@@ -39,7 +39,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
   const hostSelect = el('select', { class: 'remote-folder-host', 'aria-label': 'SSH host' })
   const addHostBtn = el(
     'button',
-    { type: 'button', class: 'remote-folder-add-host-btn' },
+    { type: 'button', class: 'ui-btn ui-btn-secondary remote-folder-add-host-btn' },
     'Add host',
   )
   const breadcrumbs = el('nav', {
@@ -54,8 +54,16 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     arrowLeftIcon('ui-icon ui-icon-sm'),
     'Up',
   )
-  const openBtn = el('button', { type: 'button', class: 'remote-folder-open primary' }, 'Open')
-  const cancelBtn = el('button', { type: 'button', class: 'remote-folder-cancel' }, 'Cancel')
+  const openBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-primary remote-folder-open' },
+    'Open',
+  )
+  const cancelBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary remote-folder-cancel' },
+    'Cancel',
+  )
 
   const draft: SshHostDraft = emptySshHostDraft()
   const idInput = el('input', {
@@ -97,13 +105,17 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
   })
   const saveHostBtn = el(
     'button',
-    { type: 'button', class: 'remote-folder-save-host primary' },
+    { type: 'button', class: 'ui-btn ui-btn-primary remote-folder-save-host' },
     'Save host',
   )
-  const cancelAddBtn = el('button', { type: 'button', class: 'remote-folder-cancel-add' }, 'Cancel')
+  const cancelAddBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary remote-folder-cancel-add' },
+    'Cancel',
+  )
   const importBtn = el(
     'button',
-    { type: 'button', class: 'remote-folder-import-config' },
+    { type: 'button', class: 'ui-btn ui-btn-ghost remote-folder-import-config' },
     'Import from ~/.ssh/config',
   )
   const addHostForm = el(

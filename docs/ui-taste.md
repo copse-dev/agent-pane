@@ -559,6 +559,16 @@ separator after it — that paints `/ / usr` for `/usr`. Skip the separator when
 [`remote-folder-path.test.ts`](../src/renderer/views/remote-folder-path.test.ts),
 [`tests/e2e/remote-folder-breadcrumbs.e2e.ts`](../tests/e2e/remote-folder-breadcrumbs.e2e.ts).
 
+## Left-elided paths need a bidi guard
+
+`.git-change-path` elides from the left with `direction: rtl` so the filename, the meaningful
+end, stays visible. That makes the span an RTL paragraph, and a neutral character at either end
+(`.` in `.bashrc`, `/` in `docs/`) takes the paragraph direction and jumps to the far end: the
+Changes list rendered dotfiles as `bashrc.` and `gitconfig.` (#3065). `layout.css` puts a
+zero-width left-to-right mark (`\200E`) in `::before` and `::after` so those characters keep a
+strong neighbour on both sides while the box still elides from the left. Copy the guard
+wherever the trick is copied. Spec: `modern-css.test.ts`.
+
 ## SSH project sidebar labels
 
 SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
@@ -828,6 +838,23 @@ manual VNC glance.
   (`prepareE2eScreenshot`) so captures are not wider than the Electron window — otherwise table
   columns clip off the right edge of the PNG.
 
+## Agent avatars in chat
+
+Use these sparingly: duotone identifies remote cloud agents; pastel riso identifies user-created
+named agents (custom ACP registrations, excluding catalog presets). Ordinary Copse replies,
+user messages, and generic subagent tool cards have no avatar. Show one identity marker at the
+start of each agent's contiguous stretch of replies, not on every message. Use message provenance
+so changing the picker never reattributes old replies. Named agents keep their art across threads
+and renames; remote agents use the thread and provider as their stable seed. Styles keep their own
+paper/ink palettes in light and dark themes; never recolor them to indicate status. The 28px size
+uses spacing tokens so interface scaling applies. Animate only the current agent's marker while
+its conversation is running, after it has started replying. Use a slow 16–22 second morph of the
+internal ink contours; keep paper, grain, outer silhouette, and the tile still. Historical replies,
+idle/error states, offscreen icons, hidden windows, and reduced-motion preferences stay static.
+Appearance → Animate agent icons defaults on; turning it off keeps identities visible and static,
+applies when saved, and persists across launches. Keep status available in text; decorative movement
+is supplementary. Visual eval: `tests/e2e/agent-avatars.e2e.ts`.
+
 ## Transcript status callouts
 
 Review and comparison results should read as annotations in the transcript, not cards or pills. They
@@ -875,6 +902,12 @@ see "Sidebar selections". Interface tint is only a subtle
 wash through otherwise neutral surfaces. Derive hover and link shades from the accent per theme,
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
+
+Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent)` on
+`html, body`, and every checkbox, radio and range input inherits it. Do not restate it per
+control: three local copies were all that kept the accent on, and every other checkbox in
+Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
+declaration to `base.css`.
 
 ## Roadmap list rows
 

@@ -1242,6 +1242,13 @@
           1
         ]
       },
+      "roadmap:find-by-thread": {
+        "api": "roadmap.findByThread",
+        "args": [
+          1,
+          1
+        ]
+      },
       "roadmap:import-issues": {
         "api": "roadmap.importIssues",
         "args": [

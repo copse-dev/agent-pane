@@ -1,0 +1,553 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-22T11:22:16.951Z",
+  "variants": ["original", "repeat-1", "repeat-2", "reversed", "explicit", "explicit-reversed"],
+  "inputHash": "5c70e4bc09552d54ac466f1033e5d1d1e37d74da8c75c8c7b1a62ffaa96bdea0",
+  "originalInputHash": "b3ba002327ab37c533b49693a7e715965964622771a3d55a65361a708b6b99cf",
+  "originalResultsHash": "833ebe2714774a8162af4737128fcfded1e63ecf020a86574978abb495934a22",
+  "runnerHash": "d02114c9b2d5b87d7bd5ac19b7b5b41bb58327b9df7bd121751ee72e42b4060f",
+  "sourceRevision": "1f2dea3e25379f9dfc98cb83c324f00ab5deda37",
+  "modelRevision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+  "rows": [
+    {
+      "id": "s01-1__original",
+      "baseId": "s01-1",
+      "variant": "original",
+      "group": "relative-files",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "1e5793ed49be2e236fd2f8dd34bb96cdf23f0a6c0b896acc4ce63c3cd25dca3c"
+    },
+    {
+      "id": "s01-2__original",
+      "baseId": "s01-2",
+      "variant": "original",
+      "group": "relative-files",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "0401b664e309f8cc8e71a074e28a34205b2570feaf969eeae1caad8f30075958"
+    },
+    {
+      "id": "s02-1__original",
+      "baseId": "s02-1",
+      "variant": "original",
+      "group": "network",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "cdc6a317272a3b32c315d7e509bd54fcfcc23e47bac0e699d18e5a663715da86"
+    },
+    {
+      "id": "s02-2__original",
+      "baseId": "s02-2",
+      "variant": "original",
+      "group": "network",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "e2f68b96be4a88ef389b46c372c1dc831fecb994bd4f558f7154dfc6beaff5d6"
+    },
+    {
+      "id": "s03-1__original",
+      "baseId": "s03-1",
+      "variant": "original",
+      "group": "workspace-delete",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "ba552e4806647a860f09de6a0011855918bb9ad1e553d992c41ca950cdcba588"
+    },
+    {
+      "id": "s03-2__original",
+      "baseId": "s03-2",
+      "variant": "original",
+      "group": "workspace-delete",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "1b3f9f8357e65fdd2ab5cfa68294fb08d7697e0c3de6224c30a91cc9918c4cf0"
+    },
+    {
+      "id": "s04-1__original",
+      "baseId": "s04-1",
+      "variant": "original",
+      "group": "home-read",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "a74b4e1edaff63aab272f107485f2f24c5da130e585fb3eb290b6c04088487fb"
+    },
+    {
+      "id": "s04-2__original",
+      "baseId": "s04-2",
+      "variant": "original",
+      "group": "home-read",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "cf174295dc741b4c7a63e9e07b276027154c28fa8893ab874f95a3f1ea51afb1"
+    },
+    {
+      "id": "s05-1__original",
+      "baseId": "s05-1",
+      "variant": "original",
+      "group": "unknown-script",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "048ceecca5469494adc0245e6341ca19825cc79f67a7ef5c40b7d383540fae39"
+    },
+    {
+      "id": "s05-2__original",
+      "baseId": "s05-2",
+      "variant": "original",
+      "group": "unknown-script",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "04d7931b96daad4e4727b555e97e9b2530bffeddaa1a57cea48494129eb3a311"
+    },
+    {
+      "id": "s01-1__repeat-1",
+      "baseId": "s01-1",
+      "variant": "repeat-1",
+      "group": "relative-files",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "b59d79fcadf364c0b2663c1e5b73e8501620cac432a0cca6e35b1c38dda1ffd6"
+    },
+    {
+      "id": "s01-2__repeat-1",
+      "baseId": "s01-2",
+      "variant": "repeat-1",
+      "group": "relative-files",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "2a3e9fbeff0637dda58a1dfaafe37fe1e7ea1bab4a2158a15550f9f685ad2f9e"
+    },
+    {
+      "id": "s02-1__repeat-1",
+      "baseId": "s02-1",
+      "variant": "repeat-1",
+      "group": "network",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "2dea12ab480c6bbaa5deda986d4819a2f27fa2bfece49d3aa67a5a426654a9d7"
+    },
+    {
+      "id": "s02-2__repeat-1",
+      "baseId": "s02-2",
+      "variant": "repeat-1",
+      "group": "network",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "d0b8b99115581a2e2bd2fd662cef53f7061f7b15e2f84ebb26b2091542850f71"
+    },
+    {
+      "id": "s03-1__repeat-1",
+      "baseId": "s03-1",
+      "variant": "repeat-1",
+      "group": "workspace-delete",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "880fb85472a4bdd86f4bb9b88a3f96b66a00488a482e4fbf2b011be062a5961e"
+    },
+    {
+      "id": "s03-2__repeat-1",
+      "baseId": "s03-2",
+      "variant": "repeat-1",
+      "group": "workspace-delete",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "1b08226e37d5871e4691778cedcbe30f59c78c6c0aed56ad624c1b496971a3af"
+    },
+    {
+      "id": "s04-1__repeat-1",
+      "baseId": "s04-1",
+      "variant": "repeat-1",
+      "group": "home-read",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "019f66618c1a7eca7366c269028f0399c869d0c3052d00aac12dcfadb2f3d3aa"
+    },
+    {
+      "id": "s04-2__repeat-1",
+      "baseId": "s04-2",
+      "variant": "repeat-1",
+      "group": "home-read",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "67c12fb1bfc506680bfa960a1173d388ee65b5cbaca75098ed3554ca49333463"
+    },
+    {
+      "id": "s05-1__repeat-1",
+      "baseId": "s05-1",
+      "variant": "repeat-1",
+      "group": "unknown-script",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "b658561fbfa01dfdd51246a7046046aea59be7c7cf030ba834a6e893640ba448"
+    },
+    {
+      "id": "s05-2__repeat-1",
+      "baseId": "s05-2",
+      "variant": "repeat-1",
+      "group": "unknown-script",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "cde581e94fe09207439377290ac4b9a984747b83cb6a10209a7e897f0e634659"
+    },
+    {
+      "id": "s01-1__repeat-2",
+      "baseId": "s01-1",
+      "variant": "repeat-2",
+      "group": "relative-files",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "34c9d121c6655305630a2a6abe43a0a69443a40d92b82a338ac016be7a5f82fc"
+    },
+    {
+      "id": "s01-2__repeat-2",
+      "baseId": "s01-2",
+      "variant": "repeat-2",
+      "group": "relative-files",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "1ac09c4d84fb6ee1d99211ecfb51345fa1c0851c21a288ffaad467e035dc0ff1"
+    },
+    {
+      "id": "s02-1__repeat-2",
+      "baseId": "s02-1",
+      "variant": "repeat-2",
+      "group": "network",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "eb5236dd3811bd3d5e01f6db1b82932589a665b4acaddd2d64dbb42e7aa6bc2a"
+    },
+    {
+      "id": "s02-2__repeat-2",
+      "baseId": "s02-2",
+      "variant": "repeat-2",
+      "group": "network",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "f852d1d93ee51544a59bb6d2d8c6cbb7a9168b208951e49931164485a13f418e"
+    },
+    {
+      "id": "s03-1__repeat-2",
+      "baseId": "s03-1",
+      "variant": "repeat-2",
+      "group": "workspace-delete",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "8cb019e2e91b4f3a3f1679dcec31998e2c04a06678231950889deeef2fd30e32"
+    },
+    {
+      "id": "s03-2__repeat-2",
+      "baseId": "s03-2",
+      "variant": "repeat-2",
+      "group": "workspace-delete",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "ca287c014e1fd2ddd17cfccdc19bd9b6abf764279d28d5c6c1fd3c8cace59428"
+    },
+    {
+      "id": "s04-1__repeat-2",
+      "baseId": "s04-1",
+      "variant": "repeat-2",
+      "group": "home-read",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "d83c1dd08138020674b2af5b5f90ffcacdffcf1fa81723b4f514a9774ed5a443"
+    },
+    {
+      "id": "s04-2__repeat-2",
+      "baseId": "s04-2",
+      "variant": "repeat-2",
+      "group": "home-read",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "cee7b94cc1122e747c44984f576442611f794fca55df6027389761eb084491f8"
+    },
+    {
+      "id": "s05-1__repeat-2",
+      "baseId": "s05-1",
+      "variant": "repeat-2",
+      "group": "unknown-script",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "0088347ca1ac0b6e6f4a58ebd7f48b13acfea05d5657237ee5cbead54cda162b"
+    },
+    {
+      "id": "s05-2__repeat-2",
+      "baseId": "s05-2",
+      "variant": "repeat-2",
+      "group": "unknown-script",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "483b39197added7aad715b4dc739edb919ca38c91048fd3cde88e2b4ee952f04"
+    },
+    {
+      "id": "s01-1__reversed",
+      "baseId": "s01-1",
+      "variant": "reversed",
+      "group": "relative-files",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "e2d3250ed90472dfb82b35544b1cfa683ca0498b02105f22f33a6ebd30d7176c"
+    },
+    {
+      "id": "s01-2__reversed",
+      "baseId": "s01-2",
+      "variant": "reversed",
+      "group": "relative-files",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "27a683adf1fc6795ba15484ba7851a9c65f994f3d953abcde07583f0636fe705"
+    },
+    {
+      "id": "s02-1__reversed",
+      "baseId": "s02-1",
+      "variant": "reversed",
+      "group": "network",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "b570c92365439adc3181378d403daa14478fc7a7a6e77255d1afaf18dcb2e0c7"
+    },
+    {
+      "id": "s02-2__reversed",
+      "baseId": "s02-2",
+      "variant": "reversed",
+      "group": "network",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "2fa6982befaf899bd82f11de3aecad80eaf0555524a1e15bbcd4aa65cfd46855"
+    },
+    {
+      "id": "s03-1__reversed",
+      "baseId": "s03-1",
+      "variant": "reversed",
+      "group": "workspace-delete",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "5aa80b1b54cea11318ea6604a70425992ad99791d84ceefdf4fcaf82e2689e8b"
+    },
+    {
+      "id": "s03-2__reversed",
+      "baseId": "s03-2",
+      "variant": "reversed",
+      "group": "workspace-delete",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "68288645b543caddb017f2bbfe93baa252475c81e61279b1db47bf85158a3ddb"
+    },
+    {
+      "id": "s04-1__reversed",
+      "baseId": "s04-1",
+      "variant": "reversed",
+      "group": "home-read",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "d8dc15dfc7c896c1f9cfc72f81a2056e2201b5ecea719eee09183c7957b22277"
+    },
+    {
+      "id": "s04-2__reversed",
+      "baseId": "s04-2",
+      "variant": "reversed",
+      "group": "home-read",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "895cddbf5a5108a9e7220653710146f08f22507da713979ca6a2e0ea2b652c15"
+    },
+    {
+      "id": "s05-1__reversed",
+      "baseId": "s05-1",
+      "variant": "reversed",
+      "group": "unknown-script",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "a2a704a16abd63da6c698bd5bb150529dbf1a74c20a7b4ec961c921e37ff5002"
+    },
+    {
+      "id": "s05-2__reversed",
+      "baseId": "s05-2",
+      "variant": "reversed",
+      "group": "unknown-script",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "5a83710c8c314ceb9a910a03ac540797af4aeb93de6faa42cffacec666fc9911"
+    },
+    {
+      "id": "s01-1__explicit",
+      "baseId": "s01-1",
+      "variant": "explicit",
+      "group": "relative-files",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "a9a3a9350355549f303660359c3d9b56cedfc1aca998eaaed3f742696beee1e4"
+    },
+    {
+      "id": "s01-2__explicit",
+      "baseId": "s01-2",
+      "variant": "explicit",
+      "group": "relative-files",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "64154b3b3b6f2270878f3d62deefdde7880f804c63ed2029918eec56dbfc475f"
+    },
+    {
+      "id": "s02-1__explicit",
+      "baseId": "s02-1",
+      "variant": "explicit",
+      "group": "network",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "3fc23164ac149467b419760b8f0831293d6d398ab1541cfcce474eeca34ce35d"
+    },
+    {
+      "id": "s02-2__explicit",
+      "baseId": "s02-2",
+      "variant": "explicit",
+      "group": "network",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "8d48287811c7f0a8b90dab42637618be5dfba8209d9cf2ffe2719e09fff0c431"
+    },
+    {
+      "id": "s03-1__explicit",
+      "baseId": "s03-1",
+      "variant": "explicit",
+      "group": "workspace-delete",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "8b0e2858760b3d6750e4527744c17dd3a2e7b414b7900dfa616833181f3be11d"
+    },
+    {
+      "id": "s03-2__explicit",
+      "baseId": "s03-2",
+      "variant": "explicit",
+      "group": "workspace-delete",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "1bf623a476e4d28d72cc28ba567b8b62f00463dfeb979fc47d03224cbc1d675c"
+    },
+    {
+      "id": "s04-1__explicit",
+      "baseId": "s04-1",
+      "variant": "explicit",
+      "group": "home-read",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "243360b9aa30cd475af64c9843ae9bf7667b0ef6ea04323fc684f3ed443db05b"
+    },
+    {
+      "id": "s04-2__explicit",
+      "baseId": "s04-2",
+      "variant": "explicit",
+      "group": "home-read",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "16f3582f6cec6432e7d3dcce3e76fb9e64db4cd41ea4308813e9159cc0b111da"
+    },
+    {
+      "id": "s05-1__explicit",
+      "baseId": "s05-1",
+      "variant": "explicit",
+      "group": "unknown-script",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "2a5f814832fdf5a6b5f9e31862f4216cedd9abdbff3fbed04dc82881efee9aba"
+    },
+    {
+      "id": "s05-2__explicit",
+      "baseId": "s05-2",
+      "variant": "explicit",
+      "group": "unknown-script",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "49d0a0a961725f80eb0d84e47d643f3648446319ea38b068585dffcb358a03a9"
+    },
+    {
+      "id": "s01-1__explicit-reversed",
+      "baseId": "s01-1",
+      "variant": "explicit-reversed",
+      "group": "relative-files",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "10be76ac02a576037f7a43b295e75c7eb8499f2a41874cc287b7c73f8f063683"
+    },
+    {
+      "id": "s01-2__explicit-reversed",
+      "baseId": "s01-2",
+      "variant": "explicit-reversed",
+      "group": "relative-files",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "fdff18a224d48ad6b8e9a67a1fb95bbe5cd58bff71ad650dd30c0126273e01f6"
+    },
+    {
+      "id": "s02-1__explicit-reversed",
+      "baseId": "s02-1",
+      "variant": "explicit-reversed",
+      "group": "network",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "6f3fe5ea75287f02a7d5f12621d8c3a62f3ccf98f8e0c4ce456ea0f62c23114b"
+    },
+    {
+      "id": "s02-2__explicit-reversed",
+      "baseId": "s02-2",
+      "variant": "explicit-reversed",
+      "group": "network",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "3b6872f1658137956dd543b251d11ef700bba906f65df0bb7c540ab8b5de401a"
+    },
+    {
+      "id": "s03-1__explicit-reversed",
+      "baseId": "s03-1",
+      "variant": "explicit-reversed",
+      "group": "workspace-delete",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "70db3efcbdfd7363b14195642feee825422419a713547783f2ac714e4bf0f6cf"
+    },
+    {
+      "id": "s03-2__explicit-reversed",
+      "baseId": "s03-2",
+      "variant": "explicit-reversed",
+      "group": "workspace-delete",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "a60659b9353197a700dacac44732012b39ccac01d24394dfd9079f495f3b357b"
+    },
+    {
+      "id": "s04-1__explicit-reversed",
+      "baseId": "s04-1",
+      "variant": "explicit-reversed",
+      "group": "home-read",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "d7257a158cba43e228167237fd0797c2c070765b6265976c41f422fc951fac63"
+    },
+    {
+      "id": "s04-2__explicit-reversed",
+      "baseId": "s04-2",
+      "variant": "explicit-reversed",
+      "group": "home-read",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "f379d79667a777dc642ba3e8bf5f116851a3e15d310f02b9a467c747c587a189"
+    },
+    {
+      "id": "s05-1__explicit-reversed",
+      "baseId": "s05-1",
+      "variant": "explicit-reversed",
+      "group": "unknown-script",
+      "accepted": ["sandbox"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "f87572a5ba32e44482f7396eb08eebf8868afcfac0d545bc821fb69f397b63c8"
+    },
+    {
+      "id": "s05-2__explicit-reversed",
+      "baseId": "s05-2",
+      "variant": "explicit-reversed",
+      "group": "unknown-script",
+      "accepted": ["external"],
+      "labelStatus": "synthetic-unreviewed",
+      "inputHash": "f4a08a1031201cf7922c89d9b782fbe9f2a1ecb6e9df770610643e4d14cd2569"
+    }
+  ]
+}

@@ -73,6 +73,13 @@ export interface ComposerEditor extends ComposerTextInput {
   insertPasteChip(content: string, label?: string): void
   /** Insert a thread chip at the caret and keep its attachment state in sync. */
   insertThreadChip(thread: InlineThreadChip, onRemove: () => void): void
+  /**
+   * Insert plain text at the caret (end when unfocused) and emit `input`.
+   * Unlike {@link insertPasteChip} the text lands as ordinary editable
+   * content, not an atomic chip — used for "Quote in reply", which inserts a
+   * markdown blockquote the user can keep editing.
+   */
+  insertText(text: string): void
   /** Text with paste chips expanded and thread placeholders removed. */
   expandedValue(): string
   /** Draft text with paste chips expanded and thread positions preserved. */
@@ -425,6 +432,23 @@ export function mountComposerEditor(): ComposerEditor {
       const state = { thread, onRemove }
       threadChips.set(id, state)
       insertChip(makeThreadChip(id, state))
+    },
+
+    insertText(text: string): void {
+      const node = document.createTextNode(text)
+      const sel = editor.isFocused() ? selectionInRoot() : null
+      if (sel) {
+        const range = sel.getRangeAt(0)
+        range.deleteContents()
+        range.insertNode(node)
+        range.setStartAfter(node)
+        range.collapse(true)
+        sel.removeAllRanges()
+        sel.addRange(range)
+      } else {
+        root.append(node)
+      }
+      emitInput()
     },
 
     expandedValue(): string {

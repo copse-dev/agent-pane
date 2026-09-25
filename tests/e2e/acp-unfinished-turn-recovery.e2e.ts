@@ -1,6 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import {
   resetUserData,
+  seedAcpPromptInterruptedFixture,
   seedAcpUnfinishedTurnFixture,
   writeSeedConfig,
 } from './helpers/seed-config.ts'
@@ -220,6 +221,51 @@ function seedAcpSettledOpenToolFixture(workspaceRoot: string): void {
     ],
   })
 }
+
+describe('ACP interrupted by a new chat prompt', () => {
+  before(async () => {
+    process.env.COPSE_PANEL_MOCK_LLM = '1'
+    process.env.ANTHROPIC_API_KEY = ''
+    process.env.OPENAI_API_KEY = ''
+    resetUserData()
+    seedAcpPromptInterruptedFixture(process.cwd())
+    await browser.reloadSession()
+    await $('[data-message-id="msg-user-acp-followup"]').waitForExist({ timeout: 30_000 })
+  })
+
+  after(() => {
+    resetUserData()
+  })
+
+  it('keeps the interrupted run folded and attributes the call when opened', async () => {
+    const run = await $('.tool-card-rollup[data-rollup-key="run"]')
+    await expect(run).toHaveAttribute('data-status', 'interrupted')
+    await expect(run).not.toHaveAttribute('open')
+    await expect(run.$(':scope > summary .tool-name')).toHaveText(
+      'Used 4 tools · 2 steps · Interrupted',
+    )
+    await savePreparedElementScreenshot('.messages-list', 'acp-prompt-interruption-collapsed.png')
+
+    await run.$(':scope > summary').click()
+    await expect(run.$(':scope > .tool-rollup-body > .tool-interruption-note')).toHaveText(
+      'Interrupted when you sent a new message.',
+    )
+    const step = await run.$('[data-step-message-id="msg-assistant-acp-interrupted-step"]')
+    await expect(step).not.toHaveAttribute('open')
+    await step.$(':scope > summary').click()
+    const call = await step.$('[data-tool-id="tc-acp-interrupted-read"]')
+    await expect(call).toHaveAttribute('data-status', 'interrupted')
+    await expect(call).not.toHaveAttribute('open')
+    await call.$(':scope > summary').click()
+    await expect(call.$('.tool-interruption-note')).toHaveText(
+      'Interrupted when you sent a new message.',
+    )
+    await expect(call).toHaveText('may have partially run or produced effects', {
+      containing: true,
+    })
+    await savePreparedElementScreenshot('.messages-list', 'acp-prompt-interruption-expanded.png')
+  })
+})
 
 describe('ACP unfinished-turn recovery fallback', () => {
   before(async () => {

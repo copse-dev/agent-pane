@@ -323,7 +323,7 @@ export interface Thread {
    * Never written any more; kept so old threads still render their card.
    */
   comparison?: ModelComparison
-  /** Latest Copse Reviewer report for this thread's changes (replaces `comparison`). */
+  /** Legacy trailing report; new reviews are anchored to their assistant message. */
   reviewReport?: ThreadReviewReport
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
@@ -597,6 +597,8 @@ export interface Message {
    * (in position, one per reviewed turn) rather than as a single trailing card.
    */
   review?: ThreadReview
+  /** Copse Reviewer findings for the turn this message concluded. */
+  reviewReport?: ThreadReviewReport
   /**
    * Provenance when this turn was started without a human submit. The
    * message role stays `user` for the LLM; `origin` lives purely in the data
