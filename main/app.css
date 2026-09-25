@@ -4249,6 +4249,29 @@ label {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+.acp-resource-link[hidden],
+.acp-resource-image[hidden] {
+  display: none;
+}
+.acp-referenced-image {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+.acp-referenced-image .tool-result-preview-caption,
+.acp-resource-image .acp-resource-description,
+.acp-resource-image .acp-resource-meta {
+  display: block;
+}
+.acp-resource-image-link {
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
+.acp-referenced-image-path {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
 .message-visual-evidence {
   display: grid;
   gap: var(--spacing-sm);
@@ -4420,6 +4443,10 @@ label {
 }
 .tool-result-content {
   margin-bottom: var(--spacing-sm);
+}
+.acp-content-blocks:not(:has(> :not([hidden]))),
+.tool-result-content:not(:has(> :not([hidden]))) {
+  display: none;
 }
 .acp-content-image {
   justify-self: start;

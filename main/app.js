@@ -71769,6 +71769,7 @@ function bindBrowserLinkClicks(root, store2, api2) {
     if (!link || !root.contains(link)) return;
     if (link.dataset["fileReferencePath"]) return;
     if (link.dataset["workspaceLink"]) return;
+    if (link.dataset["workspaceResourcePath"]) return;
     const href = linkHttpHref(link);
     if (!href) return;
     event.preventDefault();
@@ -71831,6 +71832,21 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
   const onClick = (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    const resourceLink = target.closest("a[data-workspace-resource-path]");
+    if (resourceLink && root.contains(resourceLink)) {
+      const path = resourceLink.dataset["workspaceResourcePath"];
+      if (!path) return;
+      const owner2 = getActiveThreadOwner(store2);
+      event.preventDefault();
+      event.stopPropagation();
+      void activateWorkspaceReference(store2, api2, path, "file").catch((error62) => {
+        const currentOwner = getActiveThreadOwner(store2);
+        if (currentOwner?.projectId !== owner2?.projectId || currentOwner?.threadId !== owner2?.threadId)
+          return;
+        showErrorToast(`Failed to open ${path}`, error62);
+      });
+      return;
+    }
     const link = target.closest("a[data-workspace-link]");
     if (!link || !root.contains(link)) return;
     if (link.dataset["fileReferencePath"]) return;
@@ -72256,6 +72272,328 @@ var init_attachment_icons = __esm({
         "M10 18h2"
       ]
     };
+  }
+});
+
+// src/shared/fs/workspace-path.ts
+function normalizeWorkspacePath(path) {
+  return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").split("/").filter((segment) => segment !== ".").join("/");
+}
+function workspaceRelativePath(absPath, workspaceRoot) {
+  const path = normalizeWorkspacePath(absPath);
+  const root = normalizeWorkspacePath(workspaceRoot).replace(/\/+$/, "") || "/";
+  const foldCase = DRIVE_PATH_RE.test(root);
+  const comparablePath = foldCase ? path.toLowerCase() : path;
+  const comparableRoot = foldCase ? root.toLowerCase() : root;
+  if (comparablePath === comparableRoot || comparablePath === `${comparableRoot}/`) return "";
+  const prefix = comparableRoot === "/" ? "/" : `${comparableRoot}/`;
+  if (!comparablePath.startsWith(prefix)) return null;
+  const relative = path.slice(prefix.length);
+  return relative.split("/").includes("..") ? null : relative;
+}
+function localPathFromUri(uri) {
+  if (!uri || uri.startsWith("\\") || uri.startsWith("//")) return null;
+  if (/^file:/i.test(uri)) {
+    let url2;
+    try {
+      url2 = new URL(uri);
+    } catch {
+      return null;
+    }
+    if (url2.host !== "" && url2.host.toLowerCase() !== "localhost") return null;
+    let path;
+    try {
+      path = decodeURIComponent(url2.pathname);
+    } catch {
+      return null;
+    }
+    return /^\/[a-z]:\//i.test(path) ? path.slice(1) : path;
+  }
+  if (/^[a-z][a-z\d+.-]*:/i.test(uri) && !/^[a-z]:[\\/]/i.test(uri)) return null;
+  return uri;
+}
+var DRIVE_PATH_RE;
+var init_workspace_path = __esm({
+  "src/shared/fs/workspace-path.ts"() {
+    DRIVE_PATH_RE = /^[a-z]:\//i;
+  }
+});
+
+// src/renderer/views/acp-resource-previews.ts
+function acpWorkspaceRoot(store2) {
+  return getActiveThread(store2)?.worktree?.path ?? store2.getState().workspaceRoot;
+}
+function workspaceDisplayPath(value, workspaceRoot) {
+  if (!workspaceRoot) return value;
+  const path = localPathFromUri(value);
+  const relative = path === null ? null : workspaceRelativePath(path, workspaceRoot);
+  if (relative === null) return value;
+  return relative || ".";
+}
+function workspaceResourceFilePath(uri, workspaceRoot) {
+  if (!workspaceRoot) return null;
+  const path = localPathFromUri(uri);
+  if (path === null) return null;
+  const relative = /^(?:\/|[a-z]:[\\/])/i.test(path) ? workspaceRelativePath(path, workspaceRoot) : normalizeWorkspacePath(path);
+  if (!relative || relative.split("/").includes("..")) return null;
+  return relative;
+}
+function readResourceImage(api2, owner, workspaceRoot, messageId, path) {
+  const key = [owner.projectId, owner.threadId, workspaceRoot, messageId, path].join("\0");
+  const cached2 = imageReads.get(key);
+  if (cached2) {
+    imageReads.delete(key);
+    imageReads.set(key, cached2);
+    return cached2;
+  }
+  const read = {
+    key,
+    promise: api2.fs.readImage(owner.projectId, owner.threadId, path)
+  };
+  imageReads.set(key, read);
+  for (const oldest of imageReads.keys()) {
+    if (imageReads.size <= MAX_IMAGE_READS) break;
+    imageReads.delete(oldest);
+  }
+  read.promise.then(
+    (src) => {
+      read.src = src;
+    },
+    () => {
+      forgetImageRead(read);
+    }
+  );
+  return read;
+}
+function forgetImageRead(read) {
+  if (imageReads.get(read.key) === read) imageReads.delete(read.key);
+}
+function whenImageRead(read, apply2) {
+  if (read.src !== void 0) {
+    apply2(read.src);
+    return;
+  }
+  read.promise.then(apply2, () => {
+  });
+}
+function messageIdOf(node2) {
+  return node2.closest("[data-message-id]")?.dataset["messageId"] ?? "";
+}
+function showCardImage(card, src, read) {
+  const path = card.dataset["workspaceResourcePath"] ?? "";
+  const uri = card.dataset["acpResourceUri"] ?? path;
+  const label = card.querySelector(".acp-resource-title")?.textContent ?? path;
+  const image = el("img", { class: "tool-result-preview-image", src, alt: label, loading: "lazy" });
+  attachImageExpand(image, label);
+  const details = Array.from(
+    card.querySelectorAll(".acp-resource-description, .acp-resource-meta"),
+    (node2) => node2.cloneNode(true)
+  );
+  const figure = el(
+    "figure",
+    {
+      class: "tool-result-preview acp-resource-image",
+      title: card.title,
+      "data-acp-resource-uri": uri,
+      "data-workspace-resource-path": path
+    },
+    image,
+    el(
+      "figcaption",
+      { class: "tool-result-preview-caption" },
+      el(
+        "a",
+        { class: "acp-resource-image-link", href: uri, "data-workspace-resource-path": path },
+        path
+      )
+    ),
+    ...details
+  );
+  image.addEventListener(
+    "error",
+    () => {
+      forgetImageRead(read);
+      if (!figure.isConnected) return;
+      card.hidden = figure.hidden;
+      figure.replaceWith(card);
+    },
+    { once: true }
+  );
+  figure.hidden = card.hidden;
+  card.replaceWith(figure);
+}
+function hydrateAcpResourceImages(root, api2, store2) {
+  const owner = getActiveThreadOwner(store2);
+  const workspaceRoot = acpWorkspaceRoot(store2);
+  if (!owner || !workspaceRoot) return;
+  for (const card of root.querySelectorAll(
+    ".acp-resource-link[data-workspace-resource-path]:not([data-image-preview-requested])"
+  )) {
+    const path = card.dataset["workspaceResourcePath"];
+    if (!path || !isRasterImagePath(path)) continue;
+    card.dataset["imagePreviewRequested"] = "true";
+    const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(card), path);
+    whenImageRead(read, (src) => {
+      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      showCardImage(card, src, read);
+    });
+  }
+}
+function isCurrentOwner(store2, owner, workspaceRoot) {
+  const current = getActiveThreadOwner(store2);
+  return current?.projectId === owner.projectId && current.threadId === owner.threadId && acpWorkspaceRoot(store2) === workspaceRoot;
+}
+function replaceAcpResourceBlock(current, replacement) {
+  const hidden = /* @__PURE__ */ new Set();
+  for (const resource of current.querySelectorAll(RESOURCE_SELECTOR)) {
+    const path = resource.dataset["workspaceResourcePath"];
+    if (path && resource.hidden) hidden.add(path);
+  }
+  for (const resource of replacement.querySelectorAll(RESOURCE_SELECTOR)) {
+    const path = resource.dataset["workspaceResourcePath"];
+    if (path && hidden.has(path)) resource.hidden = true;
+  }
+  current.replaceWith(replacement);
+}
+function messageOrder(list) {
+  const order = /* @__PURE__ */ new Map();
+  list.querySelectorAll("[data-message-id]").forEach((message2, index) => {
+    order.set(message2, index);
+  });
+  return (node2) => {
+    const message2 = node2.closest("[data-message-id]");
+    return message2 ? order.get(message2) ?? -1 : -1;
+  };
+}
+function syncResourceVisibility(list) {
+  const indexOf = messageOrder(list);
+  const latestReference = /* @__PURE__ */ new Map();
+  for (const reference of list.querySelectorAll(REFERENCE_SELECTOR)) {
+    const path = reference.dataset["workspaceResourcePath"];
+    if (!path) continue;
+    latestReference.set(path, Math.max(latestReference.get(path) ?? -1, indexOf(reference)));
+  }
+  for (const resource of list.querySelectorAll(RESOURCE_SELECTOR)) {
+    const path = resource.dataset["workspaceResourcePath"];
+    if (!path) continue;
+    resource.hidden = (latestReference.get(path) ?? -1) >= indexOf(resource);
+  }
+}
+function linkTarget(link, workspaceRoot) {
+  const cached2 = linkTargets.get(link);
+  if (cached2?.root === workspaceRoot) return cached2;
+  const href = link.getAttribute("href") ?? "";
+  let uri = href;
+  if (!/^file:/i.test(href)) {
+    try {
+      uri = decodeURI(href);
+    } catch {
+    }
+  }
+  const target = { root: workspaceRoot, uri, path: workspaceResourceFilePath(uri, workspaceRoot) };
+  linkTargets.set(link, target);
+  return target;
+}
+function citedResource(entries2, index) {
+  if (!entries2) return null;
+  for (let i2 = entries2.length - 1; i2 >= 0; i2--) {
+    const entry = entries2[i2];
+    if (entry && entry.index <= index) return entry.node;
+  }
+  return null;
+}
+function showReferencedImage(link, { uri, path }, src, read, list) {
+  const label = link.textContent.trim() || path;
+  const image = el("img", { class: "tool-result-preview-image", src, alt: label, loading: "lazy" });
+  attachImageExpand(image, label);
+  const labelIsPath = label === uri || label === path;
+  const preview = el(
+    "figure",
+    {
+      class: "tool-result-preview acp-referenced-image",
+      title: uri,
+      "data-workspace-resource-path": path,
+      "data-workspace-resource-reference": "true"
+    },
+    image,
+    el("figcaption", { class: "tool-result-preview-caption" }, labelIsPath ? path : label),
+    ...labelIsPath ? [] : [el("code", { class: "acp-referenced-image-path" }, path)]
+  );
+  image.addEventListener(
+    "error",
+    () => {
+      forgetImageRead(read);
+      if (!preview.isConnected) return;
+      preview.remove();
+      syncResourceVisibility(list);
+    },
+    { once: true }
+  );
+  const paragraph = link.closest("p");
+  if (paragraph && paragraph.closest(".message-text")) {
+    let anchor2 = paragraph;
+    while (anchor2.nextElementSibling?.classList.contains("acp-referenced-image")) {
+      anchor2 = anchor2.nextElementSibling;
+    }
+    anchor2.after(preview);
+  } else {
+    link.closest(".message-text")?.append(preview);
+  }
+}
+function syncAcpResourceReferences(list, api2, store2) {
+  const owner = getActiveThreadOwner(store2);
+  const workspaceRoot = acpWorkspaceRoot(store2);
+  if (!owner || !workspaceRoot || !list.querySelector(RESOURCE_SELECTOR)) return;
+  hydrateAcpResourceImages(list, api2, store2);
+  const resources = list.querySelectorAll(RESOURCE_SELECTOR);
+  const indexOf = messageOrder(list);
+  const resourcesByPath = /* @__PURE__ */ new Map();
+  for (const node2 of resources) {
+    const path = node2.dataset["workspaceResourcePath"];
+    if (!path) continue;
+    const entries2 = resourcesByPath.get(path) ?? [];
+    entries2.push({ node: node2, index: indexOf(node2) });
+    resourcesByPath.set(path, entries2);
+  }
+  for (const link of list.querySelectorAll(
+    ".msg-assistant .message-text:not(.is-streaming) a[href]:not([data-workspace-resource-reference])"
+  )) {
+    const { uri, path } = linkTarget(link, workspaceRoot);
+    if (!path) continue;
+    const resource = citedResource(resourcesByPath.get(path), indexOf(link));
+    if (!resource) continue;
+    link.dataset["workspaceResourcePath"] = path;
+    if (!isRasterImagePath(path)) {
+      link.dataset["workspaceResourceReference"] = "true";
+      continue;
+    }
+    if (link.dataset["imageReferenceRequested"]) continue;
+    link.dataset["imageReferenceRequested"] = "true";
+    const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(resource), path);
+    let settled = false;
+    whenImageRead(read, (src) => {
+      if (!link.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      showReferencedImage(link, { uri, path }, src, read, list);
+      if (settled) syncResourceVisibility(list);
+    });
+    settled = true;
+  }
+  syncResourceVisibility(list);
+}
+var RESOURCE_SELECTOR, REFERENCE_SELECTOR, MAX_IMAGE_READS, imageReads, linkTargets;
+var init_acp_resource_previews = __esm({
+  "src/renderer/views/acp-resource-previews.ts"() {
+    init_thread_helpers();
+    init_image_path();
+    init_workspace_path();
+    init_image_expand();
+    init_active_thread_owner();
+    init_helpers();
+    RESOURCE_SELECTOR = ".acp-resource-link[data-workspace-resource-path], .acp-resource-image";
+    REFERENCE_SELECTOR = ".msg-assistant .message-text:not(.is-streaming) [data-workspace-resource-reference]";
+    MAX_IMAGE_READS = 32;
+    imageReads = /* @__PURE__ */ new Map();
+    linkTargets = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -75335,7 +75673,7 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
-function syncToolResultContent(msgEl, toolCalls) {
+function syncToolResultContent(msgEl, toolCalls, workspaceRoot) {
   const previewImageDataUrls = new Set(
     toolCalls.flatMap(
       (toolCall) => (toolCall.images ?? []).filter((image) => image.kind === "screenshot").map((image) => image.dataUrl)
@@ -75361,13 +75699,14 @@ function syncToolResultContent(msgEl, toolCalls) {
   }
   const signature = renderSignature({
     content: visible,
-    previewImageDataUrls: [...previewImageDataUrls]
+    previewImageDataUrls: [...previewImageDataUrls],
+    workspaceRoot
   });
   let rendered = current;
   if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
-    rendered = createToolResultContent(visible, previewImageDataUrls);
+    rendered = createToolResultContent(visible, previewImageDataUrls, workspaceRoot);
     toolResultContentSignatures.set(rendered, signature);
-    if (current) current.replaceWith(rendered);
+    if (current) replaceAcpResourceBlock(current, rendered);
     else msgEl.append(rendered);
   }
   const toolCards = Array.from(msgEl.children).filter(
@@ -75972,7 +76311,7 @@ function acpResourceLabel(uri, title) {
     return tail;
   }
 }
-function createAcpContentBlock(block, context, previewImageDataUrls) {
+function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls) {
   if (block.type === "text") return null;
   if (block.type === "image") {
     const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
@@ -76010,16 +76349,31 @@ function createAcpContentBlock(block, context, previewImageDataUrls) {
   }
   if (block.type === "resource_link") {
     const label2 = block.title ?? block.name;
+    const displayLabel = workspaceDisplayPath(label2, workspaceRoot);
+    const displayUri = workspaceDisplayPath(block.uri, workspaceRoot);
+    const filePath = workspaceResourceFilePath(block.uri, workspaceRoot);
     const description = block.description ? el("span", { class: "acp-resource-description" }, block.description) : null;
     const metadata = [block.mimeType, block.size !== void 0 ? `${String(block.size)} B` : null].filter(Boolean).join(" \xB7 ");
-    const labelNode = /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, label2) : el("span", { class: "acp-resource-title" }, label2);
+    const labelNode = filePath ? el(
+      "a",
+      {
+        class: "acp-resource-title",
+        href: block.uri,
+        "data-workspace-resource-path": filePath
+      },
+      displayLabel
+    ) : /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, displayLabel) : el("span", { class: "acp-resource-title" }, displayLabel);
     return el(
       "div",
-      { class: "acp-resource-content acp-resource-link" },
+      {
+        class: "acp-resource-content acp-resource-link",
+        ...displayLabel !== label2 || displayUri !== block.uri ? { title: block.uri } : {},
+        ...filePath ? { "data-workspace-resource-path": filePath, "data-acp-resource-uri": block.uri } : {}
+      },
       labelNode,
       ...description ? [description] : [],
       ...metadata ? [el("span", { class: "acp-resource-meta" }, metadata)] : [],
-      el("code", { class: "acp-resource-uri" }, block.uri)
+      el("code", { class: "acp-resource-uri" }, displayUri)
     );
   }
   const label = acpResourceLabel(block.uri);
@@ -76040,15 +76394,15 @@ function createAcpContentBlock(block, context, previewImageDataUrls) {
     el("a", { class: "ui-btn ui-btn-secondary", href: block.dataUrl, download: label }, "Save")
   );
 }
-function createAcpContentBlocks(blocks, context) {
+function createAcpContentBlocks(blocks, context, workspaceRoot) {
   const nodes = blocks.flatMap((block) => {
-    const node2 = createAcpContentBlock(block, context);
+    const node2 = createAcpContentBlock(block, context, workspaceRoot);
     return node2 ? [node2] : [];
   });
   if (nodes.length === 0) return null;
   return el("div", { class: `acp-content-blocks acp-${context}-content` }, ...nodes);
 }
-function createToolResultContent(content, previewImageDataUrls) {
+function createToolResultContent(content, previewImageDataUrls, workspaceRoot) {
   const imageCount = content.filter(
     (item) => item.type === "content" && item.content.type === "image"
   ).length;
@@ -76058,7 +76412,7 @@ function createToolResultContent(content, previewImageDataUrls) {
   });
   for (const item of content) {
     if (item.type === "content") {
-      const node2 = createAcpContentBlock(item.content, "tool", previewImageDataUrls);
+      const node2 = createAcpContentBlock(item.content, "tool", workspaceRoot, previewImageDataUrls);
       if (node2) wrap.append(node2);
     } else if (item.type === "diff") {
       const diff = el(
@@ -76303,13 +76657,19 @@ function createHookCardHost(messageId, cards, load) {
   host.append(group);
   return host;
 }
-function appendMessageContent(body, msg, api2, opts) {
+function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
   if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
     body.append(
-      buildReasoningEl(msg.reasoning ?? "", !msg.content.trim(), false, msg.reasoningBlocks)
+      buildReasoningEl(
+        msg.reasoning ?? "",
+        !msg.content.trim(),
+        false,
+        msg.reasoningBlocks,
+        workspaceRoot
+      )
     );
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
@@ -76324,20 +76684,20 @@ function appendMessageContent(body, msg, api2, opts) {
     textEl.textContent = msg.content;
   }
   if (msg.role === "assistant" && msg.contentBlocks?.length) {
-    const richContent = createAcpContentBlocks(msg.contentBlocks, "message");
+    const richContent = createAcpContentBlocks(msg.contentBlocks, "message", workspaceRoot);
     if (richContent) body.append(richContent);
   }
 }
-function syncAcpMessageContent(msgEl, blocks) {
+function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
   const current = body.querySelector(":scope > .acp-message-content");
-  const replacement = createAcpContentBlocks(blocks, "message");
+  const replacement = createAcpContentBlocks(blocks, "message", workspaceRoot);
   if (!replacement) {
     current?.remove();
     return;
   }
-  if (current) current.replaceWith(replacement);
+  if (current) replaceAcpResourceBlock(current, replacement);
   else body.append(replacement);
 }
 function shouldNestReasoningInTools(toolCalls) {
@@ -76373,7 +76733,8 @@ function setReasoningDisclosureTitle(details, live) {
   if (!live) {
     const textEl = details.querySelector(".message-reasoning-text");
     const state = textEl && reasoningRenders.get(textEl);
-    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks);
+    if (textEl && state?.live)
+      renderReasoningText(textEl, state.text, false, state.blocks, state.workspaceRoot);
   }
 }
 function isReasoningDisclosureLive(thread, msg) {
@@ -76438,7 +76799,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks) {
+function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -76454,17 +76815,17 @@ function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks)
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning, live, blocks);
+  renderReasoningText(text2, reasoning, live, blocks, workspaceRoot);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks) {
+function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const previous = reasoningRenders.get(el3);
   const markdownChanged = previous?.text !== text2 || previous.live !== live;
-  const blocksChanged = previous?.blocks !== blocks;
+  const blocksChanged = previous?.blocks !== blocks || previous.workspaceRoot !== workspaceRoot;
   if (!markdownChanged && !blocksChanged) return;
   let renderer = previous?.renderer ?? null;
   if (markdownChanged) {
@@ -76479,12 +76840,12 @@ function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks) {
   let richContent = previous?.richContent ?? null;
   if (blocksChanged) {
     richContent?.remove();
-    richContent = createAcpContentBlocks(blocks, "reasoning");
+    richContent = createAcpContentBlocks(blocks, "reasoning", workspaceRoot);
   }
   if (richContent && richContent.parentElement !== el3) el3.append(richContent);
-  reasoningRenders.set(el3, { text: text2, blocks, live, renderer, richContent });
+  reasoningRenders.set(el3, { text: text2, blocks, live, renderer, richContent, workspaceRoot });
 }
-function syncReasoningEl(msgEl, msg, live) {
+function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
   const body = msgEl.querySelector(".message-body");
   if (!body) return;
   const rollupBody = msgEl.querySelector(
@@ -76497,17 +76858,18 @@ function syncReasoningEl(msgEl, msg, live) {
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks);
+    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks);
+    if (textEl)
+      renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
-function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live) {
+function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
   if (!rollupBody) return;
   const body = msgEl.querySelector(".message-body");
@@ -76517,10 +76879,10 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
+    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -76528,7 +76890,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     if (node2 !== details) node2.remove();
   });
 }
-function syncRunStepReasoning(card, run2, liveStepId) {
+function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
@@ -76541,12 +76903,19 @@ function syncRunStepReasoning(card, run2, liveStepId) {
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(step.reasoning ?? "", live, live, step.reasoningBlocks);
+      details = buildReasoningEl(
+        step.reasoning ?? "",
+        live,
+        live,
+        step.reasoningBlocks,
+        workspaceRoot
+      );
       body.prepend(details);
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks);
+    if (textEl)
+      renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -76864,7 +77233,7 @@ function mountConversation(root, store2, api2) {
     if (editing) {
       body.append(buildQueuedEditor(msg.id));
     } else {
-      appendMessageContent(body, msg, api2);
+      appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2));
       body.append(held ? buildHeldActions(msg.id) : buildQueuedActions(msg.id));
     }
     item.append(body);
@@ -77265,11 +77634,12 @@ function mountConversation(root, store2, api2) {
           msgEl,
           opts.reasoning,
           opts.reasoningBlocks,
-          opts.reasoningLive === true
+          opts.reasoningLive === true,
+          acpWorkspaceRoot(store2)
         );
       }
       if (item.type === "rollup" && run2 && item.key === RUN_ROLLUP_KEY) {
-        syncRunStepReasoning(card, run2, opts.liveStepId ?? null);
+        syncRunStepReasoning(card, run2, opts.liveStepId ?? null, acpWorkspaceRoot(store2));
       }
       desired.push(card);
     }
@@ -77296,7 +77666,12 @@ function mountConversation(root, store2, api2) {
         msgEl.insertBefore(node2, msgEl.children[base + i2] ?? null);
       }
     }
-    syncToolResultContent(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
+    syncToolResultContent(
+      msgEl,
+      run2 ? isRunMember ? [] : run2.toolCalls : toolCalls,
+      acpWorkspaceRoot(store2)
+    );
+    hydrateAcpResourceImages(msgEl, api2, store2);
     registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
@@ -77347,7 +77722,7 @@ function mountConversation(root, store2, api2) {
     const msg = thread?.messages.find((m2) => m2.id === msgId);
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
-    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
   }
   function syncRunStepTrail(thread, run2) {
     const runCard = list.querySelector(
@@ -77360,7 +77735,8 @@ function mountConversation(root, store2, api2) {
       renderRunAnchor(thread, run2);
       return;
     }
-    syncRunStepReasoning(runCard, run2, liveStepMessageId(thread));
+    syncRunStepReasoning(runCard, run2, liveStepMessageId(thread), acpWorkspaceRoot(store2));
+    hydrateAcpResourceImages(runCard, api2, store2);
   }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store2, threadId);
@@ -77380,7 +77756,7 @@ function mountConversation(root, store2, api2) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
       shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
     );
-    appendMessageContent(body, msg, api2, {
+    appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
     msgEl.append(body);
@@ -77428,6 +77804,7 @@ function mountConversation(root, store2, api2) {
     if (batched) return;
     syncModelLabels();
     syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
     scrollToBottom(msg.role === "user");
     if (msg.role === "user") scrollUserPromptIntoView(msgEl);
   }
@@ -77743,6 +78120,7 @@ function mountConversation(root, store2, api2) {
     if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     syncModelLabels();
     syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
     updateScrollButton();
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -77784,6 +78162,7 @@ function mountConversation(root, store2, api2) {
     }
     syncModelLabels();
     syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
     if (preservedScrollTop === null) {
       scrollToBottom(true);
     } else {
@@ -77835,6 +78214,7 @@ function mountConversation(root, store2, api2) {
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
     if (run2) syncRunLayout(thread, run2, msgId);
+    syncAcpResourceReferences(list, api2, store2);
     if (wasPinned) {
       scrollToBottom();
     } else restoreReadingAnchor(readingAnchor, prevScrollTop);
@@ -77895,11 +78275,18 @@ function mountConversation(root, store2, api2) {
       const msg = thread?.messages.find((message2) => message2.id === mid);
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (msg?.role === "assistant" && msgEl) {
-        syncAcpMessageContent(msgEl, msg.contentBlocks ?? []);
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? [], acpWorkspaceRoot(store2));
         const run2 = multiStepRunFor(thread, mid);
         if (run2) syncRunStepTrail(thread, run2);
-        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        else
+          syncReasoningEl(
+            msgEl,
+            msg,
+            isReasoningDisclosureLive(thread, msg),
+            acpWorkspaceRoot(store2)
+          );
         registerReasoningDisclosures(msgEl);
+        syncAcpResourceReferences(list, api2, store2);
         syncToolRunMemberVisibility(msgEl);
         scrollToBottom();
       }
@@ -77911,8 +78298,15 @@ function mountConversation(root, store2, api2) {
       if (msg?.role === "assistant" && msgEl) {
         const run2 = multiStepRunFor(thread, mid);
         if (run2) syncRunStepTrail(thread, run2);
-        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        else
+          syncReasoningEl(
+            msgEl,
+            msg,
+            isReasoningDisclosureLive(thread, msg),
+            acpWorkspaceRoot(store2)
+          );
         registerReasoningDisclosures(msgEl);
+        hydrateAcpResourceImages(msgEl, api2, store2);
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
         scrollToBottom();
@@ -77926,6 +78320,7 @@ function mountConversation(root, store2, api2) {
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, false, api2);
         hydrateRemoteArtifactImages(list, api2);
+        syncAcpResourceReferences(list, api2, store2);
       }
       if (msg?.role === "assistant" && msgEl) {
         msgEl.classList.toggle(
@@ -78106,6 +78501,7 @@ var init_conversation = __esm({
     init_model_display();
     init_attachment_icons();
     init_image_expand();
+    init_acp_resource_previews();
     init_text_expand();
     init_video_expand();
     init_composer_editor();
@@ -88744,15 +89140,6 @@ function readAsDataUrl(blob) {
     r2.readAsDataURL(blob);
   });
 }
-function relativeWorkspacePath(absPath, workspaceRoot) {
-  if (!workspaceRoot) return absPath;
-  const root = workspaceRoot.replace(/\/+$/, "");
-  const normalized = absPath.replace(/\\/g, "/");
-  const prefix = root.replace(/\\/g, "/");
-  if (normalized === prefix) return "";
-  if (normalized.startsWith(`${prefix}/`)) return normalized.slice(prefix.length + 1);
-  return absPath;
-}
 async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) {
   const name = path.split(/[\\/]/).pop() ?? path;
   if (isVideoFile({ name })) {
@@ -88772,7 +89159,11 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
       return;
     }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
-    handlers3.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content });
+    const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null;
+    handlers3.attachFile({
+      path: relativePath === null || relativePath === "" ? path : relativePath,
+      content
+    });
   } catch {
   }
 }
@@ -88862,6 +89253,7 @@ var init_handle_file_drop = __esm({
     init_archive_media();
     init_unknown_value3();
     init_image_path();
+    init_workspace_path();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
