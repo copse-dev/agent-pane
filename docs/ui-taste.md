@@ -838,6 +838,23 @@ manual VNC glance.
   (`prepareE2eScreenshot`) so captures are not wider than the Electron window — otherwise table
   columns clip off the right edge of the PNG.
 
+## Agent avatars in chat
+
+Use these sparingly: duotone identifies remote cloud agents; pastel riso identifies user-created
+named agents (custom ACP registrations, excluding catalog presets). Ordinary Copse replies,
+user messages, and generic subagent tool cards have no avatar. Show one identity marker at the
+start of each agent's contiguous stretch of replies, not on every message. Use message provenance
+so changing the picker never reattributes old replies. Named agents keep their art across threads
+and renames; remote agents use the thread and provider as their stable seed. Styles keep their own
+paper/ink palettes in light and dark themes; never recolor them to indicate status. The 28px size
+uses spacing tokens so interface scaling applies. Animate only the current agent's marker while
+its conversation is running, after it has started replying. Use a slow 16–22 second morph of the
+internal ink contours; keep paper, grain, outer silhouette, and the tile still. Historical replies,
+idle/error states, offscreen icons, hidden windows, and reduced-motion preferences stay static.
+Appearance → Animate agent icons defaults on; turning it off keeps identities visible and static,
+applies when saved, and persists across launches. Keep status available in text; decorative movement
+is supplementary. Visual eval: `tests/e2e/agent-avatars.e2e.ts`.
+
 ## Transcript status callouts
 
 Review and comparison results should read as annotations in the transcript, not cards or pills. They
