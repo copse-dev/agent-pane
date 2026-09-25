@@ -333,12 +333,36 @@ describe('base freshness single pull request path', () => {
     assert.deepEqual(conclusions, ['success', 'failure'])
   })
 
-  it('stops chasing a base that never settles', async () => {
+  it('stops chasing a base that never settles, and fails closed when it gives up', async () => {
+    // Chasing is bounded, but running out of rounds is not a reason to leave the
+    // last verdict standing: the base had already moved under it. The
+    // unestablished failure is published instead, so the latest result is never
+    // an answer this run knows to be stale.
     const tips = Array.from({ length: 10 }, (_, i) => String(i).repeat(40))
     const behind = Object.fromEntries(tips.map((tip) => [tip, 1]))
     const stub = movingBase(tips, behind)
-    await evaluateSettled(stub.api, candidate, post(stub))
-    assert.equal(stub.posted.length, MAX_SETTLE_ROUNDS)
+    const outcome = await evaluateSettled(stub.api, candidate, post(stub))
+    assert.equal(stub.posted.length, MAX_SETTLE_ROUNDS + 1)
+    assert.equal(outcome.verdict.conclusion, 'failure')
+    assert.match(outcome.verdict.title, /could not be established/)
+  })
+
+  it('does not let the final chase leave a stale success as the latest result', async () => {
+    // Regression. The loop used to exit after the last round WITHOUT checking
+    // whether the base had moved under it, so a `success` computed against the
+    // third tip could be POSTed after a base push's fan-out had already
+    // published the newer verdict — leaving the stale success as the latest
+    // check run, which is the exact failure this path exists to prevent.
+    const tip1 = '1'.repeat(40)
+    const tip2 = '2'.repeat(40)
+    const tip3 = '3'.repeat(40)
+    const tip4 = '4'.repeat(40)
+    const stub = movingBase([tip1, tip2, tip3, tip4], { [tip1]: 1, [tip2]: 1, [tip3]: 0 })
+    const conclusions: string[] = []
+    const outcome = await evaluateSettled(stub.api, candidate, post(stub, conclusions))
+    assert.deepEqual(conclusions, ['failure', 'failure', 'success', 'failure'])
+    assert.equal(outcome.verdict.conclusion, 'failure')
+    assert.match(outcome.verdict.title, /could not be established/)
   })
 
   it('reports not-current when the base tip cannot be read', async () => {

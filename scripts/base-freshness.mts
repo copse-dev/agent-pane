@@ -379,10 +379,17 @@ export const MAX_SETTLE_ROUNDS = 3
  * Check runs have no compare-and-swap, so instead the verdict is re-validated
  * AFTER it is posted: if the base tip it was computed against is no longer the
  * tip, the base moved while this ran, and the verdict is recomputed and posted
- * again. Whatever this path posts last was therefore computed against a tip that
- * was still current after the POST; a fan-out that started later posts after it
- * and is current too. Bounded, because a base that never settles is the push
- * path's job, and that path always runs after each push.
+ * again. EVERY post is validated this way, the last one included, so whatever
+ * this path posts last was either computed against a tip that was still current
+ * after the POST — a fan-out that started later posts after it and is current
+ * too — or is the explicit not-current failure described below.
+ *
+ * Bounded at `MAX_SETTLE_ROUNDS` chases, because a base that never settles is
+ * the push path's job and that path runs after every push. Exhausting them is
+ * not licence to walk away from the verdict just posted: the base moved under
+ * it, so leaving it as the latest result would be exactly the stale answer this
+ * path exists to prevent. It fails closed instead, publishing the unestablished
+ * failure rather than one this run cannot stand behind.
  */
 export async function evaluateSettled(
   api: Api,
@@ -391,9 +398,14 @@ export async function evaluateSettled(
 ): Promise<Outcome> {
   let tip = await baseTip(api, candidate.baseRef)
   let outcome = await evaluateOne(api, candidate, publishImpl, tip)
-  for (let round = 1; round < MAX_SETTLE_ROUNDS && outcome.published && tip !== null; round += 1) {
+  for (let round = 1; outcome.published && tip !== null; round += 1) {
     const now = await baseTip(api, candidate.baseRef)
-    if (now === tip) break
+    // The tip this verdict was computed against is still the tip, so nothing
+    // overtook the POST and it stands.
+    if (now === tip) return outcome
+    if (round >= MAX_SETTLE_ROUNDS) {
+      return await evaluateOne(api, candidate, publishImpl, null)
+    }
     tip = now
     outcome = await evaluateOne(api, candidate, publishImpl, tip)
   }
