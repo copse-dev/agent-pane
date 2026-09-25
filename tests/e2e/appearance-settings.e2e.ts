@@ -59,6 +59,17 @@ describe('Appearance settings live preview and scrolling', function () {
       const buttons = document.querySelector<HTMLElement>('.settings-buttons')
       if (!dialog || !body || !nav || !content || !buttons) return null
       content.scrollTop = content.scrollHeight
+      // The chrome around the content pane must not be a scroll container at
+      // all: a programmatic scroll (what scrollIntoView and focus do under the
+      // hood) has to leave it at 0. `overflow: hidden` fails this; `clip` holds.
+      const triesToScroll = (element: HTMLElement): number => {
+        element.scrollTop = 200
+        const after = element.scrollTop
+        element.scrollTop = 0
+        return after
+      }
+      const dialogScrollAttempt = triesToScroll(dialog)
+      const bodyScrollAttempt = triesToScroll(body)
       const dialogRect = dialog.getBoundingClientRect()
       const bodyRect = body.getBoundingClientRect()
       const navRect = nav.getBoundingClientRect()
@@ -66,7 +77,10 @@ describe('Appearance settings live preview and scrolling', function () {
       const buttonsRect = buttons.getBoundingClientRect()
       return {
         dialogOverflow: getComputedStyle(dialog).overflow,
+        bodyOverflow: getComputedStyle(body).overflow,
         dialogScrollTop: dialog.scrollTop,
+        dialogScrollAttempt,
+        bodyScrollAttempt,
         bodyBottom: bodyRect.bottom,
         dialogBottom: dialogRect.bottom,
         navBottom: navRect.bottom,
@@ -77,8 +91,12 @@ describe('Appearance settings live preview and scrolling', function () {
     })
 
     expect(layout).not.toBeNull()
-    expect(layout?.dialogOverflow).toBe('hidden')
+    // Clipped, not merely hidden: neither box can be scrolled, even by script.
+    expect(layout?.dialogOverflow).toBe('clip')
+    expect(layout?.bodyOverflow).toBe('clip')
     expect(layout?.dialogScrollTop).toBe(0)
+    expect(layout?.dialogScrollAttempt).toBe(0)
+    expect(layout?.bodyScrollAttempt).toBe(0)
     expect(layout?.contentScrolled).toBe(true)
     expect(Math.abs((layout?.bodyBottom ?? 0) - (layout?.dialogBottom ?? 0))).toBeLessThanOrEqual(1)
     expect(Math.abs((layout?.navBottom ?? 0) - (layout?.bodyBottom ?? 0))).toBeLessThanOrEqual(1)
