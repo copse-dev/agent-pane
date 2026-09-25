@@ -65059,7 +65059,6 @@ function mountSettingsDialog(store2, api2) {
         "approvedProviderHosts",
         PROVIDER_ALLOW_USER_APPROVAL_SETTING,
         "trustedShellCommands",
-        TRUSTED_SSH_HOSTS_SETTING,
         AUTO_APPROVAL_LEVEL_SETTING
       ];
       if (securityFieldNames.some((name) => dirtyFieldNames.has(name))) {
@@ -65081,11 +65080,18 @@ function mountSettingsDialog(store2, api2) {
             trustedShellCommands: parseTrustedCommands(
               formDataString(data, "trustedShellCommands")
             ),
-            trustedSshHosts: parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING)),
             shellAutoApprovalLevel: sanitizeAutoApprovalLevel(
               data.get(AUTO_APPROVAL_LEVEL_SETTING)
             )
           })
+        );
+      }
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api2.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING))
+          )
         );
       }
       await Promise.all(writes);
