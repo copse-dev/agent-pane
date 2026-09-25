@@ -1,10 +1,13 @@
 import { homedir } from 'node:os'
 import { resolve, sep } from 'node:path'
+import { parse as parseShell } from 'shell-quote'
+import { inertOperandIndexes } from './inert-operands.ts'
 import {
   CODE_INTERPRETERS,
   INLINE_CODE_FLAGS,
   SCRIPT_EXTENSIONS,
   SCRIPT_EXTENSION_ALTERNATION,
+  SHELL_INTERPRETERS,
   commandName,
   isStructurallyReadOnlyShellCommand,
   shellSegments,
@@ -265,7 +268,8 @@ const REASON_HOME_PATH: ScopeReason = 'home directory path (~/)'
 // Paths that indicate access outside the workspace.
 const OUTSIDE_PATH_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
   { re: /(?:^|[\s|])~(?:\/|\b)/, reason: REASON_HOME_PATH },
-  { re: /\$HOME\b/, reason: '$HOME reference' },
+  // Both spellings: `${HOME}` slipped past `\$HOME\b`, and scored `sandbox`.
+  { re: /\$(?:HOME\b|\{HOME\})/, reason: '$HOME reference' },
   { re: /(?:^|[\s|])\/etc\//, reason: 'system path (/etc/)' },
   { re: /(?:^|[\s|])\/usr\//, reason: 'system path (/usr/)' },
   { re: /(?:^|[\s|])\/var\//, reason: 'system path (/var/)' },
@@ -553,6 +557,12 @@ function collectExternalReasons(command: string): { reasons: ScopeReason[]; hasH
  */
 const TILDE_PATH_TOKENS = /(?:^|[\s'"=|])(~(?:\/[^\s'"|;&]*)?)/g
 
+/** `$HOME` and `${HOME}`, as the shell expands them. */
+const HOME_VARIABLE = /\$(?:HOME\b|\{HOME\})/g
+
+/** Each `$HOME` reference with the path that follows it (possibly empty). */
+const HOME_VARIABLE_PATHS = /\$(?:HOME\b|\{HOME\})([^\s'"|;&]*)/g
+
 /**
  * The read-only mounts inside the project seatbelt: the chat store (#644) and
  * the roots granted to the active thread (an invoked skill's directory).
@@ -626,6 +636,102 @@ function maskContainedReadPaths(command: string, readRoots: readonly string[]): 
   )
 }
 
+/** `shell-quote` operators after which the next word is a file or descriptor. */
+const REDIRECT_OPERATORS: ReadonlySet<string> = new Set([
+  '>',
+  '>>',
+  '<',
+  '<<',
+  '<<<',
+  '>&',
+  '<&',
+  '&>',
+  '>|',
+])
+
+/** Heads that turn text on stdin or in their arguments into a command or a path. */
+const TEXT_TO_ACTION_HEADS: ReadonlySet<string> = new Set([
+  'xargs',
+  'parallel',
+  'eval',
+  'source',
+  '.',
+  'exec',
+  ...SHELL_INTERPRETERS,
+  ...CODE_INTERPRETERS,
+])
+
+/** A path the scanner can compare verbatim: no quoting, escapes, globs or expansion. */
+const PLAIN_PATH = /^\/[\w.@%+,:/-]*$/
+
+/**
+ * Blank out absolute paths that appear only as text a program never opens: the
+ * pattern of a `grep`/`rg` search ({@link inertOperandIndexes}) and the operands
+ * of `echo`/`printf` whose output reaches the terminal rather than another
+ * program. `grep -rn "/usr/local/bin" src` reads `src`, and `echo "/tmp/x"`
+ * reads nothing, but both were reported as reaching outside the workspace.
+ *
+ * A path is masked only when every word that contains it is inert. The same path
+ * in any other word — a file operand, a redirect target, a flag value — keeps it,
+ * so `echo /etc/x; cat /etc/x` still reports `/etc/x`. Substitution, backticks,
+ * process substitution, and any head that turns text into commands or paths
+ * (`xargs`, a shell, an interpreter) disable masking for the whole line.
+ */
+function maskInertOperandPaths(command: string): string {
+  if (/`|\$\(|[<>]\(/.test(command)) return command
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(command)
+  } catch {
+    return command
+  }
+  const inert: string[] = []
+  const live: string[] = []
+  let words: string[] = []
+  let redirectTarget = false
+  const flush = (pipedOnward: boolean): boolean => {
+    const argv = words
+    words = []
+    if (argv.length === 0) return true
+    const head = commandName(argv[0])
+    if (TEXT_TO_ACTION_HEADS.has(head)) return false
+    const printsText = (head === 'echo' || head === 'printf') && !pipedOnward
+    const patterns = inertOperandIndexes(argv)
+    argv.forEach((word, index) => {
+      if (index > 0 && (printsText || patterns.has(index))) inert.push(word)
+      else live.push(word)
+    })
+    return true
+  }
+  for (const token of tokens) {
+    if (typeof token === 'string') {
+      if (redirectTarget) live.push(token)
+      else words.push(token)
+      redirectTarget = false
+      continue
+    }
+    if (!('op' in token)) return command
+    if (token.op === 'glob') {
+      live.push(token.pattern)
+      continue
+    }
+    if (REDIRECT_OPERATORS.has(token.op)) {
+      redirectTarget = true
+      continue
+    }
+    if (!flush(token.op === '|' || token.op === '|&')) return command
+  }
+  if (!flush(false)) return command
+  if (inert.length === 0) return command
+  return command.replace(ABSOLUTE_PATH_TOKENS, (match, lead: string, path: string) =>
+    PLAIN_PATH.test(path) &&
+    inert.some((word) => word.includes(path)) &&
+    !live.some((word) => word.includes(path))
+      ? `${lead}inert-operand`
+      : match,
+  )
+}
+
 function referencesOutsideWorkspace(
   rawCommand: string,
   workspaceRoot: string | null,
@@ -637,7 +743,14 @@ function referencesOutsideWorkspace(
   const readRoots = containedReadRoots(rawCommand)
   const isContainedRead = (absPath: string): boolean =>
     readRoots.some((root) => isInsideRoot(absPath, root))
-  const command = maskContainedReadPaths(maskAgentScratchPaths(rawCommand), readRoots)
+  const command = maskInertOperandPaths(
+    maskContainedReadPaths(maskAgentScratchPaths(rawCommand), readRoots),
+  )
+  const root = workspaceRoot === null ? null : resolve(workspaceRoot)
+  // A home-relative path that lands in the workspace (`~/project/src` when the
+  // workspace is `~/project`) is the workspace, not an escape.
+  const isContainedOrWorkspace = (absPath: string): boolean =>
+    isContainedRead(absPath) || (root !== null && isInsideRoot(absPath, root))
 
   for (const { re, reason } of OUTSIDE_PATH_PATTERNS) {
     if (!re.test(command)) continue
@@ -650,16 +763,26 @@ function referencesOutsideWorkspace(
         tokens.length > 0 &&
         tokens.every((token) => {
           const rest = token.slice(1)
-          return rest.startsWith('/') && isContainedRead(resolve(home, `.${rest}`))
+          return rest.startsWith('/') && isContainedOrWorkspace(resolve(home, `.${rest}`))
         })
+      if (allContained) continue
+    }
+    // `$HOME/…` gets the same waiver, unless the command could change what
+    // `$HOME` expands to (`HOME=/ …`, `unset HOME`, `export HOME`).
+    if (reason === '$HOME reference' && !/\bHOME\b/.test(command.replace(HOME_VARIABLE, ''))) {
+      const tokens = [...command.matchAll(HOME_VARIABLE_PATHS)].map((m) => m[1] ?? '')
+      const allContained =
+        tokens.length > 0 &&
+        tokens.every(
+          (rest) => rest.startsWith('/') && isContainedOrWorkspace(resolve(home, `.${rest}`)),
+        )
       if (allContained) continue
     }
     return reason
   }
 
-  if (!workspaceRoot) return null
+  if (root === null) return null
 
-  const root = resolve(workspaceRoot)
   // Absolute paths in the command that aren't under the workspace root. Agent
   // scratch paths are already masked out above, so they never reach this scan.
   const absPaths = command.match(ABSOLUTE_PATH_TOKENS) ?? []
@@ -697,6 +820,69 @@ export const REASON_RECURSIVE_DELETE = 'recursive/forced delete (rm -rf)'
 export const REASON_FIND_DELETE = 'find -delete bulk removal'
 export const REASON_PIPE_TO_INTERPRETER = 'piping output into an interpreter'
 
+// Pipe-to-shell: `curl … | sh`, `wget … | bash`, etc. (the curl is also caught
+// as external, but this fires even for in-workspace scripts piped to a shell).
+// `pwsh`/`powershell` come from the harm gate's former duplicate of this check.
+const PIPE_TO_INTERPRETER = /\|\s*(?:sh|bash|zsh|python3?|node|ruby|perl|pwsh|powershell)\b/i
+
+/** Interpreters whose inline program (`-c`/`-e`) reads a pipe as data. */
+const DATA_PIPE_INTERPRETERS = /^(?:python3?(?:\.\d+)?|node)$/
+
+/**
+ * What an inline program needs in order to run, write, or load the text it is
+ * piped. Absent all of these, `curl … | python3 -c "import json,sys; print(…)"`
+ * parses the download and prints it — the pipe carries data, not code.
+ */
+const INLINE_EXECUTION_OR_WRITE =
+  /\b(?:exec\w*|eval|compile|runpy|importlib|__import__|subprocess|system|popen\w*|spawn\w*|pickle|marshal|shelve|ctypes|pty|getattr|setattr|globals|locals|vars|builtins|__builtins__|open|child_process|vm|Function|import\s*\(|process\.binding|worker_threads|Module|write\w*|append\w*|remove|unlink\w*|rmtree|rename\w*|chmod\w*|symlink\w*|mkdir\w*|makedirs)\b|`|require\s*\(\s*(?!['"](?:node:)?fs['"]\s*\))/
+
+/**
+ * Whether the command pipes output into something that may run it. The regex is
+ * the screen; a match is cleared only when the tokenised pipeline shows every
+ * interpreter stage is a `python`/`node` inline program that treats its input as
+ * data. A match the tokens cannot account for (quoting tricks, a parse failure)
+ * stays flagged.
+ */
+function pipesIntoInterpreter(command: string): boolean {
+  if (
+    !PIPE_TO_INTERPRETER.test(command) &&
+    !PIPE_TO_INTERPRETER.test(normalizeShellCommandForAnalysis(command))
+  )
+    return false
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(command)
+  } catch {
+    return true
+  }
+  const stages: string[][] = []
+  let current: string[] | null = null
+  for (const token of tokens) {
+    if (typeof token === 'string') {
+      current?.push(token)
+      continue
+    }
+    if ('op' in token && (token.op === '|' || token.op === '|&')) {
+      current = []
+      stages.push(current)
+    } else {
+      current = null
+    }
+  }
+  let interpreters = 0
+  for (const argv of stages) {
+    const head = commandName(argv[0])
+    if (!PIPE_TO_INTERPRETER.test(`| ${head}`)) continue
+    interpreters++
+    if (!DATA_PIPE_INTERPRETERS.test(head)) return true
+    // The program must be the inline one: `python3 evil.py -c x` runs evil.py
+    // on the pipe, with `-c x` as its arguments.
+    const body = INLINE_CODE_FLAGS.has(argv[1] ?? '') ? argv[2] : undefined
+    if (body === undefined || INLINE_EXECUTION_OR_WRITE.test(body)) return true
+  }
+  return interpreters === 0
+}
+
 const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> = [
   { re: /\brm\s+-\S*[rf]/i, reason: REASON_RECURSIVE_DELETE },
   { re: /\bgit\s+clean\s+-\S*[dfx]/i, reason: 'git clean removes untracked files' },
@@ -705,13 +891,6 @@ const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: ScopeReason }> 
   { re: />\s*\/dev\/(?:sda|disk|null\s+2>&1\s*&\s*$)/i, reason: 'raw device write' },
   { re: /\bfind\b[^\n|;&]*\s-delete\b/i, reason: REASON_FIND_DELETE },
   { re: /\btruncate\b|\bshred\b/i, reason: 'file truncation/shredding' },
-  // Pipe-to-shell: `curl … | sh`, `wget … | bash`, etc. (the curl is also caught
-  // as external, but this fires even for in-workspace scripts piped to a shell).
-  // `pwsh`/`powershell` come from the harm gate's former duplicate of this check.
-  {
-    re: /\|\s*(?:sh|bash|zsh|python3?|node|ruby|perl|pwsh|powershell)\b/i,
-    reason: REASON_PIPE_TO_INTERPRETER,
-  },
   // Classic shell fork bomb and obvious busy-loop fork patterns.
   { re: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: 'fork bomb' },
   { re: /\bwhile\s+(?:true|:)\s*;?\s*do\b/i, reason: 'unbounded loop (CPU exhaustion)' },
@@ -727,6 +906,7 @@ export function dangerousInSandboxReasons(command: string): string[] {
       if (re.test(text) && !reasons.includes(reason)) reasons.push(reason)
     }
   }
+  if (pipesIntoInterpreter(command)) reasons.push(REASON_PIPE_TO_INTERPRETER)
   return reasons
 }
 

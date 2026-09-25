@@ -3,7 +3,7 @@
 // escalation-review scripts judge commands with the product's own code rather
 // than a copy of it. Host settings and environment binders are excluded.
 import { mkdtemp } from 'node:fs/promises'
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -12,9 +12,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 export const scripts = dirname(fileURLToPath(import.meta.url))
 export const repository = resolve(scripts, '../../..')
 export const benchmark = resolve(scripts, '..')
-
-/** Same limits as the permission gate's reader for Guarded YOLO. */
-const MAX_SCRIPT_BYTES = 256 * 1024
 
 export async function loadGuard() {
   const esbuild = createRequire(resolve(repository, 'package.json'))('esbuild')
@@ -71,28 +68,17 @@ export function canonicalizePath(path) {
   }
 }
 
-/** The permission gate's Guarded YOLO script reader: text files only, bounded. */
-export function readScriptLikeTheGate(path) {
-  try {
-    const stat = statSync(path)
-    if (!stat.isFile() || stat.size > MAX_SCRIPT_BYTES) return null
-    const bytes = readFileSync(path)
-    if (bytes.subarray(0, 8000).includes(0)) return null
-    return bytes.toString('utf8')
-  } catch {
-    return null
-  }
-}
-
 /**
  * Every deterministic verdict the escalation review scores, for one command.
- * `readScript` defaults to the gate's reader; regression cases inject fixtures.
+ * The file readers default to the permission gate's own (`script-files.ts`);
+ * regression cases inject fixtures.
  */
 export function analyze(guard, command, workspaceRoot, options = {}) {
   const {
     configuredRemotes = [],
     homeDir = process.env.HOME ?? '/',
-    readScript = readScriptLikeTheGate,
+    readScript = guard.readScriptForHarm,
+    isCompiledProgram = guard.isCompiledProgram,
   } = options
   const scope = guard.analyzeShellCommand(command, workspaceRoot)
   const autoApproval = {}
@@ -116,6 +102,7 @@ export function analyze(guard, command, workspaceRoot, options = {}) {
       homeDir,
       canonicalizePath,
       readScript,
+      isCompiledProgram,
     })
   } catch (error) {
     harm = { action: 'error', reasons: [String(error)] }

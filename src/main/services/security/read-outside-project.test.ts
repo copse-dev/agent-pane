@@ -213,3 +213,26 @@ describe('read-outside prompt copy', () => {
     assert.equal(describeReadOutsideTargets(['a', 'b', 'c', 'd', 'e']), 'a, b, c and 2 more')
   })
 })
+
+describe('analyzeReadOutsideProject — search patterns', () => {
+  it('does not read a grep pattern as a path', () => {
+    const pattern = analyze('grep -rn TODO src | grep -v "//"')
+    assert.ok(
+      !pattern.blockers.some((b) => b.includes('whole filesystem')),
+      pattern.blockers.join('; '),
+    )
+    const target = analyze('grep -rn TODO /')
+    assert.ok(
+      target.blockers.some((b) => b.includes('whole filesystem')),
+      target.blockers.join('; '),
+    )
+  })
+
+  it('still reads a pattern file as a target', () => {
+    const analysis = analyze('grep -f ~/.ssh/id_rsa src')
+    assert.ok(
+      analysis.blockers.some((b) => b.includes('credential')),
+      analysis.blockers.join('; '),
+    )
+  })
+})

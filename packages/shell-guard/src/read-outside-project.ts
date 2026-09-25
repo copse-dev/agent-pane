@@ -12,6 +12,7 @@ import {
   externalOnlyForOutsidePath,
   needsMoreThanOutsideAccess,
 } from './shell-scope.ts'
+import { inertOperandIndexes } from './inert-operands.ts'
 import { READ_ONLY_GIT_SUBCOMMANDS, READ_ONLY_SHELL_BASENAMES } from './shell-argv.ts'
 
 /**
@@ -284,9 +285,9 @@ export function analyzeReadOutsideProject(
   // not be offered the read question, or approving it would run it fully
   // unsandboxed on an answer that was only ever about reads. Today the head
   // allow-list already excludes those shapes; this keeps it true if either list
-  // moves. Deliberately the path-independent half — this module recognises
-  // `${HOME}/…` as an outside path and `shell-scope` does not, so asking the
-  // full predicate would refuse reads that are perfectly eligible.
+  // moves. Deliberately the path-independent half: the paths are this module's
+  // to judge, against its own home and project root, and the full predicate
+  // would refuse every outside path — the very reads this proof exists for.
   if (needsMoreThanOutsideAccess(trimmed)) {
     addBlocker('needs more than reads outside the project')
   }
@@ -308,7 +309,10 @@ export function analyzeReadOutsideProject(
     if (argv.length === 0) continue
     const head = headBlocker(rawArgv, argv)
     if (head) addBlocker(head)
-    for (const token of argv.slice(1)) {
+    // A search pattern is text, not a file: `grep -v "//"` reads no filesystem root.
+    const inert = inertOperandIndexes(argv)
+    for (const [offset, token] of argv.slice(1).entries()) {
+      if (inert.has(offset + 1)) continue
       if (token.startsWith('-') || !looksLikePath(token)) continue
       const resolved = resolveTarget(token, root, homeDir)
       if (isInsideProject(resolved, root)) continue

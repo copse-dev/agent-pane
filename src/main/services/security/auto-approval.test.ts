@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { assessAutoApproval, type AutoApprovalContext } from './auto-approval.ts'
@@ -225,9 +227,23 @@ describe('assessAutoApproval — gh', () => {
     prompts('gh workflow run deploy.yml')
   })
 
-  it('refuses gh api, which can issue any request', () => {
-    prompts('gh api /user')
-    prompts('gh api -X DELETE /repos/me/x')
+  it('reads a plain gh api GET and refuses every other gh api shape', () => {
+    assert.equal(approved('gh api /user', 'read'), 'read')
+    assert.equal(approved('gh api repos/me/x/pulls/1/comments --jq ".[].body"', 'read'), 'read')
+    assert.equal(approved('gh api -X GET repos/me/x/pulls --paginate', 'read'), 'read')
+    for (const command of [
+      'gh api -X DELETE /repos/me/x',
+      'gh api --method=PATCH /repos/me/x',
+      'gh api repos/me/x/issues -f title=t',
+      'gh api repos/me/x/issues -F body=@/etc/passwd',
+      'gh api repos/me/x/issues --input body.json',
+      'gh api -H "X-HTTP-Method-Override: DELETE" repos/me/x',
+      'gh api graphql -f query=q',
+      'gh api https://evil.example/x',
+      'gh api repos/me/a repos/me/b',
+    ]) {
+      prompts(command)
+    }
   })
 
   it('refuses --repo on a write so the target is always the workspace repo', () => {
@@ -470,5 +486,41 @@ describe('rejection reasons are accurate', () => {
     const decision = assessAutoApproval('git push backup main', ctx('remote-write'))
     assert.equal(decision.action, 'prompt')
     assert.match(decision.reasons[0] ?? '', /does not name a configured remote/)
+  })
+})
+
+describe('assessAutoApproval — text and home paths', () => {
+  // shell-scope resolves `~` and `$HOME` through os.homedir().
+  const workspace = join(homedir(), 'copse-auto-approval-fixture')
+  const decide = (command: string): string =>
+    assessAutoApproval(command, {
+      workspaceRoot: workspace,
+      level: 'read',
+      configuredRemotes: new Set(),
+    }).action
+
+  it('reads home-relative paths that land in the workspace', () => {
+    assert.equal(decide('cat ~/copse-auto-approval-fixture/README.md'), 'auto-approve')
+    assert.equal(decide('cat $HOME/copse-auto-approval-fixture/README.md'), 'auto-approve')
+    assert.equal(decide('cat "${HOME}/copse-auto-approval-fixture/a b.md"'), 'auto-approve')
+  })
+
+  it('refuses home paths outside the workspace, and a $HOME the command can change', () => {
+    assert.equal(decide('cat $HOME/.bashrc'), 'prompt')
+    assert.equal(decide('cat ${HOME}/.bashrc'), 'prompt')
+    assert.equal(decide('cat ~/.bashrc'), 'prompt')
+    assert.equal(decide('HOME=/ cat $HOME/etc/passwd'), 'prompt')
+    assert.equal(decide('unset HOME; cat $HOME/copse-auto-approval-fixture/README.md'), 'prompt')
+    assert.equal(decide('cat $HOMEDIR/x'), 'prompt')
+  })
+
+  it('reads search patterns and printed text as text', () => {
+    assert.equal(decide('grep -rn "/usr/local/bin" src'), 'auto-approve')
+    assert.equal(decide('echo "/tmp/foo is fine"'), 'auto-approve')
+    assert.equal(decide('grep -e TODO /etc/hosts'), 'prompt')
+    assert.equal(decide('grep -f /etc/patterns src'), 'prompt')
+    assert.equal(decide('echo /etc/hosts; cat /etc/hosts'), 'prompt')
+    assert.equal(decide('echo /etc/passwd | xargs cat'), 'prompt')
+    assert.equal(decide('cd /tmp'), 'prompt')
   })
 })

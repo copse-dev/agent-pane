@@ -20,9 +20,9 @@ export function flagName(token: string): string {
 }
 
 /**
- * `gh` subcommand pairs that only read from GitHub. `gh api` is deliberately
- * absent: it can issue any request, including mutations, with no shape this
- * classifier could check.
+ * `gh` subcommand pairs that only read from GitHub. `gh api` is classified
+ * separately by {@link isGhApiRead}: it can issue any request, so only the
+ * narrow GET shape counts as a read.
  */
 const GH_READ_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'pr view',
@@ -89,6 +89,59 @@ const GH_WRITE_FLAGS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * `gh api` flags that change only how a GET's response is shown or paged. Any
+ * other flag — a method, a field (`-f`/`-F`, which turn the request into a POST),
+ * `--input`, or a header (which could carry `X-HTTP-Method-Override`) — leaves
+ * the call unclassified.
+ */
+const GH_API_READ_SWITCHES: ReadonlySet<string> = new Set([
+  '--paginate',
+  '--slurp',
+  '--include',
+  '-i',
+  '--silent',
+  '--verbose',
+])
+const GH_API_READ_VALUED: ReadonlySet<string> = new Set([
+  '--jq',
+  '-q',
+  '--template',
+  '-t',
+  '--cache',
+  '--hostname',
+])
+const GH_API_METHOD_FLAGS: ReadonlySet<string> = new Set(['--method', '-X'])
+
+/**
+ * Whether a `gh api` call is a plain GET of a REST endpoint. `gh api` defaults to
+ * GET and switches to POST the moment a field is added, so the shape to accept is
+ * narrow: one endpoint, no body, and either no method or an explicit `GET`.
+ * `graphql` is excluded — it is always a POST, and a mutation reads exactly like
+ * a query to anything short of a GraphQL parser.
+ */
+function isGhApiRead(args: readonly string[]): boolean {
+  let endpoint: string | null = null
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i] ?? ''
+    if (!isFlag(token)) {
+      if (endpoint !== null) return false
+      endpoint = token
+      continue
+    }
+    const name = flagName(token)
+    const attached = token.length > name.length
+    if (GH_API_READ_SWITCHES.has(name) && !attached) continue
+    const valued = GH_API_READ_VALUED.has(name) || GH_API_METHOD_FLAGS.has(name)
+    if (!valued) return false
+    const value = attached ? token.slice(name.length + 1) : args[++i]
+    if (value === undefined) return false
+    if (GH_API_METHOD_FLAGS.has(name) && value.toUpperCase() !== 'GET') return false
+  }
+  // A full URL can name any host; `gh` sends the user's token to hosts it knows.
+  return endpoint !== null && endpoint !== 'graphql' && !endpoint.includes('://')
+}
+
+/**
  * Classify a `gh` invocation. Write subcommands additionally refuse `--repo`/`-R`,
  * so the target is always the repository the workspace's own remote points at
  * rather than an arbitrary one named on the command line.
@@ -98,6 +151,7 @@ const GH_WRITE_FLAGS: ReadonlySet<string> = new Set([
  * not repository-controlled, and so outside this classifier's threat model.
  */
 export function classifyGhSegment(argv: readonly string[]): GhSegmentKind | null {
+  if (argv[1] === 'api') return isGhApiRead(argv.slice(2)) ? 'read' : null
   const words = argv.slice(1).filter((token) => !isFlag(token))
   const pair = `${words[0] ?? ''} ${words[1] ?? ''}`.trim()
   if (GH_READ_SUBCOMMANDS.has(pair)) return 'read'

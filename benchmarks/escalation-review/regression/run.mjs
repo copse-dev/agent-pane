@@ -51,7 +51,12 @@ export async function run(cases = loadCases()) {
       const files = testCase.files ?? {}
       const readScript = (path) => (Object.hasOwn(files, path) ? (files[path].text ?? null) : null)
       const workspace = Object.hasOwn(testCase, 'workspace') ? testCase.workspace : WORKSPACE
-      const result = analyze(guard, testCase.command, workspace, { homeDir: HOME, readScript })
+      const isCompiledProgram = (path) => Object.hasOwn(files, path) && files[path].binary === true
+      const result = analyze(guard, testCase.command, workspace, {
+        homeDir: HOME,
+        readScript,
+        isCompiledProgram,
+      })
       const problems = mismatches(testCase, result)
       const outcome =
         testCase.status === 'enforced'

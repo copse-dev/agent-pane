@@ -29,8 +29,14 @@ export interface ShellHarmContext {
   homeDir: string
   /** Resolve symlinks when possible. Falls back to lexical resolution when absent/throwing. */
   canonicalizePath?: (path: string) => string
-  /** Read an interpreter/direct-execution script. Null means missing, unreadable, or too large. */
+  /** Read an interpreter/direct-execution script. Null means missing, unreadable, too large, or binary. */
   readScript?: (path: string) => string | null
+  /**
+   * Whether a file `readScript` could not read is a compiled executable (ELF,
+   * Mach-O, PE). Consulted only for direct execution of a file inside the
+   * workspace; absent, every unreadable file prompts.
+   */
+  isCompiledProgram?: (path: string) => boolean
 }
 
 interface MutableDecision {
@@ -917,6 +923,10 @@ function isExecutablePathShape(token: string): boolean {
  */
 function directExecutionOperand(argv: string[]): string | null {
   const head = argv[0]
+  // A word starting with `#` in command position opens a comment; the shell runs
+  // nothing. A heredoc body's `#!/bin/sh` line reached here through the
+  // line-splitting fallback lexer and prompted as an uninspectable script.
+  if (head?.startsWith('#')) return null
   if (head && head.includes('/') && !isAbsolute(head) && isExecutablePathShape(head)) return head
   return null
 }
@@ -1026,6 +1036,20 @@ function inspectInterpreter(
   if (seenScripts.has(resolved)) return
   seenScripts.add(resolved)
   const contents = context.readScript?.(resolved) ?? null
+  // A program the project compiled (`./target/debug/app`) has no text to
+  // inspect, and running it is no riskier than the `cargo run` or `make` that
+  // built it, which the gate already lets through. Only for direct execution of
+  // a file inside the workspace: an interpreter never runs a compiled binary,
+  // and a binary elsewhere is not the project's.
+  if (
+    contents === null &&
+    !isInterpreter &&
+    context.workspaceRoot !== null &&
+    isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
+    context.isCompiledProgram?.(resolved) === true
+  ) {
+    return
+  }
   if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
     addUnique(out.prompt, `script contents could not be inspected safely: ${operand}`)
     return

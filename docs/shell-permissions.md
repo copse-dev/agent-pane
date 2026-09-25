@@ -318,9 +318,15 @@ While active:
   non-credential paths auto-run; on macOS/Linux they stay contained with a widened `allowRead`
   seatbelt rather than a full sandbox escape. Credential targets and paths as broad as `~` or `/`
   remain hard-denied by the harm gate.
-- Writing or opaque GitHub CLI forms (`gh pr create`, `gh api`, …) prompt via the harm gate.
+- Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
+  `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
+  one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
   Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still always prompt. Read-only `gh`
   carve-outs keep the normal sandboxed path.
+- Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
+  executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
+  it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
+  command position is a comment, not a script to inspect.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
   allows them.
 
@@ -331,6 +337,22 @@ the existing one-time harm confirmation; literal child-process shell payloads ar
 and can be hard-denied. The confirmation shows the exact command, the uncertainty, and whether it
 will run inside or outside the project sandbox. Approval applies only to that invocation and cannot
 be remembered; declining prevents execution. It does not override a confirmed hard denial.
+
+Text that names no file is not a path. The pattern of a `grep`/`rg` search and the operands of an
+`echo`/`printf` whose output is not piped onward are masked before the outside-path rules run, so
+`grep -v "//"` is not a read of the filesystem root and `echo "/tmp/x"` does not leave the
+workspace. Recognition is an allow-list (`inert-operands.ts`): one unknown search flag, any
+substitution, or a head that turns text into commands or paths (`xargs`, a shell, an interpreter)
+disables it, and a masked path that appears in any other word stays visible. `sed` and `awk` scripts
+are not masked: they can read and write files.
+
+`~/…` and `$HOME/…` (either spelling) that resolve inside the workspace are the workspace. `$HOME`
+is trusted only when nothing else in the command mentions `HOME`, so `HOME=/ …` and `unset HOME`
+keep it an expansion that prompts.
+
+A pipe into an interpreter prompts, except into a `python`/`node` program given inline as the first
+argument (`python3 -c …`, `node -e …`) whose source has no execution, dynamic-import, or file-write
+primitive: that program reads the pipe as data.
 
 Interpreter inspection recognizes Node's `.mts` and `.cts` launchers as well as `.mjs`, so a later
 configuration-file argument cannot accidentally be inspected in place of the launcher.
