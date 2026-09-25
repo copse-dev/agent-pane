@@ -153,6 +153,17 @@ describe('attaching dropped files', () => {
     assert.equal(recorded.files.length, 0)
   })
 
+  it('keeps the absolute path when the dropped path is the workspace root', async () => {
+    const { handlers, recorded } = recordingHandlers()
+
+    await handleFileDrop(workspacePathDrop('/repo'), handlers, api, '/repo', {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+    })
+
+    assert.deepEqual(recorded.files, [{ path: '/repo', content: 'file contents' }])
+  })
+
   it('keeps workspace SVG on the text-file path', async () => {
     const { handlers, recorded } = recordingHandlers()
     let imageReads = 0

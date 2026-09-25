@@ -7,10 +7,11 @@ import {
   addMessage,
   addToolCall,
   appendAcpContentBlock,
+  appendToken,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
-import type { ToolCall } from '@shared/types'
+import type { AcpToolCallContent, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -243,6 +244,530 @@ describe('collapsed tool card bodies render lazily', () => {
       null,
       'text-only replacement clears every earlier rich block',
     )
+  })
+
+  it('shows ACP resource paths relative to the active thread checkout with absolute hover paths', () => {
+    const checkout = '/worktrees/thread-1'
+    const screenshot = `${checkout}/tests/e2e/screenshots/archive-attachment-chip.png`
+    const scratch = `${checkout}/.tmp/archive-attachment-chip-head.png`
+    const outside = '/worktrees/thread-10/other.png'
+    const store = createStore({ workspaceRoot: '/repo' })
+    const threadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) =>
+        thread.id === threadId
+          ? {
+              ...thread,
+              worktree: {
+                path: checkout,
+                branch: 'copse/thread-1',
+                baseBranch: 'main',
+                baseCommit: 'a'.repeat(40),
+                createdAt: 1,
+                seededFromDirtyProject: false,
+              },
+            }
+          : thread,
+      ),
+    })
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      result: null,
+      content: [scratch, screenshot, outside].map((uri): AcpToolCallContent => ({
+        type: 'content',
+        content: { type: 'resource_link', uri, name: uri },
+      })),
+    })
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'resource_link',
+      uri: screenshot,
+      name: screenshot,
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const toolCards = host.querySelectorAll<HTMLElement>('.tool-result-content .acp-resource-link')
+    assert.equal(toolCards.length, 3)
+    for (const [index, expected] of [
+      '.tmp/archive-attachment-chip-head.png',
+      'tests/e2e/screenshots/archive-attachment-chip.png',
+    ].entries()) {
+      const card = toolCards.item(index)
+      assert.equal(card.querySelector('.acp-resource-title')?.textContent, expected)
+      assert.equal(card.querySelector('.acp-resource-uri')?.textContent, expected)
+      assert.equal(card.title, index === 0 ? scratch : screenshot)
+    }
+    assert.equal(toolCards.item(2).textContent, `${outside}${outside}`)
+    assert.equal(toolCards.item(2).title, '')
+
+    const answerCard = host.querySelector<HTMLElement>('.acp-message-content .acp-resource-link')
+    assert.ok(answerCard)
+    assert.equal(
+      answerCard.querySelector('.acp-resource-title')?.textContent,
+      'tests/e2e/screenshots/archive-attachment-chip.png',
+    )
+    assert.equal(answerCard.title, screenshot)
+  })
+
+  it('opens a local resource file in the panel without requiring an index match', async () => {
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      result: null,
+      content: [
+        '/repo/.tmp/report.md',
+        '/elsewhere/private.md',
+        'https://example.test/report.md',
+        String.raw`\\server\share\private.md`,
+      ].map((uri): AcpToolCallContent => ({
+        type: 'content',
+        content: { type: 'resource_link', uri, name: uri },
+      })),
+    })
+    const reads: string[] = []
+    const base = fakeApi()
+    const api = {
+      ...base,
+      index: {
+        ...base.index,
+        resolveFileReferences: (): Promise<never> =>
+          Promise.reject(new Error('resource opening should not query the index')),
+      },
+      fs: {
+        ...base.fs,
+        readFile: (projectId: string, ownerThreadId: string, path: string): Promise<string> => {
+          reads.push(`${projectId}:${ownerThreadId}:${path}`)
+          return Promise.resolve('# Report')
+        },
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+
+    const titles = host.querySelectorAll<HTMLElement>('.tool-result-content .acp-resource-title')
+    const local = titles.item(0)
+    assert.equal(local.tagName, 'A')
+    assert.equal(local.dataset['workspaceResourcePath'], '.tmp/report.md')
+    assert.equal(titles.item(1).tagName, 'SPAN', 'outside paths are not opened as workspace files')
+    assert.equal(titles.item(2).getAttribute('href'), 'https://example.test/report.md')
+    assert.equal(titles.item(3).tagName, 'SPAN', 'network paths are not workspace files')
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    local.dispatchEvent(click)
+    await delay(0)
+
+    assert.equal(click.defaultPrevented, true)
+    assert.deepEqual(reads, [`project-1:${threadId}:.tmp/report.md`])
+    assert.equal(store.getState().openFile?.path, '.tmp/report.md')
+    assert.equal(store.getState().panelTab, 'file')
+    assert.equal(store.getState().filesPaneOpen, true)
+  })
+
+  it('uses a cited non-image resource link to open the panel and hides its tool card', async () => {
+    const image = '/repo/.tmp/report.md'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const toolMessageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, toolMessageId, {
+      ...doneCall,
+      result: null,
+      content: [{ type: 'content', content: { type: 'resource_link', uri: image, name: image } }],
+    })
+    const replyId = addMessage(store, threadId, 'assistant', `Read [the report](${image}).`)
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readFile: (): Promise<string> => Promise.resolve('# Report'),
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+
+    const resource = host.querySelector<HTMLElement>(
+      `[data-message-id="${toolMessageId}"] .acp-resource-link`,
+    )
+    const link = host.querySelector<HTMLAnchorElement>(
+      `[data-message-id="${replyId}"] .message-text a`,
+    )
+    assert.ok(resource)
+    assert.ok(link)
+    assert.equal(resource.hidden, true)
+    assert.equal(link.dataset['workspaceResourcePath'], '.tmp/report.md')
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await delay(0)
+    assert.equal(store.getState().openFile?.path, '.tmp/report.md')
+  })
+
+  it('replaces readable local image links with previews and keeps unavailable links', async () => {
+    const workspace = '/repo'
+    const image = `${workspace}/images/generated.png`
+    const missing = `${workspace}/images/missing.png`
+    const outside = '/elsewhere/private.png'
+    const store = createStore({ workspaceRoot: workspace, activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      result: null,
+      content: [image, missing, outside].map((uri): AcpToolCallContent => ({
+        type: 'content',
+        content: { type: 'resource_link', uri, name: uri },
+      })),
+    })
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'resource_link',
+      uri: image,
+      name: image,
+    })
+    const reads: string[] = []
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (projectId: string, ownerThreadId: string, path: string): Promise<string> => {
+          reads.push(`${projectId}:${ownerThreadId}:${path}`)
+          return path === 'images/missing.png'
+            ? Promise.reject(new Error('File not found'))
+            : Promise.resolve('data:image/png;base64,aW1hZ2U=')
+        },
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    await delay(0)
+
+    // The tool card and the message's own content block share one read.
+    assert.deepEqual(reads.sort(), [
+      `project-1:${threadId}:images/generated.png`,
+      `project-1:${threadId}:images/missing.png`,
+    ])
+    const previews = host.querySelectorAll<HTMLElement>('.acp-resource-image')
+    assert.equal(previews.length, 2)
+    for (const preview of previews) {
+      assert.equal(preview.querySelector('figcaption')?.textContent, 'images/generated.png')
+      assert.equal(preview.title, image)
+      assert.equal(preview.querySelector('img')?.getAttribute('role'), 'button')
+    }
+    const cards = host.querySelectorAll<HTMLElement>('.acp-resource-link')
+    assert.equal(cards.length, 2)
+    assert.equal(
+      cards.item(0).querySelector('.acp-resource-uri')?.textContent,
+      'images/missing.png',
+    )
+    assert.equal(cards.item(1).querySelector('.acp-resource-uri')?.textContent, outside)
+  })
+
+  it('places a cited tool image after its sentence and hides the duplicate tool preview', async () => {
+    const workspace = '/repo'
+    const cited = `${workspace}/images/cited.png`
+    const uncited = `${workspace}/images/uncited.png`
+    const store = createStore({ workspaceRoot: workspace, activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const toolMessageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, toolMessageId, {
+      ...doneCall,
+      result: null,
+      content: [cited, uncited].map((uri): AcpToolCallContent => ({
+        type: 'content',
+        content: { type: 'resource_link', uri, name: uri },
+      })),
+    })
+    const replyId = addMessage(store, threadId, 'assistant', `Here is [the image](${cited}).`)
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (): Promise<string> => Promise.resolve('data:image/png;base64,aW1hZ2U='),
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    await delay(0)
+
+    const reply = host.querySelector(`[data-message-id="${replyId}"]`)
+    const preview = reply?.querySelector<HTMLElement>('.message-text .acp-referenced-image')
+    assert.ok(preview, 'the cited image gains a preview')
+    assert.equal(preview.querySelector('img')?.alt, 'the image')
+    assert.equal(
+      preview.querySelector('.acp-referenced-image-path')?.textContent,
+      'images/cited.png',
+    )
+    assert.equal(preview.title, cited)
+    const link = reply?.querySelector<HTMLAnchorElement>(`a[href="${cited}"]`)
+    assert.ok(link, 'the authored link stays in the sentence')
+    const sentence = link.parentElement
+    assert.ok(sentence)
+    assert.equal(sentence.textContent, 'Here is the image.')
+    assert.equal(sentence.nextElementSibling, preview)
+
+    const toolOutput = host.querySelector(`[data-message-id="${toolMessageId}"]`)
+    const citedPreview = Array.from(
+      toolOutput?.querySelectorAll<HTMLElement>('.acp-resource-image') ?? [],
+    ).find((node) => node.dataset['acpResourceUri'] === cited)
+    const uncitedPreview = Array.from(
+      toolOutput?.querySelectorAll<HTMLElement>('.acp-resource-image') ?? [],
+    ).find((node) => node.dataset['acpResourceUri'] === uncited)
+    assert.equal(citedPreview?.hidden, true)
+    assert.equal(uncitedPreview?.hidden, false)
+  })
+
+  it('keeps the reply link and tool resource visible when an image cannot be read', async () => {
+    const image = '/repo/images/missing.png'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const toolMessageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, toolMessageId, {
+      ...doneCall,
+      result: null,
+      content: [{ type: 'content', content: { type: 'resource_link', uri: image, name: image } }],
+    })
+    const replyId = addMessage(store, threadId, 'assistant', `[missing image](${image})`)
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (): Promise<string> => Promise.reject(new Error('File not found')),
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    await delay(0)
+
+    assert.ok(host.querySelector(`[data-message-id="${replyId}"] a[href="${image}"]`))
+    assert.equal(host.querySelector('.acp-referenced-image'), null)
+    const resource = host.querySelector<HTMLElement>(
+      `[data-message-id="${toolMessageId}"] .acp-resource-link`,
+    )
+    assert.ok(resource)
+    assert.equal(resource.hidden, false)
+  })
+
+  it('treats file: resource URIs as workspace files and matches bare-path citations', async () => {
+    const image = '/repo/images/shot one.png'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const toolMessageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, toolMessageId, {
+      ...doneCall,
+      result: null,
+      content: ['file:///repo/images/shot%20one.png', 'file:///repo/notes.md'].map(
+        (uri): AcpToolCallContent => ({
+          type: 'content',
+          content: { type: 'resource_link', uri, name: uri },
+        }),
+      ),
+    })
+    const replyId = addMessage(store, threadId, 'assistant', `See [the shot](<${image}>).`)
+    const reads: string[] = []
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (_projectId: string, _threadId: string, path: string): Promise<string> => {
+          reads.push(path)
+          return Promise.resolve('data:image/png;base64,aW1hZ2U=')
+        },
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    await delay(0)
+
+    const notes = host.querySelector<HTMLElement>('.acp-resource-link')
+    assert.equal(notes?.dataset['workspaceResourcePath'], 'notes.md')
+    assert.equal(notes.querySelector('.acp-resource-uri')?.textContent, 'notes.md')
+    assert.equal(notes.title, 'file:///repo/notes.md')
+    assert.deepEqual(reads, ['images/shot one.png'])
+    const figure = host.querySelector<HTMLElement>('.acp-resource-image')
+    assert.equal(figure?.dataset['workspaceResourcePath'], 'images/shot one.png')
+    assert.equal(figure.hidden, true, 'the reply cites the same file by its bare path')
+    const preview = host.querySelector<HTMLElement>(
+      `[data-message-id="${replyId}"] .acp-referenced-image`,
+    )
+    assert.equal(preview?.title, image)
+  })
+
+  it('keeps a cited resource hidden when ACP content rebuilds its message', async () => {
+    const image = '/repo/images/cited.png'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', `Here is [the image](${image}).`)
+    appendAcpContentBlock(store, messageId, 'message', {
+      type: 'resource_link',
+      uri: image,
+      name: image,
+    })
+    const reads: string[] = []
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (_projectId: string, _threadId: string, path: string): Promise<string> => {
+          reads.push(path)
+          return Promise.resolve('data:image/png;base64,aW1hZ2U=')
+        },
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    await delay(0)
+    const resource = (): HTMLElement | null =>
+      host.querySelector<HTMLElement>('.acp-message-content [data-workspace-resource-path]')
+    assert.equal(resource()?.hidden, true)
+
+    appendAcpContentBlock(store, messageId, 'message', { type: 'text', text: 'more' })
+    assert.equal(resource()?.hidden, true, 'the rebuilt card stays hidden')
+    assert.equal(resource()?.tagName, 'FIGURE', 'the loaded preview is reused without a reload')
+    await delay(0)
+    assert.equal(resource()?.hidden, true)
+    assert.deepEqual(reads, ['images/cited.png'])
+  })
+
+  it('leaves a streaming reply to its renderer until the message is done', async () => {
+    const image = '/repo/images/cited.png'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const toolMessageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, toolMessageId, {
+      ...doneCall,
+      result: null,
+      content: [{ type: 'content', content: { type: 'resource_link', uri: image, name: image } }],
+    })
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (): Promise<string> => Promise.resolve('data:image/png;base64,aW1hZ2U='),
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    const replyId = addMessage(store, threadId, 'assistant', '')
+    appendToken(store, replyId, `Here is [the image](${image}) so far`)
+    // Another tool update runs the reference pass while the reply streams.
+    updateToolCall(store, toolMessageId, doneCall.id, { result: 'updated' })
+    await delay(0)
+
+    const reply = host.querySelector(`[data-message-id="${replyId}"]`)
+    const link = reply?.querySelector<HTMLAnchorElement>('.message-text a')
+    assert.ok(link, 'the streaming link is untouched')
+    assert.equal(link.dataset['workspaceResourcePath'], undefined)
+    assert.equal(reply?.querySelector('.acp-referenced-image'), null)
+    assert.equal(host.querySelector<HTMLElement>('.acp-resource-image')?.hidden, false)
+
+    store.emit('message_done', replyId)
+    await delay(0)
+    assert.ok(reply.querySelector('.acp-referenced-image'))
+    assert.equal(host.querySelector<HTMLElement>('.acp-resource-image')?.hidden, true)
+  })
+
+  it('only hides resources written at or before the reply that cites them', async () => {
+    const report = '/repo/report.md'
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const resourceCall = (id: string): ToolCall => ({
+      ...doneCall,
+      id,
+      result: null,
+      content: [{ type: 'content', content: { type: 'resource_link', uri: report, name: report } }],
+    })
+    const firstId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, firstId, resourceCall('tc-first'))
+    addMessage(store, threadId, 'assistant', `Read [the report](${report}).`)
+    const secondId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, secondId, resourceCall('tc-second'))
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = (messageId: string): HTMLElement | null =>
+      host.querySelector<HTMLElement>(`[data-message-id="${messageId}"] .acp-resource-link`)
+    assert.equal(card(firstId)?.hidden, true)
+    assert.equal(card(secondId)?.hidden, false, 'the rewritten report shows where it happened')
+  })
+
+  it('keeps the file link and details on a loaded image preview', async () => {
+    const image = '/repo/images/out.png'
+    const imageContent = (description: string): AcpToolCallContent[] => [
+      {
+        type: 'content',
+        content: {
+          type: 'resource_link',
+          uri: image,
+          name: 'out.png',
+          description,
+          mimeType: 'image/png',
+          size: 2048,
+        },
+      },
+    ]
+    const store = createStore({ workspaceRoot: '/repo', activeProjectId: 'project-1' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      result: null,
+      content: imageContent('Rendered output'),
+    })
+    const reads: string[] = []
+    const base = fakeApi()
+    const api = {
+      ...base,
+      fs: {
+        ...base.fs,
+        readImage: (_projectId: string, _threadId: string, path: string): Promise<string> => {
+          reads.push(path)
+          return Promise.resolve('data:image/png;base64,aW1hZ2U=')
+        },
+        readFile: (): Promise<string> => Promise.resolve(''),
+      },
+    } satisfies ApiClient
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+    await delay(0)
+
+    const figure = host.querySelector<HTMLElement>('.acp-resource-image')
+    assert.ok(figure)
+    assert.equal(figure.querySelector('.acp-resource-description')?.textContent, 'Rendered output')
+    assert.equal(figure.querySelector('.acp-resource-meta')?.textContent, 'image/png · 2048 B')
+    const link = figure.querySelector<HTMLAnchorElement>('figcaption a')
+    assert.equal(link?.dataset['workspaceResourcePath'], 'images/out.png')
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.dispatchEvent(click)
+    await delay(0)
+    assert.equal(click.defaultPrevented, true)
+    assert.deepEqual(reads, ['images/out.png', 'images/out.png'], 'the click opens the image')
+
+    // A tool update rebuilds the card; the preview returns at once without a reread.
+    updateToolCall(store, messageId, doneCall.id, { content: imageContent('Updated') })
+    const rebuilt = host.querySelector<HTMLElement>('.acp-resource-image')
+    assert.notEqual(rebuilt, figure)
+    assert.equal(rebuilt?.querySelector('.acp-resource-description')?.textContent, 'Updated')
+    assert.equal(
+      rebuilt.querySelector('img')?.getAttribute('src'),
+      'data:image/png;base64,aW1hZ2U=',
+    )
+    assert.equal(reads.length, 2)
   })
 
   it('renders ACP assistant media and embedded resources without Markdown data URLs', () => {
