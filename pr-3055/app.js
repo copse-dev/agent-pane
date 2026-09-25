@@ -65326,6 +65326,74 @@ var init_fork_thread3 = __esm({
   }
 });
 
+// src/renderer/controller/thread-filter.ts
+function createThreadFilter(store2, api2, changed) {
+  const matches2 = /* @__PURE__ */ new Set();
+  let generation = 0;
+  let timer;
+  let scan = Promise.resolve();
+  let pending = false;
+  let failed = false;
+  const cancel = () => {
+    generation += 1;
+    clearTimeout(timer);
+    matches2.clear();
+    pending = false;
+    failed = false;
+  };
+  const search = (query) => {
+    cancel();
+    const { activeProjectId, threads } = store2.getState();
+    if (!query || !activeProjectId) return;
+    const current = generation;
+    const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
+    const candidates = sortThreadsNewestFirst(threads).filter(
+      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+    );
+    const containsRequest = (messages) => messages.some(
+      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
+    );
+    pending = candidates.length > 0;
+    timer = setTimeout(() => {
+      scan = scan.then(async () => {
+        for (const thread of candidates) {
+          if (!isCurrent()) return;
+          try {
+            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            if (!isCurrent()) return;
+            if (matched) {
+              matches2.add(thread.id);
+              changed();
+            }
+          } catch {
+            if (!isCurrent()) return;
+            failed = true;
+          }
+        }
+        if (!isCurrent()) return;
+        pending = false;
+        changed();
+      });
+    }, 200);
+  };
+  return {
+    search,
+    cancel,
+    matches: matches2,
+    get pending() {
+      return pending;
+    },
+    get failed() {
+      return failed;
+    }
+  };
+}
+var init_thread_filter = __esm({
+  "src/renderer/controller/thread-filter.ts"() {
+    init_thread_sort();
+  }
+});
+
 // src/renderer/controller/attention.ts
 function recompute() {
   const next = /* @__PURE__ */ new Set();
@@ -65864,16 +65932,20 @@ function mountProjectsPane(root, store2, api2) {
   );
   const header = el("div", { class: "pane-projects-header" }, title, searchToggle, addBtn);
   let threadFilter = "";
+  const contentFilter = createThreadFilter(store2, api2, () => {
+    render();
+  });
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter threads\u2026",
+    placeholder: "Filter titles and requests\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
   const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
   const closeThreadFilter = () => {
+    contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
     searchRow.hidden = true;
@@ -65891,6 +65963,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   searchInput.addEventListener("input", () => {
     threadFilter = searchInput.value.trim().toLowerCase();
+    contentFilter.search(threadFilter);
     render();
   });
   searchInput.addEventListener("keydown", (e3) => {
@@ -66798,10 +66871,14 @@ function mountProjectsPane(root, store2, api2) {
         projectLine.append(newThreadBtn);
       }
       if (!isExpanded) return entry;
-      const sidebarThreads = getSidebarThreads(store2, project2.id);
-      const isFiltering = threadFilter.length > 0;
+      const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
+      const sidebarThreads = isFiltering ? sortThreadsNewestFirst(store2.getState().threads).filter(
+        (thread) => thread.archivedAt == null
+      ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter)
+        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
+          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
+        )
       ) : sidebarThreads;
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
@@ -66832,6 +66909,22 @@ function mountProjectsPane(root, store2, api2) {
       const chats = el("div", { class: "chats-list" });
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store2, project2.id)) {
         chats.append(el("div", { class: "sidebar-empty chats-loading" }, "Loading\u2026"));
+      } else if (isFiltering && contentFilter.pending) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Searching user requests\u2026"
+          )
+        );
+      } else if (isFiltering && contentFilter.failed) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Some threads could not be searched"
+          )
+        );
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
@@ -66875,11 +66968,14 @@ function mountProjectsPane(root, store2, api2) {
   }
   const unsubs = [
     store2.on("projects_changed", render),
+    // Streaming and hydration must not restart the disk scan. Resident human
+    // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
+      closeThreadFilter();
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
@@ -66893,6 +66989,7 @@ function mountProjectsPane(root, store2, api2) {
   render();
   refreshOrphans();
   return () => {
+    contentFilter.cancel();
     prStatusGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -66919,6 +67016,8 @@ var init_projects_pane = __esm({
     init_automation_dialog();
     init_toast();
     init_fork_thread3();
+    init_thread_filter();
+    init_thread_sort();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -71941,6 +72040,14 @@ function mountComposerEditor() {
   root.setAttribute("role", "textbox");
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
+  const SCROLL_PIN_THRESHOLD_PX2 = 4;
+  let pinnedToBottom = true;
+  root.addEventListener("scroll", () => {
+    pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
+  });
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight;
+  }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
   const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
@@ -72129,6 +72236,7 @@ function mountComposerEditor() {
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
+      root.scrollTop = root.scrollHeight;
     },
     get selectionStart() {
       const sel = selectionInRoot();
@@ -108026,7 +108134,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "aria-label": "Roadmap filters",
     hidden: true
   });
-  filter.append(searchInput, filterToggle, filterMenu);
+  filter.append(searchInput, filterToggle);
   const actionButtons = el("div", { class: "roadmap-action-buttons" });
   const newBtn = el(
     "button",
@@ -108102,7 +108210,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     actionButtons
   );
   const listBody = el("div", { class: "git-changes-list roadmap-list" });
-  listRoot.append(listHeader, listBody);
+  listRoot.append(listHeader, listBody, filterMenu);
   function appendFilterSection(title, values, enabled, label, defaultChecked) {
     filterMenu.append(el("div", { class: "roadmap-filter-heading" }, title));
     for (const value of values) {
@@ -108149,7 +108257,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     filterToggle.setAttribute("aria-expanded", opening ? "true" : "false");
   });
   const closeFilterOnOutsideClick = (event) => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu();
+    if (event.target instanceof Node && !filter.contains(event.target) && !filterMenu.contains(event.target)) {
+      closeFilterMenu();
+    }
   };
   document.addEventListener("click", closeFilterOnOutsideClick);
   searchInput.addEventListener("input", () => {
