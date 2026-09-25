@@ -17,6 +17,19 @@ const NO_ELECTRON = {
     'eslint.config.mjs — deliberately, and visibly in review.',
 }
 
+// Hoisted for the same reason as NO_ELECTRON above: ESLint replaces a rule's array
+// options wholesale rather than merging them, so the renderer-specific
+// `no-restricted-syntax` block below must repeat this selector or it would silently
+// reopen the `in`-with-a-dynamic-key hole for the whole renderer.
+const NO_DYNAMIC_IN = {
+  selector: "BinaryExpression[operator='in'][left.type!='Literal']",
+  message:
+    'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
+    '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
+    "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
+    'fine and is not restricted.',
+}
+
 export default ts.config(
   {
     ignores: [
@@ -30,6 +43,9 @@ export default ts.config(
       '.pnpm-store/',
       '.pr-validation/',
       '.tmp/',
+      // Generated benchmark outputs, private research scripts and downloaded model caches.
+      // The maintained benchmark harnesses under benchmarks/ are linted separately below.
+      'bench-results/',
       '.claude/**',
       'eslint.config.mjs',
       'eslint.hook.config.mjs',
@@ -129,17 +145,7 @@ export default ts.config(
       // and there are 248 of those; a blanket ban on `in` would bury the ten
       // that mattered. Tests are exempt below, because several of them use `in`
       // deliberately to assert the prototype behaviour this rule exists to stop.
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "BinaryExpression[operator='in'][left.type!='Literal']",
-          message:
-            'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
-            '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
-            "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
-            'fine and is not restricted.',
-        },
-      ],
+      'no-restricted-syntax': ['error', NO_DYNAMIC_IN],
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',
     },
@@ -261,6 +267,37 @@ export default ts.config(
           ],
         },
       ],
+      // #2497 — native `confirm()`/`alert()` render as a blocking OS-native dialog in
+      // Electron, not the in-app UI the rest of the renderer uses (PR #1030). Route
+      // through `showConfirmDialog` (src/renderer/views/confirm-dialog.ts) instead.
+      // Repeating NO_DYNAMIC_IN is required, not redundant — see its definition above.
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'confirm',
+          message:
+            'Native confirm() renders as a blocking OS dialog, not the in-app one. Use ' +
+            'showConfirmDialog from ./confirm-dialog.ts (or the relative path to it) instead.',
+        },
+        {
+          name: 'alert',
+          message:
+            'Native alert() renders as a blocking OS dialog, not the in-app UI. Show the ' +
+            'message in the view instead (an error line, a status line, or showConfirmDialog ' +
+            'from ./confirm-dialog.ts).',
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        NO_DYNAMIC_IN,
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(window|globalThis)$/][callee.property.name=/^(confirm|alert)$/]",
+          message:
+            'Native window.confirm()/window.alert() render as a blocking OS dialog, not the ' +
+            'in-app UI. Use showConfirmDialog from ./confirm-dialog.ts instead.',
+        },
+      ],
     },
   },
   {
@@ -373,6 +410,39 @@ export default ts.config(
     },
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
+    files: ['benchmarks/shell-scope/scripts/lib/**/*.mts'],
+    languageOptions: {
+      parserOptions: { project: ['./benchmarks/shell-scope/tsconfig.json'] },
+    },
+  },
+  {
+    // Reproducible research runners are native Node ESM, not TypeScript app code.
+    // Keep ordinary JS linting; typed adapter libraries use the scoped project above.
+    files: ['benchmarks/shell-scope/scripts/**/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        performance: 'readonly',
+        TextDecoder: 'readonly',
+        ReadableStream: 'readonly',
+        WritableStream: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        structuredClone: 'readonly',
+      },
+    },
+    // TypeScript-only annotation requirements cannot be expressed in these .mjs files.
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   {

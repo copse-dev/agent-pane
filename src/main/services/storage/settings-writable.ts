@@ -8,6 +8,7 @@ import {
   validateWebOriginPattern,
 } from '../security/web-origin-policy.ts'
 import { keyOf } from '@shared/member-of.ts'
+import { GIT_ATTRIBUTION_SETTING } from '@shared/git/commit-attribution.ts'
 
 // Empty string means "use the provider default"; any non-empty value must be a
 // safe base URL since it carries the Cursor API key as an Authorization header.
@@ -180,6 +181,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Whole-UI multiplier for design tokens (--ui-scale). Independent of
   // fontSize (editor/terminal); see src/shared/ui-scale.ts.
   uiScale: z.number().min(0.75).max(1.5),
+  animateAgentAvatars: z.boolean(),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   // Interaction colour for links, primary actions, selections, and chat
@@ -283,6 +285,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // the `gh` CLI and falls back to the REST/GraphQL API, or force one. See
   // services/github/backend/backend.ts.
   githubBackend: z.enum(['auto', 'cli', 'api']),
+  [GIT_ATTRIBUTION_SETTING]: z.boolean(),
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
@@ -364,6 +367,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // boolean is retired — the plugin toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
+  // Interactive terminal PTYs opened for the same project share one HISTFILE
+  // (fish: one `fish_history` session name) so up-arrow history from one
+  // thread's Shells tab is recallable in another's (#2433). On by default.
+  shareTerminalHistoryEnabled: z.boolean(),
   developerMode: z.boolean(),
   // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
   // plugin's `devtools-shortcut` capability (Settings > Plugins), so the former

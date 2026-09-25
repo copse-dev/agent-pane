@@ -397,6 +397,7 @@ function reserveLlmCall(budget: LlmCallBudget): boolean {
 }
 
 type StepUsage = {
+  hostingProvider?: string
   inputTokens: number
   outputTokens: number
   cacheReadTokens?: number
@@ -425,6 +426,7 @@ function emitStepUsage(
     onChunk({
       type: 'usage',
       model: usageModel,
+      ...(usage.hostingProvider === undefined ? {} : { hostingProvider: usage.hostingProvider }),
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       ...(usage.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
@@ -549,6 +551,9 @@ async function streamTextOnlyTurn(
       if (chunk.type === 'prompt_progress') onChunk(chunk)
       if (chunk.type === 'usage') {
         streamUsage = {
+          ...(chunk.hostingProvider === undefined
+            ? {}
+            : { hostingProvider: chunk.hostingProvider }),
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
           ...(chunk.cacheReadTokens !== undefined
@@ -686,6 +691,9 @@ async function runToolEnabledNudgeTurn(
       if (chunk.type === 'prompt_progress') onChunk(chunk)
       if (chunk.type === 'usage') {
         streamUsage = {
+          ...(chunk.hostingProvider === undefined
+            ? {}
+            : { hostingProvider: chunk.hostingProvider }),
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
           ...(chunk.cacheReadTokens !== undefined
@@ -1465,6 +1473,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         if (chunk.type === 'prompt_progress') onChunk(chunk)
         if (chunk.type === 'usage') {
           streamUsage = {
+            ...(chunk.hostingProvider === undefined
+              ? {}
+              : { hostingProvider: chunk.hostingProvider }),
             inputTokens: chunk.inputTokens,
             outputTokens: chunk.outputTokens,
             ...(chunk.cacheReadTokens !== undefined

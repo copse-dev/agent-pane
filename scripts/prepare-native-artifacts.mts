@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { recordLifecycleInstall } from './lib/dev-sync.mts'
 
 interface PreparationStep {
   label: string
@@ -42,4 +43,13 @@ for (const step of steps) {
   if (result.status !== 0) {
     throw new Error(`${step.label} failed (${result.signal ?? String(result.status)})`)
   }
+}
+
+try {
+  if (recordLifecycleInstall(root, process.env)) {
+    console.log('==> Recorded this install, so make run will not repeat it')
+  }
+} catch (err) {
+  // The install itself succeeded; without the record `make run` just installs again.
+  console.warn(`==> Could not record this install for make run: ${String(err)}`)
 }

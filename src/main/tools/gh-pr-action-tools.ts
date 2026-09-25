@@ -69,14 +69,16 @@ async function runAction(
 export const ghCreatePrTool = defineTool({
   name: 'gh_pr_create',
   description:
-    'Push the current branch and open a pull request for it. Copse appends the "Co-Authored-By: Copse" attribution trailer to the body and links the PR to this thread (the sidebar PR chip) from the created PR itself — prefer this over separate `git push` and `run_shell gh pr create` calls. An explicit head is assumed to be pushed already. Mutating action — asks for approval.',
+    'Push the current branch and open a pull request for it. When Git attribution is enabled in Settings (the default), Copse appends its attribution trailer. Copse links the PR to this thread (the sidebar PR chip) from the created PR itself. An explicit head is assumed to be pushed already. Mutating action — asks for approval.',
   parameters: z.object({
     title: z.string().min(1).describe('Pull request title.'),
     body: z
       .string()
       .optional()
       .default('')
-      .describe('Pull request body in markdown. The attribution trailer is appended for you.'),
+      .describe(
+        'Pull request body in markdown. Copse attribution follows the Git attribution setting.',
+      ),
     base: z
       .string()
       .optional()

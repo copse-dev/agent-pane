@@ -146,7 +146,10 @@ export function renderReport(
     lines.push('')
   }
   lines.push('This check is a fast subset: formatting and the type-unaware lint rules.')
-  lines.push('`npm run check` is still the gate — it adds typecheck and the type-aware rules.')
+  lines.push(
+    '`npm run check:local` is the minimum gate — it adds typecheck and the type-aware rules.',
+  )
+  lines.push('Use `npm run check` when the AGENTS.md risk policy requires the complete suite.')
   if (testHint !== null) lines.push(`Covering unit test: npm test -- ${testHint}`)
   return lines.join('\n')
 }

@@ -22,6 +22,7 @@ interface CapturedChatCompletionRequest {
 }
 
 interface ChatCompletionChunk {
+  provider?: unknown
   service_tier?: string
   choices: Array<{
     delta?: {
@@ -975,4 +976,43 @@ describe('OpenAIProvider stream parsing', () => {
     )
     assert.equal(provider.lastUsage, null)
   })
+})
+
+it('keeps reported hosting providers local to concurrent response streams', async () => {
+  const provider = new OpenAIProvider('openai/gpt-6-luna', { apiKey: 'test' })
+  const firstStarted = Promise.withResolvers<undefined>()
+  const releaseFirst = Promise.withResolvers<undefined>()
+  let call = 0
+  withFakeCreate(provider, () => {
+    const index = call++
+    return (async function* (): AsyncGenerator<ChatCompletionChunk> {
+      yield {
+        provider: index === 0 ? 'OpenAI' : 'Azure',
+        choices: [{ delta: { content: 'answer' } }],
+      }
+      if (index === 0) {
+        firstStarted.resolve(undefined)
+        await releaseFirst.promise
+      }
+      yield { choices: [], usage: { prompt_tokens: index + 1, completion_tokens: 1 } }
+    })()
+  })
+  const first = collect(provider)
+  await firstStarted.promise
+  try {
+    const second = await collect(provider)
+    assert.equal(second.find((chunk) => chunk.type === 'usage')?.hostingProvider, 'Azure')
+  } finally {
+    releaseFirst.resolve(undefined)
+  }
+  assert.equal((await first).find((chunk) => chunk.type === 'usage')?.hostingProvider, 'OpenAI')
+  for (const label of [undefined, '<details>bad', 'x'.repeat(81), { name: 'OpenAI' }]) {
+    withFakeStream(provider, [
+      { provider: label, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+    ])
+    assert.equal(
+      (await collect(provider)).find((chunk) => chunk.type === 'usage')?.hostingProvider,
+      undefined,
+    )
+  }
 })

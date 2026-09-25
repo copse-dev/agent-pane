@@ -931,3 +931,80 @@ describe('runAgent AgentHost decoupling', () => {
     assert.doesNotMatch(summary.text, /attempt/)
   })
 })
+
+describe('standalone review admission', () => {
+  it('keeps Stop bound to an active turn when a review is requested concurrently', async () => {
+    const threadId = `thread-review-admission-${randomUUID()}`
+    const started = Promise.withResolvers<AbortSignal>()
+    const release = Promise.withResolvers<undefined>()
+    const provider: LLMProvider = {
+      stream: async function* (_messages, _tools, signal) {
+        assert.ok(signal)
+        started.resolve(signal)
+        await release.promise
+        yield { type: 'done' }
+      },
+    }
+    const turnChunks: StreamChunk[] = []
+    const turnHost: AgentHost<StreamChunk> = {
+      emit: (_id, chunk) => turnChunks.push(chunk),
+    }
+
+    await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId,
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      async () => {
+        const first = runWithActiveRunIdentity(threadId, () =>
+          agentService.runAgent(threadId, 'Work on the parser', [], turnHost, new ToolRegistry(), {
+            model: 'claude-sonnet-4-6',
+            provider,
+            contextWindow: 100_000,
+          }),
+        )
+        const firstSignal = await started.promise
+        try {
+          const retryChunks: StreamChunk[] = []
+          await runWithActiveRunIdentity(threadId, () =>
+            agentService.retryPostTurnReview(
+              threadId,
+              [],
+              { emit: (_id, chunk) => retryChunks.push(chunk) },
+              new ToolRegistry(),
+              { model: 'claude-sonnet-4-6' },
+            ),
+          )
+          assert.deepEqual(
+            retryChunks.map((chunk) => chunk.type),
+            ['post_turn_review'],
+            'a rejected retry must not emit done for the active turn',
+          )
+          assert.match(
+            retryChunks[0]?.type === 'post_turn_review' ? retryChunks[0].summary : '',
+            /already has a run in progress/,
+          )
+          await assert.rejects(
+            runWithActiveRunIdentity(threadId, () =>
+              agentService.runReviewForThread(threadId, turnHost, {
+                model: 'claude-sonnet-4-6',
+              }),
+            ),
+            /already has a run in progress/,
+          )
+          assert.equal(firstSignal.aborted, false)
+          agentService.abortAgent(threadId)
+          assert.equal(firstSignal.aborted, true, 'Stop still reaches the original turn')
+        } finally {
+          release.resolve(undefined)
+          await first
+        }
+      },
+    )
+    assert.equal(agentService.listRunningThreadIds().includes(threadId), false)
+  })
+})

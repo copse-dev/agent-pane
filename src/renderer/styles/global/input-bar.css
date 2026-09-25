@@ -39,13 +39,28 @@
   cursor: text;
   /* A contenteditable grows with its content natively; min-height carries a
      compact 2-row resting floor; max-height + overflow cap the growth so a long
-     draft scrolls internally rather than eating the chat. */
+     draft scrolls internally rather than eating the chat. `flex` (see
+     `.input-row` below) lets this cap yield further, down to min-height, when
+     the outer card's own hard cap (#input-bar in titlebar.css) leaves less
+     room than 40vh — e.g. a short window. */
   min-height: calc(2lh + 2 * var(--spacing-md));
   max-height: 40vh;
+  flex: 1 1 auto;
   overflow-y: auto;
+  /* #2489: keep the box scrollable (arrow keys / Home / wheel still reach
+     earlier lines) without drawing a scrollbar over the draft — the reporter's
+     ask was "sticky but off screen", not a visible bar. `scrollbar-width` is
+     the standard property (Firefox, and future Chromium); the pseudo-element
+     covers today's Electron/Chromium. Neither removes scroll behavior, only
+     the thumb/track paint. */
+  scrollbar-width: none;
   /* Typed newlines are text nodes, not <br>s — render them. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.prompt-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 /* Placeholder for the contenteditable composer (a div has no ::placeholder). */
 .prompt-input:empty::before {
@@ -67,6 +82,23 @@
 }
 .input-row {
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+/* Scoped with the `#input-bar >` parent (not just `.input-row`) so this beats
+   `#input-bar > *`'s default `flex-shrink: 0` (titlebar.css) on specificity —
+   an id-qualified selector always outranks a class one regardless of source
+   order, so a plain `.input-row { flex: 1 1 auto }` here would silently lose
+   to that default and never actually shrink. This is the one child of
+   #input-bar allowed to shrink toward the card's cap. `min-height: 0` is
+   required for a flex item to shrink past its content size at all —
+   otherwise `.prompt-input`'s own min-height floor would be treated as this
+   row's floor too and the cap would be ignored. Column + flex on
+   `.prompt-input` below carries the shrink down to the actual scrollable
+   element. */
+#input-bar > .input-row {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 /* The topmost visible advisory strip gets the card's rounded top edge, so its
    fill (the danger wash behind the Guarded YOLO banner especially) runs into the
@@ -679,6 +711,10 @@
 }
 #app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar {
   bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
+  /* The card's bottom offset grows to clear the portrait mode-switch strip, so
+     its hard height cap (titlebar.css) has to shrink by the same amount or the
+     card could still reach past the pane's top edge. */
+  max-height: calc(100% - var(--chrome-action-band-height) - 2 * var(--spacing-md));
 }
 #app.is-portrait-chrome .pane-chat:not(.composer-centered) .conversation {
   padding-bottom: calc(
@@ -902,14 +938,34 @@
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
+  display: flex;
+  flex-direction: column;
   min-width: 180px;
-  max-height: 280px;
-  overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   padding: 4px 0;
+}
+.branch-picker-filter {
+  margin: 0 8px 4px;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+.branch-picker-filter:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.branch-picker-list {
+  overflow-y: auto;
+  max-height: 280px;
 }
 .branch-picker-option {
   display: flex;
@@ -924,7 +980,8 @@
   cursor: pointer;
   font-family: inherit;
 }
-.branch-picker-option:hover {
+.branch-picker-option:hover,
+.branch-picker-option.is-active {
   background: var(--bg-hover);
 }
 .branch-picker-option.is-selected {
@@ -1137,6 +1194,10 @@
 .footer-branch-host .branch-picker-menu {
   --footer-popup-min-width: 180px;
 }
+.footer-branch-host .branch-picker-filter {
+  min-width: min(180px, 100%);
+  box-sizing: border-box;
+}
 .context-wheel-popover[hidden] {
   display: none;
 }
@@ -1225,6 +1286,11 @@
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+.footer-usage-popover-section {
+  color: var(--text-muted);
+  margin-bottom: 2px;
   white-space: nowrap;
 }
 .footer-usage-popover-row {

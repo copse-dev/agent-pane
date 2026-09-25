@@ -13,7 +13,19 @@ import {
   AUTOSAVE_DEBOUNCE_MS,
 } from './persistence.ts'
 import { createStore } from '@shared/store/store.ts'
-import type { Message, Thread } from '@shared/types'
+import type {
+  Message,
+  ReviewFindingRecord,
+  StreamChunk,
+  Thread,
+  ThreadReviewReport,
+} from '@shared/types'
+import { createHash } from 'node:crypto'
+import { explodeMessage, foldMessage } from '@shared/threads/fold.ts'
+import { parseMessageValue } from '@shared/threads/thread-boundary.ts'
+import { parseSpine, serializeSpineLine } from '@shared/threads/spine-schema.ts'
+import { startAgentController } from './agent.ts'
+import { dismissReviewFinding, dismissReviewReport, startReview } from './review-actions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { optionalRecord } from '@shared/unknown-value.ts'
@@ -751,6 +763,112 @@ test('pagehide flush triggers a final reconcile', async () => {
       ['t1'],
     )
   } finally {
+    autosave.detach()
+  }
+})
+
+test('a standalone review report and its dismissals reach the reviewed message on disk', async () => {
+  __resetPersistenceForTest()
+  const { api: base, calls } = fakeApi()
+  let send: ((threadId: string, chunk: StreamChunk) => void) | null = null
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
+        send = handler
+        return (): void => {}
+      },
+      onHookQueueMessage: () => (): void => {},
+    },
+    review: {
+      run: async (): Promise<void> => {},
+      dismissFinding: async (): Promise<void> => {},
+      restoreFinding: async (): Promise<void> => {},
+    },
+  }
+  const assistant: Message = {
+    id: 'a1',
+    role: 'assistant',
+    content: 'Changed math.ts',
+    toolCalls: [],
+    createdAt: 20,
+  }
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [thread('t1', { messages: [userMsg('u1'), assistant] })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+  const stopAgent = startAgentController(store, api)
+  const emit = (chunk: StreamChunk): void => {
+    assert.ok(send)
+    send('t1', chunk)
+  }
+  const finding: ReviewFindingRecord = {
+    id: '0123456789abcdef',
+    path: 'src/math.ts',
+    startLine: 3,
+    claim: 'add subtracts its second argument.',
+    class: 'contract',
+    severity: 'high',
+    confidence: 'high',
+    verdict: { status: 'confirmed', reason: 'The reproducer fails on head and passes on base.' },
+    raisedBy: ['gpt-5 (correctness)'],
+    corroboratedBy: [],
+    challengedBy: [],
+    evidence: [],
+  }
+  const appendsOf = (id: string): Message[] =>
+    calls.appends.filter((a) => a.message.id === id).map((a) => a.message)
+  try {
+    // The Changes view "Review" button: optimistic card, then main's chunks.
+    startReview(store, api, 't1')
+    const running = store.getState().threads[0]?.messages[1]?.reviewReport
+    assert.ok(running?.status === 'running')
+    emit({ type: 'review_report', report: running })
+    await tick()
+    // A spinning card is never written: a crash must not leave it running.
+    assert.deepEqual(appendsOf('a1'), [])
+
+    const done: ThreadReviewReport = { ...running, status: 'done', findings: [finding] }
+    emit({ type: 'review_report', report: done })
+    emit({ type: 'done' })
+    await tick()
+    const persisted = appendsOf('a1').at(-1)
+    assert.deepEqual(persisted?.reviewReport, done)
+
+    // Reload: the IPC boundary parse, the spine line, and the fold keep it.
+    const hash = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
+    const reload = (message: Message | undefined): Message => {
+      const parsed = parseMessageValue(structuredClone(message))
+      assert.ok(parsed)
+      const { line, files } = explodeMessage(parsed, hash)
+      const [spineLine] = parseSpine(serializeSpineLine(line))
+      assert.ok(spineLine)
+      const contents = new Map(files.map((file) => [file.ref, file.contents]))
+      return foldMessage(
+        spineLine,
+        (ref) => {
+          const text = contents.get(ref)
+          if (text === undefined) throw new Error(`missing ref ${ref}`)
+          return text
+        },
+        { hash },
+      )
+    }
+    assert.deepEqual(reload(persisted).reviewReport, done)
+
+    dismissReviewFinding(store, api, 't1', finding, 'a1')
+    await tick()
+    assert.equal(reload(appendsOf('a1').at(-1)).reviewReport?.findings[0]?.dismissed, true)
+
+    dismissReviewReport(store, 't1', 'a1')
+    await tick()
+    assert.equal(reload(appendsOf('a1').at(-1)).reviewReport, undefined)
+  } finally {
+    stopAgent()
     autosave.detach()
   }
 })

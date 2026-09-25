@@ -46,6 +46,8 @@ export interface Stage4Options extends ReviewerToolHost {
   readonly threadId: string
   readonly turnPrefix: string
   readonly maxVerified?: number | undefined
+  /** Independent findings in flight; commands still share one execution lane. */
+  readonly concurrency?: number | undefined
   readonly signal?: AbortSignal | undefined
   readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
 }
@@ -60,6 +62,7 @@ export interface VerificationRecord {
   readonly result: 'confirmed' | 'refuted' | 'survived' | 'undetermined'
   readonly reason: string
   readonly usage: TurnUsage
+  readonly hostingProviders?: readonly string[]
   readonly timing?: TurnTiming
 }
 
@@ -160,6 +163,17 @@ function withVerdict(finding: Finding, update: Partial<Finding>): Finding {
 
 /** Verify Stage 3's survivors, most promising first, up to the cap. */
 export async function verifyFindings(options: Stage4Options): Promise<Stage4Result> {
+  const concurrency = options.concurrency ?? 1
+  if (concurrency !== 1 && concurrency !== 2)
+    throw new Error('verification concurrency must be 1 or 2')
+  // Queue the whole tool operation, not only cell.run: writing a reproducer
+  // and cleaning its base file must be atomic relative to other tools too.
+  let toolTail: Promise<unknown> = Promise.resolve()
+  const exclusive = <T>(operation: () => Promise<T>): Promise<T> => {
+    const next = toolTail.then(operation)
+    toolTail = next.catch(() => undefined)
+    return next
+  }
   const events: HeadlessEvent[] = []
   const emit = (event: HeadlessEvent): void => {
     events.push(event)
@@ -182,14 +196,31 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
     .filter((finding) => finding.verdict.status === 'unverified')
     .sort((a, b) => findingScore(b) - findingScore(a))
   const cap = options.maxVerified ?? DEFAULT_MAX_VERIFIED
-  const toVerify = new Set(open.slice(0, cap).map((finding) => finding.id))
+  const selected = open.slice(0, cap)
   counts.skipped = Math.max(0, open.length - cap)
 
   const settled = new Map<string, Finding>()
   let sequence = 0
-  for (const finding of options.findings) {
-    if (!toVerify.has(finding.id)) continue
-    if (options.signal?.aborted) break
+  const jobs = selected.map((finding, index) => ({
+    finding,
+    prefix: concurrency > 1 ? `.copse-review/finding-${String(index + 1)}-` : undefined,
+    reproduceTurn:
+      options.reproducer !== null && canRun && REPRODUCIBLE_CLASSES.includes(finding.class)
+        ? `${options.turnPrefix}:reproduce:${String(++sequence)}`
+        : undefined,
+    challengeTurn:
+      options.challenger !== null
+        ? `${options.turnPrefix}:challenge:${String(++sequence)}`
+        : undefined,
+  }))
+  const turnOrder = new Map(
+    jobs
+      .flatMap((job) => [job.reproduceTurn, job.challengeTurn])
+      .filter((id) => id !== undefined)
+      .map((id, index) => [id, index]),
+  )
+  const verify = async (job: (typeof jobs)[number]): Promise<void> => {
+    const { finding, prefix } = job
     let current = finding
     counts.attempted++
     let differential: ReproducerRun | null = null
@@ -198,15 +229,28 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
       const executor = createVerifierToolExecutor({
         ...options,
         baseCheckout: options.baseCheckout,
+        reproducerPrefix: prefix,
       })
-      const turnId = `${options.turnPrefix}:reproduce:${String(++sequence)}`
+      const turnId = job.reproduceTurn
+      if (turnId === undefined) throw new Error('missing reproducer turn id')
       const turn = await runTurn({
         provider: options.reproducer.provider,
         model: options.reproducer.model,
         systemPrompt: REPRODUCER_SYSTEM,
-        userPrompt: describeFinding(current, options.context),
+        userPrompt: [
+          describeFinding(current, options.context),
+          ...(prefix
+            ? [
+                `Your test must be a root-level filename starting with ${prefix} (for example ${prefix}probe.test.ts). Other findings run concurrently. Relative imports still start one directory below the repository root.`,
+              ]
+            : []),
+        ].join('\n\n'),
         tools: reproducerTools(),
-        execute: (name, args, signal, id) => executor.execute(name, args, signal, id),
+        execute: (name, args, signal, id) =>
+          exclusive(() => {
+            signal.throwIfAborted()
+            return executor.execute(name, args, signal, id)
+          }),
         threadId: options.threadId,
         turnId,
         maxSteps: REPRODUCER_MAX_STEPS,
@@ -231,6 +275,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
               : `reproducer ${run.path} did not separate head from base (head exit ${String(run.head.exitCode)}, base exit ${String(run.base.exitCode)})`,
         usage: turn.usage,
         timing: turn.timing,
+        ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
       })
     }
 
@@ -240,7 +285,8 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
         baseCheckout: options.baseCheckout,
         requireReproducerAssessment: differential !== null,
       })
-      const turnId = `${options.turnPrefix}:challenge:${String(++sequence)}`
+      const turnId = job.challengeTurn
+      if (turnId === undefined) throw new Error('missing challenger turn id')
       const turn = await runTurn({
         provider: options.challenger.provider,
         model: options.challenger.model,
@@ -250,7 +296,11 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           ...(differential ? [describeReproducer(differential)] : []),
         ].join('\n\n'),
         tools: challengerTools(differential !== null),
-        execute: (name, args, signal, id) => executor.execute(name, args, signal, id),
+        execute: (name, args, signal, id) =>
+          exclusive(() => {
+            signal.throwIfAborted()
+            return executor.execute(name, args, signal, id)
+          }),
         threadId: options.threadId,
         turnId,
         maxSteps: CHALLENGE_MAX_STEPS,
@@ -298,6 +348,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           reason: verdict.reason,
           usage: turn.usage,
           timing: turn.timing,
+          ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
         })
       } else if (
         verdict?.status === 'stands' &&
@@ -337,6 +388,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           reason: current.verdict.reason,
           usage: turn.usage,
           timing: turn.timing,
+          ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
         })
       } else if (verdict?.status === 'stands') {
         current = withVerdict(current, {
@@ -361,6 +413,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           reason: verdict.reason,
           usage: turn.usage,
           timing: turn.timing,
+          ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
         })
       } else {
         counts.undetermined++
@@ -374,6 +427,7 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
           reason: verdict?.reason ?? turn.error ?? 'the challenger gave no verdict',
           usage: turn.usage,
           timing: turn.timing,
+          ...(turn.hostingProviders.length ? { hostingProviders: turn.hostingProviders } : {}),
         })
       }
     } else {
@@ -381,6 +435,25 @@ export async function verifyFindings(options: Stage4Options): Promise<Stage4Resu
     }
     settled.set(finding.id, current)
   }
+
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (!options.signal?.aborted) {
+      const job = jobs[next++]
+      if (job === undefined) return
+      await verify(job)
+    }
+  }
+  // Wait for all active jobs before callers can tear down their shared cell.
+  const workers = await Promise.allSettled(
+    Array.from({ length: Math.min(concurrency, jobs.length) }, worker),
+  )
+  for (const result of workers) if (result.status === 'rejected') throw result.reason
+  records.sort((a, b) => (turnOrder.get(a.turnId) ?? 0) - (turnOrder.get(b.turnId) ?? 0))
+  const findingOrder = new Map(selected.map((finding, index) => [finding.id, index]))
+  reproducers.sort(
+    (a, b) => (findingOrder.get(a.findingId) ?? 0) - (findingOrder.get(b.findingId) ?? 0),
+  )
 
   return {
     findings: options.findings.map((finding) => settled.get(finding.id) ?? finding),

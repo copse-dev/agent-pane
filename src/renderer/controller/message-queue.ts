@@ -16,6 +16,7 @@ import { syncAgentActivity } from '../agent-activity.ts'
 import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
+import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -85,15 +86,13 @@ export function startAutomationTurnTree(store: AppStore, threadId: string): stri
 
 function startRootTurnTree(store: AppStore, threadId: string): string {
   const epoch = newEpoch()
-  const threads = store
-    .getState()
-    // A fresh turn tree resets the auto-continuation budget (decision 5): a
-    // user-authorized root is the floor, and the machine-turn counter starts
-    // over.
-    .threads.map((t) =>
-      t.id !== threadId ? t : { ...t, currentEpoch: epoch, continuationUsed: 0 },
-    )
-  store.setState({ threads })
+  // Navigation can carry a pending human send into the background before
+  // checkout completes. Reset the owning thread's epoch and budget there too.
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    currentEpoch: epoch,
+    continuationUsed: 0,
+  }))
   return epoch
 }
 
@@ -157,7 +156,7 @@ function refreshPayload(
   threadId: string,
   payload: AgentRunPayload,
 ): AgentRunPayload {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   return {
     ...payload,
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
@@ -180,19 +179,102 @@ function refreshPayload(
   }
 }
 
+type AgentRunApi = { agent: Pick<ApiClient['agent'], 'run'> }
+
+// A queued dispatch stays pending until main either rejects it as busy or the
+// accepted turn finishes. `done` can cross the IPC boundary before the invoke
+// promise settles; while that happens, do not let its queue drain overtake the
+// item whose acceptance is still unknown (#1881).
+const pendingDispatches = new WeakMap<AppStore, Map<string, number>>()
+
+function beginPendingDispatch(store: AppStore, threadId: string): void {
+  const byThread = pendingDispatches.get(store) ?? new Map<string, number>()
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1)
+  pendingDispatches.set(store, byThread)
+}
+
+function finishPendingDispatch(store: AppStore, threadId: string): void {
+  const byThread = pendingDispatches.get(store)
+  const count = byThread?.get(threadId) ?? 0
+  if (count <= 1) byThread?.delete(threadId)
+  else byThread?.set(threadId, count - 1)
+}
+
+function hasPendingDispatch(store: AppStore, threadId: string): boolean {
+  return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
+}
+
+/**
+ * Start a turn for `threadId`. Pass `queued` when the payload belongs to a user
+ * message already in the transcript: if the main process turns the run away
+ * because a turn it started is still in flight (a machine continuation or wake
+ * the renderer has not heard about yet), the message goes back to the front of
+ * the queue and sends when that turn ends, rather than being dropped behind an
+ * "Unexpected error" toast (#1881). Any other rejection still reaches the global
+ * handler.
+ */
 export function dispatchAgentRun(
   store: AppStore,
-  api: { agent: Pick<ApiClient['agent'], 'run'> },
+  api: AgentRunApi,
   threadId: string,
   payload: AgentRunPayload,
+  queued?: QueuedUserMessage,
 ): void {
-  const projectId = store.getState().activeProjectId
-  if (!projectId) throw new Error('Cannot run thread without an active project')
+  const { activeProjectId, backgroundThreads } = store.getState()
+  const projectId =
+    backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId
+  if (!projectId) throw new Error('Cannot run thread without an owning project')
   clearContextSnapshot(store, threadId)
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
   perfMark('ttft:renderer-dispatch')
-  void api.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store, threadId, payload)))
+  if (queued) beginPendingDispatch(store, threadId)
+  const run = api.agent.run(
+    projectId,
+    threadId,
+    JSON.stringify(refreshPayload(store, threadId, payload)),
+  )
+  if (!queued) {
+    void run
+    return
+  }
+  void run
+    .catch((err: unknown) => {
+      if (!isAgentTurnBusyError(err)) throw err
+      requeueBusyMessage(store, api, threadId, queued)
+    })
+    .finally(() => {
+      finishPendingDispatch(store, threadId)
+      // `done` may have tried to drain while the invoke result was still in
+      // flight. Once acceptance is known, resume from the true queue front.
+      if (getThreadById(store, threadId)?.status === 'idle') {
+        drainMessageQueue(store, api, threadId)
+      }
+    })
+}
+
+function requeueBusyMessage(
+  store: AppStore,
+  api: AgentRunApi,
+  threadId: string,
+  item: QueuedUserMessage,
+): void {
+  patchThreadAnywhere(store, threadId, (t) => {
+    const pending = t.pendingMessages ?? []
+    if (pending.some((entry) => entry.messageId === item.messageId)) return t
+    const requeued = { ...t, pendingMessages: [item, ...pending], updatedAt: Date.now() }
+    // The drain that sent a machine continuation charged the turn tree's budget
+    // for a turn that never ran; hand the unit back so the retry is not charged twice.
+    return isMachineContinuation(item) && (t.continuationUsed ?? 0) > 0
+      ? { ...requeued, continuationUsed: (t.continuationUsed ?? 0) - 1 }
+      : requeued
+  })
+  store.emit('message_queued', threadId, item.messageId)
+  store.emit('threads_changed')
+  // The turn holding the slot normally ends after this rejection arrives, and its
+  // `done` drains the queue. If that `done` got here first the thread is already
+  // idle and nothing else will drain it.
+  if (getThreadById(store, threadId)?.status === 'idle') drainMessageQueue(store, api, threadId)
 }
 
 export function enqueueUserMessage(
@@ -200,21 +282,17 @@ export function enqueueUserMessage(
   threadId: string,
   item: QueuedUserMessage,
 ): void {
-  const threads = store.getState().threads.map((t) =>
-    t.id !== threadId
-      ? t
-      : {
-          ...t,
-          pendingMessages: [...(t.pendingMessages ?? []), item],
-          updatedAt: Date.now(),
-        },
-  )
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    pendingMessages: [...(t.pendingMessages ?? []), item],
+    updatedAt: Date.now(),
+  }))
   store.emit('message_queued', threadId, item.messageId)
   store.emit('threads_changed')
 }
 
-export function drainMessageQueue(store: AppStore, api: ApiClient, threadId: string): void {
+export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: string): void {
+  if (hasPendingDispatch(store, threadId)) return
   const thread = store.getState().threads.find((t) => t.id === threadId)
   if (!thread || thread.status !== 'idle' || thread.queuePaused) return
   const pending = thread.pendingMessages ?? []
@@ -274,7 +352,7 @@ export function drainMessageQueue(store: AppStore, api: ApiClient, threadId: str
   if (heldByBudget.length > 0) addMessage(store, threadId, 'error', continuationBudgetHeldNote())
 
   store.emit('threads_changed')
-  if (next) dispatchAgentRun(store, api, threadId, next.payload)
+  if (next) dispatchAgentRun(store, api, threadId, next.payload, next)
 }
 
 export function movePendingUserMessagesToEnd(

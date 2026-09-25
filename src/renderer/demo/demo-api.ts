@@ -882,7 +882,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           failed: [],
         }),
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false),
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -1069,6 +1074,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       abortReview: () => resolved(false),
       onChanged: subscribe,
       setThread: () => resolved(null),
+      findByThread: () => resolved(null),
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),

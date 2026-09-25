@@ -268,6 +268,18 @@ describe('isRetryableAcpError', () => {
     assert.ok(isRetryableAcpError(new Error('Internal Server Error')))
   })
 
+  it('retries the Codex workspace-routing network failure but not its 401', () => {
+    assert.ok(isRetryableAcpError(new Error('Internal error: workspace routing discovery failed')))
+    assert.ok(
+      isRetryableAcpError(new Error('Internal error: workspace routing discovery timed out')),
+    )
+    assert.ok(
+      !isRetryableAcpError(
+        new Error('Internal error: workspace routing discovery unauthorized (401)'),
+      ),
+    )
+  })
+
   it('does not retry a dropped connection because the agent may have run unseen work', () => {
     assert.ok(!isRetryableAcpError(new Error('ACP connection closed')))
     assert.ok(!isRetryableAcpError(new Error('write EPIPE')))

@@ -9,8 +9,8 @@
 // ("this row is current") and nesting ("these rows are children of that one").
 // One device serving three meanings is what made it read as repetition rather
 // than as signal. `prototypes/side-highlight` took the first two away —
-// containment became a plate (flat for the agent's own prose, hatched for
-// Copse's commentary on a turn) and selection became the fill alone — and left
+// containment became a plate (flat for agent prose, hatched for short status
+// commentary, etched for long reasoning) and selection became the fill alone — and left
 // the third, where a line down the edge is literally what a nesting guide is.
 //
 // A selection/status rail is a slim bar on one inline edge of a row — either a
@@ -156,8 +156,13 @@ function rail(body: string): { side: Side; kind: 'border' | 'shadow'; declaratio
   }
   // An inset shadow is a rail when it is offset horizontally with no blur: a
   // ring (`inset 0 0 0 1px`) has a zero offset and follows the radius evenly.
+  // The blur length is optional in the shorthand (`inset 3px 0 var(--accent)`),
+  // so accept two lengths as well as three; `.process-manager-name` hid behind
+  // that gap.
   const shadow = body.match(/box-shadow:\s*([^;]+)/)
-  const inset = (shadow?.[1] ?? '').match(/inset\s+(-?[\d.]+)px\s+0(?:px)?\s+0(?:px)?(?!\s*[\d.])/)
+  const inset = (shadow?.[1] ?? '').match(
+    /inset\s+(-?[\d.]+)px\s+0(?:px)?(?:\s+0(?:px)?)?(?!\s*[\d.])/,
+  )
   if (inset) {
     const offset = Number(inset[1])
     if (offset !== 0) {
