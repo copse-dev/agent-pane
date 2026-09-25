@@ -18,6 +18,8 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+
 function installClipboard(writeText: (text: string) => Promise<void>): void {
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
@@ -100,6 +102,7 @@ function clickMenuItem(label: string): void {
 }
 
 afterEach(() => {
+  if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator)
   dismissContextMenu()
   closeConversationSearch()
   document.body.replaceChildren()
@@ -202,7 +205,7 @@ describe('transcript context menu — with a text selection', () => {
     }
   })
 
-  it('"Add to roadmap" creates a roadmap item and links the active thread', async () => {
+  it('"Add to roadmap" creates a roadmap item without marking the thread as its origin', async () => {
     const store = createStore()
     const threadId = createThread(store)
     addMessage(store, threadId, 'assistant', 'Selected text for quoting lives here.')
@@ -235,9 +238,42 @@ describe('transcript context menu — with a text selection', () => {
     await tick()
 
     assert.deepEqual(created, ['text for quoting'])
-    assert.deepEqual(linked, [{ id: 'roadmap-1', threadId }])
+    // `thread` means "started from this item" (origin chip, Reopen): a thread
+    // the text was quoted from is not that.
+    assert.deepEqual(linked, [])
     const toast = document.querySelector('.toast-info')
     assert.equal(toast?.textContent, 'Added to roadmap')
+  })
+
+  it('"Add to roadmap" reports a failure without the IPC prefix', async () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'assistant', 'Selected text for quoting lives here.')
+    const host = document.createElement('div')
+    document.body.append(host)
+    const base = createFakeApi()
+    const api: ApiClient = {
+      ...base,
+      roadmap: {
+        ...base.roadmap,
+        create: () =>
+          Promise.reject(
+            new Error("Error invoking remote method 'roadmap:create': Error: disk full"),
+          ),
+      },
+    }
+    mountConversation(host, store, api)
+
+    const body = host.querySelector<HTMLElement>('.message-body')
+    assert.ok(body)
+    rightClickSelection(body, 'text for quoting')
+    clickMenuItem('Add to roadmap')
+    await tick()
+
+    assert.equal(
+      document.querySelector('.toast-error')?.textContent,
+      'Could not add to roadmap: disk full',
+    )
   })
 
   it('"Search" opens the find bar prefilled with the selection', () => {
@@ -258,6 +294,64 @@ describe('transcript context menu — with a text selection', () => {
     const input = document.querySelector<HTMLInputElement>('.chat-search-input')
     assert.equal(bar?.hidden, false)
     assert.equal(input?.value, 'text for quoting')
+  })
+
+  it('"Search" collapses a multi-line selection and finds it across paragraphs', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(
+      store,
+      threadId,
+      'assistant',
+      'First paragraph ends here.\n\nSecond paragraph starts.',
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, createFakeApi())
+    mountConversationSearch(host)
+
+    const paragraphs = host.querySelectorAll<HTMLElement>('.message-text p')
+    const first = paragraphs[0]?.firstChild
+    const second = paragraphs[1]?.firstChild
+    assert.ok(first, 'first paragraph text')
+    assert.ok(second, 'second paragraph text')
+    const range = document.createRange()
+    range.setStart(first, 'First paragraph '.length)
+    range.setEnd(second, 'Second'.length)
+    const selection = document.getSelection()
+    assert.ok(selection)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    paragraphs[0]?.dispatchEvent(
+      new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+    )
+    clickMenuItem('Search')
+
+    const input = document.querySelector<HTMLInputElement>('.chat-search-input')
+    assert.equal(input?.value, 'ends here. Second')
+    assert.equal(document.querySelector('.chat-search-count')?.textContent, '1/1')
+  })
+
+  it('"Copy" keeps the leading indentation of a selected code line', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'assistant', '```\nfn main() {\n    indented();\n}\n```')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, createFakeApi())
+
+    const copied: string[] = []
+    installClipboard((text) => {
+      copied.push(text)
+      return Promise.resolve()
+    })
+
+    const code = host.querySelector<HTMLElement>('.message-text pre')
+    assert.ok(code)
+    rightClickSelection(code, '    indented();')
+    clickMenuItem('Copy')
+
+    assert.deepEqual(copied, ['    indented();'])
   })
 
   it('"Copy" copies the selected text', () => {
@@ -321,5 +415,23 @@ describe('transcript context menu — with no selection', () => {
     clickMenuItem('Copy message')
 
     assert.deepEqual(copied, ['Whole message body.'])
+  })
+
+  it('leaves the platform menu alone for a message with no text to copy', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'assistant', '')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, createFakeApi())
+
+    const msgEl = host.querySelector<HTMLElement>('.msg[data-message-id]')
+    assert.ok(msgEl)
+    document.getSelection()?.removeAllRanges()
+    const event = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    msgEl.dispatchEvent(event)
+
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(document.querySelector('.context-menu'), null)
   })
 })

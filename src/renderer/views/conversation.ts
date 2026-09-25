@@ -133,7 +133,9 @@ import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
-import { openConversationSearch } from './conversation-search.ts'
+import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
+import { trimSelectionText } from '../dom/markdown-quote.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 type ToolCardStatus = ToolCall['status'] | 'interrupted'
 type InterruptionCause = 'message' | 'user'
@@ -2315,8 +2317,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // Right-click in the transcript: a non-empty text selection offers quoting
   // it into the reply, filing it on the roadmap, or searching the thread for
   // it; with no selection, right-clicking a message still offers to copy its
-  // text. Anywhere else in the transcript (blank space, before any message)
-  // falls through to the platform's own menu.
+  // text. Anywhere else in the transcript (blank space, before any message, or
+  // a message with no text to copy) falls through to the platform's own menu.
   list.addEventListener('contextmenu', (e) => {
     // An inner element (an image, a link, a code block) that already handled
     // this right-click keeps its own menu.
@@ -2329,15 +2331,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       !selection.isCollapsed &&
       list.contains(selection.anchorNode) &&
       list.contains(selection.focusNode)
-    const selectedText = selectionIsInsideTranscript ? selection.toString().trim() : ''
-
-    if (!selectedText && !msgEl) return
-
-    e.preventDefault()
-    e.stopPropagation()
+    const selectedText = selectionIsInsideTranscript ? trimSelectionText(selection.toString()) : ''
 
     if (selectedText) {
-      const threadId = store.getState().activeThreadId
+      e.preventDefault()
+      e.stopPropagation()
       showContextMenu(e.clientX, e.clientY, [
         {
           label: 'Quote in reply',
@@ -2348,13 +2346,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         {
           label: 'Add to roadmap',
           onSelect: (): void => {
-            void addTranscriptSelectionToRoadmap(api, threadId, selectedText)
+            void addTranscriptSelectionToRoadmap(api, selectedText)
           },
         },
         {
           label: 'Search',
           onSelect: (): void => {
-            openConversationSearch(selectedText)
+            // The find bar is one line: a multi-line selection is searched
+            // with its whitespace collapsed, as the matcher compares text.
+            openConversationSearch(normalizeSearchText(selectedText))
           },
         },
         {
@@ -2370,6 +2370,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgId = msgEl?.dataset['messageId']
     const messageText = msgId ? messageContentById(store, msgId) : undefined
     if (!messageText) return
+    e.preventDefault()
+    e.stopPropagation()
     showContextMenu(e.clientX, e.clientY, [
       {
         label: 'Copy message',
@@ -4213,18 +4215,18 @@ function quoteTranscriptSelection(text: string): void {
   handlers.focusComposer?.()
 }
 
-/** "Add to roadmap": file the transcript selection as a new roadmap item, linked to the thread. */
-async function addTranscriptSelectionToRoadmap(
-  api: ApiClient,
-  threadId: string | null,
-  text: string,
-): Promise<void> {
+/**
+ * "Add to roadmap": file the transcript selection as a new roadmap item. The
+ * item's `thread` field is deliberately left alone — it means "the thread
+ * started from this item" (the origin back-link and Reopen), which a thread
+ * the item was merely quoted from is not.
+ */
+async function addTranscriptSelectionToRoadmap(api: ApiClient, text: string): Promise<void> {
   try {
-    const created = await api.roadmap.create(text)
-    if (threadId) await api.roadmap.setThread(created.id, threadId)
+    await api.roadmap.create(text)
     showToast('Added to roadmap')
   } catch (err) {
-    showToast(`Could not add to roadmap: ${err instanceof Error ? err.message : String(err)}`, {
+    showToast(`Could not add to roadmap: ${ipcErrorMessage(err, 'unknown error')}`, {
       variant: 'error',
     })
   }

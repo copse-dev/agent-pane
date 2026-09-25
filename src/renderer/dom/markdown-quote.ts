@@ -11,3 +11,12 @@ export function formatMarkdownQuote(text: string): string {
     .map((line) => (line ? `> ${line}` : '>'))
     .join('\n')
 }
+
+/**
+ * A transcript selection as the text to act on: leading blank lines and
+ * trailing whitespace dropped, but the first line's indentation kept, so a
+ * quoted code block keeps its shape. Whitespace-only selections become `''`.
+ */
+export function trimSelectionText(text: string): string {
+  return text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd()
+}

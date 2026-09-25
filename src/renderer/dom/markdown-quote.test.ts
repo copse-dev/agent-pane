@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatMarkdownQuote } from './markdown-quote.ts'
+import { formatMarkdownQuote, trimSelectionText } from './markdown-quote.ts'
 
 describe('formatMarkdownQuote', () => {
   it('prefixes a single line', () => {
@@ -17,5 +17,15 @@ describe('formatMarkdownQuote', () => {
 
   it('normalizes CRLF line endings', () => {
     assert.equal(formatMarkdownQuote('a\r\nb'), '> a\n> b')
+  })
+})
+
+describe('trimSelectionText', () => {
+  it('keeps leading indentation while dropping blank edge lines', () => {
+    assert.equal(trimSelectionText('\n\n    indented()\n  next()\n\n'), '    indented()\n  next()')
+  })
+
+  it('returns an empty string for a whitespace-only selection', () => {
+    assert.equal(trimSelectionText(' \n\t\n '), '')
   })
 })
