@@ -135,6 +135,8 @@ export interface CheckOutcome {
   readonly verdict: CheckVerdict
   readonly head: CheckRun | null
   readonly base: CheckRun | null
+  /** Second head test run, only after the first failed. Never replaces the first evidence. */
+  readonly headConfirmation?: CheckRun
   readonly reason?: string
 }
 
@@ -250,10 +252,16 @@ function checkLevelFinding(context: FindingContext, klass: FindingClass): Findin
     severity: 'high',
     confidence: 'high',
     provenance: { raisedBy: [STAGE0_REVIEWER], corroboratedBy: [], challengedBy: [] },
-    evidence: [commandEvidence(context.headRun), commandEvidence(context.baseRun)],
+    evidence: [
+      commandEvidence(context.headRun),
+      commandEvidence(context.baseRun),
+      ...(context.outcome.headConfirmation
+        ? [commandEvidence(context.outcome.headConfirmation)]
+        : []),
+    ],
     verdict: {
       status: 'confirmed',
-      reason: `exit ${String(context.headRun.exitCode)} on head, exit ${String(context.baseRun.exitCode)} on base`,
+      reason: `exit ${String(context.headRun.exitCode)} on head, exit ${String(context.baseRun.exitCode)} on base${context.outcome.headConfirmation ? '; head failure repeated on confirmation' : ''}`,
     },
   }
 }
@@ -587,8 +595,43 @@ export async function runStage0Checks(
   )
 
   const failedOnHead = new Set<CheckKind>()
+  // Confirm a failing test before spending time on base or blaming the diff.
+  // Use the configured command in the same cell, without repeating preparation.
+  const firstTest = headRuns.runs.get('test')
+  const confirmationRuns =
+    firstTest?.status === 'failed'
+      ? await runTarget(
+          cell,
+          'head',
+          headProject.commands.filter((command) => command.kind === 'test'),
+          new Set(['test']),
+          scrub,
+          signal,
+        )
+      : null
+  const headConfirmation = confirmationRuns?.runs.get('test')
+  let unstableTestReason: string | null = null
+  if (headConfirmation && firstTest) {
+    if (headConfirmation.status !== 'failed') {
+      unstableTestReason = `Tests failed once, but ${headConfirmation.status === 'passed' ? 'passed' : 'timed out'} on confirmation; a regression was not established.`
+    } else if (firstTest.testFailures || headConfirmation.testFailures) {
+      const first = firstTest.testFailures
+      const second = headConfirmation.testFailures
+      if (
+        !first ||
+        !second ||
+        first.failed === 0 ||
+        newTestFailures(first, second).length > 0 ||
+        newTestFailures(second, first).length > 0
+      ) {
+        unstableTestReason =
+          'The two head test runs did not report the same complete failure list; a regression was not established.'
+      }
+    }
+  }
   for (const [kind, run] of headRuns.runs) {
-    if (kind !== 'prepare' && run.status === 'failed') failedOnHead.add(kind)
+    if (kind !== 'prepare' && run.status === 'failed' && !(kind === 'test' && unstableTestReason))
+      failedOnHead.add(kind)
   }
   const baseKinds = new Set(checkKinds(baseProject).filter((kind) => failedOnHead.has(kind)))
   const baseRuns =
@@ -623,6 +666,11 @@ export async function runStage0Checks(
       continue
     }
     checked.push(kind)
+    if (kind === 'test' && unstableTestReason !== null) {
+      checks.push({ kind, verdict: 'undetermined', head, base, reason: unstableTestReason })
+      notChecked.push({ kind, reason: unstableTestReason })
+      continue
+    }
     if (head.status === 'passed') {
       checks.push({ kind, verdict: base?.status === 'failed' ? 'fixed' : 'clean', head, base })
       continue
@@ -638,7 +686,13 @@ export async function runStage0Checks(
       continue
     }
     if (base.status === 'passed') {
-      const outcome: CheckOutcome = { kind, verdict: 'regressed', head, base }
+      const outcome: CheckOutcome = {
+        kind,
+        verdict: 'regressed',
+        head,
+        base,
+        ...(kind === 'test' && headConfirmation ? { headConfirmation } : {}),
+      }
       checks.push(outcome)
       findings.push(
         ...findingsFor({
@@ -677,10 +731,15 @@ export async function runStage0Checks(
             confidence: 'high',
             claim,
             provenance: { raisedBy: [STAGE0_REVIEWER], corroboratedBy: [], challengedBy: [] },
-            evidence: [commandEvidence(head), commandEvidence(base)],
+            evidence: [
+              commandEvidence(head),
+              commandEvidence(base),
+              ...(headConfirmation ? [commandEvidence(headConfirmation)] : []),
+            ],
             verdict: {
               status: 'confirmed',
-              reason: 'Compared complete individual failure inventories, not just exit codes',
+              reason:
+                'Compared complete individual failure inventories; head failures repeated on confirmation',
             },
           })
         }
@@ -703,7 +762,9 @@ export async function runStage0Checks(
       head: headRuns.runs.get('prepare') ?? null,
       base: baseRuns.runs.get('prepare') ?? null,
     },
-    checks,
+    checks: checks.map((check) =>
+      check.kind === 'test' && headConfirmation ? { ...check, headConfirmation } : check,
+    ),
     findings,
     coverage: { checked, notChecked },
     durationMs: now() - started,

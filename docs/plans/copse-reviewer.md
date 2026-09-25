@@ -616,6 +616,15 @@ base failure inventory. Missing/ambiguous inventories or other doubly-failing ch
 downgraded the same way. Renamed tests can appear as new failures; the report preserves
 both command outputs for inspection. This is failure identity comparison, not proof of causal blame.
 
+Before comparing a failed test command with base, Stage 0 repeats that command once on head,
+inside the same cell and without redoing preparation. Passing or timed-out confirmation leaves
+the result unverified, with both head attempts retained. Where either attempt supplies a complete
+failure inventory, both must supply the same nonempty set of failing identities; changed or
+missing inventories also remain unverified. Stable failures then run on base as before, with the
+confirmation included in finding evidence. Passing head commands never repeat. This reduces
+one-off process failures becoming confirmed regressions; two repeated failures still do not prove
+causal blame. A genuinely failing test command costs one additional head run.
+
 The reporter executes only where the test command already executes (inside the cell for foreign
 reviews). No repository output or test names are promoted into trusted system instructions.
 
