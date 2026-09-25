@@ -137,6 +137,7 @@ describe('thread roadmap origin chip', () => {
 
       store.setState({ activeThreadId: 'thread-2' })
       store.emit('threads_changed')
+      assert.equal(element.hidden, true, 'the old thread chip hides before the lookup settles')
       await flush()
       assert.equal(element.hidden, true)
     } finally {

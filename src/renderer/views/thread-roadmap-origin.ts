@@ -56,11 +56,19 @@ export function mountThreadRoadmapOrigin(
   function sync(): void {
     const gen = ++generation
     const threadId = store.getState().activeThreadId
+    const threadChanged = threadId !== syncedThreadId
     syncedThreadId = threadId
     if (!threadId) {
       itemId = null
       link.hidden = true
       return
+    }
+    // A lookup reads the roadmap store on the main side. Hide and disarm the
+    // previous thread's chip while that read is in flight, so a quick click
+    // after switching threads can never navigate to the old thread's origin.
+    if (threadChanged) {
+      itemId = null
+      link.hidden = true
     }
     void api.roadmap
       .findByThread(threadId)
