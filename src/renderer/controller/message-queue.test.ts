@@ -1100,15 +1100,25 @@ test('a busy rejection that lands after the blocking turn ended sends the messag
   const store = createProjectStore()
   const api = busyOnceApi()
   const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'later',
+    payload: { content: 'b' },
+    createdAt: 2,
+  })
   const item = { messageId: 'first', payload: { content: 'a' }, createdAt: 1 }
 
   dispatchAgentRun(store, api, threadId, item.payload, item)
   // The blocking turn's `done` reached the renderer before the rejection did.
   setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
   await settle()
 
   assert.equal(api.runs.length, 2)
-  assert.equal(getThread(store, threadId).pendingMessages, undefined)
+  assert.equal(expectRecord(parseJsonUnknown(api.runs[1] ?? ''))['content'], 'a')
+  assert.deepEqual(
+    getThread(store, threadId).pendingMessages?.map((entry) => entry.messageId),
+    ['later'],
+  )
   assert.equal(getThread(store, threadId).status, 'running')
 })
 

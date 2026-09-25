@@ -181,6 +181,29 @@ function refreshPayload(
 
 type AgentRunApi = { agent: Pick<ApiClient['agent'], 'run'> }
 
+// A queued dispatch stays pending until main either rejects it as busy or the
+// accepted turn finishes. `done` can cross the IPC boundary before the invoke
+// promise settles; while that happens, do not let its queue drain overtake the
+// item whose acceptance is still unknown (#1881).
+const pendingDispatches = new WeakMap<AppStore, Map<string, number>>()
+
+function beginPendingDispatch(store: AppStore, threadId: string): void {
+  const byThread = pendingDispatches.get(store) ?? new Map<string, number>()
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1)
+  pendingDispatches.set(store, byThread)
+}
+
+function finishPendingDispatch(store: AppStore, threadId: string): void {
+  const byThread = pendingDispatches.get(store)
+  const count = byThread?.get(threadId) ?? 0
+  if (count <= 1) byThread?.delete(threadId)
+  else byThread?.set(threadId, count - 1)
+}
+
+function hasPendingDispatch(store: AppStore, threadId: string): boolean {
+  return (pendingDispatches.get(store)?.get(threadId) ?? 0) > 0
+}
+
 /**
  * Start a turn for `threadId`. Pass `queued` when the payload belongs to a user
  * message already in the transcript: if the main process turns the run away
@@ -205,6 +228,7 @@ export function dispatchAgentRun(
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
   perfMark('ttft:renderer-dispatch')
+  if (queued) beginPendingDispatch(store, threadId)
   const run = api.agent.run(
     projectId,
     threadId,
@@ -214,10 +238,19 @@ export function dispatchAgentRun(
     void run
     return
   }
-  void run.catch((err: unknown) => {
-    if (!isAgentTurnBusyError(err)) throw err
-    requeueBusyMessage(store, api, threadId, queued)
-  })
+  void run
+    .catch((err: unknown) => {
+      if (!isAgentTurnBusyError(err)) throw err
+      requeueBusyMessage(store, api, threadId, queued)
+    })
+    .finally(() => {
+      finishPendingDispatch(store, threadId)
+      // `done` may have tried to drain while the invoke result was still in
+      // flight. Once acceptance is known, resume from the true queue front.
+      if (getThreadById(store, threadId)?.status === 'idle') {
+        drainMessageQueue(store, api, threadId)
+      }
+    })
 }
 
 function requeueBusyMessage(
@@ -259,6 +292,7 @@ export function enqueueUserMessage(
 }
 
 export function drainMessageQueue(store: AppStore, api: AgentRunApi, threadId: string): void {
+  if (hasPendingDispatch(store, threadId)) return
   const thread = store.getState().threads.find((t) => t.id === threadId)
   if (!thread || thread.status !== 'idle' || thread.queuePaused) return
   const pending = thread.pendingMessages ?? []
