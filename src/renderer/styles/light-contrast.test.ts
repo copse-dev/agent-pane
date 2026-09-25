@@ -112,6 +112,44 @@ function contrastRatio(a: Rgb, b: Rgb): number {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
+/**
+ * A custom property's shipped value in `theme`: the theme block's definition
+ * when it has one, otherwise tokens.css. Follows `var()` references and
+ * `color-mix(in srgb, …)` so the result is what the browser paints, not what a
+ * token name suggests. Fails loudly on any form it does not understand.
+ */
+function resolveToken(name: string, theme: 'dark' | 'light', depth = 0): Rgb {
+  assert.ok(depth < 10, `${name} does not resolve to a colour`)
+  const tokens = readFileSync(resolve(STYLES, 'tokens.css'), 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  )
+  const themes = readFileSync(resolve(STYLES, 'themes.css'), 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  )
+  const block = new RegExp(`\\[data-theme='${theme}'\\]\\s*\\{([\\s\\S]*?)\\n\\}`).exec(themes)?.[1]
+  assert.ok(block, `could not find the ${theme} theme block`)
+  const definition = (css: string): string | undefined =>
+    new RegExp(`(?:^|[;{\\s])${name}:\\s*([^;]+);`).exec(css)?.[1]?.trim()
+  const value = definition(block) ?? definition(tokens)
+  assert.ok(value, `could not read ${name} — the token derivation changed, re-check this test`)
+  const colour = (term: string): Rgb => {
+    const trimmed = term.trim()
+    if (trimmed === 'black') return [0, 0, 0]
+    if (trimmed === 'white') return [255, 255, 255]
+    if (trimmed.startsWith('#')) return parseHex(trimmed)
+    const reference = /^var\((--[\w-]+)\)$/.exec(trimmed)?.[1]
+    assert.ok(reference, `${name}: unsupported colour term ${trimmed}`)
+    return resolveToken(reference, theme, depth + 1)
+  }
+  const mixed = /^color-mix\(in srgb,\s*(.+?)\s+(\d+(?:\.\d+)?)%,\s*(.+)\)$/.exec(value)
+  if (mixed) {
+    return mix(colour(mixed[1] ?? ''), Number(mixed[2]) / 100, colour(mixed[3] ?? ''))
+  }
+  return colour(value)
+}
+
 /** WCAG 2.2 AA for body text. Code spans are small text, so this is the right bar. */
 const AA_BODY_TEXT = 4.5
 
@@ -201,43 +239,31 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
   })
 
   it('gives the roadmap Save button and Changes badge fill/label pair >= 4.5:1 in both themes', () => {
-    // The two controls the report named by appearance. Both take their colour
-    // from `.memories-btn-primary` (the roadmap Save button's primary class,
-    // `roadmap-pane.ts`) and `.titlebar-btn-badge` (the sidebar/footer Changes
-    // count, `panel-mode-controls.ts`) — and both declare
-    // `background: var(--accent-fill); color: var(--text-on-accent)` directly
-    // (memories.css, titlebar.css). Neither token is redefined by either theme
-    // block (pinned above and below), so one measurement of the shipped default
-    // pair stands for both controls in both themes — this computes the actual
-    // WCAG ratio rather than trusting the token names, so a future change to
-    // either hex still has to clear AA.
-    const tokens = readFileSync(resolve(STYLES, 'tokens.css'), 'utf8')
-    const themes = readFileSync(resolve(STYLES, 'themes.css'), 'utf8')
-    const read = (css: string, name: string, pattern: RegExp): string => {
-      const found = pattern.exec(css)?.[1]
-      assert.ok(found, `could not read ${name} — the token derivation changed, re-check this test`)
-      return found
-    }
-    const accentColor = read(tokens, '--accent-color', /--accent-color:\s*(#[0-9a-fA-F]{3,8})/)
-    const textOnAccent = read(tokens, '--text-on-accent', /--text-on-accent:\s*(#[0-9a-fA-F]{3,8})/)
-
-    for (const theme of ['dark', 'light'] as const) {
-      const block = new RegExp(`\\[data-theme='${theme}'\\]\\s*\\{([\\s\\S]*?)\\n\\}`).exec(
-        themes,
-      )?.[1]
-      assert.ok(block, `could not find the ${theme} theme block`)
-      assert.ok(
-        !/^\s*--accent-fill:/m.test(block) && !/^\s*--text-on-accent:/m.test(block),
-        `${theme} redefines --accent-fill or --text-on-accent; re-measure this pair against its own values`,
+    // The two controls the report named by appearance: `.memories-btn-primary`
+    // (the roadmap Save button's primary class, `roadmap-pane.ts`) and
+    // `.titlebar-btn-badge` (the sidebar/footer Changes count,
+    // `panel-mode-controls.ts`). The fill and label are read from the rule each
+    // control actually uses and resolved through tokens.css and the theme
+    // block, so repointing either control at `--accent` fails here in light.
+    const declarations = stylesheets().flatMap(({ file, css }) => rules(file, css))
+    for (const target of ['.memories-btn-primary', '.titlebar-btn-badge']) {
+      const rule = declarations.find(
+        (candidate) =>
+          candidate.selector.includes(target) && candidate.body.includes('var(--text-on-accent)'),
       )
+      assert.ok(rule, `missing rule for ${target}`)
+      const fill = /background(?:-color)?:\s*var\((--[\w-]+)\)/.exec(rule.body)?.[1]
+      const label = /(?:^|[;\s])color:\s*var\((--[\w-]+)\)/.exec(rule.body)?.[1]
+      assert.ok(fill && label, `${rule.file}:${String(rule.line)} ${target} fill/label not found`)
+      for (const theme of ['dark', 'light'] as const) {
+        const ratio = contrastRatio(resolveToken(fill, theme), resolveToken(label, theme))
+        assert.ok(
+          ratio >= AA_BODY_TEXT,
+          `${target} ${fill} / ${label} must clear ${String(AA_BODY_TEXT)}:1 in ${theme}, ` +
+            `measured ${ratio.toFixed(2)}:1`,
+        )
+      }
     }
-
-    const ratio = contrastRatio(parseHex(accentColor), parseHex(textOnAccent))
-    assert.ok(
-      ratio >= AA_BODY_TEXT,
-      `--accent-fill (${accentColor}) / --text-on-accent (${textOnAccent}) must clear ` +
-        `${String(AA_BODY_TEXT)}:1 in both themes, measured ${ratio.toFixed(2)}:1`,
-    )
   })
 
   it('would still fail at the pre-fix --accent/--text-on-accent pairing in light (guards the guard)', () => {
@@ -245,19 +271,10 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
     // the actual bug, not just a value that happens to already pass. Before the
     // fix, both controls filled with `--accent` (the light-only 30%-of-black
     // derivation meant for small text/borders) instead of `--accent-fill`.
-    const tokens = readFileSync(resolve(STYLES, 'tokens.css'), 'utf8')
-    const themes = readFileSync(resolve(STYLES, 'themes.css'), 'utf8')
-    const accentColor = /--accent-color:\s*(#[0-9a-fA-F]{3,8})/.exec(tokens)?.[1]
-    const textOnAccent = /--text-on-accent:\s*(#[0-9a-fA-F]{3,8})/.exec(tokens)?.[1]
-    assert.ok(accentColor && textOnAccent, 'expected default accent/text-on-accent tokens')
-    const lightBlock = /\[data-theme='light'\]\s*\{([\s\S]*?)\n\}/.exec(themes)?.[1]
-    assert.ok(lightBlock, 'could not find the light theme block')
-    const percent = /--accent:\s*color-mix\(in srgb, var\(--accent-color\) (\d+)%, black\)/.exec(
-      lightBlock,
-    )?.[1]
-    assert.ok(percent, 'could not read the light --accent derivation — re-check this test')
-    const darkenedAccent = mix(parseHex(accentColor), Number(percent) / 100, [0, 0, 0])
-    const ratio = contrastRatio(darkenedAccent, parseHex(textOnAccent))
+    const ratio = contrastRatio(
+      resolveToken('--accent', 'light'),
+      resolveToken('--text-on-accent', 'light'),
+    )
     assert.ok(
       ratio < AA_BODY_TEXT,
       `expected the pre-fix --accent/--text-on-accent pairing to stay unreadable in light, measured ${ratio.toFixed(2)}:1`,
