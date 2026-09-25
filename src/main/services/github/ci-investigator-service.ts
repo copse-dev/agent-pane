@@ -19,10 +19,12 @@ import { getWorkspaceRoot } from '../workspace.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
 
 // The CI investigator subagent is experimental and off by default. It is gated
-// by the `copse.ci-investigator` first-party plugin (Settings > Plugins): the plugin
-// enablement drives both tool registration (registry-bootstrap's
-// `syncCiInvestigatorTools`) and the "Investigate CI failure" follow-up pointer
-// (follow-up-service), so both surfaces stay gated together.
+// by the `copse.ci-investigator` first-party plugin (Settings > Plugins) plus a
+// usable `gh` (registry-bootstrap's `syncCiInvestigatorTools`), and the entry
+// tool is only offered to a parent turn while subagents are on. The system
+// prompt's tool line and the "Investigate CI failure" follow-up both read
+// `isInvestigateCiOffered` (ci-investigator-availability.ts), so no surface
+// names the tool when a turn cannot call it.
 
 export interface RunCiInvestigatorSubagentOptions {
   parentToolCallId: string

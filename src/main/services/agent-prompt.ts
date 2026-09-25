@@ -106,9 +106,18 @@ export function buildAblatedBasePrompt(
   return assemblePromptFromSections(buildPromptSections(toSectionVars(v)), omit)
 }
 
+/**
+ * The explore-mode tool line for the CI investigator subagent. Only present
+ * when the turn is actually offered `investigate_ci` (see
+ * `isInvestigateCiOffered`); otherwise the prompt would point the model at a
+ * tool it cannot call.
+ */
+export const INVESTIGATE_CI_TOOL_LINE =
+  '- investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI'
+
 const EXPLORE_MODE_VARS: BasePromptVars = {
   tools: `- explore: Explore the codebase by reading and searching files (returns a summary — use this instead of reading files directly)
-- investigate_ci: Delegate a deep CI-failure investigation to a subagent that reads the failing run logs and returns root-cause findings — prefer this when a PR has failing CI
+${INVESTIGATE_CI_TOOL_LINE}
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
 ${SHARED_WEB_TOOLS}`,
@@ -144,6 +153,11 @@ ${SHARED_WEB_TOOLS}`,
 }
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt(EXPLORE_MODE_VARS)
+/** Explore-mode base prompt for turns that are not offered `investigate_ci`. */
+export const BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI = buildBasePrompt({
+  ...EXPLORE_MODE_VARS,
+  tools: EXPLORE_MODE_VARS.tools.replace(`${INVESTIGATE_CI_TOOL_LINE}\n`, ''),
+})
 export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt(DIRECT_READS_MODE_VARS)
 
 /** Vars for the explore-mode base prompt — ablation evals pin against these. */
