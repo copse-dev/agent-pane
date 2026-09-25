@@ -2,7 +2,7 @@
 # Reconstruct a disposable checkout from caches alone; never copy user profiles.
 set -euo pipefail
 portable_repo="$(cd "$(dirname "$0")/../.." && pwd -P)"
-portable_root="$1"
+portable_root="$(cd "$1" && pwd -P)"
 cd "$portable_repo"
 if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
   echo 'Commit source changes before verifying offline setup: the check rebuilds the current commit.' >&2
@@ -18,7 +18,11 @@ mkdir -p "$verification/checkout/.portable"
 cd "$verification/checkout"
 # In addition to denying networking, deny the usual host development caches.
 # A passing test must not accidentally borrow the original Mac's headers/assets.
-if /usr/bin/sandbox-exec -D "HOST_USER=$HOME" -p '
+# The clone sits inside the original checkout, so Node and TypeScript lookups that
+# climb parent directories would otherwise reach its node_modules. Deny the original
+# installation's contents too, so a missing lockfile entry or cache input fails loudly.
+# Only data is denied there: resolving paths still reads the ancestors' metadata.
+if /usr/bin/sandbox-exec -D "HOST_USER=$HOME" -D "ORIGINAL_REPO=$portable_repo" -D "ORIGINAL_ROOT=$portable_root" -p '
   (version 1) (allow default) (deny network*)
   (deny file-read* file-write*
     (subpath (string-append (param "HOST_USER") "/.electron-gyp"))
@@ -28,7 +32,13 @@ if /usr/bin/sandbox-exec -D "HOST_USER=$HOME" -p '
     (subpath (string-append (param "HOST_USER") "/.cache"))
     (subpath (string-append (param "HOST_USER") "/.copse/cache"))
     (subpath (string-append (param "HOST_USER") "/Library/Caches")))
-' /usr/bin/env COPSE_PORTABLE_OFFLINE=1 bash scripts/portable/setup.sh > "$verification/build.log" 2>&1; then
+  (deny file-read-data file-write*
+    (subpath (string-append (param "ORIGINAL_REPO") "/node_modules"))
+    (subpath (string-append (param "ORIGINAL_REPO") "/dist"))
+    (subpath (string-append (param "ORIGINAL_ROOT") "/apps"))
+    (subpath (string-append (param "ORIGINAL_ROOT") "/cache"))
+    (subpath (string-append (param "ORIGINAL_ROOT") "/data")))
+' /usr/bin/env COPSE_PORTABLE_OFFLINE=1 /bin/bash scripts/portable/setup.sh > "$verification/build.log" 2>&1; then
   {
     echo 'PASS: clean checkout installed and built using only drive caches.'
     echo 'Network access and common host development caches were denied.'

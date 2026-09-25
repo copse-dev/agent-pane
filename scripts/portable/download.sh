@@ -9,7 +9,7 @@ download() {
     echo "Offline setup needs a valid cached download: $destination. Run this installer online first." >&2
     return 1
   fi
-  local curl_args=(--fail --location --retry 3 --proto '=https' --tlsv1.2 "$url" -o "$destination.part")
+  local curl_args=(--fail --location --retry 3 --proto '=https' --proto-redir '=https' --tlsv1.2 "$url" -o "$destination.part")
   if [[ "$url" = https://huggingface.co/* ]] && [ -n "${HF_TOKEN:-}" ]; then
     case "$HF_TOKEN" in *$'\n'*|*$'\r'*) echo 'HF_TOKEN contains a line break.' >&2; return 1 ;; esac
     # Keep the token out of command arguments and files. Curl drops Authorization

@@ -3,6 +3,9 @@
 portable_tools="$portable_root/apps/darwin-arm64"
 export PATH="$portable_tools/node/bin:$portable_tools/bin:$portable_tools/packages/node_modules/.bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export COPSE_DIR="$portable_root/data/copse"
+# An explicit profile opts out of Copse's one-time legacy-profile migration, which
+# would otherwise carry the host's <appData>/copse-panel onto this drive.
+export COPSE_PANEL_USER_DATA="$COPSE_DIR/user-data"
 export COPSE_PRESERVE_PATH=1
 export COPSE_ELECTRON_DIST_CACHE="$portable_root/cache/electron-dist"
 export COPSE_GORTEX_CACHE="$portable_root/cache/gortex"

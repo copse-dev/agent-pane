@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Own the local engines for one portable Copse session; never adopt another server."""
 import fcntl
+import http.client
 import json
 import os
 from pathlib import Path
@@ -14,8 +15,43 @@ import urllib.request
 
 SOURCE = Path(__file__).resolve().parent
 RUNTIMES = Path("apps/darwin-arm64/lm-studio-runtimes")
-LLAMA = RUNTIMES / "llama.cpp-mac-arm64-apple-metal-advsimd-2.34.0/llama-server"
-PYTHON = RUNTIMES / "vendor/_amphibian/app-mlx-generate-mac14-arm64@34/bin/python"
+# runtime-setup.sh records the path at which it regenerated the runtimes' absolute paths.
+RUNTIME_LOCATION = ".installed-path"
+PORTABLE_SLUGS = ("portable-gguf", "portable-mlx")
+ROUTED_KEYS = ("model", "localDefaultModel", "smallTasksModel", "subagentModel", "advisorModel",
+               "reviewModel")
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+# Runs in its own session so closing the terminal cannot kill it first. When the supervisor
+# dies by any means, including SIGKILL, its pipe closes and this stops the engine's group.
+WATCHDOG = """
+import os, signal, sys, time
+sys.stdin.buffer.read()
+group = int(sys.argv[1])
+for sig in (signal.SIGTERM, signal.SIGKILL):
+    try:
+        os.killpg(group, sig)
+    except ProcessLookupError:
+        sys.exit(0)
+    for _ in range(150):
+        time.sleep(0.1)
+        try:
+            os.killpg(group, 0)
+        except ProcessLookupError:
+            sys.exit(0)
+"""
+
+
+def runtime_directory(prefix):
+    """The pinned runtime directory, read from runtimes.tsv so the two cannot drift."""
+    with (SOURCE / "runtimes.tsv").open() as manifest:
+        matches = [line.split("\t", 1)[0] for line in manifest if line.startswith(prefix)]
+    if len(matches) != 1:
+        raise ValueError("runtimes.tsv must pin exactly one {} runtime".format(prefix))
+    return RUNTIMES / matches[0]
+
+
+LLAMA = runtime_directory("llama.cpp-") / "llama-server"
+PYTHON = runtime_directory("vendor/_amphibian/app-mlx-generate-") / "bin/python"
 
 
 def read_config(path):
@@ -54,18 +90,61 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
-def configure_settings(root, engines):
-    profile = root / "data/copse/user-data"
-    # Electron owns this profile while open. Never race its in-memory settings cache.
-    if (profile / "SingletonLock").is_symlink() or (profile / "SingletonLock").exists():
-        raise ValueError("Close the portable Copse window before configuring its engines")
-    path = profile / "settings.json"
+def check_profile_closed(profile):
+    """Electron owns the profile while open; never race its in-memory settings cache.
+
+    Chromium's SingletonLock is a symlink to `<host>-<pid>`. A crash, power loss or pulled
+    drive leaves it behind, so a lock whose process is gone on this Mac is stale.
+    """
+    lock = profile / "SingletonLock"
+    try:
+        target = os.readlink(lock)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise ValueError("Close the portable Copse window before configuring its engines") from error
+    host, _, pid = target.rpartition("-")
+    if host != socket.gethostname() or not pid.isdigit():
+        raise ValueError("The portable Copse profile is locked by {}. If Copse is not running there, "
+                         "delete {}".format(target, lock))
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        pass
+    raise ValueError("Close the portable Copse window before configuring its engines")
+
+
+def is_portable_selection(value):
+    return isinstance(value, str) and value.startswith(tuple(slug + ":" for slug in PORTABLE_SLUGS))
+
+
+def load_settings(path):
     settings = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(settings, dict) or not isinstance(settings.get("extraProviders", []), list):
         raise ValueError("Invalid existing Copse settings; left unchanged")
+    return settings
+
+
+def save_settings(path, settings, previous):
+    if previous == json.dumps(settings, sort_keys=True):
+        return
+    if path.exists():
+        backup = path.parent / ("settings.before-local-engines-{}.json".format(time.time_ns()))
+        backup.write_bytes(path.read_bytes())
+        backup.chmod(0o600)
+    atomic_json(path, settings)
+
+
+def configure_settings(root, engines):
+    profile = root / "data/copse/user-data"
+    check_profile_closed(profile)
+    path = profile / "settings.json"
+    settings = load_settings(path)
     previous = json.dumps(settings, sort_keys=True)
     providers = [p for p in settings.get("extraProviders", [])
-                 if not isinstance(p, dict) or p.get("slug") not in ("portable-gguf", "portable-mlx")]
+                 if not isinstance(p, dict) or p.get("slug") not in PORTABLE_SLUGS]
     for engine in engines:
         providers.append({
             "slug": "portable-" + engine["kind"],
@@ -77,17 +156,48 @@ def configure_settings(root, engines):
                         "inputPricePerMTok": 0, "outputPricePerMTok": 0}],
         })
     settings["extraProviders"] = providers
-    first = engines[0]
-    selection = "portable-{}:{}".format(first["kind"], first["id"])
-    # Defaults apply only to an unconfigured profile; later user choices survive launches.
-    for key in ("model", "localDefaultModel", "smallTasksModel", "subagentModel", "advisorModel"):
-        settings.setdefault(key, selection)
-    if previous != json.dumps(settings, sort_keys=True):
-        if path.exists():
-            backup = profile / ("settings.before-local-engines-{}.json".format(time.time_ns()))
-            backup.write_bytes(path.read_bytes())
-            backup.chmod(0o600)
-        atomic_json(path, settings)
+    # A profile without a chat model is unconfigured: route every role, including the review
+    # that otherwise defaults to LM Studio, to the first engine. Once a chat model is chosen,
+    # the user's routing (including roles left on automatic) is never changed.
+    if not settings.get("model"):
+        first = engines[0]
+        selection = "portable-{}:{}".format(first["kind"], first["id"])
+        for key in ROUTED_KEYS:
+            settings.setdefault(key, selection)
+    save_settings(path, settings, previous)
+
+
+def remove_settings(root):
+    """Undo configure_settings: drop drive providers and every selection that names them."""
+    profile = root / "data/copse/user-data"
+    check_profile_closed(profile)
+    path = profile / "settings.json"
+    if not path.exists():
+        return
+    settings = load_settings(path)
+    previous = json.dumps(settings, sort_keys=True)
+    if "extraProviders" in settings:
+        settings["extraProviders"] = [p for p in settings["extraProviders"]
+                                      if not isinstance(p, dict) or p.get("slug") not in PORTABLE_SLUGS]
+    for key in ROUTED_KEYS:
+        if is_portable_selection(settings.get(key)):
+            del settings[key]
+    role_models = settings.get("roleModels")
+    if isinstance(role_models, dict):
+        for role in [role for role, value in role_models.items() if is_portable_selection(value)]:
+            del role_models[role]
+    save_settings(path, settings, previous)
+
+
+def check_runtime_location(root):
+    runtimes = (root / RUNTIMES).resolve()
+    try:
+        recorded = (runtimes / RUNTIME_LOCATION).read_text().strip()
+    except FileNotFoundError:
+        recorded = ""
+    if recorded != str(runtimes):
+        raise ValueError("The drive runtimes were prepared at {} and must be repaired for this mount "
+                         "path: make portable-local-ai-runtimes-offline".format(recorded or "an unknown path"))
 
 
 def engine_command(root, engine):
@@ -105,8 +215,11 @@ def engine_command(root, engine):
                    "--prompt-cache-size", "1", "--prompt-cache-bytes", "1073741824",
                    "--prefill-step-size", "512", "--max-tokens", "4096",
                    "--chat-template-args", '{"enable_thinking":false}']
+    if not (root / RUNTIMES).is_dir():
+        raise ValueError("Install the drive runtimes first: make portable-local-ai-runtimes")
+    check_runtime_location(root)
     if not os.access(command[0], os.X_OK):
-        raise ValueError("Install the drive runtimes first: make portable-local-ai-runtimes-offline")
+        raise ValueError("Incomplete drive runtime {}: make portable-local-ai-runtimes-offline".format(command[0]))
     return command
 
 
@@ -131,13 +244,25 @@ def wait_ready(process, engine, log):
         except urllib.error.HTTPError as error:
             if error.code != 503:
                 raise RuntimeError("Engine HTTP {}: {}; see {}".format(error.code, error.read().decode()[:600], log)) from error
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError,
+                http.client.HTTPException):
+            # Not listening yet, or dropped the connection while loading. On macOS's Python 3.9,
+            # socket.timeout is not yet an alias of TimeoutError.
             pass
         time.sleep(1)
     raise RuntimeError("Engine startup timed out; see " + str(log))
 
 
-def stop(children):
+def start_watchdog(child, guard):
+    return subprocess.Popen([sys.executable, "-I", "-c", WATCHDOG, str(child.pid)], stdin=guard,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True)
+
+
+def stop(children, watchdogs=()):
+    # A second signal must not abandon engines halfway through shutdown. Restore the handlers
+    # afterwards: ignored signals would otherwise be inherited by any later child.
+    previous = {signum: signal.signal(signum, signal.SIG_IGN) for signum in STOP_SIGNALS}
     # Popen objects refer only to children created during this invocation, never saved PIDs.
     for child in reversed(children):
         if child.poll() is None:
@@ -154,6 +279,12 @@ def stop(children):
             except ProcessLookupError:
                 pass
             child.wait()
+    # Engines are reaped; retire their watchdogs before the pipe closes at exit.
+    for watchdog in watchdogs:
+        watchdog.kill()
+        watchdog.wait()
+    for signum, handler in previous.items():
+        signal.signal(signum, handler)
 
 
 def main():
@@ -162,22 +293,45 @@ def main():
     data = root / "data"
     data.mkdir(parents=True, exist_ok=True)
     config = data / "local-engines.json"
+    disabled = data / "local-engines.disabled.json"
+    defaults = SOURCE / "local-engines.json"
+    if action not in ("enable", "disable", "run", "serve"):
+        raise ValueError("Action must be enable, disable, run or serve")
     with (data / "local-engines.lock").open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise RuntimeError("Portable engines/Copse are already running; use the open window") from error
-        config_source = SOURCE / "local-engines.json" if action == "enable" and not config.exists() else config
+        if action == "disable":
+            remove_settings(root)
+            if config.exists():
+                config.replace(disabled)
+            print("Disabled drive engines. Plain portable launches no longer start them.")
+            return
+        config_source = config
+        if action == "enable" and not config.exists():
+            config_source = disabled if disabled.exists() else defaults
         engines = read_config(config_source)
+        if config_source == defaults:
+            # The default pair spans the starter models and the optional library; start with
+            # whichever is installed rather than requiring both.
+            missing = [e for e in engines if not (root / "models" / e["model"]).exists()]
+            engines = [e for e in engines if e not in missing]
+            if not engines:
+                raise ValueError("Model missing for every default engine. Install one first: "
+                                 "make portable-local-ai-setup or make portable-local-ai-library")
+            for engine in missing:
+                print("Skipping the {} engine: {} is not installed (make portable-local-ai-library). "
+                      "Add it later in data/local-engines.json.".format(engine["kind"], engine["model"]))
         commands = [engine_command(root, engine) for engine in engines]
         if action == "enable":
             configure_settings(root, engines)
             if not config.exists():
                 atomic_json(config, {"engines": engines})
+            if disabled.exists():
+                disabled.unlink()
             print("Enabled drive engines. Launch Copse.command or make portable-run will start them.")
             return
-        if action not in ("run", "serve"):
-            raise ValueError("Action must be enable, run or serve")
         if os.environ.get("COPSE_PORTABLE_OFFLINE") == "1":
             raise ValueError("The strict --offline sandbox blocks loopback too. Use normal run for local inference.")
         for engine in engines:
@@ -188,11 +342,14 @@ def main():
         logs.mkdir(exist_ok=True)
         environment = dict(os.environ, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
                            HF_HOME=str(root / "cache/huggingface"), HF_HUB_DISABLE_TELEMETRY="1")
-        children = []
+        children, watchdogs = [], []
         def interrupted(signum, frame):
             raise KeyboardInterrupt
-        signal.signal(signal.SIGTERM, interrupted)
-        signal.signal(signal.SIGINT, interrupted)
+        # SIGHUP arrives when the Terminal window of a Finder launch closes.
+        for signum in STOP_SIGNALS:
+            signal.signal(signum, interrupted)
+        # Only this process holds the write end; children never inherit it (close_fds).
+        guard, guard_write = os.pipe()
         try:
             for engine, command in zip(engines, commands):
                 log = logs / (engine["kind"] + ".log")
@@ -200,6 +357,7 @@ def main():
                     child = subprocess.Popen(command, cwd=root / "models", env=environment,
                                              stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
                 children.append(child)
+                watchdogs.append(start_watchdog(child, guard))
                 wait_ready(child, engine, log)
             if action == "serve":
                 print("Engines ready. Ctrl-C stops this session's engines.", flush=True)
@@ -215,7 +373,7 @@ def main():
                 app.wait()
                 raise
         finally:
-            stop(children)
+            stop(children, watchdogs)
 
 
 if __name__ == "__main__":
