@@ -64,6 +64,29 @@ describe('splitDiff', () => {
     )
     assert.ok(files[0]?.text.startsWith('diff --git a/src/a.ts'))
   })
+
+  it('decodes C-quoted paths, including octal UTF-8 and escapes', () => {
+    const quoted = [
+      'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"',
+      'new file mode 100644',
+      '+x',
+      'diff --git "a/tab\\tq.ts" "b/tab\\tq.ts"',
+      'new file mode 100644',
+      '+y',
+      'diff --git a/plain.ts "b/moved \\"q\\".ts"',
+      'rename from plain.ts',
+      'rename to moved "q".ts',
+      '',
+    ].join('\n')
+    assert.deepEqual(
+      splitDiff(quoted).map((file) => [file.path, file.status, file.oldPath]),
+      [
+        ['café.ts', 'added', undefined],
+        ['tab\tq.ts', 'added', undefined],
+        ['moved "q".ts', 'renamed', 'plain.ts'],
+      ],
+    )
+  })
 })
 
 describe('budgetFileDiffs', () => {
@@ -193,7 +216,7 @@ describe('buildReviewContext', () => {
         { gitDir: checkouts.headGitDir, workTree: checkouts.head },
         checkouts.mergeBase,
         path,
-        checkouts.headCommit,
+        { headCommit: checkouts.headCommit },
       )
     assert.match(await diff('src/math.ts'), /\+export const add.*a - b/)
     assert.match(await diff('pnpm-lock.yaml'), /\+lockfileVersion: 10/)
@@ -320,6 +343,49 @@ describe('host-side git over a checkout the cell has written', () => {
     } finally {
       await rm(scratch, { recursive: true, force: true })
       await nested.remove()
+      await repo.remove()
+    }
+  })
+})
+
+describe("diffs under the author's own git settings", () => {
+  it('keeps paths, renames and non-ASCII names intact for the context and git_diff', async () => {
+    const repo = await createTestRepo({ 'old-name.txt': 'line\n'.repeat(50) })
+    const scratch = await mkdtemp(join(tmpdir(), 'review-context-config-'))
+    try {
+      repo.git('checkout', '-q', '-b', 'feature')
+      repo.git('mv', 'old-name.txt', 'new-name.txt')
+      await repo.write({ 'new-name.txt': 'line\n'.repeat(50) + 'added\n', 'café.ts': 'x\n' })
+      repo.commit('rename and add')
+      // Each of these used to break the headers splitDiff reads.
+      repo.git('config', 'diff.noprefix', 'true')
+      repo.git('config', 'diff.mnemonicPrefix', 'true')
+      const checkouts = await materialiseCheckouts({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        scratchDir: scratch,
+        includeWorkingTree: false,
+      })
+      try {
+        const context = await buildReviewContext({ checkouts })
+        assert.deepEqual(
+          context.files.map((file) => [file.path, file.status, file.oldPath]).sort(),
+          [
+            ['café.ts', 'added', undefined],
+            ['new-name.txt', 'renamed', 'old-name.txt'],
+          ],
+        )
+        const renamed = await readFileDiff(context.head, context.mergeBase, 'new-name.txt', {
+          oldPath: 'old-name.txt',
+        })
+        assert.match(renamed, /^rename from old-name\.txt$/m)
+        assert.match(renamed, /^\+added$/m)
+        assert.doesNotMatch(renamed, /^new file mode/m, 'not a whole-file addition')
+      } finally {
+        await checkouts.cleanup()
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
       await repo.remove()
     }
   })

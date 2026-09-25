@@ -43,7 +43,12 @@ const SCHEDULE_ID = 'schedule-ci-review'
 // waits, and the spec switches to the schedule's project once the scenario is
 // in place — the controller's `workspace_changed` pickup, or its trigger
 // listener if the tick lands after the switch, then starts it.
-const MISSED_TICK_AT = 1_786_000_140_000
+//
+// The missed boundary is derived from the wall clock, never a fixed date: a
+// persisted `nextWakeAt` still in the future is armed as an ordinary wake, not
+// coalesced, so a hard-coded instant would only work on hosts whose clock is
+// already past it. One full minute back keeps it safely in the past.
+const MISSED_TICK_AT = Math.floor(Date.now() / 60_000) * 60_000 - 60_000
 const SCHEDULER_TICK_TIMEOUT_MS = 30_000
 
 describe('cron automation trigger', function () {
