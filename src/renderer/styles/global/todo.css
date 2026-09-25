@@ -154,54 +154,21 @@
   --sev: var(--danger, #d9534f);
 }
 /* Retry action on a failed review/comparison card — pushed to the right edge of
-   the header (no cost badge is present in the error state that would claim it). */
+   the header (no cost badge is present in the error state that would claim it).
+   The button look is the compact kit (`.ui-btn-secondary.ui-btn-compact`); this
+   only places it and undoes the header's uppercase label styling. */
 .card-retry-button {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: 2px var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 11px;
   text-transform: none;
   letter-spacing: normal;
-  cursor: pointer;
 }
-.card-retry-button:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-}
-.card-retry-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-/* Icon-only dismiss (×) on a failed comparison card. Claims the right edge when
-   it stands alone; sits flush after the retry button when both are present. */
+/* Icon-only dismiss (×) on a failed card. Claims the right edge when it stands
+   alone; sits after the retry button when both are present. */
 .card-dismiss-button {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
 }
 .card-retry-button + .card-dismiss-button {
   margin-left: 0;
-}
-.card-dismiss-button:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-}
-.card-dismiss-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .review-panel-icon {
   display: inline-flex;

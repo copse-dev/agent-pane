@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { AUTOMATIONS_PLUGIN_ID } from '../../packages/agent/src/plugins/automations-plugin.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 
 const PROJECT_ID = 'e2e-settings-automations'
 const SCHEDULE_ID = 'schedule-morning-review'
@@ -82,6 +83,19 @@ describe('settings automations plugin', function () {
     assert.match(await detail.getText(), /1 live worktree max/i)
     assert.match(await detail.getText(), /Normal tool permission prompts still apply/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
+    // Row actions are compact kit buttons (#3065): Edit / Run now secondary,
+    // Delete the kit danger, --spacing-md apart.
+    const rowActions = assertKitButtonRow(
+      await measureKitButtonRow('.automation-row-actions'),
+      'automation row',
+      { compact: true, minButtons: 3 },
+    )
+    assert.deepEqual(
+      rowActions.buttons.map((button) =>
+        button.classes.find((c) => ['ui-btn-secondary', 'ui-btn-danger'].includes(c)),
+      ),
+      ['ui-btn-secondary', 'ui-btn-secondary', 'ui-btn-danger'],
+    )
     await saveElementScreenshot('.automation-plugin-settings', 'settings-automations.png')
 
     // Capture the editor separately so the settings dialog's sticky global
@@ -98,6 +112,14 @@ describe('settings automations plugin', function () {
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
     await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
+    // Save schedule is the form's kit primary; Cancel the kit secondary.
+    const formActions = assertKitButtonRow(
+      await measureKitButtonRow('.automation-form-actions'),
+      'automation form',
+      { compact: false, minButtons: 2 },
+    )
+    assert.ok(formActions.buttons[0]?.classes.includes('ui-btn-primary'), 'Save is the primary')
+    assert.ok(formActions.buttons[1]?.classes.includes('ui-btn-secondary'), 'Cancel is secondary')
     await saveElementScreenshot('.automation-form', 'settings-automation-form.png')
     await detail.$('.automation-cancel-btn').click()
     await expect(dialog.$('.settings-buttons')).toBeDisplayed()

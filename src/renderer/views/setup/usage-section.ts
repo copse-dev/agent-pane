@@ -154,7 +154,7 @@ export function renderPlanProvider(
     if (result.provider === 'claude' && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
       const signIn = document.createElement('button')
       signIn.type = 'button'
-      signIn.className = 'usage-plan-signin-btn'
+      signIn.className = 'ui-btn ui-btn-primary usage-plan-signin-btn'
       signIn.textContent = 'Sign in to Claude'
       signIn.title = 'Open a terminal and run `claude /login`'
       signIn.addEventListener('click', () => {

@@ -69,6 +69,23 @@
   color: var(--text-primary);
 }
 
+/* Compact size for dense surfaces (pane rows, card headers, inline row actions).
+   Composes with any variant: `ui-btn ui-btn-secondary ui-btn-compact`. Keeps the
+   kit radius and border; only the box shrinks. The block size comes from
+   `min-height`, not padding, so text-only buttons (cap-trimmed in brand.css) and
+   icon + label buttons land on the same row height. */
+.ui-btn-compact {
+  min-height: var(--spacing-xl);
+  padding: 0 var(--spacing-sm);
+  font-size: var(--font-size-xs);
+}
+
+/* Icon-only compact button (a card's × dismiss): a square hit target. */
+.ui-btn-compact[aria-label]:has(> .ui-icon:only-child) {
+  min-width: var(--spacing-xl);
+  padding-inline: 0;
+}
+
 copse-ui-actions,
 .ui-actions {
   display: flex;

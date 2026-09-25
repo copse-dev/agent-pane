@@ -42,6 +42,8 @@ Under `src/renderer/ui/`:
 
 1. **`.ui-btn*` CSS** — shared button look. No factory: `el('button', { class: 'ui-btn ui-btn-primary' }, …)`
    is enough until a button needs real behaviour (icons, loading, busy).
+   Variants: `-primary`, `-secondary`, `-danger`, `-ghost`. One size modifier,
+   `.ui-btn-compact`, composes with any variant for dense surfaces (see decision 6).
 2. **`<copse-ui-actions>` + `uiActions`** — light-DOM action row host (align + gap convention).
 3. **`<copse-ui-field>` + `uiField`** — light-DOM labelled field + optional hint (assembles structure).
 
@@ -144,3 +146,9 @@ navigation, orphans, attention, pagination. Treat as product chrome, not a pane 
 5. **Panel shells next, not more atoms (2026-07-22).** Browser/terminals tabs+content is the
    cleanest structural extraction. List+viewer (memories/roadmap) is real but must stay shell-only;
    projects expand and pane lifecycles stay out of the kit.
+6. **One compact size, not per-surface stacks (2026-09-25, #3065).** Memories/Roadmap forms,
+   the Ports rail, PR lifecycle actions, review/comparison card Retry/×, and automation row
+   actions each carried a private `*-btn` stack only because the kit had no small size. They now
+   use `.ui-btn-compact` (token-sized: `--spacing-xl` min-height, `--spacing-sm` inline padding,
+   `--font-size-xs`; kit radius and border unchanged). Add further sizes only when a second
+   product surface needs one; do not add a surface-local size.

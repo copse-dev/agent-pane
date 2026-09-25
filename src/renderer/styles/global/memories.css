@@ -114,41 +114,11 @@
 }
 .memories-actions {
   display: flex;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-md);
   align-items: center;
 }
-.memories-btn {
-  padding: 4px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-}
-.memories-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.memories-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.memories-btn-primary {
-  background: var(--accent-fill);
-  border-color: var(--accent-fill);
-  color: var(--text-on-accent);
-}
-.memories-btn-primary:hover:not(:disabled) {
-  background: var(--accent-fill);
-  filter: brightness(1.08);
-  color: var(--text-on-accent);
-}
-.memories-btn-danger {
+/* Button look lives on `.ui-btn*` (ui.css). Delete sits apart from Save so a
+   destructive click is not one slip away from the primary. */
+.memories-delete-btn {
   margin-left: auto;
-  color: var(--danger, #f14c4c);
-}
-.memories-btn-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
-  color: var(--danger, #f14c4c);
 }

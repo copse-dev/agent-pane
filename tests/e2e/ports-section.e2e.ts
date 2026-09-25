@@ -6,6 +6,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 
 // Ports are discovered by scanning the host, and the CI image has neither `ss`
 // nor `lsof` — so this spec seeds the rows main would have produced. What it
@@ -99,6 +100,14 @@ describe('ports section', function () {
     assert.equal(await $('.ports-open-btn').isExisting(), true)
     assert.equal(await $('.ports-kill-btn').isExisting(), true)
     assert.match(await $('.ports-detail').getText(), /npm run dev/)
+
+    // Open / Copy / Kill are compact kit buttons, not a `.ports-btn` stack (#3065).
+    const actions = assertKitButtonRow(await measureKitButtonRow('.ports-actions'), 'ports row', {
+      compact: true,
+      minButtons: 3,
+    })
+    const kill = actions.buttons.find((button) => button.label === 'Kill')
+    assert.ok(kill?.classes.includes('ui-btn-danger'), 'Kill is the kit danger variant')
 
     await prepareE2eScreenshot()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ports-section-owned.png'))

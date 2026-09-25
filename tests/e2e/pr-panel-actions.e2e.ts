@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -8,6 +9,7 @@ import {
   seedPrPanelChatFixture,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 
 /**
  * Drives the PR-pane lifecycle action buttons (Rerun CI / Approve / Mark ready /
@@ -107,6 +109,19 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await expect(await $('.pr-action-status')).toHaveText(
       expect.stringMatching(/ready for review/i),
     )
+
+    // Link actions (Open on GitHub, New thread) and lifecycle actions are compact
+    // kit buttons in one --spacing-md row, not a `.pr-action-btn` stack (#3065).
+    const row = assertKitButtonRow(await measureKitButtonRow('.pr-viewer-actions'), 'PR actions', {
+      compact: true,
+      minButtons: 3,
+    })
+    for (const button of row.buttons) {
+      const expected = button.classes.includes('pr-action-btn')
+        ? 'ui-btn-secondary'
+        : 'ui-btn-ghost'
+      assert.ok(button.classes.includes(expected), `"${button.label}" should be ${expected}`)
+    }
     await saveElementScreenshot('#pane-files', 'pr-actions-ready.png')
 
     // Switch to the failing workspace PR (#88) and re-run its failed CI.

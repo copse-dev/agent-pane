@@ -77,7 +77,11 @@ export function mountPortsSection(
   listRoot.append(section)
 
   function actionButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
-    const button = el('button', { type: 'button', class: `ports-btn ${className}` }, label)
+    const button = el(
+      'button',
+      { type: 'button', class: `ui-btn ui-btn-compact ${className}` },
+      label,
+    )
     button.addEventListener('click', (event) => {
       // The row itself is a button; a click on an action must not re-toggle it.
       event.stopPropagation()
@@ -99,10 +103,10 @@ export function mountPortsSection(
     if (row.url) {
       const url = row.url
       actions.append(
-        actionButton('Open', 'ports-open-btn', () => {
+        actionButton('Open', 'ui-btn-secondary ports-open-btn', () => {
           openBrowserUrl(store, url)
         }),
-        actionButton('Copy', 'ports-copy-btn', () => {
+        actionButton('Copy', 'ui-btn-secondary ports-copy-btn', () => {
           void navigator.clipboard.writeText(url).then(
             () => {
               showToast(`Copied ${url}`)
@@ -115,7 +119,7 @@ export function mountPortsSection(
       )
     }
     if (row.owner) {
-      const killBtn = actionButton('Kill', 'ports-btn-danger ports-kill-btn', () => {
+      const killBtn = actionButton('Kill', 'ui-btn-danger ports-kill-btn', () => {
         void kill(row, killBtn)
       })
       actions.append(killBtn)

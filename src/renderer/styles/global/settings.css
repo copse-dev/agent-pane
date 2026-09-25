@@ -1105,20 +1105,10 @@ dialog.settings-overlay::backdrop {
 .usage-plan-status-error {
   color: var(--danger, #c44);
 }
+/* Look comes from `.ui-btn.ui-btn-primary` (ui.css); this only places it. */
 .usage-plan-signin-btn {
   align-self: flex-start;
   -webkit-app-region: no-drag;
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius);
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.usage-plan-signin-btn:hover {
-  filter: brightness(1.05);
 }
 .usage-plan-window,
 .usage-credit-grant {
@@ -2287,27 +2277,6 @@ dialog.settings-overlay::backdrop {
   justify-content: space-between;
   gap: var(--spacing-md);
 }
-.automation-add-btn,
-.automation-save-btn,
-.automation-cancel-btn,
-.automation-row-btn {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  cursor: pointer;
-}
-.automation-add-btn:hover:not(:disabled),
-.automation-cancel-btn:hover:not(:disabled),
-.automation-row-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.automation-add-btn:disabled,
-.automation-row-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
 .automation-scope,
 .automation-notice,
 .automation-status,
@@ -2373,19 +2342,12 @@ dialog.settings-overlay::backdrop {
 .automation-row-schedule {
   color: var(--accent);
 }
+/* Buttons are kit buttons (`.ui-btn*`, ui.css): row actions compact
+   secondary/danger, the form's Save schedule the primary. */
 .automation-row-actions,
 .automation-form-actions {
   flex: none;
-  gap: var(--spacing-sm);
-}
-.automation-run-btn,
-.automation-save-btn {
-  border-color: var(--accent-fill);
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-}
-.automation-remove-btn {
-  color: var(--error);
+  gap: var(--spacing-md);
 }
 .automation-form {
   display: grid;

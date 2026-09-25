@@ -140,6 +140,18 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
+Dense surfaces — pane rows (Ports), list editors (Memories, Roadmap), card headers (review
+Retry / ×), PR lifecycle actions, inline row actions (automation Edit / Run now / Delete) — add
+the one size modifier, **`.ui-btn-compact`**, to the same variant classes:
+`ui-btn ui-btn-secondary ui-btn-compact`. It shrinks the box (24px min-height,
+`--spacing-sm` inline padding, `--font-size-xs`) and keeps the kit radius and border; an
+icon-only compact button with an `aria-label` becomes a 24px square. Do not give a surface its
+own `padding: 2px 8px; font-size: 11px` button to be "smaller" — that is how `.memories-btn`,
+`.ports-btn`, `.pr-action-btn` and `.card-retry-button` each grew a private stack. A screen hook
+class (`.ports-kill-btn`) may stay for JS/tests and for placement (`margin-left: auto`), but must
+not restate background, radius or padding; `src/renderer/styles/kit-buttons.test.ts` enforces
+that for the migrated hooks.
+
 ### An outlined chip needs an edge you can find
 
 When a row mixes one filled action with outlined ones — the queued message's

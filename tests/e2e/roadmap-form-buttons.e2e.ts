@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 
 // Roadmap editor action buttons stay content-sized (not equal-width grid columns).
 describe('roadmap form buttons', () => {
@@ -58,6 +59,16 @@ describe('roadmap form buttons', () => {
       layout.startWidth < layout.actionsWidth * 0.5,
       'Start thread button should not stretch to half the action bar',
     )
+
+    // The form's actions are compact kit buttons (#3065): Save is the kit
+    // primary, the rest secondary, spaced --spacing-md apart.
+    const row = assertKitButtonRow(
+      await measureKitButtonRow('.roadmap-form .memories-actions'),
+      'roadmap form',
+      { compact: true, minButtons: 2 },
+    )
+    const save = row.buttons.find((button) => button.label === 'Save')
+    assert.ok(save?.classes.includes('ui-btn-primary'), 'Save is the kit primary')
 
     await saveAppScreenshot('roadmap-form-buttons.png')
   })

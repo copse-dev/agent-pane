@@ -166,11 +166,11 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
     // `--accent-fill` keeps the raw hue in both themes, which is what dark label
     // text is designed to sit on (`.ui-btn-primary` is the reference recipe).
     const targets = [
+      // `.ui-btn-primary` covers the roadmap/memories Save, Usage "Sign in to
+      // Claude" and automation "Save schedule" buttons, which all use the kit.
+      '.ui-btn-primary',
       '.titlebar-btn-badge',
-      '.memories-btn-primary',
       '.queued-action.queued-send-now',
-      '.usage-plan-signin-btn',
-      '.automation-save-btn',
     ]
     const declarations = stylesheets().flatMap(({ file, css }) => rules(file, css))
     for (const target of targets) {
@@ -202,11 +202,11 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
 
   it('gives the roadmap Save button and Changes badge fill/label pair >= 4.5:1 in both themes', () => {
     // The two controls the report named by appearance. Both take their colour
-    // from `.memories-btn-primary` (the roadmap Save button's primary class,
+    // from `.ui-btn-primary` (the roadmap Save button's kit class,
     // `roadmap-pane.ts`) and `.titlebar-btn-badge` (the sidebar/footer Changes
     // count, `panel-mode-controls.ts`) — and both declare
     // `background: var(--accent-fill); color: var(--text-on-accent)` directly
-    // (memories.css, titlebar.css). Neither token is redefined by either theme
+    // (ui.css, titlebar.css). Neither token is redefined by either theme
     // block (pinned above and below), so one measurement of the shipped default
     // pair stands for both controls in both themes — this computes the actual
     // WCAG ratio rather than trusting the token names, so a future change to

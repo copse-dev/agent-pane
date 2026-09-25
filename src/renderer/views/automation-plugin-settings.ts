@@ -163,7 +163,7 @@ export function createAutomationPluginSettings(
       'button',
       {
         type: 'button',
-        class: 'automation-add-btn',
+        class: 'ui-btn ui-btn-secondary ui-btn-compact automation-add-btn',
         disabled: projectId ? undefined : true,
       },
       'Add schedule',
@@ -272,8 +272,16 @@ export function createAutomationPluginSettings(
     el('option', { value: '2' }, '2 — allow one retained checkout'),
     el('option', { value: '3' }, '3 — allow two retained checkouts'),
   )
-  const saveButton = el('button', { type: 'submit', class: 'automation-save-btn' }, 'Save schedule')
-  const cancelButton = el('button', { type: 'button', class: 'automation-cancel-btn' }, 'Cancel')
+  const saveButton = el(
+    'button',
+    { type: 'submit', class: 'ui-btn ui-btn-primary automation-save-btn' },
+    'Save schedule',
+  )
+  const cancelButton = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary automation-cancel-btn' },
+    'Cancel',
+  )
   form.append(
     formTitle,
     el('label', { class: 'automation-label' }, 'Name', nameInput),
@@ -459,12 +467,16 @@ export function createAutomationPluginSettings(
         el('div', { class: 'automation-row-last-run' }, lastRunLabel(schedule.lastRunAt)),
       )
       const actions = el('div', { class: 'automation-row-actions' })
-      const edit = el('button', { type: 'button', class: 'automation-row-btn' }, 'Edit')
+      const edit = el(
+        'button',
+        { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact automation-row-btn' },
+        'Edit',
+      )
       const run = el(
         'button',
         {
           type: 'button',
-          class: 'automation-row-btn automation-run-btn',
+          class: 'ui-btn ui-btn-secondary ui-btn-compact automation-row-btn automation-run-btn',
           disabled: pluginEnabled ? undefined : true,
           title: pluginEnabled ? 'Start a scheduled task now' : 'Enable the plugin to run',
         },
@@ -472,7 +484,10 @@ export function createAutomationPluginSettings(
       )
       const remove = el(
         'button',
-        { type: 'button', class: 'automation-row-btn automation-remove-btn' },
+        {
+          type: 'button',
+          class: 'ui-btn ui-btn-danger ui-btn-compact automation-row-btn automation-remove-btn',
+        },
         'Delete',
       )
       edit.addEventListener('click', () => void openForm(schedule))

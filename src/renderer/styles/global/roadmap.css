@@ -207,21 +207,10 @@
   align-self: flex-start;
 }
 /* Roadmap forms can show up to six actions (Save/Start/Reopen/Fit/Delete/Cancel).
-   Keep them compact and content-sized — they wrap instead of stretching. */
+   They are compact kit buttons (`.ui-btn-compact`) and wrap instead of stretching. */
 .roadmap-form .memories-actions {
-  display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
   justify-content: flex-start;
-}
-.roadmap-form .memories-actions .memories-btn {
-  width: auto;
-  flex: 0 0 auto;
-  min-width: 0;
-  padding-inline: var(--spacing-sm);
-}
-.roadmap-form .memories-actions .memories-btn-danger {
-  margin-left: 0;
 }
 .roadmap-issue-chip {
   font-size: 10px;
@@ -507,7 +496,6 @@
 }
 .roadmap-review-row-actions {
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
   padding-top: 2px;
 }
 .roadmap-review-actions {
