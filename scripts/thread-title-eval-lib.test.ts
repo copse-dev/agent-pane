@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ThreadTitleEvalCase } from '../benchmarks/thread-titles/cases.ts'
 import {
+  cleanForArm,
   parseThreadTitleEvalArgs,
   scoreThreadTitle,
   summarizeThreadTitleEval,
@@ -84,5 +85,29 @@ describe('parseThreadTitleEvalArgs', () => {
     assert.equal(options.caseId, 'thread-title')
     assert.deepEqual(options.arms, ['candidate'])
     assert.equal(options.repeats, 2)
+  })
+})
+
+describe('cleanForArm', () => {
+  it('scores the legacy arm with the cleaner that shipped alongside its prompt', () => {
+    const raw = 'Can we improve thread naming?'
+    assert.equal(cleanForArm('legacy', raw), 'Can we improve thread naming?')
+    assert.equal(
+      cleanForArm('candidate', '**Title:** Improve thread naming'),
+      'Improve thread naming',
+    )
+  })
+})
+
+describe('parseThreadTitleEvalArgs environment', () => {
+  it('treats blank environment values as unset', () => {
+    const saved = process.env['LM_STUDIO_MODEL']
+    process.env['LM_STUDIO_MODEL'] = '  '
+    try {
+      assert.notEqual(parseThreadTitleEvalArgs([]).model.trim(), '')
+    } finally {
+      if (saved === undefined) delete process.env['LM_STUDIO_MODEL']
+      else process.env['LM_STUDIO_MODEL'] = saved
+    }
   })
 })

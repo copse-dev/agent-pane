@@ -20,6 +20,10 @@ const AUTO_LOCAL_DEFAULT = lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks
  */
 const SMALL_TASK_OPTIONS: BuildProviderOptions = { maxReasoning: 'low' }
 
+function mockLlmActive(): boolean {
+  return process.env['COPSE_PANEL_MOCK_LLM'] === '1'
+}
+
 export interface SmallTasksRoute {
   provider: LLMProvider
   model: string
@@ -46,6 +50,7 @@ async function buildSmallTasksRoute(selection: string): Promise<SmallTasksRoute>
 export async function resolveSmallTasksFallbackRoute(
   excludeModel?: string,
 ): Promise<SmallTasksRoute | null> {
+  if (mockLlmActive()) return null
   try {
     const selection = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
     const model = await resolveDynamicModelId(selection)
@@ -65,6 +70,9 @@ export async function resolveSmallTasksFallbackRoute(
  * failover can request {@link resolveSmallTasksFallbackRoute} after a failed call.
  */
 export async function resolveSmallTasksRoute(): Promise<SmallTasksRoute | null> {
+  // Scenario fixtures own their chat replies. Auxiliary labels use the callers'
+  // normal heuristic fallbacks instead of consuming a conversation response.
+  if (mockLlmActive()) return null
   try {
     return await buildSmallTasksRoute(resolveSmallTasksModelId())
   } catch {
@@ -74,8 +82,5 @@ export async function resolveSmallTasksRoute(): Promise<SmallTasksRoute | null> 
 
 /** Provider-only compatibility wrapper for existing small-task services. */
 export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
-  // Scenario fixtures own their chat replies. Auxiliary labels use the callers'
-  // normal heuristic fallbacks instead of consuming a conversation response.
-  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return null
   return (await resolveSmallTasksRoute())?.provider ?? null
 }

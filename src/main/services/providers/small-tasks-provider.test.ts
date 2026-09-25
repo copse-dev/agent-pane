@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   resolveSmallTasksFallbackRoute,
   resolveSmallTasksModelId,
+  resolveSmallTasksProvider,
   resolveSmallTasksRoute,
 } from './small-tasks-provider.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -30,32 +31,35 @@ describe('resolveSmallTasksModelId', () => {
   })
 
   it('resolves distinct primary and chat fallback routes', async () => {
+    await setSetting('smallTasksModel', 'lmstudio:local-small')
+    await setSetting('model', 'lmstudio:local-chat')
+
+    const primary = await resolveSmallTasksRoute()
+    const fallback = await resolveSmallTasksFallbackRoute(primary?.model)
+
+    assert.equal(primary?.model, 'lmstudio:local-small')
+    assert.equal(fallback?.model, 'lmstudio:local-chat')
+    assert.equal(await resolveSmallTasksFallbackRoute('lmstudio:local-chat'), null)
+  })
+
+  it('resolves dynamic role assignments before building the provider', async () => {
+    await setSetting('roleModels', {
+      'small-tasks': 'auto:role:advisor',
+      advisor: 'lmstudio:advisor-small',
+    })
+    const route = await resolveSmallTasksRoute()
+    assert.equal(route?.model, 'lmstudio:advisor-small')
+  })
+
+  it('never routes small tasks to the mock LLM, whose replies belong to scenario fixtures', async () => {
     const previousMock = process.env['COPSE_PANEL_MOCK_LLM']
     process.env['COPSE_PANEL_MOCK_LLM'] = '1'
     try {
       await setSetting('smallTasksModel', 'lmstudio:local-small')
-      await setSetting('model', 'gpt-5-mini')
-
-      const primary = await resolveSmallTasksRoute()
-      const fallback = await resolveSmallTasksFallbackRoute(primary?.model)
-
-      assert.equal(primary?.model, 'lmstudio:local-small')
-      assert.equal(fallback?.model, 'gpt-5-mini')
-      assert.equal(await resolveSmallTasksFallbackRoute('gpt-5-mini'), null)
-    } finally {
-      if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
-      else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock
-    }
-  })
-
-  it('resolves dynamic role assignments before building the provider', async () => {
-    const previousMock = process.env['COPSE_PANEL_MOCK_LLM']
-    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
-    try {
-      await setSetting('roleModels', { 'small-tasks': 'auto:best-value' })
-      const route = await resolveSmallTasksRoute()
-      assert.ok(route)
-      assert.equal(route.model.startsWith('auto:'), false)
+      await setSetting('model', 'lmstudio:local-chat')
+      assert.equal(await resolveSmallTasksRoute(), null)
+      assert.equal(await resolveSmallTasksFallbackRoute(), null)
+      assert.equal(await resolveSmallTasksProvider(), null)
     } finally {
       if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
       else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock

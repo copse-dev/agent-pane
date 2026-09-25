@@ -35,12 +35,18 @@ function usageFromChunk(chunk: Extract<StreamChunk, { type: 'usage' }>): ModelUs
   )
 }
 
-/** Run a one-shot provider stream and return text plus accumulated token usage. */
+/**
+ * Run a one-shot provider stream and return text plus accumulated token usage.
+ * `onUsage` receives the usage accumulated so far whether the call succeeds or
+ * throws (timeout, transport error), so callers can bill tokens a failed
+ * attempt already spent.
+ */
 export async function completeMessagesWithUsage(
   provider: LLMProvider,
   messages: LLMMessage[],
   timeoutMs: number,
   signal?: AbortSignal,
+  onUsage?: (usage: ModelUsage) => void,
 ): Promise<{ text: string; usage: ModelUsage }> {
   let text = ''
   let usage = { ...EMPTY_USAGE }
@@ -79,6 +85,7 @@ export async function completeMessagesWithUsage(
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', abortFromCaller)
+    onUsage?.(usage)
   }
   return { text, usage }
 }
@@ -88,6 +95,13 @@ export function completeTextWithUsage(
   provider: LLMProvider,
   prompt: string,
   timeoutMs: number,
+  onUsage?: (usage: ModelUsage) => void,
 ): Promise<{ text: string; usage: ModelUsage }> {
-  return completeMessagesWithUsage(provider, [{ role: 'user', content: prompt }], timeoutMs)
+  return completeMessagesWithUsage(
+    provider,
+    [{ role: 'user', content: prompt }],
+    timeoutMs,
+    undefined,
+    onUsage,
+  )
 }

@@ -61,8 +61,15 @@ function vagueClause(value: string): boolean {
   )
 }
 
-function compactTitle(value: string): string {
+// C0/C1 controls become spaces; bidi overrides/isolates and directional marks
+// are dropped so a title cannot visually reorder the sidebar (e.g. U+202E).
+const CONTROL_CHARS = /\p{Cc}/gu
+const BIDI_FORMAT_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu
+
+function compactTitle(value: string, capitalize: boolean): string {
   const words = value
+    .replace(BIDI_FORMAT_CHARS, '')
+    .replace(CONTROL_CHARS, ' ')
     .replace(/\s+/g, ' ')
     .replace(/[.!?,:;\s]+$/g, '')
     .trim()
@@ -71,14 +78,21 @@ function compactTitle(value: string): string {
     .slice(0, MAX_THREAD_TITLE_WORDS)
 
   let title = words.join(' ')
-  if (title.length > MAX_THREAD_TITLE_CHARS) {
-    const clipped = title.slice(0, MAX_THREAD_TITLE_CHARS + 1)
+  // Count code points, not UTF-16 units, so clipping never splits a surrogate pair.
+  const chars = Array.from(title)
+  if (chars.length > MAX_THREAD_TITLE_CHARS) {
+    const clipped = chars.slice(0, MAX_THREAD_TITLE_CHARS + 1).join('')
     const boundary = clipped.lastIndexOf(' ')
     title = (
-      boundary > 0 ? clipped.slice(0, boundary) : clipped.slice(0, MAX_THREAD_TITLE_CHARS)
+      boundary > 0 ? clipped.slice(0, boundary) : chars.slice(0, MAX_THREAD_TITLE_CHARS).join('')
     ).trim()
   }
-  return title.replace(/^([a-z])/, (letter) => letter.toUpperCase())
+  return capitalize ? title.replace(/^([a-z])/, (letter) => letter.toUpperCase()) : title
+}
+
+/** Keep user text from closing (or reopening) the prompt's data block. */
+function escapeConversationTags(text: string): string {
+  return text.replace(/<(\/?\s*conversation)/gi, '&lt;$1')
 }
 
 /**
@@ -102,19 +116,46 @@ export function threadTitlePrompt(text: string): string {
     '“Could you investigate why the terminal clips output?” → Terminal output clipping\n' +
     '“Please add filtering to the thread list.” → Filter the thread list\n\n' +
     '<conversation>\n' +
-    text.slice(0, THREAD_TITLE_INPUT_CAP) +
+    escapeConversationTags(text.slice(0, THREAD_TITLE_INPUT_CAP)) +
     '\n</conversation>'
   )
 }
 
-/** Normalize common small-model wrappers without allowing them into the sidebar. */
+// "Sure, here's the title: X" / "Thread title: X" — keep only X.
+const MODEL_TITLE_LABEL =
+  /^(?:(?:sure|okay|ok|got it|alright)\b[\s,!.:;—-]*)?(?:here(?:'s| is)\s+(?:the|a|your)?\s*)?(?:thread\s+|sidebar\s+)?title\s*:\s*/i
+
+// A line of preamble or reasoning rather than a title ("Okay, the user wants…").
+const MODEL_PREAMBLE = new RegExp(
+  [
+    // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
+    String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
+    String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
+    String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+    String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`,
+  ].join('|'),
+  'i',
+)
+
+// Single words that are a non-answer rather than a title.
+const NON_TITLE_WORD = /^(?:title|untitled|none|n\/a|yes|no|thread|conversation|request)$/i
+
+/**
+ * Normalize common small-model wrappers without allowing them into the sidebar.
+ * Only formatting and answer preambles are removed: the conversational-opener
+ * heuristics in {@link fallbackThreadTitle} are for raw user text and would
+ * mangle legitimate model titles ("Make targets fail on Linux", "IT asset …").
+ */
 export function cleanThreadTitle(output: string): string | null {
   for (const candidate of output.split('\n')) {
     const line = candidate.trim()
     if (!line || /^\x60{3}(?:\w+)?$/.test(line)) continue
-    const title = compactTitle(stripDecoration(stripConversationalLead(stripDecoration(line))))
-    const wordCount = title.split(/\s+/).filter(Boolean).length
-    if (wordCount >= 2 && !vagueClause(title)) return title
+    const unlabelled = stripDecoration(stripDecoration(line).replace(MODEL_TITLE_LABEL, ''))
+    if (!unlabelled || MODEL_PREAMBLE.test(unlabelled)) continue
+    const title = compactTitle(unlabelled, false)
+    if (!title || vagueClause(title)) continue
+    if (!title.includes(' ') && NON_TITLE_WORD.test(title)) continue
+    return title
   }
   return null
 }
@@ -135,10 +176,10 @@ export function fallbackThreadTitle(input: string): string {
   for (const rawClause of clauses) {
     const clause = stripConversationalLead(stripDecoration(rawClause))
     if (!clause || vagueClause(clause)) continue
-    const title = compactTitle(clause)
+    const title = compactTitle(clause, true)
     if (title) return title
   }
 
-  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)))
+  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true)
   return fallback || 'New Thread'
 }

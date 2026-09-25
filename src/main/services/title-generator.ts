@@ -39,20 +39,36 @@ async function* threadTitleRoutes(): AsyncIterable<SmallTasksRoute> {
 export interface ThreadTitleCompletion {
   title: string
   model: string
-  usage: { inputTokens: number; outputTokens: number }
 }
 
-/** Try title routes in order, including malformed-output failover. */
+type RecordRouteUsage = (
+  model: string,
+  usage: { inputTokens: number; outputTokens: number },
+) => void
+
+/**
+ * Try title routes in order, including malformed-output failover. Every
+ * attempt's tokens go to `recordUsage` — a rejected answer or a timed-out
+ * stream still spent them.
+ */
 export async function completeThreadTitleWithRoutes(
   text: string,
   routes: AsyncIterable<SmallTasksRoute>,
+  recordUsage: RecordRouteUsage = recordSmallTasksUsage,
 ): Promise<ThreadTitleCompletion | null> {
   const prompt = threadTitlePrompt(text)
   for await (const route of routes) {
     try {
-      const { text: output, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+      const { text: output } = await completeTextWithUsage(
+        route.provider,
+        prompt,
+        20_000,
+        (usage) => {
+          recordUsage(route.model, usage)
+        },
+      )
       const title = cleanThreadTitle(output)
-      if (title) return { title, model: route.model, usage }
+      if (title) return { title, model: route.model }
     } catch {
       // The selected local model may build successfully while its server is
       // stopped or that model is unloaded. Advance to the chat route.
@@ -71,9 +87,7 @@ export async function suggestThreadTitle(text: string): Promise<string | null> {
     return mockScenarioTitle(text)
   }
   const completion = await completeThreadTitleWithRoutes(text, threadTitleRoutes())
-  if (!completion) return null
-  recordSmallTasksUsage(completion.model, completion.usage)
-  return completion.title
+  return completion?.title ?? null
 }
 
 // Trim model output to a single clean phrase (sentence case left as-is).

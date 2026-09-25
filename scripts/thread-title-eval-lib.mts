@@ -81,8 +81,19 @@ function legacyThreadTitlePrompt(text: string): string {
   )
 }
 
+/** The cleaner the product used with the legacy prompt, so each arm is scored as it shipped. */
+function legacyCleanTitle(out: string): string | null {
+  const firstLine = out.trim().split('\n')[0] ?? ''
+  const title = firstLine.replace(/^["'#\s-]+|["'.\s]+$/g, '').slice(0, 60)
+  return title || null
+}
+
 function promptForArm(arm: ThreadTitleEvalArm, input: string): string {
   return arm === 'candidate' ? threadTitlePrompt(input) : legacyThreadTitlePrompt(input)
+}
+
+export function cleanForArm(arm: ThreadTitleEvalArm, raw: string): string | null {
+  return arm === 'candidate' ? cleanThreadTitle(raw) : legacyCleanTitle(raw)
 }
 
 function normalized(value: string): string {
@@ -225,7 +236,7 @@ async function runAttempt(
       promptForArm(arm, evalCase.input),
       20_000,
     )
-    const title = cleanThreadTitle(raw)
+    const title = cleanForArm(arm, raw)
     const score = scoreThreadTitle(evalCase, title)
     return {
       caseId: evalCase.id,
@@ -313,6 +324,12 @@ export async function runThreadTitleEval(
   return report
 }
 
+/** A trimmed environment value, treating an empty or blank value as unset. */
+function envValue(name: string): string | undefined {
+  const value = process.env[name]?.trim()
+  return value === '' ? undefined : value
+}
+
 function argValue(args: readonly string[], flag: string): string | undefined {
   const index = args.indexOf(flag)
   return index === -1 ? undefined : args[index + 1]
@@ -345,22 +362,17 @@ function parseArms(value: string | undefined): ThreadTitleEvalArm[] {
 export function parseThreadTitleEvalArgs(args: readonly string[]): ThreadTitleEvalOptions {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const model =
-    argValue(args, '--model') ??
-    process.env['LM_STUDIO_MODEL']?.trim() ??
-    LM_STUDIO_MODEL_IDS.smallTasks
+    argValue(args, '--model') ?? envValue('LM_STUDIO_MODEL') ?? LM_STUDIO_MODEL_IDS.smallTasks
   const caseId = argValue(args, '--case')
   return {
     model,
     baseUrl: preferIpv4LoopbackUrl(
       argValue(args, '--base-url') ??
-        process.env['COPSE_EVAL_LM_STUDIO_URL']?.trim() ??
-        process.env['LM_STUDIO_BASE_URL']?.trim() ??
+        envValue('COPSE_EVAL_LM_STUDIO_URL') ??
+        envValue('LM_STUDIO_BASE_URL') ??
         DEFAULT_LM_STUDIO_URL,
     ),
-    apiKey:
-      process.env['LM_STUDIO_API_KEY']?.trim() ??
-      process.env['LM_API_TOKEN']?.trim() ??
-      'lm-studio',
+    apiKey: envValue('LM_STUDIO_API_KEY') ?? envValue('LM_API_TOKEN') ?? 'lm-studio',
     repeats: positiveInteger(argValue(args, '--repeats'), 1, '--repeats'),
     arms: parseArms(argValue(args, '--arms')),
     ...(caseId ? { caseId } : {}),
