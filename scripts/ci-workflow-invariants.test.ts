@@ -794,6 +794,10 @@ describe('Copse Reviewer workflow invariants', () => {
     'utf8',
   )
   const reviewCellDockerfile = readFileSync(resolve('packages/review/Dockerfile.cell'), 'utf8')
+  const groundCellScript = readFileSync(
+    resolve('packages/review/ci/ground-as-cell-user.sh'),
+    'utf8',
+  )
   const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
 
   function workflowJobBlock(workflow: string, name: string): string {
@@ -833,10 +837,26 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.doesNotMatch(job, /\$\{\{\s*secrets\./)
       assert.match(job, /ref: \$\{\{ github\.(?:sha|event\.repository\.default_branch) \}\}/)
       assert.match(job, /persist-credentials: false/)
-      assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
-      assert.match(job, /--backend ephemeral-runner/)
-      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
+      assert.match(job, /bash packages\/review\/ci\/ground-as-cell-user\.sh/)
+      assert.doesNotMatch(job, /--backend ephemeral-runner/, 'never as the runner user')
     }
+    // Pull-request code runs as a user that can reach nothing a later step
+    // executes with the job's Actions runtime token.
+    assert.match(groundCellScript, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
+    assert.match(groundCellScript, /--backend ephemeral-runner/)
+    assert.match(groundCellScript, /--scratch-parent "\$cell_home\/scratch"/)
+    assert.match(groundCellScript, /sudo useradd [^\n]*"\$cell_user"/)
+    assert.match(groundCellScript, /sudo chmod 0700 "\$HOME"/)
+    assert.match(groundCellScript, /sudo -u "\$cell_user" -- env -i \\/)
+    assert.match(groundCellScript, /sudo usermod --lock --expiredate 1 "\$cell_user"/)
+    assert.match(groundCellScript, /sudo pkill -KILL -u "\$cell_user"/)
+    const cli = groundCellScript.indexOf('--backend ephemeral-runner')
+    assert.ok(groundCellScript.indexOf('sudo chmod 0700 "$HOME"') < cli)
+    assert.ok(groundCellScript.lastIndexOf('as_cell ', cli) < cli, 'the CLI runs as the cell user')
+    assert.ok(cli < groundCellScript.indexOf('sudo pkill'))
+    assert.ok(
+      groundCellScript.indexOf('sudo pkill') < groundCellScript.indexOf('> "$OUT_DIR/report.json"'),
+    )
 
     const handoff = workflowJobBlock(groundWorkflow, 'handoff')
     assert.match(handoff, /needs: \[reuse, ground\]/)
@@ -947,17 +967,22 @@ describe('Copse Reviewer workflow invariants', () => {
 
   it('primes the isolated checks from data-only files at the exact pull-request head', () => {
     for (const workflow of [groundWorkflow, nightlyWorkflow]) {
-      const job = workflowJobBlock(workflow, 'ground')
-      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
-      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
-      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
-      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
-      assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
-      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+      assert.match(workflowJobBlock(workflow, 'ground'), /ground-as-cell-user\.sh/)
+    }
+    {
+      const job = groundCellScript
+      assert.match(job, /git -C "\$GITHUB_WORKSPACE" show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git -C "\$GITHUB_WORKSPACE" archive --format=tar "\$HEAD_SHA" patches/)
       assert.match(
         job,
-        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+        /pnpm fetch --frozen-lockfile --dir "\$dependency_seed" --store-dir "\$store"/,
       )
+      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
+      const fetch = job.indexOf('pnpm fetch --frozen-lockfile')
+      assert.ok(job.indexOf('rev-parse "refs/remotes/pr/') < fetch)
+      assert.ok(fetch < job.indexOf('--backend ephemeral-runner'))
+      assert.match(job, /--store "\$store"/)
+      assert.match(job, /--trusted-prepare "\$trusted\/scripts\/prepare-review-stage0\.mts"/)
     }
 
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
@@ -989,8 +1014,8 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /export PATH="\$\{setup_node_bin\}:\/usr\/bin:\$\{PATH\}"/)
       assert.match(job, /test "\$\(command -v cargo\)" = \/usr\/bin\/cargo/)
       assert.match(job, /test "\$\(command -v node\)" = "\$\{setup_node_bin\}\/node"/)
-      assert.ok(job.indexOf('apt-get install') < job.indexOf('refs/pull/'))
-      assert.ok(job.indexOf('export PATH=') < job.indexOf('--backend ephemeral-runner'))
+      assert.ok(job.indexOf('apt-get install') < job.indexOf('ground-as-cell-user.sh'))
+      assert.ok(job.indexOf('export PATH=') < job.indexOf('ground-as-cell-user.sh'))
     }
   })
 
