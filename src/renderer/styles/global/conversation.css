@@ -9,9 +9,13 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  max-width: calc(100% - 2 * var(--spacing-xl));
-  margin: var(--spacing-sm) var(--spacing-xl) 0;
-  padding: 0;
+  /* Line the chip up with the centred transcript column (`.msg` caps at
+     --chat-content-max inside the list's --spacing-xl gutter) and its text
+     inset, so on a wide pane it sits above the text rather than at the
+     pane edge. */
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
   border: none;
   background: transparent;
   font: inherit;

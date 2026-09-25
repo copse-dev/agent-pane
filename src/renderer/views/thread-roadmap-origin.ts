@@ -1,6 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { navigateToRoadmapItem } from '../controller/panels.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -42,10 +43,20 @@ export function mountThreadRoadmapOrigin(
 
   let itemId: string | null = null
   let generation = 0
+  // The thread the last lookup was for. `threads_changed` fires many times per
+  // turn (streaming, titles, status), and each lookup reads every roadmap note
+  // on the main side, so thread events only re-query when the active thread
+  // actually changed; `roadmap:changed` always re-queries.
+  let syncedThreadId: string | null | undefined
+
+  function syncIfThreadChanged(): void {
+    if (store.getState().activeThreadId !== syncedThreadId) sync()
+  }
 
   function sync(): void {
     const gen = ++generation
     const threadId = store.getState().activeThreadId
+    syncedThreadId = threadId
     if (!threadId) {
       itemId = null
       link.hidden = true
@@ -63,7 +74,7 @@ export function mountThreadRoadmapOrigin(
         itemId = item.id
         const title = item.title || '(untitled)'
         titleEl.textContent = title
-        link.title = `Open roadmap item "${title}"`
+        setTooltip(link, `Open roadmap item "${title}"`)
         link.setAttribute('aria-label', `Open roadmap item "${title}"`)
         link.hidden = false
       })
@@ -79,11 +90,13 @@ export function mountThreadRoadmapOrigin(
   })
 
   sync()
-  const unsubscribeThreads = store.on('threads_changed', sync)
+  const unsubscribeThreads = store.on('threads_changed', syncIfThreadChanged)
   // "Start thread" creates the thread (threads_changed) before the item's
   // `thread` field is stamped — the pane's setThread call returns and
   // broadcasts on this same channel once it durably lands (see
   // roadmap:set-thread), the same shape as a background complexity stamp.
+  // Renames and deletes broadcast on it too, so the chip never keeps a stale
+  // title or a link to a deleted item.
   const unsubscribeRoadmap = api.roadmap.onChanged(sync)
 
   return {

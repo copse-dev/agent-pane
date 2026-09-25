@@ -19,6 +19,8 @@ export interface RoadmapWriteDependencies {
   addKnowledgeNote: typeof notes.addKnowledgeNote
   getKnowledgeNote: typeof notes.getKnowledgeNote
   updateKnowledgeNote: typeof notes.updateKnowledgeNote
+  deleteKnowledgeNote: typeof notes.deleteKnowledgeNote
+  loadKnowledgeNotes: typeof notes.loadKnowledgeNotes
   saveKnowledgeAttachments: typeof attachments.saveKnowledgeAttachments
   deleteAllKnowledgeAttachments: typeof attachments.deleteAllKnowledgeAttachments
   deleteKnowledgeAttachmentFiles: typeof attachments.deleteKnowledgeAttachmentFiles
@@ -28,7 +30,10 @@ export interface RoadmapWriteDependencies {
   notifyRoadmapChanged: () => void
 }
 
-/** Actual create/update logic; Electron sender authorization stays at the IPC boundary. */
+/**
+ * Actual create/update/delete/thread-tracking logic; Electron sender
+ * authorization stays at the IPC boundary.
+ */
 export interface RoadmapWriteHandlers {
   create(
     rawPrompt: unknown,
@@ -45,6 +50,9 @@ export interface RoadmapWriteHandlers {
     rawAddAttachments?: unknown,
     rawRemoveAttachmentIds?: unknown,
   ): notes.KnowledgeNote | null
+  remove(rawId: unknown): boolean
+  setThread(rawId: unknown, rawThreadId: unknown): notes.KnowledgeNote | null
+  findByThread(rawThreadId: unknown): { id: string; title: string } | null
 }
 
 export function createRoadmapWriteHandlers(deps: RoadmapWriteDependencies): RoadmapWriteHandlers {
@@ -52,6 +60,8 @@ export function createRoadmapWriteHandlers(deps: RoadmapWriteDependencies): Road
     addKnowledgeNote,
     getKnowledgeNote,
     updateKnowledgeNote,
+    deleteKnowledgeNote,
+    loadKnowledgeNotes,
     saveKnowledgeAttachments,
     deleteAllKnowledgeAttachments,
     deleteKnowledgeAttachmentFiles,
@@ -221,6 +231,9 @@ export function createRoadmapWriteHandlers(deps: RoadmapWriteDependencies): Road
       if (!updated) deleteKnowledgeAttachmentFiles(id, saved)
     }
     if (updated) deleteKnowledgeAttachmentFiles(id, removed)
+    // Other surfaces mirror an item's title (the thread-side back-link chip,
+    // #2501); tell them now rather than only when a background stamp lands.
+    if (updated) notifyRoadmapChanged()
     if (updated && promptChanged) {
       void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
       void stampRoadmapCategory(id, prompt, notifyRoadmapChanged)
@@ -231,5 +244,53 @@ export function createRoadmapWriteHandlers(deps: RoadmapWriteDependencies): Road
     }
     return updated
   }
-  return { create, update }
+  function remove(rawId: unknown): boolean {
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return false
+    const deleted = deleteKnowledgeNote(id)
+    if (deleted) {
+      deleteAllKnowledgeAttachments(id)
+      // A deleted item must stop being offered as a thread's origin (#2501).
+      notifyRoadmapChanged()
+    }
+    return deleted
+  }
+
+  // Track the chat thread started from an item ("Start thread" in the pane) in
+  // a `thread` frontmatter field, so the pane can offer reopening it later.
+  // Restamping is deliberate: starting a fresh thread from the same item points
+  // the field at the newest one. An empty threadId clears the tracking.
+  //
+  // The new thread's own `threads_changed` fires (createThread) before this
+  // stamp lands, so the thread-side back-link chip (#2501) cannot learn the
+  // mapping from thread events alone. Broadcast on the shared
+  // `roadmap:changed` channel so it (and the pane) pick the stamp up once it
+  // durably lands, the same as a background complexity/category stamp.
+  function setThread(rawId: unknown, rawThreadId: unknown): notes.KnowledgeNote | null {
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const threadId = parseIpcArgs(z.string().max(128).optional(), [rawThreadId])?.trim() ?? ''
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    const { thread: _thread, ...rest } = existing.fields
+    const updated = updateKnowledgeNote(id, {
+      fields: { ...rest, ...(threadId ? { thread: threadId } : {}) },
+    })
+    if (updated) notifyRoadmapChanged()
+    return updated
+  }
+
+  // Reverse lookup for the thread-side back-link (#2501): the roadmap item
+  // currently tracking `threadId` as its `thread` field. That field is
+  // restamped to the newest thread on every "Start thread", so an item that
+  // has since spawned a second thread only answers for the newer one — the
+  // older thread's back-link quietly stops resolving rather than pointing at
+  // the wrong item.
+  function findByThread(rawThreadId: unknown): { id: string; title: string } | null {
+    const threadId = parseIpcArgs(zNonEmptyString.max(128), [rawThreadId])
+    const match = loadKnowledgeNotes(ROADMAP_TYPE).find((n) => n.fields['thread'] === threadId)
+    return match ? { id: match.id, title: match.title } : null
+  }
+
+  return { create, update, remove, setThread, findByThread }
 }

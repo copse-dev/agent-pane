@@ -1006,6 +1006,8 @@ export function registerAllHandlers(
     addKnowledgeNote,
     getKnowledgeNote,
     updateKnowledgeNote,
+    deleteKnowledgeNote,
+    loadKnowledgeNotes,
     saveKnowledgeAttachments,
     deleteAllKnowledgeAttachments,
     deleteKnowledgeAttachmentFiles,
@@ -1144,43 +1146,15 @@ export function registerAllHandlers(
     return matchOpenIssuesToRoadmapItems(issues)
   })
 
-  // Track the chat thread started from an item ("Start thread" in the pane) in
-  // a `thread` frontmatter field, so the pane can offer reopening it later.
-  // Restamping is deliberate: starting a fresh thread from the same item points
-  // the field at the newest one. An empty threadId clears the tracking.
-  //
-  // The new thread's own `threads_changed` fires (createThread) before this
-  // stamp lands — the same "return before the background write lands" shape
-  // as a complexity stamp — so the thread-side back-link chip (#2501) cannot
-  // learn the mapping from thread events alone. Broadcast on the shared
-  // `roadmap:changed` channel so it (and the pane) pick the stamp up once it
-  // durably lands, same as stampRoadmapComplexity/Category above.
+  // Thread tracking for "Start thread" and its reverse lookup for the
+  // thread-side back-link chip (#2501); see roadmap-write-handlers.ts.
   ipcMain.handle('roadmap:set-thread', (event, rawId: unknown, rawThreadId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zRoadmapId, [rawId])
-    const threadId = parseIpcArgs(z.string().max(128).optional(), [rawThreadId])?.trim() ?? ''
-    const existing = getKnowledgeNote(id)
-    if (!existing || existing.type !== ROADMAP_TYPE) return null
-    const { thread: _thread, ...rest } = existing.fields
-    const updated = updateKnowledgeNote(id, {
-      fields: { ...rest, ...(threadId ? { thread: threadId } : {}) },
-    })
-    if (updated) notifyRoadmapChanged()
-    return updated
+    return roadmapWrites.setThread(rawId, rawThreadId)
   })
-
-  // Reverse lookup for the thread-side back-link (issue #2501): given a
-  // thread id, find the roadmap item currently tracking it as its `thread`
-  // field. Because that field is restamped to the newest thread on every
-  // "Start thread" (see roadmap:set-thread above), an item that has since
-  // spawned a second thread only answers for the newer one — the older
-  // thread's back-link quietly stops resolving rather than pointing at the
-  // wrong item.
   ipcMain.handle('roadmap:find-by-thread', (event, rawThreadId: unknown) => {
     assertMainFrameSender(event, win)
-    const threadId = parseIpcArgs(zNonEmptyString.max(128), [rawThreadId])
-    const match = loadKnowledgeNotes(ROADMAP_TYPE).find((n) => n.fields['thread'] === threadId)
-    return match ? { id: match.id, title: match.title } : null
+    return roadmapWrites.findByThread(rawThreadId)
   })
 
   // Advisory fit check of an item's prompt against its pinned issue,
@@ -1241,12 +1215,7 @@ export function registerAllHandlers(
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zRoadmapId, [rawId])
-    const existing = getKnowledgeNote(id)
-    if (!existing || existing.type !== ROADMAP_TYPE) return false
-    const deleted = deleteKnowledgeNote(id)
-    if (deleted) deleteAllKnowledgeAttachments(id)
-    return deleted
+    return roadmapWrites.remove(rawId)
   })
 
   // Deterministic export of the active project's roadmap (RoadmapExporter,

@@ -143,4 +143,38 @@ describe('thread roadmap origin chip', () => {
       destroy()
     }
   })
+
+  it('ignores threads_changed for the same active thread, but re-queries on roadmap:changed', async () => {
+    const store = createStore({ activeThreadId: 'thread-1' })
+    const origin: Record<string, { id: string; title: string }> = {
+      'thread-1': { id: 'item-a', title: 'Old title' },
+    }
+    const { api, calls, fireChanged } = makeApi(origin)
+    const { element, destroy } = mountThreadRoadmapOrigin(store, api)
+    try {
+      await flush()
+      assert.deepEqual(calls, ['thread-1'])
+      store.emit('threads_changed')
+      store.emit('threads_changed')
+      await flush()
+      assert.deepEqual(calls, ['thread-1'], 'streaming thread events do not re-query')
+
+      // A rename broadcasts roadmap:changed: the chip picks the new title up.
+      origin['thread-1'] = { id: 'item-a', title: 'New title' }
+      fireChanged()
+      await flush()
+      assert.deepEqual(calls, ['thread-1', 'thread-1'])
+      assert.equal(element.querySelector('.thread-roadmap-origin-title')?.textContent, 'New title')
+      assert.equal(element.getAttribute('data-tooltip'), 'Open roadmap item "New title"')
+      assert.equal(element.hasAttribute('title'), false)
+
+      // Deleting the item broadcasts too: the chip disappears.
+      delete origin['thread-1']
+      fireChanged()
+      await flush()
+      assert.equal(element.hidden, true)
+    } finally {
+      destroy()
+    }
+  })
 })

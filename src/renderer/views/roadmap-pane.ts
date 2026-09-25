@@ -1689,12 +1689,11 @@ export function mountRoadmapPane(
       }
     }
     // Track the started thread on the item so it can be reopened from here
-    // later. Best-effort: a failed stamp only costs the Reopen shortcut.
+    // later. Best-effort: a failed stamp only costs the Reopen shortcut. Main
+    // broadcasts roadmap:changed once the stamp lands, and the onChanged
+    // subscription below refreshes the list — no second refresh here.
     if (selectedId) {
-      void api.roadmap
-        .setThread(selectedId, threadId)
-        .then(() => refresh({ preserveDirty: true }))
-        .catch(() => {})
+      void api.roadmap.setThread(selectedId, threadId).catch(() => {})
     }
     handlers?.focusComposer?.()
   }
