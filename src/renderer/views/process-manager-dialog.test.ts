@@ -166,10 +166,17 @@ test('running-thread and background-task actions keep their thread scope', async
   open()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(document.querySelector('.process-manager-activity')?.hasAttribute('hidden'), false)
-  assert.match(
-    document.querySelector('.process-manager-activity-item')?.textContent ?? '',
-    /Working.*thread-a/,
+  const activityItem = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
+  assert.ok(activityItem)
+  assert.match(activityItem.textContent, /Working.*thread-a/)
+  assert.equal(activityItem.getAttribute('aria-label'), 'Open thread thread-a')
+  activityItem.dispatchEvent(
+    new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
   )
+  menuItem('Stop agent run').click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(aborted, ['thread-a'])
+
   const actions = document.querySelector<HTMLButtonElement>(
     'tr[data-pid="43"] .process-manager-actions-button',
   )
@@ -177,7 +184,7 @@ test('running-thread and background-task actions keep their thread scope', async
   actions.click()
   menuItem('Stop agent run').click()
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.deepEqual(aborted, ['thread-a'])
+  assert.deepEqual(aborted, ['thread-a', 'thread-a'])
 
   actions.click()
   menuItem('Stop background task').click()
