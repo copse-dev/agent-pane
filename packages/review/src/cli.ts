@@ -613,14 +613,19 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
                     { gitDir: checkouts.headGitDir, workTree: checkouts.head },
                     mergeBase,
                     path,
-                    headCommit,
+                    { headCommit },
                   )
                 : '',
           },
         )
         io.stderr(
-          `copse-review: posted the review on ${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''})\n`,
+          `copse-review: posted the review on ${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''}${posted.superseded ? `; superseded ${String(posted.superseded)} earlier review(s)` : ''})\n`,
         )
+        if (posted.supersedeError !== undefined) {
+          io.stderr(
+            `copse-review: earlier reviews were left as they were: ${posted.supersedeError}\n`,
+          )
+        }
       } catch (err) {
         postError = errorMessage(err)
         io.stderr(`copse-review: the review could not be posted: ${postError}\n`)
