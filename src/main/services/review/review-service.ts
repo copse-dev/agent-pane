@@ -14,6 +14,7 @@
 // Spend: a human gesture (the Changes view's "Review", the bubble) is its own
 // decision and never prompts. The agent's `review_changes` tool call prompts
 // for a billable model, remembered per thread like the post-turn review does.
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { errorMessage } from '@shared/errors.ts'
 import type { StreamChunk, ThreadReviewReport, ReviewFindingRecord } from '@shared/types'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
@@ -606,8 +607,11 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
   }
 }
 
-// Run-scoped context for the `review_changes` tool, set by agent-service around
-// the tool call (mirrors setAdvisorContext / setCiInvestigatorContext).
+// Run-scoped context for the `review_changes` tool, bound by agent-service
+// around the tool call. Async-local, like the advisor's context: the tool
+// reads it only after awaiting its permission check, and a process-global
+// slot let a second thread's concurrent call replace it in the meantime, so
+// one thread reviewed another's checkout and streamed into its conversation.
 export interface ReviewToolContext {
   readonly threadId: string
   readonly root: string
@@ -615,19 +619,21 @@ export interface ReviewToolContext {
   readonly onChunk: (chunk: StreamChunk) => void
 }
 
-let activeContext: ReviewToolContext | null = null
+const reviewToolContext = new AsyncLocalStorage<ReviewToolContext>()
 
-export function setReviewToolContext(ctx: ReviewToolContext | null): void {
-  activeContext = ctx
+export function runWithReviewToolContext<T>(ctx: ReviewToolContext, run: () => T): T {
+  return reviewToolContext.run(ctx, run)
 }
 
 export type ReviewToolRunner = (signal: AbortSignal) => Promise<string>
 
-export function getReviewToolRunner(): ReviewToolRunner | null {
-  if (!activeContext) return null
-  const ctx = activeContext
+export function getReviewToolRunner(
+  review: typeof runThreadReview = runThreadReview,
+): ReviewToolRunner | null {
+  const ctx = reviewToolContext.getStore()
+  if (ctx === undefined) return null
   return async (signal) => {
-    const { summary } = await runThreadReview({ ...ctx, signal, initiator: 'agent' })
+    const { summary } = await review({ ...ctx, signal, initiator: 'agent' })
     return summary
   }
 }
