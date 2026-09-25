@@ -12,8 +12,8 @@ adversarial challenge, the ranked report, SARIF export and the headless event en
 In the app, the `copse.review` plugin has replaced `copse.model-comparison`: "Review" in
 the Changes view, the "Review changes" bubble and the `review_changes` tool run the same
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
-to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
-pull request runs Stage 0 on a secret-free runner and posts the findings as one review
+to the knowledge store (see §What Phase 3 delivered). In CI, every ready owner pull request
+(and a draft given the `copse-review` label) runs Stage 0 on a secret-free runner and posts the findings as one review
 from a second job whose model process brokers focused validation into a secret-free
 container (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
@@ -860,8 +860,9 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   the upload step.
 - **The CI shell, in two privilege domains.** `review-ground.yml` uses
   a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
-  `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
-  the trusted default branch even when the pull request predates it. (`issues:labeled` does not
+  `pull_request_target` (`opened`, `reopened` and `ready_for_review` for a non-draft pull request;
+  `labeled` for the `copse-review` label; never for one labelled `copse-review-skip`), so its
+  definition comes from the trusted default branch even when the pull request predates it. (`issues:labeled` does not
   fire for pull requests, while `pull_request:labeled` selects the pull request revision.) The
   target context is deliberately confined to resolving current PR metadata and dispatching the
   ground workflow: it checks out and executes no repository content. Grounding gets the PR
@@ -915,8 +916,9 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   `COPSE_REVIEW_PR_PROFILE=configured` rolls both paths back to the retained
   `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`, and `COPSE_REVIEW_BASE_URL` variables
   (the Scaleway `qwen3.8-27b` route). The benchmark profile remains separately selectable.
-  A separate schedule samples no more than one recent, unlabelled same-repository pull
-  request per night, including drafts; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
+  A separate schedule samples no more than one recent, unlabelled same-repository draft pull
+  request per night (ready ones are reviewed when they become ready); `copse-review-skip` is the
+  opt-out. Both paths run the trusted default-branch CLI,
   preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
   secret-redacted diff and file context leave the GitHub runner for the selected provider. Human

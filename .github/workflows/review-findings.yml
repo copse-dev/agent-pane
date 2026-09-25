@@ -88,9 +88,15 @@ jobs:
             if (pull.state !== 'open' || pull.user?.id !== 338988 ||
                 pull.head.repo?.id !== 1274237362 || pull.base.repo?.id !== 1274237362 ||
                 pull.head.sha !== process.env.EXPECTED_HEAD ||
-                pull.base.ref !== process.env.EXPECTED_BASE ||
-                !pull.labels.some(label => label.name === 'copse-review')) {
-              core.notice('Paid reviews require a current, labelled owner PR from this repository.');
+                pull.base.ref !== process.env.EXPECTED_BASE) {
+              core.notice('Paid reviews require a current owner PR from this repository.');
+              return;
+            }
+            const labels = pull.labels.map(label => label.name);
+            // Ready pull requests are reviewed by default; a draft needs the label.
+            if (labels.includes('copse-review-skip') ||
+                (pull.draft && !labels.includes('copse-review'))) {
+              core.notice('Paid reviews skip copse-review-skip and unlabelled draft PRs.');
               return;
             }
             core.setOutput('authorized', 'true');

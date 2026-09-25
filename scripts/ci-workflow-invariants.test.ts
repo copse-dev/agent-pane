@@ -864,12 +864,33 @@ describe('Copse Reviewer workflow invariants', () => {
   }
 
   it('executes pull-request code only in credential-free execution cells', () => {
-    assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
+    assert.match(
+      triggerWorkflow,
+      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled\]$/m,
+    )
+    assert.doesNotMatch(triggerWorkflow, /synchronize/, 'a push must not post another review')
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
     assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
     const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
-    assert.match(dispatcher, /github\.event\.label\.name == 'copse-review'/)
+    // Ready pull requests by default; a draft only with the label; never with the opt-out.
+    assert.match(
+      dispatcher,
+      /github\.event\.action == 'labeled' && github\.event\.label\.name == 'copse-review'/,
+    )
+    assert.match(
+      dispatcher,
+      /github\.event\.action != 'labeled' && !github\.event\.pull_request\.draft/,
+    )
+    assert.match(
+      dispatcher,
+      /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'copse-review-skip'\)/,
+    )
+    assert.match(dispatcher, /if \[ "\$skipped" = "true" \]/)
+    assert.match(dispatcher, /if \[ "\$draft" = "true" \] && \[ "\$labelled" != "true" \]/)
+    const authorize = workflowJobBlock(findingsWorkflow, 'authorize')
+    assert.match(authorize, /labels\.includes\('copse-review-skip'\)/)
+    assert.match(authorize, /pull\.draft && !labels\.includes\('copse-review'\)/)
     assert.match(dispatcher, /github\.actor_id == '338988'/)
     assert.match(dispatcher, /github\.event\.pull_request\.user\.id == 338988/)
     assert.match(dispatcher, /github\.event\.pull_request\.head\.repo\.id == 1274237362/)
@@ -1236,7 +1257,7 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {
+  it('samples at most one recent same-repository draft PR and has an explicit opt-out', () => {
     assert.match(nightlyWorkflow, /^ {2}schedule:$/m)
     assert.match(nightlyWorkflow, /^ {2}workflow_dispatch:$/m)
     assert.match(nightlyWorkflow, /pull\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
@@ -1244,8 +1265,9 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review'\)/)
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review-skip'\)/)
     assert.match(nightlyWorkflow, /selected = candidates\[utcDay % candidates\.length\]/)
-    assert.doesNotMatch(nightlyWorkflow, /!pull\.draft/)
-    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/)
+    // Ready pull requests are reviewed on becoming ready; the sample covers drafts.
+    assert.match(nightlyWorkflow, /pull\.draft === true/)
+    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/, 'a dispatched PR may be either')
     assert.doesNotMatch(nightlyWorkflow, /^ {2}pull_request:/m)
   })
 
