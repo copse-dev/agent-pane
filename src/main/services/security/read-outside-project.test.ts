@@ -2,7 +2,6 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   analyzeReadOutsideProject,
-  describeReadOutsideTargets,
   formatReadOutsideProjectPromptParts,
   readOutsideProjectGrantTargets,
   sensitiveTargetReason,
@@ -198,18 +197,18 @@ describe('readOutsideProjectGrantTargets', () => {
 })
 
 describe('read-outside prompt copy', () => {
-  it('keeps the sensitive-locations warning and says what the grant covers', () => {
-    const analysis = analyze('ls -la ~/.copse')
-    const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse', analysis)
-    assert.equal(parts.command, 'ls -la ~/.copse')
-    assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
-    assert.match(parts.bodyAdvice ?? '', /read from sensitive locations on your computer/)
+  it('names every requested path and warns that directories include nested files', () => {
+    const command = 'cat /etc/hosts ~/.gitconfig ~/notes/a ~/notes/b'
+    const parts = formatReadOutsideProjectPromptParts(command, analyze(command))
+    assert.equal(parts.command, command)
+    for (const path of ['/etc/hosts', '~/.gitconfig', '~/notes/a', '~/notes/b']) {
+      assert.ok(parts.bodyAdvice?.includes(`• ${path}`))
+    }
+    assert.match(parts.bodyAdvice ?? '', /sensitive files/)
+    assert.match(parts.bodyAdvice ?? '', /nested inside/)
     assert.match(parts.bodyFooter ?? '', /rest of this thread/)
+    assert.match(parts.bodyFooter ?? '', /Other paths ask again/)
+    assert.match(parts.bodyFooter ?? '', /Writes, installs, and network access/)
     assert.match(parts.bodyFooter ?? '', /credential/)
-  })
-
-  it('summarises a long target list rather than listing all of it', () => {
-    assert.equal(describeReadOutsideTargets(['a', 'b']), 'a, b')
-    assert.equal(describeReadOutsideTargets(['a', 'b', 'c', 'd', 'e']), 'a, b, c and 2 more')
   })
 })

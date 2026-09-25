@@ -170,9 +170,12 @@ guest.
 ## Read access outside the project
 
 A command that only reads fully-accounted-for paths outside the project receives the narrower
-“Allow read access outside of the project?” question. Its primary action grants that proven read
-shape for the remainder of the thread, in memory only. An expanded “Approve this command” action
-approves one invocation without a grant.
+“Allow read access outside of the project?” question. The prompt lists every requested path and
+warns that a directory can contain sensitive files. Its primary action grants reads of those
+specific paths for the remainder of the thread, in memory only: an approved file covers only that
+file, while an approved directory covers its descendants. A later command that names any other
+outside path asks again. An expanded “Approve this command” action approves one invocation without
+a grant.
 
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
 and must prove it is a plain read through a fail-closed allow-list. An unknown command head, write
