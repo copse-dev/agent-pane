@@ -84,6 +84,7 @@ import {
   workspaceDisplayPath,
   workspaceResourceFilePath,
 } from './acp-resource-previews.ts'
+import { computeLineDiff, foldLineDiff } from '@shared/diff/line-diff.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
@@ -1520,6 +1521,85 @@ function createAcpContentBlocks(
   return el('div', { class: `acp-content-blocks acp-${context}-content` }, ...nodes)
 }
 
+const acpDiffLineSigns = { context: ' ', add: '+', del: '-' } as const
+
+/**
+ * An ACP edit as a unified line diff: the workspace-relative path and +/- counts
+ * in the summary, and only the changed lines (with a little context) in the body.
+ */
+function createAcpToolDiff(
+  item: Extract<AcpToolCallContent, { type: 'diff' }>,
+  workspaceRoot: string | null,
+): HTMLElement {
+  const displayPath = workspaceDisplayPath(item.path, workspaceRoot)
+  const lines = computeLineDiff(item.oldText ?? '', item.newText)
+  const additions = lines.filter((line) => line.kind === 'add').length
+  const deletions = lines.filter((line) => line.kind === 'del').length
+  const hasChanges = additions > 0 || deletions > 0
+  const body = hasChanges
+    ? el('div', { class: 'acp-tool-diff-lines' })
+    : el('div', { class: 'acp-content-label' }, 'No changes')
+  const details = el(
+    'details',
+    { class: 'acp-tool-diff' },
+    el(
+      'summary',
+      {},
+      el(
+        'span',
+        { class: 'acp-tool-diff-label' },
+        item.oldText === undefined ? 'New file' : 'Diff',
+      ),
+      el(
+        'code',
+        {
+          class: 'acp-tool-diff-path',
+          ...(displayPath !== item.path ? { title: item.path } : {}),
+        },
+        // Isolated so the rtl elision trick cannot move a leading `.` to the end.
+        el('bdi', {}, displayPath),
+      ),
+      el('span', { class: 'tool-stat tool-stat-add' }, `+${String(additions)}`),
+      el('span', { class: 'tool-stat tool-stat-del' }, `-${String(deletions)}`),
+    ),
+    body,
+  )
+  if (!hasChanges) return details
+
+  const buildRows = (): void => {
+    if (!details.open || body.childElementCount > 0) return
+    const rows = foldLineDiff(lines).flatMap((line) => {
+      if (line.kind === 'gap') {
+        return [
+          el(
+            'div',
+            { class: 'acp-diff-line acp-diff-gap' },
+            `⋯ ${String(line.count)} unchanged ${line.count === 1 ? 'line' : 'lines'}`,
+          ),
+        ]
+      }
+      const accessibility =
+        line.kind === 'add'
+          ? { 'aria-label': `Added line: ${line.text}` }
+          : line.kind === 'del'
+            ? { 'aria-label': `Deleted line: ${line.text}` }
+            : {}
+      const row = el(
+        'div',
+        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        el('span', { class: 'acp-diff-sign', 'aria-hidden': 'true' }, acpDiffLineSigns[line.kind]),
+        el('span', { class: 'acp-diff-text' }, line.text),
+      )
+      return line.noNewlineAtEnd
+        ? [row, el('div', { class: 'acp-diff-line acp-diff-eof' }, '\\ No newline at end of file')]
+        : [row]
+    })
+    body.append(...rows)
+  }
+  details.addEventListener('toggle', buildRows)
+  return details
+}
+
 function createToolResultContent(
   content: readonly AcpToolCallContent[],
   previewImageDataUrls: ReadonlySet<string>,
@@ -1537,20 +1617,7 @@ function createToolResultContent(
       const node = createAcpContentBlock(item.content, 'tool', workspaceRoot, previewImageDataUrls)
       if (node) wrap.append(node)
     } else if (item.type === 'diff') {
-      const diff = el(
-        'details',
-        { class: 'acp-tool-diff' },
-        el('summary', {}, `Diff · ${item.path}`),
-        ...(item.oldText !== undefined
-          ? [
-              el('div', { class: 'acp-content-label' }, 'Before'),
-              el('pre', { class: 'acp-tool-diff-text' }, item.oldText),
-            ]
-          : []),
-        el('div', { class: 'acp-content-label' }, 'After'),
-        el('pre', { class: 'acp-tool-diff-text' }, item.newText),
-      )
-      wrap.append(diff)
+      wrap.append(createAcpToolDiff(item, workspaceRoot))
     } else {
       wrap.append(
         el(
