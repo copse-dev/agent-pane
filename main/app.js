@@ -130492,6 +130492,7 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
+    const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
       column === "cpu" ? ascending ? "ascending" : "descending" : "none"
@@ -130517,7 +130518,7 @@ function mountProcessManagerDialog(api2, store2) {
           type: "button",
           class: "process-manager-activity-item",
           "data-thread-id": threadId,
-          "aria-label": `Open thread ${label}`
+          "aria-label": canNavigate ? `Working ${label}: open thread` : `Working ${label}`
         },
         el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
         el("span", { class: "process-manager-activity-state" }, "Working"),
@@ -130551,6 +130552,10 @@ function mountProcessManagerDialog(api2, store2) {
         );
       });
       activityList.append(item);
+      if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
+    }
+    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
+      closeButton.focus({ preventScroll: true });
     }
     const state = store2.getState();
     for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
