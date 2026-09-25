@@ -3582,9 +3582,9 @@ label {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  max-width: calc(100% - 2 * var(--spacing-xl));
-  margin: var(--spacing-sm) var(--spacing-xl) 0;
-  padding: 0;
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
   border: none;
   background: transparent;
   font: inherit;
@@ -4127,36 +4127,10 @@ label {
 .msg-assistant {
   background: transparent;
 }
-.agent-avatar {
-  display: block;
-  width: calc(var(--spacing-xl) + var(--spacing-xs));
-  height: calc(var(--spacing-xl) + var(--spacing-xs));
-  flex-shrink: 0;
-  border-radius: var(--radius);
-}
-.message-agent {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-.message-agent-name {
-  font-weight: 500;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
-}
-.message-agent .message-model {
-  margin-bottom: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
@@ -5256,13 +5230,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-group-item[data-status=error] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
-.tool-interruption-note {
-  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
-  color: var(--text-secondary);
-}
-.tool-rollup-body > .tool-interruption-note {
-  margin: var(--spacing-xs) 0;
-}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -5312,15 +5279,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
-}
-.tool-subagent-marker {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
-  color: var(--text-secondary);
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
@@ -6777,6 +6735,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+.footer-usage-popover-section {
+  color: var(--text-muted);
+  margin-bottom: 2px;
   white-space: nowrap;
 }
 .footer-usage-popover-row {
