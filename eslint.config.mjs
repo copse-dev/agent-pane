@@ -315,6 +315,7 @@ export default ts.config(
       'src/preload/**/*.ts',
       'src/main/index.ts',
       'src/main/app-init.ts',
+      'src/main/app-profile-owner.ts',
       'src/main/app-icon.ts',
       'src/main/windows/**/*.ts',
       'src/main/ipc/**/*.ts',
