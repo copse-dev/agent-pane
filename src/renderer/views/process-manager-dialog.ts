@@ -222,6 +222,10 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   }
 
   function render(snapshot: ProcessManagerSnapshot): void {
+    const focusedActivityThread =
+      document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement)
+        ? document.activeElement.dataset['threadId']
+        : undefined
     cpuHeading.setAttribute(
       'aria-sort',
       column === 'cpu' ? (ascending ? 'ascending' : 'descending') : 'none',
@@ -247,7 +251,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
           type: 'button',
           class: 'process-manager-activity-item',
           'data-thread-id': threadId,
-          'aria-label': `Open thread ${label}`,
+          'aria-label': canNavigate ? `Working ${label}: open thread` : `Working ${label}`,
         },
         el('span', { class: 'process-manager-activity-dot', 'aria-hidden': 'true' }),
         el('span', { class: 'process-manager-activity-state' }, 'Working'),
@@ -281,6 +285,10 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
         )
       })
       activityList.append(item)
+      if (threadId === focusedActivityThread) item.focus({ preventScroll: true })
+    }
+    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
+      closeButton.focus({ preventScroll: true })
     }
     const state = store.getState()
     for (const row of sortedRows(snapshot.processes, column, ascending)) {
