@@ -214,19 +214,19 @@ dialog.process-manager-overlay {
 }
 .process-manager-sort::after {
   content: '';
-  width: 0;
-  height: 0;
-  margin-left: 5px;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
+  width: 8px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-inline-start: 5px;
+  background: currentColor;
   visibility: hidden;
 }
 .process-manager-table th[aria-sort='descending'] .process-manager-sort::after {
-  border-top: 6px solid currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
   visibility: visible;
 }
 .process-manager-table th[aria-sort='ascending'] .process-manager-sort::after {
-  border-bottom: 6px solid currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
   visibility: visible;
 }
 .process-manager-sort:focus-visible {
