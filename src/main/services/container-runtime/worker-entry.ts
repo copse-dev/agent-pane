@@ -286,6 +286,14 @@ function finalAssistantText(messages: readonly LLMMessage[]): string {
   return message && typeof message.content === 'string' ? message.content.trim() : ''
 }
 
+/** The run's provider key, from the host over the stdio link; never from the environment. */
+async function collectRunKey(link: EgressLink | null): Promise<string> {
+  if (!link) throw new Error('the run has a key but no link to the host to collect it over')
+  const key = await link.requestKey()
+  if (key.length === 0) throw new Error("the host did not hand over the run's key")
+  return key
+}
+
 async function main(): Promise<void> {
   // The home is a directory on the run's volume that does not exist until
   // the worker makes it (decision A9); private to the worker, as a home is.
@@ -296,7 +304,7 @@ async function main(): Promise<void> {
   // started and only connects on the first request.
   let hostGone: ((error: Error | undefined) => void) | null = null
   const link =
-    process.env['COPSE_EGRESS'] === 'stdio'
+    process.env['COPSE_HOST_LINK'] === 'stdio'
       ? claimStdioLink((error) => {
           hostGone?.(error)
         })
@@ -305,23 +313,24 @@ async function main(): Promise<void> {
   const egressToken = tokenEnv !== undefined && tokenEnv.length > 0 ? tokenEnv : null
   let proxyRefusals = 0
   const tunnelFailures = new Set<string>()
-  const egressProxy = link
-    ? await startGuestEgressProxy(link, GUEST_EGRESS_PROXY, {
-        ...(egressToken ? { token: egressToken } : {}),
-        onRefused: (target) => {
-          proxyRefusals += 1
-          say(`[egress] refused without the run token: ${target}\n`)
-        },
-        // Each distinct failure once: the agent retries, the log need not.
-        onTunnelError: (target, reason) => {
-          const line = `[egress] ${target}: ${reason}`
-          if (tunnelFailures.has(line)) return
-          tunnelFailures.add(line)
-          say(`${line}\n`)
-        },
-      })
-    : null
-  if (link && egressProxy) {
+  const egressProxy =
+    link && process.env['COPSE_EGRESS'] === 'stdio'
+      ? await startGuestEgressProxy(link, GUEST_EGRESS_PROXY, {
+          ...(egressToken ? { token: egressToken } : {}),
+          onRefused: (target) => {
+            proxyRefusals += 1
+            say(`[egress] refused without the run token: ${target}\n`)
+          },
+          // Each distinct failure once: the agent retries, the log need not.
+          onTunnelError: (target, reason) => {
+            const line = `[egress] ${target}: ${reason}`
+            if (tunnelFailures.has(line)) return
+            tunnelFailures.add(line)
+            say(`${line}\n`)
+          },
+        })
+      : null
+  if (link) {
     // One round trip before anything depends on it, so a link the host is not
     // reading fails the run now, by name, rather than as a 403 on the agent's
     // first request and a run that "completes" having reached nothing.
@@ -329,7 +338,7 @@ async function main(): Promise<void> {
       await probeBroker(link)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
-      await egressProxy.close()
+      await egressProxy?.close()
       throw new Error(
         `egress broker unreachable over the container's stdio: ${reason}. Nothing in the guest can leave the container until the host answers.`,
         { cause: error },
@@ -353,19 +362,19 @@ async function main(): Promise<void> {
     if (process.env[name] !== undefined) process.env[name] = ''
   }
   say(
-    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}, broker reachable over stdio` : 'off (no link to the host)'}\n`,
+    `[worker] egress proxy ${egressProxy ? `on ${egressProxy.address.host}:${String(egressProxy.address.port)}${egressToken ? ', token-gated' : ''}, broker reachable over stdio` : link ? 'off (the link carries only the run key)' : 'off (no link to the host)'}\n`,
   )
   const spec = readSpec()
   const attestationText = readFileSync(join(RUN_DIR, 'attestation.json'), 'utf8')
   const attestation = parseContainerRuntimeAttestation(attestationText)
   if (attestation === null) throw new Error('attestation.json is not a valid attestation')
-  const apiKey = spec.apiKeyEnv ? (process.env[spec.apiKeyEnv] ?? '') : ''
-  if (spec.apiKeyEnv) {
-    // The key is consumed here and never reaches a child process or the record
-    // through the environment. Under an ACP harness it reaches exactly one
-    // child — the agent — as the one entry of its explicit env map.
-    process.env[spec.apiKeyEnv] = ''
-  }
+  // The run's key is collected over the link now, before this process has
+  // spawned anything (the carry-in is the first child), and the host hands
+  // it over only once (decision A17). It was never in this process's
+  // environment, so no later process in the guest can read it from /proc.
+  // Under an ACP harness it reaches exactly one child — the agent — as the
+  // one entry of its explicit env map.
+  const apiKey = spec.apiKeyOverLink ? await collectRunKey(link) : ''
   if (spec.acp) {
     say(`[worker] harness: ACP agent ${spec.acp.agent.id} (${spec.acp.agent.command})\n`)
   }

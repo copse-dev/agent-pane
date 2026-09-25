@@ -106,8 +106,9 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   name only the guest resolves, which is how a scripted model server on loopback plays a
   real origin on 443 in the tests.)
 - **No credentials in the guest except one.** The model loop needs a provider key, so the
-  worker receives exactly that value in its environment, consumes it into the provider
-  client, and blanks the variable before any tool can spawn a child. Git remotes, GitHub
+  worker collects exactly that value from the host over the container's stdio link before
+  it spawns anything, and consumes it into the provider client (A17: it is never in the
+  container's configuration or any process's initial environment). Git remotes, GitHub
   tokens and the host's environment never enter. A secret canary exported on the host is
   checked against every host-owned surface of the run and against the guest's reported
   environment key names.
@@ -363,8 +364,8 @@ guarantee, and the record must say so.
 ### Decisions
 
 - **A1 — credentials: a vendor API key, scoped to the run, never the login.** The key
-  travels as the existing single run-scoped env var, is read by the worker and blanked as
-  today, and reaches the agent only through the config's explicit `env` map — the one
+  reaches the worker over the stdio link (A17; it was once a run-scoped env var), and
+  reaches the agent only through the config's explicit `env` map — the one
   path `buildAcpAgentEnv` does not scrub. Mounting the user's `$HOME` login into an
   unattended container is rejected: it puts a live session where nobody is watching, and
   the secret canary exists to catch precisely that. Decision 3 stays "narrowed": exactly
@@ -385,7 +386,9 @@ guarantee, and the record must say so.
   desktop's out; and it exists only for agents whose login lives in files — Claude Code
   keeps its OAuth credentials in the macOS Keychain, so it stays key-only. The copy is
   staged world-readable inside the run directory (the worker uid does not exist on the
-  host), removed in `finally` however the run ends, restored private to the worker in
+  host, and a native Linux engine applies the host's mode bits to the guest), under a
+  runtimes directory the runner makes 0700 so other local accounts cannot reach it (A17),
+  removed in `finally` however the run ends, restored private to the worker in
   the guest, and never bind-mounted, so nothing the agent writes reaches the host. A key,
   when present, always wins. The record says which was held (`credential`), the arming
   decision says it, and the dialog shows it.
@@ -652,6 +655,31 @@ guarantee, and the record must say so.
   `runSerialized` rather than a mutex of its own; and `runHeadlessAgent` returns the
   turn's own `turnOutcome`, so the worker reports a failed turn from the loop's verdict
   instead of reconstructing one from the chunks.
+- **A17 — the run's key crosses the link, not the environment.** From the default-on
+  readiness review. The key used to travel as a randomly named variable set on the main
+  process from container start until the guest held it, passed by name to `docker create`.
+  That kept it in the environment every terminal and tool the desktop spawned meanwhile
+  inherited (the name escaped `child-process-env.ts`'s scrub), in the container's
+  configuration for the container's lifetime, and in the worker's initial environment,
+  which the worker could blank for its children but not in `/proc/<pid>/environ`, readable
+  by every same-uid process in the guest — install scripts and shell commands included.
+  Now the service hands the key to the runner in memory, the broker holds it, and the
+  worker asks for it with a `KEY_REQUEST` frame on stream 0 of the stdio link right after
+  the liveness probe, before it spawns anything. The broker answers once and forgets it;
+  a later request gets an empty answer. A run with a key and no egress still gets the link
+  (`COPSE_HOST_LINK=stdio`) but no proxy. The spec says only that a key is coming
+  (`apiKeyOverLink`). Residuals, recorded rather than hidden: the value lives in the
+  worker's memory for the run, which a same-uid process could read only with ptrace-level
+  access (subject to the engine kernel's Yama setting); an ACP agent still receives it in
+  its explicit `env` map, so it is in that agent's initial environment and its own
+  children's, as A1 accepts; and the egress token is still an environment variable, the
+  residual A7 records. Two related changes from the same review: the runtimes directory
+  is made 0700 on every run (the guest's mount root is the run directory, so the guest is
+  unaffected), and the start-up orphan sweep runs once per app session and only when the
+  feature is on or the profile has a run directory, so a profile that never used the
+  feature does not start the Docker CLI. The worker's base image is pinned by index digest
+  (`WORKER_BASE_IMAGE`), which the image fingerprint hashes, so a moved tag no longer
+  changes the guest silently; moving the pin is a deliberate edit.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -772,11 +800,11 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Image freshness        | unit        | The fingerprint changes with the worker bundle and the base image                                                                                       | `container-runtime/thread-container.test.ts`                                                                                           |
 | Completion honesty     | unit        | Unfetched commits, failed teardown and a leaked canary are never a clean finish                                                                         | `container-runtime/container-run-service.test.ts`                                                                                      |
 | Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                                                                | `container-runtime/container-run-service.test.ts`                                                                                      |
-| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name                                                    | `container-runtime/thread-container.test.ts`                                                                                           |
+| Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; no key in argv, docker's env or the spec (A17)                        | `container-runtime/thread-container.test.ts`                                                                                           |
 | Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                                                            | `container-runtime/thread-container.test.ts`                                                                                           |
 | End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`                                                     | `container-runtime/thread-container.integration.test.ts`                                                                               |
 | Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker                                                | `providers/container-provider.test.ts`                                                                                                 |
-| Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals                                                | `container-runtime/container-run-service.test.ts`                                                                                      |
+| Run service            | unit        | Provider resolved, key passed in memory and never in the host environment (A17), phases published, refusals; sweep once and only when wanted            | `container-runtime/container-run-service.test.ts`                                                                                      |
 | UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                                                        | `tests/demo/container-run.demo.ts`                                                                                                     |
 | UI (Electron)          | e2e         | Real IPC: the dialog opens from the footer and a model without a key is refused with a readable error                                                   | `tests/e2e/container-run-dialog.e2e.ts`                                                                                                |
 | ACP: agent table       | unit        | Only catalogue agents with a documented key are baked; per-agent reasons; a retired id maps to its current entry                                        | `shared/container-acp-agents.test.ts` (A-0)                                                                                            |

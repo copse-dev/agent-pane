@@ -1,5 +1,4 @@
 import type { TaskSupervisor } from '../supervisor/task-supervisor.ts'
-import { randomBytes } from 'node:crypto'
 import type { ContainerRunProgress, ContainerRunRequest } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { execFileSync } from 'node:child_process'
@@ -16,6 +15,7 @@ import {
   adoptCarryOut,
   assertThreadContainerEngine,
   buildWorkerImage,
+  hasRecordedRuns,
   loadCarryOutForAdoption,
   loadRunForContinuation,
   newRuntimeId,
@@ -65,6 +65,12 @@ interface RunDependencies {
   resolveContext: (projectId: string, threadId: string) => Promise<ThreadExecutionContext>
   /** Remove what earlier app sessions left behind; see {@link sweepOrphanedRuntimes}. */
   sweep: typeof sweepOrphanedRuntimes
+  /**
+   * Whether the start-up sweep has anything to look for: the feature is on,
+   * or this profile ran a container before it was turned off. Otherwise the
+   * sweep would start the Docker CLI on every launch for a feature that is off.
+   */
+  sweepWanted: () => boolean
   /** Apply a run's commits to a checkout; see {@link adoptCarryOut}. */
   adopt: typeof adoptCarryOut
   /** A finished run's ref and base from its record on disk, for a run this session did not start. */
@@ -77,6 +83,7 @@ const productionDependencies: RunDependencies = {
   run: runThreadInContainer,
   stop: teardownRuntime,
   sweep: sweepOrphanedRuntimes,
+  sweepWanted: () => getSetting<boolean>('containerRunsEnabled', false) || hasRecordedRuns(),
   adopt: adoptCarryOut,
   loadCarryOut: loadCarryOutForAdoption,
   loadContinuation: loadRunForContinuation,
@@ -127,6 +134,8 @@ export class ContainerRunService {
   private readonly stopSignals = new Map<string, AbortController>()
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
+  /** The one start-up sweep; later windows share it rather than sweeping again. */
+  private orphanSweep: Promise<OrphanSweep | null> | null = null
 
   constructor(deps: Partial<RunDependencies> = {}) {
     this.deps = { ...productionDependencies, ...deps }
@@ -162,8 +171,19 @@ export class ContainerRunService {
    * that this process did not start is an orphan: a container and a volume
    * of several gigabytes from a run the previous session quit on. Docker
    * being absent is not an error here; there is nothing to sweep.
+   *
+   * Every window asks, and only the first ask sweeps: a later sweep could
+   * take a run this session just created, and not yet started, for an
+   * orphan. A profile that never ran a container, with the feature off, does
+   * not start Docker at all.
    */
-  async sweepOrphans(): Promise<OrphanSweep | null> {
+  sweepOrphans(): Promise<OrphanSweep | null> {
+    this.orphanSweep ??= this.sweepOnce()
+    return this.orphanSweep
+  }
+
+  private async sweepOnce(): Promise<OrphanSweep | null> {
+    if (!this.deps.sweepWanted()) return null
     try {
       const sweep = await this.deps.sweep()
       if (sweep.removed.length > 0 || sweep.failed.length > 0) {
@@ -480,11 +500,9 @@ export class ContainerRunService {
     stopSignal: AbortController,
   ): Promise<void> {
     const runtimeId = newRuntimeId()
-    // The key travels as an environment variable the runner names on the
-    // `docker run` command line, so neither the value nor a host variable name
-    // appears in argv or in the run's files; it is removed once the container
-    // is up.
-    const keyEnv = `COPSE_CONTAINER_RUN_KEY_${randomBytes(4).toString('hex').toUpperCase()}`
+    // The key stays in memory: the runner hands it to the guest over the
+    // container's stdio link (decision A17). This process's environment, and
+    // so every terminal or tool it spawns meanwhile, never holds it.
     const apiKey = plan.apiKey
     const log = (line: string): void => {
       this.update(progress, { log: [...progress.log, line].slice(-LOG_TAIL) })
@@ -529,7 +547,6 @@ export class ContainerRunService {
         throw new Error('Stopped by you before the container started')
       }
       this.update(progress, { phase: 'starting' })
-      if (apiKey) process.env[keyEnv] = apiKey
       const runRequest: ThreadContainerRequest = {
         workspace,
         threadId: request.threadId,
@@ -547,7 +564,7 @@ export class ContainerRunService {
               ...(plan.egressResolve ? { egressResolve: plan.egressResolve } : {}),
             }
           : { acp: plan.harness }),
-        ...(apiKey ? { apiKeyEnv: keyEnv } : {}),
+        ...(apiKey ? { apiKey } : {}),
         budgets: request.budgets,
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
@@ -562,10 +579,6 @@ export class ContainerRunService {
           }
         },
         signal: stopSignal.signal,
-        onStarted: () => {
-          // The container has the key now; the host process no longer needs it.
-          process.env[keyEnv] = ''
-        },
       })
       const outcome = judgeRun(record)
       // A run the user stopped is not a guest failure; say what happened.
@@ -584,7 +597,6 @@ export class ContainerRunService {
         error: error instanceof Error ? error.message : String(error),
       })
     } finally {
-      process.env[keyEnv] = ''
       if (supervisor && taskId) {
         try {
           if (stoppedByUser()) await supervisor.cancel(request.projectId, taskId)
