@@ -72770,6 +72770,22 @@ function mountComposerEditor() {
       threadChips.set(id, state);
       insertChip(makeThreadChip(id, state));
     },
+    insertText(text2) {
+      const node2 = document.createTextNode(text2);
+      const sel = editor.isFocused() ? selectionInRoot() : null;
+      if (sel) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(node2);
+        range.setStartAfter(node2);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        root.append(node2);
+      }
+      emitInput();
+    },
     expandedValue() {
       return serializedValue(false);
     },
@@ -74785,6 +74801,323 @@ var init_image_input_support = __esm({
   }
 });
 
+// src/renderer/views/conversation-search.ts
+function findMatchOffsets(haystack, needle) {
+  if (!needle) return [];
+  const hay = haystack.toLowerCase();
+  const q2 = needle.toLowerCase();
+  const offsets = [];
+  let from = 0;
+  for (; ; ) {
+    const idx = hay.indexOf(q2, from);
+    if (idx === -1) break;
+    offsets.push(idx);
+    from = idx + q2.length;
+  }
+  return offsets;
+}
+function normalizeSearchText(text2) {
+  return text2.replace(/\s+/g, " ").trim();
+}
+function buildSearchIndex(segments) {
+  const capacity = segments.reduce((n2, segment) => n2 + segment.text.length + 1, 0);
+  const segmentAt = new Int32Array(capacity);
+  const offsetAt = new Int32Array(capacity);
+  const chars = [];
+  let pendingSpace = false;
+  segments.forEach((segment, seg) => {
+    if (segment.breakBefore && chars.length > 0) pendingSpace = true;
+    for (let i2 = 0; i2 < segment.text.length; i2++) {
+      const ch = segment.text.charAt(i2);
+      if (WHITESPACE_CHAR.test(ch)) {
+        if (chars.length > 0) pendingSpace = true;
+        continue;
+      }
+      if (pendingSpace) {
+        segmentAt[chars.length] = seg;
+        offsetAt[chars.length] = i2;
+        chars.push(" ");
+        pendingSpace = false;
+      }
+      segmentAt[chars.length] = seg;
+      offsetAt[chars.length] = i2;
+      chars.push(ch);
+    }
+  });
+  return {
+    text: chars.join(""),
+    segmentAt: segmentAt.subarray(0, chars.length),
+    offsetAt: offsetAt.subarray(0, chars.length)
+  };
+}
+function findSegmentMatches(index, query) {
+  const needle = normalizeSearchText(query);
+  return findMatchOffsets(index.text, needle).map((start) => {
+    const last = start + needle.length - 1;
+    return {
+      startSegment: index.segmentAt[start] ?? 0,
+      startOffset: index.offsetAt[start] ?? 0,
+      endSegment: index.segmentAt[last] ?? 0,
+      endOffset: (index.offsetAt[last] ?? 0) + 1
+    };
+  });
+}
+function openConversationSearch(query) {
+  openImpl?.(query);
+}
+function closeConversationSearch() {
+  closeImpl?.();
+}
+function isConversationSearchOpen() {
+  return isOpenImpl?.() ?? false;
+}
+function mountConversationSearch(root) {
+  const input2 = el("input", {
+    type: "text",
+    class: "chat-search-input",
+    placeholder: "Find in conversation\u2026",
+    "aria-label": "Find in conversation",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  const count = el("span", { class: "chat-search-count", "aria-live": "polite" });
+  const prevBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "chat-search-nav",
+      "aria-label": "Previous match",
+      "data-tooltip": "Previous match (Shift+Enter)"
+    },
+    chevronUpIcon("ui-icon ui-icon-sm")
+  );
+  const nextBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "chat-search-nav",
+      "aria-label": "Next match",
+      "data-tooltip": "Next match (Enter)"
+    },
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const closeBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "chat-search-close",
+      "aria-label": "Close find",
+      "data-tooltip": "Close find (Esc)"
+    },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  const bar = el(
+    "div",
+    { class: "chat-search", role: "search", hidden: true },
+    el(
+      "span",
+      { class: "chat-search-icon", "aria-hidden": "true" },
+      searchIcon("ui-icon ui-icon-sm")
+    ),
+    input2,
+    count,
+    el("div", { class: "chat-search-actions" }, prevBtn, nextBtn, closeBtn)
+  );
+  const host = root.closest(".pane-chat") ?? root;
+  host.append(bar);
+  let ranges = [];
+  let currentIdx = 0;
+  let debounce = null;
+  let observer = null;
+  function messagesList() {
+    return root.querySelector(".messages-list");
+  }
+  function clearHighlights() {
+    if (!highlightsSupported) return;
+    CSS.highlights.delete(BASE_HIGHLIGHT);
+    CSS.highlights.delete(CURRENT_HIGHLIGHT);
+  }
+  function collectRanges(query) {
+    const container = messagesList();
+    if (!container || !normalizeSearchText(query)) return [];
+    const nodes = [];
+    const segments = [];
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let previousBlock = null;
+    let node2 = walker.nextNode();
+    while (node2) {
+      const block = node2.parentElement?.closest(SEARCH_BLOCK_SELECTOR) ?? null;
+      nodes.push(node2);
+      segments.push({ text: node2.nodeValue ?? "", breakBefore: block !== previousBlock });
+      previousBlock = block;
+      node2 = walker.nextNode();
+    }
+    const found = [];
+    for (const match of findSegmentMatches(buildSearchIndex(segments), query)) {
+      const start = nodes[match.startSegment];
+      const end = nodes[match.endSegment];
+      if (!start || !end) continue;
+      const range = document.createRange();
+      range.setStart(start, match.startOffset);
+      range.setEnd(end, match.endOffset);
+      found.push(range);
+    }
+    return found;
+  }
+  function paintHighlights() {
+    if (!highlightsSupported) return;
+    if (ranges.length === 0) {
+      clearHighlights();
+      return;
+    }
+    CSS.highlights.set(BASE_HIGHLIGHT, new Highlight(...ranges));
+    const current = ranges[currentIdx];
+    if (current) {
+      const currentHighlight = new Highlight(current);
+      currentHighlight.priority = 1;
+      CSS.highlights.set(CURRENT_HIGHLIGHT, currentHighlight);
+    } else {
+      CSS.highlights.delete(CURRENT_HIGHLIGHT);
+    }
+  }
+  function updateCount() {
+    const total = ranges.length;
+    const query = input2.value;
+    if (!query) {
+      count.textContent = "";
+      input2.classList.remove("chat-search-nomatch");
+      return;
+    }
+    count.textContent = total === 0 ? "0/0" : `${String(currentIdx + 1)}/${String(total)}`;
+    input2.classList.toggle("chat-search-nomatch", total === 0);
+  }
+  function scrollCurrentIntoView() {
+    const current = ranges[currentIdx];
+    const target = current?.startContainer.parentElement;
+    target?.scrollIntoView({ block: "center", behavior: "auto" });
+  }
+  function runSearch(preserveIndex = false) {
+    const query = input2.value;
+    const prev = preserveIndex ? currentIdx : 0;
+    ranges = collectRanges(query);
+    currentIdx = ranges.length === 0 ? 0 : Math.min(prev, ranges.length - 1);
+    paintHighlights();
+    updateCount();
+  }
+  function step(delta) {
+    if (ranges.length === 0) return;
+    currentIdx = (currentIdx + delta + ranges.length) % ranges.length;
+    paintHighlights();
+    updateCount();
+    scrollCurrentIntoView();
+  }
+  input2.addEventListener("input", () => {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      runSearch(false);
+      scrollCurrentIntoView();
+    }, 120);
+  });
+  input2.addEventListener("keydown", (e3) => {
+    if (e3.isComposing) return;
+    if (e3.key === "Enter") {
+      e3.preventDefault();
+      step(e3.shiftKey ? -1 : 1);
+    } else if (e3.key === "Escape") {
+      e3.preventDefault();
+      e3.stopPropagation();
+      close();
+    }
+  });
+  prevBtn.addEventListener("click", () => {
+    step(-1);
+  });
+  nextBtn.addEventListener("click", () => {
+    step(1);
+  });
+  closeBtn.addEventListener("click", () => {
+    close();
+  });
+  function open2(query) {
+    const alreadyOpen = !bar.hidden;
+    bar.hidden = false;
+    if (query !== void 0) input2.value = query;
+    if (!alreadyOpen) {
+      const container = messagesList();
+      if (container) {
+        observer = new MutationObserver(() => {
+          if (debounce) clearTimeout(debounce);
+          debounce = setTimeout(() => {
+            runSearch(true);
+          }, 120);
+        });
+        observer.observe(container, { childList: true, subtree: true, characterData: true });
+      }
+    }
+    input2.focus();
+    input2.select();
+    if (query !== void 0) {
+      runSearch(false);
+      scrollCurrentIntoView();
+    } else if (input2.value) {
+      runSearch(true);
+    }
+  }
+  function close() {
+    if (bar.hidden) return;
+    bar.hidden = true;
+    if (debounce) {
+      clearTimeout(debounce);
+      debounce = null;
+    }
+    observer?.disconnect();
+    observer = null;
+    ranges = [];
+    currentIdx = 0;
+    clearHighlights();
+  }
+  openImpl = open2;
+  closeImpl = close;
+  isOpenImpl = () => !bar.hidden;
+}
+var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, WHITESPACE_CHAR, SEARCH_BLOCK_SELECTOR, openImpl, closeImpl, isOpenImpl;
+var init_conversation_search = __esm({
+  "src/renderer/views/conversation-search.ts"() {
+    init_helpers();
+    init_icons();
+    BASE_HIGHLIGHT = "chat-search";
+    CURRENT_HIGHLIGHT = "chat-search-current";
+    highlightsSupported = typeof CSS !== "undefined" && "highlights" in CSS && typeof globalThis.Highlight === "function";
+    WHITESPACE_CHAR = /\s/;
+    SEARCH_BLOCK_SELECTOR = "p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, td, th, dt, dd, summary, figcaption, div";
+    openImpl = null;
+    closeImpl = null;
+    isOpenImpl = null;
+  }
+});
+
+// src/renderer/dom/markdown-quote.ts
+function formatMarkdownQuote(text2) {
+  return text2.replace(/\r\n/g, "\n").split("\n").map((line) => line ? `> ${line}` : ">").join("\n");
+}
+function trimSelectionText(text2) {
+  return text2.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
+}
+var init_markdown_quote = __esm({
+  "src/renderer/dom/markdown-quote.ts"() {
+  }
+});
+
+// src/renderer/ipc-error-message.ts
+function ipcErrorMessage(err2, fallback) {
+  if (!(err2 instanceof Error)) return fallback;
+  return err2.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, "") || fallback;
+}
+var init_ipc_error_message = __esm({
+  "src/renderer/ipc-error-message.ts"() {
+  }
+});
+
 // src/renderer/views/conversation.ts
 function markUserInterruptedCalls(thread) {
   if (!thread) return;
@@ -76297,6 +76630,58 @@ function mountConversation(root, store2, api2) {
     e3.stopPropagation();
     navigateToChange(store2, path);
   });
+  list.addEventListener("contextmenu", (e3) => {
+    if (e3.defaultPrevented) return;
+    const targetEl = e3.target instanceof Element ? e3.target : null;
+    const msgEl = targetEl?.closest(".msg[data-message-id]") ?? null;
+    const selection2 = document.getSelection();
+    const selectionIsInsideTranscript = selection2 !== null && !selection2.isCollapsed && list.contains(selection2.anchorNode) && list.contains(selection2.focusNode);
+    const selectedText = selectionIsInsideTranscript ? trimSelectionText(selection2.toString()) : "";
+    if (selectedText) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      showContextMenu(e3.clientX, e3.clientY, [
+        {
+          label: "Quote in reply",
+          onSelect: () => {
+            quoteTranscriptSelection(selectedText);
+          }
+        },
+        {
+          label: "Add to roadmap",
+          onSelect: () => {
+            void addTranscriptSelectionToRoadmap(api2, selectedText);
+          }
+        },
+        {
+          label: "Search",
+          onSelect: () => {
+            openConversationSearch(normalizeSearchText(selectedText));
+          }
+        },
+        {
+          label: "Copy",
+          onSelect: () => {
+            void navigator.clipboard.writeText(selectedText);
+          }
+        }
+      ]);
+      return;
+    }
+    const msgId = msgEl?.dataset["messageId"];
+    const messageText = msgId ? messageContentById(store2, msgId) : void 0;
+    if (!messageText) return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    showContextMenu(e3.clientX, e3.clientY, [
+      {
+        label: "Copy message",
+        onSelect: () => {
+          void navigator.clipboard.writeText(messageText);
+        }
+      }
+    ]);
+  });
   let editingMessageId = null;
   let editingDraft = "";
   function startEditing(messageId) {
@@ -77658,6 +78043,25 @@ function mountConversation(root, store2, api2) {
     });
   };
 }
+function messageContentById(store2, msgId) {
+  return store2.getState().threads.flatMap((t2) => t2.messages).find((m2) => m2.id === msgId)?.content;
+}
+function quoteTranscriptSelection(text2) {
+  const handlers3 = getPromptAttachmentHandlers();
+  if (!handlers3) return;
+  handlers3.quoteText(text2);
+  handlers3.focusComposer?.();
+}
+async function addTranscriptSelectionToRoadmap(api2, text2) {
+  try {
+    await api2.roadmap.create(text2);
+    showToast("Added to roadmap");
+  } catch (err2) {
+    showToast(`Could not add to roadmap: ${ipcErrorMessage(err2, "unknown error")}`, {
+      variant: "error"
+    });
+  }
+}
 function attachCopyButton(body, msgId, store2) {
   const copyBtn = el("button", { class: "msg-copy", "aria-label": "Copy response" }, "Copy");
   copyBtn.addEventListener("click", () => {
@@ -77732,6 +78136,11 @@ var init_conversation = __esm({
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
+    init_context_menu();
+    init_prompt_attachments();
+    init_conversation_search();
+    init_markdown_quote();
+    init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
@@ -94122,6 +94531,18 @@ ${description}
     attachTextBlock: (content, label) => {
       composer.insertPasteChip(content, label);
     },
+    // Unlike attachTextBlock, a quote lands as literal editable text so the
+    // user can trim or edit it inline before sending, matching how a reply
+    // quote behaves everywhere else.
+    quoteText: (content) => {
+      const quote = formatMarkdownQuote(content);
+      const caret = composer.selectionStart;
+      const prevChar = caret > 0 ? composer.value[caret - 1] : void 0;
+      const needsLeadingBreak = prevChar !== void 0 && prevChar !== "\n";
+      composer.insertText(`${needsLeadingBreak ? "\n\n" : ""}${quote}
+
+`);
+    },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
     attachArchive: addArchiveChip,
@@ -94394,6 +94815,7 @@ var init_input_bar = __esm({
     init_icons();
     init_attachment_icons();
     init_context_menu();
+    init_markdown_quote();
     init_image_expand();
     init_text_expand();
     init_video_expand();
@@ -108931,10 +109353,6 @@ function attachmentName(file2) {
 function itemThreadId(item) {
   return item.fields["thread"] ?? "";
 }
-function ipcErrorMessage(err2, fallback) {
-  if (!(err2 instanceof Error)) return fallback;
-  return err2.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, "");
-}
 function toRoadmapStatus(value) {
   return STATUS_OPTIONS.find((status) => status === value) ?? "ready";
 }
@@ -110808,6 +111226,7 @@ var STATUS_OPTIONS, LIST_STATUS_BADGES, isRoadmapStatus, NEW_ITEM_DRAFT_KEY;
 var init_roadmap_pane = __esm({
   "src/renderer/views/roadmap-pane.ts"() {
     init_helpers();
+    init_ipc_error_message();
     init_confirm_dialog();
     init_context_menu();
     init_pane_loading();
@@ -130112,7 +130531,7 @@ ${Object.values(item.fields).join(" ")}`.toLowerCase();
   }).slice(0, ROADMAP_RESULT_LIMIT);
 }
 function openFileSearchDialog() {
-  openImpl?.();
+  openImpl2?.();
 }
 function closeFileSearchDialog() {
   if (dialogEl4?.open) dialogEl4.close();
@@ -130272,7 +130691,7 @@ function mountFileSearchDialog(store2, api2) {
   dialog2.addEventListener("mousedown", (e3) => {
     if (e3.target === dialog2) closeFileSearchDialog();
   });
-  openImpl = () => {
+  openImpl2 = () => {
     if (dialog2.open) return;
     input2.value = "";
     results = [];
@@ -130288,7 +130707,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -130300,7 +130719,7 @@ var init_file_search_dialog = __esm({
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
     dialogEl4 = null;
-    openImpl = null;
+    openImpl2 = null;
   }
 });
 
@@ -130417,242 +130836,6 @@ var init_keyboard_shortcuts_dialog = __esm({
       }
     ];
     dialogEl5 = null;
-  }
-});
-
-// src/renderer/views/conversation-search.ts
-function findMatchOffsets(haystack, needle) {
-  if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from = idx + q2.length;
-  }
-  return offsets;
-}
-function openConversationSearch() {
-  openImpl2?.();
-}
-function closeConversationSearch() {
-  closeImpl?.();
-}
-function isConversationSearchOpen() {
-  return isOpenImpl?.() ?? false;
-}
-function mountConversationSearch(root) {
-  const input2 = el("input", {
-    type: "text",
-    class: "chat-search-input",
-    placeholder: "Find in conversation\u2026",
-    "aria-label": "Find in conversation",
-    spellcheck: "false",
-    autocomplete: "off"
-  });
-  const count = el("span", { class: "chat-search-count", "aria-live": "polite" });
-  const prevBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "chat-search-nav",
-      "aria-label": "Previous match",
-      "data-tooltip": "Previous match (Shift+Enter)"
-    },
-    chevronUpIcon("ui-icon ui-icon-sm")
-  );
-  const nextBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "chat-search-nav",
-      "aria-label": "Next match",
-      "data-tooltip": "Next match (Enter)"
-    },
-    chevronDownIcon("ui-icon ui-icon-sm")
-  );
-  const closeBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "chat-search-close",
-      "aria-label": "Close find",
-      "data-tooltip": "Close find (Esc)"
-    },
-    closeIcon("ui-icon ui-icon-sm")
-  );
-  const bar = el(
-    "div",
-    { class: "chat-search", role: "search", hidden: true },
-    el(
-      "span",
-      { class: "chat-search-icon", "aria-hidden": "true" },
-      searchIcon("ui-icon ui-icon-sm")
-    ),
-    input2,
-    count,
-    el("div", { class: "chat-search-actions" }, prevBtn, nextBtn, closeBtn)
-  );
-  const host = root.closest(".pane-chat") ?? root;
-  host.append(bar);
-  let ranges = [];
-  let currentIdx = 0;
-  let debounce = null;
-  let observer = null;
-  function messagesList() {
-    return root.querySelector(".messages-list");
-  }
-  function clearHighlights() {
-    if (!highlightsSupported) return;
-    CSS.highlights.delete(BASE_HIGHLIGHT);
-    CSS.highlights.delete(CURRENT_HIGHLIGHT);
-  }
-  function collectRanges(query) {
-    const container = messagesList();
-    if (!container || !query) return [];
-    const found = [];
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode(node3) {
-        return node3.nodeValue && node3.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-      }
-    });
-    let node2 = walker.nextNode();
-    while (node2) {
-      const text2 = node2.nodeValue ?? "";
-      for (const offset of findMatchOffsets(text2, query)) {
-        const range = new Range();
-        range.setStart(node2, offset);
-        range.setEnd(node2, offset + query.length);
-        found.push(range);
-      }
-      node2 = walker.nextNode();
-    }
-    return found;
-  }
-  function paintHighlights() {
-    if (!highlightsSupported) return;
-    if (ranges.length === 0) {
-      clearHighlights();
-      return;
-    }
-    CSS.highlights.set(BASE_HIGHLIGHT, new Highlight(...ranges));
-    const current = ranges[currentIdx];
-    if (current) {
-      const currentHighlight = new Highlight(current);
-      currentHighlight.priority = 1;
-      CSS.highlights.set(CURRENT_HIGHLIGHT, currentHighlight);
-    } else {
-      CSS.highlights.delete(CURRENT_HIGHLIGHT);
-    }
-  }
-  function updateCount() {
-    const total = ranges.length;
-    const query = input2.value;
-    if (!query) {
-      count.textContent = "";
-      input2.classList.remove("chat-search-nomatch");
-      return;
-    }
-    count.textContent = total === 0 ? "0/0" : `${String(currentIdx + 1)}/${String(total)}`;
-    input2.classList.toggle("chat-search-nomatch", total === 0);
-  }
-  function scrollCurrentIntoView() {
-    const current = ranges[currentIdx];
-    const target = current?.startContainer.parentElement;
-    target?.scrollIntoView({ block: "center", behavior: "auto" });
-  }
-  function runSearch(preserveIndex = false) {
-    const query = input2.value;
-    const prev = preserveIndex ? currentIdx : 0;
-    ranges = collectRanges(query);
-    currentIdx = ranges.length === 0 ? 0 : Math.min(prev, ranges.length - 1);
-    paintHighlights();
-    updateCount();
-  }
-  function step(delta) {
-    if (ranges.length === 0) return;
-    currentIdx = (currentIdx + delta + ranges.length) % ranges.length;
-    paintHighlights();
-    updateCount();
-    scrollCurrentIntoView();
-  }
-  input2.addEventListener("input", () => {
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(() => {
-      runSearch(false);
-      scrollCurrentIntoView();
-    }, 120);
-  });
-  input2.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
-    if (e3.key === "Enter") {
-      e3.preventDefault();
-      step(e3.shiftKey ? -1 : 1);
-    } else if (e3.key === "Escape") {
-      e3.preventDefault();
-      e3.stopPropagation();
-      close();
-    }
-  });
-  prevBtn.addEventListener("click", () => {
-    step(-1);
-  });
-  nextBtn.addEventListener("click", () => {
-    step(1);
-  });
-  closeBtn.addEventListener("click", () => {
-    close();
-  });
-  function open2() {
-    const alreadyOpen = !bar.hidden;
-    bar.hidden = false;
-    if (!alreadyOpen) {
-      const container = messagesList();
-      if (container) {
-        observer = new MutationObserver(() => {
-          if (debounce) clearTimeout(debounce);
-          debounce = setTimeout(() => {
-            runSearch(true);
-          }, 120);
-        });
-        observer.observe(container, { childList: true, subtree: true, characterData: true });
-      }
-    }
-    input2.focus();
-    input2.select();
-    if (input2.value) runSearch(true);
-  }
-  function close() {
-    if (bar.hidden) return;
-    bar.hidden = true;
-    if (debounce) {
-      clearTimeout(debounce);
-      debounce = null;
-    }
-    observer?.disconnect();
-    observer = null;
-    ranges = [];
-    currentIdx = 0;
-    clearHighlights();
-  }
-  openImpl2 = open2;
-  closeImpl = close;
-  isOpenImpl = () => !bar.hidden;
-}
-var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, openImpl2, closeImpl, isOpenImpl;
-var init_conversation_search = __esm({
-  "src/renderer/views/conversation-search.ts"() {
-    init_helpers();
-    init_icons();
-    BASE_HIGHLIGHT = "chat-search";
-    CURRENT_HIGHLIGHT = "chat-search-current";
-    highlightsSupported = typeof CSS !== "undefined" && "highlights" in CSS && typeof globalThis.Highlight === "function";
-    openImpl2 = null;
-    closeImpl = null;
-    isOpenImpl = null;
   }
 });
 
