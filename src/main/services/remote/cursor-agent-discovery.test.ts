@@ -4,6 +4,7 @@ import type { Thread } from '@shared/types'
 import {
   buildExternalCursorAgentStub,
   collectLinkedCursorAgentIds,
+  createBestEffortExternalCursorAgentDiscovery,
   cursorAgentMatchesRepository,
   discoverExternalCursorAgents,
   parseCursorAgentDetail,
@@ -119,6 +120,43 @@ describe('buildExternalCursorAgentStub', () => {
 })
 
 describe('discoverExternalCursorAgents', () => {
+  it('summarizes repeated background failures once and keeps retrying', async () => {
+    let attempts = 0
+    const logs: string[] = []
+    const discover = createBestEffortExternalCursorAgentDiscovery(
+      async () => {
+        attempts += 1
+        if (attempts < 3) throw new Error('Configure a Cursor API key in Settings.')
+        return {
+          imported: [],
+          scanned: 7,
+          skippedLinked: 0,
+          skippedWrongRepo: 0,
+          skippedInactive: 0,
+        }
+      },
+      (message) => logs.push(message),
+    )
+
+    const first = await discover()
+    const second = await discover()
+    const recovered = await discover()
+
+    assert.deepEqual(first, {
+      imported: [],
+      scanned: 0,
+      skippedLinked: 0,
+      skippedWrongRepo: 0,
+      skippedInactive: 0,
+    })
+    assert.deepEqual(second, first)
+    assert.equal(recovered.scanned, 7)
+    assert.equal(attempts, 3)
+    assert.deepEqual(logs, [
+      '[cursor-agent-discovery] sync skipped: Configure a Cursor API key in Settings.',
+    ])
+  })
+
   it('imports matching ACTIVE agents, skips linked / wrong-repo / inactive', async () => {
     const created: Thread[] = []
     const seeded: Array<{ threadId: string; agentId: string; url?: string }> = []

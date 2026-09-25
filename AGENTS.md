@@ -7,7 +7,7 @@ no backend service; the main process talks directly to LLM providers. Launch it 
 which verifies Node, content-addresses dependency and build inputs, validates the complete `dist/`
 outputs, and then starts the app. For everything else prefer the scripts in
 `package.json` (`dev`, `build`, `start`, `typecheck`, `lint`, `format:check`, `test`, `test:e2e`,
-`check`) rather than inventing parallel commands.
+`check:local`, `check`) rather than inventing parallel commands.
 
 Use Node **24 or newer** and **pnpm** (via Corepack). The repo pins the Node 24 LTS
 release in `.nvmrc` and `pnpm@10.34.5` via `packageManager`; both nvm and fnm read
@@ -97,8 +97,9 @@ pnpm run oracle -- --run unit
 pnpm run oracle -- --run e2e
 ```
 
-Read the oracle confidence. `LOW` exposes unmapped files and `broad` requires the full named tier; a
-green subset is never a substitute for the pre-commit gate. Full guidance is in
+Read the oracle confidence. `LOW` exposes unmapped files and `broad` requires the full named tier;
+`HIGH` is eligible for the risk-based local fast path only when every condition below also holds.
+Full guidance is in
 [`docs/testing-strategy.md`](docs/testing-strategy.md).
 
 ### Use the right machine
@@ -120,14 +121,35 @@ green subset is never a substitute for the pre-commit gate. Full guidance is in
 `.copse/hooks.json`, `.cursor/hooks.json`, and `.claude/settings.json` run
 `scripts/hook-file-check.mts` after edits. It applies oxfmt and reports type-unaware ESLint issues;
 do not rerun the formatter after every edit. If it rewrites a file, re-read it before editing again. The
-hook does not replace type-aware lint, TypeScript, or the full gate.
+hook does not replace type-aware lint, TypeScript, or a pre-commit gate.
 
 ### Before committing
 
 Rebase onto the PR's current base (normally `origin/main`) before opening the PR; GitHub tests the
-merged base and head, not an isolated branch tip. Run **`pnpm run check`** before committing. It covers
-typecheck, ESLint, oxfmt, dead-code detection, and unit tests. If a source file is intentionally
-unlinked, add it to `ALLOWED_UNLINKED` in `scripts/check-dead-code.mts` with a reason.
+merged base and head, not an isolated branch tip.
+
+Run the full **`pnpm run check`** locally when any of these applies:
+
+- the test oracle reports `LOW` confidence or `broad` coverage;
+- the change affects security, sandboxing, permissions, persisted data or migrations, auth,
+  secrets, billing, native runtime/IPC boundaries, agent-loop/hook control flow, dependencies or
+  lockfiles, release/packaging/update controls, CI, test infrastructure, or the oracle itself;
+- the diff is cross-cutting, lacks direct focused coverage, will not pass through required PR CI
+  before merge, or the user explicitly requests the full gate.
+
+For a PR-bound, low-risk change, **`pnpm run check:local` plus focused tests may replace the full
+local `pnpm run check`** only when all of these are true:
+
+- `pnpm run oracle -- --explain` reports `HIGH` confidence;
+- the diff is localized and every behavioral change has direct focused test coverage;
+- none of the mandatory full-check surfaces above are touched;
+- required PR CI will run the repository's complete static and unit gates before merge.
+
+The fast path still requires `pnpm run check:local`, any relevant focused tests, and any visual or
+real-runtime evidence the change normally requires. In the PR's Validation section, state that the
+full local suite was deferred under the low-risk fast path and name the CI gate that will run it.
+When risk or coverage is ambiguous, run the full check. If a source file is intentionally unlinked,
+add it to `ALLOWED_UNLINKED` in `scripts/check-dead-code.mts` with a reason.
 
 For renderer UI or e2e fixture changes, also run the focused visual workflow selected by the test
 oracle. Detailed local commands and screenshot ownership behavior are in

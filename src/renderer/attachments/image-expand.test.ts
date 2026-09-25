@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { attachImageExpand, openImageExpand } from './image-expand.ts'
+import { attachImageCopyMenu, attachImageExpand, openImageExpand } from './image-expand.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 import { patchPreviewDialog } from './preview-dialog.test-support.ts'
@@ -124,6 +124,70 @@ describe('image expand lightbox', () => {
     // Backdrop handler closes when the click target is the dialog itself.
     dialog.click()
     assert.equal(dialog.open, false)
+  })
+
+  it('right-click on a chat thumbnail copies its pixels without opening the preview', async () => {
+    const clipboard = installClipboard()
+    const img = document.createElement('img')
+    img.src = PNG
+    document.body.append(img)
+    attachImageExpand(img, 'shot.png')
+
+    rightClick(img)
+    const item = qsRequired<HTMLButtonElement>(document, '.context-menu-item')
+    assert.equal(item.textContent, 'Copy image')
+    assert.equal(
+      qs<HTMLDialogElement>(document, '.attachment-preview-dialog')?.open ?? false,
+      false,
+    )
+
+    item.click()
+    await tick()
+
+    assert.equal(clipboard.writes.length, 1)
+    assert.equal(clipboard.writes[0]?.['image/png']?.type, 'image/png')
+    img.remove()
+  })
+
+  it('copies a rendered SVG as PNG pixels', async () => {
+    const clipboard = installClipboard()
+    const img = document.createElement('img')
+    img.src = 'data:image/svg+xml;base64,PHN2Zy8+'
+    Object.defineProperties(img, {
+      complete: { configurable: true, value: true },
+      naturalWidth: { configurable: true, value: 2 },
+      naturalHeight: { configurable: true, value: 3 },
+    })
+    const canvas = window.HTMLCanvasElement.prototype
+    const getContext = Object.getOwnPropertyDescriptor(canvas, 'getContext')
+    const toDataURL = Object.getOwnPropertyDescriptor(canvas, 'toDataURL')
+    let drawnImage: HTMLImageElement | null = null
+    Object.defineProperty(canvas, 'getContext', {
+      configurable: true,
+      value: () => ({
+        drawImage: (source: HTMLImageElement): void => {
+          drawnImage = source
+        },
+      }),
+    })
+    Object.defineProperty(canvas, 'toDataURL', { configurable: true, value: () => PNG })
+
+    try {
+      attachImageCopyMenu(img)
+      rightClick(img)
+      const item = qsRequired<HTMLButtonElement>(document, '.context-menu-item')
+      assert.equal(item.textContent, 'Copy image')
+      item.click()
+      await tick()
+      assert.equal(drawnImage, img)
+      const blob = clipboard.writes[0]?.['image/png']
+      assert.ok(blob instanceof Blob)
+      assert.equal(blob.type, 'image/png')
+      assert.ok(blob.size > 0)
+    } finally {
+      if (getContext) Object.defineProperty(canvas, 'getContext', getContext)
+      if (toDataURL) Object.defineProperty(canvas, 'toDataURL', toDataURL)
+    }
   })
 
   it('right-click offers "Copy image" and writes the image to the clipboard', async () => {

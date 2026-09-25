@@ -278,6 +278,10 @@ export class AcpTurnFailure extends Error {
  */
 export function isTransientProviderError(err: unknown): boolean {
   const msg = acpErrorMessage(err)
+  // Codex 0.156.x turns a workspace-routing discovery network failure into a
+  // bare -32603 before any model token streams (the 401 variant is an auth
+  // failure, classified separately — not retried).
+  if (/workspace routing discovery (?:failed|timed out)/i.test(msg)) return true
   if (/\boverloaded\b/i.test(msg)) return true
   if (/\brate[ _-]?limit/i.test(msg)) return true
   if (/\b(?:429|500|502|503|504|529)\b/.test(msg)) return true

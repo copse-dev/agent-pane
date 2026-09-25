@@ -1,4 +1,8 @@
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import {
+  expectAssistantReply,
+  installMockScenario,
+  prepareMockToolTurn,
+} from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +13,9 @@ import {
   seedEmptyProject,
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -58,17 +64,13 @@ async function clickChange(path: string): Promise<void> {
 
 async function proposeImage(path: string, bytes: Buffer): Promise<void> {
   const args = { path, content: bytes.toString('latin1') }
-  await prepareMockToolTurn(
-    `Propose an update to ${path}.`,
-    { name: 'write_file', args },
-    'The proposed file change is ready for review.',
-  )
+  const prompt = `Propose an update to ${path}.`
+  const reply = 'The proposed file change is ready for review.'
+  const scenario = await prepareMockToolTurn(prompt, { name: 'write_file', args }, reply)
   await $('.submit-btn').click()
-  await browser.waitUntil(async () => (await $('.submit-btn').getText()) === 'Send', {
-    timeout: 60_000,
-    interval: 500,
-    timeoutMsg: 'Agent did not return to idle after proposing the image',
-  })
+  await waitForAgentIdle(60_000)
+  await expectAssistantReply(reply)
+  await scenario.assertComplete()
 }
 
 describe('git changes image preview', function () {
@@ -110,6 +112,106 @@ describe('git changes image preview', function () {
     await expect($('#git-diff-viewer-host .monaco-diff-editor')).not.toBeDisplayed()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-staged.png'))
 
+    const stagedAfter = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]',
+    )
+    const stagedAfterSrc = await stagedAfter.getAttribute('src')
+    await stagedAfter.click()
+    const expandDialog = $('dialog.attachment-preview-dialog[open]')
+    await expandDialog.waitForExist({ timeout: 5_000 })
+    const expandedImg = await $('.image-expand-image')
+    await expect(expandedImg).toExist()
+    await expect(expandedImg).toHaveAttribute('src', stagedAfterSrc ?? '')
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expand.png'))
+    await $('.attachment-preview-close').click()
+    await browser.waitUntil(
+      async () => !(await $('dialog.attachment-preview-dialog[open]').isExisting()),
+      { timeout: 5_000, timeoutMsg: 'expand modal did not close' },
+    )
+
+    const beforeImage = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
+    )
+    const afterImage = await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]',
+    )
+    await expect(beforeImage).toHaveAttribute('role', 'button')
+    await expect(beforeImage).toHaveAttribute('tabindex', '0')
+    await expect(afterImage).toHaveAttribute('role', 'button')
+    const beforeSrc = await beforeImage.getAttribute('src')
+    const afterSrc = await afterImage.getAttribute('src')
+
+    // Keep a real turn active while dismissing the modal. The app-level Escape
+    // shortcut arms agent cancellation, so the preview must isolate the key
+    // while preserving the dialog's native close behavior.
+    const user = 'Keep working while I inspect this image.'
+    const scenario = await installMockScenario({
+      title: 'Inspect image while work continues',
+      turns: [
+        {
+          user,
+          responses: [
+            {
+              waitFor: 'preview-open',
+              text: 'I will wait while you inspect the image.',
+            },
+          ],
+          allowAbort: true,
+        },
+      ],
+    })
+    await setComposerValue(user)
+    await submitComposer()
+    await scenario.waitForHold('preview-open')
+    const stopButton = await $('.stop-btn')
+    await stopButton.waitForDisplayed({ timeout: 15_000 })
+
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const target = document.querySelector<HTMLElement>(
+            '#git-diff-viewer-host .git-image-diff-img[alt="staged.png (before)"]',
+          )
+          if (!target) return false
+          target.focus()
+          return document.activeElement === target
+        }),
+      { timeout: 5_000, timeoutMsg: 'expected the current before image to receive focus' },
+    )
+    await browser.keys('Enter')
+    const preview = await $('dialog.attachment-preview-dialog[open]')
+    await preview.waitForDisplayed({ timeout: 5_000 })
+    await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (before)')
+    await expect(preview.$('.image-expand-image')).toHaveAttribute('src', beforeSrc ?? '')
+    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-expanded.png'))
+
+    await browser.keys('Escape')
+    await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => document.activeElement?.getAttribute('alt') === 'staged.png (before)',
+        ),
+      { timeout: 5_000, timeoutMsg: 'expected Escape to restore focus to the before image' },
+    )
+    await expect(stopButton).toBeDisplayed()
+    await expect(stopButton).not.toHaveElementClass('stop-pending')
+    await stopButton.click()
+    await waitForAgentIdle(15_000)
+    await scenario.assertComplete()
+
+    await $('#git-diff-viewer-host .git-image-diff-img[alt="staged.png (after)"]').click()
+    await preview.waitForDisplayed({ timeout: 5_000 })
+    await expect(preview.$('.attachment-preview-title')).toHaveText('staged.png (after)')
+    await expect(preview.$('.image-expand-image')).toHaveAttribute('src', afterSrc ?? '')
+    await preview.$('.attachment-preview-close').click()
+    await preview.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => document.activeElement?.getAttribute('alt') === 'staged.png (after)'),
+      { timeout: 5_000, timeoutMsg: 'expected Close to restore focus to the after image' },
+    )
+
     await clickChange('unstaged.png')
     await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize({
@@ -142,7 +244,6 @@ describe('git changes image preview', function () {
     resetUserData()
     seedEmptyProject(proposedRoot, 'e2e-proposed-image-project', {
       subagentsEnabled: false,
-      model: 'claude-sonnet-4-6',
     })
     await browser.reloadSession()
     await waitForWorkspace()

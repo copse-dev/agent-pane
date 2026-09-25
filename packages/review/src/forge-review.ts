@@ -34,6 +34,33 @@ export interface ForgeReviewOptions {
   /** The commit the comments anchor to; findings without one go in the body. */
   readonly headCommit: string | null
   readonly toolVersion: string
+  /** Full, commit-pinned diffs. An absent path has no place for an inline comment. */
+  readonly fileDiffs?: ReadonlyMap<string, string>
+}
+
+/** Choose a visible head-side line within the finding's own range, never a nearby line. */
+function inlineLine(finding: Finding, options: ForgeReviewOptions): number | undefined {
+  const start = finding.anchor.startLine
+  if (options.headCommit === null || start === undefined) return undefined
+  const end = finding.anchor.endLine ?? start
+  if (options.fileDiffs === undefined) return end
+  let next = 0
+  let remaining = 0
+  let chosen: number | undefined
+  for (const line of (options.fileDiffs.get(finding.anchor.path) ?? '').split('\n')) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    if (hunk) {
+      next = Number(hunk[1])
+      remaining = Number(hunk[2] ?? 1)
+    } else if (remaining > 0 && (line.startsWith('+') || line.startsWith(' '))) {
+      if (next >= start && next <= end) chosen = next
+      next++
+      remaining--
+    } else if (!line.startsWith('-') && !line.startsWith('\\')) {
+      remaining = 0
+    }
+  }
+  return chosen
 }
 
 function where(finding: Finding): string {
@@ -42,15 +69,50 @@ function where(finding: Finding): string {
     : `${finding.anchor.path}:${String(finding.anchor.startLine)}`
 }
 
+/**
+ * Model- or report-derived prose as inert markdown. Hostile diff content can
+ * steer what a model writes, and the review posts under the App's identity:
+ * outside code spans, `<` and `>` are escaped (no raw HTML, so an unterminated `<!--`
+ * cannot hide the rest of the review) and an `@` that would mention a user or
+ * team gets a zero-width space. Code spans are kept as written — neither
+ * renders inside one.
+ */
+function inertMarkdown(text: string): string {
+  const inert = (prose: string): string =>
+    prose
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replace(/@(?=[A-Za-z0-9])/g, '@\u200b')
+  // A code span opens on a backtick run and closes on the next run of exactly
+  // the same length (CommonMark); an unclosed run is literal text.
+  const span = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g
+  let out = ''
+  let last = 0
+  for (const match of text.matchAll(span)) {
+    out += inert(text.slice(last, match.index)) + match[0]
+    last = match.index + match[0].length
+  }
+  return out + inert(text.slice(last))
+}
+
+/** `text` as one inline code span, whatever backticks or newlines it holds. */
+function codeSpan(text: string): string {
+  const flat = text.replace(/\s*\n\s*/g, ' ')
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length))
+  const fence = '`'.repeat(longest + 1)
+  const pad = flat.startsWith('`') || flat.endsWith('`') ? ' ' : ''
+  return `${fence}${pad}${flat}${pad}${fence}`
+}
+
 function evidenceLines(finding: Finding): string[] {
   return finding.evidence.map((evidence) => {
     switch (evidence.kind) {
       case 'command':
-        return `- \`${evidence.command}\` on ${evidence.target}: exit ${evidence.exitCode === null ? 'killed' : String(evidence.exitCode)}`
+        return `- ${codeSpan(evidence.command)} on ${evidence.target}: exit ${evidence.exitCode === null ? 'killed' : String(evidence.exitCode)}`
       case 'reproducer':
-        return `- reproducer \`${evidence.testPath}\`: ${evidence.failsOnHead ? 'fails' : 'passes'} on head, ${evidence.passesOnBase ? 'passes' : 'fails'} on base`
+        return `- reproducer ${codeSpan(evidence.testPath)}: ${evidence.failsOnHead ? 'fails' : 'passes'} on head, ${evidence.passesOnBase ? 'passes' : 'fails'} on base`
       case 'citation':
-        return `- \`${evidence.path}:${String(evidence.startLine)}–${String(evidence.endLine)}\``
+        return `- ${codeSpan(`${evidence.path}:${String(evidence.startLine)}–${String(evidence.endLine)}`)}`
     }
   })
 }
@@ -92,14 +154,14 @@ export function renderFindingComment(finding: Finding): string {
         ? 'Dismissed after further checking.'
         : 'Possible issue — not confirmed by a test.'
   return [
-    `**${finding.claim}**`,
+    `**${inertMarkdown(finding.claim)}**`,
     '',
     `${finding.severity.charAt(0).toUpperCase()}${finding.severity.slice(1)} priority. ${status}`,
     '',
     details(
       'Why this was flagged',
       [
-        finding.verdict.reason,
+        inertMarkdown(finding.verdict.reason),
         '',
         ...evidenceLines(finding),
         '',
@@ -134,7 +196,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     )
   }
   for (const note of stage0.coverage.notChecked) {
-    lines.push(`Not checked: ${note.kind === 'all' ? '' : `${note.kind} — `}${note.reason}.`)
+    lines.push(
+      `Not checked: ${note.kind === 'all' ? '' : `${note.kind} — `}${inertMarkdown(note.reason)}.`,
+    )
   }
   if (report.verification !== null) {
     const { counts } = report.verification
@@ -152,7 +216,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     for (const review of incomplete) {
       const reason =
         review.error?.replace(/\s+/g, ' ') ?? `${review.outcome} (${review.stopReason})`
-      lines.push(`Incomplete reviewer: ${review.model} (${review.lens}) — ${reason}.`)
+      lines.push(
+        `Incomplete reviewer: ${review.model} (${review.lens}) — ${inertMarkdown(reason)}.`,
+      )
     }
   }
   const limitations = reviewerLimitations(report.reviews)
@@ -161,10 +227,21 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
       `Review limits: ${String(limitations.length)} completed reviewer run(s) left material uncertainty.`,
     )
     for (const limitation of limitations) {
-      lines.push(`Could not verify (${limitation.model}, ${limitation.lens}): ${limitation.detail}`)
+      lines.push(
+        `Could not verify (${limitation.model}, ${limitation.lens}): ${inertMarkdown(limitation.detail)}`,
+      )
     }
   }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
+  const hosts = new Set([
+    ...report.reviews.flatMap((review) => review.hostingProviders ?? []),
+    ...(report.verification?.records ?? []).flatMap((record) => record.hostingProviders ?? []),
+  ])
+  lines.push(
+    hosts.size
+      ? `Hosting providers reported by responses: ${[...hosts].sort().join(', ')}.`
+      : 'Hosting provider: not reported by the service.',
+  )
   const timings = [
     ...report.reviews.map((review) => ({ label: 'Find issues', timing: review.timing })),
     ...(report.verification?.records ?? []).map((record) => ({
@@ -181,7 +258,10 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
           `| ${label} | ${seconds(timing.durationMs)} | ${seconds(timing.toolMs)} | ${seconds(timing.modelAndOverheadMs)} |`,
         )
     }
-    lines.push('', 'Model and waiting includes API retries and orchestration, not just inference.')
+    lines.push(
+      '',
+      'Passes may overlap; their totals should not be added. Tools includes waiting for the shared execution lane. Model and waiting includes API retries and orchestration, not just inference.',
+    )
   }
   return lines
 }
@@ -197,15 +277,16 @@ export function buildForgeReview(
   fold: ReadonlySet<number> = new Set(),
 ): ForgeReview {
   const comments: ForgeReviewComment[] = []
-  const inBody: Finding[] = []
+  const inBody: { finding: Finding; number: number }[] = []
   report.findings.forEach((finding, index) => {
-    if (finding.anchor.startLine === undefined || fold.has(index)) {
-      inBody.push(finding)
+    const line = inlineLine(finding, options)
+    if (line === undefined || fold.has(index)) {
+      inBody.push({ finding, number: index + 1 })
       return
     }
     comments.push({
       path: finding.anchor.path,
-      line: finding.anchor.endLine ?? finding.anchor.startLine,
+      line,
       body: renderFindingComment(finding),
     })
   })
@@ -230,8 +311,17 @@ export function buildForgeReview(
     lines.push(
       `${String(report.findings.length)} ${report.findings.length === 1 ? 'issue' : 'issues'} to review.${comments.length > 0 ? ` See ${comments.length === 1 ? 'the inline comment' : 'the inline comments'}.` : ''}`,
     )
-    for (const finding of inBody) {
-      lines.push('', `#### ${where(finding)}`, '', renderFindingComment(finding))
+    for (const { finding, number } of inBody) {
+      lines.push(
+        '',
+        '---',
+        '',
+        `#### Issue ${String(number)}`,
+        '',
+        codeSpan(where(finding)),
+        '',
+        renderFindingComment(finding),
+      )
     }
   }
   if (report.appendix.length > 0) {
@@ -242,6 +332,7 @@ export function buildForgeReview(
     supporting.push(
       `${String(report.refuted.length)} suspected issues were dismissed after checking.`,
     )
+  if (inBody.length > 0) lines.push('', '---')
   lines.push('', details('Review details', supporting.join('\n')))
   lines.push(
     '',
@@ -317,21 +408,26 @@ function headers(target: ForgeTarget): Record<string, string> {
 
 export interface PostedReview {
   readonly inline: number
-  /** Findings folded into the body because the forge refused their line. */
+  /** Anchored findings kept in the body because their line could not be used. */
   readonly folded: number
 }
 
 const ERROR_EXCERPT_CHARS = 512
 
 /**
- * Post the review. A 422 — the forge could not place one of the inline
- * comments — is retried once with every inline comment folded into the body;
+ * Check anchors against full diffs before posting so one invalid location does
+ * not displace the valid comments. A 422 — the forge could not place an inline
+ * comment — is retried once with every inline comment folded into the body;
  * any other failure is an error carrying the status and the response's head.
  */
 export async function postForgeReview(
   target: ForgeTarget,
   report: ReviewReport,
-  options: { readonly toolVersion: string; readonly fetch?: FetchLike },
+  options: {
+    readonly toolVersion: string
+    readonly fetch?: FetchLike
+    readonly diffForPath?: (path: string) => Promise<string>
+  },
 ): Promise<PostedReview> {
   const fetchImpl: FetchLike = options.fetch ?? fetch
   const url = reviewsUrl(target)
@@ -353,11 +449,32 @@ export async function postForgeReview(
       throw new ForgeReviewError(0, `could not reach ${url}: ${errorMessage(err)}`)
     }
   }
-  const reviewOptions = { headCommit: target.headCommit, toolVersion: options.toolVersion }
+  let fileDiffs: Map<string, string> | undefined
+  if (options.diffForPath !== undefined && target.headCommit !== null) {
+    const readDiff = options.diffForPath
+    const paths = new Set(
+      report.findings
+        .filter((finding) => finding.anchor.startLine !== undefined)
+        .map((finding) => finding.anchor.path),
+    )
+    fileDiffs = new Map(
+      await Promise.all(
+        [...paths].map(async (path): Promise<[string, string]> => [path, await readDiff(path)]),
+      ),
+    )
+  }
+  const reviewOptions = {
+    headCommit: target.headCommit,
+    toolVersion: options.toolVersion,
+    ...(fileDiffs === undefined ? {} : { fileDiffs }),
+  }
   const inline = buildForgeReview(report, reviewOptions)
+  const anchored = report.findings.filter(
+    (finding) => finding.anchor.startLine !== undefined,
+  ).length
   try {
     await attempt(inline)
-    return { inline: inline.comments.length, folded: 0 }
+    return { inline: inline.comments.length, folded: anchored - inline.comments.length }
   } catch (err) {
     if (!(err instanceof ForgeReviewError) || err.status !== 422 || inline.comments.length === 0) {
       throw err
@@ -365,7 +482,7 @@ export async function postForgeReview(
   }
   const everything = new Set(report.findings.map((_finding, index) => index))
   await attempt(buildForgeReview(report, reviewOptions, everything))
-  return { inline: 0, folded: inline.comments.length }
+  return { inline: 0, folded: anchored }
 }
 
 export class ForgeReviewError extends Error {

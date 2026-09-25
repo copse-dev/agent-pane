@@ -65,6 +65,7 @@ function deps(over: Partial<PrCreateDependencies> = {}): Recorded {
       })
     },
     getThreadModels: () => ['claude-opus-5'],
+    isAttributionEnabled: () => true,
     backendKind: () => 'cli',
     broadcast: (channel, ...args) => {
       broadcasts.push({ channel, args })
@@ -188,6 +189,20 @@ describe('createPrForThread', () => {
     const body = recorded.created[0]?.body ?? ''
     assert.match(body, /Groups a run under its anchor\./)
     assert.match(body, /Co-Authored-By/i)
+  })
+
+  it('preserves the PR description when Git attribution is disabled', async () => {
+    const recorded = deps({ isAttributionEnabled: () => false })
+    await createPrForThread(
+      { title: 'Roll up tool activity', body: 'Written by the user.' },
+      WORKTREE_CONTEXT,
+      recorded.deps,
+    )
+    assert.equal(recorded.created[0]?.body, 'Written by the user.')
+
+    const empty = deps({ isAttributionEnabled: () => false })
+    await createPrForThread({ title: 'Roll up tool activity' }, WORKTREE_CONTEXT, empty.deps)
+    assert.equal(empty.created[0]?.body, '')
   })
 
   it('still attributes a PR opened with an empty description', async () => {

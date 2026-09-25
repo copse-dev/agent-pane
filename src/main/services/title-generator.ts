@@ -166,3 +166,39 @@ export async function suggestTerminalTitle(text: string): Promise<string | null>
     return null
   }
 }
+
+/**
+ * Input cap for the roadmap title prompt — matches the classification prompts
+ * (roadmap-complexity.ts / roadmap-category.ts) that already send this much of
+ * a roadmap item's prompt to the same small-tasks model.
+ */
+const ROADMAP_TITLE_INPUT_CAP = 2000
+
+/** The prompt {@link suggestRoadmapTitle} sends; `text` is the roadmap item's prompt. */
+export function roadmapTitlePrompt(text: string): string {
+  return (
+    'Reply with ONLY a concise 3-6 word title in Title Case for the following future-work ' +
+    'prompt from a project roadmap. No quotes, no trailing punctuation.\n\nPrompt:\n' +
+    text.slice(0, ROADMAP_TITLE_INPUT_CAP)
+  )
+}
+
+// Generate a short roadmap item title from its prompt (issue #2472) — the same
+// model-generated naming threads (suggestThreadTitle) and terminals
+// (suggestTerminalTitle) already get. Uses the configured small-tasks model;
+// returns null on failure so the caller can fall back to the plain truncation
+// (roadmapTitleFromPrompt in tools/roadmap-tools.ts).
+export async function suggestRoadmapTitle(text: string): Promise<string | null> {
+  const provider = await resolveSmallTasksProvider()
+  if (!provider) return null
+  const model = resolveSmallTasksModelId()
+
+  const prompt = roadmapTitlePrompt(text)
+  try {
+    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
+    recordSmallTasksUsage(model, usage)
+    return cleanPhrase(out, 60)
+  } catch {
+    return null
+  }
+}

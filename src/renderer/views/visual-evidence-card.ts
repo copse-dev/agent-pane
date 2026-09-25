@@ -1,5 +1,5 @@
 import type { VisualEvidenceAsset, VisualEvidenceRef } from '@shared/types'
-import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
 import { el } from '../dom/helpers.ts'
 import { imageIcon } from '../dom/icons.ts'
 
@@ -35,6 +35,7 @@ function thumbnail(asset: VisualEvidenceAsset, caption: string): HTMLElement {
     alt: `${asset.label}: ${caption}`,
     loading: 'lazy',
   })
+  attachImageCopyMenu(image)
   return image
 }
 

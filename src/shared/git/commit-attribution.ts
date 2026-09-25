@@ -3,6 +3,10 @@
 // fixed; the `Copse-Models` trailer lists the distinct model ids that actually
 // ran in the thread (sourced from usage, not the LLM guessing its own name).
 
+/** Persistent setting controlling Copse credit on commits and pull requests. */
+export const GIT_ATTRIBUTION_SETTING = 'gitAttributionEnabled'
+export const DEFAULT_GIT_ATTRIBUTION_ENABLED = true
+
 /** Fixed co-author trailer identifying Copse as a commit author. */
 export const COPSE_COAUTHOR = 'Co-Authored-By: Copse <noreply@copse.dev>'
 

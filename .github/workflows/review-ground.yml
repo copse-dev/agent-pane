@@ -9,10 +9,13 @@ run-name: copse-review-ground pr=${{ inputs.pr }}
 # then fetches the exact resolved PR head as data. With credentials removed
 # after checkout and a fresh hosted runner, contributor code has nothing
 # privileged to reach. It runs Stage 0 (build,
-# typecheck, lint, test on head, and on base for whatever failed on head) with
-# the runner itself as the execution cell and uploads the report. Nothing in
-# that job can reach a model or a privileged token: the runner is ephemeral
-# and holds neither, which is what lets a contributor's code run.
+# typecheck, lint, test on head, and on base for whatever failed on head) as a
+# dedicated unprivileged user on the ephemeral runner and uploads the report.
+# Nothing in that job can reach a model or a privileged token. The job's
+# Actions runtime token, which `permissions: {}` does not remove, lives only in
+# later steps the runner user executes; the cell user has no sudo and cannot
+# read or write the runner's home, where those actions and command files live
+# (packages/review/ci/ground-as-cell-user.sh).
 #
 # A separate, fresh handoff job gets only Actions-dispatch permission after
 # grounding succeeds. It explicitly dispatches "Copse review findings" on the
@@ -36,6 +39,10 @@ on:
         description: Base branch resolved by the trusted trigger
         required: true
         type: string
+      fresh:
+        description: Ignore previous successful grounding and rerun all checks
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -44,7 +51,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  reuse:
+    name: Look for verified grounding of the same revision
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A cache/setup outage must not make a successful fresh grounding run fail.
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_id: ${{ steps.reuse.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        if: ${{ !inputs.fresh }}
+        with:
+          ref: ${{ github.sha }}
+          filter: blob:none
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        if: ${{ !inputs.fresh }}
+        with:
+          node-version-file: '.nvmrc'
+      - name: Install only trusted reviewer dependencies
+        if: ${{ !inputs.fresh }}
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
+      - name: Validate previous run, policy and report
+        id: reuse
+        if: ${{ !inputs.fresh }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          HEAD_SHA: ${{ inputs.head }}
+          BASE_REF: ${{ inputs.base }}
+        run: node packages/review/ci/reuse-ground.mts
+
   ground:
+    needs: reuse
+    if: always() && !cancelled() && needs.reuse.outputs.run_id == ''
     name: Stage 0 on the pull request head
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -56,7 +104,7 @@ jobs:
         with:
           # Use the reviewed CLI from the default branch. The PR head is fetched
           # below and executed only by Stage 0's secret-free execution cell.
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.sha }}
           # Keep ancestry for merge-base; hydrate only trees we actually review.
           filter: blob:none
           fetch-depth: 0
@@ -101,51 +149,25 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
 
-      - name: Run Stage 0 with the runner as the cell
+      # Pull-request code runs as a separate user with no sudo and no access
+      # to the runner's home, so it cannot reach the actions and command files
+      # later steps execute with the job's Actions runtime token.
+      - name: Run Stage 0 as the unprivileged review cell user
         shell: bash
         env:
           HEAD_SHA: ${{ inputs.head }}
           BASE_REF: ${{ inputs.base }}
           PR_NUMBER: ${{ inputs.pr }}
+          OUT_DIR: ground
         run: |
           set -euo pipefail
           setup_node_bin="$(dirname "$(command -v node)")"
           export PATH="${setup_node_bin}:/usr/bin:${PATH}"
           test "$(command -v cargo)" = /usr/bin/cargo
           test "$(command -v node)" = "${setup_node_bin}/node"
-          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
-          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git check-ref-format --branch "$BASE_REF"
-          git fetch --no-tags --quiet origin \
-            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
-            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
-
-          # Stage 0 installs with --offline inside the isolated cell. Prime the
-          # host store from data-only files at the exact contributor commit;
-          # pnpm fetch ignores manifests and never runs lifecycle scripts. This
-          # job has no token permissions or secrets if the lockfile is hostile.
-          dependency_seed="$RUNNER_TEMP/copse-review-dependencies"
-          mkdir -p "$dependency_seed"
-          git show "${HEAD_SHA}:pnpm-lock.yaml" > "$dependency_seed/pnpm-lock.yaml"
-          if git cat-file -e "${HEAD_SHA}:patches" 2>/dev/null; then
-            git archive --format=tar "$HEAD_SHA" patches | tar -xf - -C "$dependency_seed"
-          fi
-          pnpm fetch --frozen-lockfile --dir "$dependency_seed"
-
           mkdir -p ground
           printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
-          # Findings never affect the exit code; a refused execution (3) or an
-          # undetectable project (2) does, and then there is no ground to upload.
-          node packages/review/bin/copse-review.mjs \
-            --foreign \
-            --head "refs/remotes/pr/${PR_NUMBER}" \
-            --base "origin/${BASE_REF}" \
-            --backend ephemeral-runner \
-            --scratch-parent "$RUNNER_TEMP" \
-            --trusted-prepare "$GITHUB_WORKSPACE/scripts/prepare-review-stage0.mts" \
-            --no-model \
-            --json ground/report.json
+          bash packages/review/ci/ground-as-cell-user.sh
 
       - uses: actions/upload-artifact@v7
         with:
@@ -156,7 +178,11 @@ jobs:
 
   handoff:
     name: Dispatch findings after secret-free grounding
-    needs: ground
+    needs: [reuse, ground]
+    if: >-
+      always() && !cancelled() &&
+      (needs.ground.result == 'success' ||
+      (needs.reuse.result == 'success' && needs.reuse.outputs.run_id != '' && needs.ground.result == 'skipped'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # This is a fresh runner. It checks out, downloads and executes nothing;
@@ -170,7 +196,7 @@ jobs:
           BASE_REF: ${{ inputs.base }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
-          GROUND_RUN_ID: ${{ github.run_id }}
+          GROUND_RUN_ID: ${{ needs.reuse.outputs.run_id || github.run_id }}
           HEAD_SHA: ${{ inputs.head }}
           PR_NUMBER: ${{ inputs.pr }}
         run: |

@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import type { LLMProvider } from '@shared/types'
 import type { ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import { cleanThreadTitle, fallbackThreadTitle, threadTitlePrompt } from '@shared/thread-title.ts'
-import { completeThreadTitleWithRoutes, type ThreadTitleCompletion } from './title-generator.ts'
+import {
+  completeThreadTitleWithRoutes,
+  roadmapTitlePrompt,
+  type ThreadTitleCompletion,
+} from './title-generator.ts'
 import type { SmallTasksRoute } from './providers/small-tasks-provider.ts'
 
 function textProvider(run: () => string): LLMProvider {
@@ -133,5 +137,25 @@ describe('completeThreadTitleWithRoutes', () => {
 
     assert.equal(completion?.title, 'Thread naming quality')
     assert.equal(fallbackResolved, false)
+  })
+})
+
+describe('roadmapTitlePrompt', () => {
+  it('asks for a short Title Case name for a roadmap item prompt (issue #2472)', () => {
+    const prompt = roadmapTitlePrompt('Refactor the settings dialog into separate panels')
+    assert.match(prompt, /3-6 word title in Title Case/)
+    assert.match(prompt, /future-work prompt from a project roadmap/)
+    assert.ok(
+      prompt.endsWith('Prompt:\nRefactor the settings dialog into separate panels'),
+      'the roadmap prompt itself is appended last',
+    )
+  })
+
+  it('caps the input at 2000 characters, matching the complexity/category classifiers', () => {
+    const input = 'x'.repeat(3000)
+    const prompt = roadmapTitlePrompt(input)
+    const sent = prompt.slice(prompt.indexOf('Prompt:\n') + 'Prompt:\n'.length)
+    assert.equal(sent.length, 2000)
+    assert.equal(roadmapTitlePrompt('short').endsWith('Prompt:\nshort'), true)
   })
 })

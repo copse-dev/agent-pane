@@ -27,7 +27,7 @@ import { errorMessage } from '@copse/std/errors.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { detectContainerBackend } from './container-backend.ts'
-import { buildReviewContext } from './context.ts'
+import { buildReviewContext, readFileDiff } from './context.ts'
 import {
   isForge,
   postForgeReview,
@@ -40,6 +40,7 @@ import type { DiffOrigin, IsolationBackend } from './isolation.ts'
 import { resolveLenses } from './lenses.ts'
 import { serializeCell } from './isolation.ts'
 import {
+  envValue,
   isProviderKind,
   selectProvider,
   PROVIDER_KINDS,
@@ -100,10 +101,11 @@ never the exit code.
   --challenger <id>       model that challenges and writes reproducers (default: the first --model)
   --no-verify             skip Stage 4 (no reproducers, no challenge)
   --max-verify <n>        findings to verify, most promising first (default 10)
+  --verify-concurrency <n> findings verified at once: 1 or 2 (default 1)
   --concurrency <n>       reviewers running at once (default 2)
   --base-url <url>        endpoint for lmstudio / openai-compatible
   --mock-script <path>    scripted steps for --provider mock (a list, or {roles:{...}})
-  --json [<path>]         write the full report as JSON (path, or - for stdout)
+  --json <path|->         write the full report as JSON (a path, or - for stdout)
   --sarif <path>          write the surfaced findings as SARIF 2.1.0
   --events <path>         write the model turn's headless events as JSONL (- for stdout)
   --post-review <forge>   post the findings as one review on the pull request:
@@ -182,8 +184,9 @@ export async function discoverPnpmStore(
 
 function integer(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`)
+  // parseInt alone would read `3x` as 3 and `1.5` as 1.
+  const parsed = /^[1-9]\d*$/.test(value) ? Number(value) : Number.NaN
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be a positive integer`)
   return parsed
 }
 
@@ -221,10 +224,10 @@ export function resolveForgeTarget(
   const number = integer(flags.pr, '--pr')
   if (number === undefined) throw new Error('--post-review needs --pr <n>')
   const token =
-    env['COPSE_REVIEW_FORGE_TOKEN'] ??
-    (forge === 'forgejo' ? env['FORGEJO_TOKEN'] : undefined) ??
-    env['GITHUB_TOKEN']
-  if (token === undefined || token.length === 0) {
+    envValue(env, 'COPSE_REVIEW_FORGE_TOKEN') ??
+    (forge === 'forgejo' ? envValue(env, 'FORGEJO_TOKEN') : undefined) ??
+    envValue(env, 'GITHUB_TOKEN')
+  if (token === undefined) {
     throw new Error('--post-review needs a token in COPSE_REVIEW_FORGE_TOKEN or GITHUB_TOKEN')
   }
   const apiBase =
@@ -267,6 +270,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         challenger: { type: 'string' },
         'no-verify': { type: 'boolean', default: false },
         'max-verify': { type: 'string' },
+        'verify-concurrency': { type: 'string' },
         concurrency: { type: 'string' },
         'base-url': { type: 'string' },
         'mock-script': { type: 'string' },
@@ -315,6 +319,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   let budgetChars: number | undefined
   let maxSteps: number | undefined
   let maxVerify: number | undefined
+  let verifyConcurrency: number | undefined
   let concurrency: number | undefined
   let scratchParent: string | undefined
   let lenses
@@ -325,6 +330,14 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     budgetChars = integer(values['budget-chars'], '--budget-chars')
     maxSteps = integer(values['max-steps'], '--max-steps')
     maxVerify = integer(values['max-verify'], '--max-verify')
+    const requestedVerificationConcurrency = values['verify-concurrency']
+    if (
+      requestedVerificationConcurrency !== undefined &&
+      requestedVerificationConcurrency !== '1' &&
+      requestedVerificationConcurrency !== '2'
+    )
+      throw new Error('--verify-concurrency must be 1 or 2')
+    verifyConcurrency = integer(requestedVerificationConcurrency, '--verify-concurrency')
     concurrency = integer(values.concurrency, '--concurrency')
     if (values['scratch-parent'] !== undefined) {
       scratchParent = await realpath(values['scratch-parent'])
@@ -537,6 +550,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             threadId,
             turnPrefix,
             maxVerified: maxVerify,
+            concurrency: verifyConcurrency,
             signal: io.signal,
             onEvent,
           })
@@ -583,10 +597,26 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     let postError: string | null = null
     if (forgeTarget !== null && !io.signal?.aborted) {
       try {
+        const { checkouts } = ground
+        const { mergeBase, headCommit, dirtyWorkingTree } = stage0
         const posted = await postForgeReview(
           { ...forgeTarget, headCommit: stage0.headCommit },
           report,
-          { toolVersion: CLI_VERSION, ...(io.fetch ? { fetch: io.fetch } : {}) },
+          {
+            toolVersion: CLI_VERSION,
+            ...(io.fetch ? { fetch: io.fetch } : {}),
+            // Use the committed diff, independent of prompt truncation and any
+            // files touched by verification. Working-tree findings stay in the body.
+            diffForPath: async (path) =>
+              checkouts !== null && mergeBase !== null && headCommit !== null && !dirtyWorkingTree
+                ? readFileDiff(
+                    { gitDir: checkouts.headGitDir, workTree: checkouts.head },
+                    mergeBase,
+                    path,
+                    headCommit,
+                  )
+                : '',
+          },
         )
         io.stderr(
           `copse-review: posted the review on ${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''})\n`,

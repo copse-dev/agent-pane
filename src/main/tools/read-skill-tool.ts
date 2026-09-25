@@ -18,12 +18,19 @@ export const readSkillTool = defineTool({
   }),
   async execute({ name, path }) {
     const result = await readSkill(name, path ?? 'SKILL.md')
+    const missingReferenceNote =
+      result.missingReferences.length > 0
+        ? `Note: this skill references ${result.missingReferences.map((ref) => `\`${ref}\``).join(', ')}, ` +
+          `which ${result.missingReferences.length === 1 ? 'is' : 'are'} not present in the bundle — ` +
+          'continue without it and report the broken skill.'
+        : ''
     const header = [
       `# Skill: ${result.name}`,
       `Root: ${result.skillRoot}`,
       `File: ${result.relativePath}`,
       '',
       result.description ? `Description: ${result.description}` : '',
+      missingReferenceNote,
       '',
       '---',
       '',

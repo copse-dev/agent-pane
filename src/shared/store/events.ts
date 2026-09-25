@@ -2,6 +2,24 @@
 import type { ThreadStatus, ToolCall } from '@shared/types'
 import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 
+export interface CodeBlockRunRequest {
+  id: string
+  command: string
+  projectId: string
+  threadId: string
+}
+
+export interface CodeBlockRunResult {
+  id: string
+  threadId: string
+  exitCode: number | null
+  shell: {
+    tabId: string
+    label: string
+    content: string
+  }
+}
+
 export interface StoreEvents {
   message_added: [threadId: string, messageId: string]
   message_queued: [threadId: string, messageId: string]
@@ -77,6 +95,11 @@ export interface StoreEvents {
   // command in it. Used by the Usage panel's "Sign in to Claude" button to
   // launch `claude /login` in a real interactive terminal.
   request_terminal_command: [command: string]
+  // A runnable assistant code block was explicitly started by the user. The
+  // Shells pane owns execution; completion returns a scrollback snapshot that
+  // the composer stages as an @shell attachment on the originating thread.
+  code_block_run_requested: [request: CodeBlockRunRequest]
+  code_block_run_finished: [result: CodeBlockRunResult]
   // The set of non-focused threads awaiting user input (a pending approval or
   // ask_user question) changed. Drives the sidebar attention indicator.
   attention_changed: []

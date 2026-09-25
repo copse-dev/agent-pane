@@ -380,6 +380,13 @@ scope.
   no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
+  Repeated reviews may reuse a clean Job A report less than 24 hours old for the identical
+  head and merge-base. A separate trusted read-only lookup verifies GitHub producer identity,
+  successful completion, complete check coverage, and unchanged trusted runner/dependency
+  inputs. The source checkout is pinned to the producer's workflow SHA. Lookup failures or
+  uncertain reports fall back to a fresh Job A; `fresh=true` forces it. The handoff names the
+  original producer run, and Job B still validates its metadata and the current PR. Ordinary
+  merge-commit CI results are not treated as exact-head grounding.
   Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
   validation image and primes a read-only dependency store from the exact head lockfile. Its
   trusted model process holds the credentials; brokered focused commands and reproducers run
@@ -834,6 +841,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+  "Holding no secrets" is not the whole of it: the job still carries an Actions runtime
+  token (which `permissions: {}` does not remove) into the later steps the runner user
+  executes, and that user owns those actions and has sudo. The CI shell therefore runs the
+  CLI as a separate unprivileged user that cannot reach the runner's home
+  (`packages/review/ci/ground-as-cell-user.sh`), and kills everything that user owns before
+  the upload step.
 - **The CI shell, in two privilege domains.** `review-ground.yml` uses
   a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
   `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
@@ -1302,3 +1315,36 @@ The prompt directs an early small test rather than open-ended setup research; ro
 remain unchanged. This removes an observed source of wasted work, not a guaranteed latency
 reduction. Each role now records total wall time, tool wall time (overlap counted once), and
 the remainder for model calls/retries/orchestration so the next live run can measure it.
+
+### September 24: two concurrent verifications and actual hosting providers
+
+The protected PR workflow now opts into `--verify-concurrency 2` (the CLI keeps
+1 as its compatibility default). Repository variable `COPSE_REVIEW_VERIFY_CONCURRENCY`
+can restore 1 without a workflow edit; invalid values are refused. A bounded worker pool processes findings in
+priority order. Each finding still runs its reproducer before its own challenger
+and keeps the mandatory behavioral-proof audit. Stable turn IDs and result order
+are allocated before workers start. Cancellation stops queued findings; all active
+workers settle before the shared cell can be destroyed.
+
+This overlaps model investigation and model waiting. It does not parallelize
+commands in a shared checkout: one tool queue covers every verification tool,
+including each reproducer's prepare/write/head-run/base-run/base-cleanup sequence.
+Each concurrent finding must use its own root-level `.copse-review/finding-N-`
+filename prefix; a mismatched path is refused before writing or executing. Relative
+imports keep their prior depth. The existing credential-free, offline cell and
+all owner/key/environment checks are unchanged. This is collision prevention in
+the existing shared cell, not separate OS isolation for each finding's code.
+
+Hosting provider names are read from successful response metadata, bounded to a
+short plain label and passed with per-stream usage through secret redaction. The
+review report retains the observed names for each role and puts their union in
+collapsed details. Absent metadata remains unknown; the `openai/` model prefix is
+never used as hosting evidence. This is additive accounting only: no changes to
+agent-loop budgets, hooks, continuations, routing, model choice or retry delays.
+
+The sequential baseline (run 36015789351) took 697.7s for two findings: 618.2s in
+model calls/waiting, including 135.4s of scheduled waits after ten streamed 429s,
+44.4s in tools and 35.2s elsewhere. The second finding's two passes used 148.3s,
+which is an overlap opportunity, not a promised saving under increased load.
+Compare the subsequent protected live run's elapsed time, per-turn overlap,
+provider metadata, retry count and proof quality before claiming a speedup.

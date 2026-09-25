@@ -7,6 +7,7 @@ import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { installArtifactImagePolicy } from './artifact-image-policy.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { dismissContextMenu } from '../dom/context-menu.ts'
 
 // renderMarkdown only produces artifact <img> placeholders once the host policy
 // is injected (as main.ts does at startup).
@@ -271,6 +272,12 @@ describe('markdown browser links', () => {
     const img = qsRequired<HTMLImageElement>(root, 'img')
     assert.equal(img.dataset['remoteArtifactState'], 'loaded')
     assert.equal(img.src, 'data:image/png;base64,abc123')
+    img.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    assert.equal(
+      qsRequired<HTMLButtonElement>(document, '.context-menu-item').textContent,
+      'Copy image',
+    )
+    dismissContextMenu()
   })
 
   it('retries artifact image hydration after restored messages attach to the thread', async () => {
