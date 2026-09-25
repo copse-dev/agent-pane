@@ -1,4 +1,5 @@
 import { ClassifierError } from '@copse/llm/classifiers/error.ts'
+import { keyOf } from '@copse/std/member-of.ts'
 import type {
   ClassifierQuestion,
   ClassifierResult,
@@ -25,7 +26,7 @@ import type { TerminalReadVerdict } from './terminal-read-verdict.ts'
 
 const DECISION = 'decision'
 
-export const SHELL_SCOPE_QUESTION = {
+const SHELL_SCOPE_QUESTION = {
   type: 'choice',
   instructions:
     'Can this shell command run entirely inside the project sandbox? The sandbox allows reading and writing the workspace directory only, and denies all network access.',
@@ -36,7 +37,7 @@ export const SHELL_SCOPE_QUESTION = {
   },
 } satisfies ClassifierQuestion
 
-export const TERMINAL_READ_QUESTION = {
+const TERMINAL_READ_QUESTION = {
   type: 'choice',
   instructions:
     "A coding assistant wants to read this recent output from the user's interactive terminal. Is it safe to share without the user reviewing it first?",
@@ -47,7 +48,7 @@ export const TERMINAL_READ_QUESTION = {
   },
 } satisfies ClassifierQuestion
 
-export interface ClassifierScreening<T> {
+interface ClassifierScreening<T> {
   verdict: T | null
   problem: SafetyModelProblem | null
 }
@@ -58,18 +59,14 @@ interface ChosenOption<T extends string> {
   reason: string
 }
 
-function isOption<T extends string>(options: Record<T, string>, value: string): value is T {
-  return Object.hasOwn(options, value)
-}
-
 /** The classifier's pick for the screening question, or `null` if the answer is unusable. */
-export function chosenOption<T extends string>(
+function chosenOption<T extends string>(
   result: ClassifierResult,
   label: string,
   options: Record<T, string>,
 ): ChosenOption<T> | null {
   const answer = result.answers[DECISION]
-  if (answer?.type !== 'choice' || !isOption(options, answer.choice)) return null
+  if (answer?.type !== 'choice' || !keyOf(options)(answer.choice)) return null
   const probability = answer.probabilities[answer.choice]
   if (probability === undefined) return null
   return {
