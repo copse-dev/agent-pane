@@ -9,6 +9,31 @@ interface AskUserRequest {
   /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
   threadId: string | undefined
   questions: { question: string; options?: string[] }[]
+  /** Renderer clock when the question arrived — how long it has been waiting. */
+  receivedAt: number
+  /** Arrival order; the clock alone ties within a millisecond. */
+  arrival: number
+}
+
+/** What another surface (the Activity panel) may read about one pending question. */
+export interface PendingQuestionSummary {
+  id: string
+  threadId: string | undefined
+  /** The question texts, in order, as the agent wrote them (Markdown source). */
+  questions: string[]
+  receivedAt: number
+}
+
+/**
+ * The dialog's pending questions, read-only. Answering stays in the dialog: a
+ * surface that wants a question answered opens its thread, which is exactly
+ * what makes the dialog surface it.
+ */
+export interface AskUserRequests {
+  /** Every question still waiting — on screen or queued — oldest first. */
+  pending(): PendingQuestionSummary[]
+  /** Called after any change to {@link pending}. Returns an unsubscribe. */
+  onChange(listener: () => void): () => void
 }
 
 /** Render the small, phrasing-only Markdown subset that is valid inside a button. */
@@ -39,13 +64,15 @@ function setControlMarkdown(target: HTMLButtonElement, source: string): void {
  * thread the user isn't looking at stays queued and is surfaced as a sidebar
  * attention indicator rather than interrupting the focused thread.
  */
-export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
+export function mountAskUserDialog(api: ApiClient, store: AppStore): AskUserRequests {
   const form = el('form', { id: 'ask-user-form', method: 'dialog' })
   const dialog = el('dialog', { id: 'ask-user-dialog' }, form)
   document.body.append(dialog)
 
   const queue: AskUserRequest[] = []
   let active: AskUserRequest | null = null
+  const changeListeners = new Set<() => void>()
+  let arrivals = 0
   // One input per question of the active request, kept in question order so
   // answers map back to questions by index.
   let inputs: HTMLTextAreaElement[] = []
@@ -62,6 +89,8 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
       .map((req) => req.threadId)
       .filter((id): id is string => !!id && id !== activeThreadId)
     setAttentionThreads(store, 'ask', waiting)
+    // Every queue mutation ends here, so this is where other surfaces hear of it.
+    for (const listener of [...changeListeners]) listener()
   }
 
   function renderActive(): void {
@@ -219,7 +248,13 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
   })
 
   api.agent.onAskUserRequest((req) => {
-    queue.push({ id: req.id, threadId: req.threadId, questions: req.questions })
+    queue.push({
+      id: req.id,
+      threadId: req.threadId,
+      questions: req.questions,
+      receivedAt: Date.now(),
+      arrival: arrivals++,
+    })
     showNext()
     // Cover the case where a modal is already up: the new background request
     // still needs to flag its thread.
@@ -247,4 +282,22 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
     showNext()
     syncAttention()
   })
+
+  return {
+    pending: () =>
+      [...(active ? [active] : []), ...queue]
+        .sort((a, b) => a.arrival - b.arrival)
+        .map((req) => ({
+          id: req.id,
+          threadId: req.threadId,
+          questions: req.questions.map((q) => q.question),
+          receivedAt: req.receivedAt,
+        })),
+    onChange: (listener) => {
+      changeListeners.add(listener)
+      return () => {
+        changeListeners.delete(listener)
+      }
+    },
+  }
 }

@@ -1093,6 +1093,27 @@ the project scope above the form, and use the identical editor inside Settings.
 Do not recreate the editor when plugin enablement changes: it may contain a draft.
 Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.ts).
 
+## Activity panel: attention first, answer in place
+
+The Activity panel ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts),
+[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) is a sibling of the
+Process Manager overlay, not a new surface kind.
+
+- **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
+  An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **State is glyph + word.** Each state has its own outline glyph (hand, question bubble,
+  three dots, triangle, check) and a short label beside it. Colour is a third, redundant
+  channel. The running dots are held still here; the sidebar already animates them.
+- **One column grid down the whole list.** Every row reserves the action column, even rows
+  with no buttons, so thread, project and age line up.
+- **Approve once is the only in-place grant.** Buttons follow the approval prompt's recipe
+  (`ui-btn-primary` Approve once, outlined Reject with `--border-strong`). Broader answers
+  stay on the prompt in the thread.
+- **Rows do not move under a click.** Re-renders are throttled, focus is restored to the same
+  row, and Approve pauses after the waiting list changes.
+
+Spec: [`tests/e2e/activity-panel.e2e.ts`](../tests/e2e/activity-panel.e2e.ts).
+
 ## Settings → Usage worth-it card
 
 The plan worth-it block sits between subscription bars and the local ledger: one short verdict, one

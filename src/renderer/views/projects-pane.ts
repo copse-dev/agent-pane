@@ -3,6 +3,7 @@ import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
+  bellIcon,
   chevronRightIcon,
   closeIcon,
   gitPullRequestIcon,
@@ -52,7 +53,8 @@ import { forkThread } from '../controller/fork-thread.ts'
 import { createThreadFilter } from '../controller/thread-filter.ts'
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
-import { isThreadAwaitingAttention } from '../controller/attention.ts'
+import { getAttentionThreadIds, isThreadAwaitingAttention } from '../controller/attention.ts'
+import { openActivityPanel } from './activity-panel.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 import { maybeRenameThreadBranch } from '../controller/thread-naming.ts'
 import {
@@ -208,7 +210,43 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     },
     plusIcon('ui-icon ui-icon-sm'),
   )
-  const header = el('div', { class: 'pane-projects-header' }, title, searchToggle, addBtn)
+  // The sidebar's bells mark each waiting thread in place; this one gathers
+  // them — and everything running — into the Activity panel (Cmd/Ctrl+Shift+A).
+  const activityCount = el('span', { class: 'projects-activity-count', hidden: true })
+  const activityBtn = el(
+    'button',
+    {
+      class: 'projects-activity-btn',
+      'aria-label': 'Activity',
+      'data-tooltip': 'Activity: what needs you and what is running',
+    },
+    bellIcon('ui-icon ui-icon-sm'),
+    activityCount,
+  )
+  activityBtn.addEventListener('click', () => {
+    openActivityPanel()
+  })
+  const syncActivityButton = (): void => {
+    const waiting = getAttentionThreadIds().length
+    activityBtn.classList.toggle('has-attention', waiting > 0)
+    activityCount.hidden = waiting === 0
+    activityCount.textContent = waiting > 0 ? String(waiting) : ''
+    activityBtn.setAttribute(
+      'aria-label',
+      waiting === 0
+        ? 'Activity'
+        : `Activity: ${String(waiting)} ${waiting === 1 ? 'thread needs' : 'threads need'} you`,
+    )
+  }
+  syncActivityButton()
+  const header = el(
+    'div',
+    { class: 'pane-projects-header' },
+    title,
+    searchToggle,
+    activityBtn,
+    addBtn,
+  )
 
   // Filter input for the expanded project's threads. It lives outside `list`
   // (which render() clears on every update) so its focus and value survive
@@ -1504,6 +1542,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       render()
     }),
     store.on('attention_changed', render),
+    store.on('attention_changed', syncActivityButton),
     // Recovering an orphan or relocating a project changes the project set, which
     // in turn changes which store dirs count as orphaned — re-scan on that.
     store.on('projects_changed', refreshOrphans),

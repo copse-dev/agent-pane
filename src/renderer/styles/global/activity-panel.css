@@ -1,0 +1,219 @@
+/* Activity panel (views/activity-panel.ts): threads by claim on attention.
+   Same overlay shell as the Process Manager; rows follow the shared list rhythm. */
+dialog.activity-panel-overlay {
+  margin: 10vh auto 0;
+  padding: 0;
+  width: min(980px, calc(100vw - 32px));
+  max-height: 76vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.activity-panel-overlay::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+.activity-panel-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: 76vh;
+}
+.activity-panel-header,
+.activity-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+.activity-panel-header {
+  border-bottom: 1px solid var(--border);
+}
+.activity-panel-header h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.activity-panel-subtitle,
+.activity-panel-footer,
+.activity-panel-status,
+.activity-quiet {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.activity-panel-subtitle {
+  margin: var(--spacing-xs) 0 0;
+}
+.activity-panel-close {
+  flex-shrink: 0;
+}
+.activity-panel-body {
+  min-height: 0;
+  overflow: auto;
+  padding-block: var(--spacing-xs);
+}
+.activity-panel-footer {
+  border-top: 1px solid var(--border);
+}
+.activity-panel-status {
+  margin: 0;
+  padding: 0 var(--spacing-lg);
+}
+.activity-panel-status:not(:empty) {
+  padding-block: var(--spacing-sm);
+}
+.activity-quiet {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-lg);
+}
+
+.activity-empty {
+  max-width: 560px;
+  padding: var(--spacing-xl) var(--spacing-lg);
+}
+.activity-empty-title {
+  margin: 0 0 var(--spacing-sm);
+  font-weight: 600;
+}
+.activity-empty-body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.activity-group + .activity-group {
+  border-top: 1px solid var(--border);
+}
+.activity-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.activity-group-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.activity-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding-inline-end: var(--spacing-lg);
+}
+.activity-row:hover {
+  background: var(--bg-hover);
+}
+.activity-row-open {
+  display: grid;
+  grid-template-columns:
+    var(--spacing-lg) 72px minmax(0, 1fr) minmax(0, 150px) minmax(0, 100px)
+    36px;
+  align-items: center;
+  column-gap: var(--spacing-sm);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--list-row-padding-block) var(--spacing-sm) var(--list-row-padding-block)
+    var(--spacing-lg);
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.activity-row-open[aria-disabled='true'] {
+  cursor: default;
+}
+.activity-row-open:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.activity-glyph {
+  justify-self: center;
+}
+.activity-row[data-state='needs-approval'] .activity-glyph,
+.activity-row[data-state='needs-answer'] .activity-glyph {
+  color: var(--warning);
+}
+.activity-row[data-state='working'] .activity-glyph {
+  color: var(--text-secondary);
+}
+.activity-row[data-state='failed'] .activity-glyph {
+  color: var(--error);
+}
+.activity-row[data-state='finished'] .activity-glyph {
+  color: var(--success);
+}
+.activity-state {
+  font-weight: 600;
+}
+.activity-want {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.activity-want-text,
+.activity-want-detail,
+.activity-thread,
+.activity-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-want-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.activity-want-code {
+  font-family: var(--font-mono);
+}
+.activity-thread {
+  color: var(--text-primary);
+}
+.activity-project,
+.activity-age {
+  color: var(--text-muted);
+}
+.activity-age {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+/* Every row reserves the same action column, so thread / project / age line
+   up down the whole list whether or not a row has buttons. */
+.activity-row-actions {
+  display: flex;
+  flex: 0 0 calc(13 * var(--spacing-lg));
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+}
+.activity-row-actions .ui-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+}
+/* Beside a filled Approve, an outlined chip needs an edge that can be located
+   (docs/ui-taste.md, "An outlined chip needs an edge you can find"). */
+.activity-row-actions .ui-btn-secondary {
+  border-color: var(--border-strong);
+}
+/* The running mark is the sidebar's three dots, held still: the list is read
+   at a glance, and a panel of walking dots would compete with the one row that
+   actually needs the user. Zero-length paths, so the stroke sets their size. */
+.activity-glyph-running {
+  stroke-width: 3;
+}

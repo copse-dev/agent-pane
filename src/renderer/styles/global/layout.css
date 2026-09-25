@@ -117,6 +117,26 @@
 .projects-search-btn.active {
   color: var(--accent);
 }
+/* Activity panel entry: a bell, with a count of waiting threads beside it. */
+.projects-activity-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-activity-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.projects-activity-btn.has-attention {
+  color: var(--warning);
+}
+.projects-activity-count {
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
 .projects-search-row {
   padding: var(--spacing-xs) var(--spacing-md);
   border-bottom: 1px solid var(--border);

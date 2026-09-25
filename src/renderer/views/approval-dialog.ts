@@ -101,11 +101,45 @@ const defaultTimer: ApprovalTimer = (fn, ms) => {
   }
 }
 
+/** What another surface (the Activity panel) may read about one pending approval. */
+export interface PendingApprovalSummary {
+  id: string
+  /** Thread the request belongs to; undefined when it is not tied to a run. */
+  threadId: string | undefined
+  title: string
+  body: string
+  bodyAdvice: string | undefined
+  type: string
+  /** Renderer clock when the request arrived — how long it has been waiting. */
+  receivedAt: number
+}
+
+/**
+ * The dialog's pending requests, exposed so a second surface can list and answer
+ * them without growing a second approval path. The dialog stays the only owner
+ * of its queue and the only caller of `approval.respond`.
+ */
+export interface ApprovalRequests {
+  /** Every request still waiting for an answer — on screen or queued — oldest first. */
+  pending(): PendingApprovalSummary[]
+  /**
+   * Answer one request with the narrowest decision the prompt offers: approve
+   * this request once (no remembered grant, no task lease), or reject it.
+   *
+   * Returns false, and sends nothing, when the request is no longer pending —
+   * it was answered here or on the prompt already, or main cancelled it. That is
+   * what makes a double click or a stale row harmless.
+   */
+  answerOnce(id: string, approved: boolean): boolean
+  /** Called after any change to {@link pending}. Returns an unsubscribe. */
+  onChange(listener: () => void): () => void
+}
+
 export function mountApprovalDialog(
   api: ApiClient,
   store: AppStore,
   options: ApprovalDialogOptions = {},
-): void {
+): ApprovalRequests {
   const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS
   const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS
   const setTimer = options.setTimer ?? defaultTimer
@@ -191,7 +225,13 @@ export function mountApprovalDialog(
     turnTreeLeaseLabel: string | undefined
     turnTreeLeaseDefault: boolean | undefined
     turnTreeLeaseSubject: string | undefined
+    receivedAt: number
+    /** Arrival order; the clock alone ties within a millisecond. */
+    arrival: number
   }
+
+  const changeListeners = new Set<() => void>()
+  let arrivals = 0
 
   // Requests waiting for their turn (background threads, or arrived before the
   // coalesce window elapsed). `batch` holds the requests currently on screen —
@@ -243,6 +283,9 @@ export function mountApprovalDialog(
       .map((req) => req.threadId)
       .filter((id): id is string => !!id && (hidden || id !== activeThreadId))
     setAttentionThreads(store, 'approval', waiting)
+    // Every queue/batch mutation ends here, so this is the one place the
+    // pending set is announced to other surfaces.
+    for (const listener of [...changeListeners]) listener()
   }
 
   /** Move every currently-showable queued request onto the on-screen batch,
@@ -650,6 +693,8 @@ export function mountApprovalDialog(
         turnTreeLeaseLabel,
         turnTreeLeaseDefault,
         turnTreeLeaseSubject,
+        receivedAt: Date.now(),
+        arrival: arrivals++,
       }
       queue.push(pending)
       if (active && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
@@ -720,4 +765,34 @@ export function mountApprovalDialog(
   rejectButton.addEventListener('click', () => {
     resolve(false, false)
   })
+
+  return {
+    pending: () =>
+      [...batch, ...queue]
+        .sort((a, b) => a.arrival - b.arrival)
+        .map((req) => ({
+          id: req.id,
+          threadId: req.threadId,
+          title: req.title,
+          body: req.body,
+          bodyAdvice: req.bodyAdvice,
+          type: req.type,
+          receivedAt: req.receivedAt,
+        })),
+    answerOnce: (id, approved): boolean => {
+      if (!batch.some((req) => req.id === id) && !queue.some((req) => req.id === id)) return false
+      // Taken off the dialog first, exactly as a cancellation would be: an open
+      // prompt that still holds siblings re-renders and re-arms its settle
+      // guard, and an emptied one closes and surfaces whatever waited behind it.
+      removeCancelled(id)
+      void api.approval.respond(id, approved, false, 'once')
+      return true
+    },
+    onChange: (listener) => {
+      changeListeners.add(listener)
+      return () => {
+        changeListeners.delete(listener)
+      }
+    },
+  }
 }

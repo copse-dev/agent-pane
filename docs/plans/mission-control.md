@@ -1,9 +1,80 @@
 # Knowing what your agents are doing
 
-Status: **Proposed.** No implementation is on `develop`. This is a specification for one
-capability, written from the user's side. It covers R-04, R-06, R-20 and R-22 from
+Status: **Active (slice 1 landed).** Job 1's core — the Activity panel with Needs you,
+Working and Recently finished, and answering an approval without switching threads — is
+implemented; see [Slice 1 — what shipped](#slice-1--what-shipped). Everything else below is
+still specification. It covers R-04, R-06, R-20 and R-22 from
 [`user-control-surface-gaps.md`](user-control-surface-gaps.md), which collapse into a
 single surface and should be one issue rather than four.
+
+## Slice 1 — what shipped
+
+**Design decision: the panel sits beside the sidebar, as an overlay like the Process
+Manager — not the sidebar growing up.** The projects pane is a navigation tree: threads
+nest under the one expanded project, automations collapse under their own disclosure, and
+rows sort by last human prompt. Regrouping it by attention would fight all three, and
+answering approvals inside a 240px column would crowd the rows it exists to show. A right
+panel mode was the other candidate, but panel modes are workspace-scoped and compete with
+Explorer, Terminal and Changes for one slot. The Process Manager already proved the
+overlay shape (`createOverlayDialog`) for "what is running across threads", so the Activity
+panel reuses that shell rather than adding a new surface kind. The sidebar keeps its
+per-thread bells and gains one header bell that counts waiting threads and opens the panel.
+
+What is in:
+
+- `src/renderer/views/activity-panel.ts` — the overlay. Groups: **Needs you** (pending
+  approval or `ask_user` question, longest-waiting first) → **Working** (running, newest run
+  first) → **Recently finished** (failed before finished, capped at 10 with the full count).
+  Each row: an outline glyph plus a text label (never colour alone), what it wants (the
+  approval's title and command, or the question), thread, project and age. Opened with
+  Cmd/Ctrl+Shift+A, the sidebar header bell, or the command palette's **Activity**.
+- `src/renderer/controller/activity-model.ts` — pure derivation over thread **metadata**
+  (id, title, status, `unreadAt`), the live request queues, and run timings observed from
+  `thread_status_changed` / `agent_activity`. It never reads `messages`; tests pin that with
+  a transcript that throws when touched.
+- **Approvals are answered through the existing path.** `mountApprovalDialog` now returns an
+  `ApprovalRequests` handle (`pending`, `answerOnce`, `onChange`). `answerOnce` removes the
+  request from the dialog's own queue exactly as a cancellation does, then calls the same
+  `approval.respond` IPC with the narrowest answer the prompt offers: approve this request
+  once (`remember: false`, `grantScope: 'once'`) or reject. No new IPC, no remembered grant,
+  no task lease; anything broader is still answered on the prompt itself. It returns false
+  and sends nothing when the request is no longer pending, so a double click, a stale row, or
+  a request answered on the prompt or cancelled by main is harmless.
+- The approval dialog's clickjack guard carries over: when the Needs-you list changes while
+  the panel is open, Approve pauses for `APPROVAL_SETTLE_MS`; Reject stays live.
+- **Questions go to their thread.** `mountAskUserDialog` returns a read-only
+  `AskUserRequests` handle. A question row's **Answer…** opens its thread, where the existing
+  ask dialog surfaces it — the dialog stays the only thing that answers.
+- Re-rendering is throttled to one pass per 250ms, ages refresh every 30s while open, and
+  focus is kept on the same row (or its place in the list) across re-renders.
+- Keyboard: arrows/Home/End move between rows (roving tab stop), Enter opens the thread,
+  Tab reaches a row's Approve once / Reject, Esc closes. Each list is labelled by its group
+  heading and each row's accessible name leads with its state.
+- The empty state explains what the panel will show.
+
+Evidence: `activity-model.test.ts`, `activity-panel.test.ts`,
+`approval-dialog-requests.test.ts`, and `tests/e2e/activity-panel.e2e.ts`, which approves a
+background thread's real shell prompt from the panel and waits for that thread's tool to run
+and its turn to finish while another thread keeps working (screenshots
+`activity-panel-needs-you.png`, `activity-panel-approved.png`).
+
+### Remaining work (not in slice 1)
+
+- Stalled detection (Job 2) and its threshold; the row's progress signal is not built.
+- The `delegated` runtime state.
+- User-set disposition (`working` / `ready` / `done` / `backlog` / `abandoned`), its store
+  field and the `archivedAt` migration.
+- Delivery state (branch, PR, checks, review) and artifacts on the row.
+- Filter and search.
+- Notifications (one per stop, coalesced) — the panel is pull-only today.
+- Cross-window aggregation: a prompt routed to a pop-out window's renderer is listed there,
+  not in the main window's panel.
+- Threads from projects not opened this session. The panel sees exactly what the sidebar
+  sees (`getSidebarThreads` reads the active project plus projects visited this session), so
+  an unvisited project's threads — and the project name of a request from one — are absent.
+- The panel shows an approval's title and command, not its full advice text; the complete
+  prompt (and its broader answers, such as "Always allow") remains one click away in the
+  thread.
 
 ## The problem
 
@@ -268,9 +339,9 @@ start collecting for this.
 
 ## Open questions
 
-- **Is the panel the sidebar, or beside it?** The projects pane already lists threads and
-  shows some status. This may be that pane growing up, which would be cheaper and less
-  duplicative. Needs a design call before build.
+- ~~**Is the panel the sidebar, or beside it?**~~ Decided in slice 1: beside it, as an
+  overlay sharing the Process Manager's shell. See
+  [Slice 1 — what shipped](#slice-1--what-shipped).
 - **What is the stall threshold really?** Five minutes is a guess. It should come from
   timing real runs, and a semantic-search or benchmark run may legitimately exceed any
   fixed number.
