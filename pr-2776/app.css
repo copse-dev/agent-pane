@@ -13677,14 +13677,7 @@ dialog.process-manager-overlay {
 }
 
 /* src/renderer/styles/global/roadmap.css */
-.roadmap-list-header {
-  position: relative;
-  z-index: 30;
-  overflow: visible;
-}
 .roadmap-filter {
-  position: relative;
-  z-index: 30;
   display: flex;
   flex: 1;
   min-width: 120px;
@@ -13705,18 +13698,15 @@ dialog.process-manager-overlay {
   background: var(--bg-hover);
 }
 .roadmap-filter-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 190px;
-  max-height: min(420px, 70vh);
+  flex-shrink: 0;
+  max-height: min(280px, 45vh);
   overflow-y: auto;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-composer);
 }
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
