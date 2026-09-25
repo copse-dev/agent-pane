@@ -91,6 +91,7 @@ import {
 import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
 import { isHostInterruptedToolCall } from '@shared/tools/tool-interruption.ts'
 import { navigateToChange } from '../controller/panels.ts'
+import { mountThreadRoadmapOrigin } from './thread-roadmap-origin.ts'
 import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
@@ -2301,7 +2302,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // visible at the bottom of the screen instead of getting buried under the
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
-  root.append(scrollArea, queuedHost)
+  const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
+  root.append(roadmapOrigin.element, scrollArea, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -4136,6 +4138,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
+    roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()
     })

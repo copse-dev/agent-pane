@@ -1,3 +1,42 @@
+/* Back-link to the roadmap item a thread was started from (#2501). Quiet
+   chrome above the transcript, mirroring `.roadmap-thread-chip`'s muted
+   icon-first treatment in the reverse direction (roadmap.css). Hidden by
+   default via [hidden]; thread-roadmap-origin.ts only reveals it for a
+   thread with a tracked roadmap origin. */
+.thread-roadmap-origin {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  /* Line the chip up with the centred transcript column (`.msg` caps at
+     --chat-content-max inside the list's --spacing-xl gutter) and its text
+     inset, so on a wide pane it sits above the text rather than at the
+     pane edge. */
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.thread-roadmap-origin:hover {
+  color: var(--accent);
+}
+.thread-roadmap-origin-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.thread-roadmap-origin-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .messages-list {
   flex: 1;
   overflow-y: auto;
