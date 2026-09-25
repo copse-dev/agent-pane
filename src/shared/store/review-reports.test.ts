@@ -113,6 +113,12 @@ describe('reviewReportsAwaitingModel', () => {
       reviewReport: r,
     })
     assert.deepEqual(reviewReportsAwaitingModel(after), [])
+    // A reply stamped in the same millisecond as the run still counts as the reply.
+    const sameMs = thread({
+      messages: [message('u1', 'user', 10), message('a1', 'assistant', 30)],
+      reviewReport: r,
+    })
+    assert.deepEqual(reviewReportsAwaitingModel(sameMs), [])
   })
 
   it('lists an unanswered thread-level review before the anchored one', () => {

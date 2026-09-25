@@ -49,10 +49,12 @@ export function reviewReportsAwaitingModel(
 ): ThreadReviewReport[] {
   const awaiting: ThreadReviewReport[] = []
   const legacy = userRunDone(thread.reviewReport)
+  // A thread-level report is only written while no assistant message exists, so
+  // any assistant message stamped in the same millisecond as the run is its reply.
   if (
     legacy &&
     !thread.messages.some(
-      (message) => message.role === 'assistant' && message.createdAt > legacy.startedAt,
+      (message) => message.role === 'assistant' && message.createdAt >= legacy.startedAt,
     )
   ) {
     awaiting.push(legacy)
