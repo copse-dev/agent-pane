@@ -841,6 +841,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+  "Holding no secrets" is not the whole of it: the job still carries an Actions runtime
+  token (which `permissions: {}` does not remove) into the later steps the runner user
+  executes, and that user owns those actions and has sudo. The CI shell therefore runs the
+  CLI as a separate unprivileged user that cannot reach the runner's home
+  (`packages/review/ci/ground-as-cell-user.sh`), and kills everything that user owns before
+  the upload step.
 - **The CI shell, in two privilege domains.** `review-ground.yml` uses
   a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
   `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
