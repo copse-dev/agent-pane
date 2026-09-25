@@ -2264,6 +2264,14 @@ footer a:hover {
   display: block;
 }
 
+/* Each fallback unhides itself only in the mode that owns it. Everywhere else
+   it stays hidden, even where a component rule such as the hero badge's
+   inline-flex outranks the UA's [hidden] rule. */
+:root:not([data-site-mode='coming-soon']) .mode-coming-soon-only[hidden],
+:root:not([data-site-mode]) .mode-source-private-only[hidden] {
+  display: none !important;
+}
+
 /* Keep the hero badge's icon and label on one line. The publication-mode rule
    above otherwise overrides its component-level inline-flex display. */
 [data-site-mode='downloads-live'] .marketing-site .hero-badges > .mode-source-private-only[hidden] {
