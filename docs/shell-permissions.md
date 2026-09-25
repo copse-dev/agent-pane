@@ -180,6 +180,15 @@ flag, redirect, environment variable, or privilege wrapper falls back to the ord
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
 paths as broad as `~` or `/` are never eligible.
 
+The proof follows a `cd` to an absolute or home-relative directory when it runs in sequence (`&&`
+or `;`), not in a pipeline, subshell, background job, or after `||`. Later relative operands
+resolve against that directory; every operand after it is treated as a path, so
+`cd ~/other && cat .env` meets the credential rules; a command with no operand, and any `git`
+command, reads the directory itself. `cd` alone, `cd -`, and relative targets stay ineligible. A
+`sed` is a read only in the filter shape the read tier already admits (no `-i`, no `-f`, no
+`r`/`w`/`e` command), and its script is not a path. The Guarded YOLO harm gate carries the same
+`cd` forward, so `cd ~/.ssh && cat id_rsa` is refused like `cat ~/.ssh/id_rsa`.
+
 This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap to leave, but the
 access is still outside the project and requires the same narrowly reasoned permission.
 
@@ -355,6 +364,11 @@ the existing one-time harm confirmation; literal child-process shell payloads ar
 and can be hard-denied. The confirmation shows the exact command, the uncertainty, and whether it
 will run inside or outside the project sandbox. Approval applies only to that invocation and cannot
 be remembered; declining prevents execution. It does not override a confirmed hard denial.
+
+A `PATH=` or `export PATH=` value is not an outside path either. It names directories to search
+and opens none of them, and a program found through it still runs inside the sandbox, so
+`export PATH="$HOME/.cargo/bin:$PATH"; …` no longer forces a contained command outside.
+Auto-approval, which runs commands outside the sandbox, still refuses the assignment.
 
 Text that names no file is not a path. The pattern of a `grep`/`rg` search and the operands of an
 `echo`/`printf` whose output is not piped onward are masked before the outside-path rules run, so

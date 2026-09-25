@@ -1330,8 +1330,16 @@ function inspectRefusedOutsideReads(
   // launder a credential read (`cat ~/.ssh/id && touch marker`) by contributing
   // a whole-line "not a plain read" blocker that suppresses the refusal.
   const segments = splitSegments(command)
+  // A `cd` moves the segments after it: `cd ~/.ssh && cat id_rsa` reads the key
+  // exactly as `cat ~/.ssh/id_rsa` does. Carry the latest one into each later
+  // segment's analysis, which resolves relative operands against it.
+  let cdPrefix = ''
   for (const segment of segments.length > 0 ? segments : [command]) {
-    const analysis = analyzeReadOutsideProject(segment, workspaceRoot, {
+    if (/^\s*cd\s+\S+\s*$/.test(segment)) {
+      cdPrefix = `${segment.trim()} && `
+      continue
+    }
+    const analysis = analyzeReadOutsideProject(`${cdPrefix}${segment}`, workspaceRoot, {
       homeDir: context.homeDir,
     })
     const refused = analysis.blockers.filter(isRefusedOutsideReadBlocker)

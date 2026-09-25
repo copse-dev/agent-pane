@@ -34,6 +34,14 @@ export function mismatches(testCase, result) {
         `harm ${result.harm} (${result.harmReasons.join('; ')}), expected ${allowed.join(' or ')}`,
       )
   }
+  if (Object.hasOwn(expect, 'scope') && result.scope !== expect.scope) {
+    out.push(`scope ${result.scope} (${result.scopeReasons.join('; ')}), expected ${expect.scope}`)
+  }
+  if (Object.hasOwn(expect, 'readOutside') && result.readOutside !== expect.readOutside) {
+    out.push(
+      `outside-read proof ${result.readOutside ? 'eligible' : 'ineligible'}, expected ${expect.readOutside ? 'eligible' : 'ineligible'}`,
+    )
+  }
   if (Object.hasOwn(expect, 'read') && result.autoApproval.read !== expect.read) {
     out.push(
       `read tier ${result.autoApproval.read ?? 'prompt'} (${result.autoApprovalReasons.join('; ')}), expected ${expect.read ?? 'prompt'}`,

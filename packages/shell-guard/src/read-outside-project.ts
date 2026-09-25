@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { isAbsolute, basename, resolve, sep } from 'node:path'
+import { parse as parseShell } from 'shell-quote'
 import {
   commandName,
   shellRedirects,
@@ -13,7 +14,11 @@ import {
   needsMoreThanOutsideAccess,
 } from './shell-scope.ts'
 import { inertOperandIndexes } from './inert-operands.ts'
-import { READ_ONLY_GIT_SUBCOMMANDS, READ_ONLY_SHELL_BASENAMES } from './shell-argv.ts'
+import {
+  READ_ONLY_GIT_SUBCOMMANDS,
+  READ_ONLY_SHELL_BASENAMES,
+  isReadOnlySedCommand,
+} from './shell-argv.ts'
 
 /**
  * Recognise the narrow shape "this command only READS files outside the project,
@@ -243,6 +248,10 @@ function headBlocker(rawArgv: readonly string[], argv: readonly string[]): strin
   if (rawHead !== head && !TRUST_TRANSPARENT_WRAPPERS.has(rawHead)) {
     return `runs through \`${rawHead}\`, which changes how the command runs`
   }
+  // `sed` is a read only in the filter shape `isReadOnlySedCommand` proves.
+  if (head === 'sed') {
+    return isReadOnlySedCommand(argv) ? null : '`sed` is asked to write or execute, not just read'
+  }
   if (!READ_ONLY_SHELL_BASENAMES.has(head) && !EXTRA_READ_ONLY_HEADS.has(head)) {
     return `runs \`${head}\`, which is not a plain read`
   }
@@ -254,6 +263,83 @@ function headBlocker(rawArgv: readonly string[], argv: readonly string[]): strin
     return `\`${head}\` is asked to write or execute, not just read`
   }
   return null
+}
+
+/** Read-only heads that print their arguments or state and open no file. */
+const OPENS_NO_FILE: ReadonlySet<string> = new Set(['echo', 'printf', 'pwd', 'true', 'false', ':'])
+
+/** Operators that end one command and start the next. */
+const COMMAND_SEPARATORS: ReadonlySet<string> = new Set([
+  '&&',
+  '||',
+  ';',
+  '|',
+  '&',
+  '|&',
+  '(',
+  ')',
+  ';;',
+])
+
+/** The separators after which a `cd` still governs the commands that follow. */
+const SEQUENTIAL = new Set<string | null>([null, '&&', ';'])
+
+/**
+ * Why the command's `cd`s cannot be followed, or null when every one runs in
+ * sequence (`cd /other && git log; cat README.md`). A `cd` in a pipeline stage,
+ * a subshell, after `||`, or in the background changes a directory the next
+ * command may not run in, and the analysis would resolve its paths against the
+ * wrong base.
+ */
+function directoryChangeBlocker(command: string): string | null {
+  if (!/(?:^|[\s;&|(])cd(?:\s|$)/.test(command)) return null
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(command)
+  } catch {
+    return 'changes directory in a command that could not be parsed'
+  }
+  const separatorAt = (index: number): string | null => {
+    const token = tokens[index]
+    return typeof token === 'object' && 'op' in token && COMMAND_SEPARATORS.has(token.op)
+      ? token.op
+      : null
+  }
+  if (tokens.some((_, index) => separatorAt(index) === '(' || separatorAt(index) === ')')) {
+    return 'changes directory inside a subshell'
+  }
+  let before: string | null = null
+  let atCommand = true
+  for (let index = 0; index < tokens.length; index++) {
+    const separator = separatorAt(index)
+    if (separator !== null) {
+      before = separator
+      atCommand = true
+      continue
+    }
+    if (atCommand && tokens[index] === 'cd') {
+      let next = index + 1
+      while (next < tokens.length && separatorAt(next) === null) next++
+      const after = next < tokens.length ? separatorAt(next) : null
+      if (!SEQUENTIAL.has(before) || !SEQUENTIAL.has(after)) {
+        return 'changes directory inside a pipeline, conditional, or background job'
+      }
+    }
+    atCommand = false
+  }
+  return null
+}
+
+/**
+ * The directory a plain `cd` names, when it can be resolved without running
+ * anything: exactly one operand, absolute or home-relative. `cd` alone, `cd -`,
+ * and relative targets are refused rather than guessed.
+ */
+function cdTarget(argv: readonly string[]): string | null {
+  const operands = argv.slice(1).filter((arg) => arg !== '-P' && arg !== '-L')
+  if (operands.length !== 1) return null
+  const [target = ''] = operands
+  return /^(?:\/|~(?:\/|$)|\$\{?HOME\}?(?:\/|$))/.test(target) ? target : null
 }
 
 /**
@@ -302,27 +388,72 @@ export function analyzeReadOutsideProject(
 
   const targets: string[] = []
   const resolvedTargets: string[] = []
+  const addTarget = (token: string, resolved: string): void => {
+    if (isInsideProject(resolved, root)) return
+    const sensitive = sensitiveTargetReason(token, resolved)
+    if (sensitive) addBlocker(`reads a ${sensitive}`)
+    const breadth = breadthBlocker(token, resolved, homeDir)
+    if (breadth) addBlocker(`reads ${breadth}`)
+    if (resolvedTargets.includes(resolved)) return
+    targets.push(token)
+    resolvedTargets.push(resolved)
+  }
+
+  const cdBlocker = directoryChangeBlocker(trimmed)
+  if (cdBlocker) addBlocker(cdBlocker)
   // `shellSegments` unions two lexers and deliberately over-segments; that can
-  // only ever add a blocker or a target here, never remove one.
-  for (const rawArgv of shellSegments(trimmed)) {
+  // only ever add a blocker or a target here, never remove one. The first lexer's
+  // segments come first and in order, so only they move the working directory a
+  // `cd` sets; the fallback lexer's repeats still add blockers, and add targets
+  // only while no `cd` has moved the base (never a path resolved from a guess).
+  const ordered = shellSegments(trimmed, false).length
+  let base = root
+  let baseToken = '.'
+  for (const [index, rawArgv] of shellSegments(trimmed).entries()) {
+    const tracked = index < ordered
     const argv = unwrapWrappers(rawArgv)
     if (argv.length === 0) continue
+    if (commandName(argv[0]) === 'cd') {
+      const target = rawArgv[0] === 'cd' ? cdTarget(argv) : null
+      if (target === null) {
+        addBlocker(`changes to a directory that cannot be resolved (${argv.join(' ')})`)
+      } else if (tracked) {
+        base = resolveTarget(target, root, homeDir)
+        baseToken = target
+      }
+      continue
+    }
     const head = headBlocker(rawArgv, argv)
     if (head) addBlocker(head)
-    // A search pattern is text, not a file: `grep -v "//"` reads no filesystem root.
+    const collect = tracked || base === root
+    // After a `cd` out of the project every operand is a path under the new base:
+    // `cd ~/other && cat .env` must meet the credential check `.env` alone skips.
+    // A search pattern or a filter script is text, not a file: `grep -v "//"`
+    // reads no filesystem root.
     const inert = inertOperandIndexes(argv)
-    for (const [offset, token] of argv.slice(1).entries()) {
+    // git after a `cd` reads the repository there; the directory target below
+    // covers it, and its subcommands and refs are not files.
+    const movedGit = tracked && base !== root && commandName(argv[0]) === 'git'
+    // `echo`, `printf`, and `pwd` open nothing wherever they run: `cd / && echo
+    // done` is not a read of the filesystem root.
+    if (tracked && base !== root && OPENS_NO_FILE.has(commandName(argv[0]))) continue
+    let operands = 0
+    for (const [offset, token] of (movedGit ? [] : argv.slice(1)).entries()) {
       if (inert.has(offset + 1)) continue
-      if (token.startsWith('-') || !looksLikePath(token)) continue
-      const resolved = resolveTarget(token, root, homeDir)
-      if (isInsideProject(resolved, root)) continue
-      const sensitive = sensitiveTargetReason(token, resolved)
-      if (sensitive) addBlocker(`reads a ${sensitive}`)
-      const breadth = breadthBlocker(token, resolved, homeDir)
-      if (breadth) addBlocker(`reads ${breadth}`)
-      if (targets.includes(token)) continue
-      targets.push(token)
-      resolvedTargets.push(resolved)
+      if (token.startsWith('-')) continue
+      if (!looksLikePath(token) && !(tracked && base !== root)) continue
+      operands++
+      const resolved = resolveTarget(token, tracked ? base : root, homeDir)
+      if (collect) addTarget(token, resolved)
+      else if (!isInsideProject(resolved, root)) {
+        const sensitive = sensitiveTargetReason(token, resolved)
+        if (sensitive) addBlocker(`reads a ${sensitive}`)
+      }
+    }
+    // `cd /other && ls` reads the directory it moved to with no operand, and git
+    // reads the repository there whatever its operands name.
+    if (tracked && base !== root && (operands === 0 || movedGit)) {
+      addTarget(baseToken, base)
     }
   }
 

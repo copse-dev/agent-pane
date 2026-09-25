@@ -47,6 +47,15 @@ describe('inertOperandIndexes', () => {
     assert.deepEqual(inert('grep', '--context', '/x', 'src'), [2])
   })
 
+  it('finds the script of a read-only sed, and nothing in any other sed', () => {
+    assert.deepEqual(inert('sed', '-n', '/^## /p', 'notes.md'), [2])
+    assert.deepEqual(inert('sed', '-n', '-e', '1,5p', '-e', '/x/p', 'a'), [3, 5])
+    assert.deepEqual(inert('sed', '-ne', '/x/p', 'a'), [2])
+    assert.deepEqual(inert('sed', '-e/x/p', 'a'), [])
+    assert.deepEqual(inert('sed', '-i', '/x/d', 'a'), [])
+    assert.deepEqual(inert('sed', '-n', 'w /tmp/out', 'a'), [])
+  })
+
   it('ignores other programs', () => {
     assert.deepEqual(inert('cat', '/etc/hosts'), [])
     assert.deepEqual(inert('sed', '-n', 's|/etc|x|p', 'a'), [])

@@ -236,3 +236,56 @@ describe('analyzeReadOutsideProject — search patterns', () => {
     )
   })
 })
+
+describe('analyzeReadOutsideProject — cd and sed', () => {
+  it('follows a sequential cd into another checkout', () => {
+    const log = analyze('cd /work/other && git log --oneline -5')
+    assert.equal(log.eligible, true, log.blockers.join('; '))
+    assert.deepEqual(log.resolvedTargets, ['/work/other'])
+    const file = analyze('cd ~/other; sed -n 1,40p src/a.rs')
+    assert.equal(file.eligible, true, file.blockers.join('; '))
+    assert.deepEqual(file.resolvedTargets, ['/home/dev/other/src/a.rs'])
+  })
+
+  it('does not read the directory for commands that open no file', () => {
+    const analysis = analyze('cd / && echo done && pwd')
+    assert.ok(
+      !analysis.blockers.some((b) => b.includes('whole filesystem')),
+      analysis.blockers.join('; '),
+    )
+  })
+
+  it('checks bare filenames after cd against the credential rules', () => {
+    for (const command of ['cd /work/other && cat .env', 'cd ~/.ssh && cat id_rsa', 'cd ~ && ls']) {
+      assert.equal(analyze(command).eligible, false, command)
+    }
+  })
+
+  it('refuses a cd it cannot follow', () => {
+    for (const command of [
+      'cd /work/other | cat notes.md',
+      'cd /work/other || cat notes.md',
+      'cd /work/other & cat notes.md',
+      '(cd /work/other && cat notes.md)',
+      'cd other && cat notes.md',
+      'cd && ls',
+      'cd - && ls',
+      'env cd /work/other && ls',
+    ]) {
+      assert.equal(analyze(command).eligible, false, command)
+    }
+  })
+
+  it('admits only a print-only sed, and not its script as a path', () => {
+    const print = analyze('sed -n "/^## /p" ~/notes.md')
+    assert.equal(print.eligible, true, print.blockers.join('; '))
+    assert.deepEqual(print.resolvedTargets, ['/home/dev/notes.md'])
+    for (const command of [
+      'sed -i s/a/b/ ~/notes.md',
+      'sed -n "w /tmp/out" ~/notes.md',
+      'sed -f script.sed ~/notes.md',
+    ]) {
+      assert.equal(analyze(command).eligible, false, command)
+    }
+  })
+})

@@ -16,7 +16,10 @@ test('cases are well formed', () => {
   assert.equal(new Set(cases.map((c) => c.id)).size, cases.length)
   for (const c of cases) {
     assert.ok(['enforced', 'known-gap'].includes(c.status), c.id)
-    assert.ok(Object.hasOwn(c.expect, 'harm') || Object.hasOwn(c.expect, 'read'), c.id)
+    assert.ok(
+      ['harm', 'read', 'scope', 'readOutside'].some((key) => Object.hasOwn(c.expect, key)),
+      c.id,
+    )
     assert.equal(c.status === 'known-gap', Boolean(c.fix), `${c.id}: known gaps name their fix`)
     const text = JSON.stringify(c)
     for (const [, user] of text.matchAll(/\/Users\/([^/\s"'\\]+)/g)) {

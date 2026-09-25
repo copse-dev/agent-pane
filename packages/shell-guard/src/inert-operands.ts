@@ -1,4 +1,4 @@
-import { commandName } from './shell-argv.ts'
+import { commandName, isReadOnlySedCommand } from './shell-argv.ts'
 
 /**
  * Arguments a program reads as text and never opens: the pattern of a `grep` or
@@ -175,11 +175,51 @@ const SEARCH_TOOLS: ReadonlyMap<string, SearchFlags> = new Map([
 const NONE: ReadonlySet<number> = new Set()
 
 /**
+ * The script operands of a `sed` that {@link isReadOnlySedCommand} proves is a
+ * filter — no in-place edit, no script file, no read/write/execute command — so
+ * `sed -n '/^## /p' ~/notes.md` reads the notes, not a file called `/^## /p`.
+ * Same walk as the validator: `-e`/`--expression` values, else the first
+ * positional.
+ */
+function sedScriptIndexes(argv: readonly string[]): ReadonlySet<number> {
+  if (!isReadOnlySedCommand(argv)) return NONE
+  const scripts = new Set<number>()
+  let byExpression = false
+  let firstPositional: number | null = null
+  let filesOnly = false
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i] ?? ''
+    if (filesOnly || arg === '-' || !arg.startsWith('-')) {
+      firstPositional ??= i
+      continue
+    }
+    if (arg === '--') {
+      filesOnly = true
+      continue
+    }
+    if (arg.startsWith('--')) {
+      if (arg === '--expression' || arg.startsWith('--expression=')) byExpression = true
+      if (arg === '--expression') scripts.add(++i)
+      continue
+    }
+    // In a short bundle, `e` ends the flags: its script is attached (`-eSCRIPT`,
+    // nothing to point at) or is the next word (`-ne SCRIPT`).
+    const e = arg.indexOf('e')
+    if (e === -1) continue
+    byExpression = true
+    if (e === arg.length - 1) scripts.add(++i)
+  }
+  if (!byExpression && firstPositional !== null) scripts.add(firstPositional)
+  return scripts
+}
+
+/**
  * Indexes into `argv` of the words its program treats purely as a search
- * pattern. Empty when the head is not a recognised search tool or any flag is
- * not understood.
+ * pattern or a filter script. Empty when the head is not a recognised search
+ * tool or read-only `sed`, or any flag is not understood.
  */
 export function inertOperandIndexes(argv: readonly string[]): ReadonlySet<number> {
+  if (commandName(argv[0]) === 'sed') return sedScriptIndexes(argv)
   const flags = SEARCH_TOOLS.get(commandName(argv[0]))
   if (!flags) return NONE
   const explicitPatterns = new Set<number>()

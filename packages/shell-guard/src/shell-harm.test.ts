@@ -720,3 +720,11 @@ describe('Guarded YOLO shell harm gate — false positives', () => {
     }
   })
 })
+
+describe('Guarded YOLO shell harm gate — cd into credentials', () => {
+  it('denies a credential read reached through cd', () => {
+    assert.equal(action('cd ~/.ssh && cat id_rsa'), 'deny')
+    assert.equal(action('cd ~/.aws; cat credentials'), 'deny')
+    assert.equal(action('cd /work/other && cat notes.md'), 'allow')
+  })
+})

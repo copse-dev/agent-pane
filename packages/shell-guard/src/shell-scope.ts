@@ -732,6 +732,28 @@ function maskInertOperandPaths(command: string): string {
   )
 }
 
+/** A `PATH=` assignment, bare or exported, with its value. */
+const PATH_ASSIGNMENT = /(^|[\s;&|(])((?:export\s+)?PATH=)("[^"]*"|'[^']*'|[^\s;&|]*)/g
+
+/**
+ * Blank out the value of a `PATH=` assignment before the outside-path rules run.
+ * `export PATH="$HOME/.cargo/bin:$PATH"` names directories to search and opens
+ * none of them; it was scoring `external`, so every command an agent prefixed
+ * with it prompted and, once approved, ran fully unsandboxed.
+ *
+ * This is safe only because the scope verdict decides *containment*: a program
+ * found through the new PATH still runs inside the sandbox. Everything that runs
+ * a command outside it refuses the assignment on its own terms — auto-approval
+ * rejects `export` and `$PATH`, trusted-command routing rejects an `export`
+ * segment, and without an OS sandbox every verdict prompts.
+ */
+function maskPathAssignments(command: string): string {
+  return command.replace(
+    PATH_ASSIGNMENT,
+    (_match, lead: string, assignment: string) => `${lead}${assignment}search-path`,
+  )
+}
+
 function referencesOutsideWorkspace(
   rawCommand: string,
   workspaceRoot: string | null,
@@ -743,8 +765,8 @@ function referencesOutsideWorkspace(
   const readRoots = containedReadRoots(rawCommand)
   const isContainedRead = (absPath: string): boolean =>
     readRoots.some((root) => isInsideRoot(absPath, root))
-  const command = maskInertOperandPaths(
-    maskContainedReadPaths(maskAgentScratchPaths(rawCommand), readRoots),
+  const command = maskPathAssignments(
+    maskInertOperandPaths(maskContainedReadPaths(maskAgentScratchPaths(rawCommand), readRoots)),
   )
   const root = workspaceRoot === null ? null : resolve(workspaceRoot)
   // A home-relative path that lands in the workspace (`~/project/src` when the

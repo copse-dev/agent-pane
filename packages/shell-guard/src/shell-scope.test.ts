@@ -899,3 +899,20 @@ describe('dangerousInSandboxReasons — pipes into interpreters', () => {
     }
   })
 })
+
+describe('analyzeShellCommand — PATH assignments', () => {
+  const root = '/Users/me/project'
+  const verdict = (command: string): string => analyzeShellCommand(command, root).verdict
+
+  it('does not count a PATH value as reaching outside the workspace', () => {
+    assert.equal(verdict('export PATH="$HOME/.cargo/bin:$PATH"; grep -rn TODO src'), 'sandbox')
+    assert.equal(verdict("export PATH='/opt/homebrew/bin:/usr/bin'; ls"), 'sandbox')
+    assert.equal(verdict('PATH=$HOME/bin:$PATH make test'), 'sandbox')
+  })
+
+  it('keeps every other outside path visible', () => {
+    assert.equal(verdict('export PATH="$HOME/.cargo/bin:$PATH"; cat ~/.bashrc'), 'external')
+    assert.equal(verdict('export PATH="$HOME/.cargo/bin:$PATH"; cat /etc/hosts'), 'external')
+    assert.equal(verdict('export MYPATH=/etc/x; cat $MYPATH'), 'external')
+  })
+})
