@@ -1232,8 +1232,13 @@ jobs:
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
     # 8 shards stays under that limit even in the densest spec range.
-    # The per-attempt `timeout` is 480s (step cap 18 min for 2 attempts) so attempt
-    # 1 finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
+    # The per-attempt `timeout` is 600s (step cap 22 min: 2 attempts plus setup and
+    # diagnostics) so attempt 1 finishes instead of being SIGKILL'd mid-retry,
+    # letting attempt 2 relaunch. It was 480s until the densest shards' healthy
+    # runtime reached 410-460s: the timer then killed whichever spec was running
+    # last and reported it as the failure (exit 124). Keep ~25% headroom over the
+    # slowest healthy shard; if a shard outgrows that, rebalance or speed up its
+    # specs rather than adding shards (the count is a memory ceiling, #339).
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
       # fleet a failure is usually a whole-run problem (a poisoned dep cache, a
@@ -1375,7 +1380,7 @@ jobs:
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
-        timeout-minutes: 18
+        timeout-minutes: 22
         env:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
@@ -1714,8 +1719,8 @@ jobs:
           trap 'cleanup_e2e_processes; restore_e2e_screenshot_tracking' EXIT
           # Two attempts, not three: attempt 2 absorbs the flaky-session-startup
           # case this retry exists for, while a deterministic failure (e.g. a
-          # selector that can never match) previously burned three full 480s
-          # attempts before reporting. Halves the cost of a genuine red shard.
+          # selector that can never match) previously burned three full
+          # per-attempt budgets before reporting. Halves the cost of a genuine red shard.
           for attempt in 1 2; do
             cleanup_e2e_processes
             run_log="e2e-failure-artifacts/attempt-${attempt}.log"
@@ -1723,7 +1728,7 @@ jobs:
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             # Tee so the reporter output can be re-read for the digest below.
             # PIPESTATUS, not $?, or we would read tee's status instead.
-            ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
+            ${TIMEOUT:+$TIMEOUT -k 15 600} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS 2>&1 \
               | tee "$run_log"
             attempt_status=${PIPESTATUS[0]}
             echo "::endgroup::"
@@ -1801,8 +1806,10 @@ jobs:
   # those slices into one downloadable candidate set. It deliberately has no
   # write permission and never checks out or pushes the PR branch. The trusted
   # publish-screenshot-candidates workflow links the finished artifact from the
-  # parent. Only `update-screenshots` requests a bot-owned child PR for accepting
-  # baseline changes. Forks retain the artifact-only/manual path.
+  # parent, together with a view-only compare branch for GitHub's image diff
+  # and an inline before/after preview. Accepting references means committing
+  # them to the PR branch, for example by cherry-picking the compare commit.
+  # Forks retain the artifact-only/manual path.
   screenshot-artifacts:
     needs: [build, e2e]
     if: >-
@@ -1837,7 +1844,7 @@ jobs:
           path: candidates
       # Reference PNGs are pixel-rendered on the runner, so a re-render of an
       # UNCHANGED screen still differs by a handful of anti-aliased pixels. Left
-      # unfiltered every PR ships a review PR of near-wholesale re-renders —
+      # unfiltered every PR ships a candidate set of near-wholesale re-renders —
       # measured at 280 shots on #2134, a PR that changed no source file at all,
       # of which `filter-screenshots` classified 0 as real. Reviewers cannot find
       # signal in that, so they rubber-stamp it.
@@ -1846,7 +1853,7 @@ jobs:
       # ignore / flap decision and was written for exactly this, but it was only
       # ever documented as a manual local step. Run it here, in the job that
       # merges the shard slices, so the candidate artifact carries only real
-      # changes and any explicitly requested review PR is worth opening.
+      # changes and its compare view is worth reviewing.
       - name: Drop render noise from the candidate set
         env:
           # The filter's documented escape hatch: the label means "refresh
@@ -1896,8 +1903,9 @@ jobs:
             else
               echo "${#files[@]} changed reference screenshot(s) are attached as an immutable artifact."
               echo
-              echo "A trusted follow-up workflow links this evidence from the same-repository parent PR."
-              echo 'Only the `update-screenshots` label requests a separate PNG review PR.'
+              echo "A trusted follow-up workflow links this evidence from the same-repository parent PR,"
+              echo "including a view-only compare view of the PNGs in GitHub's image diff."
+              echo 'Accept them by committing the PNGs to the PR branch (the comment gives a cherry-pick command).'
               echo "The artifact remains the immutable record and the manual fallback for forks."
               echo
               printf -- '- `%s`\n' "${files[@]#candidates/}"

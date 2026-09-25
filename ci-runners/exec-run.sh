@@ -157,7 +157,7 @@ fi
 TIMEOUT="$(command -v timeout || true)"
 for attempt in 1 2 3; do
   echo "==> e2e attempt ${attempt}: pnpm run test:e2e:ci -- $*"
-  if ${TIMEOUT:+${TIMEOUT} -k 15 480} pnpm run test:e2e:ci -- "$@"; then
+  if ${TIMEOUT:+${TIMEOUT} -k 15 600} pnpm run test:e2e:ci -- "$@"; then
     finish 0
   fi
   echo "==> attempt ${attempt} failed or timed out"
