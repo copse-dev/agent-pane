@@ -56,6 +56,11 @@ export interface ActivityRow {
   requestId: string | null
   /** The approval's kind (`shell`, `mcp`, …) so a command can render as code. */
   requestType: string | null
+  /**
+   * The approval exactly as its prompt carries it — never truncated. `want` and
+   * `detail` are for scanning; this is what the user reviews before approving.
+   */
+  approval: PendingApprovalSummary | null
   /** Epoch the age counts from; null when the renderer never saw it start. */
   since: number | null
 }
@@ -140,6 +145,7 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
       detail: req.body.trim() === '' ? null : truncateText(req.body),
       requestId: req.id,
       requestType: req.type,
+      approval: req,
       since: req.receivedAt,
     })),
     ...input.questions.map((req): ActivityRow => ({
@@ -150,6 +156,7 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
       detail: null,
       requestId: req.id,
       requestType: null,
+      approval: null,
       since: req.receivedAt,
     })),
   ].sort((a, b) => (a.since ?? 0) - (b.since ?? 0))
@@ -171,6 +178,7 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
     detail: null,
     requestId: null,
     requestType: null,
+    approval: null,
     since,
   })
 

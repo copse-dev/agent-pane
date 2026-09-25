@@ -111,6 +111,7 @@ dialog.activity-panel-overlay {
 
 .activity-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-sm);
   padding-inline-end: var(--spacing-lg);
@@ -216,4 +217,33 @@ dialog.activity-panel-overlay {
    actually needs the user. Zero-length paths, so the stroke sets their size. */
 .activity-glyph-running {
   stroke-width: 3;
+}
+
+/* The expanded review: the request as the approval prompt shows it, in full.
+   The prompt's own .approval-advice / .approval-body / .approval-footer carry
+   the look; nothing here truncates — a long body wraps and scrolls. */
+.activity-review {
+  /* Indented under the row's text; the basis subtracts the indent so the review
+     never runs past the row (a 100% basis plus a margin scrolls the panel). */
+  --activity-review-indent: calc(var(--spacing-lg) * 2 + var(--spacing-sm));
+  box-sizing: border-box;
+  flex: 0 0 calc(100% - var(--activity-review-indent));
+  min-width: 0;
+  margin: 0 0 var(--spacing-md) var(--activity-review-indent);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.activity-review-title {
+  margin: 0 0 var(--spacing-sm);
+  font-weight: 600;
+}
+.activity-review .approval-body {
+  overflow-wrap: anywhere;
+}
+.activity-review-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-md);
 }

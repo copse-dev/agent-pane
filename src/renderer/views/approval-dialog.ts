@@ -61,6 +61,43 @@ function approvalCopyElement(className: string, text: string): HTMLElement {
   return root
 }
 
+/** Keep the full plain-text advice visible in the Activity review. */
+export function adviceElement(advice: string): HTMLElement {
+  const children: (Node | string)[] = []
+  advice.split('\n').forEach((line, index) => {
+    if (index > 0) children.push('\n')
+    children.push(
+      line.startsWith(REASON_BULLET) ? el('span', { class: 'approval-advice-item' }, line) : line,
+    )
+  })
+  return el('div', { class: 'approval-advice' }, ...children)
+}
+
+/**
+ * One request exactly as a single-request prompt presents it, fully expanded:
+ * the advice, the whole body (monospaced for shell), then the footer. Shared
+ * with the Activity panel so a request is never approved from a view that shows
+ * less than this prompt would. Nothing is truncated; a long body scrolls.
+ */
+export function approvalRequestDetails(req: {
+  body: string
+  bodyAdvice: string | undefined
+  bodyFooter: string | undefined
+  type: string
+}): HTMLElement[] {
+  const parts: HTMLElement[] = []
+  if (req.bodyAdvice) parts.push(adviceElement(req.bodyAdvice))
+  parts.push(
+    el(
+      'div',
+      { class: req.type === 'shell' ? 'approval-body approval-body-code' : 'approval-body' },
+      req.body,
+    ),
+  )
+  if (req.bodyFooter) parts.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
+  return parts
+}
+
 /**
  * Combine the distinct explanations for one grouped decision. Permission copy
  * commonly shares a lead line followed by request-specific bullets; keep that
@@ -121,6 +158,7 @@ export interface PendingApprovalSummary {
   title: string
   body: string
   bodyAdvice: string | undefined
+  bodyFooter: string | undefined
   type: string
   /** Renderer clock when the request arrived — how long it has been waiting. */
   receivedAt: number
@@ -788,6 +826,7 @@ export function mountApprovalDialog(
           title: req.title,
           body: req.body,
           bodyAdvice: req.bodyAdvice,
+          bodyFooter: req.bodyFooter,
           type: req.type,
           receivedAt: req.receivedAt,
         })),

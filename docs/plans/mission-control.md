@@ -40,6 +40,14 @@ What is in:
   no task lease; anything broader is still answered on the prompt itself. It returns false
   and sends nothing when the request is no longer pending, so a double click, a stale row, or
   a request answered on the prompt or cancelled by main is harmless.
+- **Approve requires the full request to be visible.** A collapsed row is for scanning —
+  its title and command are truncated — so it offers only **Review** and **Reject** (which
+  can only narrow). Review expands the row into the request exactly as the approval prompt
+  presents it, rendered by the prompt's own `approvalRequestDetails`: full title, advice,
+  the whole untruncated body (monospaced for shell, wrapping and scrolling, never cut) and
+  the footer. **Approve once** exists only in that expanded view, and opening it arms the
+  settle window below, so a request cannot be approved from a view that shows less than
+  the prompt would.
 - The approval dialog's clickjack guard carries over: when the Needs-you list changes while
   the panel is open, Approve pauses for `APPROVAL_SETTLE_MS`; Reject stays live.
 - **Questions go to their thread.** `mountAskUserDialog` returns a read-only
@@ -72,9 +80,8 @@ and its turn to finish while another thread keeps working (screenshots
 - Threads from projects not opened this session. The panel sees exactly what the sidebar
   sees (`getSidebarThreads` reads the active project plus projects visited this session), so
   an unvisited project's threads — and the project name of a request from one — are absent.
-- The panel shows an approval's title and command, not its full advice text; the complete
-  prompt (and its broader answers, such as "Always allow") remains one click away in the
-  thread.
+- Broader answers the prompt offers (such as "Always allow" or a task lease) are not
+  offered in the panel; the prompt in the thread remains one click away.
 
 ## The problem
 

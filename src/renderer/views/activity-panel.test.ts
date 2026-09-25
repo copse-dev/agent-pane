@@ -27,6 +27,8 @@ interface ApprovalEvent {
   threadId?: string | undefined
   title: string
   body: string
+  bodyAdvice?: string
+  bodyFooter?: string
   type: string
 }
 
@@ -220,6 +222,13 @@ describe('activity panel', () => {
     )
   }
 
+  /** Open a row's review, then let its settle window pass so Approve is live. */
+  function review(rowKey: string): HTMLButtonElement {
+    qsRequired<HTMLButtonElement>(rowFor(rowKey), '.activity-review-toggle').click()
+    time.advance(APPROVAL_SETTLE_MS)
+    return qsRequired<HTMLButtonElement>(rowFor(rowKey), '.activity-approve')
+  }
+
   const shell = (id: string, threadId: string, command = `printf ${id}`): ApprovalEvent => ({
     id,
     threadId,
@@ -314,7 +323,7 @@ describe('activity panel', () => {
     emitApproval(shell('req-other', 'other'))
     panel.open()
 
-    qsRequired<HTMLButtonElement>(rowFor('approval:req-auth'), '.activity-approve').click()
+    review('approval:req-auth').click()
     assert.deepEqual(responses, [
       { id: 'req-auth', approved: true, remember: false, grantScope: 'once' },
     ])
@@ -324,9 +333,9 @@ describe('activity panel', () => {
     time.advance(ACTIVITY_RENDER_INTERVAL_MS)
     assert.deepEqual(rowKeys('needs-you'), ['approval:req-other'])
 
-    // The remaining row moved up under the pointer, so Approve pauses; Reject does not.
+    // Reject lives on the collapsed row: it only narrows, so it needs no review.
     const rest = rowFor('approval:req-other')
-    assert.equal(qsRequired<HTMLButtonElement>(rest, '.activity-approve').disabled, true)
+    assert.equal(rest.querySelector('.activity-approve'), null)
     assert.equal(qsRequired<HTMLButtonElement>(rest, '.activity-reject').disabled, false)
     qsRequired<HTMLButtonElement>(rest, '.activity-reject').click()
     assert.deepEqual(responses.at(-1), {
@@ -346,7 +355,7 @@ describe('activity panel', () => {
     emitApproval(shell('req-other', 'other'))
     panel.open()
 
-    const approve = qsRequired<HTMLButtonElement>(rowFor('approval:req-auth'), '.activity-approve')
+    const approve = review('approval:req-auth')
     approve.click()
     approve.click()
     assert.equal(responses.length, 1)
@@ -365,10 +374,17 @@ describe('activity panel', () => {
     mount([thread('focused'), thread('a'), thread('b')])
     emitApproval(shell('first', 'a'))
     panel.open()
+    // Opening a review pauses Approve for the same window an append does.
+    qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-review-toggle').click()
+    assert.equal(
+      qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-approve').disabled,
+      true,
+    )
+    time.advance(APPROVAL_SETTLE_MS)
     assert.equal(
       qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-approve').disabled,
       false,
-      'a fresh look is live',
+      'live once the request has been on screen for the settle window',
     )
 
     emitApproval(shell('second', 'b'))
@@ -424,9 +440,12 @@ describe('activity panel', () => {
     key(openers()[0] ?? document.body, 'End')
     assert.equal(document.activeElement, openers()[1])
     // From an action button, arrows still move by row.
-    const approve = qsRequired<HTMLButtonElement>(rowFor('approval:req-auth'), '.activity-approve')
-    approve.focus()
-    key(approve, 'ArrowDown')
+    const toggle = qsRequired<HTMLButtonElement>(
+      rowFor('approval:req-auth'),
+      '.activity-review-toggle',
+    )
+    toggle.focus()
+    key(toggle, 'ArrowDown')
     assert.equal(document.activeElement, openers()[1])
 
     // Enter on a native <button> activates it: jump to the thread and close.
@@ -440,12 +459,74 @@ describe('activity panel', () => {
     emitApproval(shell('first', 'a'))
     emitApproval(shell('second', 'b'))
     panel.open()
-    const approve = qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-approve')
+    const approve = review('approval:first')
     approve.focus()
     approve.click()
     time.advance(ACTIVITY_RENDER_INTERVAL_MS)
     const opener = qsRequired(rowFor('approval:second'), '.activity-row-open')
     assert.equal(document.activeElement, opener)
+  })
+
+  it('offers no Approve until the whole command, including its tail, is on screen', () => {
+    const tail = '; rm -rf ./build'
+    const command = `printf '${'x'.repeat(400 - tail.length - 9)}'${tail}`
+    assert.equal(command.length, 400)
+    mount([thread('focused'), thread('auth', { title: 'Refactor auth' })])
+    emitApproval(shell('long', 'auth', command))
+    panel.open()
+
+    const row = rowFor('approval:long')
+    // Collapsed: the scan line is truncated, so there is nothing to approve.
+    assert.equal(row.querySelector('.activity-approve'), null)
+    assert.equal(document.querySelector('#activity-panel .activity-approve'), null)
+    assert.ok(!row.textContent.includes(tail), 'the collapsed row hides the tail')
+    const toggle = qsRequired<HTMLButtonElement>(row, '.activity-review-toggle')
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+
+    toggle.click()
+    const expanded = rowFor('approval:long')
+    assert.equal(
+      qsRequired(expanded, '.activity-review-toggle').getAttribute('aria-expanded'),
+      'true',
+    )
+    const body = qsRequired(expanded, '.activity-review .approval-body')
+    assert.equal(body.textContent, command, 'the full command, verbatim')
+    assert.ok(body.classList.contains('approval-body-code'), 'shell is monospaced')
+    // Only now does Approve exist — and it waits out the settle window.
+    const approve = qsRequired<HTMLButtonElement>(expanded, '.activity-review .activity-approve')
+    assert.equal(approve.disabled, true)
+    time.advance(APPROVAL_SETTLE_MS)
+    assert.equal(
+      qsRequired<HTMLButtonElement>(rowFor('approval:long'), '.activity-approve').disabled,
+      false,
+    )
+
+    // Collapsing again removes it.
+    qsRequired<HTMLButtonElement>(rowFor('approval:long'), '.activity-review-toggle').click()
+    assert.equal(rowFor('approval:long').querySelector('.activity-approve'), null)
+  })
+
+  it('shows the advice and footer the prompt would show, in the review', () => {
+    mount([thread('focused'), thread('auth')])
+    const advice =
+      'The project sandbox would block this command:\n• Installs or updates packages, which downloads and runs code from the internet'
+    emitApproval({
+      id: 'install',
+      threadId: 'auth',
+      title: 'Run package install?',
+      body: 'npm install',
+      bodyAdvice: advice,
+      bodyFooter: 'Allow this install?',
+      type: 'shell',
+    })
+    panel.open()
+    review('approval:install')
+    const view = qsRequired(rowFor('approval:install'), '.activity-review')
+    assert.equal(qsRequired(view, '.activity-review-title').textContent, 'Run package install?')
+    assert.equal(qsRequired(view, '.approval-advice').textContent, advice)
+    assert.equal(qsRequired(view, '.approval-advice-item').textContent.startsWith('• '), true)
+    assert.equal(qsRequired(view, '.approval-body').textContent, 'npm install')
+    assert.equal(qsRequired(view, '.approval-footer').textContent, 'Allow this install?')
   })
 
   it('sends a question to its thread rather than answering it in the panel', () => {

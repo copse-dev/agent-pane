@@ -43,6 +43,7 @@ function approval(
     title: 'Run shell command?',
     body: 'printf done',
     bodyAdvice: undefined,
+    bodyFooter: undefined,
     type: 'shell',
     receivedAt,
   }
@@ -217,6 +218,15 @@ describe('deriveActivity', () => {
     assert.equal(q.state, 'needs-answer')
     assert.equal(q.want, 'First? (+2 more)')
     assert.equal(q.projectId, null)
+  })
+
+  it('truncates only the scan line; the row keeps the request verbatim for review', () => {
+    const body = `printf '${'y'.repeat(380)}'; rm -rf ./build`
+    const req = { ...approval('long', 't', 1), body }
+    const [row] = group(deriveActivity(input({ approvals: [req] })), 'needs-you').rows
+    assert.ok(row)
+    assert.ok((row.detail ?? '').length < body.length)
+    assert.equal(row.approval?.body, body)
   })
 
   it('truncates long wants on a word-agnostic character budget', () => {

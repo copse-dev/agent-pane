@@ -21,7 +21,12 @@ import {
   type ActivityRowState,
 } from '../controller/activity-model.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
-import { APPROVAL_SETTLE_MS, type ApprovalRequests, type ApprovalTimer } from './approval-dialog.ts'
+import {
+  APPROVAL_SETTLE_MS,
+  approvalRequestDetails,
+  type ApprovalRequests,
+  type ApprovalTimer,
+} from './approval-dialog.ts'
 import type { AskUserRequests } from './ask-user-dialog.ts'
 
 /**
@@ -185,6 +190,8 @@ export function mountActivityPanel(
   let needsYouSignature: string | null = null
   let cancelSettle: (() => void) | null = null
   let settling = false
+  // Approval rows the user has expanded to review, by row key.
+  const expanded = new Set<string>()
 
   function canOpen(row: ActivityRow): boolean {
     if (!row.threadId || !row.projectId) return false
@@ -232,18 +239,37 @@ export function mountActivityPanel(
     scheduleRender()
   }
 
+  /**
+   * A collapsed approval row is for scanning: its text is truncated, so it
+   * offers Review (to see the request in full) and Reject (which only narrows).
+   * Approve once lives solely in the expanded review, beside the untruncated
+   * request — see {@link reviewFor}.
+   */
   function actionsFor(row: ActivityRow): HTMLElement | null {
     if (row.state === 'needs-approval') {
-      const approve = el(
+      const open = expanded.has(row.key)
+      const toggle = el(
         'button',
         {
           type: 'button',
-          class: 'ui-btn ui-btn-primary activity-approve',
-          'data-control': 'approve',
-          'aria-label': `Approve once: ${row.want} (${row.threadTitle})`,
+          class: 'ui-btn ui-btn-secondary activity-review-toggle',
+          'data-control': 'review',
+          'aria-expanded': open ? 'true' : 'false',
+          'aria-controls': reviewId(row),
+          'aria-label': `${open ? 'Hide' : 'Review'} request: ${row.want} (${row.threadTitle})`,
         },
-        'Approve once',
+        open ? 'Hide' : 'Review',
       )
+      toggle.addEventListener('click', () => {
+        if (expanded.has(row.key)) expanded.delete(row.key)
+        else {
+          expanded.add(row.key)
+          // The full request just appeared: give it the same settle window an
+          // append gets on the prompt, so Approve cannot be clicked unread.
+          armSettle()
+        }
+        renderNow()
+      })
       const reject = el(
         'button',
         {
@@ -254,17 +280,11 @@ export function mountActivityPanel(
         },
         'Reject',
       )
-      approve.disabled = settling
-      approve.addEventListener('click', () => {
-        // Honour the settle guard even for a synthetic/keyboard activation.
-        if (approve.disabled) return
-        answerApproval(row, true, [approve, reject])
-      })
       reject.addEventListener('click', () => {
         if (reject.disabled) return
-        answerApproval(row, false, [approve, reject])
+        answerApproval(row, false, rowButtons(reject))
       })
-      return el('div', { class: 'activity-row-actions' }, approve, reject)
+      return el('div', { class: 'activity-row-actions' }, toggle, reject)
     }
     if (row.state === 'needs-answer') {
       const answer = el(
@@ -290,6 +310,72 @@ export function mountActivityPanel(
       return el('div', { class: 'activity-row-actions' }, answer)
     }
     return null
+  }
+
+  function reviewId(row: ActivityRow): string {
+    return `activity-review-${row.requestId ?? row.key}`
+  }
+
+  /** Every answer button on the same row, so one answer disables them all. */
+  function rowButtons(from: HTMLElement): HTMLButtonElement[] {
+    const item = from.closest('.activity-row')
+    return item
+      ? [...item.querySelectorAll<HTMLButtonElement>('.activity-approve, .activity-reject')]
+      : []
+  }
+
+  /**
+   * The expanded review: the request exactly as the approval prompt shows it —
+   * full title, advice, the whole body and the footer, rendered by the prompt's
+   * own `approvalRequestDetails` — and the only place Approve once exists.
+   */
+  function reviewFor(row: ActivityRow): HTMLElement | null {
+    const request = row.approval
+    if (!request || !expanded.has(row.key)) return null
+    const approve = el(
+      'button',
+      {
+        type: 'button',
+        class: 'ui-btn ui-btn-primary activity-approve',
+        'data-control': 'approve',
+        'aria-label': `Approve once: ${request.title} (${row.threadTitle})`,
+      },
+      'Approve once',
+    )
+    approve.disabled = settling
+    approve.addEventListener('click', () => {
+      // Honour the settle guard even for a synthetic/keyboard activation.
+      if (approve.disabled) return
+      answerApproval(row, true, rowButtons(approve))
+    })
+    const actions: HTMLElement[] = [approve]
+    if (canOpen(row)) {
+      const openInThread = el(
+        'button',
+        {
+          type: 'button',
+          class: 'ui-btn ui-btn-ghost activity-review-open',
+          'data-control': 'open-thread',
+        },
+        'Open in thread',
+      )
+      openInThread.addEventListener('click', () => {
+        openThread(row)
+      })
+      actions.push(openInThread)
+    }
+    return el(
+      'div',
+      {
+        id: reviewId(row),
+        class: 'activity-review',
+        role: 'region',
+        'aria-label': `Approval request: ${request.title}`,
+      },
+      el('p', { class: 'activity-review-title' }, request.title),
+      ...approvalRequestDetails(request),
+      el('div', { class: 'activity-review-actions' }, ...actions),
+    )
   }
 
   function rowElement(row: ActivityRow, at: number): HTMLLIElement {
@@ -352,6 +438,8 @@ export function mountActivityPanel(
       openButton,
     )
     item.append(actionsFor(row) ?? el('div', { class: 'activity-row-actions' }))
+    const review = reviewFor(row)
+    if (review) item.append(review)
     return item
   }
 
@@ -473,6 +561,9 @@ export function mountActivityPanel(
     // Reject stays live, since a mis-click there can only deny.
     if (needsYouSignature !== null && signature !== needsYouSignature) armSettle()
     needsYouSignature = signature
+    // A review stays open across re-renders only while its request is pending.
+    const pendingKeys = new Set(needsYou?.rows.map((row) => row.key))
+    for (const key of [...expanded]) if (!pendingKeys.has(key)) expanded.delete(key)
 
     const populated = groups.filter((group) => group.rows.length > 0)
     if (populated.length === 0) {
@@ -487,6 +578,12 @@ export function mountActivityPanel(
     }
     dialog.dataset['needsYou'] = String(needsYou?.total ?? 0)
     restoreFocus(focus)
+  }
+
+  /** Redraw at once, for the user's own action (expanding a review). */
+  function renderNow(): void {
+    cancelRender?.()
+    render()
   }
 
   function scheduleRender(): void {
@@ -557,6 +654,7 @@ export function mountActivityPanel(
     cancelSettle = null
     settling = false
     needsYouSignature = null
+    expanded.clear()
     status.textContent = ''
   })
 
@@ -564,7 +662,8 @@ export function mountActivityPanel(
     open: () => {
       if (isOpen()) return
       open()
-      // A fresh look: nothing has moved under the user yet, so Approve is live.
+      // A fresh look: every row starts collapsed, so nothing is approvable until
+      // the user opens its review (which arms the settle window).
       needsYouSignature = null
       render()
       const first = rowOpeners()[0]
