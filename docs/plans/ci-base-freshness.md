@@ -40,7 +40,9 @@ Acceptance cases:
 - A push to `main` or `release` re-evaluates every mergeable open pull request
   targeting it.
 - A pull request that contains every commit on its base reports current.
-- A pull request behind its base reports the exact deficit.
+- A pull request behind its base reports the exact deficit, worded as the
+  branch's own deficit ("Branch is N commits behind `main`") — never as a claim
+  about which base CI merged (see _What `Base Current` measures_).
 - A base retarget without a push re-evaluates, because the merge result changed.
 - A comparison that cannot be established reports failure, never a quiet pass
   and never `neutral` or `skipped`.
@@ -57,8 +59,10 @@ A new check context, `Base Current`, published by
   _Why this cannot be the enforcement_ below.
 - **Additive.** Nothing renames or republishes `CI Passed`, so no existing rule
   or consumer changes meaning and no merge window that was closed can open.
-- **Re-evaluate, never re-run.** One comparison and one check run per candidate.
-  No checkout of candidate code, no build, no test, no fleet.
+- **Re-evaluate, never re-run.** One comparison and one check run per candidate,
+  compared against one snapshot of the base tip. No checkout of candidate code,
+  no build, no test, no fleet. The comparison asks for `per_page=1`, since only
+  the `behind_by` total is read (GitHub always includes the file list).
 - **Fixed hosted capacity**, never `SELF_HOSTED_CHECKS`, and inside a timeout —
   the same rule `ci-passed` follows. A report on whether a candidate is current
   must not queue behind the fleet it reports on (#1669).
@@ -86,9 +90,32 @@ A new check context, `Base Current`, published by
   no `ref:` and that no install or build step exists.
 
 Cost control: drafts are skipped on the push fan-out (they cannot merge, and
-`ready_for_review` re-evaluates them the moment they can), and the concurrency
+`ready_for_review` re-evaluates them the moment they can), `edited` events other
+than a base retarget are filtered out at the job, and the job-level concurrency
 group collapses a burst of merges into a single evaluation whose answer is the
-current one.
+current one. The group is keyed by the base being evaluated (the dispatch input,
+else the pushed branch), so a manual `release` re-evaluation run from `main`
+never shares or cancels `main`'s group.
+
+Races between the paths: the per-PR path and the push fan-out sit in different
+concurrency groups, so a pull request's run could otherwise compute `success`,
+lose the race to a base push whose fan-out posts "behind", and then post its
+stale `success` last. Check runs have no compare-and-swap, so the single-PR path
+re-reads the base tip after posting and, if it moved, recomputes and posts again
+(bounded to three rounds; a base that keeps moving is the fan-out's job).
+
+## What `Base Current` measures
+
+It measures whether the branch contains the current base tip — GitHub's
+`behind_by` — and nothing more. It does not know which base the latest CI run
+merged. `ci.yml` runs on `pull_request`, so CI tests `refs/pull/N/merge`: a run
+dispatched after the base moved has already tested head + that newer base, while
+the branch itself is still behind. The base a past run merged is not recoverable
+from the API afterwards (`refs/pull/N/merge` moves on, and a workflow run's
+`pull_requests[]` is resolved when it is read), so the check reports the honest
+signal it has: zero behind is the only value that proves every tested merge
+result equals the one that would land; a positive count says only that the
+branch is behind.
 
 ## Why this cannot be the enforcement
 
@@ -139,7 +166,7 @@ on the pull request what the rule is blocking on.
 ## Validation evidence
 
 `scripts/base-freshness.test.ts` covers the policy, the decoders, the fan-out,
-and the workflow's structural invariants — 24 tests. The policy tests assert the
+the single-PR re-validation, and the workflow's structural invariants. The policy tests assert the
 two-conclusion property directly, because a `neutral` here would be a silent
 regression to the behavior this control exists to remove.
 

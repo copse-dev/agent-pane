@@ -7,11 +7,16 @@ import {
   decideBaseFreshness,
   decodeBehindBy,
   decodeCandidates,
+  decodeRefSha,
   evaluate,
+  evaluateSettled,
   listCandidates,
+  MAX_SETTLE_ROUNDS,
   type Candidate,
   type Verdict,
 } from './base-freshness.mts'
+
+const TIP = 'b'.repeat(40)
 
 const candidate: Candidate = {
   number: 42,
@@ -58,17 +63,19 @@ describe('base freshness policy', () => {
     assert.match(verdict.title, /Up to date with main/)
   })
 
-  it('fails a pull request whose base has advanced since it was tested', () => {
-    // The whole point of #2520's base-advancement half: CI is green, and green
-    // describes a merge result that no longer exists.
+  it('reports a branch behind its base as exactly that, without claiming which base CI merged', () => {
+    // A pull_request run dispatched after the base moved already tested head +
+    // the newer base, so "behind" must not be worded as "CI ran against the
+    // earlier base": only the branch's own deficit is known.
     const verdict = decideBaseFreshness(candidate, 3)
     assert.equal(verdict.conclusion, 'failure')
-    assert.match(verdict.title, /3 commits behind main/)
-    assert.match(verdict.summary, /no longer exists/)
+    assert.equal(verdict.title, 'Branch is 3 commits behind main')
+    assert.match(verdict.summary, /does not contain 3 commits on `main`/)
+    assert.doesNotMatch(verdict.summary, /CI ran against|no longer exists/)
   })
 
   it('counts a single commit without pluralising it', () => {
-    assert.match(decideBaseFreshness(candidate, 1).title, /^1 commit behind main$/)
+    assert.match(decideBaseFreshness(candidate, 1).title, /^Branch is 1 commit behind main$/)
   })
 
   it('reports not-current when the comparison could not be established', () => {
@@ -98,6 +105,13 @@ describe('base freshness policy', () => {
 })
 
 describe('base freshness decoding', () => {
+  it('reads the commit a base ref resolves to, and nothing that is not a full sha', () => {
+    const sha = 'a'.repeat(40)
+    assert.equal(decodeRefSha(JSON.stringify({ object: { sha, type: 'commit' } })), sha)
+    assert.equal(decodeRefSha('{"object":{"sha":"abc"}}'), null)
+    assert.equal(decodeRefSha('[]'), null)
+  })
+
   it('reads behind_by from a comparison', () => {
     assert.equal(decodeBehindBy('{"behind_by":7,"ahead_by":2}'), 7)
   })
@@ -190,8 +204,8 @@ describe('base freshness fan-out', () => {
 
   it('publishes one check run per candidate, against its own head sha', async () => {
     const { api, posted } = stubApi({
-      '/compare/main...sha-1': '{"behind_by":0}',
-      '/compare/main...sha-2': '{"behind_by":4}',
+      [`/compare/${TIP}...sha-1?per_page=1`]: '{"behind_by":0}',
+      [`/compare/${TIP}...sha-2?per_page=1`]: '{"behind_by":4}',
     })
     const outcomes = await evaluate(
       api,
@@ -206,6 +220,7 @@ describe('base freshness fan-out', () => {
           conclusion: verdict.conclusion,
         })
       },
+      TIP,
     )
     assert.deepEqual(
       outcomes.map((o) => o.verdict.conclusion),
@@ -221,7 +236,7 @@ describe('base freshness fan-out', () => {
   it('reports a candidate whose comparison errors, without abandoning the rest', async () => {
     // A transient comparison failure must not silently drop the candidate from
     // the run: no check run at all reads as "not configured", not as "unknown".
-    const { api } = stubApi({ '/compare/main...sha-2': '{"behind_by":0}' })
+    const { api } = stubApi({ [`/compare/${TIP}...sha-2?per_page=1`]: '{"behind_by":0}' })
     const outcomes = await evaluate(
       api,
       [
@@ -231,6 +246,7 @@ describe('base freshness fan-out', () => {
       async () => {
         await Promise.resolve()
       },
+      TIP,
     )
     assert.deepEqual(
       outcomes.map((o) => o.verdict.conclusion),
@@ -244,9 +260,9 @@ describe('base freshness fan-out', () => {
     // the stale window to the candidate that actually failed — it does not make
     // the fan-out sound, which is why this context must not be required.
     const { api } = stubApi({
-      '/compare/main...sha-1': '{"behind_by":2}',
-      '/compare/main...sha-2': '{"behind_by":3}',
-      '/compare/main...sha-3': '{"behind_by":4}',
+      [`/compare/${TIP}...sha-1?per_page=1`]: '{"behind_by":2}',
+      [`/compare/${TIP}...sha-2?per_page=1`]: '{"behind_by":3}',
+      [`/compare/${TIP}...sha-3?per_page=1`]: '{"behind_by":4}',
     })
     const outcomes = await evaluate(
       api,
@@ -260,6 +276,7 @@ describe('base freshness fan-out', () => {
         if (c.number === 2) throw new Error('503 from check-runs')
         await Promise.resolve()
       },
+      TIP,
     )
     assert.deepEqual(
       outcomes.map((o) => o.published),
@@ -268,6 +285,67 @@ describe('base freshness fan-out', () => {
     assert.match(outcomes[1]?.error ?? '', /503 from check-runs/)
     // Every candidate still carries a verdict, so the caller can name the gap.
     assert.equal(outcomes.length, 3)
+  })
+})
+
+describe('base freshness single pull request path', () => {
+  /** A base whose tip is read from `tips` in order, one entry per lookup. */
+  function movingBase(tips: string[], behind: Record<string, number>): StubApi {
+    const stub = stubApi({})
+    let lookups = 0
+    stub.api.get = async (path: string): Promise<string> => {
+      stub.requested.push(path)
+      if (path === '/git/ref/heads/main') {
+        const sha = tips[Math.min(lookups, tips.length - 1)] ?? ''
+        lookups += 1
+        return await Promise.resolve(JSON.stringify({ object: { sha } }))
+      }
+      const match = /^\/compare\/([0-9a-f]{40})\.\.\./.exec(path)
+      const count = match?.[1] === undefined ? undefined : behind[match[1]]
+      if (count === undefined) throw new Error(`no stub for ${path}`)
+      return await Promise.resolve(JSON.stringify({ behind_by: count }))
+    }
+    return stub
+  }
+  const post =
+    (stub: StubApi, conclusions: string[] = []) =>
+    async (c: Candidate, verdict: Verdict): Promise<void> => {
+      conclusions.push(verdict.conclusion)
+      await stub.api.post('/check-runs', { head_sha: c.headSha, conclusion: verdict.conclusion })
+    }
+  const moved = 'c'.repeat(40)
+
+  it('posts once when the base did not move while it ran', async () => {
+    const stub = movingBase([TIP], { [TIP]: 0 })
+    const outcome = await evaluateSettled(stub.api, candidate, post(stub))
+    assert.equal(outcome.verdict.conclusion, 'success')
+    assert.equal(stub.posted.length, 1)
+  })
+
+  it('re-posts when the base moved before its verdict landed, so a stale success is not last', async () => {
+    // The race with the push fan-out: this computed "up to date" at TIP, the
+    // base moved and the fan-out posted "1 behind", then this POSTed. The
+    // re-validation sees the new tip and posts the current verdict last.
+    const stub = movingBase([TIP, moved, moved], { [TIP]: 0, [moved]: 1 })
+    const conclusions: string[] = []
+    const outcome = await evaluateSettled(stub.api, candidate, post(stub, conclusions))
+    assert.equal(outcome.verdict.conclusion, 'failure')
+    assert.deepEqual(conclusions, ['success', 'failure'])
+  })
+
+  it('stops chasing a base that never settles', async () => {
+    const tips = Array.from({ length: 10 }, (_, i) => String(i).repeat(40))
+    const behind = Object.fromEntries(tips.map((tip) => [tip, 1]))
+    const stub = movingBase(tips, behind)
+    await evaluateSettled(stub.api, candidate, post(stub))
+    assert.equal(stub.posted.length, MAX_SETTLE_ROUNDS)
+  })
+
+  it('reports not-current when the base tip cannot be read', async () => {
+    const stub = stubApi({})
+    const outcome = await evaluateSettled(stub.api, candidate, post(stub))
+    assert.equal(outcome.verdict.conclusion, 'failure')
+    assert.match(outcome.verdict.title, /could not be established/)
   })
 })
 
@@ -321,9 +399,21 @@ describe('base-freshness.yml workflow invariants', () => {
     assert.match(workflow, /^ {4}timeout-minutes: \d+$/m)
   })
 
-  it('collapses a burst of base pushes into one evaluation', () => {
-    assert.match(workflow, /^ {2}cancel-in-progress: true$/m)
-    assert.match(workflow, /group: base-freshness-/)
+  it('collapses a burst of base pushes into one evaluation per base', () => {
+    assert.match(workflow, /^ {6}cancel-in-progress: true$/m)
+    // Keyed by the base being evaluated, so a dispatch for `release` run from
+    // `main` cannot share (and cancel) main's push group.
+    assert.match(workflow, /base-freshness-\$\{\{ github\.event\.pull_request\.number/)
+    assert.match(workflow, /format\('base-\{0\}', inputs\.base \|\| github\.ref_name\)/)
+  })
+
+  it('ignores edits that do not retarget the base', () => {
+    assert.match(workflow, /github\.event\.action != 'edited' \|\|/)
+    assert.match(workflow, /github\.event\.changes\.base != null/)
+  })
+
+  it('leaves no token behind in the checkout', () => {
+    assert.match(workflow, /^ {10}persist-credentials: false$/m)
   })
 
   it('leaves the CI Passed contract untouched', () => {

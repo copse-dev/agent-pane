@@ -24,6 +24,18 @@
 // answer as its own check run, `Base Current`. No checkout, no dependency
 // restore, no fleet — one comparison and one check run per candidate.
 //
+// ## What it measures, exactly
+//
+// `Base Current` reports whether the BRANCH contains the current base tip. It
+// does not claim to know which base the last CI run merged: a run dispatched
+// after the base moved already tested head + that newer base, even though the
+// branch itself is still behind. The base SHA a `pull_request` run merged is
+// not recoverable from the API afterwards (`refs/pull/N/merge` moves, and a
+// run's `pull_requests[]` is resolved at read time), so the honest signal
+// available here is the plain one: "the branch is N commits behind the base".
+// Zero is the only value that proves every tested merge result equals the one
+// that would land, because merging a head with any ancestor of it is the head.
+//
 // ## This REPORTS. It must never become a required check.
 //
 // `Base Current` is advisory, and the limit is structural rather than a gap to
@@ -99,6 +111,8 @@ export type Verdict = {
  * `behindBy` is GitHub's own count of commits on the base that the head does
  * not contain — the same measure "Require branches to be up to date before
  * merging" uses. Zero means the tested merge result is still the merge result.
+ * A positive count is reported as exactly that — the branch is behind — and
+ * deliberately makes no claim about which base CI merged (see the header).
  *
  * `behindBy === null` means the comparison could not be established at all.
  * That is a failure, not a neutral: an unestablished base is indistinguishable
@@ -124,20 +138,20 @@ export function decideBaseFreshness(candidate: Candidate, behindBy: number | nul
     const commits = behindBy === 1 ? '1 commit' : `${String(behindBy)} commits`
     return {
       conclusion: 'failure',
-      title: `${commits} behind ${candidate.baseRef}`,
+      title: `Branch is ${commits} behind ${candidate.baseRef}`,
       summary:
-        `${where} has moved on by ${commits} since this pull request was last tested. CI ran ` +
-        `against the earlier base, so a green \`CI Passed\` here describes a merge result that ` +
-        `no longer exists. Update the branch from ${where} to re-test the combination that ` +
-        `would actually land.`,
+        `This branch does not contain ${commits} on ${where}. This reports the branch only: ` +
+        `\`CI Passed\` may already have tested a merge with some or all of those commits, or ` +
+        `none of them, depending on when it ran. Update the branch from ${where} so the ` +
+        `branch itself contains the base that would land.`,
     }
   }
   return {
     conclusion: 'success',
     title: `Up to date with ${candidate.baseRef}`,
     summary:
-      `This pull request contains every commit on ${where}, so the merge result CI tested is ` +
-      `the merge result that would land.`,
+      `This branch contains every commit on ${where}, so any merge result CI tested is the ` +
+      `merge result that would land.`,
   }
 }
 
@@ -192,6 +206,13 @@ export function decodeBehindBy(text: string): number | null {
   return behindBy
 }
 
+/** The commit a `/git/ref/heads/...` lookup resolves to, or null when it carries none. */
+export function decodeRefSha(text: string): string | null {
+  const value: unknown = JSON.parse(text)
+  const sha = field(field(value, 'object'), 'sha')
+  return typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha) ? sha : null
+}
+
 type Api = {
   get: (path: string) => Promise<string>
   post: (path: string, body: unknown) => Promise<void>
@@ -225,8 +246,9 @@ export function githubApi(repository: string, token: string, fetchImpl: typeof f
  *
  * Drafts are skipped on the fan-out path because they cannot merge, and their
  * own `ready_for_review` event re-evaluates them the moment they can. That
- * keeps a push to a busy base to roughly one request per mergeable candidate,
- * which is what holds this inside the Actions token's hourly budget.
+ * keeps a push to a busy base to two requests per mergeable candidate (one
+ * comparison, one check-run POST) plus the listing and one base lookup, which
+ * is what holds this inside the Actions token's hourly budget.
  */
 export async function listCandidates(api: Api, baseRef: string): Promise<Candidate[]> {
   const candidates: Candidate[] = []
@@ -248,10 +270,30 @@ export async function listCandidates(api: Api, baseRef: string): Promise<Candida
   )
 }
 
-export async function behindBy(api: Api, candidate: Candidate): Promise<number | null> {
+/**
+ * The base branch's current tip, or null when it could not be read. Comparing
+ * against this exact SHA (rather than the branch name) pins what a verdict was
+ * computed against, so the single-PR path can tell whether the base moved
+ * before its verdict landed.
+ */
+export async function baseTip(api: Api, baseRef: string): Promise<string | null> {
   try {
-    const base = encodeURIComponent(candidate.baseRef)
-    return decodeBehindBy(await api.get(`/compare/${base}...${candidate.headSha}`))
+    return decodeRefSha(await api.get(`/git/ref/heads/${encodeURIComponent(baseRef)}`))
+  } catch {
+    return null
+  }
+}
+
+export async function behindBy(
+  api: Api,
+  candidate: Candidate,
+  baseSha: string | null,
+): Promise<number | null> {
+  if (baseSha === null) return null
+  try {
+    // `per_page=1` trims the commit list to one entry; `behind_by` is a total
+    // and does not depend on it. (The file list cannot be turned off.)
+    return decodeBehindBy(await api.get(`/compare/${baseSha}...${candidate.headSha}?per_page=1`))
   } catch {
     // A comparison this run could not make is not evidence of freshness. The
     // null flows into decideBaseFreshness and becomes an explicit failure.
@@ -294,23 +336,68 @@ export async function evaluate(
   api: Api,
   candidates: Candidate[],
   publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
+  baseSha: string | null,
 ): Promise<Outcome[]> {
   const outcomes: Outcome[] = []
   for (const candidate of candidates) {
-    const verdict = decideBaseFreshness(candidate, await behindBy(api, candidate))
-    try {
-      await publishImpl(candidate, verdict)
-      outcomes.push({ candidate, verdict, published: true })
-    } catch (error: unknown) {
-      outcomes.push({
-        candidate,
-        verdict,
-        published: false,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
+    outcomes.push(await evaluateOne(api, candidate, publishImpl, baseSha))
   }
   return outcomes
+}
+
+async function evaluateOne(
+  api: Api,
+  candidate: Candidate,
+  publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
+  baseSha: string | null,
+): Promise<Outcome> {
+  const verdict = decideBaseFreshness(candidate, await behindBy(api, candidate, baseSha))
+  try {
+    await publishImpl(candidate, verdict)
+    return { candidate, verdict, published: true }
+  } catch (error: unknown) {
+    return {
+      candidate,
+      verdict,
+      published: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+/** Rounds the single-PR path spends chasing a base that keeps moving. */
+export const MAX_SETTLE_ROUNDS = 3
+
+/**
+ * The single-PR path, made safe against the push fan-out.
+ *
+ * The two paths run in different concurrency groups (one per pull request, one
+ * per base), so without this a pull request's run could compute `success`, lose
+ * the race to a base push whose fan-out posts "1 behind", and then POST its
+ * now-stale `success` last — and the latest check run is the one GitHub shows.
+ *
+ * Check runs have no compare-and-swap, so instead the verdict is re-validated
+ * AFTER it is posted: if the base tip it was computed against is no longer the
+ * tip, the base moved while this ran, and the verdict is recomputed and posted
+ * again. Whatever this path posts last was therefore computed against a tip that
+ * was still current after the POST; a fan-out that started later posts after it
+ * and is current too. Bounded, because a base that never settles is the push
+ * path's job, and that path always runs after each push.
+ */
+export async function evaluateSettled(
+  api: Api,
+  candidate: Candidate,
+  publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
+): Promise<Outcome> {
+  let tip = await baseTip(api, candidate.baseRef)
+  let outcome = await evaluateOne(api, candidate, publishImpl, tip)
+  for (let round = 1; round < MAX_SETTLE_ROUNDS && outcome.published && tip !== null; round += 1) {
+    const now = await baseTip(api, candidate.baseRef)
+    if (now === tip) break
+    tip = now
+    outcome = await evaluateOne(api, candidate, publishImpl, tip)
+  }
+  return outcome
 }
 
 function requireEnv(name: string): string {
@@ -325,17 +412,24 @@ async function main(): Promise<void> {
   const api = githubApi(repository, requireEnv('GITHUB_TOKEN'))
   const pullNumber = process.env['PR_NUMBER']
 
-  // One pull request when its own head or base moved; the whole open set for
-  // that base when the base itself moved.
-  const candidates =
-    pullNumber === undefined || pullNumber === ''
-      ? await listCandidates(api, requireEnv('BASE_REF'))
-      : [decodeCandidateResponse(await api.get(`/pulls/${pullNumber}`))]
-
-  const outcomes = await evaluate(api, candidates, async (candidate, verdict) => {
+  const publishImpl = async (candidate: Candidate, verdict: Verdict): Promise<void> => {
     console.log(`#${String(candidate.number)} ${verdict.conclusion}: ${verdict.title}`)
     if (!dryRun) await publish(api, candidate, verdict)
-  })
+  }
+
+  // One pull request when its own head or base moved (PR_NUMBER wins whenever it
+  // is set); the whole open set for that base when the base itself moved. The
+  // fan-out snapshots the base tip once, so every candidate is compared against
+  // the same commit; a later push is a later run in the same concurrency group.
+  let outcomes: Outcome[]
+  if (pullNumber === undefined || pullNumber === '') {
+    const baseRef = requireEnv('BASE_REF')
+    const candidates = await listCandidates(api, baseRef)
+    outcomes = await evaluate(api, candidates, publishImpl, await baseTip(api, baseRef))
+  } else {
+    const candidate = decodeCandidateResponse(await api.get(`/pulls/${pullNumber}`))
+    outcomes = [await evaluateSettled(api, candidate, publishImpl)]
+  }
 
   const stale = outcomes.filter((outcome) => outcome.verdict.conclusion === 'failure').length
   const unpublished = outcomes.filter((outcome) => !outcome.published)
