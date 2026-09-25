@@ -114,6 +114,18 @@ describe('git changes viewer', function () {
 
     const untrackedBadge = await $('.git-change-status-untracked')
     await expect(untrackedBadge).toHaveText('?')
+    // Status letters take the semantic tokens, so they derive per theme (#3065).
+    const statusColors = await browser.execute(() => {
+      const badge = document.querySelector<HTMLElement>('.git-change-status-untracked')
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--success)'
+      document.body.append(probe)
+      const success = getComputedStyle(probe).color
+      probe.remove()
+      return badge ? { badge: getComputedStyle(badge).color, success } : null
+    })
+    assert.ok(statusColors, 'expected the untracked status letter')
+    assert.equal(statusColors.badge, statusColors.success)
 
     // A shell command or external editor does not register the file-viewer
     // fs.watch used by the renderer. Keep the panel open and create such a

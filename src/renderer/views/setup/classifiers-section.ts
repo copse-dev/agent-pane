@@ -317,15 +317,19 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     }
     advanced.append(el('label', {}, 'Timeout (seconds)', timeout))
     form.append(advanced)
-    const save = el('button', { type: 'button', class: 'classifier-save' }, 'Save classifier')
+    const save = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-primary classifier-save' },
+      'Save classifier',
+    )
     const test = el(
       'button',
-      { type: 'button', class: 'classifier-test', disabled: !saved },
+      { type: 'button', class: 'ui-btn ui-btn-secondary classifier-test', disabled: !saved },
       'Test classifier',
     )
     const remove = el(
       'button',
-      { type: 'button', class: 'classifier-remove' },
+      { type: 'button', class: 'ui-btn ui-btn-secondary classifier-remove' },
       saved ? 'Remove classifier' : 'Discard draft',
     )
     const actions = el('div', { class: 'provider-actions' }, save, test, remove)

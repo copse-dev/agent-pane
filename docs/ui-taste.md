@@ -54,6 +54,12 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
     flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
     owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
+  - That includes the small stuff: git status letters, PR CI dots, Monaco diff washes, tool
+    diff stats, and PR state badges all take `--success` / `--warning` / `--danger` / `--info`.
+    Raw hex values gave the app four different greens for "added" and none of them derived
+    for the light theme (#3065). `status-colors.test.ts` holds component stylesheets to the
+    tokens, with a shrink-only allowlist for the measured syntax palette and a few glyph
+    colours.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
 
@@ -1117,6 +1123,9 @@ eval: `tests/e2e/guarded-yolo.e2e.ts`.
 centers both. Always override `flex-direction: row` (and reset `margin-bottom`) on checkbox list
 rows built from `<label>`. Visual eval:
 [`tests/e2e/roadmap-import-picker.e2e.ts`](../tests/e2e/roadmap-import-picker.e2e.ts).
+The SSH host form in Settings hit the same trap from the other side: its own `label { flex-direction:
+column }` outranked `.checkbox-label`, so "Forward SSH agent" stacked its box above the text;
+`.ssh-host-form label.checkbox-label` restores the row (#3065).
 
 ## Worktree storage selection
 

@@ -98,6 +98,17 @@ describe('SSH settings section', () => {
     await browser.execute(() => {
       document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
     })
+    // Form actions are UI-kit buttons and the checkbox sits inline with its label (#3065).
+    await expect(sshSection.$('.ssh-host-save')).toHaveElementClass('ui-btn-primary')
+    await expect(sshSection.$('.ssh-host-clear')).toHaveElementClass('ui-btn-secondary')
+    assert.equal(
+      await browser.execute(() => {
+        const label = document.querySelector<HTMLElement>('.ssh-host-form label.checkbox-label')
+        return label ? getComputedStyle(label).flexDirection : null
+      }),
+      'row',
+      'the Forward SSH agent checkbox must sit beside its label, not above it',
+    )
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-invalid-port.png')
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.ssh-host-clear')?.click()

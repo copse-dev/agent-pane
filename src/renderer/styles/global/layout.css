@@ -1173,17 +1173,17 @@
   font-family: monospace;
 }
 .git-change-status-modified {
-  color: #e2b340;
+  color: var(--warning);
 }
 .git-change-status-added,
 .git-change-status-untracked {
-  color: #73c991;
+  color: var(--success);
 }
 .git-change-status-deleted {
-  color: #f14c4c;
+  color: var(--danger);
 }
 .git-change-status-renamed {
-  color: #75beff;
+  color: var(--info);
 }
 .git-change-path {
   overflow: hidden;
@@ -1295,13 +1295,13 @@
   background: transparent;
 }
 .pr-list-ci-success {
-  background: #73c991;
+  background: var(--success);
 }
 .pr-list-ci-failure {
-  background: #f14c4c;
+  background: var(--danger);
 }
 .pr-list-ci-pending {
-  background: #e2b340;
+  background: var(--warning);
 }
 .pr-list-ci-loading {
   background: transparent;
@@ -1513,9 +1513,11 @@
   color: var(--success);
   border-color: var(--success);
 }
+/* Auto-merge is a state beside Draft and Approved, so it takes a status hue;
+   the accent is interaction emphasis, not status (#3065). */
 .pr-badge-automerge {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--info);
+  border-color: var(--info);
 }
 .pr-viewer-description {
   flex-shrink: 0;
@@ -1583,20 +1585,20 @@
 }
 .git-diff-editor-wrap .line-insert,
 .git-diff-editor-wrap .char-insert {
-  background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;
+  background-color: color-mix(in srgb, var(--success) 28%, transparent) !important;
 }
 .git-diff-editor-wrap .line-delete,
 .git-diff-editor-wrap .char-delete,
 .git-diff-editor-wrap .inline-deleted-text {
-  background-color: color-mix(in srgb, #f85149 26%, transparent) !important;
+  background-color: color-mix(in srgb, var(--danger) 26%, transparent) !important;
 }
 .git-diff-editor-wrap .gutter-insert,
 .git-diff-editor-wrap .inline-added-margin-view-zone {
-  background-color: color-mix(in srgb, #2ea043 22%, transparent) !important;
+  background-color: color-mix(in srgb, var(--success) 22%, transparent) !important;
 }
 .git-diff-editor-wrap .gutter-delete,
 .git-diff-editor-wrap .inline-deleted-margin-view-zone {
-  background-color: color-mix(in srgb, #f85149 22%, transparent) !important;
+  background-color: color-mix(in srgb, var(--danger) 22%, transparent) !important;
 }
 .git-image-diff-wrap {
   flex: 1;

@@ -159,6 +159,9 @@ describe('classifier connections settings', () => {
     assert.equal(lastAuthorization, 'Bearer classifier-e2e-secret')
     assert.match(await host.$('.classifier-status').getText(), /color: red/)
     assert.match(await host.$('.classifier-status').getText(), /kev-fixture-1/)
+    // Classifier actions are UI-kit buttons, not bare text (#3065).
+    await expect(host.$('.classifier-save')).toHaveElementClass('ui-btn-primary')
+    await expect(host.$('.classifier-test')).toHaveElementClass('ui-btn-secondary')
     await saveElementScreenshot('#settings-dialog', 'settings-classifiers.png')
     await host.$('[name="classifierUrl"]').setValue('https://example.com/v1')
     await expect(host.$('.classifier-destination-note')).toBeDisplayed()

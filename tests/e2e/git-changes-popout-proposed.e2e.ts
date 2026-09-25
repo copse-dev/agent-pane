@@ -140,6 +140,8 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
     // Approve the selected diff in the pop-out; both windows fall back to the
     // remaining proposal and must colour it.
     const acceptBtn = await $('#git-diff-viewer-host .diff-accept-btn')
+    // Accept is the kit primary, not a --success fill (#3065).
+    await expect(acceptBtn).toHaveElementClass('ui-btn-primary')
     await acceptBtn.waitForDisplayed({ timeout: 10_000 })
     await acceptBtn.click()
     await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 1, {

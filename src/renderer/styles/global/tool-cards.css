@@ -153,10 +153,10 @@
   text-decoration: underline;
 }
 .tool-stat-add {
-  color: #3dd68c;
+  color: var(--success);
 }
 .tool-stat-del {
-  color: #f07178;
+  color: var(--danger);
 }
 
 /* Turn rollup: italic muted summary — click to expand the flat tool list. */

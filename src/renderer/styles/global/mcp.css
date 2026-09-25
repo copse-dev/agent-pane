@@ -38,13 +38,15 @@
   color: var(--text-muted);
   word-break: break-word;
 }
-.mcp-server-row.mcp-state-error .mcp-server-summary {
+/* State tints the status badge, not the server's name: every other Settings
+   list row keeps a neutral title and carries its state in a badge (#3065). */
+.mcp-server-row.mcp-state-error .mcp-server-summary .ui-inline-status {
   color: var(--error);
 }
-.mcp-server-row.mcp-state-connected .mcp-server-summary {
+.mcp-server-row.mcp-state-connected .mcp-server-summary .ui-inline-status {
   color: var(--success);
 }
-.mcp-server-row.mcp-state-untrusted .mcp-server-summary {
+.mcp-server-row.mcp-state-untrusted .mcp-server-summary .ui-inline-status {
   color: var(--warning, #d29922);
 }
 

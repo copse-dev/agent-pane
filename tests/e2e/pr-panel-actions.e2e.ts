@@ -96,6 +96,17 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await expect(await $('.pr-action-status')).toHaveText(
       expect.stringMatching(/auto-merge \(squash\)/i),
     )
+    // Auto-merge is a state, so it wears --info rather than the pink accent (#3065).
+    const automergeColors = await browser.execute(() => {
+      const badge = document.querySelector<HTMLElement>('.pr-badge-automerge')
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--info)'
+      document.body.append(probe)
+      const info = getComputedStyle(probe).color
+      probe.remove()
+      return badge ? { badge: getComputedStyle(badge).color, info } : null
+    })
+    expect(automergeColors?.badge).toBe(automergeColors?.info)
     await saveElementScreenshot('#pane-files', 'pr-actions-automerge.png')
 
     // Mark ready → the Draft badge disappears.

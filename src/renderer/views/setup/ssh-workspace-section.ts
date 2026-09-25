@@ -68,8 +68,8 @@ export function createSshWorkspaceSection(
     el(
       'div',
       { class: 'provider-actions' },
-      el('button', { type: 'button', class: 'ssh-host-save' }, 'Save host'),
-      el('button', { type: 'button', class: 'ssh-host-clear' }, 'Clear'),
+      el('button', { type: 'button', class: 'ui-btn ui-btn-primary ssh-host-save' }, 'Save host'),
+      el('button', { type: 'button', class: 'ui-btn ui-btn-secondary ssh-host-clear' }, 'Clear'),
     ),
   )
 
@@ -238,7 +238,7 @@ export function createSshWorkspaceSection(
 
   const importBtn = el(
     'button',
-    { type: 'button', class: 'ssh-import-config' },
+    { type: 'button', class: 'ui-btn ui-btn-ghost ssh-import-config' },
     'Import from ~/.ssh/config',
   )
   importBtn.addEventListener('click', () => {

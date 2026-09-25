@@ -224,8 +224,16 @@ export function mountGitChangesPane(
   const conflictBanner = el('div', { class: 'diff-conflict-banner' })
   conflictBanner.hidden = true
   const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
-  const acceptBtn = el('button', { type: 'button', class: 'diff-accept-btn' }, 'Accept')
-  const rejectBtn = el('button', { type: 'button', class: 'diff-reject-btn' }, 'Reject')
+  const acceptBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-primary diff-accept-btn' },
+    'Accept',
+  )
+  const rejectBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary diff-reject-btn' },
+    'Reject',
+  )
   acceptBtn.hidden = true
   rejectBtn.hidden = true
   // A bar below the editor, not an overlay: floating buttons sat on top of the
