@@ -99,7 +99,13 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
     await roadmapButton.click()
     await $('.roadmap-new-btn').waitForDisplayed({ timeout: 10_000 })
     await $('.roadmap-new-btn').click()
-    await $('.roadmap-save-btn').waitForDisplayed({ timeout: 10_000 })
+    const saveButton = $('.roadmap-save-btn')
+    await saveButton.waitForDisplayed({ timeout: 10_000 })
+    assert.equal(
+      await saveButton.getText(),
+      'Save',
+      'the real roadmap Save label should be visible',
+    )
 
     async function measureAndCapture(theme: 'light' | 'dark') {
       await browser.execute((mode) => {
@@ -110,7 +116,13 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
         '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
         `light-contrast-changes-badge-${theme}.png`,
       )
-      await saveElementScreenshot('.roadmap-save-btn', `light-contrast-save-button-${theme}.png`)
+      // Capture the containing action row: Chromium's bare-element crop can
+      // omit glyphs after a live theme swap, while the row keeps the real
+      // button and enough surrounding context to review its rendered label.
+      await saveElementScreenshot(
+        '.roadmap-form .memories-actions',
+        `light-contrast-save-button-${theme}.png`,
+      )
       const badge = await browser.execute(
         controlContrast,
         '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
