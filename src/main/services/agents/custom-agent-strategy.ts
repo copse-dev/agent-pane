@@ -1,3 +1,4 @@
+import { TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
 import type { LLMTool, UserContent } from '@shared/types'
 import type { AgentMetadata, AgentSource } from '@shared/types/agents.ts'
 
@@ -39,18 +40,64 @@ export const CUSTOM_AGENT_DEFAULT_MAX_STEPS = 12
  */
 export const CUSTOM_AGENT_MAX_STEPS_CEILING = 30
 
-const CUSTOM_AGENT_MODEL_ALIASES: Readonly<Record<string, string>> = {
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-8',
-  haiku: 'claude-haiku-4-5',
-  fable: 'claude-fable-5',
+/**
+ * Claude Code's `model:` aliases. Each names a model family, and Claude Code
+ * resolves it to that family's current model — so the alias must follow the
+ * catalog rather than pin an id, or one definition runs on different models in
+ * the two products.
+ */
+const CLAUDE_MODEL_FAMILY_ALIASES: readonly string[] = ['sonnet', 'opus', 'haiku', 'fable']
+
+/**
+ * The version segments of a `claude-<family>-<n>[-<n>…]` id, or null when the
+ * id is another family or not a plain versioned id. Segments longer than two
+ * digits are dated snapshots (`claude-opus-5-20260101`), which an alias never
+ * means.
+ */
+function claudeFamilyVersion(modelId: string, family: string): number[] | null {
+  const prefix = `claude-${family}-`
+  if (!modelId.startsWith(prefix)) return null
+  const segments = modelId.slice(prefix.length).split('-')
+  if (!segments.every((segment) => /^\d{1,2}$/.test(segment))) return null
+  return segments.map(Number)
+}
+
+function compareVersions(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+/**
+ * The newest model of a Claude family among `models`, by version number
+ * (`claude-fable-5-1` > `claude-fable-5` > `claude-fable-4-8`), or null when
+ * the list has none.
+ */
+export function newestClaudeModelInFamily(
+  family: string,
+  models: readonly string[],
+): string | null {
+  let newest: { id: string; version: number[] } | null = null
+  for (const id of models) {
+    const version = claudeFamilyVersion(id, family)
+    if (version && (!newest || compareVersions(version, newest.version) > 0)) {
+      newest = { id, version }
+    }
+  }
+  return newest?.id ?? null
 }
 
 /** Resolve Claude/Cursor agent-model shorthand, or inherit the parent model. */
 export function resolveCustomAgentModel(model: string, parentModel: string): string {
   const requested = model.trim()
-  if (requested === '' || requested.toLowerCase() === 'inherit') return parentModel
-  return CUSTOM_AGENT_MODEL_ALIASES[requested.toLowerCase()] ?? requested
+  const alias = requested.toLowerCase()
+  if (alias === '' || alias === 'inherit') return parentModel
+  if (!CLAUDE_MODEL_FAMILY_ALIASES.includes(alias)) return requested
+  // A catalog without the family leaves the alias as written, so building its
+  // provider fails visibly instead of silently running some other model.
+  return newestClaudeModelInFamily(alias, TRACKED_MODELS) ?? requested
 }
 
 /**

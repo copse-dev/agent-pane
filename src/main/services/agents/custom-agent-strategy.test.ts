@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
 import type { LLMTool } from '@shared/types'
 import {
   CUSTOM_AGENT_DEFAULT_MAX_STEPS,
@@ -8,6 +9,7 @@ import {
   buildCustomAgentSystemPrompt,
   buildCustomAgentTask,
   customAgentInvocationTask,
+  newestClaudeModelInFamily,
   resolveCustomAgentModel,
   resolveCustomAgentMaxSteps,
   resolveCustomAgentTools,
@@ -134,10 +136,45 @@ describe('resolveCustomAgentModel', () => {
     assert.equal(resolveCustomAgentModel('', 'gpt-5'), 'gpt-5')
   })
 
-  it('maps ecosystem aliases and preserves full model ids', () => {
-    assert.equal(resolveCustomAgentModel('sonnet', 'gpt-5'), 'claude-sonnet-4-6')
-    assert.equal(resolveCustomAgentModel('OPUS', 'gpt-5'), 'claude-opus-4-8')
+  it('resolves each alias to the newest catalog model of its family', () => {
+    for (const alias of ['sonnet', 'opus', 'haiku', 'fable']) {
+      const resolved = resolveCustomAgentModel(alias, 'gpt-5')
+      assert.ok(
+        TRACKED_MODELS.some((id) => id === resolved),
+        `${alias} → ${resolved} must be a catalog model`,
+      )
+      assert.equal(resolved, newestClaudeModelInFamily(alias, TRACKED_MODELS))
+    }
+    // The pins this replaced: the catalog already carries newer models.
+    assert.notEqual(resolveCustomAgentModel('sonnet', 'gpt-5'), 'claude-sonnet-4-6')
+    assert.notEqual(resolveCustomAgentModel('opus', 'gpt-5'), 'claude-opus-4-8')
+  })
+
+  it('matches aliases case-insensitively and preserves full model ids', () => {
+    assert.equal(resolveCustomAgentModel('OPUS', 'gpt-5'), resolveCustomAgentModel('opus', 'gpt-5'))
     assert.equal(resolveCustomAgentModel('lmstudio:qwen', 'gpt-5'), 'lmstudio:qwen')
+    assert.equal(resolveCustomAgentModel('claude-sonnet-4-6', 'gpt-5'), 'claude-sonnet-4-6')
+    assert.equal(resolveCustomAgentModel('gpt-5.5', 'claude-opus-5'), 'gpt-5.5')
+  })
+})
+
+describe('newestClaudeModelInFamily', () => {
+  it('orders by version number, not by list position or string order', () => {
+    const models = ['claude-fable-5', 'claude-fable-4-8', 'claude-fable-5-1', 'claude-fable-10']
+    assert.equal(newestClaudeModelInFamily('fable', models), 'claude-fable-10')
+    assert.equal(newestClaudeModelInFamily('fable', models.slice(0, 3)), 'claude-fable-5-1')
+  })
+
+  it('ignores other families, look-alike names and dated snapshots', () => {
+    const models = [
+      'claude-opus-4-8',
+      'claude-opus-5-20260101',
+      'claude-opusx-9',
+      'claude-sonnet-9',
+      'openrouter:anthropic/claude-opus-9',
+    ]
+    assert.equal(newestClaudeModelInFamily('opus', models), 'claude-opus-4-8')
+    assert.equal(newestClaudeModelInFamily('haiku', models), null)
   })
 })
 
