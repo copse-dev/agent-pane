@@ -144,6 +144,6 @@ describe('settings tool permissions', () => {
       await reopenedCopseGroup.$('summary').click()
     }
     await reopenedCanvasGroup.scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('#settings-dialog', 'settings-tool-permissions.png')
+    await saveElementScreenshot('#settings-dialog', 'settings-mcp-permission-group-blocked.png')
   })
 })
