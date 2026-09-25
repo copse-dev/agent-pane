@@ -8,6 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Copse — AI coding that stays on your machine</title>
     <link rel="icon" href="brand-mark.svg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
     <!-- Markdown twin of this page, for agents that would rather read the copy
          than the chrome. Generated from this file by scripts/sync-site-markdown.mts
          (`npm run site:md`); never edited by hand. -->
@@ -45,7 +46,20 @@
         }
       }
     </script>
+    <!-- Firefox paints whatever the parser has built while a <head> stylesheet
+         is still loading, so a slow styles.css used to flash the unstyled page, with
+         viewport-sized SVGs. The inline script waits for the stylesheet before
+         it runs, which holds the parser in <head>; the only paint in that gap
+         is this forest background. Keep it in step with .marketing-root. -->
+    <style>
+      html {
+        background: #002e2b;
+      }
+    </style>
     <link rel="stylesheet" href="styles.css" />
+    <script>
+      0
+    </script>
     <meta name="robots" content="noindex, nofollow" />
   </head>
   <body class="marketing-site">
@@ -72,19 +86,37 @@
           <div class="hero-copy">
             <div class="hero-badges" aria-label="Copse highlights">
               <span class="mode-source-live-only">
-                <svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <svg
+                  class="badge-icon"
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  aria-hidden="true"
+                >
                   <path d="m3 8.5 3 3 7-7" />
                 </svg>
                 Free &amp; open source
               </span>
               <span class="mode-source-private-only" hidden>
-                <svg class="badge-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <svg
+                  class="badge-icon"
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  aria-hidden="true"
+                >
                   <path d="m3 8.5 3 3 7-7" />
                 </svg>
                 Free public beta
               </span>
               <span>
-                <svg class="badge-icon badge-desktop" viewBox="0 0 16 16" aria-hidden="true">
+                <svg
+                  class="badge-icon badge-desktop"
+                  viewBox="0 0 16 16"
+                  width="14"
+                  height="14"
+                  aria-hidden="true"
+                >
                   <rect x="2.5" y="3" width="11" height="8" rx="1" />
                   <path d="M1.5 13h13" />
                 </svg>
@@ -131,7 +163,13 @@
               target="_blank"
               rel="noreferrer"
             >
-              <svg class="hero-demo-popout-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <svg
+                class="hero-demo-popout-icon"
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                aria-hidden="true"
+              >
                 <rect x="1.5" y="5.5" width="9" height="9" rx="1" />
                 <rect x="5.5" y="1.5" width="9" height="9" rx="1" />
               </svg>
