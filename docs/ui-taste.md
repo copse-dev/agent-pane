@@ -691,6 +691,14 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
 
   When a tool settles, drop the icon; do not keep animating it.
 
+- **The subagent glyph is the one exception to "nothing precedes the label".** A subagent row
+  reads exactly like a parent tool row once it settles collapsed (#2452), so
+  `.tool-subagent-marker` sits in flow ahead of `.tool-name` inside the `<summary>`, where it
+  survives collapse. The subagent label therefore starts one glyph (about 20px) right of its
+  model badge, summary preview and neighbouring tool rows; that indent is the mark, not drift.
+  Keep it static (never the activity spiral), give it `role="img"` with `aria-label="Subagent"`,
+  and do not add other leading glyphs to any row.
+
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on

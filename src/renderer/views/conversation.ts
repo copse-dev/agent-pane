@@ -837,7 +837,14 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
 function subagentHeaderMarker(): HTMLElement {
   return el(
     'span',
-    { class: 'tool-subagent-marker', 'aria-label': 'Subagent', 'data-tooltip': 'Subagent' },
+    // A named generic `span` is not announced (ARIA 1.2 prohibits naming it),
+    // and the SVG inside is aria-hidden: `img` makes "Subagent" the glyph's name.
+    {
+      class: 'tool-subagent-marker',
+      role: 'img',
+      'aria-label': 'Subagent',
+      'data-tooltip': 'Subagent',
+    },
     gitBranchIcon('ui-icon ui-icon-sm'),
   )
 }

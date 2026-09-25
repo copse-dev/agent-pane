@@ -97,6 +97,8 @@ describe('subagent badge and footer model label', () => {
     const marker = await card.$('summary.tool-card-header .tool-subagent-marker')
     await expect(marker).toBeDisplayed()
     await expect(marker).toHaveAttribute('aria-label', 'Subagent')
+    await expect(marker).toHaveAttribute('role', 'img')
+    await expect(marker).toHaveComputedLabel('Subagent')
 
     await saveElementScreenshot('.tool-card-subagent', 'subagent-collapsed-marker.png')
   })
