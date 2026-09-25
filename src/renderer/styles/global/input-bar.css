@@ -915,6 +915,29 @@
 .footer-branch-status.is-mismatch.is-link {
   color: var(--warning);
 }
+.footer-branch-status.is-detached {
+  color: var(--warning);
+}
+.branch-reattach-button {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 6px;
+  cursor: pointer;
+}
+.branch-reattach-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.branch-reattach-button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+.branch-reattach-button[hidden] {
+  display: none;
+}
 .footer-branch-label,
 .branch-picker-label {
   overflow: hidden;

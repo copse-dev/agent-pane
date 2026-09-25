@@ -178,7 +178,29 @@ describe('footer branch status for a detached thread worktree', () => {
     await expect(branchBtn).toBeDisplayed()
     await expect(branchBtn.$('.footer-branch-label')).toHaveText(detachedBranch)
     await expect($('.toast-error')).not.toExist()
+    await expect(branchBtn).toHaveElementClass('is-detached')
+    const reattachBtn = await $('.branch-reattach-button')
+    await expect(reattachBtn).toBeDisplayed()
+    await expect(reattachBtn).toBeEnabled()
+    await expect(reattachBtn).toHaveAttribute(
+      'aria-label',
+      `Reattach checkout to ${detachedBranch}`,
+    )
 
     await saveElementScreenshot('#input-bar', 'footer-branch-detached-worktree.png')
+  })
+
+  it('reattaches the checkout to its branch from the footer', async () => {
+    await $('.branch-reattach-button').click()
+
+    await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 10_000 })
+    const branchBtn = await $('.footer-branch-status')
+    await expect(branchBtn).not.toHaveElementClass('is-detached')
+    await expect(branchBtn.$('.footer-branch-label')).toHaveText(detachedBranch)
+    await expect($('.toast-error')).not.toExist()
+    // The repair is real: Git itself reports the checkout back on the branch.
+    expect(git(worktreeRoot, ['symbolic-ref', '--short', 'HEAD'])).toBe(detachedBranch)
+
+    await saveElementScreenshot('#input-bar', 'footer-branch-reattached-worktree.png')
   })
 })

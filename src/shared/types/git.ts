@@ -74,6 +74,24 @@ export interface GitBranchStatus {
   pr: GitOpenPr | null
 }
 
+/**
+ * Whether an isolated thread checkout is still on its branch. `recovery` names
+ * a rebase or cherry-pick Git left in progress: reattaching then would discard
+ * the half-applied state, so the user finishes or aborts it in the terminal.
+ */
+export type ThreadWorktreeAttachment =
+  | { state: 'attached' }
+  | { state: 'detached'; branch: string; recovery: 'rebase' | 'cherry-pick' | null }
+
+/** What `reattachWorktree` did to put the checkout back on its branch. */
+export interface ThreadWorktreeReattachResult {
+  branch: string
+  /** The branch moved forward to keep commits made while HEAD was detached. */
+  keptDetachedCommits: boolean
+  /** The branch's previous tip, saved under this name because HEAD had diverged from it. */
+  backupBranch: string | null
+}
+
 /** Repository snapshot captured at a prompt boundary (issue: spine prompt hash / dirty state). */
 export interface GitPromptState {
   /** Full HEAD commit SHA the prompt was sent against, or null outside a repo / no commits yet. */

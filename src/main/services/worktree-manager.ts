@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import type { ThreadWorktreeAttachment, ThreadWorktreeReattachResult } from '@shared/types/git.ts'
 import {
   initialThreadWorktreeBranchName,
   isInitialThreadWorktreeBranchName,
@@ -998,21 +999,31 @@ type ValidatedThreadWorktreeState = Omit<ValidatedThreadWorktree, 'branch'> & {
   branch: string | null
 }
 
-const GIT_RECOVERY_MARKERS = ['rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD'] as const
+const GIT_RECOVERY_MARKERS = [
+  ['rebase-merge', 'rebase'],
+  ['rebase-apply', 'rebase'],
+  ['CHERRY_PICK_HEAD', 'cherry-pick'],
+] as const
 
-async function hasActiveGitRecovery(gitDir: string): Promise<boolean> {
+type GitRecoveryKind = (typeof GIT_RECOVERY_MARKERS)[number][1]
+
+async function activeGitRecovery(gitDir: string): Promise<GitRecoveryKind | null> {
   const markers = await Promise.all(
-    GIT_RECOVERY_MARKERS.map(async (marker) => {
+    GIT_RECOVERY_MARKERS.map(async ([marker, kind]) => {
       try {
         await lstat(join(gitDir, marker))
-        return true
+        return kind
       } catch (error) {
-        if (ownErrorCode(error) === 'ENOENT') return false
+        if (ownErrorCode(error) === 'ENOENT') return null
         throw error
       }
     }),
   )
-  return markers.some(Boolean)
+  return markers.find((kind) => kind !== null) ?? null
+}
+
+async function hasActiveGitRecovery(gitDir: string): Promise<boolean> {
+  return (await activeGitRecovery(gitDir)) !== null
 }
 
 /** Reconstruct and validate persisted metadata; failure never falls back to shared mode. */
@@ -1143,6 +1154,101 @@ export async function validateThreadWorktreeRecovery(
     releaseWorktreeRoot(validated.root)
     throw error
   }
+}
+
+/**
+ * Report whether the thread checkout is on a branch without throwing for a
+ * detached HEAD, so the renderer can offer `reattachThreadWorktree` instead of
+ * a dead-end error.
+ */
+export async function inspectThreadWorktreeAttachment(
+  input: ValidateWorktreeInput,
+): Promise<ThreadWorktreeAttachment> {
+  const validated = await validateThreadWorktreeState(input)
+  if (validated.branch) return { state: 'attached' }
+  try {
+    return {
+      state: 'detached',
+      branch: input.worktree.branch,
+      recovery: await activeGitRecovery(validated.gitDir),
+    }
+  } finally {
+    releaseWorktreeRoot(validated.root)
+  }
+}
+
+async function isAncestor(cwd: string, ancestor: string, descendant: string): Promise<boolean> {
+  const result = await git(cwd, ['merge-base', '--is-ancestor', ancestor, descendant])
+  if (result.code === 0) return true
+  if (result.code === 1) return false
+  throw commandFailure('Cannot compare thread worktree commits', result)
+}
+
+/**
+ * Put a detached thread checkout back on its recorded branch without losing
+ * work. The files on disk are what the user and agent were looking at, so the
+ * branch follows HEAD whenever HEAD holds commits the branch lacks; a diverged
+ * branch tip is first saved under a backup branch. A HEAD already contained in
+ * the branch simply switches back to it. Git's own refusal protects
+ * uncommitted changes, and an in-progress rebase or cherry-pick is refused
+ * because switching away would strand its half-applied state.
+ */
+export async function reattachThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<ThreadWorktreeReattachResult> {
+  const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    const validated = await validateThreadWorktreeState(input)
+    try {
+      if (validated.branch) throw new Error('Thread worktree is already on a branch')
+      const recovery = await activeGitRecovery(validated.gitDir)
+      if (recovery) {
+        throw new Error(
+          `A ${recovery} is still in progress in this checkout. Finish or abort it in the thread terminal, then reattach.`,
+        )
+      }
+      const branch = input.worktree.branch
+      const checkout = validated.path
+      await assertBranchName(checkout, branch, 'Thread branch')
+      const head = await resolveCommit(checkout, 'HEAD')
+      if (!head) throw new Error('Cannot resolve the detached thread worktree HEAD')
+      const tip = await resolveCommit(checkout, branchRef(branch))
+
+      const switchTo = async (args: string[]): Promise<void> => {
+        const result = await git(checkout, ['switch', ...args])
+        if (result.code !== 0) {
+          throw commandFailure('Cannot reattach thread worktree', result, branch)
+        }
+      }
+
+      if (!tip) {
+        await switchTo(['-c', branch])
+        return { branch, keptDetachedCommits: true, backupBranch: null }
+      }
+      if (tip === head || (await isAncestor(checkout, head, tip))) {
+        await switchTo([branch])
+        return { branch, keptDetachedCommits: false, backupBranch: null }
+      }
+      if (await isAncestor(checkout, tip, head)) {
+        await switchTo(['-C', branch])
+        return { branch, keptDetachedCommits: true, backupBranch: null }
+      }
+      const backupBranch = `${branch}-before-reattach-${tip.slice(0, 7)}`
+      await assertBranchName(checkout, backupBranch, 'Backup branch')
+      if (await branchExists(checkout, backupBranch)) {
+        throw new Error(
+          `Cannot reattach: backup branch "${backupBranch}" already exists. Rename or delete it, then retry.`,
+        )
+      }
+      const backup = await git(checkout, ['branch', backupBranch, tip])
+      if (backup.code !== 0) throw commandFailure('Cannot save the thread branch tip', backup)
+      await switchTo(['-C', branch])
+      return { branch, keptDetachedCommits: true, backupBranch }
+    } catch (error) {
+      releaseWorktreeRoot(validated.root)
+      throw error
+    }
+  })
 }
 
 export async function listProjectWorktrees(projectRoot: string): Promise<WorktreeRecord[]> {

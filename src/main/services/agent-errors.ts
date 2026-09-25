@@ -425,7 +425,7 @@ export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailu
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
   if (err instanceof ThreadWorktreeDetachedError) {
-    return `This thread's checkout is detached from its branch. Your files are preserved. Reattach it to \`${err.branch}\`, then retry.`
+    return `This thread's checkout is detached from its branch. Your files are preserved. Use **Reattach** next to the branch name below the composer to put it back on \`${err.branch}\`, then retry.`
   }
 
   const rpc = findJsonRpcError(err)

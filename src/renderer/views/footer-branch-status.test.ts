@@ -111,6 +111,117 @@ describe('footer branch status', () => {
     assert.equal(document.querySelector('.toast-error'), null)
   })
 
+  describe('a detached thread checkout', () => {
+    function mountDetached(git: Partial<ApiClient['git']>): HTMLElement {
+      const store = createStore({
+        workspaceRoot: '/repo',
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread('copse/thread-branch', true)],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const base = createApi({ currentBranch: null, pr: null })
+      mountFooterBranchStatus(host, store, { ...base, git: { ...base['git'], ...git } })
+      return host
+    }
+
+    const detachedStatus = async (): Promise<never> => {
+      throw new Error('Thread worktree is on a detached HEAD')
+    }
+
+    it('offers a reattach that puts the checkout back on its branch', async () => {
+      let attached = false
+      const reattachCalls: string[] = []
+      const host = mountDetached({
+        branchStatus: async () => {
+          if (!attached) return detachedStatus()
+          return { currentBranch: 'copse/thread-branch', pr: null }
+        },
+        worktreeAttachment: async () =>
+          attached
+            ? { state: 'attached' }
+            : { state: 'detached', branch: 'copse/thread-branch', recovery: null },
+        reattachWorktree: async (projectId, threadId) => {
+          reattachCalls.push(`${projectId}/${threadId}`)
+          attached = true
+          return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+        },
+      })
+      await settle()
+
+      const trigger = qsRequired<HTMLButtonElement>(host, '.footer-branch-status')
+      const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(reattach.hidden, false)
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.getAttribute('aria-label'), 'Reattach checkout to copse/thread-branch')
+      assert.ok(trigger.classList.contains('is-detached'))
+      assert.match(trigger.title, /detached from copse\/thread-branch\. Your files are preserved/)
+
+      reattach.click()
+      await settle()
+      await settle()
+
+      assert.deepEqual(reattachCalls, ['project-1/thread-1'])
+      assert.match(
+        document.querySelector('.toast-info')?.textContent ?? '',
+        /Reattached to copse\/thread-branch/,
+      )
+      assert.equal(reattach.hidden, true)
+      assert.equal(trigger.classList.contains('is-detached'), false)
+    })
+
+    it('disables reattach while a rebase is still in progress', async () => {
+      let reattachCalled = false
+      const host = mountDetached({
+        branchStatus: detachedStatus,
+        worktreeAttachment: async () => ({
+          state: 'detached',
+          branch: 'copse/thread-branch',
+          recovery: 'rebase',
+        }),
+        reattachWorktree: async () => {
+          reattachCalled = true
+          return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+        },
+      })
+      await settle()
+
+      const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(reattach.hidden, false)
+      assert.equal(reattach.disabled, true)
+      assert.match(reattach.title, /a rebase is still in progress\. Finish or abort it/)
+      reattach.click()
+      await settle()
+      assert.equal(reattachCalled, false)
+    })
+
+    it('keeps the button and reports the failure when git refuses to reattach', async () => {
+      const host = mountDetached({
+        branchStatus: detachedStatus,
+        worktreeAttachment: async () => ({
+          state: 'detached',
+          branch: 'copse/thread-branch',
+          recovery: null,
+        }),
+        reattachWorktree: async () => {
+          throw new Error('Cannot reattach thread worktree: local changes would be overwritten')
+        },
+      })
+      await settle()
+
+      const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      reattach.click()
+      await settle()
+      await settle()
+
+      assert.ok(document.querySelector('.toast-error'))
+      assert.equal(reattach.hidden, false)
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.textContent, 'Reattach')
+    })
+  })
+
   it('keeps a readable branch status when only the branch listing fails', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
