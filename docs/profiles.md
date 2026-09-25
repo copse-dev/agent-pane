@@ -114,8 +114,9 @@ Two consequences:
   credentials.
 - **With default storage, keys do not survive a move to another machine or OS user.** The ciphertext
   copies fine; the key that opens it does not. After restoring a profile
-  elsewhere, stored keys must be re-entered. The optional device-bound vault below
-  can instead restore saved secrets using a separately backed-up recovery key.
+  elsewhere, stored keys must be re-entered. On supported signed macOS releases,
+  where saved-secret encryption is standard (below), a separately backed-up
+  recovery key can restore them instead.
 
 Run `/checkup` after restoring a profile. A key that cannot be decrypted is
 reported as an error against the provider it belongs to. Re-enter it in
@@ -150,12 +151,12 @@ What needs attention:
 | Knowledge, long tasks, roadmap review | Survive — keyed by project id                                                                                 |
 | Projects (`config.json`)              | Record absolute paths. A path that no longer exists is quarantined, not deleted; relocate it from the sidebar |
 | Worktrees                             | Git records absolute paths inside each linked checkout; expect to recreate them                               |
-| Browser sessions                      | Cookies use Chromium’s OS storage and are outside the optional saved-secret vault                             |
+| Browser sessions                      | Cookies use Chromium’s OS storage and are outside saved-secret encryption                                     |
 | Semantic-search index                 | Rebuilt on demand                                                                                             |
 
 So the practical restore sequence is: copy `~/.copse/` across, relocate each
 project onto its path on the new machine, and re-enter your API keys (or restore
-access with your recovery key if you enabled the optional vault). Threads
+access with your recovery key on a profile that uses saved-secret encryption). Threads
 and per-project notes follow the project once it is relocated; browser logins
 and the search index rebuild themselves.
 

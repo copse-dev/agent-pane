@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +12,7 @@ import {
   type VaultManifest,
 } from '@copse/store-kit/profile-vault-crypto.ts'
 import { readVaultManifest } from '@copse/store-kit/profile-vault-files.ts'
+import { registerVaultProfileClient } from '@copse/store-kit/profile-vault-access.ts'
 import type { NativeVaultRequest, NativeVaultReply } from '@copse/store-kit/profile-vault-native.ts'
 import { AppProfileVault, type ProfileVaultDependencies } from './profile-vault.ts'
 import type { SecretCipher } from './secret-cipher.ts'
@@ -161,9 +162,54 @@ describe('application vault', () => {
       await assert.rejects(vault.initialize())
       assert.equal(readVaultManifest(f.path), null)
       assert.equal(readFileSync(join(f.path, 'settings.json'), 'utf8'), original)
-      assert.equal((await vault.status()).migrationFailed, true)
+      const status = await vault.status()
+      assert.equal(status.migrationFailed, true)
+      assert.equal(status.migrationBlocker, 'saved API key “openai”')
       assert.equal(f.restarts(), 0)
-      assert.equal(f.calls.filter((call) => call.operation === 'create').length, 1)
+      // The inventory runs first, so no native device key (Keychain item) is orphaned.
+      assert.equal(f.calls.filter((call) => call.operation === 'create').length, 0)
+      await assert.rejects(vault.migrate(), { reason: 'corrupt' })
+      assert.equal(f.calls.filter((call) => call.operation === 'create').length, 0)
+      assert.equal(existsSync(join(f.path, '.vault-maintenance')), false)
+    } finally {
+      f.dispose()
+    }
+  })
+  it('names a symlinked store as the migration blocker before creating a device key', async () => {
+    const f = fixture()
+    try {
+      const real = join(f.path, 'real-settings.json')
+      writeFileSync(real, JSON.stringify({}))
+      symlinkSync(real, join(f.path, 'settings.json'))
+      const vault = new AppProfileVault(f.deps)
+      await assert.rejects(vault.initialize(), { reason: 'corrupt' })
+      assert.match((await vault.status()).migrationBlocker ?? '', /^settings\.json/)
+      assert.ok(!f.calls.some((call) => call.operation === 'create'))
+    } finally {
+      f.dispose()
+    }
+  })
+  it('keeps the unlocked session when recovery cannot acquire the maintenance gate', async () => {
+    const f = fixture()
+    try {
+      f.seed()
+      const vault = new AppProfileVault(f.deps)
+      await vault.initialize()
+      assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      const releaseClient = registerVaultProfileClient(f.path)
+      try {
+        await assert.rejects(vault.recover(), /Close headless/)
+      } finally {
+        releaseClient()
+      }
+      assert.ok(!f.calls.some((call) => call.operation === 'recover'))
+      assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      const identity = { store: 'api-key', record: 'openai' } as const
+      assert.equal(
+        vault.cipher.decryptString(vault.cipher.encryptString('still open', identity), identity),
+        'still open',
+      )
+      vault.dispose()
     } finally {
       f.dispose()
     }
@@ -240,13 +286,20 @@ describe('application vault', () => {
           return f.deps.invoke(request)
         },
       })
+      let unlockedNotifications = 0
+      vault.onUnlocked(() => {
+        unlockedNotifications++
+      })
       await assert.rejects(vault.initialize(), { reason: 'cancelled' })
       await assert.rejects(vault.initialize(), { reason: 'cancelled' })
       assert.equal(attempts, 1)
       assert.equal(vault.cipher.isEncryptionAvailable(), false)
+      assert.equal(unlockedNotifications, 0)
       await vault.unlock()
       assert.equal(attempts, 2)
       assert.equal(vault.cipher.isEncryptionAvailable(), true)
+      // Startup readers that saw "locked" re-check their credentials now.
+      assert.equal(unlockedNotifications, 1)
       vault.dispose()
     } finally {
       f.dispose()

@@ -209,6 +209,14 @@ jobs:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
+          # Packaged workers run on a separate, checksum-verified Node (the app's
+          # RunAsNode fuse is off). build.mts needs the runner's architecture and
+          # after-pack.cjs the target's, so prepare both.
+          pnpm run prepare:node
+          # Still open: build:release also requires the signed
+          # native vault helper (`pnpm run prepare:vault --identity …`). That needs
+          # the Developer ID identity in a keychain before this step; CSC_LINK is
+          # only imported by electron-builder during packaging. See PR #2658.
           pnpm run build:release
           # A clean checkout does not contain the generated .icns. Without this
           # step electron-builder falls back to Electron's icon for the app and

@@ -12,7 +12,11 @@ import {
   VaultError,
   type VaultManifest,
 } from './profile-vault-crypto.ts'
-import { migrateVaultStores } from './profile-vault-migration.ts'
+import {
+  inventoryVaultStores,
+  migrateVaultStores,
+  VaultMigrationBlockedError,
+} from './profile-vault-migration.ts'
 import {
   assertVaultProfileState,
   commitVaultMigration,
@@ -88,6 +92,43 @@ describe('profile vault migration', () => {
       assert.deepEqual(settings, before)
     }
     assert.throws(() => migrateVaultStores({ apiKey: [] }, {}, legacy, key, manifest), VaultError)
+  })
+  it('inventories every record read-only and names the record that blocks migration', () => {
+    const { legacy, sealed, plain } = fixture()
+    const settings = { apiKey: { openai: sealed, custom: plain }, vncPassword: { target: sealed } }
+    const ssh = { hosts: { machine: { prompt: sealed } } }
+    const before = structuredClone({ settings, ssh })
+    assert.equal(inventoryVaultStores(settings, ssh, legacy), 4)
+    assert.deepEqual({ settings, ssh }, before)
+    const cases: [unknown, unknown, RegExp][] = [
+      [
+        { apiKey: { openai: sealed, anthropic: { v: 1, enc: 'broken' } } },
+        {},
+        /API key “anthropic”/,
+      ],
+      [
+        { vncPassword: { target: { v: 1, enc: plain.enc, plain: true } } },
+        {},
+        /VNC password for “target”/,
+      ],
+      [
+        {},
+        { hosts: { machine: { prompt: { v: 1, enc: sealed.enc.slice(4) } } } },
+        /SSH credential for host “machine”/,
+      ],
+      [{ apiKey: [] }, {}, /settings\.json “apiKey”/],
+    ]
+    for (const [badSettings, badSsh, label] of cases) {
+      assert.throws(
+        () => inventoryVaultStores(badSettings, badSsh, legacy),
+        (error: unknown) =>
+          error instanceof VaultMigrationBlockedError &&
+          error.reason === 'corrupt' &&
+          label.test(error.record) &&
+          !error.record.includes('synthetic') &&
+          !error.record.includes('plaintext-fixture'),
+      )
+    }
   })
   it('commits ciphertext and manifest, retaining all credential counts', () => {
     const { key, manifest, legacy, plain } = fixture()
