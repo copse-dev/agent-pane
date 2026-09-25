@@ -12,14 +12,20 @@ each with 50 thread-adapted commands and 50 controlled cases. Each model receive
 two frozen prompts. The holdout labels are 71 sandbox / 29 external, so an
 always-sandbox predictor already agrees with 71/100 labels.
 
-| Evaluator                              | Dev-selected prompt | Holdout correct / 100 | Wrong sandbox / 29 external | Wrong external / 71 sandbox | Fitted policy accepted / wrong |
-| -------------------------------------- | ------------------- | --------------------: | --------------------------: | --------------------------: | -----------------------------: |
-| Deterministic scope, historical source | Not applicable      |                    87 |                           3 |                          10 |        Not a probability model |
-| Actual SemIf                           | Explicit            |                    54 |                           6 |                          40 |            4 / 0, all external |
-| Laya typed-decisions                   | Original            |                    71 |                          29 |                           0 |                          0 / 0 |
-| Laya base                              | Original            |                    71 |                          29 |                           0 |                          0 / 0 |
-| Kev 0.5B                               | Explicit            |                    29 |                           0 |                          71 |                          5 / 2 |
-| OpenJev NLI                            | Explicit            |                    75 |                          20 |                           5 |      No categorical confidence |
+| Evaluator                              | Dev-selected prompt | Holdout correct / 100 | Wrong sandbox / 29 external | Wrong external / 71 sandbox |               Fitted policy accepted / wrong |
+| -------------------------------------- | ------------------- | --------------------: | --------------------------: | --------------------------: | -------------------------------------------: |
+| Deterministic scope, historical source | Not applicable      |                    87 |                           3 |                          10 |                      Not a probability model |
+| Actual SemIf                           | Explicit            |                    54 |                           6 |                          40 |                          4 / 0, all external |
+| Laya typed-decisions                   | Original            |                    71 |                          29 |                           0 |                                        0 / 0 |
+| Laya base                              | Original            |                    71 |                          29 |                           0 |                                        0 / 0 |
+| Kev 0.5B                               | Explicit            |                    29 |                           0 |                          71 |                                        5 / 2 |
+| OpenJev NLI                            | Explicit            |                    75 |                          20 |                           5 |                    No categorical confidence |
+| decider-4b v2 (2026-09-25)             | Explicit            |                    87 |                          13 |                           0 | Dev-fitted 0.09 → 64 on holdout; not adopted |
+
+decider-4b v2 matches the deterministic count only because the holdout is 71%
+sandbox: it misses 13 of 29 external commands, mostly outside paths passed as
+arguments, and its balanced accuracy is 0.776 against the deterministic check's
+0.878. See [its run notes](results/2026-09-25/decider-4b-v2/README.md).
 
 This table uses the prompt selected on development data, not each model's best
 holdout prompt. See [all prompt results](RESULTS.md), the
