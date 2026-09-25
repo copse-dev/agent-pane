@@ -64,7 +64,6 @@
   height: auto;
   margin: 0;
   padding: 0;
-  accent-color: var(--accent);
 }
 
 /* Every category group is an accordion, one row or many, so a collapsed group
@@ -551,7 +550,6 @@
   margin: 0;
   flex: none;
   align-self: center;
-  accent-color: var(--accent);
   background: transparent;
   border: none;
   border-radius: 0;

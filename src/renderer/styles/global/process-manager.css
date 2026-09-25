@@ -179,9 +179,6 @@ dialog.process-manager-overlay {
   color: var(--text-primary);
   font-weight: 600;
 }
-.process-manager-table tr[data-active-thread='true'] .process-manager-name {
-  box-shadow: inset 3px 0 var(--accent);
-}
 .process-manager-number {
   text-align: right !important;
 }
