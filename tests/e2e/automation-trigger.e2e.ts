@@ -10,27 +10,45 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
-import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  writeSeedConfig,
+  writeSeedSupervisedTask,
+} from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-automation-trigger'
+const OTHER_PROJECT_ID = 'e2e-automation-trigger-other'
 const PROMPT = 'Review CI and report any failures.'
 const SCHEDULE_ID = 'schedule-ci-review'
 
-// The schedule's own `* * * * *` is not what paces this spec. `automation-
-// service.start()` enqueues its tick as a supervised cron task, and
-// `TaskSupervisor.arm()` sets that timer to `nextCronOccurrence(…)` — the next
-// *minute boundary*. So the first tick lands 0-60s after the app boots,
-// uniformly distributed, and only then does `tick()` match the schedule and
-// create the thread.
+// What paces the scheduler is not the schedule's own `* * * * *` but the
+// supervised `automation_scheduler_tick` task that `automation-service` keeps
+// for it: `TaskSupervisor.arm()` sets its timer to the persisted `nextWakeAt`,
+// or else to the next *minute boundary*. Left to that, the first tick lands a
+// uniformly random 0-60s after boot, which cost every run of this spec up to a
+// minute of real time and pushed its CI shard past the per-attempt timeout.
 //
-// The wait here was 30s, which meant this spec failed whenever the app happened
-// to start more than 30s before the boundary — roughly half of all runs, and
-// invisibly so, because `ci.yml` skips e2e on pushes to main.
-const SCHEDULER_BOUNDARY_WAIT_MS = 75_000
+// Instead the profile holds the durable scheduler task as a previous session
+// left it — waiting on a minute boundary that passed while the app was closed.
+// The supervisor coalesces a missed cron occurrence into one run on restart
+// (`task-supervisor.test.ts`, "coalesces missed cron occurrences after
+// restart"), so the real tick fires as soon as the supervisor loads, matches
+// the schedule and creates the thread. `automation-service` retains this task
+// rather than enqueuing another, because it is owned by the enabled schedule.
+//
+// A tick at boot would outrun `installMockScenario`, which needs the renderer
+// up: the automation controller starts a pending scheduled run as soon as its
+// project is active. So the app opens on another project, where that run
+// waits, and the spec switches to the schedule's project once the scenario is
+// in place — the controller's `workspace_changed` pickup, or its trigger
+// listener if the tick lands after the switch, then starts it.
+const MISSED_TICK_AT = 1_786_000_140_000
+const SCHEDULER_TICK_TIMEOUT_MS = 30_000
 
 describe('cron automation trigger', function () {
-  // The boundary wait plus a mock agent turn, with headroom for a loaded runner.
-  this.timeout(180_000)
+  // A mock agent turn plus checkout preparation, with headroom for a loaded runner.
+  this.timeout(120_000)
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -57,11 +75,36 @@ describe('cron automation trigger', function () {
       git('commit', '-qm', 'seed')
     }
 
+    const otherProjectRoot = join(dirname(worktreesRoot), 'automation-trigger-other-project')
+    mkdirSync(otherProjectRoot, { recursive: true })
+
     seedEmptyProject(projectRoot, PROJECT_ID, { model: 'claude-sonnet-4-6' })
     writeSeedConfig({
-      projects: [{ id: PROJECT_ID, path: projectRoot, name: 'workspace' }],
-      activeProjectId: PROJECT_ID,
-      activeThreadId: 'regular-chat',
+      projects: [
+        { id: PROJECT_ID, path: projectRoot, name: 'workspace' },
+        { id: OTHER_PROJECT_ID, path: otherProjectRoot, name: 'notes' },
+      ],
+      activeProjectId: OTHER_PROJECT_ID,
+      activeThreadId: 'other-chat',
+      [`threads:${OTHER_PROJECT_ID}`]: [
+        {
+          id: 'other-chat',
+          title: 'Meeting notes',
+          status: 'idle',
+          messages: [
+            {
+              id: 'other-chat-message',
+              role: 'user',
+              content: 'Summarise the meeting.',
+              toolCalls: [],
+              createdAt: 1_786_000_200_000,
+            },
+          ],
+          usage: { inputTokens: 0, outputTokens: 0 },
+          createdAt: 1_786_000_200_000,
+          updatedAt: 1_786_000_200_000,
+        },
+      ],
       [`threads:${PROJECT_ID}`]: [
         {
           id: 'regular-chat',
@@ -148,6 +191,29 @@ describe('cron automation trigger', function () {
         },
       },
     })
+    writeSeedSupervisedTask({
+      taskId: 'automation-scheduler-tick',
+      projectId: PROJECT_ID,
+      threadId: SCHEDULE_ID,
+      handler: 'automation_scheduler_tick',
+      provenance: 'schedule',
+      state: 'waiting',
+      createdAt: 1_786_000_000_000,
+      updatedAt: 1_786_000_120_000,
+      trigger: { kind: 'cron', expression: '* * * * *' },
+      permissionSnapshot: {
+        capturedAt: 1_786_000_000_000,
+        autoRunSandboxCommands: false,
+        projectSandboxEnabled: false,
+      },
+      reapproveOnWake: false,
+      concurrencyClass: 'schedule',
+      resourceBudget: { maxDurationMs: 30_000 },
+      attempt: 0,
+      maxAttempts: 1,
+      contentHash: 'automation_scheduler_tick',
+      nextWakeAt: MISSED_TICK_AT,
+    })
     await browser.reloadSession()
   })
 
@@ -175,12 +241,26 @@ describe('cron automation trigger', function () {
       null,
     )
 
+    // Only now open the schedule's project, so its scheduled run starts
+    // against the scenario above rather than the mock's unscripted fallback.
+    const scheduleProject = $('.project-row*=workspace')
+    await scheduleProject.waitForExist({ timeout: 10_000 })
+    await scheduleProject.click()
+    // The switch selects the project's newest thread, which is the scheduled
+    // run whenever the tick beat the click. Select the ordinary chat so the
+    // Automations section starts collapsed either way.
+    const regularChat = $('.chat-row[data-thread-id="regular-chat"]')
+    await regularChat.waitForExist({ timeout: 15_000 })
+    await regularChat.click()
+    await browser.waitUntil(
+      async () => (await regularChat.getAttribute('class'))?.includes('selected') === true,
+      { timeout: 5_000, timeoutMsg: 'the ordinary chat never became the selected thread' },
+    )
+
     const automationGroup = $('.automation-threads-toggle')
     await automationGroup.waitForExist({
-      timeout: SCHEDULER_BOUNDARY_WAIT_MS,
-      timeoutMsg: `the scheduled automation group never appeared within ${String(
-        SCHEDULER_BOUNDARY_WAIT_MS,
-      )}ms — the supervisor arms its tick for the next minute boundary, so this must outlast a full minute`,
+      timeout: 10_000,
+      timeoutMsg: 'the Automations section never appeared after opening the schedule project',
     })
     assert.equal(await automationGroup.getAttribute('aria-expanded'), 'false')
     assert.equal(await automationGroup.$('.automation-threads-count').getText(), '1')
@@ -192,8 +272,10 @@ describe('cron automation trigger', function () {
     await browser.waitUntil(
       async () => (await scheduleGroup.$('.automation-schedule-count').getText()) === '3 runs',
       {
-        timeout: SCHEDULER_BOUNDARY_WAIT_MS,
-        timeoutMsg: 'the fresh scheduled task never joined its existing schedule group',
+        timeout: SCHEDULER_TICK_TIMEOUT_MS,
+        timeoutMsg:
+          'the fresh scheduled task never joined its existing schedule group — the persisted ' +
+          'scheduler task should have fired its missed tick as soon as the supervisor loaded',
       },
     )
     // Finish checkout/provider startup, then hold the response while opening
