@@ -302,6 +302,24 @@ function readInstructions(headCheckout: string): RepositoryInstructions[] {
   return out
 }
 
+/**
+ * A diff over the head checkout, which the cell may have written. No external
+ * diff or textconv driver, and no recursion into submodules: for each gitlink
+ * a worktree diff would otherwise run `git status` inside `head/<submodule>/`,
+ * where the cell-writable `.git` can name filter drivers that then run on the
+ * host. The flag, unlike `diff.ignoreSubmodules`, also outranks an `ignore`
+ * setting in the checkout's `.gitmodules`. Submodule pointer changes are not
+ * shown as a result.
+ */
+const WORKTREE_DIFF_ARGS = [
+  'diff',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--ignore-submodules=all',
+  '--find-renames',
+] as const
+
 export interface BuildContextOptions {
   readonly checkouts: MaterialisedCheckouts
   readonly budgetChars?: number
@@ -326,15 +344,7 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
       throw new Error(`Cannot stage untracked context: ${added.stderr.trim()}`)
     }
   }
-  const result = await gitInWorktree(git, head, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--find-renames',
-    checkouts.mergeBase,
-    '--',
-  ])
+  const result = await gitInWorktree(git, head, [...WORKTREE_DIFF_ARGS, checkouts.mergeBase, '--'])
   if (result.code !== 0) {
     throw new Error(`Cannot diff head against the merge-base: ${result.stderr.trim()}`)
   }
@@ -417,11 +427,7 @@ export async function readFileDiff(
   headCommit?: string,
 ): Promise<string> {
   const result = await gitInWorktree(runGit, head, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--find-renames',
+    ...WORKTREE_DIFF_ARGS,
     mergeBase,
     ...(headCommit === undefined ? [] : [headCommit]),
     '--',
