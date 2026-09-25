@@ -3414,7 +3414,7 @@ function handleIntersectionResults(result, left, right) {
     if (!collect(iss, "r"))
       result.issues.push(iss);
   }
-  const bothKeys = [...unrecKeys].filter(([, f3]) => f3.l && f3.r).map(([k2]) => k2);
+  const bothKeys = [...unrecKeys].filter(([, f4]) => f4.l && f4.r).map(([k2]) => k2);
   if (bothKeys.length) {
     const aggregated = unrecIssue ? bothKeys.filter((k2) => unrecIssue.keys.includes(k2)) : [];
     if (aggregated.length)
@@ -3626,9 +3626,9 @@ function partPattern(schema) {
     return own2;
   }
   if (def.options) {
-    const sources2 = def.options.map(partPattern);
-    if (sources2.every(Boolean))
-      return `^(${sources2.map((s16) => cleanRegex(s16)).join("|")})$`;
+    const sources3 = def.options.map(partPattern);
+    if (sources3.every(Boolean))
+      return `^(${sources3.map((s16) => cleanRegex(s16)).join("|")})$`;
   }
   return leafPattern(schema);
 }
@@ -13751,8 +13751,8 @@ var init_registries = __esm({
         if (p2) {
           const pm = { ...this.get(p2) ?? {} };
           delete pm.id;
-          const f3 = { ...pm, ...this._map.get(schema) };
-          return Object.keys(f3).length ? f3 : void 0;
+          const f4 = { ...pm, ...this._map.get(schema) };
+          return Object.keys(f4).length ? f4 : void 0;
         }
         return this._map.get(schema);
       }
@@ -16447,8 +16447,8 @@ var init_api = __esm({
 });
 
 // node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/to-json-schema.js
-function assignProps(target, ...sources2) {
-  for (const source of sources2) {
+function assignProps(target, ...sources3) {
+  for (const source of sources3) {
     for (const key of Reflect.ownKeys(source)) {
       if (Object.prototype.propertyIsEnumerable.call(source, key)) {
         assignProp(target, key, source[key]);
@@ -30044,6 +30044,7 @@ function createStore(initial) {
     themePreference: DEFAULT_THEME_PREFERENCE,
     fontSize: 14,
     uiScale: 1,
+    animateAgentAvatars: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -32361,6 +32362,9 @@ function parseRemoteAgentModelSelection(model) {
   const provider = selection2.agent;
   if (!isRemoteAgentProvider(provider)) return null;
   return selection2.id ? { provider, model: selection2.id } : { provider };
+}
+function parseRemoteAgentModel(model) {
+  return parseRemoteAgentModelSelection(model)?.provider ?? null;
 }
 function remoteAgentGroupLabel(provider) {
   return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? provider;
@@ -62365,6 +62369,18 @@ function mountSettingsDialog(store2, api2) {
               </label>
             </fieldset>
 
+            <fieldset data-testid="settings-agent-motion">
+              <legend>Agent icons</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="animateAgentAvatars" aria-describedby="agent-motion-hint" />
+                Animate agent icons
+              </label>
+              <p class="field-hint" id="agent-motion-hint">
+                Subtle motion while a remote or named agent is working. Turn off to keep the
+                icons still. Always respects your system's reduced-motion preference.
+              </p>
+            </fieldset>
+
             <fieldset>
               <legend>Display</legend>
               <label>
@@ -62973,7 +62989,7 @@ function mountSettingsDialog(store2, api2) {
       }
       const detail = [
         agent.description,
-        ...agent.unsupportedFields.map((f3) => `${f3.field}: ${f3.reason}`)
+        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
       ].filter(isNonEmptyString).join(" \xB7 ");
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
@@ -63801,10 +63817,10 @@ function mountSettingsDialog(store2, api2) {
       ]);
       fillSourceList(
         "#sources-instructions-list",
-        instructions.map((f3) => makeInstructionRow(f3)),
+        instructions.map((f4) => makeInstructionRow(f4)),
         "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
       );
-      if (instructions.some((f3) => f3.discoveryTruncated)) {
+      if (instructions.some((f4) => f4.discoveryTruncated)) {
         const note = document.createElement("span");
         note.className = "sources-empty";
         note.id = "sources-instructions-truncated";
@@ -64035,7 +64051,7 @@ function mountSettingsDialog(store2, api2) {
       chips.push({
         label: "Follow-ups",
         count: contributions.followUps.length,
-        title: contributions.followUps.map((f3) => `${f3.label} (${f3.action}, ${f3.when})`).join(", ")
+        title: contributions.followUps.map((f4) => `${f4.label} (${f4.action}, ${f4.when})`).join(", ")
       });
     }
     if (contributions.capabilities.length > 0) {
@@ -64446,11 +64462,11 @@ function mountSettingsDialog(store2, api2) {
       const text2 = document.createElement("span");
       text2.textContent = "This workspace defines its own MCP servers. They will not run until you trust this workspace.";
       void api2.instructions.list().then((files) => {
-        const inert = files.filter((f3) => !f3.active);
+        const inert = files.filter((f4) => !f4.active);
         if (inert.length === 0) return;
         const note = document.createElement("span");
         note.className = "mcp-trust-instructions-note";
-        note.textContent = ` It also ships agent instruction files (${inert.map((f3) => f3.name).join(", ")}), inert until trusted.`;
+        note.textContent = ` It also ships agent instruction files (${inert.map((f4) => f4.name).join(", ")}), inert until trusted.`;
         text2.append(note);
       }).catch(() => {
       });
@@ -65024,6 +65040,7 @@ function mountSettingsDialog(store2, api2) {
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
+        animateAgentAvatars: data.get("animateAgentAvatars") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -65160,6 +65177,7 @@ var init_settings_dialog = __esm({
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
+      { name: "animateAgentAvatars", kind: "checkbox", default: true, save: true },
       { name: "alertOnInteraction", kind: "checkbox", default: true, save: true },
       { name: "alertOnThreadFinished", kind: "checkbox", default: true, save: true },
       { name: "alertSystemNotification", kind: "checkbox", default: true, save: true },
@@ -67156,6 +67174,339 @@ var init_projects_pane = __esm({
   }
 });
 
+// src/renderer/dom/agent-avatar.ts
+function seededDrawing(seed) {
+  const TAU = Math.PI * 2;
+  let state = seed;
+  const mulberry32 = () => {
+    let t2 = state += 1831565813;
+    t2 = Math.imul(t2 ^ t2 >>> 15, t2 | 1);
+    t2 ^= t2 + Math.imul(t2 ^ t2 >>> 7, t2 | 61);
+    return ((t2 ^ t2 >>> 14) >>> 0) / 4294967296;
+  };
+  const random = mulberry32;
+  const rand = (min, max) => min + random() * (max - min);
+  const shuffle = (values) => {
+    const a3 = [...values];
+    for (let i2 = a3.length - 1; i2 > 0; i2--) {
+      const j3 = Math.floor(random() * (i2 + 1));
+      const current = a3[i2] ?? values[0];
+      a3[i2] = a3[j3] ?? values[0];
+      a3[j3] = current;
+    }
+    return a3;
+  };
+  const smoothClosed = (pts) => {
+    const first = pts[0];
+    if (!first) return "";
+    const n2 = pts.length;
+    let d3 = `M${f(first[0])} ${f(first[1])}`;
+    for (let i2 = 0; i2 < n2; i2++) {
+      const p0 = pts[(i2 - 1 + n2) % n2] ?? first;
+      const p1 = pts[i2] ?? first;
+      const p2 = pts[(i2 + 1) % n2] ?? first;
+      const p3 = pts[(i2 + 2) % n2] ?? first;
+      d3 += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+    }
+    return d3 + "Z";
+  };
+  const blob = (cx2, cy, radius, amp = 1) => {
+    const harmonics = [2, 3, 4, 5].map((k2, i2) => ({
+      k: k2,
+      a: rand(0, [0.09, 0.06, 0.04, 0.025][i2] ?? 0) * amp,
+      p: rand(0, TAU)
+    }));
+    const pts = [];
+    const drift = [];
+    for (let i2 = 0; i2 < 40; i2++) {
+      const th = i2 / 40 * TAU;
+      const r2 = radius * (1 + harmonics.reduce((s16, h3) => s16 + h3.a * Math.sin(h3.k * th + h3.p), 0));
+      pts.push([cx2 + Math.cos(th) * r2, cy + Math.sin(th) * r2]);
+      const shifted = radius * (1 + harmonics.reduce((s16, h3) => s16 + h3.a * Math.sin(h3.k * th + h3.p + 0.45), 0));
+      drift.push([cx2 + 10 + Math.cos(th) * shifted, cy - 8 + Math.sin(th) * shifted]);
+    }
+    return { cx: cx2, cy, radius, d: smoothClosed(pts), drift: smoothClosed(drift) };
+  };
+  return { random, rand, shuffle, blob };
+}
+function inkMotion(shapes) {
+  return `<style>@media (prefers-reduced-motion: no-preference) {
+    ${shapes.map(
+    (shape, i2) => `
+      .ink-${String(i2)} { animation: ink-${String(i2)} ${String(16 + i2 * 3)}s ease-in-out infinite; }
+      @keyframes ink-${String(i2)} {
+        0%, 100% { d: path("${shape.d}"); }
+        50% { d: path("${shape.drift}"); }
+      }`
+  ).join("")}
+  }</style>`;
+}
+function risoIconSVG(seed, moving = false) {
+  const { random, rand, shuffle, blob } = seededDrawing(seed);
+  const id = "riso";
+  const pal = RISO_PALETTES[Math.floor(random() * RISO_PALETTES.length)] ?? RISO_PALETTES[0];
+  const [base, overlay, shadow] = shuffle(pal.c);
+  const main = blob(256 + rand(-8, 8), 258 + rand(-8, 8), rand(165, 188));
+  const overprint = blob(
+    main.cx + rand(-60, 60),
+    main.cy + rand(-60, 60),
+    main.radius * rand(0.55, 0.75),
+    1.6
+  );
+  const halftone = blob(
+    main.cx + rand(-70, 70),
+    main.cy + rand(-70, 70),
+    main.radius * rand(0.45, 0.65),
+    1.8
+  );
+  const hole = blob(
+    main.cx + rand(-50, 50),
+    main.cy + rand(-50, 50),
+    main.radius * rand(0.18, 0.3),
+    1.2
+  );
+  const dotRadius = rand(2.2, 3.6);
+  const dotPitch = rand(9, 12);
+  const screenAngle = rand(10, 75);
+  const shadowX = rand(6, 12);
+  const shadowY = rand(5, 11);
+  const outlineX = rand(-5, -2);
+  const outlineY = rand(-4, -1);
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+      <defs>
+        ${moving ? inkMotion([overprint, halftone, hole]) : ""}
+        <clipPath id="${id}-clip">
+          <path d="${main.d}"/>
+        </clipPath>
+
+        <pattern id="${id}-dots" width="${f(dotPitch)}" height="${f(dotPitch)}"
+                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f(screenAngle)})">
+          <circle cx="${f(dotPitch / 2)}" cy="${f(dotPitch / 2)}" r="${f(dotRadius)}"
+                  fill="${pal.ink}" opacity=".55"/>
+        </pattern>
+
+        <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
+          <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .22 0 0 0 0"/>
+        </filter>
+      </defs>
+
+      <rect width="512" height="512" fill="${pal.bg}"/>
+
+      <!-- Offset shadow in the third ink -->
+      <path d="${main.d}" fill="${shadow}"
+            transform="translate(${f(shadowX)} ${f(shadowY)})"
+            style="mix-blend-mode:multiply"/>
+
+      <g clip-path="url(#${id}-clip)">
+        <rect width="512" height="512" fill="${base}"/>
+        <path class="ink-0" d="${overprint.d}" fill="${overlay}" style="mix-blend-mode:multiply"/>
+        <path class="ink-1" d="${halftone.d}" fill="url(#${id}-dots)"/>
+        <path class="ink-2" d="${hole.d}" fill="${pal.bg}"/>
+      </g>
+
+      <!-- Outline printed slightly off register -->
+      <path d="${main.d}" fill="none" stroke="${pal.ink}" stroke-width="5"
+            stroke-linejoin="round" transform="translate(${f(outlineX)} ${f(outlineY)})"/>
+
+      <!-- Paper grain over everything -->
+      <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
+    </svg>
+  `;
+}
+function duotoneIconSVG(seed, moving = false) {
+  const { random, rand, blob } = seededDrawing(seed);
+  const id = "duo";
+  const pair = DUOTONE_INK_PAIRS[Math.floor(random() * DUOTONE_INK_PAIRS.length)] ?? DUOTONE_INK_PAIRS[0];
+  const [firstInk, secondInk] = random() < 0.5 ? [pair[1], pair[0]] : pair;
+  const main = blob(256 + rand(-8, 8), 258 + rand(-8, 8), rand(165, 188));
+  const overprint = blob(
+    main.cx + rand(-55, 55),
+    main.cy + rand(-55, 55),
+    main.radius * rand(0.6, 0.8),
+    1.6
+  );
+  const stripes = blob(
+    main.cx + rand(-60, 60),
+    main.cy + rand(-60, 60),
+    main.radius * rand(0.3, 0.45),
+    1.4
+  );
+  const linePitch = rand(7, 10);
+  const lineAngle = rand(20, 70);
+  const registerX = rand(3, 7);
+  const registerY = rand(2, 6);
+  return `
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+    <defs>
+      ${moving ? inkMotion([overprint, stripes]) : ""}
+      <clipPath id="${id}-clip"><path d="${main.d}"/></clipPath>
+      <pattern id="${id}-lines" width="${f(linePitch)}" height="${f(linePitch)}"
+               patternUnits="userSpaceOnUse" patternTransform="rotate(${f(lineAngle)})">
+        <rect width="${f(linePitch)}" height="${f(linePitch * 0.42)}" fill="${secondInk}"/>
+      </pattern>
+      <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
+        <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .3 0 0 0 0"/>
+      </filter>
+    </defs>
+
+    <rect width="512" height="512" fill="${DUOTONE_PAPER}"/>
+
+    <!-- First ink -->
+    <path d="${main.d}" fill="${firstInk}" opacity=".88"/>
+
+    <!-- Second ink, slightly off register; multiply makes the overlap colour -->
+    <g clip-path="url(#${id}-clip)" style="mix-blend-mode:multiply">
+      <path class="ink-0" d="${overprint.d}" fill="${secondInk}" opacity=".85"
+            transform="translate(${f(registerX)} ${f(registerY)})"/>
+    </g>
+
+    <!-- Striped patch in the second ink -->
+    <path class="ink-1" d="${stripes.d}" fill="url(#${id}-lines)" style="mix-blend-mode:multiply"/>
+
+    <!-- Heavier grain than the pastel version, to read as ink on paper -->
+    <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
+  </svg>`;
+}
+function createAgentAvatar(identity, style = "riso") {
+  const cacheKey = `${style}:${identity}`;
+  let source = sources.get(cacheKey);
+  if (!source) {
+    let seed = 2166136261;
+    for (let i2 = 0; i2 < identity.length; i2++) {
+      seed = Math.imul(seed ^ identity.charCodeAt(i2), 16777619) >>> 0;
+    }
+    const generate = (moving) => `data:image/svg+xml,${encodeURIComponent(style === "duotone" ? duotoneIconSVG(seed, moving) : risoIconSVG(seed, moving))}`;
+    source = { still: generate(false), animate: () => generate(true) };
+    const oldest = sources.keys().next().value;
+    if (sources.size >= MAX_CACHED_AVATARS && oldest !== void 0) sources.delete(oldest);
+    sources.set(cacheKey, source);
+  }
+  const img = el("img", {
+    class: "agent-avatar",
+    "data-avatar-style": style,
+    src: source.still,
+    alt: "",
+    "aria-hidden": "true",
+    draggable: "false"
+  });
+  imageSources.set(img, source);
+  return img;
+}
+function setMoving(img, moving) {
+  const source = imageSources.get(img);
+  if (!source) return;
+  if (moving) source.moving ??= source.animate();
+  const src = moving ? source.moving ?? source.still : source.still;
+  if (img.src !== src) img.src = src;
+  img.toggleAttribute("data-avatar-animating", moving);
+}
+function createAgentAvatarMotion() {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let active2 = null;
+  let visible = false;
+  const sync = () => {
+    if (active2) setMoving(active2, visible && !document.hidden && !reducedMotion.matches);
+  };
+  const observer = new window.IntersectionObserver((entries2) => {
+    for (const entry of entries2) {
+      if (entry.target === active2) visible = entry.isIntersecting;
+    }
+    sync();
+  });
+  const setActive = (img) => {
+    if (active2 === img) return;
+    if (active2) {
+      observer.unobserve(active2);
+      setMoving(active2, false);
+      active2.removeAttribute("data-avatar-active");
+    }
+    active2 = img;
+    visible = false;
+    if (active2) {
+      active2.setAttribute("data-avatar-active", "");
+      observer.observe(active2);
+    }
+  };
+  reducedMotion.addEventListener("change", sync);
+  document.addEventListener("visibilitychange", sync);
+  return {
+    setActive,
+    dispose: () => {
+      setActive(null);
+      observer.disconnect();
+      reducedMotion.removeEventListener("change", sync);
+      document.removeEventListener("visibilitychange", sync);
+    }
+  };
+}
+var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f, sources, imageSources, MAX_CACHED_AVATARS;
+var init_agent_avatar = __esm({
+  "src/renderer/dom/agent-avatar.ts"() {
+    init_helpers();
+    RISO_PALETTES = [
+      { bg: "#FFF6EC", ink: "#3D3A4B", c: ["#F2A7A0", "#F7D08A", "#9ED2C6"] },
+      { bg: "#F4F1FA", ink: "#2F3350", c: ["#B8A9E3", "#F5B8C8", "#A8D8EA"] },
+      { bg: "#F3F7F0", ink: "#2E4036", c: ["#A7D3A6", "#F2E394", "#E8A87C"] },
+      { bg: "#FDF3F0", ink: "#4A2F35", c: ["#E58F8B", "#F6C28B", "#8FB8DE"] },
+      { bg: "#EEF5F7", ink: "#1F3A4A", c: ["#7FC8C2", "#FFD6A5", "#FF9AA2"] },
+      { bg: "#FAF6E9", ink: "#39352A", c: ["#C9B6E4", "#BDE0FE", "#FFC8DD"] }
+    ];
+    DUOTONE_INK_PAIRS = [
+      ["#FF48B0", "#0078BF"],
+      ["#FFE800", "#FF48B0"],
+      ["#00838A", "#FF6C2F"],
+      ["#FFB511", "#3255A4"],
+      ["#F15060", "#82D8D5"],
+      ["#765BA7", "#FFE800"]
+    ];
+    DUOTONE_PAPER = "#F7F4EE";
+    f = (n2) => n2.toFixed(1);
+    sources = /* @__PURE__ */ new Map();
+    imageSources = /* @__PURE__ */ new WeakMap();
+    MAX_CACHED_AVATARS = 128;
+  }
+});
+
+// src/renderer/views/chat-agent-identity.ts
+function customAgentId(model) {
+  const id = parseAcpModel(model);
+  return id && !findAcpCatalogEntry(id) ? id : null;
+}
+function namedAgentTitles(value) {
+  const titles2 = /* @__PURE__ */ new Map();
+  const entries2 = Array.isArray(value) ? value : [];
+  for (const entry of entries2) {
+    if (typeof entry === "object" && entry !== null && "id" in entry && typeof entry.id === "string" && "title" in entry && typeof entry.title === "string" && entry.title.trim())
+      titles2.set(entry.id, entry.title.trim());
+  }
+  return titles2;
+}
+function chatAgentIdentity(threadId, message2, names) {
+  const model = message2.model ?? message2.requestedModel;
+  if (!model) return null;
+  const provider = parseRemoteAgentModel(model);
+  if (provider) {
+    return {
+      key: `remote:${threadId}:${provider}`,
+      label: remoteAgentGroupLabel(provider),
+      style: "duotone"
+    };
+  }
+  const id = customAgentId(model);
+  const label = id ? names.get(id) : void 0;
+  return id && label ? { key: `named:${id}`, label, style: "riso" } : null;
+}
+var init_chat_agent_identity = __esm({
+  "src/renderer/views/chat-agent-identity.ts"() {
+    init_acp();
+    init_acp_known_agents();
+    init_remote_agent();
+  }
+});
+
 // src/renderer/dom/reasoning-activity-icon.ts
 function reasoningActivityIcon(className) {
   const svg2 = document.createElementNS(SVG_NS4, "svg");
@@ -68867,7 +69218,7 @@ var init_eraser = __esm({
             hit = true;
           }
         }
-        if (hit) this.fragments = this.fragments.filter((f3) => !this.erased.includes(f3.element));
+        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
         return hit;
       }
       onEnd() {
@@ -69021,7 +69372,7 @@ function u(e3, t2) {
 function d(e3, t2, n2) {
   return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
 }
-function f(e3, t2) {
+function f2(e3, t2) {
   return [e3[0] * t2, e3[1] * t2];
 }
 function p(e3, t2, n2) {
@@ -69065,14 +69416,14 @@ function C(e3, t2, n2, r2) {
   return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
 }
 function w(e3, t2, n2) {
-  return c(e3, f(u(t2, e3), n2));
+  return c(e3, f2(u(t2, e3), n2));
 }
 function te(e3, t2, n2, r2) {
   let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
   return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
 }
 function T(e3, t2, n2) {
-  return c(e3, f(t2, n2));
+  return c(e3, f2(t2, n2));
 }
 function k(e3, n2) {
   let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
@@ -69085,7 +69436,7 @@ function A2(e3, n2, r2) {
   return i2;
 }
 function j(e3, t2, n2) {
-  let r2 = u(t2, n2), i2 = f(r2, 0.5), a3 = f(r2, 0.51);
+  let r2 = u(t2, n2), i2 = f2(r2, 0.5), a3 = f2(r2, 0.51);
   return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
 }
 function M(e3, n2, r2, i2) {
@@ -69094,7 +69445,7 @@ function M(e3, n2, r2, i2) {
   return a3;
 }
 function ne(e3, t2, n2) {
-  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2))];
+  return [c(e3, f2(t2, n2)), c(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2))];
 }
 function N(e3, t2, n2) {
   return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
@@ -69106,13 +69457,13 @@ function re(e3, t2, n2) {
   }, e3[0].pressure);
 }
 function P(e3, n2 = {}) {
-  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f3 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
+  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
   if (e3.length === 0 || r2 <= 0) return [];
-  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f3, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
+  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
   for (let n3 = 0; n3 < e3.length; n3++) {
     let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
     if (!x3 && F3 - b5 < 3) continue;
-    f3 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f3, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
+    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
     let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
     H2 = Math.max(0.01, H2 * Math.min(S4, T3));
     let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
@@ -69151,14 +69502,14 @@ function L(e3, t2 = {}) {
     for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
   }
   l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
-  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f3 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
+  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
   for (let e4 = 1; e4 < l2.length; e4++) {
     let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
     if (_(m2.point, t3)) continue;
     let r2 = x(t3, m2.point);
-    if (p2 += r2, e4 < h3 && !f3) {
+    if (p2 += r2, e4 < h3 && !f4) {
       if (p2 < a3) continue;
-      f3 = true;
+      f4 = true;
     }
     d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
   }
@@ -70680,7 +71031,7 @@ function createMermaidFrame(source, layoutWidth = 300) {
   );
   const width = Number.isFinite(layoutWidth) && layoutWidth > 0 ? Math.min(layoutWidth, MAX_DIAGRAM_DIMENSION) : 300;
   element.style.width = `${String(width)}px`;
-  sources.set(element, { source, layoutWidth: width });
+  sources2.set(element, { source, layoutWidth: width });
   const ready3 = new Promise((resolve, reject) => {
     if (source.length > MAX_DIAGRAM_SOURCE_LENGTH) {
       reject(new Error("Diagram source is too large"));
@@ -70724,15 +71075,15 @@ function createMermaidFrame(source, layoutWidth = 300) {
   return { element, ready: ready3 };
 }
 function recreateMermaidFrame(element) {
-  const saved = sources.get(element);
+  const saved = sources2.get(element);
   return saved === void 0 ? null : createMermaidFrame(saved.source, saved.layoutWidth);
 }
-var FRAME_TIMEOUT_MS, sources;
+var FRAME_TIMEOUT_MS, sources2;
 var init_mermaid_frame = __esm({
   "src/renderer/markdown/mermaid-frame.ts"() {
     init_mermaid_frame_protocol();
     FRAME_TIMEOUT_MS = 3e4;
-    sources = /* @__PURE__ */ new WeakMap();
+    sources2 = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -72127,7 +72478,7 @@ function buildTextWithAttachments(text2, files, textBlocks = [], options = {}) {
   const videoRefs = options.videoRefs ?? [];
   const archiveRefs = options.archiveRefs ?? [];
   const blocks = [
-    ...files.map((f3) => renderTextBlock(f3.path, f3.content, cap)),
+    ...files.map((f4) => renderTextBlock(f4.path, f4.content, cap)),
     ...textBlocks.map((b4) => renderTextBlock(b4.label, b4.content, cap)),
     // No truncation path — thread, video and archive refs inline nothing, so
     // ATTACHMENT_MAX_CHARS never applies here.
@@ -75869,6 +76220,11 @@ function mountConversation(root, store2, api2) {
   const todoHost = el("div", { class: "conversation-todos-host" });
   const appleDevelopmentHost = createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false });
   const list = el("div", { class: "messages-list", role: "log", "aria-live": "polite" });
+  let agentNames = /* @__PURE__ */ new Map();
+  let agentNamesRequested = false;
+  let agentNamesRevision = 0;
+  let disposed = false;
+  const avatarMotion = createAgentAvatarMotion();
   const scrollToBottomBtn = el(
     "button",
     {
@@ -76743,6 +77099,20 @@ function mountConversation(root, store2, api2) {
   function syncModelLabels() {
     const thread = getActiveThread(store2);
     if (!thread) return;
+    if (!agentNamesRequested && thread.messages.some((msg) => {
+      const model = msg.model ?? msg.requestedModel;
+      return msg.role === "assistant" && model && customAgentId(model);
+    })) {
+      agentNamesRequested = true;
+      const revision = ++agentNamesRevision;
+      void api2.settings.get("registeredAcpAgents").then((value) => {
+        if (disposed || revision !== agentNamesRevision) return;
+        agentNames = namedAgentTitles(value);
+        syncModelLabels();
+      }).catch((error62) => {
+        console.warn("[conversation] Could not load named agent identities", error62);
+      });
+    }
     const show2 = shouldShowPrimaryChatModelLabels(thread.messages);
     const rendered = /* @__PURE__ */ new Map();
     list.querySelectorAll("[data-message-id]").forEach((node2) => {
@@ -76750,6 +77120,7 @@ function mountConversation(root, store2, api2) {
       if (id !== null && !rendered.has(id)) rendered.set(id, node2);
     });
     let prevLabel;
+    let prevAgentKey;
     for (const msg of thread.messages) {
       if (msg.role !== "assistant") continue;
       const msgEl = rendered.get(msg.id);
@@ -76757,16 +77128,52 @@ function mountConversation(root, store2, api2) {
       const existing = msgEl.querySelector(".message-model");
       const model = msg.model;
       const text2 = model ? formatPrimaryChatModelLabel(model, msg.parameters) : void 0;
-      if (show2 && text2 && text2 !== prevLabel) {
+      const identity = chatAgentIdentity(thread.id, msg, agentNames);
+      let header = msgEl.querySelector(".message-agent");
+      if (identity && identity.key !== prevAgentKey) {
+        if (header?.dataset["agentKey"] !== identity.key) {
+          header?.remove();
+          header = el(
+            "div",
+            { class: "message-agent", "data-agent-key": identity.key },
+            createAgentAvatar(identity.key, identity.style),
+            el("span", { class: "message-agent-name" }, identity.label)
+          );
+          msgEl.prepend(header);
+        } else {
+          const name = header.querySelector(".message-agent-name");
+          if (name) name.textContent = identity.label;
+        }
+      } else {
+        header?.remove();
+        header = null;
+      }
+      if (show2 && model && text2 && text2 !== prevLabel && (!identity || model.includes("#"))) {
         const label = existing ?? el("div", { class: "message-model" });
-        label.textContent = text2;
-        if (!existing) msgEl.prepend(label);
+        label.textContent = identity ? formatPrimaryChatModelLabel(model.slice(model.indexOf("#") + 1), msg.parameters) : text2;
+        if (header) {
+          if (label.parentElement !== header) header.append(label);
+        } else if (label.parentElement !== msgEl) msgEl.prepend(label);
       } else {
         existing?.remove();
       }
       syncToolRunMemberVisibility(msgEl);
       prevLabel = text2;
+      prevAgentKey = identity?.key;
     }
+    syncAvatarMotion();
+  }
+  function syncAvatarMotion() {
+    const thread = getActiveThread(store2);
+    if (!thread || thread.status !== "running" || !store2.getState().animateAgentAvatars) {
+      avatarMotion.setActive(null);
+      return;
+    }
+    const pending = queuedMessageIds(thread);
+    const latest = [...thread.messages].reverse().find((msg) => !pending.has(msg.id));
+    const identity = latest?.role === "assistant" ? chatAgentIdentity(thread.id, latest, agentNames) : null;
+    const header = identity ? [...list.querySelectorAll(".message-agent")].reverse().find((element) => element.dataset["agentKey"] === identity.key) : void 0;
+    avatarMotion.setActive(header?.querySelector(".agent-avatar") ?? null);
   }
   function syncTodoPanel() {
     todoHost.replaceChildren();
@@ -76942,6 +77349,7 @@ function mountConversation(root, store2, api2) {
     }
     disclosureElements.clear();
     disposeInlineArtefacts(list);
+    avatarMotion.setActive(null);
     clear(list);
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
@@ -77022,6 +77430,11 @@ function mountConversation(root, store2, api2) {
   const unsubs = [
     store2.on("code_block_run_finished", (result) => {
       setCodeBlockRunOutcome(list, result.id, result.exitCode);
+    }),
+    store2.on("settings_changed", () => {
+      agentNamesRequested = false;
+      agentNamesRevision++;
+      syncModelLabels();
     }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
@@ -77180,6 +77593,7 @@ function mountConversation(root, store2, api2) {
         const last = getThreadById(store2, tid)?.messages.at(-1);
         if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
       }
+      syncAvatarMotion();
     }),
     store2.on("agent_activity", (tid, label) => {
       if (tid !== store2.getState().activeThreadId) return;
@@ -77194,6 +77608,8 @@ function mountConversation(root, store2, api2) {
   rebuildForThread();
   syncFromStore();
   return () => {
+    disposed = true;
+    avatarMotion.dispose();
     backfillGeneration++;
     showAcpTransportNoiseDisclosure = () => false;
     revealTimers.forEach((timer) => {
@@ -77230,6 +77646,8 @@ var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, strea
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
+    init_agent_avatar();
+    init_chat_agent_identity();
     init_reasoning_activity_icon();
     init_icons();
     init_user_prompt_fold();
@@ -93485,7 +93903,7 @@ ${description}
     const remove = document.createElement("button");
     remove.append(closeIcon("ui-icon ui-icon-sm"));
     remove.addEventListener("click", () => {
-      attachedFiles = attachedFiles.filter((f3) => f3.path !== file2.path);
+      attachedFiles = attachedFiles.filter((f4) => f4.path !== file2.path);
       chip2.remove();
       scheduleContextEstimate();
     });
@@ -95170,12 +95588,12 @@ function sl(s16, t2, e3, i2, r2, n2) {
     }
     let c3 = 0, d3 = ri(h3, c3, t2), _3 = 1, p2 = 0;
     for (; _3 < h3.length; ) {
-      let f3 = ri(h3, _3, t2), A3 = f3 - p2, R2 = e3 - d3, O2 = Math.min(A3, R2);
-      h3[c3].copyCellsFrom(h3[_3], p2, d3, O2, false), d3 += O2, d3 === e3 && (c3++, d3 = 0), p2 += O2, p2 === f3 && (_3++, p2 = 0), d3 === 0 && c3 !== 0 && h3[c3 - 1].getWidth(e3 - 1) === 2 && (h3[c3].copyCellsFrom(h3[c3 - 1], e3 - 1, d3++, 1, false), h3[c3 - 1].setCell(e3 - 1, r2));
+      let f4 = ri(h3, _3, t2), A3 = f4 - p2, R2 = e3 - d3, O2 = Math.min(A3, R2);
+      h3[c3].copyCellsFrom(h3[_3], p2, d3, O2, false), d3 += O2, d3 === e3 && (c3++, d3 = 0), p2 += O2, p2 === f4 && (_3++, p2 = 0), d3 === 0 && c3 !== 0 && h3[c3 - 1].getWidth(e3 - 1) === 2 && (h3[c3].copyCellsFrom(h3[c3 - 1], e3 - 1, d3++, 1, false), h3[c3 - 1].setCell(e3 - 1, r2));
     }
     h3[c3].replaceCells(d3, e3, r2);
     let m2 = 0;
-    for (let f3 = h3.length - 1; f3 > 0 && (f3 > c3 || h3[f3].getTrimmedLength() === 0); f3--) m2++;
+    for (let f4 = h3.length - 1; f4 > 0 && (f4 > c3 || h3[f4].getTrimmedLength() === 0); f4--) m2++;
     m2 > 0 && (o3.push(l2 + h3.length - m2), o3.push(m2)), l2 += h3.length - 1;
   }
   return o3;
@@ -95505,15 +95923,15 @@ var init_xterm = __esm({
         if (this.interim[0]) {
           let _3 = false, p2 = this.interim[0];
           p2 &= (p2 & 224) === 192 ? 31 : (p2 & 240) === 224 ? 15 : 7;
-          let m2 = 0, f3;
-          for (; (f3 = this.interim[++m2] & 63) && m2 < 4; ) p2 <<= 6, p2 |= f3;
+          let m2 = 0, f4;
+          for (; (f4 = this.interim[++m2] & 63) && m2 < 4; ) p2 <<= 6, p2 |= f4;
           let A3 = (this.interim[0] & 224) === 192 ? 2 : (this.interim[0] & 240) === 224 ? 3 : 4, R2 = A3 - m2;
           for (; h3 < R2; ) {
             if (h3 >= i2) return 0;
-            if (f3 = t2[h3++], (f3 & 192) !== 128) {
+            if (f4 = t2[h3++], (f4 & 192) !== 128) {
               h3--, _3 = true;
               break;
-            } else this.interim[m2++] = f3, p2 <<= 6, p2 |= f3 & 63;
+            } else this.interim[m2++] = f4, p2 <<= 6, p2 |= f4 & 63;
           }
           _3 || (A3 === 2 ? p2 < 128 ? h3-- : e3[r2++] = p2 : A3 === 3 ? p2 < 2048 || p2 >= 55296 && p2 <= 57343 || p2 === 65279 || (e3[r2++] = p2) : p2 < 65536 || p2 > 1114111 || (e3[r2++] = p2)), this.interim.fill(0);
         }
@@ -95830,7 +96248,7 @@ var init_xterm = __esm({
               } catch {
                 p2 = true;
               }
-              p2 || r2.push({ text: d3, range: _3, activate: (m2, f3) => n2 ? n2.activate(m2, f3, _3) : Ol(m2, f3), hover: (m2, f3) => n2?.hover?.(m2, f3, _3), leave: (m2, f3) => n2?.leave?.(m2, f3, _3) });
+              p2 || r2.push({ text: d3, range: _3, activate: (m2, f4) => n2 ? n2.activate(m2, f4, _3) : Ol(m2, f4), hover: (m2, f4) => n2?.hover?.(m2, f4, _3), leave: (m2, f4) => n2?.leave?.(m2, f4, _3) });
             }
             h3 = false, o3.hasExtendedAttrs() && o3.extended.urlId ? (u2 = c3, a3 = o3.extended.urlId) : (u2 = -1, a3 = -1);
           }
@@ -96110,10 +96528,10 @@ var init_xterm = __esm({
         return oe;
       }
       O2.reduce = m2;
-      function* f3(I2, k2, P2 = I2.length) {
+      function* f4(I2, k2, P2 = I2.length) {
         for (k2 < 0 && (k2 += I2.length), P2 < 0 ? P2 += I2.length : P2 > I2.length && (P2 = I2.length); k2 < P2; k2++) yield I2[k2];
       }
-      O2.slice = f3;
+      O2.slice = f4;
       function A3(I2, k2 = Number.POSITIVE_INFINITY) {
         let P2 = [];
         if (k2 === 0) return [P2, I2];
@@ -96203,9 +96621,9 @@ var init_xterm = __esm({
             d3 = `(shared with ${n2.get(u2.slice(0, c3 + 1).join(`
 `)).size}/${i2.length} leaks) at ${d3}`;
             let p2 = n2.get(u2.slice(0, c3).join(`
-`)), m2 = co([...p2].map((f3) => r2(f3)[c3]), (f3) => f3);
+`)), m2 = co([...p2].map((f4) => r2(f4)[c3]), (f4) => f4);
             delete m2[u2[c3]];
-            for (let [f3, A3] of Object.entries(m2)) h3.unshift(`    - stacktraces of ${A3.length} other leaks continue with ${f3}`);
+            for (let [f4, A3] of Object.entries(m2)) h3.unshift(`    - stacktraces of ${A3.length} other leaks continue with ${f4}`);
             h3.unshift(d3);
           }
           o3 += `
@@ -96521,7 +96939,7 @@ ${h3.join(`
         return [Qe.filter(y2, T2, g2), Qe.filter(y2, (w2) => !T2(w2), g2)];
       }
       Qe.split = m2;
-      function f3(y2, T2 = false, g2 = [], w2) {
+      function f4(y2, T2 = false, g2 = [], w2) {
         let E2 = g2.slice(), x2 = y2((te2) => {
           E2 ? E2.push(te2) : Z.fire(te2);
         });
@@ -96537,7 +96955,7 @@ ${h3.join(`
         } });
         return w2 && w2.add(Z), Z.event;
       }
-      Qe.buffer = f3;
+      Qe.buffer = f4;
       function A3(y2, T2) {
         return (w2, E2, x2) => {
           let N2 = T2(new O2());
@@ -97831,8 +98249,8 @@ ${h3.join(`
             let c3 = this.newGestureEvent(He.Contextmenu, u2.initialTarget);
             c3.pageX = Se(u2.rollingPageX), c3.pageY = Se(u2.rollingPageY), this.dispatchEvent(c3);
           } else if (n2 === 1) {
-            let c3 = Se(u2.rollingPageX), d3 = Se(u2.rollingPageY), _3 = Se(u2.rollingTimestamps) - u2.rollingTimestamps[0], p2 = c3 - u2.rollingPageX[0], m2 = d3 - u2.rollingPageY[0], f3 = [...this.targets].filter((A3) => u2.initialTarget instanceof Node && A3.contains(u2.initialTarget));
-            this.inertia(e3, f3, r2, Math.abs(p2) / _3, p2 > 0 ? 1 : -1, c3, Math.abs(m2) / _3, m2 > 0 ? 1 : -1, d3);
+            let c3 = Se(u2.rollingPageX), d3 = Se(u2.rollingPageY), _3 = Se(u2.rollingTimestamps) - u2.rollingTimestamps[0], p2 = c3 - u2.rollingPageX[0], m2 = d3 - u2.rollingPageY[0], f4 = [...this.targets].filter((A3) => u2.initialTarget instanceof Node && A3.contains(u2.initialTarget));
+            this.inertia(e3, f4, r2, Math.abs(p2) / _3, p2 > 0 ? 1 : -1, c3, Math.abs(m2) / _3, m2 > 0 ? 1 : -1, d3);
           }
           this.dispatchEvent(this.newGestureEvent(He.End, u2.initialTarget)), delete this.activeTouches[a3.identifier];
         }
@@ -97863,8 +98281,8 @@ ${h3.join(`
         this.handle = mt(e3, () => {
           let c3 = Date.now(), d3 = c3 - r2, _3 = 0, p2 = 0, m2 = true;
           n2 += Q2.SCROLL_FRICTION * d3, a3 += Q2.SCROLL_FRICTION * d3, n2 > 0 && (m2 = false, _3 = o3 * n2 * d3), a3 > 0 && (m2 = false, p2 = u2 * a3 * d3);
-          let f3 = this.newGestureEvent(He.Change);
-          f3.translationX = _3, f3.translationY = p2, i2.forEach((A3) => A3.dispatchEvent(f3)), m2 || this.inertia(e3, i2, c3, n2, o3, l2 + _3, a3, u2, h3 + p2);
+          let f4 = this.newGestureEvent(He.Change);
+          f4.translationX = _3, f4.translationY = p2, i2.forEach((A3) => A3.dispatchEvent(f4)), m2 || this.inertia(e3, i2, c3, n2, o3, l2 + _3, a3, u2, h3 + p2);
         });
       }
       onTouchMove(e3) {
@@ -98814,8 +99232,8 @@ ${h3.join(`
         if (J = (u2.rgba & 255) / 255, J === 1) return { css: u2.css, rgba: u2.rgba };
         let h3 = u2.rgba >> 24 & 255, c3 = u2.rgba >> 16 & 255, d3 = u2.rgba >> 8 & 255, _3 = a3.rgba >> 24 & 255, p2 = a3.rgba >> 16 & 255, m2 = a3.rgba >> 8 & 255;
         ue = _3 + Math.round((h3 - _3) * J), he = p2 + Math.round((c3 - p2) * J), de = m2 + Math.round((d3 - m2) * J);
-        let f3 = j2.toCss(ue, he, de), A3 = j2.toRgba(ue, he, de);
-        return { css: f3, rgba: A3 };
+        let f4 = j2.toCss(ue, he, de), A3 = j2.toRgba(ue, he, de);
+        return { css: f4, rgba: A3 };
       }
       l2.blend = s16;
       function t2(a3) {
@@ -98898,8 +99316,8 @@ ${h3.join(`
           if (h3 < u2) {
             let p2 = e3(o3, l2, a3), m2 = Xe(u2, ve.relativeLuminance(p2 >> 8));
             if (m2 < a3) {
-              let f3 = i2(o3, l2, a3), A3 = Xe(u2, ve.relativeLuminance(f3 >> 8));
-              return m2 > A3 ? p2 : f3;
+              let f4 = i2(o3, l2, a3), A3 = Xe(u2, ve.relativeLuminance(f4 >> 8));
+              return m2 > A3 ? p2 : f4;
             }
             return p2;
           }
@@ -99060,7 +99478,7 @@ ${h3.join(`
       createRow(t2, e3, i2, r2, n2, o3, l2, a3, u2, h3, c3) {
         let d3 = [], _3 = this._characterJoinerService.getJoinedCharacters(e3), p2 = this._themeService.colors, m2 = t2.getNoBgTrimmedLength();
         i2 && m2 < o3 + 1 && (m2 = o3 + 1);
-        let f3, A3 = 0, R2 = "", O2 = 0, I2 = 0, k2 = 0, P2 = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V2 = [], Qe = h3 !== -1 && c3 !== -1;
+        let f4, A3 = 0, R2 = "", O2 = 0, I2 = 0, k2 = 0, P2 = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V2 = [], Qe = h3 !== -1 && c3 !== -1;
         for (let y2 = 0; y2 < m2; y2++) {
           t2.loadCell(y2, this._workCell);
           let T2 = this._workCell.getWidth();
@@ -99076,11 +99494,11 @@ ${h3.join(`
             Oe = true;
           });
           let ze = x2.getChars() || we;
-          if (ze === " " && (x2.isUnderline() || x2.isOverline()) && (ze = "\xA0"), Ke = T2 * a3 - u2.get(ze, x2.isBold(), x2.isItalic()), !f3) f3 = this._document.createElement("span");
+          if (ze === " " && (x2.isUnderline() || x2.isOverline()) && (ze = "\xA0"), Ke = T2 * a3 - u2.get(ze, x2.isBold(), x2.isItalic()), !f4) f4 = this._document.createElement("span");
           else if (A3 && (N2 && Pe || !N2 && !Pe && x2.bg === I2) && (N2 && Pe && p2.selectionForeground || x2.fg === k2) && x2.extended.ext === P2 && te2 === oe && Ke === Me && !Z && !g2 && !Oe && w2) {
             x2.isInvisible() ? R2 += we : R2 += ze, A3++;
             continue;
-          } else A3 && (f3.textContent = R2), f3 = this._document.createElement("span"), A3 = 0, R2 = "";
+          } else A3 && (f4.textContent = R2), f4 = this._document.createElement("span"), A3 = 0, R2 = "";
           if (I2 = x2.bg, k2 = x2.fg, P2 = x2.extended.ext, oe = te2, Me = Ke, Pe = N2, g2 && o3 >= y2 && o3 <= E2 && (o3 = y2), !this._coreService.isCursorHidden && Z && this._coreService.isCursorInitialized) {
             if (V2.push("xterm-cursor"), this._coreBrowserService.isFocused) l2 && V2.push("xterm-cursor-blink"), V2.push(r2 === "bar" ? "xterm-cursor-bar" : r2 === "underline" ? "xterm-cursor-underline" : "xterm-cursor-block");
             else if (n2) switch (n2) {
@@ -99100,12 +99518,12 @@ ${h3.join(`
                 break;
             }
           }
-          if (x2.isBold() && V2.push("xterm-bold"), x2.isItalic() && V2.push("xterm-italic"), x2.isDim() && V2.push("xterm-dim"), x2.isInvisible() ? R2 = we : R2 = x2.getChars() || we, x2.isUnderline() && (V2.push(`xterm-underline-${x2.extended.underlineStyle}`), R2 === " " && (R2 = "\xA0"), !x2.isUnderlineColorDefault())) if (x2.isUnderlineColorRGB()) f3.style.textDecorationColor = `rgb(${De.toColorRGB(x2.getUnderlineColor()).join(",")})`;
+          if (x2.isBold() && V2.push("xterm-bold"), x2.isItalic() && V2.push("xterm-italic"), x2.isDim() && V2.push("xterm-dim"), x2.isInvisible() ? R2 = we : R2 = x2.getChars() || we, x2.isUnderline() && (V2.push(`xterm-underline-${x2.extended.underlineStyle}`), R2 === " " && (R2 = "\xA0"), !x2.isUnderlineColorDefault())) if (x2.isUnderlineColorRGB()) f4.style.textDecorationColor = `rgb(${De.toColorRGB(x2.getUnderlineColor()).join(",")})`;
           else {
             let W = x2.getUnderlineColor();
-            this._optionsService.rawOptions.drawBoldTextInBrightColors && x2.isBold() && W < 8 && (W += 8), f3.style.textDecorationColor = p2.ansi[W].css;
+            this._optionsService.rawOptions.drawBoldTextInBrightColors && x2.isBold() && W < 8 && (W += 8), f4.style.textDecorationColor = p2.ansi[W].css;
           }
-          x2.isOverline() && (V2.push("xterm-overline"), R2 === " " && (R2 = "\xA0")), x2.isStrikethrough() && V2.push("xterm-strikethrough"), te2 && (f3.style.textDecoration = "underline");
+          x2.isOverline() && (V2.push("xterm-overline"), R2 === " " && (R2 = "\xA0")), x2.isStrikethrough() && V2.push("xterm-strikethrough"), te2 && (f4.style.textDecoration = "underline");
           let le = x2.getFgColor(), et = x2.getFgColorMode(), me = x2.getBgColor(), ht = x2.getBgColorMode(), fi = !!x2.isInverse();
           if (fi) {
             let W = le;
@@ -99124,7 +99542,7 @@ ${h3.join(`
               it = p2.ansi[me], V2.push(`xterm-bg-${me}`);
               break;
             case 50331648:
-              it = j2.toColor(me >> 16, me >> 8 & 255, me & 255), this._addStyle(f3, `background-color:#${qo((me >>> 0).toString(16), "0", 6)}`);
+              it = j2.toColor(me >> 16, me >> 8 & 255, me & 255), this._addStyle(f4, `background-color:#${qo((me >>> 0).toString(16), "0", 6)}`);
               break;
             case 0:
             default:
@@ -99133,19 +99551,19 @@ ${h3.join(`
           switch (tt || x2.isDim() && (tt = U.multiplyOpacity(it, 0.5)), et) {
             case 16777216:
             case 33554432:
-              x2.isBold() && le < 8 && this._optionsService.rawOptions.drawBoldTextInBrightColors && (le += 8), this._applyMinimumContrast(f3, it, p2.ansi[le], x2, tt, void 0) || V2.push(`xterm-fg-${le}`);
+              x2.isBold() && le < 8 && this._optionsService.rawOptions.drawBoldTextInBrightColors && (le += 8), this._applyMinimumContrast(f4, it, p2.ansi[le], x2, tt, void 0) || V2.push(`xterm-fg-${le}`);
               break;
             case 50331648:
               let W = j2.toColor(le >> 16 & 255, le >> 8 & 255, le & 255);
-              this._applyMinimumContrast(f3, it, W, x2, tt, Qi) || this._addStyle(f3, `color:#${qo(le.toString(16), "0", 6)}`);
+              this._applyMinimumContrast(f4, it, W, x2, tt, Qi) || this._addStyle(f4, `color:#${qo(le.toString(16), "0", 6)}`);
               break;
             case 0:
             default:
-              this._applyMinimumContrast(f3, it, p2.foreground, x2, tt, Qi) || fi && V2.push(`xterm-fg-${257}`);
+              this._applyMinimumContrast(f4, it, p2.foreground, x2, tt, Qi) || fi && V2.push(`xterm-fg-${257}`);
           }
-          V2.length && (f3.className = V2.join(" "), V2.length = 0), !Z && !g2 && !Oe && w2 ? A3++ : f3.textContent = R2, Ke !== this.defaultSpacing && (f3.style.letterSpacing = `${Ke}px`), d3.push(f3), y2 = E2;
+          V2.length && (f4.className = V2.join(" "), V2.length = 0), !Z && !g2 && !Oe && w2 ? A3++ : f4.textContent = R2, Ke !== this.defaultSpacing && (f4.style.letterSpacing = `${Ke}px`), d3.push(f4), y2 = E2;
         }
-        return f3 && A3 && (f3.textContent = R2), d3;
+        return f4 && A3 && (f4.textContent = R2), d3;
       }
       _applyMinimumContrast(t2, e3, i2, r2, n2, o3) {
         if (this._optionsService.rawOptions.minimumContrastRatio === 1 || $o(r2.getCode())) return false;
@@ -99266,7 +99684,7 @@ ${h3.join(`
         this._rowElements = [];
         this._selectionRenderModel = Yo();
         this.onRequestRedraw = this._register(new v2()).event;
-        this._rowContainer = this._document.createElement("div"), this._rowContainer.classList.add(Le), this._rowContainer.style.lineHeight = "normal", this._rowContainer.setAttribute("aria-hidden", "true"), this._refreshRowElements(this._bufferService.cols, this._bufferService.rows), this._selectionContainer = this._document.createElement("div"), this._selectionContainer.classList.add(Xr), this._selectionContainer.setAttribute("aria-hidden", "true"), this.dimensions = Vo(), this._updateDimensions(), this._register(this._optionsService.onOptionChange(() => this._handleOptionsChanged())), this._register(this._themeService.onChangeColors((f3) => this._injectCss(f3))), this._injectCss(this._themeService.colors), this._rowFactory = u2.createInstance(Vt, document), this._element.classList.add(_s + this._terminalClass), this._screenElement.appendChild(this._rowContainer), this._screenElement.appendChild(this._selectionContainer), this._register(this._linkifier2.onShowLinkUnderline((f3) => this._handleLinkHover(f3))), this._register(this._linkifier2.onHideLinkUnderline((f3) => this._handleLinkLeave(f3))), this._register(C2(() => {
+        this._rowContainer = this._document.createElement("div"), this._rowContainer.classList.add(Le), this._rowContainer.style.lineHeight = "normal", this._rowContainer.setAttribute("aria-hidden", "true"), this._refreshRowElements(this._bufferService.cols, this._bufferService.rows), this._selectionContainer = this._document.createElement("div"), this._selectionContainer.classList.add(Xr), this._selectionContainer.setAttribute("aria-hidden", "true"), this.dimensions = Vo(), this._updateDimensions(), this._register(this._optionsService.onOptionChange(() => this._handleOptionsChanged())), this._register(this._themeService.onChangeColors((f4) => this._injectCss(f4))), this._injectCss(this._themeService.colors), this._rowFactory = u2.createInstance(Vt, document), this._element.classList.add(_s + this._terminalClass), this._screenElement.appendChild(this._rowContainer), this._screenElement.appendChild(this._selectionContainer), this._register(this._linkifier2.onShowLinkUnderline((f4) => this._handleLinkHover(f4))), this._register(this._linkifier2.onHideLinkUnderline((f4) => this._handleLinkLeave(f4))), this._register(C2(() => {
           this._element.classList.remove(_s + this._terminalClass), this._rowContainer.remove(), this._selectionContainer.remove(), this._widthCache.dispose(), this._themeStyleElement.remove(), this._dimensionsStyleElement.remove();
         })), this._widthCache = new Yr(this._document, this._helperContainer), this._widthCache.setFont(this._optionsService.rawOptions.fontFamily, this._optionsService.rawOptions.fontSize, this._optionsService.rawOptions.fontWeight, this._optionsService.rawOptions.fontWeightBold), this._setDefaultSpacing();
       }
@@ -99365,9 +99783,9 @@ ${h3.join(`
         r2 = Math.max(Math.min(r2, a3), 0), n2 = Math.max(Math.min(n2, a3), 0), o3 = Math.min(o3, this._bufferService.cols);
         let u2 = this._bufferService.buffer, h3 = u2.ybase + u2.y, c3 = Math.min(u2.x, o3 - 1), d3 = this._optionsService.rawOptions.cursorBlink, _3 = this._optionsService.rawOptions.cursorStyle, p2 = this._optionsService.rawOptions.cursorInactiveStyle;
         for (let m2 = r2; m2 <= n2; ++m2) {
-          let f3 = m2 + u2.ydisp, A3 = this._rowElements[m2], R2 = u2.lines.get(f3);
+          let f4 = m2 + u2.ydisp, A3 = this._rowElements[m2], R2 = u2.lines.get(f4);
           if (!A3 || !R2) break;
-          A3.replaceChildren(...this._rowFactory.createRow(R2, f3, f3 === h3, _3, p2, c3, d3, this.dimensions.css.cell.width, this._widthCache, l2 ? m2 === r2 ? e3 : 0 : -1, l2 ? (m2 === n2 ? i2 : o3) - 1 : -1));
+          A3.replaceChildren(...this._rowFactory.createRow(R2, f4, f4 === h3, _3, p2, c3, d3, this.dimensions.css.cell.width, this._widthCache, l2 ? m2 === r2 ? e3 : 0 : -1, l2 ? (m2 === n2 ? i2 : o3) - 1 : -1));
         }
       }
     };
@@ -100039,26 +100457,26 @@ ${h3.join(`
           }
         }
         h3++;
-        let f3 = u2 + c3 - d3 + p2, A3 = Math.min(this._bufferService.cols, h3 - u2 + d3 + _3 - p2 - m2);
+        let f4 = u2 + c3 - d3 + p2, A3 = Math.min(this._bufferService.cols, h3 - u2 + d3 + _3 - p2 - m2);
         if (!(!i2 && a3.slice(u2, h3).trim() === "")) {
-          if (r2 && f3 === 0 && l2.getCodePoint(0) !== 32) {
+          if (r2 && f4 === 0 && l2.getCodePoint(0) !== 32) {
             let R2 = o3.lines.get(e3[1] - 1);
             if (R2 && l2.isWrapped && R2.getCodePoint(this._bufferService.cols - 1) !== 32) {
               let O2 = this._getWordAt([this._bufferService.cols - 1, e3[1] - 1], false, true, false);
               if (O2) {
                 let I2 = this._bufferService.cols - O2.start;
-                f3 -= I2, A3 += I2;
+                f4 -= I2, A3 += I2;
               }
             }
           }
-          if (n2 && f3 + A3 === this._bufferService.cols && l2.getCodePoint(this._bufferService.cols - 1) !== 32) {
+          if (n2 && f4 + A3 === this._bufferService.cols && l2.getCodePoint(this._bufferService.cols - 1) !== 32) {
             let R2 = o3.lines.get(e3[1] + 1);
             if (R2?.isWrapped && R2.getCodePoint(0) !== 32) {
               let O2 = this._getWordAt([0, e3[1] + 1], false, false, true);
               O2 && (A3 += O2.length);
             }
           }
-          return { start: f3, length: A3 };
+          return { start: f4, length: A3 };
         }
       }
       _selectWordAt(e3, i2) {
@@ -100673,13 +101091,13 @@ ${h3.join(`
             p2.push(k2);
           }
           p2.length > 0 && (n2.push({ start: l2 + u2.length + o3, newLines: p2 }), o3 += p2.length), u2.push(...p2);
-          let m2 = c3.length - 1, f3 = c3[m2];
-          f3 === 0 && (m2--, f3 = c3[m2]);
+          let m2 = c3.length - 1, f4 = c3[m2];
+          f4 === 0 && (m2--, f4 = c3[m2]);
           let A3 = u2.length - d3 - 1, R2 = h3;
           for (; A3 >= 0; ) {
-            let I2 = Math.min(R2, f3);
+            let I2 = Math.min(R2, f4);
             if (u2[m2] === void 0) break;
-            if (u2[m2].copyCellsFrom(u2[A3], R2 - I2, f3 - I2, I2, true), f3 -= I2, f3 === 0 && (m2--, f3 = c3[m2]), R2 -= I2, R2 === 0) {
+            if (u2[m2].copyCellsFrom(u2[A3], R2 - I2, f4 - I2, I2, true), f4 -= I2, f4 === 0 && (m2--, f4 = c3[m2]), R2 -= I2, R2 === 0) {
               A3--;
               let k2 = Math.max(A3, 0);
               R2 = ri(u2, k2, this._cols);
@@ -100692,16 +101110,16 @@ ${h3.join(`
         }
         if (n2.length > 0) {
           let l2 = [], a3 = [];
-          for (let f3 = 0; f3 < this.lines.length; f3++) a3.push(this.lines.get(f3));
+          for (let f4 = 0; f4 < this.lines.length; f4++) a3.push(this.lines.get(f4));
           let u2 = this.lines.length, h3 = u2 - 1, c3 = 0, d3 = n2[c3];
           this.lines.length = Math.min(this.lines.maxLength, this.lines.length + o3);
           let _3 = 0;
-          for (let f3 = Math.min(this.lines.maxLength - 1, u2 + o3 - 1); f3 >= 0; f3--) if (d3 && d3.start > h3 + _3) {
-            for (let A3 = d3.newLines.length - 1; A3 >= 0; A3--) this.lines.set(f3--, d3.newLines[A3]);
-            f3++, l2.push({ index: h3 + 1, amount: d3.newLines.length }), _3 += d3.newLines.length, d3 = n2[++c3];
-          } else this.lines.set(f3, a3[h3--]);
+          for (let f4 = Math.min(this.lines.maxLength - 1, u2 + o3 - 1); f4 >= 0; f4--) if (d3 && d3.start > h3 + _3) {
+            for (let A3 = d3.newLines.length - 1; A3 >= 0; A3--) this.lines.set(f4--, d3.newLines[A3]);
+            f4++, l2.push({ index: h3 + 1, amount: d3.newLines.length }), _3 += d3.newLines.length, d3 = n2[++c3];
+          } else this.lines.set(f4, a3[h3--]);
           let p2 = 0;
-          for (let f3 = l2.length - 1; f3 >= 0; f3--) l2[f3].index += p2, this.lines.onInsertEmitter.fire(l2[f3]), p2 += l2[f3].amount;
+          for (let f4 = l2.length - 1; f4 >= 0; f4--) l2[f4].index += p2, this.lines.onInsertEmitter.fire(l2[f4]), p2 += l2[f4].amount;
           let m2 = Math.max(0, u2 + o3 - this.lines.maxLength);
           m2 > 0 && this.lines.onTrimEmitter.fire(m2);
         }
@@ -101736,10 +102154,10 @@ ${h3.join(`
             let O2 = l2[String.fromCharCode(n2)];
             O2 && (n2 = O2.charCodeAt(0));
           }
-          let f3 = this._unicodeService.charProperties(n2, p2);
-          o3 = Ae.extractWidth(f3);
-          let A3 = Ae.extractShouldJoin(f3), R2 = A3 ? Ae.extractWidth(p2) : 0;
-          if (p2 = f3, a3 && this._onA11yChar.fire(Ce(n2)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), this._activeBuffer.x + o3 - R2 > u2) {
+          let f4 = this._unicodeService.charProperties(n2, p2);
+          o3 = Ae.extractWidth(f4);
+          let A3 = Ae.extractShouldJoin(f4), R2 = A3 ? Ae.extractWidth(p2) : 0;
+          if (p2 = f4, a3 && this._onA11yChar.fire(Ce(n2)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), this._activeBuffer.x + o3 - R2 > u2) {
             if (h3) {
               let O2 = _3, I2 = this._activeBuffer.x - R2;
               for (this._activeBuffer.x = R2, this._activeBuffer.y++, this._activeBuffer.y === this._activeBuffer.scrollBottom + 1 ? (this._activeBuffer.y--, this._bufferService.scroll(this._eraseAttrData(), true)) : (this._activeBuffer.y >= this._bufferService.rows && (this._activeBuffer.y = this._bufferService.rows - 1), this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).isWrapped = true), _3 = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y), R2 > 0 && _3 instanceof Ze && _3.copyCellsFrom(O2, I2, 0, R2, false); I2 < u2; ) O2.setCellFromCodepoint(I2++, 0, 1, d3);
@@ -102178,8 +102596,8 @@ ${h3.join(`
       requestMode(e3, i2) {
         let r2;
         ((P2) => (P2[P2.NOT_RECOGNIZED = 0] = "NOT_RECOGNIZED", P2[P2.SET = 1] = "SET", P2[P2.RESET = 2] = "RESET", P2[P2.PERMANENTLY_SET = 3] = "PERMANENTLY_SET", P2[P2.PERMANENTLY_RESET = 4] = "PERMANENTLY_RESET"))(r2 ||= {});
-        let n2 = this._coreService.decPrivateModes, { activeProtocol: o3, activeEncoding: l2 } = this._coreMouseService, a3 = this._coreService, { buffers: u2, cols: h3 } = this._bufferService, { active: c3, alt: d3 } = u2, _3 = this._optionsService.rawOptions, p2 = (A3, R2) => (a3.triggerDataEvent(`${b2.ESC}[${i2 ? "" : "?"}${A3};${R2}$y`), true), m2 = (A3) => A3 ? 1 : 2, f3 = e3.params[0];
-        return i2 ? f3 === 2 ? p2(f3, 4) : f3 === 4 ? p2(f3, m2(a3.modes.insertMode)) : f3 === 12 ? p2(f3, 3) : f3 === 20 ? p2(f3, m2(_3.convertEol)) : p2(f3, 0) : f3 === 1 ? p2(f3, m2(n2.applicationCursorKeys)) : f3 === 3 ? p2(f3, _3.windowOptions.setWinLines ? h3 === 80 ? 2 : h3 === 132 ? 1 : 0 : 0) : f3 === 6 ? p2(f3, m2(n2.origin)) : f3 === 7 ? p2(f3, m2(n2.wraparound)) : f3 === 8 ? p2(f3, 3) : f3 === 9 ? p2(f3, m2(o3 === "X10")) : f3 === 12 ? p2(f3, m2(_3.cursorBlink)) : f3 === 25 ? p2(f3, m2(!a3.isCursorHidden)) : f3 === 45 ? p2(f3, m2(n2.reverseWraparound)) : f3 === 66 ? p2(f3, m2(n2.applicationKeypad)) : f3 === 67 ? p2(f3, 4) : f3 === 1e3 ? p2(f3, m2(o3 === "VT200")) : f3 === 1002 ? p2(f3, m2(o3 === "DRAG")) : f3 === 1003 ? p2(f3, m2(o3 === "ANY")) : f3 === 1004 ? p2(f3, m2(n2.sendFocus)) : f3 === 1005 ? p2(f3, 4) : f3 === 1006 ? p2(f3, m2(l2 === "SGR")) : f3 === 1015 ? p2(f3, 4) : f3 === 1016 ? p2(f3, m2(l2 === "SGR_PIXELS")) : f3 === 1048 ? p2(f3, 1) : f3 === 47 || f3 === 1047 || f3 === 1049 ? p2(f3, m2(c3 === d3)) : f3 === 2004 ? p2(f3, m2(n2.bracketedPasteMode)) : f3 === 2026 ? p2(f3, m2(n2.synchronizedOutput)) : p2(f3, 0);
+        let n2 = this._coreService.decPrivateModes, { activeProtocol: o3, activeEncoding: l2 } = this._coreMouseService, a3 = this._coreService, { buffers: u2, cols: h3 } = this._bufferService, { active: c3, alt: d3 } = u2, _3 = this._optionsService.rawOptions, p2 = (A3, R2) => (a3.triggerDataEvent(`${b2.ESC}[${i2 ? "" : "?"}${A3};${R2}$y`), true), m2 = (A3) => A3 ? 1 : 2, f4 = e3.params[0];
+        return i2 ? f4 === 2 ? p2(f4, 4) : f4 === 4 ? p2(f4, m2(a3.modes.insertMode)) : f4 === 12 ? p2(f4, 3) : f4 === 20 ? p2(f4, m2(_3.convertEol)) : p2(f4, 0) : f4 === 1 ? p2(f4, m2(n2.applicationCursorKeys)) : f4 === 3 ? p2(f4, _3.windowOptions.setWinLines ? h3 === 80 ? 2 : h3 === 132 ? 1 : 0 : 0) : f4 === 6 ? p2(f4, m2(n2.origin)) : f4 === 7 ? p2(f4, m2(n2.wraparound)) : f4 === 8 ? p2(f4, 3) : f4 === 9 ? p2(f4, m2(o3 === "X10")) : f4 === 12 ? p2(f4, m2(_3.cursorBlink)) : f4 === 25 ? p2(f4, m2(!a3.isCursorHidden)) : f4 === 45 ? p2(f4, m2(n2.reverseWraparound)) : f4 === 66 ? p2(f4, m2(n2.applicationKeypad)) : f4 === 67 ? p2(f4, 4) : f4 === 1e3 ? p2(f4, m2(o3 === "VT200")) : f4 === 1002 ? p2(f4, m2(o3 === "DRAG")) : f4 === 1003 ? p2(f4, m2(o3 === "ANY")) : f4 === 1004 ? p2(f4, m2(n2.sendFocus)) : f4 === 1005 ? p2(f4, 4) : f4 === 1006 ? p2(f4, m2(l2 === "SGR")) : f4 === 1015 ? p2(f4, 4) : f4 === 1016 ? p2(f4, m2(l2 === "SGR_PIXELS")) : f4 === 1048 ? p2(f4, 1) : f4 === 47 || f4 === 1047 || f4 === 1049 ? p2(f4, m2(c3 === d3)) : f4 === 2004 ? p2(f4, m2(n2.bracketedPasteMode)) : f4 === 2026 ? p2(f4, m2(n2.synchronizedOutput)) : p2(f4, 0);
       }
       _updateAttrColor(e3, i2, r2, n2, o3) {
         return i2 === 2 ? (e3 |= 50331648, e3 &= -16777216, e3 |= De.fromColorRGB([r2, n2, o3])) : i2 === 5 && (e3 &= -50331904, e3 |= 33554432 | r2 & 255), e3;
@@ -114667,7 +115085,7 @@ function gen_bitlen(s16, desc) {
   var n2, m2;
   var bits;
   var xbits;
-  var f3;
+  var f4;
   var overflow = 0;
   for (bits = 0; bits <= MAX_BITS; bits++) {
     s16.bl_count[bits] = 0;
@@ -114689,10 +115107,10 @@ function gen_bitlen(s16, desc) {
     if (n2 >= base) {
       xbits = extra[n2 - base];
     }
-    f3 = tree[n2 * 2];
-    s16.opt_len += f3 * (bits + xbits);
+    f4 = tree[n2 * 2];
+    s16.opt_len += f4 * (bits + xbits);
     if (has_stree) {
-      s16.static_len += f3 * (stree[n2 * 2 + 1] + xbits);
+      s16.static_len += f4 * (stree[n2 * 2 + 1] + xbits);
     }
   }
   if (overflow === 0) {
@@ -115249,8 +115667,8 @@ function err(strm, errorCode) {
   strm.msg = messages_default[errorCode];
   return errorCode;
 }
-function rank(f3) {
-  return (f3 << 1) - (f3 > 4 ? 9 : 0);
+function rank(f4) {
+  return (f4 << 1) - (f4 > 4 ? 9 : 0);
 }
 function zero2(buf) {
   var len = buf.length;
@@ -120679,7 +121097,7 @@ var init_aes = __esm({
 });
 
 // node_modules/.pnpm/@novnc+novnc@1.7.0/node_modules/@novnc/novnc/core/crypto/des.js
-var PC2, totrot, z3, a2, b3, c2, d2, e2, f2, SP1, SP2, SP3, SP4, SP5, SP6, SP7, SP8, DES, DESECBCipher, DESCBCCipher;
+var PC2, totrot, z3, a2, b3, c2, d2, e2, f3, SP1, SP2, SP3, SP4, SP5, SP6, SP7, SP8, DES, DESECBCipher, DESCBCCipher;
 var init_des = __esm({
   "node_modules/.pnpm/@novnc+novnc@1.7.0/node_modules/@novnc/novnc/core/crypto/des.js"() {
     PC2 = [
@@ -120739,42 +121157,42 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 2;
     e2 = 1 << 10;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP1 = [
       c2 | e2,
       z3 | z3,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       c2 | d2,
-      a2 | f2,
+      a2 | f3,
       z3 | d2,
       a2 | z3,
       z3 | e2,
       c2 | e2,
-      c2 | f2,
+      c2 | f3,
       z3 | e2,
-      b3 | f2,
+      b3 | f3,
       c2 | d2,
       b3 | z3,
       z3 | d2,
-      z3 | f2,
+      z3 | f3,
       b3 | e2,
       b3 | e2,
       a2 | e2,
       a2 | e2,
       c2 | z3,
       c2 | z3,
-      b3 | f2,
+      b3 | f3,
       a2 | d2,
       b3 | d2,
       b3 | d2,
       a2 | d2,
       z3 | z3,
-      z3 | f2,
-      a2 | f2,
+      z3 | f3,
+      a2 | f3,
       b3 | z3,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       z3 | d2,
       c2 | z3,
       c2 | e2,
@@ -120787,17 +121205,17 @@ var init_des = __esm({
       b3 | d2,
       z3 | e2,
       z3 | d2,
-      b3 | f2,
-      a2 | f2,
-      c2 | f2,
+      b3 | f3,
+      a2 | f3,
+      c2 | f3,
       a2 | d2,
       c2 | z3,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
-      z3 | f2,
-      a2 | f2,
+      z3 | f3,
+      a2 | f3,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | e2,
       b3 | e2,
       z3 | z3,
@@ -120811,18 +121229,18 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 5;
     e2 = 1 << 15;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP2 = [
-      c2 | f2,
+      c2 | f3,
       b3 | e2,
       z3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       z3 | d2,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
-      c2 | f2,
+      c2 | f3,
       c2 | e2,
       b3 | z3,
       b3 | e2,
@@ -120831,51 +121249,51 @@ var init_des = __esm({
       c2 | d2,
       a2 | e2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
       b3 | z3,
       z3 | e2,
-      a2 | f2,
+      a2 | f3,
       c2 | z3,
       a2 | d2,
       b3 | d2,
       z3 | z3,
       a2 | e2,
-      z3 | f2,
+      z3 | f3,
       c2 | e2,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | d2,
       a2 | z3,
-      b3 | f2,
+      b3 | f3,
       c2 | z3,
       c2 | e2,
       z3 | e2,
       c2 | z3,
       b3 | e2,
       z3 | d2,
-      c2 | f2,
-      a2 | f2,
+      c2 | f3,
+      a2 | f3,
       z3 | d2,
       z3 | e2,
       b3 | z3,
-      z3 | f2,
+      z3 | f3,
       c2 | e2,
       a2 | z3,
       b3 | d2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
       a2 | d2,
       a2 | e2,
       z3 | z3,
       b3 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | z3,
       c2 | d2,
-      c2 | f2,
+      c2 | f3,
       a2 | e2
     ];
     a2 = 1 << 17;
@@ -120883,24 +121301,24 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 3;
     e2 = 1 << 9;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP3 = [
-      z3 | f2,
+      z3 | f3,
       c2 | e2,
       z3 | z3,
       c2 | d2,
       b3 | e2,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       b3 | e2,
       a2 | d2,
       b3 | d2,
       b3 | d2,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | d2,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       b3 | z3,
       z3 | d2,
       c2 | e2,
@@ -120908,44 +121326,44 @@ var init_des = __esm({
       a2 | e2,
       c2 | z3,
       c2 | d2,
-      a2 | f2,
-      b3 | f2,
+      a2 | f3,
+      b3 | f3,
       a2 | e2,
       a2 | z3,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
-      c2 | f2,
+      c2 | f3,
       z3 | e2,
       b3 | z3,
       c2 | e2,
       b3 | z3,
       a2 | d2,
-      z3 | f2,
+      z3 | f3,
       a2 | z3,
       c2 | e2,
       b3 | e2,
       z3 | z3,
       z3 | e2,
       a2 | d2,
-      c2 | f2,
+      c2 | f3,
       b3 | e2,
       b3 | d2,
       z3 | e2,
       z3 | z3,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       a2 | z3,
       b3 | z3,
-      c2 | f2,
+      c2 | f3,
       z3 | d2,
-      a2 | f2,
+      a2 | f3,
       a2 | e2,
       b3 | d2,
       c2 | z3,
-      b3 | f2,
-      z3 | f2,
+      b3 | f3,
+      z3 | f3,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       z3 | d2,
       c2 | d2,
       a2 | e2
@@ -120955,21 +121373,21 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 0;
     e2 = 1 << 7;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP4 = [
       c2 | d2,
-      a2 | f2,
-      a2 | f2,
+      a2 | f3,
+      a2 | f3,
       z3 | e2,
       c2 | e2,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
       a2 | d2,
       z3 | z3,
       c2 | z3,
       c2 | z3,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       z3 | z3,
       b3 | e2,
       b3 | d2,
@@ -120981,38 +121399,38 @@ var init_des = __esm({
       b3 | z3,
       a2 | d2,
       a2 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       a2 | e2,
       b3 | e2,
       a2 | z3,
       c2 | e2,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       b3 | e2,
       b3 | d2,
       c2 | z3,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       z3 | z3,
       z3 | z3,
       c2 | z3,
       a2 | e2,
       b3 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       c2 | d2,
-      a2 | f2,
-      a2 | f2,
+      a2 | f3,
+      a2 | f3,
       z3 | e2,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       z3 | d2,
       a2 | z3,
       b3 | d2,
       a2 | d2,
       c2 | e2,
-      b3 | f2,
+      b3 | f3,
       a2 | d2,
       a2 | e2,
       b3 | z3,
@@ -121027,40 +121445,40 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 8;
     e2 = 1 << 19;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP5 = [
       z3 | d2,
-      a2 | f2,
+      a2 | f3,
       a2 | e2,
       c2 | d2,
       z3 | e2,
       z3 | d2,
       b3 | z3,
       a2 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | e2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       c2 | d2,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | z3,
       a2 | z3,
       b3 | e2,
       b3 | e2,
       z3 | z3,
       b3 | d2,
-      c2 | f2,
-      c2 | f2,
+      c2 | f3,
+      c2 | f3,
       a2 | d2,
       c2 | e2,
       b3 | d2,
       z3 | z3,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       z3 | e2,
       c2 | d2,
       z3 | d2,
@@ -121068,30 +121486,30 @@ var init_des = __esm({
       b3 | z3,
       a2 | e2,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       a2 | d2,
       b3 | z3,
       c2 | e2,
-      a2 | f2,
-      b3 | f2,
+      a2 | f3,
+      b3 | f3,
       z3 | d2,
       a2 | z3,
       c2 | e2,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       c2 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       z3 | z3,
       b3 | e2,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       a2 | d2,
       b3 | d2,
       z3 | e2,
       z3 | z3,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       b3 | d2
     ];
     a2 = 1 << 22;
@@ -121099,37 +121517,37 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 4;
     e2 = 1 << 14;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP6 = [
       b3 | d2,
       c2 | z3,
       z3 | e2,
-      c2 | f2,
+      c2 | f3,
       c2 | z3,
       z3 | d2,
-      c2 | f2,
+      c2 | f3,
       a2 | z3,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       b3 | d2,
       a2 | d2,
       b3 | e2,
       b3 | z3,
-      z3 | f2,
+      z3 | f3,
       z3 | z3,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | e2,
       a2 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       c2 | d2,
       c2 | d2,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       a2 | e2,
       c2 | e2,
       b3 | z3,
@@ -121137,60 +121555,60 @@ var init_des = __esm({
       z3 | d2,
       c2 | d2,
       a2 | e2,
-      c2 | f2,
+      c2 | f3,
       a2 | z3,
-      z3 | f2,
+      z3 | f3,
       b3 | d2,
       a2 | z3,
       b3 | e2,
       b3 | z3,
-      z3 | f2,
+      z3 | f3,
       b3 | d2,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | e2,
       z3 | z3,
       c2 | d2,
       z3 | d2,
       z3 | e2,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       z3 | e2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
       c2 | e2,
       b3 | z3,
       a2 | d2,
-      b3 | f2
+      b3 | f3
     ];
     a2 = 1 << 21;
     b3 = 1 << 26;
     c2 = a2 | b3;
     d2 = 1 << 1;
     e2 = 1 << 11;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP7 = [
       a2 | z3,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
       z3 | e2,
-      b3 | f2,
-      a2 | f2,
+      b3 | f3,
+      a2 | f3,
       c2 | e2,
-      c2 | f2,
+      c2 | f3,
       a2 | z3,
       z3 | z3,
       b3 | d2,
       z3 | d2,
       b3 | z3,
       c2 | d2,
-      z3 | f2,
+      z3 | f3,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | d2,
       b3 | e2,
       b3 | d2,
@@ -121199,8 +121617,8 @@ var init_des = __esm({
       a2 | d2,
       c2 | z3,
       z3 | e2,
-      z3 | f2,
-      c2 | f2,
+      z3 | f3,
+      c2 | f3,
       a2 | e2,
       z3 | d2,
       b3 | z3,
@@ -121208,8 +121626,8 @@ var init_des = __esm({
       b3 | z3,
       a2 | e2,
       a2 | z3,
-      b3 | f2,
-      b3 | f2,
+      b3 | f3,
+      b3 | f3,
       c2 | d2,
       c2 | d2,
       z3 | d2,
@@ -121218,19 +121636,19 @@ var init_des = __esm({
       b3 | e2,
       a2 | z3,
       c2 | e2,
-      z3 | f2,
-      a2 | f2,
+      z3 | f3,
+      a2 | f3,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | d2,
-      c2 | f2,
+      c2 | f3,
       c2 | z3,
       a2 | e2,
       z3 | z3,
       z3 | d2,
-      c2 | f2,
+      c2 | f3,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | z3,
       z3 | e2,
       b3 | d2,
@@ -121243,48 +121661,48 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 6;
     e2 = 1 << 12;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP8 = [
-      b3 | f2,
+      b3 | f3,
       z3 | e2,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       b3 | z3,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       b3 | z3,
       a2 | d2,
       c2 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       c2 | e2,
-      a2 | f2,
+      a2 | f3,
       z3 | e2,
       z3 | d2,
       c2 | z3,
       b3 | d2,
       b3 | e2,
-      z3 | f2,
+      z3 | f3,
       a2 | e2,
       a2 | d2,
       c2 | d2,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       z3 | z3,
       z3 | z3,
       c2 | d2,
       b3 | d2,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       c2 | e2,
       z3 | e2,
       z3 | d2,
       c2 | d2,
       z3 | e2,
-      a2 | f2,
+      a2 | f3,
       b3 | e2,
       z3 | d2,
       b3 | d2,
@@ -121292,20 +121710,20 @@ var init_des = __esm({
       c2 | d2,
       b3 | z3,
       a2 | z3,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | d2,
       b3 | d2,
       c2 | z3,
       b3 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       a2 | e2,
-      z3 | f2,
-      z3 | f2,
+      z3 | f3,
+      z3 | f3,
       a2 | d2,
       b3 | z3,
       c2 | e2
@@ -121725,11 +122143,11 @@ async function MD5(d3) {
   return M3(V(Y2(X2(s16), 8 * s16.length)));
 }
 function M3(d3) {
-  let f3 = new Uint8Array(d3.length);
+  let f4 = new Uint8Array(d3.length);
   for (let i2 = 0; i2 < d3.length; i2++) {
-    f3[i2] = d3.charCodeAt(i2);
+    f4[i2] = d3.charCodeAt(i2);
   }
-  return f3;
+  return f4;
 }
 function X2(d3) {
   let r2 = Array(d3.length >> 2);
@@ -121744,27 +122162,27 @@ function V(d3) {
 }
 function Y2(d3, g2) {
   d3[g2 >> 5] |= 128 << g2 % 32, d3[14 + (g2 + 64 >>> 9 << 4)] = g2;
-  let m2 = 1732584193, f3 = -271733879, r2 = -1732584194, i2 = 271733878;
+  let m2 = 1732584193, f4 = -271733879, r2 = -1732584194, i2 = 271733878;
   for (let n2 = 0; n2 < d3.length; n2 += 16) {
-    let h3 = m2, t2 = f3, g3 = r2, e3 = i2;
-    f3 = ii2(f3 = ii2(f3 = ii2(f3 = ii2(f3 = hh(f3 = hh(f3 = hh(f3 = hh(f3 = gg(f3 = gg(f3 = gg(f3 = gg(f3 = ff(f3 = ff(f3 = ff(f3 = ff(f3, r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 0], 7, -680876936), f3, r2, d3[n2 + 1], 12, -389564586), m2, f3, d3[n2 + 2], 17, 606105819), i2, m2, d3[n2 + 3], 22, -1044525330), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 4], 7, -176418897), f3, r2, d3[n2 + 5], 12, 1200080426), m2, f3, d3[n2 + 6], 17, -1473231341), i2, m2, d3[n2 + 7], 22, -45705983), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 8], 7, 1770035416), f3, r2, d3[n2 + 9], 12, -1958414417), m2, f3, d3[n2 + 10], 17, -42063), i2, m2, d3[n2 + 11], 22, -1990404162), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 12], 7, 1804603682), f3, r2, d3[n2 + 13], 12, -40341101), m2, f3, d3[n2 + 14], 17, -1502002290), i2, m2, d3[n2 + 15], 22, 1236535329), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 1], 5, -165796510), f3, r2, d3[n2 + 6], 9, -1069501632), m2, f3, d3[n2 + 11], 14, 643717713), i2, m2, d3[n2 + 0], 20, -373897302), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 5], 5, -701558691), f3, r2, d3[n2 + 10], 9, 38016083), m2, f3, d3[n2 + 15], 14, -660478335), i2, m2, d3[n2 + 4], 20, -405537848), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 9], 5, 568446438), f3, r2, d3[n2 + 14], 9, -1019803690), m2, f3, d3[n2 + 3], 14, -187363961), i2, m2, d3[n2 + 8], 20, 1163531501), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 13], 5, -1444681467), f3, r2, d3[n2 + 2], 9, -51403784), m2, f3, d3[n2 + 7], 14, 1735328473), i2, m2, d3[n2 + 12], 20, -1926607734), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 5], 4, -378558), f3, r2, d3[n2 + 8], 11, -2022574463), m2, f3, d3[n2 + 11], 16, 1839030562), i2, m2, d3[n2 + 14], 23, -35309556), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 1], 4, -1530992060), f3, r2, d3[n2 + 4], 11, 1272893353), m2, f3, d3[n2 + 7], 16, -155497632), i2, m2, d3[n2 + 10], 23, -1094730640), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 13], 4, 681279174), f3, r2, d3[n2 + 0], 11, -358537222), m2, f3, d3[n2 + 3], 16, -722521979), i2, m2, d3[n2 + 6], 23, 76029189), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 9], 4, -640364487), f3, r2, d3[n2 + 12], 11, -421815835), m2, f3, d3[n2 + 15], 16, 530742520), i2, m2, d3[n2 + 2], 23, -995338651), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 0], 6, -198630844), f3, r2, d3[n2 + 7], 10, 1126891415), m2, f3, d3[n2 + 14], 15, -1416354905), i2, m2, d3[n2 + 5], 21, -57434055), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 12], 6, 1700485571), f3, r2, d3[n2 + 3], 10, -1894986606), m2, f3, d3[n2 + 10], 15, -1051523), i2, m2, d3[n2 + 1], 21, -2054922799), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 8], 6, 1873313359), f3, r2, d3[n2 + 15], 10, -30611744), m2, f3, d3[n2 + 6], 15, -1560198380), i2, m2, d3[n2 + 13], 21, 1309151649), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 4], 6, -145523070), f3, r2, d3[n2 + 11], 10, -1120210379), m2, f3, d3[n2 + 2], 15, 718787259), i2, m2, d3[n2 + 9], 21, -343485551), m2 = add(m2, h3), f3 = add(f3, t2), r2 = add(r2, g3), i2 = add(i2, e3);
+    let h3 = m2, t2 = f4, g3 = r2, e3 = i2;
+    f4 = ii2(f4 = ii2(f4 = ii2(f4 = ii2(f4 = hh(f4 = hh(f4 = hh(f4 = hh(f4 = gg(f4 = gg(f4 = gg(f4 = gg(f4 = ff(f4 = ff(f4 = ff(f4 = ff(f4, r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 0], 7, -680876936), f4, r2, d3[n2 + 1], 12, -389564586), m2, f4, d3[n2 + 2], 17, 606105819), i2, m2, d3[n2 + 3], 22, -1044525330), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 4], 7, -176418897), f4, r2, d3[n2 + 5], 12, 1200080426), m2, f4, d3[n2 + 6], 17, -1473231341), i2, m2, d3[n2 + 7], 22, -45705983), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 8], 7, 1770035416), f4, r2, d3[n2 + 9], 12, -1958414417), m2, f4, d3[n2 + 10], 17, -42063), i2, m2, d3[n2 + 11], 22, -1990404162), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 12], 7, 1804603682), f4, r2, d3[n2 + 13], 12, -40341101), m2, f4, d3[n2 + 14], 17, -1502002290), i2, m2, d3[n2 + 15], 22, 1236535329), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 1], 5, -165796510), f4, r2, d3[n2 + 6], 9, -1069501632), m2, f4, d3[n2 + 11], 14, 643717713), i2, m2, d3[n2 + 0], 20, -373897302), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 5], 5, -701558691), f4, r2, d3[n2 + 10], 9, 38016083), m2, f4, d3[n2 + 15], 14, -660478335), i2, m2, d3[n2 + 4], 20, -405537848), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 9], 5, 568446438), f4, r2, d3[n2 + 14], 9, -1019803690), m2, f4, d3[n2 + 3], 14, -187363961), i2, m2, d3[n2 + 8], 20, 1163531501), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 13], 5, -1444681467), f4, r2, d3[n2 + 2], 9, -51403784), m2, f4, d3[n2 + 7], 14, 1735328473), i2, m2, d3[n2 + 12], 20, -1926607734), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 5], 4, -378558), f4, r2, d3[n2 + 8], 11, -2022574463), m2, f4, d3[n2 + 11], 16, 1839030562), i2, m2, d3[n2 + 14], 23, -35309556), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 1], 4, -1530992060), f4, r2, d3[n2 + 4], 11, 1272893353), m2, f4, d3[n2 + 7], 16, -155497632), i2, m2, d3[n2 + 10], 23, -1094730640), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 13], 4, 681279174), f4, r2, d3[n2 + 0], 11, -358537222), m2, f4, d3[n2 + 3], 16, -722521979), i2, m2, d3[n2 + 6], 23, 76029189), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 9], 4, -640364487), f4, r2, d3[n2 + 12], 11, -421815835), m2, f4, d3[n2 + 15], 16, 530742520), i2, m2, d3[n2 + 2], 23, -995338651), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 0], 6, -198630844), f4, r2, d3[n2 + 7], 10, 1126891415), m2, f4, d3[n2 + 14], 15, -1416354905), i2, m2, d3[n2 + 5], 21, -57434055), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 12], 6, 1700485571), f4, r2, d3[n2 + 3], 10, -1894986606), m2, f4, d3[n2 + 10], 15, -1051523), i2, m2, d3[n2 + 1], 21, -2054922799), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 8], 6, 1873313359), f4, r2, d3[n2 + 15], 10, -30611744), m2, f4, d3[n2 + 6], 15, -1560198380), i2, m2, d3[n2 + 13], 21, 1309151649), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 4], 6, -145523070), f4, r2, d3[n2 + 11], 10, -1120210379), m2, f4, d3[n2 + 2], 15, 718787259), i2, m2, d3[n2 + 9], 21, -343485551), m2 = add(m2, h3), f4 = add(f4, t2), r2 = add(r2, g3), i2 = add(i2, e3);
   }
-  return Array(m2, f3, r2, i2);
+  return Array(m2, f4, r2, i2);
 }
-function cmn(d3, g2, m2, f3, r2, i2) {
-  return add(rol(add(add(g2, d3), add(f3, i2)), r2), m2);
+function cmn(d3, g2, m2, f4, r2, i2) {
+  return add(rol(add(add(g2, d3), add(f4, i2)), r2), m2);
 }
-function ff(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(g2 & m2 | ~g2 & f3, d3, g2, r2, i2, n2);
+function ff(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(g2 & m2 | ~g2 & f4, d3, g2, r2, i2, n2);
 }
-function gg(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(g2 & f3 | m2 & ~f3, d3, g2, r2, i2, n2);
+function gg(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(g2 & f4 | m2 & ~f4, d3, g2, r2, i2, n2);
 }
-function hh(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(g2 ^ m2 ^ f3, d3, g2, r2, i2, n2);
+function hh(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(g2 ^ m2 ^ f4, d3, g2, r2, i2, n2);
 }
-function ii2(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(m2 ^ (g2 | ~f3), d3, g2, r2, i2, n2);
+function ii2(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(m2 ^ (g2 | ~f4), d3, g2, r2, i2, n2);
 }
 function add(d3, g2) {
   let m2 = (65535 & d3) + (65535 & g2);
@@ -132471,6 +132889,7 @@ async function loadStartupSettings(settings) {
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
+    animateAgentAvatars,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -132485,6 +132904,7 @@ async function loadStartupSettings(settings) {
     settings.get("openLinksInBuiltInBrowser"),
     settings.get("theme"),
     settings.get("fontSize"),
+    settings.get("animateAgentAvatars"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -132500,6 +132920,7 @@ async function loadStartupSettings(settings) {
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
+    animateAgentAvatars,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -133200,15 +133621,15 @@ function _arrayWithHoles(r2) {
 function _iterableToArrayLimit(r2, l2) {
   var t2 = null == r2 ? null : "undefined" != typeof Symbol && r2[Symbol.iterator] || r2["@@iterator"];
   if (null != t2) {
-    var e3, n2, i2, u2, a3 = [], f3 = true, o3 = false;
+    var e3, n2, i2, u2, a3 = [], f4 = true, o3 = false;
     try {
       if (i2 = (t2 = t2.call(r2)).next, 0 === l2) ;
-      else for (; !(f3 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f3 = true) ;
+      else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
     } catch (r3) {
       o3 = true, n2 = r3;
     } finally {
       try {
-        if (!f3 && null != t2.return && (u2 = t2.return(), Object(u2) !== u2)) return;
+        if (!f4 && null != t2.return && (u2 = t2.return(), Object(u2) !== u2)) return;
       } finally {
         if (o3) throw n2;
       }
@@ -141764,6 +142185,7 @@ async function boot() {
     themePreference,
     fontSize,
     uiScale,
+    animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
