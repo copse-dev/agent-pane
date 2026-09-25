@@ -108134,7 +108134,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "aria-label": "Roadmap filters",
     hidden: true
   });
-  filter.append(searchInput, filterToggle, filterMenu);
+  filter.append(searchInput, filterToggle);
   const actionButtons = el("div", { class: "roadmap-action-buttons" });
   const newBtn = el(
     "button",
@@ -108210,7 +108210,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     actionButtons
   );
   const listBody = el("div", { class: "git-changes-list roadmap-list" });
-  listRoot.append(listHeader, listBody);
+  listRoot.append(listHeader, listBody, filterMenu);
   function appendFilterSection(title, values, enabled, label, defaultChecked) {
     filterMenu.append(el("div", { class: "roadmap-filter-heading" }, title));
     for (const value of values) {
@@ -108257,7 +108257,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     filterToggle.setAttribute("aria-expanded", opening ? "true" : "false");
   });
   const closeFilterOnOutsideClick = (event) => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu();
+    if (event.target instanceof Node && !filter.contains(event.target) && !filterMenu.contains(event.target)) {
+      closeFilterMenu();
+    }
   };
   document.addEventListener("click", closeFilterOnOutsideClick);
   searchInput.addEventListener("input", () => {
