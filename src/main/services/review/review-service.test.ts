@@ -197,6 +197,21 @@ describe('review service', () => {
     assert.equal(worktreeCount(repo), 1)
   })
 
+  it('records who asked for the run on every report it emits (#2519)', async () => {
+    const byUser = await run({ initiator: 'user' })
+    assert.deepEqual(
+      byUser.reports.map((report) => report.initiator),
+      ['user', 'user'],
+    )
+    const byAgent = await run({ initiator: 'agent' })
+    assert.deepEqual(
+      byAgent.reports.map((report) => report.initiator),
+      ['agent', 'agent'],
+    )
+    const refused = await run({ initiator: 'user', registryEnabled: false })
+    assert.equal(refused.result.report.initiator, 'user')
+  })
+
   it('reports a provider failure instead of a clean review', async () => {
     const reviewer: LLMProvider = {
       async *stream() {
@@ -332,7 +347,7 @@ describe('review_changes tool context', () => {
     const reviewed: string[] = []
     const fakeReview: typeof runThreadReview = (options) => {
       reviewed.push(`${options.threadId}:${options.root}`)
-      const report = runningReviewReport({ reviewer: 'm', challenger: 'm' }, [], 0)
+      const report = runningReviewReport({ reviewer: 'm', challenger: 'm' }, [], 0, 'agent')
       return Promise.resolve({ report, summary: options.threadId })
     }
     const call = (threadId: string, pause: number): Promise<string> =>

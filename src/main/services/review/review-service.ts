@@ -316,6 +316,7 @@ export interface ProjectReportInput {
   readonly models: ReviewModels
   readonly lenses: readonly string[]
   readonly startedAt: number
+  readonly initiator: ReviewInitiator
   readonly dismissed: ReadonlySet<string>
   /** Reads the anchored source of a finding on head; `null` when unreadable. */
   readonly anchored: (finding: Finding) => string | null
@@ -339,6 +340,7 @@ export function projectReviewReport(input: ProjectReportInput): ThreadReviewRepo
     status: failed.length > 0 ? 'error' : 'done',
     ...(error !== '' ? { error } : {}),
     startedAt: input.startedAt,
+    initiator: input.initiator,
     models: { reviewer: models.reviewer, challenger: models.challenger },
     lenses: [...input.lenses],
     baseRef: stage0.baseRef,
@@ -379,10 +381,12 @@ export function runningReviewReport(
   models: ReviewModels,
   lenses: readonly string[],
   startedAt: number,
+  initiator: ReviewInitiator,
 ): ThreadReviewReport {
   return {
     status: 'running',
     startedAt,
+    initiator,
     models: { reviewer: models.reviewer, challenger: models.challenger },
     lenses: [...lenses],
     baseRef: '',
@@ -424,7 +428,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
   const lensSpec = resolveReviewLensSpec(readSetting)
   const lenses = resolveLenses(lensSpec)
   const lensIds = lenses.map((lens) => lens.id)
-  const placeholder = runningReviewReport(models, lensIds, startedAt)
+  const placeholder = runningReviewReport(models, lensIds, startedAt, options.initiator)
 
   if (!getDefaultPluginRegistry().isEnabled(REVIEW_PLUGIN_ID)) {
     const report = errorReport(
@@ -587,6 +591,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
       models,
       lenses: lensIds,
       startedAt,
+      initiator: options.initiator,
       dismissed: loadDismissedFindingIds(),
       anchored: (finding) => anchoredSource(headCheckout, finding),
       cost: services.estimateCost(usageByModel),

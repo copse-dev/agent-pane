@@ -476,6 +476,53 @@ describe('runAgent AgentHost decoupling', () => {
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
   })
 
+  // #2519: a review the user ran reaches the model with the next prompt, and
+  // stays in history with it — while hooks still see only what the user typed.
+  it('leads the prompt with the review summary it carries and keeps it in history', async () => {
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const sent: LLMMessage[][] = []
+    const provider: LLMProvider = {
+      stream: async function* (messages) {
+        sent.push(messages)
+        yield { type: 'text' as const, text: 'Fixing the high-severity finding.' }
+      },
+    }
+    const reviewContext = '<copse_review_report>\n1 finding(s):\n…\n</copse_review_report>'
+
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-review-context',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-review-context', () =>
+          agentService.runAgent(
+            'thread-review-context',
+            'Fix what the review found.',
+            [{ role: 'assistant', content: 'Done with the change.' }],
+            host,
+            new ToolRegistry(),
+            { provider, contextWindow: 100_000, reviewContext },
+          ),
+        ),
+    )
+
+    const expected = `${reviewContext}\n\nFix what the review found.`
+    const firstCall = sent[0] ?? []
+    assert.deepEqual(
+      firstCall.filter((message) => message.role === 'user').map((message) => message.content),
+      [expected],
+    )
+    assert.deepEqual(result.messages.slice(0, 2), [
+      { role: 'assistant', content: 'Done with the change.' },
+      { role: 'user', content: expected },
+    ])
+  })
+
   it('activates nested instructions on first file access and defers the first edit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
     await mkdir(join(root, 'packages', 'api'), { recursive: true })

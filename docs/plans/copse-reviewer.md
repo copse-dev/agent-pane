@@ -784,6 +784,16 @@ the app-side review service (`src/main/services/review/review-service.ts`, with
   on thread metadata; earlier thread-level reports remain readable there. Both forms
   render from saved data after the plugin is disabled (decision 17).
   No review starts a machine turn, so decision 5's budget is untouched.
+- **The model sees reviews the user ran (#2519).** Each report records its `initiator`. A
+  completed `user` run (the Review button or the bubble) that the model has not replied
+  after — the latest assistant turn's report, or a thread-level report no assistant message
+  postdates — is summarised by the renderer into the next dispatch's `reviewContext`: what
+  was reviewed, the ground, and the open findings as one line each, never the raw report.
+  `runAgent` leads the outbound prompt with it (after `beforeSubmitPrompt`, which sees only
+  what the user typed). It rides the user's own message rather than the operator channel,
+  because it records the user's action and must stay in history (decision 22 governs
+  turn-local steering, not this). The agent's own `review_changes` run is never re-sent: its
+  report is already the tool result.
 - **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
   verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a
   disclosure onto the verdict's reason, the anchored lines, the evidence (a command with

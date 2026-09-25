@@ -12,6 +12,10 @@ import {
   setQueuePaused,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
+import {
+  reviewReportModelContext,
+  reviewReportsAwaitingModel,
+} from '@shared/store/review-reports.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
@@ -154,11 +158,18 @@ function setMessageHookOrigin(
 function refreshPayload(
   store: AppStore,
   threadId: string,
-  payload: AgentRunPayload,
+  { reviewContext: _stale, ...payload }: AgentRunPayload,
 ): AgentRunPayload {
   const thread = getThreadById(store, threadId)
+  // Reviews the user ran since the model's last reply (#2519), read at dispatch
+  // time: a review that finished while this message sat queued still goes with
+  // it, and one the model has already replied after never goes again.
+  const reviewContext = thread
+    ? reviewReportModelContext(reviewReportsAwaitingModel(thread))
+    : undefined
   return {
     ...payload,
+    ...(reviewContext !== undefined ? { reviewContext } : {}),
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...(thread?.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
     // Send the per-thread model so the run uses the picker's selection rather

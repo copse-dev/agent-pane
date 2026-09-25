@@ -89,6 +89,7 @@ export function startReview(
   const runningReport: ThreadReviewReport = {
     status: 'running',
     startedAt: Date.now(),
+    initiator: 'user',
     models: { reviewer: thread?.model ?? '', challenger: null },
     lenses: [],
     baseRef: '',
