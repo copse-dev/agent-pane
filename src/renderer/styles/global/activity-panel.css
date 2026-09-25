@@ -80,7 +80,7 @@ dialog.activity-panel-overlay {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 
 .activity-group + .activity-group {
