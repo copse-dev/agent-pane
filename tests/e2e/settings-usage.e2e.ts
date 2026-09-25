@@ -148,6 +148,20 @@ describe('settings usage panel', function () {
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(2) tbody tr')).toBeDisplayed()
 
+    const periodButtons = await $$('.usage-period-btn')
+    assert.equal(periodButtons.length, 4)
+    const periodWidths = await Promise.all(periodButtons.map((button) => button.getSize('width')))
+    const monthButton = $('.usage-period-btn[data-period="month"]')
+    await monthButton.click()
+    await expect(monthButton).toHaveAttribute('aria-selected', 'true')
+    assert.deepEqual(
+      await Promise.all(periodButtons.map((button) => button.getSize('width'))),
+      periodWidths,
+      'selecting a usage period must not change any pill width',
+    )
+    await saveElementScreenshot('.usage-period-tabs', 'settings-usage-period-tabs.png')
+    await $('.usage-period-btn[data-period="day"]').click()
+
     const cloudRows = await browser.execute(() =>
       [...document.querySelectorAll('.usage-model-group:nth-of-type(1) tbody tr')].map(
         (row) => row.textContent ?? '',

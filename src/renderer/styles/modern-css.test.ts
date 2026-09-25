@@ -60,6 +60,12 @@ describe('modern CSS adoptions', () => {
       /\.git-change-path:not\(\.pr-list-title\)::before,\s*\.git-change-path:not\(\.pr-list-title\)::after\s*\{[^}]*content:\s*'\\200E'/,
       'an RTL paragraph needs left-to-right marks at both ends or `.bashrc` renders as `bashrc.`',
     )
+    const settings = read('settings.css')
+    assert.match(
+      settings,
+      /\.sources-row-hover-detail::before,\s*\.sources-row-hover-detail::after\s*\{[^}]*content:\s*'\\200E'/,
+      'left-elided source paths need the same bidi guards',
+    )
   })
 
   it('does not bump weight on the active Usage period toggle', () => {
