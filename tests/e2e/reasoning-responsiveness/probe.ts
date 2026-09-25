@@ -26,7 +26,7 @@ export async function startResponsivenessProbe(): Promise<void> {
     const supportedEntries = [...PerformanceObserver.supportedEntryTypes]
     const observers: Array<{ observer: PerformanceObserver; samples: number[] }> = []
     const started = performance.now()
-    const settled = document.querySelector('.tool-card-step .message-reasoning-text p')
+    const settled = document.querySelector('.tool-card-rollup [data-reasoning-message-id] p')
     let lastFrame: number | null = null
     let frame = 0
     let stopped = false

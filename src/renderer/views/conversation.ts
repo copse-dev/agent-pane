@@ -84,6 +84,7 @@ import {
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
   getToolCallLabel,
+  getToolGroupKey,
   getToolEditPath,
   RUN_ROLLUP_KEY,
   type ToolCallDisplayItem,
@@ -1018,39 +1019,6 @@ function createRollupToolCard(
   return card
 }
 
-/**
- * One member message of a cross-message run, nested inside the run's summary.
- * The step keeps its own message id on the element so that message's reasoning
- * trail — which streams on its own event, long after the card was built — can
- * be hung on the right step (see syncRunStepReasoning).
- */
-function createStepToolCard(
-  item: Extract<ToolCallDisplayItem, { type: 'step' }>,
-  api: ApiClient,
-  threadId: string,
-): HTMLDetailsElement {
-  const status = aggregateToolStatus(item.toolCalls)
-  const card = el('details', {
-    class: 'tool-card tool-card-step',
-    'data-step-key': item.key,
-    'data-step-message-id': item.messageId,
-    'data-status': status,
-    'data-tool-count': String(item.toolCalls.length),
-  })
-  // Steps reuse the rollup's body treatment: one rail, unboxed rows inside.
-  // That is the single extra rail the run adds — groups below it inset without
-  // a rule of their own, so depth stops consuming horizontal space here.
-  const body = el('div', { class: 'tool-rollup-body' })
-  for (const child of item.children) {
-    const childCard = createToolCard(child, api, threadId)
-    toolCardKeys.set(childCard, toolCardKey(child))
-    toolCardSignatures.set(childCard, toolCardSignature(child))
-    body.append(childCard)
-  }
-  card.append(createToolHeader(item.label, status, 'tool-card-header'), body)
-  return card
-}
-
 function createToolCard(
   item: ToolCallDisplayItem,
   api: ApiClient,
@@ -1058,7 +1026,6 @@ function createToolCard(
   store?: AppStore,
 ): HTMLDetailsElement {
   if (item.type === 'rollup') return createRollupToolCard(item, api, threadId, store)
-  if (item.type === 'step') return createStepToolCard(item, api, threadId)
   if (item.type === 'group') return createGroupToolCard(item)
   return createIndividualToolCard(item.toolCall, item.label, api, threadId, store)
 }
@@ -1071,8 +1038,7 @@ const toolCardSignatures = new WeakMap<HTMLElement, string>()
 const toolGroupItemSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
-  if (item.type === 'rollup') return `r:${item.key}`
-  if (item.type === 'step') return `s:${item.key}`
+  if (item.type === 'rollup') return 'r:activity'
   if (item.type === 'group') return `g:${item.key}`
   return `t:${item.toolCall.id}`
 }
@@ -1218,15 +1184,13 @@ function reconcileToolCard(
   threadId: string,
   store?: AppStore,
 ): void {
-  if (item.type === 'rollup' || item.type === 'step') {
+  if (item.type === 'rollup') {
     const status = aggregateToolStatus(item.toolCalls)
     card.dataset['status'] = status
     card.dataset['toolCount'] = String(item.toolCalls.length)
-    if (item.type === 'step') {
-      card.dataset['stepMessageId'] = item.messageId
-    }
+    card.dataset['rollupKey'] = item.key
     const count =
-      item.type === 'rollup' && item.children.length === 1 && item.children[0]?.type === 'group'
+      item.children.length === 1 && item.children[0]?.type === 'group'
         ? item.toolCalls.length
         : undefined
     replaceDirectToolHeader(card, createToolHeader(item.label, status, 'tool-card-header', count))
@@ -1719,12 +1683,10 @@ function appendMessageContent(
   // summary heading. History renders as settled ("Reasoned").
   if (
     msg.role === 'assistant' &&
-    (msg.reasoning || msg.reasoningBlocks?.length) &&
+    (msg.reasoning?.trim() || msg.reasoningBlocks?.length) &&
     opts?.nestReasoningInTools !== true
   ) {
-    body.append(
-      buildReasoningEl(msg.reasoning ?? '', !msg.content.trim(), false, msg.reasoningBlocks),
-    )
+    body.append(buildReasoningEl(msg.reasoning ?? '', false, msg.reasoningBlocks))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   // Attach before markdown so ACP transport-noise disclosure can find a parent
@@ -1812,9 +1774,10 @@ function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean)
   if (title && title.textContent !== label) title.textContent = label
   details.classList.toggle('message-reasoning-live', live)
   if (!live) {
-    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    const state = textEl && reasoningRenders.get(textEl)
-    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks)
+    for (const textEl of details.querySelectorAll<HTMLElement>('.message-reasoning-text')) {
+      const state = reasoningRenders.get(textEl)
+      if (state?.live) renderReasoningText(textEl, state.text, false, state.blocks)
+    }
   }
 }
 
@@ -1925,21 +1888,18 @@ function countChipPlaceholders(text: string): number {
 }
 
 /**
- * A `<details>` disclosure holding the model's reasoning trail. `open` reflects
- * whether the answer is still pending so live reasoning is visible by default but
- * past turns stay collapsed. Title tense follows status (`Reasoning` / `Reasoned`).
+ * A compact, initially closed disclosure holding the model's reasoning trail.
+ * Title tense follows status (`Reasoning` / `Reasoned`).
  * A click on the summary marks it user-controlled so later streaming updates
  * never fight the user's choice.
  */
 function buildReasoningEl(
   reasoning: string,
-  open: boolean,
   live: boolean,
   blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
 ): HTMLDetailsElement {
   const details = el('details', {
     class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
-    open,
   })
   const summary = el(
     'summary',
@@ -2026,12 +1986,12 @@ function syncReasoningEl(
   )
   const host = rollupBody ?? body
   let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!msg.reasoning?.trim() && !msg.reasoningBlocks?.length) {
     details?.remove()
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? '', true, live, msg.reasoningBlocks)
+    details = buildReasoningEl(msg.reasoning ?? '', live, msg.reasoningBlocks)
     host.prepend(details)
   } else {
     if (details.parentElement !== host) host.prepend(details)
@@ -2039,8 +1999,6 @@ function syncReasoningEl(
     if (textEl) renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks)
     setReasoningDisclosureTitle(details, live)
   }
-  // Keep the trail open while it is still live, unless the user collapsed it.
-  if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
 }
 
 /**
@@ -2065,10 +2023,16 @@ function syncNestedRollupReasoning(
     return
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? '', true, live, reasoningBlocks)
+    details = buildReasoningEl(reasoning ?? '', live, reasoningBlocks)
   } else {
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks)
+    if (textEl) {
+      renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks)
+      delete textEl.dataset['reasoningMessageId']
+    }
+    for (const extra of details.querySelectorAll('.message-reasoning-text')) {
+      if (extra !== textEl) extra.remove()
+    }
     setReasoningDisclosureTitle(details, live)
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details)
@@ -2080,35 +2044,52 @@ function syncNestedRollupReasoning(
 }
 
 /**
- * Hang each run member's reasoning trail at the top of its own step.
- *
- * Kept out of the step's render signature deliberately: reasoning streams token
- * by token, and folding it into the signature would rebuild the whole step card
- * (losing its expansion and its rendered markdown) on every chunk. This updates
- * the existing disclosure in place instead — the same contract
- * {@link syncNestedRollupReasoning} gives a single-message rollup.
+ * One reasoning disclosure for the run, with independently updated message
+ * bodies so new chunks never rebuild previously rendered reasoning.
  */
-function syncRunStepReasoning(card: HTMLElement, run: ToolRun, liveStepId: string | null): void {
-  for (const step of run.steps) {
-    const body = card.querySelector<HTMLElement>(
-      `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`,
-    )
-    if (!body) continue
-    let details = body.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
-    if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
-      details?.remove()
-      continue
-    }
-    const live = step.messageId === liveStepId
-    if (!details) {
-      details = buildReasoningEl(step.reasoning ?? '', live, live, step.reasoningBlocks)
-      body.prepend(details)
-      continue
-    }
-    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, step.reasoning ?? '', live, step.reasoningBlocks)
-    setReasoningDisclosureTitle(details, live)
+function syncRunReasoning(card: HTMLElement, run: ToolRun, liveStepId: string | null): void {
+  const body = card.querySelector<HTMLElement>(':scope > .tool-rollup-body')
+  if (!body) return
+  const steps = run.steps.filter(
+    (step) => Boolean(step.reasoning?.trim()) || Boolean(step.reasoningBlocks?.length),
+  )
+  let details = body.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
+  if (steps.length === 0) {
+    details?.remove()
+    return
   }
+  const live = steps.some((step) => step.messageId === liveStepId)
+  if (!details) {
+    details = buildReasoningEl('', live)
+    details.querySelector('.message-reasoning-text')?.remove()
+    body.prepend(details)
+  }
+  // A single-message disclosure may already exist when the second segment arrives.
+  const existing = new Map<string, HTMLElement>()
+  for (const text of details.querySelectorAll<HTMLElement>(':scope > .message-reasoning-text')) {
+    existing.set(text.dataset['reasoningMessageId'] ?? run.anchorId, text)
+  }
+  for (const [index, step] of steps.entries()) {
+    let text = existing.get(step.messageId)
+    existing.delete(step.messageId)
+    if (!text) {
+      text = el('div', { class: 'message-reasoning-text' })
+      details.append(text)
+    }
+    const current = details.querySelectorAll(':scope > .message-reasoning-text')[index]
+    if (current !== text) details.insertBefore(text, current ?? null)
+    text.dataset['reasoningMessageId'] = step.messageId
+    renderReasoningText(
+      text,
+      step.reasoning ?? '',
+      step.messageId === liveStepId,
+      step.reasoningBlocks,
+    )
+  }
+  existing.forEach((text) => {
+    text.remove()
+  })
+  setReasoningDisclosureTitle(details, live)
 }
 
 /**
@@ -2477,6 +2458,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // Once a live message starts as a rollup, keep that wrapper shape for this
   // mounted session so a one-tool update cannot turn into a different card type.
   const liveRollupMessages = new Set<string>()
+  const renderedToolRuns = new Map<string, ToolRun>()
   const autoOpenedDisclosures = new Set<string>()
   const autoOpenedAt = new Map<string, number>()
   const runningDisclosures = new Set<string>()
@@ -2517,9 +2499,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const fallbackMessageId = msgEl.dataset['messageId']
     if (!threadId || !fallbackMessageId) return
     msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
-      const step = details.closest<HTMLElement>('.tool-card-step[data-step-message-id]')
-      const messageId = step?.dataset['stepMessageId'] ?? fallbackMessageId
-      const key = `${threadId}:${messageId}:reasoning`
+      const key = `${threadId}:${fallbackMessageId}:reasoning`
       details.dataset['disclosureKey'] = key
       disclosureElements.set(key, details)
       wireDisclosurePreference(details, key)
@@ -2666,7 +2646,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // never show two live "Reasoning…" labels in the transcript.
     if (
       label.startsWith('Reasoning…') &&
-      list.querySelector('.message-reasoning.message-reasoning-live')
+      [...list.querySelectorAll('.message-reasoning-live')].some(
+        (details) => !details.parentElement?.closest('details:not([open]), [hidden]'),
+      )
     ) {
       activityBar.hidden = true
       scrollToBottom()
@@ -2738,44 +2720,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     item: ToolCallDisplayItem,
     opts: { commandSummary?: string; toolSummary?: string },
   ): void {
-    const { commandSummary, toolSummary } = opts
-    // LLM polish for the turn rollup: replaces the canned `Used N tools` /
-    // category label when ready. Failures stay visible on the collapsed line.
-    if (item.type === 'rollup') {
-      if (toolSummary?.trim()) {
-        const failed = item.toolCalls.filter((tc) => tc.status === 'error').length
-        item.label =
-          failed > 0 ? `${toolSummary.trim()} · ${String(failed)} failed` : toolSummary.trim()
-      }
-      for (const child of item.children) applyRollupSummaries(child, opts)
-      // Legacy shell-only path: when no toolSummary yet, a commandSummary can
-      // still label a pure shell turn.
-      if (
-        !toolSummary?.trim() &&
-        commandSummary &&
-        item.children.length === 1 &&
-        item.children[0]?.type === 'group' &&
-        item.children[0].key === 'shell'
-      ) {
-        item.label = commandSummary
-      }
-      // When the polish lands on a single shell group, keep the nested header
-      // in sync so expand doesn't revert to the canned "Ran commands".
-      if (
-        toolSummary?.trim() &&
-        item.children.length === 1 &&
-        item.children[0]?.type === 'group' &&
-        item.children[0].key === 'shell'
-      ) {
-        item.children[0].label = toolSummary.trim()
-      }
-      return
-    }
-    // LLM-only rollup: a small-model summary, when ready, replaces the generic
-    // "Ran commands" header for the shell group.
-    if (item.type === 'group' && item.key === 'shell' && commandSummary) {
-      item.label = commandSummary
-    }
+    if (item.type !== 'rollup') return
+    const shellOnly = item.toolCalls.every((tc) => getToolGroupKey(tc.name, tc.kind) === 'shell')
+    let summary = opts.toolSummary?.trim()
+    if (!summary && shellOnly) summary = opts.commandSummary?.trim()
+    if (!summary) return
+    const failed = item.toolCalls.filter((tc) => tc.status === 'error').length
+    item.label = failed > 0 ? `${summary} · ${String(failed)} failed` : summary
   }
 
   function applyToolCardOpenState(
@@ -2811,6 +2762,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (preference !== undefined) {
       card.open = preference
+    } else if (item.type === 'rollup') {
+      // Background activity stays quiet, including when a sibling tool fails.
+      card.open = false
     } else if (failed) {
       // Failed tools stay expanded so the error body is visible without a click.
       // Compaction already skips data-status=error; auto-open here covers the
@@ -2826,7 +2780,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     if (card.open) ensureToolCardBodyRendered(card)
 
-    if (item.type === 'rollup' || item.type === 'step') {
+    if (item.type === 'rollup') {
       const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
         ':scope > .tool-rollup-body > .tool-card',
       )
@@ -2905,6 +2859,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         ? opts.run
         : undefined
     const isRunMember = run !== undefined && run.anchorId !== msgId
+    if (run && !isRunMember) renderedToolRuns.set(msgId, run)
+    else renderedToolRuns.delete(msgId)
     // Keep the persisted message node for stable event routing and backfill, but
     // let CSS collapse it when the run absorbed everything it could show. The
     // selector deliberately checks the live DOM, so a retained subagent card or
@@ -2984,7 +2940,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         )
       }
       if (item.type === 'rollup' && run && item.key === RUN_ROLLUP_KEY) {
-        syncRunStepReasoning(card, run, opts.liveStepId ?? null)
+        syncRunReasoning(card, run, opts.liveStepId ?? null)
       }
       desired.push(card)
     }
@@ -3081,12 +3037,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
    * the message itself would show none of its tools or its reasoning trail.
    */
   function resyncRunMembership(thread: Thread | undefined, msgId: string): void {
-    const staleStep = list.querySelector<HTMLElement>(
-      `.tool-card-step[data-step-message-id="${msgId}"]`,
+    const previous = [...renderedToolRuns.values()].find(
+      (run) => run.anchorId !== msgId && run.memberIds.includes(msgId),
     )
-    const anchorEl = staleStep?.closest<HTMLElement>('.msg')
-    const anchorId = anchorEl?.dataset['messageId']
-    if (!anchorEl || !anchorId || anchorId === msgId) return
+    const anchorId = previous?.anchorId
+    const anchorEl = anchorId
+      ? list.querySelector<HTMLElement>(`[data-message-id="${anchorId}"]`)
+      : null
+    if (!anchorEl || !anchorId) return
     const anchorRun = multiStepRunFor(thread, anchorId)
     if (anchorRun?.memberIds.includes(msgId) === true) return
     const anchor = thread?.messages.find((m) => m.id === anchorId)
@@ -3114,16 +3072,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const runCard = list.querySelector<HTMLElement>(
       `[data-message-id="${run.anchorId}"] > .tool-card-rollup[data-rollup-key="${RUN_ROLLUP_KEY}"]`,
     )
-    const complete =
-      runCard !== null &&
-      run.steps.every((step) =>
-        runCard.querySelector(`.tool-card-step[data-step-message-id="${step.messageId}"]`),
-      )
-    if (!complete) {
+    const previous = renderedToolRuns.get(run.anchorId)
+    if (
+      !runCard ||
+      !previous ||
+      previous.memberIds.length !== run.memberIds.length ||
+      run.memberIds.some((id, index) => previous.memberIds[index] !== id)
+    ) {
       renderRunAnchor(thread, run)
       return
     }
-    syncRunStepReasoning(runCard, run, liveStepMessageId(thread))
+    syncRunReasoning(runCard, run, liveStepMessageId(thread))
   }
 
   /**
@@ -3616,6 +3575,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function rebuildForThread(): void {
+    renderedToolRuns.clear()
     const thread = getActiveThread(store)
     const rebuildingSameThread = thread !== undefined && thread.id === renderedThreadId
     const preservedScrollTop = rebuildingSameThread && !pinnedToBottom ? list.scrollTop : null

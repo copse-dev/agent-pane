@@ -651,21 +651,22 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `Using 3 tools`, activity line `Listing directory…`); past once settled (`Read files`,
   `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
   tool, and do not keep progressive wording on a completed card.
-- **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
-  `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
-  to expand nested category groups and individuals. Subagent cards stay outside the rollup.
-- **Reasoning nests with its tools.** When a segment has both `reasoning` and tools, do **not**
-  render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
-  body (above the tool rows) so the collapsed view is only the italic heading. Standalone
-  Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
-  `Reasoning…` while live, `Reasoned` when settled.
+- **One stable rollup for background activity.** Regular tools use a closed
+  `.tool-card-rollup` with an italic muted summary. Expanding shows a flat tool list;
+  subsequent assistant segments join the same disclosure without per-message wrappers.
+  Failed tools remain visible beside it, without exposing successful work. Subagent and
+  proposal cards retain their own surfaces.
+- **Reasoning stays compact.** A run has one initially closed reasoning disclosure,
+  including while live. Opening it shows plain text without a plate, hatch, or large padding.
+  Standalone reasoning remains for answer-only / no-tool segments. Empty trails are omitted.
+  Title tense matches tools: `Reasoning…` while live, `Reasoned` when settled.
 - **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
   `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
   `reasoning` field / provider events.
 - **Live activity belongs to the transcript.** The initial `Reasoning…` wait is the final row in
-  `.messages-list`, never a strip inside `#input-bar`. Once reasoning tokens exist, fold that row
-  into the live disclosure title so the transcript never shows two reasoning labels. Settled
-  reasoning disclosures return to a static chevron.
+  `.messages-list`, never a strip inside `#input-bar`. Fold that row into the live disclosure
+  title only when the title is visible; keep it while reasoning is inside a closed rollup.
+  Settled reasoning disclosures return to a static chevron.
 - **The activity spiral never sits ahead of a label in the text column.** Nothing in flow may
   precede a live label, or the row reads at a different indent than its settled self and the hover
   pill stretches past the text. Two placements, by where the row's label sits:

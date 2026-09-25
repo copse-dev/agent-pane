@@ -9,6 +9,7 @@ import {
   createThread,
   setMessageContent,
   setMessageRunSummary,
+  setThreadStatus,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -82,6 +83,93 @@ afterEach(() => {
 })
 
 describe('cross-message tool runs (component)', () => {
+  it('keeps late reasoning in message order and finalizes every body on stop', () => {
+    const { store, threadId, ids } = seedRun()
+    const host = mount(store)
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, ids.at(-1) ?? '', '**unfinished')
+    appendReasoning(store, ids[0] ?? '', 'Earlier thought.')
+    const texts = [...host.querySelectorAll('.message-reasoning-text')]
+    assert.deepEqual(
+      texts.map((text) => text.getAttribute('data-reasoning-message-id')),
+      [ids[0], ids.at(-1)],
+    )
+    setThreadStatus(store, threadId, 'idle')
+    assert.equal(host.querySelector('.message-reasoning-live'), null)
+    assert.equal(texts[1]?.textContent, '**unfinished')
+  })
+
+  it('removes departed reasoning when a run shortens to one message', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const first = addMessage(store, threadId, 'assistant', '')
+    addReads(store, first, 2)
+    appendReasoning(store, first, 'First thought.')
+    const second = addMessage(store, threadId, 'assistant', '')
+    addReads(store, second, 1)
+    appendReasoning(store, second, 'Second thought.')
+    const host = mount(store)
+    setMessageContent(store, second, 'A new update.')
+    const firstBubble = qsRequired(host, `[data-message-id="${first}"]`)
+    assert.equal(firstBubble.querySelectorAll('.message-reasoning-text').length, 1)
+    assert.equal(
+      firstBubble.querySelector('.message-reasoning-text')?.textContent,
+      'First thought.',
+    )
+  })
+
+  it('keeps a live activity indicator when reasoning is inside a closed rollup', () => {
+    const { store, threadId, ids } = seedRun()
+    const host = mount(store)
+    setThreadStatus(store, threadId, 'running')
+    appendReasoning(store, ids.at(-1) ?? '', 'Still checking.')
+    store.emit('agent_activity', threadId, 'Reasoning…')
+    assert.equal(qsRequired(host, '.agent-activity').hidden, false)
+    assert.equal(qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup').open, false)
+  })
+
+  it('keeps the first live disclosure and tool at the same depth as messages arrive', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const host = mount(store)
+    setThreadStatus(store, threadId, 'running')
+    const first = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, first, 'Initial reasoning.')
+    addReads(store, first, 1)
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    qsRequired(run, 'summary').click()
+    const tool = qsRequired(run, '[data-tool-id]')
+    const reasoning = qsRequired<HTMLDetailsElement>(run, '.message-reasoning')
+    qsRequired(reasoning, 'summary').click()
+    const next = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, next, 'Next thought.')
+    addReads(store, next, 1)
+    assert.ok(host.querySelector('.tool-card-rollup') === run, 'rollup identity survives')
+    assert.ok(run.querySelector('[data-tool-id]') === tool, 'tool identity survives')
+    assert.ok(run.querySelector('.message-reasoning') === reasoning, 'reasoning identity survives')
+    assert.equal(run.open, true)
+    assert.equal(reasoning.open, true)
+    assert.equal(host.querySelectorAll('.message-reasoning').length, 1)
+    assert.equal(run.querySelector('.tool-card-step, .tool-card-rollup'), null)
+  })
+
+  it('shows a failure without opening successful work or reasoning', () => {
+    const { store, threadId } = seedRun()
+    const host = mount(store)
+    const last = addMessage(store, threadId, 'assistant', '')
+    appendReasoning(store, last, 'Checking the failing command.')
+    addReads(store, last, 1, 'error')
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    const failure = qsRequired<HTMLDetailsElement>(host, `.msg > [data-tool-id="${last}-0"]`)
+    assert.equal(run.open, false)
+    assert.equal(failure.open, true)
+    assert.match(failure.textContent, /ENOENT/)
+    assert.equal(qsRequired<HTMLDetailsElement>(run, '.message-reasoning').open, false)
+    qsRequired(failure, 'summary').click()
+    updateToolCall(store, last, `${last}-0`, { result: 'Error: still missing' })
+    assert.equal(failure.open, false, 'explicit failure collapse survives updates')
+  })
+
   it('collapses a burst spanning five messages into one run summary', () => {
     const { store, ids } = seedRun()
     const host = mount(store)
@@ -94,16 +182,12 @@ describe('cross-message tool runs (component)', () => {
     assert.equal(run.closest('.msg')?.getAttribute('data-message-id'), ids[0])
     assert.equal(
       run.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
-      'Used 18 tools · 5 steps',
+      'Used 18 tools',
     )
 
-    // Every member message keeps its DOM identity for event routing, contributes
-    // a step, and is marked for visual collapse once the anchor owns its cards.
-    const steps = run.querySelectorAll<HTMLElement>('.tool-card-step')
-    assert.deepEqual(
-      [...steps].map((step) => step.dataset['stepMessageId']),
-      ids,
-    )
+    assert.equal(run.querySelector('.tool-card-step'), null)
+    assert.equal(run.querySelectorAll('.tool-rollup-body > .tool-card').length, 18)
+    // Members retain their identity for event routing without empty transcript rows.
     for (const id of ids.slice(1)) {
       const memberEl = qsRequired(host, `[data-message-id="${id}"]`)
       assert.equal(
@@ -116,55 +200,32 @@ describe('cross-message tool runs (component)', () => {
     }
   })
 
-  it('expands into every step, and each step into its own operations', () => {
-    const { store, ids } = seedRun()
+  it('expands straight into every tool, without per-message or category wrappers', () => {
+    const { store } = seedRun()
     const host = mount(store)
-
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
-    assert.equal(run.hasAttribute('open'), false, 'a settled run stays collapsed')
-    run.open = true
-
-    const lastStep = qsRequired<HTMLDetailsElement>(
-      run,
-      `.tool-card-step[data-step-message-id="${String(ids.at(-1))}"]`,
-    )
-    assert.equal(lastStep.querySelector('.tool-name')?.textContent, 'Read files')
-    lastStep.open = true
-    const group = qsRequired(lastStep, '.tool-card-group')
-    assert.equal(group.querySelector('.tool-count')?.textContent, '×2')
+    assert.equal(run.open, false)
+    qsRequired(run, 'summary').click()
+    assert.equal(run.open, true)
+    assert.equal(run.querySelectorAll('.tool-rollup-body > .tool-card').length, 18)
+    assert.equal(run.querySelector('.tool-card-step, .tool-card-group, .tool-card-rollup'), null)
   })
-
-  it('keeps a user-expanded step open when a later member ticks', async () => {
+  it('preserves expanded tools when another member updates', () => {
     const { store, ids } = seedRun()
     const host = mount(store)
-
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
-    run.querySelector<HTMLElement>(':scope > summary')?.click()
-    const first = qsRequired<HTMLDetailsElement>(
-      run,
-      `.tool-card-step[data-step-message-id="${String(ids[0])}"]`,
-    )
-    first.querySelector<HTMLElement>(':scope > summary')?.click()
-    await Promise.resolve()
-
-    // A tool settling on the *last* member repaints the anchor's whole run.
+    qsRequired(run, 'summary').click()
+    const first = qsRequired<HTMLDetailsElement>(run, `[data-tool-id="${String(ids[0])}-0"]`)
+    qsRequired(first, 'summary').click()
     updateToolCall(store, ids.at(-1) ?? '', `${String(ids.at(-1))}-0`, { result: 'changed' })
-
-    assert.equal(host.querySelectorAll('.tool-card-rollup').length, 1, 'no duplicate run card')
-    const runAfter = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
-    assert.equal(runAfter.hasAttribute('open'), true, 'run stays open')
-    const firstAfter = qsRequired<HTMLDetailsElement>(
-      runAfter,
-      `.tool-card-step[data-step-message-id="${String(ids[0])}"]`,
+    assert.ok(host.querySelector('.tool-card-rollup') === run, 'rollup identity survives')
+    assert.equal(run.open, true)
+    assert.equal(first.open, true)
+    assert.equal(
+      qsRequired<HTMLDetailsElement>(run, `[data-tool-id="${String(ids[1])}-0"]`).open,
+      false,
     )
-    assert.equal(firstAfter.hasAttribute('open'), true, 'the expanded step survives the repaint')
-    const untouched = qsRequired<HTMLDetailsElement>(
-      runAfter,
-      `.tool-card-step[data-step-message-id="${String(ids[1])}"]`,
-    )
-    assert.equal(untouched.hasAttribute('open'), false)
   })
-
   it('shows the run polish with counts and failures, and updates it in place', () => {
     const { store, threadId, ids } = seedRun()
     const failing = addMessage(store, threadId, 'assistant', '')
@@ -173,48 +234,36 @@ describe('cross-message tool runs (component)', () => {
 
     assert.equal(
       qsRequired(host, '.tool-card-rollup > .tool-card-header .tool-name').textContent,
-      'Used 19 tools · 6 steps · 1 failed',
+      'Used 19 tools · 1 failed',
     )
 
     setMessageRunSummary(store, ids[0] ?? '', 'Checked CI, branch state, and test coverage')
 
     assert.equal(
       qsRequired(host, '.tool-card-rollup > .tool-card-header .tool-name').textContent,
-      'Checked CI, branch state, and test coverage · 19 tools · 6 steps · 1 failed',
+      'Checked CI, branch state, and test coverage · 19 tools · 1 failed',
     )
   })
 
-  it('hangs each member’s reasoning on its own step, not on its bubble', () => {
+  it('collects member reasoning into one closed disclosure', () => {
     const { store, ids } = seedRun()
     const host = mount(store)
-
-    const member = ids[2] ?? ''
-    appendReasoning(store, member, 'Checking whether the oracle ran.')
-
-    assert.equal(
-      host.querySelector('.message-body > .message-reasoning'),
-      null,
-      'no member keeps a body-level trail',
-    )
-    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
-    const step = qsRequired(run, `.tool-card-step[data-step-message-id="${member}"]`)
-    const trail = qsRequired(step, ':scope > .tool-rollup-body > .message-reasoning')
-    assert.equal(
-      trail.querySelector('.message-reasoning-text')?.textContent.trim(),
-      'Checking whether the oracle ran.',
-    )
+    appendReasoning(store, ids[1] ?? '', 'Checking the build.')
+    appendReasoning(store, ids[2] ?? '', 'Checking whether the oracle ran.')
+    assert.equal(host.querySelector('.message-body > .message-reasoning'), null)
+    assert.equal(host.querySelectorAll('.message-reasoning').length, 1)
+    const trail = qsRequired<HTMLDetailsElement>(host, '.tool-rollup-body > .message-reasoning')
+    assert.equal(trail.open, false)
+    assert.match(trail.textContent, /Checking the build/)
+    assert.match(trail.textContent, /Checking whether the oracle ran/)
   })
-
   it('retains settled reasoning paragraphs when later run steps receive chunks', () => {
     const { store, ids } = seedRun()
     const settledId = ids[1] ?? ''
     const liveId = ids.at(-1) ?? ''
     appendReasoning(store, settledId, 'Completed **investigation**.\n\nEverything checked.')
     const host = mount(store)
-    const settled = qsRequired(
-      host,
-      `.tool-card-step[data-step-message-id="${settledId}"] .message-reasoning-text p`,
-    )
+    const settled = qsRequired(host, `[data-reasoning-message-id="${settledId}"] p`)
     for (let index = 0; index < 8; index++) {
       appendReasoning(store, liveId, `More reasoning ${String(index)}. `)
       assert.ok(settled.isConnected, 'later chunks must not replace completed-step markdown')
@@ -251,12 +300,12 @@ describe('cross-message tool runs (component)', () => {
     assert.equal(shortened.querySelector('.tool-card-step'), null)
     assert.equal(
       departed.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
-      'Used 12 tools · 4 steps',
+      'Used 12 tools',
     )
   })
 
   it('releases a reasoning-only member when it gains prose', () => {
-    const { store, threadId, ids } = seedRun()
+    const { store, threadId } = seedRun()
     const host = mount(store)
 
     // A bubble that has streamed only reasoning is still absorbed as a step —
@@ -266,9 +315,9 @@ describe('cross-message tool runs (component)', () => {
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
     assert.equal(
       run.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
-      'Used 18 tools · 6 steps',
+      'Used 18 tools',
     )
-    assert.ok(run.querySelector(`.tool-card-step[data-step-message-id="${member}"]`))
+    assert.ok(run.querySelector(`[data-reasoning-message-id="${member}"]`))
     const memberEl = qsRequired(host, `[data-message-id="${member}"]`)
     assert.equal(memberEl.querySelector('.message-reasoning'), null)
 
@@ -280,19 +329,14 @@ describe('cross-message tool runs (component)', () => {
     const runAfter = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
     assert.equal(
       runAfter.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
-      'Used 18 tools · 5 steps',
+      'Used 18 tools',
     )
     assert.equal(
-      host.querySelector(`.tool-card-step[data-step-message-id="${member}"]`),
+      host.querySelector(`[data-reasoning-message-id="${member}"]`),
       null,
       'no stale step for the departed member',
     )
-    assert.deepEqual(
-      [...runAfter.querySelectorAll<HTMLElement>('.tool-card-step')].map(
-        (step) => step.dataset['stepMessageId'],
-      ),
-      ids,
-    )
+    assert.equal(runAfter.querySelectorAll('.tool-rollup-body > .tool-card').length, 18)
     const trail = qsRequired(memberEl, '.message-body > .message-reasoning')
     assert.equal(
       trail.querySelector('.message-reasoning-text')?.textContent.trim(),
@@ -338,7 +382,7 @@ describe('cross-message tool runs (component)', () => {
     for (const run of runs) {
       assert.equal(
         run.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
-        'Used 4 tools · 2 steps',
+        'Used 4 tools',
       )
     }
   })

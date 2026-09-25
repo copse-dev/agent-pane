@@ -8,6 +8,7 @@ import {
   addToolCall,
   createThread,
   setMessageToolSummary,
+  setMessageCommandSummary,
   setThreadStatus,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
@@ -19,8 +20,8 @@ import { qsRequired } from '../dom/helpers.ts'
 // Component-level port of tests/e2e/tool-display-rollup.e2e.ts. The grouping /
 // tense / turn-rollup LOGIC is covered in src/shared/tools/tool-display.test.ts;
 // this file asserts the conversation VIEW: one collapsed `.tool-card-rollup`,
-// nested "Read files ×2", and the failed read as its own card outside that
-// group. Seeded thread mirrors seedToolDisplayFixture().
+// flat successful tool rows, and the failed read visible outside the rollup.
+// Seeded thread mirrors seedToolDisplayFixture().
 
 function fakeApi(): ApiClient {
   return ((): ApiClient => {
@@ -87,6 +88,27 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
+  it('keeps legacy command summaries on the flat shell rollup', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    for (const id of ['shell-one', 'shell-two']) {
+      addToolCall(store, messageId, {
+        id,
+        name: 'run_shell',
+        args: { command: 'pnpm test' },
+        status: 'done',
+        result: 'passed',
+      })
+    }
+    setMessageCommandSummary(store, messageId, 'Verified the build')
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+    assert.equal(qsRequired(host, '.tool-card-rollup .tool-name').textContent, 'Verified the build')
+    assert.equal(host.querySelector('.tool-card-group'), null)
+  })
+
   it('keeps fast tools compact instead of flashing their details open', async () => {
     const store = createStore()
     const threadId = createThread(store)
@@ -115,7 +137,7 @@ describe('tool call display (component)', () => {
     assert.equal(rollup.open, false, 'a tool that finished inside the reveal delay flashed open')
   })
 
-  it('holds revealed work open across tool gaps and compacts once the run settles', async () => {
+  it('keeps long-running background work compact through tool gaps', async () => {
     const store = createStore()
     const threadId = createThread(store)
     const messageId = addMessage(store, threadId, 'assistant', '')
@@ -134,13 +156,13 @@ describe('tool call display (component)', () => {
     const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
     assert.ok(rollup)
     await delay(350)
-    assert.equal(rollup.open, true, 'long-running work should reveal after the delay')
+    assert.equal(rollup.open, false, 'background work must stay collapsed')
 
     updateToolCall(store, messageId, 'tc-long', {
       status: 'done',
       result: 'passed',
     })
-    assert.equal(rollup.open, true, 'the completed-tool gap collapsed the live rollup')
+    assert.equal(rollup.open, false, 'tool completion must not open the rollup')
     addToolCall(store, messageId, {
       id: 'tc-next',
       name: 'read_file',
@@ -153,7 +175,7 @@ describe('tool call display (component)', () => {
       rollup,
       'adding a second tool replaced the live rollup shell',
     )
-    assert.equal(rollup.open, true)
+    assert.equal(rollup.open, false)
 
     updateToolCall(store, messageId, 'tc-next', {
       status: 'done',
@@ -182,7 +204,8 @@ describe('tool call display (component)', () => {
     const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
     assert.ok(rollup)
     await delay(350)
-    assert.equal(rollup.open, true)
+    assert.equal(rollup.open, false)
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
     rollup.querySelector<HTMLElement>(':scope > summary')?.click()
     assert.equal(rollup.open, false)
     await delay(0)
@@ -228,8 +251,7 @@ describe('tool call display (component)', () => {
     const rollup = document.querySelector<HTMLDetailsElement>('.tool-card-rollup')
     assert.ok(rollup)
     await delay(350)
-    assert.equal(rollup.open, true)
-    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
+    assert.equal(rollup.open, false)
     rollup.querySelector<HTMLElement>(':scope > summary')?.click()
     assert.equal(rollup.open, true)
 
@@ -272,86 +294,40 @@ describe('tool call display (component)', () => {
     assert.equal(settledCard.querySelector('.tool-name')?.textContent, 'Ran command')
     assert.equal(settledSlot.childElementCount, 0, 'settled slot stays reserved but empty')
   })
-
-  it('rolls the turn into one expanded failed summary with reasoning nested inside', () => {
+  it('keeps successful activity and reasoning closed beside the visible failure', () => {
     mountWithTools()
-
-    const rollup = document.querySelector('.tool-card-rollup')
-    assert.ok(rollup, 'expected a turn rollup card')
-    // A failed child keeps the settled rollup open so its diagnostic is visible.
-    assert.equal(rollup.hasAttribute('open'), true)
-    // toolSummary polish + failure callout (not the canned "Used 3 tools").
+    const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
+    assert.equal(rollup.open, false)
     assert.equal(
-      rollup.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      rollup.querySelector('.tool-name')?.textContent,
       'Inspected the repo layout · 1 failed',
     )
-    // Reasoning belongs inside the rollup — not as a standalone body trail.
     assert.equal(document.querySelector('.message-body > .message-reasoning'), null)
-    assert.ok(rollup.querySelector('.tool-rollup-body > .message-reasoning'))
+    assert.equal(qsRequired<HTMLDetailsElement>(rollup, '.message-reasoning').open, false)
+    const failure = qsRequired<HTMLDetailsElement>(document, '.msg > [data-tool-id="tc-read-2"]')
+    assert.equal(failure.open, true)
+    assert.match(failure.textContent, /ENOENT/)
   })
-
-  it('keeps the successful reads grouped inside the rollup and surfaces the error outside that group', () => {
+  it('expands directly into successful tools, without another group to open', () => {
     mountWithTools()
-
     const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
-    assert.ok(rollup)
-    rollup.open = true
-
-    assert.ok(
-      rollup.querySelector('.tool-rollup-body > .message-reasoning .message-reasoning-text'),
-      'expected reasoning nested in the expanded rollup',
-    )
-    const group = rollup.querySelector('.tool-card-group')
-    assert.ok(group, 'expected a grouped tool card inside the rollup')
-    assert.equal(group.querySelector('.tool-name')?.textContent, 'Read files')
-    assert.equal(group.querySelector('.tool-count')?.textContent, '×2')
-
-    const failed = rollup.querySelector('.tool-card[data-tool-id="tc-read-2"]')
-    assert.ok(failed, 'expected the errored read to render as an individual card')
-    assert.equal(failed.querySelector('.tool-name')?.textContent, 'Read file')
-    assert.equal(failed.getAttribute('data-status'), 'error')
-    // The errored read must NOT be folded into the reading group.
-    assert.equal(document.querySelector('.tool-card-group [data-tool-id="tc-read-2"]'), null)
+    qsRequired(rollup, 'summary').click()
+    assert.equal(rollup.querySelector('.tool-card-group'), null)
+    assert.equal(rollup.querySelectorAll('.tool-rollup-body > .tool-card').length, 2)
+    assert.equal(rollup.querySelector('[data-tool-id="tc-read-2"]'), null)
   })
-
-  it('keeps a user-expanded group item open across a tool update rebuild', async () => {
+  it('keeps a user-expanded tool open across a tool update', () => {
     const { store, messageId } = mountWithTools()
-
     const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
-    const group = qsRequired<HTMLDetailsElement>(rollup, '.tool-card-group')
-    const item = qsRequired<HTMLDetailsElement>(group, '[data-tool-id="tc-read-1"]')
-    // The failed rollup auto-opens. Close and reopen it so the final open state
-    // is an explicit user preference, just like the nested group and item.
-    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
-    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
-    group.querySelector<HTMLElement>(':scope > summary')?.click()
-    item.querySelector<HTMLElement>(':scope > summary')?.click()
-    await delay(0)
-
-    // A group member changing patches the existing disclosure shells; every
-    // explicit user choice must survive the status/result update.
-    updateToolCall(store, messageId, 'tc-list-1', {
-      result: 'd main\nf index.ts\nf util.ts',
-    })
-
-    const rollups = document.querySelectorAll('.tool-card-rollup')
-    assert.equal(rollups.length, 1, 'rebuild must replace the rollup, not duplicate it')
-    const rollupAfter = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
-    assert.equal(rollupAfter.hasAttribute('open'), true, 'rollup should stay open')
-    const groups = rollupAfter.querySelectorAll('.tool-card-group')
-    assert.equal(groups.length, 1, 'rebuild must replace the group card, not duplicate it')
-    const groupAfter = qsRequired<HTMLDetailsElement>(rollupAfter, '.tool-card-group')
-    assert.equal(groupAfter.hasAttribute('open'), true, 'group should stay open')
-    const itemAfter = groupAfter.querySelector('[data-tool-id="tc-read-1"]')
-    assert.ok(itemAfter, 'expected the reading item to still render')
-    assert.equal(itemAfter.hasAttribute('open'), true, 'expanded item should stay open')
-    // The item the user never touched stays collapsed.
-    assert.equal(
-      groupAfter.querySelector('[data-tool-id="tc-list-1"]')?.hasAttribute('open'),
-      false,
-    )
+    const item = qsRequired<HTMLDetailsElement>(rollup, '[data-tool-id="tc-read-1"]')
+    qsRequired(rollup, 'summary').click()
+    qsRequired(item, 'summary').click()
+    updateToolCall(store, messageId, 'tc-list-1', { result: 'updated listing' })
+    assert.strictEqual(document.querySelector('.tool-card-rollup'), rollup)
+    assert.equal(rollup.open, true)
+    assert.equal(item.open, true)
+    assert.equal(qsRequired<HTMLDetailsElement>(rollup, '[data-tool-id="tc-list-1"]').open, false)
   })
-
   it('renders the advisor result as attributed markdown, not raw text', () => {
     const store = createStore()
     const threadId = createThread(store)

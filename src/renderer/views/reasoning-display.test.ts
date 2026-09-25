@@ -19,8 +19,8 @@ import { qsRequired } from '../dom/helpers.ts'
 
 // Component eval for the live "Reasoning" disclosure. Reasoning tokens stream
 // in via `appendReasoning` (which emits `message_reasoning`); the view should
-// surface them in a collapsible <details> above the answer, keep it open while
-// the answer is still empty, and tuck it away once the answer lands. The
+// surface them in an initially closed <details> above the answer, preserving
+// the user's choice as the answer arrives. The
 // initial activity row lives in the transcript, then folds into the live
 // disclosure once reasoning tokens arrive.
 
@@ -53,7 +53,7 @@ afterEach(() => {
 })
 
 describe('reasoning display (component)', () => {
-  it('streams reasoning into an open disclosure above the answer', () => {
+  it('streams reasoning into a compact disclosure above the answer', () => {
     const { store, threadId, messageId } = mountWithReasoning()
     setThreadStatus(store, threadId, 'running')
 
@@ -62,8 +62,8 @@ describe('reasoning display (component)', () => {
 
     const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
     assert.ok(details, 'expected a reasoning disclosure')
-    // Live (no answer yet): open by default; progressive title.
-    assert.equal(details.open, true)
+    // Live reasoning stays quiet until the user explicitly opens it.
+    assert.equal(details.open, false)
     assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoning…')
     assert.ok(details.classList.contains('message-reasoning-live'))
     assert.ok(details.querySelector('[data-icon="reasoning-activity"]'))
@@ -92,7 +92,7 @@ describe('reasoning display (component)', () => {
     const stable = qsRequired(text, 'p strong')
     const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
     qsRequired(details, 'summary').click()
-    details.open = false
+    qsRequired(details, 'summary').click()
     for (const chunk of [' tail', '.\n\nAnother **paragraph**.\n\nPending']) {
       source += chunk
       appendReasoning(store, messageId, chunk)
