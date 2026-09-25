@@ -15,6 +15,9 @@
  * `ACCEPT` or `REFUSE reason`, and then carry `DATA` both ways, `END` for a
  * half close, `RESET` (with an optional reason) for an abort. `PING`/`PONG` on
  * stream 0 is the liveness probe the worker sends before anything else.
+ * `KEY_REQUEST`/`KEY` on stream 0 hand the run's provider key to the worker
+ * (decision A17): it never enters the container's configuration or any
+ * process's initial environment, and the host answers it once.
  *
  * Flow control is the byte stream's own: a frame that does not fit is held
  * until the pipe drains, and a stream whose reader is slow pauses the whole
@@ -34,6 +37,8 @@ export const FRAME = {
   RESET: 6,
   PING: 7,
   PONG: 8,
+  KEY_REQUEST: 9,
+  KEY: 10,
 } as const
 
 export interface Frame {
@@ -204,6 +209,11 @@ export interface EgressLinkHandlers {
   onOpen?: (id: number, target: string) => void
   /** Either side: the byte stream ended or failed; every stream has been severed. */
   onClose?: (error: Error | undefined) => void
+  /**
+   * Host side: the guest asked for the run's key. Returns it, or an empty
+   * string when there is none (or it was already handed over).
+   */
+  onKeyRequest?: () => string
 }
 
 export interface EgressLinkOutput {
@@ -223,6 +233,10 @@ export class EgressLink implements LinkCore {
     { resolve: (stream: MuxStream) => void; reject: (error: Error) => void }
   >()
   private readonly pings: Array<{ resolve: () => void; reject: (error: Error) => void }> = []
+  private readonly keyRequests: Array<{
+    resolve: (key: string) => void
+    reject: (error: Error) => void
+  }> = []
   private readonly stalled = new Set<number>()
   private readonly waitingForDrain: Array<(error?: Error) => void> = []
   private nextId = 1
@@ -312,6 +326,36 @@ export class EgressLink implements LinkCore {
     })
   }
 
+  /**
+   * Ask the host for the run's key; resolves with it, or with an empty string
+   * when the host has none to give. Rejects when the host does not answer.
+   */
+  requestKey(timeoutMs = 5000): Promise<string> {
+    return new Promise((resolveKey, reject) => {
+      if (this.closed) {
+        reject(new Error('egress link is closed'))
+        return
+      }
+      const timer = setTimeout(() => {
+        const index = this.keyRequests.indexOf(entry)
+        if (index !== -1) this.keyRequests.splice(index, 1)
+        reject(new Error(`no key from the host within ${String(timeoutMs)}ms`))
+      }, timeoutMs)
+      const entry = {
+        resolve: (key: string): void => {
+          clearTimeout(timer)
+          resolveKey(key)
+        },
+        reject: (error: Error): void => {
+          clearTimeout(timer)
+          reject(error)
+        },
+      }
+      this.keyRequests.push(entry)
+      this.send(0, FRAME.KEY_REQUEST, '')
+    })
+  }
+
   // -- host side -----------------------------------------------------------
 
   /** Admit the guest's request on `id`; the stream is ready to pipe. */
@@ -371,6 +415,7 @@ export class EgressLink implements LinkCore {
     for (const pending of this.opening.values()) pending.reject(failure)
     this.opening.clear()
     for (const pending of this.pings.splice(0)) pending.reject(failure)
+    for (const pending of this.keyRequests.splice(0)) pending.reject(failure)
     for (const done of this.waitingForDrain.splice(0)) done(failure)
     for (const stream of [...this.streams.values()]) stream.severed(error)
     this.streams.clear()
@@ -407,6 +452,12 @@ export class EgressLink implements LinkCore {
         return
       case FRAME.PONG:
         this.pings.shift()?.resolve()
+        return
+      case FRAME.KEY_REQUEST:
+        this.send(0, FRAME.KEY, this.handlers.onKeyRequest?.() ?? '')
+        return
+      case FRAME.KEY:
+        this.keyRequests.shift()?.resolve(frame.payload.toString('utf8'))
         return
       default:
         this.streams.get(frame.id)?.receive(frame)

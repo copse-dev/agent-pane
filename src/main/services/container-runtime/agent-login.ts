@@ -9,8 +9,13 @@
  * agent's token refreshes land in the guest's tmpfs and die with it, and the
  * staged copy on the host is removed the moment the run ends, whatever
  * happened. The staged files are world-readable for that window because the
- * worker uid does not exist on the host — a bounded exposure inside the user's
- * own profile directory, and the reason the copy is deleted in `finally`.
+ * worker uid does not exist on the host: with a native Linux engine the guest
+ * reads the bind mount with the host's own mode bits, so a 0600 copy owned by
+ * the host user would be unreadable to it. What keeps other local accounts
+ * out instead is the runtimes directory above every run directory, which the
+ * runner makes 0700 (`runThreadInContainer`); the container's mount root is
+ * the run directory itself, so that closed parent does not stop the guest.
+ * The copy is still deleted in `finally`.
  *
  * Files, not directories, and asynchronously, for a reason that was learned
  * the hard way: `~/.codex` also holds every session transcript the CLI ever

@@ -22,7 +22,8 @@ export const threadContainerRunSpecSchema = z.object({
     })
     .nullable(),
   contextWindow: z.number().int().positive().nullable(),
-  apiKeyEnv: z.string().min(1).nullable(),
+  /** The run has a provider key, which the worker collects over the stdio link (A17). */
+  apiKeyOverLink: z.boolean(),
   acp: z
     .object({
       agent: acpAgentConfigSchema,
