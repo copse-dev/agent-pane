@@ -22,8 +22,8 @@ third-party components whose licenses require attribution. Those are listed here
 - **License:** Creative Commons Attribution 4.0 International (CC BY 4.0) —
   https://creativecommons.org/licenses/by/4.0/
 - **Used by:** the experimental on-device PII redaction feature
-  (`src/main/services/pii-redactor.ts`). Optional dependency; loaded only when
-  the user enables PII redaction in Settings → Experimental.
+  (`src/main/services/security/pii-redactor.ts`). Optional dependency; loaded
+  only when the user enables the PII redaction plugin in Settings → Plugins.
 - **Modifications:** none. The package and its model are used as published.
 
 CC BY 4.0 is a permissive, attribution-only license. It is not copyleft, and the

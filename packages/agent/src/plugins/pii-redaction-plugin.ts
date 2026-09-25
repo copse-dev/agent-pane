@@ -41,8 +41,8 @@ export const PII_REDACTION_TOOL_NAME = 'reveal_pii'
  */
 export const PII_REDACTION_BLOCK = `
 
-This conversation has client-side PII redaction on. Personal data the user typed is replaced with stable placeholders before their message reaches you — typed tokens like [GIVEN_NAME_1], [EMAIL_2], [SSN_1], [PHONE_1]. The same real value always maps to the same placeholder, so you can reason about a placeholder as if it were the value. Keep placeholders intact in your replies and edits; do not invent or guess the underlying values.
-- reveal_pii: When you genuinely need a real value — e.g. to write it verbatim into a file or command — call reveal_pii with the placeholder. The user is prompted to approve each reveal and may decline, in which case keep using the placeholder.`
+This conversation has client-side PII redaction on. Some personal data the user typed — such as email addresses, SSNs and card numbers — is replaced with placeholders before their message reaches you, as typed tokens like [EMAIL_QJXKT_1] or [SSN_QJXKT_1] (the letters are a per-session tag). Within a session the same real value always maps to the same placeholder, so you can reason about a placeholder as if it were the value. URLs, hostnames and IP addresses are left as typed. Keep placeholders intact in your replies and edits; do not invent or guess the underlying values.
+- reveal_pii: When you genuinely need a real value — e.g. to write it verbatim into a file or command — call reveal_pii with the placeholder. The user is prompted to approve each reveal and may decline, in which case keep using the placeholder. Placeholders from an earlier app session cannot be revealed.`
 
 /** The manifest's steering prompt block (framed as trusted first-party text). */
 const PII_REDACTION_PROMPT_BLOCK: PluginPromptBlock = {
@@ -63,7 +63,7 @@ export const piiRedactionPlugin: RegisteredPlugin = definePlugin(
   {
     name: PII_REDACTION_PLUGIN_ID,
     description:
-      'PII redaction — replaces personal data you type (names, emails, phone numbers, SSNs, card numbers) with stable placeholders on-device before your message reaches any model provider; the agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
+      'PII redaction — replaces email addresses, SSNs and card numbers you type with placeholders on-device before your message reaches any model provider; names, phone numbers and street addresses are only caught when the optional contextual model is installed, which Copse releases do not include. URLs and IP addresses are left as typed. The agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [PII_REDACTION_TOOL_NAME] },

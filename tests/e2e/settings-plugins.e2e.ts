@@ -152,6 +152,17 @@ describe('settings plugins (about:addons)', function () {
     assert.equal(await pluginRow.$('.plugin-name').getText(), 'PII redaction')
     await expect(pluginRow.$('.plugin-badge-first-party')).toBeDisplayed()
     assert.equal(await pluginRow.getAttribute('data-enabled'), 'false')
+    // The description must not promise name/phone redaction: releases ship
+    // Rampart's heuristic layer only, and URLs / IPs are deliberately kept.
+    const piiText = await pluginRow.getText()
+    assert.match(piiText, /email addresses, SSNs and card numbers/)
+    assert.match(piiText, /names, phone numbers and street addresses are only caught when/)
+    assert.match(piiText, /URLs and IP addresses are left as typed/)
+    await pluginRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.pii-redaction"]',
+      'settings-pii-redaction-plugin.png',
+    )
 
     // Background execution is a stable primitive and is available without a
     // fresh-profile opt-in. Loopback binding still prompts separately at use time.
