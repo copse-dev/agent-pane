@@ -72597,6 +72597,115 @@ var init_acp_resource_previews = __esm({
   }
 });
 
+// src/shared/diff/line-diff.ts
+function splitDiffLines(text2) {
+  const normalized = text2.replace(/\r\n/g, "\n");
+  if (normalized === "") return [];
+  return normalized.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+}
+function outputLine(kind, token) {
+  const terminated = token.endsWith("\n");
+  return {
+    kind,
+    text: terminated ? token.slice(0, -1) : token,
+    ...!terminated ? { noNewlineAtEnd: true } : {}
+  };
+}
+function computeLineDiff(before, after) {
+  const a3 = splitDiffLines(before);
+  const b4 = splitDiffLines(after);
+  let start = 0;
+  while (start < a3.length && start < b4.length && a3[start] === b4[start]) start += 1;
+  let aEnd = a3.length;
+  let bEnd = b4.length;
+  while (aEnd > start && bEnd > start && a3[aEnd - 1] === b4[bEnd - 1]) {
+    aEnd -= 1;
+    bEnd -= 1;
+  }
+  const context = (text2) => outputLine("context", text2);
+  const del = (text2) => outputLine("del", text2);
+  const add2 = (text2) => outputLine("add", text2);
+  const head = a3.slice(0, start).map(context);
+  const tail = a3.slice(aEnd).map(context);
+  const oldMiddle = a3.slice(start, aEnd);
+  const newMiddle = b4.slice(start, bEnd);
+  const n2 = oldMiddle.length;
+  const m2 = newMiddle.length;
+  if (n2 === 0 || m2 === 0 || (n2 + 1) * (m2 + 1) > MAX_TABLE_CELLS) {
+    return [...head, ...oldMiddle.map(del), ...newMiddle.map(add2), ...tail];
+  }
+  const width = m2 + 1;
+  const lcs = new Uint16Array((n2 + 1) * width);
+  for (let i3 = n2 - 1; i3 >= 0; i3 -= 1) {
+    for (let j4 = m2 - 1; j4 >= 0; j4 -= 1) {
+      lcs[i3 * width + j4] = oldMiddle[i3] === newMiddle[j4] ? (lcs[(i3 + 1) * width + j4 + 1] ?? 0) + 1 : Math.max(lcs[(i3 + 1) * width + j4] ?? 0, lcs[i3 * width + j4 + 1] ?? 0);
+    }
+  }
+  const middle = [];
+  let dels = [];
+  let adds = [];
+  const flush = () => {
+    middle.push(...dels, ...adds);
+    dels = [];
+    adds = [];
+  };
+  let i2 = 0;
+  let j3 = 0;
+  while (i2 < n2 || j3 < m2) {
+    const oldLine = oldMiddle[i2];
+    const newLine = newMiddle[j3];
+    if (i2 < n2 && j3 < m2 && oldLine === newLine) {
+      flush();
+      middle.push(context(oldLine ?? ""));
+      i2 += 1;
+      j3 += 1;
+    } else if (j3 >= m2 || i2 < n2 && (lcs[(i2 + 1) * width + j3] ?? 0) >= (lcs[i2 * width + j3 + 1] ?? 0)) {
+      dels.push(del(oldLine ?? ""));
+      i2 += 1;
+    } else {
+      adds.push(add2(newLine ?? ""));
+      j3 += 1;
+    }
+  }
+  flush();
+  return [...head, ...middle, ...tail];
+}
+function foldLineDiff(lines, contextLines = 3) {
+  const keep = new Uint8Array(lines.length);
+  lines.forEach((line, index2) => {
+    if (line.kind === "context") return;
+    const from = Math.max(0, index2 - contextLines);
+    const to = Math.min(lines.length - 1, index2 + contextLines);
+    for (let k2 = from; k2 <= to; k2 += 1) keep[k2] = 1;
+  });
+  const out = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (keep[index]) {
+      const line = lines[index];
+      if (line) out.push(line);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < lines.length && !keep[end]) end += 1;
+    if (end - index === 1) {
+      const line = lines[index];
+      if (line) out.push(line);
+    } else {
+      out.push({ kind: "gap", count: end - index });
+    }
+    index = end;
+  }
+  return out;
+}
+var MAX_TABLE_CELLS;
+var init_line_diff = __esm({
+  "src/shared/diff/line-diff.ts"() {
+    MAX_TABLE_CELLS = 1e6;
+  }
+});
+
 // src/renderer/attachments/text-expand.ts
 function copyText(text2) {
   void navigator.clipboard.writeText(text2).then(() => showToast("Copied", { durationMs: 1500 })).catch((error62) => {
@@ -76402,6 +76511,65 @@ function createAcpContentBlocks(blocks, context, workspaceRoot) {
   if (nodes.length === 0) return null;
   return el("div", { class: `acp-content-blocks acp-${context}-content` }, ...nodes);
 }
+function createAcpToolDiff(item, workspaceRoot) {
+  const displayPath = workspaceDisplayPath(item.path, workspaceRoot);
+  const lines = computeLineDiff(item.oldText ?? "", item.newText);
+  const additions = lines.filter((line) => line.kind === "add").length;
+  const deletions = lines.filter((line) => line.kind === "del").length;
+  const hasChanges = additions > 0 || deletions > 0;
+  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, "No changes");
+  const details = el(
+    "details",
+    { class: "acp-tool-diff" },
+    el(
+      "summary",
+      {},
+      el(
+        "span",
+        { class: "acp-tool-diff-label" },
+        item.oldText === void 0 ? "New file" : "Diff"
+      ),
+      el(
+        "code",
+        {
+          class: "acp-tool-diff-path",
+          ...displayPath !== item.path ? { title: item.path } : {}
+        },
+        // Isolated so the rtl elision trick cannot move a leading `.` to the end.
+        el("bdi", {}, displayPath)
+      ),
+      el("span", { class: "tool-stat tool-stat-add" }, `+${String(additions)}`),
+      el("span", { class: "tool-stat tool-stat-del" }, `-${String(deletions)}`)
+    ),
+    body
+  );
+  if (!hasChanges) return details;
+  const buildRows = () => {
+    if (!details.open || body.childElementCount > 0) return;
+    const rows = foldLineDiff(lines).flatMap((line) => {
+      if (line.kind === "gap") {
+        return [
+          el(
+            "div",
+            { class: "acp-diff-line acp-diff-gap" },
+            `\u22EF ${String(line.count)} unchanged ${line.count === 1 ? "line" : "lines"}`
+          )
+        ];
+      }
+      const accessibility = line.kind === "add" ? { "aria-label": `Added line: ${line.text}` } : line.kind === "del" ? { "aria-label": `Deleted line: ${line.text}` } : {};
+      const row2 = el(
+        "div",
+        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        el("span", { class: "acp-diff-sign", "aria-hidden": "true" }, acpDiffLineSigns[line.kind]),
+        el("span", { class: "acp-diff-text" }, line.text)
+      );
+      return line.noNewlineAtEnd ? [row2, el("div", { class: "acp-diff-line acp-diff-eof" }, "\\ No newline at end of file")] : [row2];
+    });
+    body.append(...rows);
+  };
+  details.addEventListener("toggle", buildRows);
+  return details;
+}
 function createToolResultContent(content, previewImageDataUrls, workspaceRoot) {
   const imageCount = content.filter(
     (item) => item.type === "content" && item.content.type === "image"
@@ -76415,18 +76583,7 @@ function createToolResultContent(content, previewImageDataUrls, workspaceRoot) {
       const node2 = createAcpContentBlock(item.content, "tool", workspaceRoot, previewImageDataUrls);
       if (node2) wrap.append(node2);
     } else if (item.type === "diff") {
-      const diff = el(
-        "details",
-        { class: "acp-tool-diff" },
-        el("summary", {}, `Diff \xB7 ${item.path}`),
-        ...item.oldText !== void 0 ? [
-          el("div", { class: "acp-content-label" }, "Before"),
-          el("pre", { class: "acp-tool-diff-text" }, item.oldText)
-        ] : [],
-        el("div", { class: "acp-content-label" }, "After"),
-        el("pre", { class: "acp-tool-diff-text" }, item.newText)
-      );
-      wrap.append(diff);
+      wrap.append(createAcpToolDiff(item, workspaceRoot));
     } else {
       wrap.append(
         el(
@@ -78468,7 +78625,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -78502,6 +78659,7 @@ var init_conversation = __esm({
     init_attachment_icons();
     init_image_expand();
     init_acp_resource_previews();
+    init_line_diff();
     init_text_expand();
     init_video_expand();
     init_composer_editor();
@@ -78548,6 +78706,7 @@ var init_conversation = __esm({
     toolCardKeys = /* @__PURE__ */ new WeakMap();
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
+    acpDiffLineSigns = { context: " ", add: "+", del: "-" };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
