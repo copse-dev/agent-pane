@@ -48,6 +48,13 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
+(`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
+gate therefore judges it by the **Windows / sandbox init failure** row whatever this machine's
+sandbox state, and whatever containment a caller reports. It asks the same execution-target
+resolution the spawn uses (`spawnRunsOnSshTarget` in `project-sandbox/spawn.ts`), and a remote
+project that cannot route over SSH counts as unsandboxed rather than local.
+
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git

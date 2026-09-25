@@ -897,6 +897,94 @@ describe('custom tool permission', () => {
   })
 })
 
+describe('ensureShellCommandPermitted — SSH workspace execution target', () => {
+  // Commands in an SSH workspace are spawned on the remote host with no
+  // sandbox (project-sandbox/spawn.ts), so the gate must judge them as it does
+  // on a platform without one, even while THIS machine's sandbox is active.
+  // Every case passes `sandboxEnabled: true` — the local containment the
+  // caller reports — and compares a local workspace with a remote one.
+  const LOCAL_ROOT = '/tmp/copse-gate-local-project'
+  const REMOTE_ROOT = '/remote/project'
+  const AMBIGUOUS = 'gh api repos/copse-dev/agent-pane/pulls'
+  const OPAQUE_HEREDOC = "python3 - <<'EOF'\nimport os\nprint(os.getcwd())\nEOF"
+  const PLAIN_READ = 'rg TODO src'
+
+  async function useSshProject(opts: { executionEnabled?: boolean } = {}): Promise<() => void> {
+    await setSetting('sshWorkspaceEnabled', opts.executionEnabled ?? true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'remote-p1')
+    storageSet('projects', [{ id: 'remote-p1', path: REMOTE_ROOT, sshHost: 'dev' }])
+    const restore = setWorkspaceRootForTest(REMOTE_ROOT)
+    return () => {
+      restore()
+      storageSet('activeProjectId', null)
+      storageSet('projects', [])
+    }
+  }
+
+  async function runGate(
+    command: string,
+    target: 'local' | 'ssh' | 'ssh-unroutable',
+  ): Promise<{ permitted: boolean; prompts: (string | undefined)[] }> {
+    setPermissionGateForTests(null)
+    await setSetting('safetyClassifierEnabled', false)
+    const restore =
+      target === 'local'
+        ? setWorkspaceRootForTest(LOCAL_ROOT)
+        : await useSshProject({ executionEnabled: target === 'ssh' })
+    const prompts: (string | undefined)[] = []
+    setApprovalHandler((request) => {
+      prompts.push(request.cause)
+      return Promise.resolve({ approved: false, remember: false })
+    })
+    try {
+      const permitted = await ensureShellCommandPermitted(command, {
+        sandboxEnabled: true,
+        autoRun: true,
+      })
+      return { permitted, prompts }
+    } finally {
+      setApprovalHandler(null)
+      restore()
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
+  }
+
+  it('auto-runs an ambiguous command locally but prompts for it on the SSH host', async () => {
+    assert.deepEqual(await runGate(AMBIGUOUS, 'local'), { permitted: true, prompts: [] })
+    const remote = await runGate(AMBIGUOUS, 'ssh')
+    assert.equal(remote.permitted, false)
+    assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('auto-runs an opaque interpreter heredoc locally but prompts for it on the SSH host', async () => {
+    assert.deepEqual(await runGate(OPAQUE_HEREDOC, 'local'), { permitted: true, prompts: [] })
+    const remote = await runGate(OPAQUE_HEREDOC, 'ssh')
+    assert.equal(remote.permitted, false)
+    assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('applies the unsandboxed policy to a plain read on the SSH host', async () => {
+    // Without an OS sandbox even a read can run repository-controlled code
+    // (a configured pager, a wrapper script on PATH), so it prompts too.
+    assert.deepEqual(await runGate(PLAIN_READ, 'local'), { permitted: true, prompts: [] })
+    const remote = await runGate(PLAIN_READ, 'ssh')
+    assert.equal(remote.permitted, false)
+    assert.deepEqual(remote.prompts, ['shell-no-containment'])
+  })
+
+  it('fails closed when the active project is remote but cannot route over SSH', async () => {
+    // The spawn refuses this state; the gate must not fall back to "local and
+    // contained" for it either.
+    const unroutable = await runGate(AMBIGUOUS, 'ssh-unroutable')
+    assert.equal(unroutable.permitted, false)
+    assert.deepEqual(unroutable.prompts, ['shell-no-containment'])
+  })
+})
+
 describe('run_background arg helpers', () => {
   it('reads command and the port-binding opt-in, tolerating malformed args', () => {
     assert.equal(backgroundCommandFromArgs({ command: 'npm run dev' }), 'npm run dev')
