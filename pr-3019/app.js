@@ -22392,10 +22392,42 @@ function setThreadReviewReport(store2, threadId, report) {
     else delete next.reviewReport;
     return next;
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, null);
 }
-function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+function setMessageReviewReport(store2, threadId, messageId, report) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message2) => {
+      if (message2.id !== messageId) return message2;
+      const next = { ...message2 };
+      if (report) next.reviewReport = report;
+      else delete next.reviewReport;
+      return next;
+    })
+  }));
+  store2.emit("review_report_changed", threadId, messageId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messageId = null) {
   patchThreadAnywhere(store2, threadId, (t2) => {
+    if (messageId !== null) {
+      return {
+        ...t2,
+        updatedAt: Date.now(),
+        messages: t2.messages.map((message2) => {
+          if (message2.id !== messageId || !message2.reviewReport) return message2;
+          return {
+            ...message2,
+            reviewReport: {
+              ...message2.reviewReport,
+              findings: message2.reviewReport.findings.map(
+                (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+              )
+            }
+          };
+        })
+      };
+    }
     if (!t2.reviewReport) return t2;
     return {
       ...t2,
@@ -22408,7 +22440,7 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
       }
     };
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
@@ -23594,7 +23626,7 @@ function isPinned(thread, activeThreadId) {
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
-  const inFlight3 = /* @__PURE__ */ new Map();
+  const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
@@ -23618,7 +23650,7 @@ function attachThreadHydration(store2, api2) {
   };
   const fetchInto = (projectId, threadId) => {
     const key = `${projectId}:${threadId}`;
-    const existing = inFlight3.get(key);
+    const existing = inFlight4.get(key);
     if (existing) return existing;
     failedThreadIds.delete(threadId);
     const endHydrate = begin("thread:hydrate");
@@ -23652,9 +23684,9 @@ function attachThreadHydration(store2, api2) {
       failedThreadIds.add(threadId);
       store2.emit("threads_changed");
     }).finally(() => {
-      inFlight3.delete(key);
+      inFlight4.delete(key);
     });
-    inFlight3.set(key, request);
+    inFlight4.set(key, request);
     return request;
   };
   activeHydrator = {
@@ -23706,7 +23738,7 @@ function attachThreadHydration(store2, api2) {
     offPrRefs();
     activeHydrator = null;
     recency = [];
-    inFlight3.clear();
+    inFlight4.clear();
     failedThreadIds.clear();
   };
 }
@@ -28793,7 +28825,12 @@ function createDemoApi(scenario, options = {}) {
         failed: []
       })
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false)
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -61281,6 +61318,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61899,6 +61945,15 @@ function mountSettingsDialog(store2, api2) {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -64963,6 +65018,7 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
     init_commit_attribution();
@@ -65018,6 +65074,14 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
@@ -65226,6 +65290,7 @@ function copyMessage(message2) {
     id: _id,
     hookCards: _hookCards,
     review: _review,
+    reviewReport: _reviewReport,
     toolCalls,
     images,
     canvasArtefacts,
@@ -67220,13 +67285,13 @@ function customAgentId(model) {
   return id && !findAcpCatalogEntry(id) ? id : null;
 }
 function namedAgentTitles(value) {
-  const titles = /* @__PURE__ */ new Map();
+  const titles2 = /* @__PURE__ */ new Map();
   const entries2 = Array.isArray(value) ? value : [];
   for (const entry of entries2) {
     if (typeof entry === "object" && entry !== null && "id" in entry && typeof entry.id === "string" && "title" in entry && typeof entry.title === "string" && entry.title.trim())
-      titles.set(entry.id, entry.title.trim());
+      titles2.set(entry.id, entry.title.trim());
   }
-  return titles;
+  return titles2;
 }
 function chatAgentIdentity(threadId, message2, names) {
   const model = message2.model ?? message2.requestedModel;
@@ -71255,6 +71320,230 @@ var init_file_links = __esm({
   }
 });
 
+// src/renderer/markdown/pr-title-cache.ts
+function cachedPrTitle(ref) {
+  return titles.get(githubPrKey(ref));
+}
+function rememberPrTitle(ref, title, isDraft) {
+  const trimmed2 = title.trim();
+  if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
+  const key = githubPrKey(ref);
+  const previous = titles.get(key);
+  titles.delete(key);
+  titles.set(key, {
+    title: trimmed2,
+    ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
+  });
+  if (titles.size > MAX_TITLES) {
+    const oldest = titles.keys().next().value;
+    if (oldest !== void 0) titles.delete(oldest);
+  }
+}
+function loadPrTitle(ref, gh) {
+  const cached2 = cachedPrTitle(ref);
+  if (cached2) return Promise.resolve(cached2);
+  const key = githubPrKey(ref);
+  const pending = inFlight3.get(key);
+  if (pending) return pending;
+  const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+    if (!details) return null;
+    rememberPrTitle(ref, details.title, details.isDraft);
+    return cachedPrTitle(ref) ?? null;
+  }).finally(() => {
+    inFlight3.delete(key);
+  });
+  inFlight3.set(key, request);
+  return request;
+}
+var MAX_TITLES, titles, inFlight3;
+var init_pr_title_cache = __esm({
+  "src/renderer/markdown/pr-title-cache.ts"() {
+    init_github_pr_url2();
+    MAX_TITLES = 128;
+    titles = /* @__PURE__ */ new Map();
+    inFlight3 = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/renderer/markdown/pr-link-preview.ts
+function linkedPr(root, target) {
+  if (!(target instanceof Element)) return null;
+  const link = target.closest("a[href]");
+  if (!link || !root.contains(link)) return null;
+  if (link.dataset["workspaceLink"] || link.dataset["fileReferencePath"]) return null;
+  const ref = parseGithubPrUrl(link.href);
+  return ref ? { link, ref } : null;
+}
+function bindPrLinkPreviews(root, gh) {
+  if (!gh) return () => {
+  };
+  const github = gh;
+  let activeLink = null;
+  let suppressedLink = null;
+  let preview = null;
+  let hoverTimer = null;
+  let requestGen = 0;
+  let disposed = false;
+  const previewId = `pr-link-preview-${String(++nextPreviewId)}`;
+  function ensurePreview() {
+    if (preview) return preview;
+    const node2 = document.createElement("div");
+    node2.id = previewId;
+    node2.className = "pr-link-preview";
+    node2.setAttribute("role", "tooltip");
+    node2.hidden = true;
+    document.body.append(node2);
+    preview = node2;
+    return node2;
+  }
+  function position2() {
+    if (!activeLink || !preview || preview.hidden) return;
+    const anchor2 = activeLink.getBoundingClientRect();
+    const tip = preview.getBoundingClientRect();
+    const placed = computeTooltipPosition({
+      anchor: { left: anchor2.left, top: anchor2.top, width: anchor2.width, height: anchor2.height },
+      tip: { width: tip.width, height: tip.height },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      preferred: "bottom",
+      gap: 9,
+      pad: 12
+    });
+    preview.style.left = `${String(Math.round(placed.left))}px`;
+    preview.style.top = `${String(Math.round(placed.top))}px`;
+  }
+  function describedBy(link, add2) {
+    const values = (link.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+    const next = values.filter((value) => value !== previewId);
+    if (add2) next.push(previewId);
+    if (next.length) link.setAttribute("aria-describedby", next.join(" "));
+    else link.removeAttribute("aria-describedby");
+  }
+  function hide3() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    requestGen++;
+    if (activeLink) describedBy(activeLink, false);
+    activeLink = null;
+    if (preview) preview.hidden = true;
+  }
+  function show2(ref, data) {
+    if (!activeLink) return;
+    const node2 = ensurePreview();
+    node2.replaceChildren();
+    const meta3 = document.createElement("div");
+    meta3.className = "pr-link-preview-meta";
+    meta3.textContent = `Pull request #${String(ref.number)}`;
+    if (data?.isDraft) {
+      const badge = document.createElement("span");
+      badge.className = "pr-link-preview-draft";
+      badge.textContent = "Draft";
+      meta3.append(badge);
+    }
+    const title = document.createElement("div");
+    title.className = "pr-link-preview-title";
+    title.textContent = data?.title ?? "Loading title\u2026";
+    if (!data) title.classList.add("is-loading");
+    const repo = document.createElement("div");
+    repo.className = "pr-link-preview-repo";
+    repo.textContent = `${ref.owner} / ${ref.repo}`;
+    node2.append(meta3, title, repo);
+    node2.hidden = false;
+    describedBy(activeLink, true);
+    position2();
+  }
+  function activate2(link, ref, immediate) {
+    if (activeLink === link) return;
+    hide3();
+    activeLink = link;
+    const cached2 = cachedPrTitle(ref);
+    if (cached2) {
+      show2(ref, cached2);
+      return;
+    }
+    const gen = requestGen;
+    const load = () => {
+      hoverTimer = null;
+      if (disposed || activeLink !== link || gen !== requestGen) return;
+      show2(ref, null);
+      void loadPrTitle(ref, github).then((title) => {
+        if (disposed || activeLink !== link || gen !== requestGen) return;
+        if (title) show2(ref, title);
+        else hide3();
+      }).catch(() => {
+        if (activeLink === link && gen === requestGen) hide3();
+      });
+    };
+    if (immediate) load();
+    else hoverTimer = setTimeout(load, HOVER_DELAY_MS);
+  }
+  const onPointerOver = (event) => {
+    if (event.pointerType === "touch") return;
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, false);
+  };
+  const onPointerOut = (event) => {
+    const target = event.target;
+    const next = event.relatedTarget;
+    if (!(target instanceof Node) || !activeLink || !activeLink.contains(target)) return;
+    if (next instanceof Node && activeLink.contains(next)) return;
+    hide3();
+  };
+  const onPointerMove = (event) => {
+    if (suppressedLink && !(event.target instanceof Node && suppressedLink.contains(event.target))) {
+      suppressedLink = null;
+    }
+  };
+  const onFocusIn = (event) => {
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, true);
+  };
+  const onFocusOut = (event) => {
+    if (activeLink === event.target) hide3();
+  };
+  const onPointerDown = (event) => {
+    suppressedLink = linkedPr(root, event.target)?.link ?? null;
+    hide3();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") hide3();
+  };
+  root.addEventListener("pointerover", onPointerOver);
+  root.addEventListener("pointerout", onPointerOut);
+  root.addEventListener("focusin", onFocusIn);
+  root.addEventListener("focusout", onFocusOut);
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("pointermove", onPointerMove, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("scroll", hide3, true);
+  window.addEventListener("resize", position2);
+  return () => {
+    disposed = true;
+    hide3();
+    root.removeEventListener("pointerover", onPointerOver);
+    root.removeEventListener("pointerout", onPointerOut);
+    root.removeEventListener("focusin", onFocusIn);
+    root.removeEventListener("focusout", onFocusOut);
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("pointermove", onPointerMove, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("scroll", hide3, true);
+    window.removeEventListener("resize", position2);
+    preview?.remove();
+  };
+}
+var HOVER_DELAY_MS, nextPreviewId;
+var init_pr_link_preview = __esm({
+  "src/renderer/markdown/pr-link-preview.ts"() {
+    init_github_pr_url2();
+    init_tooltip();
+    init_pr_title_cache();
+    HOVER_DELAY_MS = 220;
+    nextPreviewId = 0;
+  }
+});
+
 // src/renderer/markdown/browser-links.ts
 function linkHttpHref(link) {
   const href = link.href;
@@ -71315,15 +71604,21 @@ function bindBrowserLinkClicks(root, store2, api2) {
     }
     openPlainLink(href);
   };
+  const unbindPreviews = bindPrLinkPreviews(
+    root,
+    api2?.gh?.prDetails ? { prDetails: api2.gh.prDetails } : void 0
+  );
   root.addEventListener("click", onClick);
   return () => {
     root.removeEventListener("click", onClick);
+    unbindPreviews();
   };
 }
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
+    init_pr_link_preview();
   }
 });
 
@@ -72030,6 +72325,14 @@ function mountComposerEditor() {
   root.setAttribute("role", "textbox");
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
+  const SCROLL_PIN_THRESHOLD_PX2 = 4;
+  let pinnedToBottom = true;
+  root.addEventListener("scroll", () => {
+    pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
+  });
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight;
+  }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
   const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
@@ -72218,6 +72521,7 @@ function mountComposerEditor() {
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
+      root.scrollTop = root.scrollHeight;
     },
     get selectionStart() {
       const sel = selectionInRoot();
@@ -72364,6 +72668,17 @@ function toolRunForMessage(messages, messageId) {
 }
 var init_tool_runs = __esm({
   "src/shared/tools/tool-runs.ts"() {
+  }
+});
+
+// src/shared/tools/tool-interruption.ts
+function isHostInterruptedToolCall(toolCall) {
+  return toolCall.status === "error" && toolCall.result === ACP_CANCELLED_TOOL_CALL_RESULT;
+}
+var ACP_CANCELLED_TOOL_CALL_RESULT;
+var init_tool_interruption = __esm({
+  "src/shared/tools/tool-interruption.ts"() {
+    ACP_CANCELLED_TOOL_CALL_RESULT = "Interrupted before completion \u2014 no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.";
   }
 });
 
@@ -72773,7 +73088,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -73342,6 +73660,28 @@ var init_quiet_runs = __esm({
   }
 });
 
+// src/renderer/controller/review-report-target.ts
+function setReviewReportTarget(store2, threadId, messageId) {
+  const targets = targetsByStore.get(store2) ?? /* @__PURE__ */ new Map();
+  targets.set(threadId, messageId);
+  targetsByStore.set(store2, targets);
+}
+function getReviewReportTarget(store2, threadId) {
+  return targetsByStore.get(store2)?.get(threadId);
+}
+function clearReviewReportTarget(store2, threadId) {
+  const targets = targetsByStore.get(store2);
+  if (!targets) return;
+  targets.delete(threadId);
+  if (targets.size === 0) targetsByStore.delete(store2);
+}
+var targetsByStore;
+var init_review_report_target = __esm({
+  "src/renderer/controller/review-report-target.ts"() {
+    targetsByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // src/renderer/controller/review-actions.ts
 function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -73361,12 +73701,14 @@ function retryReview(store2, api2, threadId, messageId) {
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function startReview(store2, api2, threadId) {
+function startReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (thread?.status === "running") return;
-  setThreadReviewReport(store2, threadId, {
+  const anchorId = messageId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id;
+  setReviewReportTarget(store2, threadId, anchorId ?? null);
+  const runningReport = {
     status: "running",
     startedAt: Date.now(),
     models: { reviewer: thread?.model ?? "", challenger: null },
@@ -73383,19 +73725,25 @@ function startReview(store2, api2, threadId) {
     reviewers: [],
     verification: null,
     durationMs: 0
-  });
+  };
+  if (anchorId) setMessageReviewReport(store2, threadId, anchorId, runningReport);
+  else setThreadReviewReport(store2, threadId, runningReport);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
   void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
-    const report = store2.getState().threads.find((t2) => t2.id === threadId)?.reviewReport;
+    clearReviewReportTarget(store2, threadId);
+    const currentThread = store2.getState().threads.find((t2) => t2.id === threadId);
+    const report = anchorId ? currentThread?.messages.find((message2) => message2.id === anchorId)?.reviewReport : currentThread?.reviewReport;
     if (report?.status === "running") {
-      setThreadReviewReport(store2, threadId, {
+      const failedReport = {
         ...report,
         status: "error",
         error: errorMessage(err2),
         durationMs: Date.now() - report.startedAt
-      });
+      };
+      if (anchorId) setMessageReviewReport(store2, threadId, anchorId, failedReport);
+      else setThreadReviewReport(store2, threadId, failedReport);
       setThreadStatus(store2, threadId, "idle");
       syncAgentActivity(store2, threadId, false);
       takeQuietRun(threadId);
@@ -73403,25 +73751,26 @@ function startReview(store2, api2, threadId) {
     showErrorToast("Review could not start", err2);
   });
 }
-function dismissReviewReport(store2, threadId) {
-  setThreadReviewReport(store2, threadId, null);
+function dismissReviewReport(store2, threadId, messageId) {
+  if (messageId) setMessageReviewReport(store2, threadId, messageId, null);
+  else setThreadReviewReport(store2, threadId, null);
 }
-function dismissReviewFinding(store2, api2, threadId, finding) {
-  setReviewFindingDismissed(store2, threadId, finding.id, true);
+function dismissReviewFinding(store2, api2, threadId, finding, messageId) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true, messageId);
   void api2.review.dismissFinding({
     findingId: finding.id,
     path: finding.path,
     claim: finding.claim,
     class: finding.class
   }).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    setReviewFindingDismissed(store2, threadId, finding.id, false, messageId);
     showErrorToast("Could not save the dismissal", err2);
   });
 }
-function restoreReviewFinding(store2, api2, threadId, findingId) {
-  setReviewFindingDismissed(store2, threadId, findingId, false);
+function restoreReviewFinding(store2, api2, threadId, findingId, messageId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false, messageId);
   void api2.review.restoreFinding(findingId).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, findingId, true);
+    setReviewFindingDismissed(store2, threadId, findingId, true, messageId);
     showErrorToast("Could not restore the finding", err2);
   });
 }
@@ -73430,6 +73779,7 @@ var init_review_actions = __esm({
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_review_report_target();
     init_toast();
     init_errors3();
   }
@@ -74130,6 +74480,48 @@ var init_image_input_support = __esm({
 });
 
 // src/renderer/views/conversation.ts
+function markUserInterruptedCalls(thread) {
+  if (!thread) return;
+  let turnCalls = [];
+  for (const [index, message2] of thread.messages.entries()) {
+    if (message2.role !== "assistant") turnCalls = [];
+    else turnCalls.push(...message2.toolCalls);
+    if (!message2.turnOutcome) continue;
+    const next = thread.messages[index + 1];
+    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    for (const call of turnCalls) {
+      if (!isHostInterruptedToolCall(call)) continue;
+      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
+        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
+      } else {
+        userInterruptedCalls.delete(call);
+      }
+    }
+    turnCalls = [];
+  }
+}
+function cardStatus2(toolCalls) {
+  if (toolCalls.some((call) => call.status === "running")) return "running";
+  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+    return "error";
+  }
+  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  return "done";
+}
+function interruptionLabel(call) {
+  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+}
+function syncRollupInterruptionNote(body, calls) {
+  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const current = body.querySelector(":scope > .tool-interruption-note");
+  if (!interrupted) {
+    current?.remove();
+    return;
+  }
+  const label = interruptionLabel(interrupted);
+  if (current) current.textContent = label;
+  else body.prepend(el("div", { class: "tool-interruption-note" }, label));
+}
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
@@ -74228,7 +74620,7 @@ function onToolCardBodyBuilt(card, cb) {
 function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const header = createToolHeader(
     label,
-    tc2.status,
+    cardStatus2([tc2]),
     summaryClass,
     count,
     tc2.editStats,
@@ -74239,6 +74631,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
       ...appendIfPresent(argsSection),
+      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
         tc2.resultFormat,
@@ -74382,7 +74775,7 @@ function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   const card = el("details", {
     class: "tool-card",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(card, tc2, label, "tool-card-header");
   onToolCardBodyBuilt(card, () => {
@@ -74405,7 +74798,7 @@ function createInnerToolCard(tc2, api2) {
   const entry = el("details", {
     class: "tool-group-item subagent-inner-tool",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   onToolCardBodyBuilt(entry, () => {
@@ -74522,6 +74915,13 @@ function subagentCardStatus(tc2, session) {
   if (session.status === "error" || tc2.status === "error") return "error";
   return "done";
 }
+function subagentHeaderMarker() {
+  return el(
+    "span",
+    { class: "tool-subagent-marker", "aria-label": "Subagent", "data-tooltip": "Subagent" },
+    gitBranchIcon("ui-icon ui-icon-sm")
+  );
+}
 function subagentModelBadge(session) {
   if (!session.model) return null;
   const badge = el("div", { class: "subagent-model" });
@@ -74628,7 +75028,9 @@ function populateSubagentCard(card, tc2, label, api2) {
   for (const node2 of Array.from(card.children)) {
     if (node2 !== timeline) node2.remove();
   }
-  card.append(createToolHeader(label, status, "tool-card-header"));
+  const header = createToolHeader(label, status, "tool-card-header");
+  header.querySelector(".tool-name")?.before(subagentHeaderMarker());
+  card.append(header);
   const badge = subagentModelBadge(session);
   if (badge) card.append(badge);
   const preview = session.summary ?? tc2.result ?? "";
@@ -74685,7 +75087,7 @@ function createSubagentToolCard(tc2, label, api2) {
   return card;
 }
 function createGroupToolCard(item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-group",
     "data-group-key": item.key,
@@ -74698,16 +75100,16 @@ function createGroupToolCard(item) {
     const entry = el("details", {
       class: "tool-group-item",
       "data-tool-id": tc2.id,
-      "data-status": tc2.status
+      "data-status": cardStatus2([tc2])
     });
     appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
-    toolGroupItemSignatures.set(entry, renderSignature(tc2));
+    toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
     groupItems.append(entry);
   }
   return card;
 }
 function createRollupToolCard(item, api2, threadId, store2) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-rollup",
     "data-rollup-key": item.key,
@@ -74722,11 +75124,12 @@ function createRollupToolCard(item, api2, threadId, store2) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
+  syncRollupInterruptionNote(body, item.toolCalls);
   card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-step",
     "data-step-key": item.key,
@@ -74756,8 +75159,15 @@ function toolCardKey(item) {
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
+function toolCallSignature(call) {
+  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+}
 function toolCardSignature(item, extra) {
-  const base = renderSignature(item);
+  const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+  const base = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+  });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
 function replaceDirectToolHeader(card, header) {
@@ -74770,7 +75180,7 @@ function replaceDirectToolHeader(card, header) {
 function populateRegularToolCard(card, tc2, label, threadId) {
   const wasOpen = card.open;
   lazyToolCardBodies.delete(card);
-  card.dataset["status"] = tc2.status;
+  card.dataset["status"] = cardStatus2([tc2]);
   card.replaceChildren();
   card.open = wasOpen;
   appendStandardToolSections(card, tc2, label, "tool-card-header");
@@ -74783,15 +75193,15 @@ function populateRegularToolCard(card, tc2, label, threadId) {
 function populateGroupItem(entry, tc2) {
   const wasOpen = entry.open;
   lazyToolCardBodies.delete(entry);
-  entry.dataset["status"] = tc2.status;
+  entry.dataset["status"] = cardStatus2([tc2]);
   entry.replaceChildren();
   entry.open = wasOpen;
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   if (wasOpen) ensureToolCardBodyRendered(entry);
-  toolGroupItemSignatures.set(entry, renderSignature(tc2));
+  toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
 }
 function reconcileGroupCard(card, item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
@@ -74817,10 +75227,10 @@ function reconcileGroupCard(card, item) {
       entry = el("details", {
         class: "tool-group-item",
         "data-tool-id": tc2.id,
-        "data-status": tc2.status
+        "data-status": cardStatus2([tc2])
       });
       populateGroupItem(entry, tc2);
-    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc2)) {
+    } else if (toolGroupItemSignatures.get(entry) !== toolCallSignature(tc2)) {
       populateGroupItem(entry, tc2);
     }
     desired.push(entry);
@@ -74863,7 +75273,7 @@ function reconcileNestedToolCards(host, items, api2, threadId, store2) {
 }
 function reconcileToolCard(card, item, api2, threadId, store2) {
   if (item.type === "rollup" || item.type === "step") {
-    const status = aggregateToolStatus(item.toolCalls);
+    const status = cardStatus2(item.toolCalls);
     card.dataset["status"] = status;
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
@@ -74878,6 +75288,7 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       body = el("div", { class: "tool-rollup-body" });
       card.append(body);
     }
+    if (item.type === "rollup") syncRollupInterruptionNote(body, item.toolCalls);
     reconcileNestedToolCards(body, item.children, api2, threadId, store2);
   } else if (item.type === "group") {
     reconcileGroupCard(card, item);
@@ -75989,6 +76400,20 @@ function mountConversation(root, store2, api2) {
     }
     updateScrollButton();
   }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
   function applyRollupSummaries(item, opts) {
     const { commandSummary, toolSummary } = opts;
     if (item.type === "rollup") {
@@ -76009,17 +76434,34 @@ function mountConversation(root, store2, api2) {
       item.label = commandSummary;
     }
   }
+  function labelUserInterruptions(item) {
+    const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+    if (calls.some((call) => userInterruptedCalls.has(call))) {
+      const failed = calls.filter(
+        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+      ).length;
+      const base = item.label.replace(/ · \d+ failed$/, "");
+      item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
+    }
+    if (item.type === "rollup" || item.type === "step") {
+      for (const child of item.children) labelUserInterruptions(child);
+    }
+  }
   function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
-    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
     card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
     const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
     const failed = itemStatus2 === "error";
+    if (itemStatus2 === "interrupted") {
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+    }
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -76078,6 +76520,7 @@ function mountConversation(root, store2, api2) {
     const msgId = msgEl.dataset["messageId"] ?? "";
     const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
     const activeThread = getActiveThread(store2);
+    markUserInterruptedCalls(activeThread);
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
@@ -76089,6 +76532,7 @@ function mountConversation(root, store2, api2) {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
+    for (const item of items) labelUserInterruptions(item);
     const existing = /* @__PURE__ */ new Map();
     for (const node2 of msgEl.querySelectorAll(":scope > .tool-card")) {
       const key = toolCardKeys.get(node2);
@@ -76259,6 +76703,7 @@ function mountConversation(root, store2, api2) {
     syncMessageVisualEvidence(msgEl, msg);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
     renderMessageTurnRecovery(threadId, msgId);
   }
@@ -76282,6 +76727,7 @@ function mountConversation(root, store2, api2) {
     syncModelLabels();
     syncUserActions();
     scrollToBottom(msg.role === "user");
+    if (msg.role === "user") scrollUserPromptIntoView(msgEl);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
@@ -76480,6 +76926,31 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
+  function renderMessageReviewReport(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    if (!msg?.reviewReport || !msgEl) return;
+    const card = createReviewFindingsCardEl(msg.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId, messageId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId, messageId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding, messageId);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id, messageId);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    card.setAttribute("data-review-report-for", messageId);
+    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    (postTurnCard ?? msgEl).after(card);
+  }
   function renderMessageTurnRecovery(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
@@ -76501,7 +76972,9 @@ function mountConversation(root, store2, api2) {
     msgEl.after(card);
   }
   function firstTrailingCard() {
-    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+    return list.querySelector(
+      "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
+    );
   }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
@@ -76516,7 +76989,7 @@ function mountConversation(root, store2, api2) {
     }
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]")?.remove();
+    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
     if (!thread?.reviewReport) return;
     const threadId = thread.id;
@@ -76797,8 +77270,9 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
-    store2.on("review_report_changed", () => {
-      syncReviewReportCard();
+    store2.on("review_report_changed", (tid, mid) => {
+      if (mid) renderMessageReviewReport(tid, mid);
+      else syncReviewReportCard();
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -76877,7 +77351,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -76916,6 +77390,7 @@ var init_conversation = __esm({
     init_agent_activity();
     init_tool_display();
     init_tool_runs();
+    init_tool_interruption();
     init_panels();
     init_thread_hydration();
     init_plugin_panel();
@@ -76937,6 +77412,7 @@ var init_conversation = __esm({
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
+    userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -89566,6 +90042,7 @@ function threadToJsonl(thread) {
         ...msg.parameters !== void 0 ? { parameters: msg.parameters } : {},
         ...msg.turnOutcome !== void 0 ? { turnOutcome: msg.turnOutcome } : {},
         ...msg.review !== void 0 ? { review: msg.review } : {},
+        ...msg.reviewReport !== void 0 ? { reviewReport: msg.reviewReport } : {},
         ...msg.origin !== void 0 ? { origin: msg.origin } : {},
         ...msg.editedByUser !== void 0 ? { editedByUser: msg.editedByUser } : {},
         toolCalls: msg.toolCalls
@@ -90799,8 +91276,8 @@ function startBlocker(state) {
   return null;
 }
 function agentModelsNote() {
-  const titles = containerAcpAgentTitles();
-  const named = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  const titles2 = containerAcpAgentTitles();
+  const named = titles2.length > 1 ? `${titles2.slice(0, -1).join(", ")} and ${titles2[titles2.length - 1] ?? ""}` : titles2[0] ?? "";
   return `Agent models run as their own process. ${named} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
 }
 function mountContainerRunControl(api2, context, onStateChanged) {
@@ -103722,10 +104199,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
     tab.sessionId = null;
-    tab.term.writeln(`\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`, () => {
-      finishCodeBlockRun(tab, code);
-    });
+    tab.term.writeln(
+      code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
+      () => {
+        finishCodeBlockRun(tab, code);
+      }
+    );
   });
   function createXterm() {
     const term = new Dl({
@@ -106230,7 +106710,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let otherLoading = false;
   const checksCache = /* @__PURE__ */ new Map();
   const checksInFlight = /* @__PURE__ */ new Set();
-  const titlesCache = /* @__PURE__ */ new Map();
   const titleInFlight = /* @__PURE__ */ new Set();
   const titleAttempted = /* @__PURE__ */ new Set();
   let ciEls = /* @__PURE__ */ new Map();
@@ -106357,27 +106836,22 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!ghStatus?.authenticated) return;
     for (const pr2 of prs) {
       const key = githubPrKey(pr2);
-      const cached2 = titlesCache.get(key);
+      const cached2 = cachedPrTitle(pr2);
       if (cached2) {
-        if (pr2.title !== cached2) pr2.title = cached2;
+        if (pr2.title !== cached2.title) pr2.title = cached2.title;
         continue;
       }
       if (!isPlaceholderPr(pr2)) {
-        if (pr2.title && pr2.title !== placeholderPrTitle(pr2.number)) {
-          titlesCache.set(key, pr2.title);
-        }
+        rememberPrTitle(pr2, pr2.title);
         continue;
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
       titleInFlight.add(key);
       const gen = titleGen;
-      void api2.gh.prDetails(pr2.owner, pr2.repo, pr2.number).then((details) => {
-        if (disposed || gen !== titleGen) return;
-        const title = details?.title.trim();
-        if (!title || title === placeholderPrTitle(pr2.number)) return;
-        titlesCache.set(key, title);
-        pr2.title = title;
+      void loadPrTitle(pr2, api2.gh).then((title) => {
+        if (disposed || gen !== titleGen || !title) return;
+        pr2.title = title.title;
         scheduleTitleRepaint();
       }).catch(() => {
       }).finally(() => {
@@ -106910,7 +107384,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        titlesCache.set(key, details.title);
+        rememberPrTitle(details, details.title, details.isDraft);
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
         if (row2 && row2.title !== details.title) {
           row2.title = details.title;
@@ -107172,6 +107646,7 @@ var init_pr_pane = __esm({
     init_prompt_attachments();
     init_dist();
     init_browser_links();
+    init_pr_title_cache();
     init_workspace_links();
     init_git_diff_viewer();
     init_ui_scale();
@@ -108106,11 +108581,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   let importing = false;
   let reviewing = false;
   let reviewPeekId = null;
+  let reviewPanelHidden = false;
   let reviewResults = [];
   const reviewApplied = /* @__PURE__ */ new Map();
   let bulkReviewFinished = false;
   let reviewInFlight = false;
   let bulkRunId = null;
+  let reviewTotal = 0;
   let reviewRunToken = 0;
   let cachedCheckpoint;
   let openIssues = [];
@@ -108164,7 +108641,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "aria-label": "Roadmap filters",
     hidden: true
   });
-  filter.append(searchInput, filterToggle, filterMenu);
+  filter.append(searchInput, filterToggle);
   const actionButtons = el("div", { class: "roadmap-action-buttons" });
   const newBtn = el(
     "button",
@@ -108186,6 +108663,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     },
     downloadIcon("ui-icon ui-icon-sm")
   );
+  const reviewLiveBadge = el("span", { class: "roadmap-review-live-badge", hidden: true });
   const reviewBtn = el(
     "button",
     {
@@ -108194,7 +108672,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       "aria-label": "Review roadmap resolution",
       "data-tooltip": "Review whether roadmap items have been resolved"
     },
-    searchIcon("ui-icon ui-icon-sm")
+    searchIcon("ui-icon ui-icon-sm"),
+    reviewLiveBadge
   );
   const refreshBtn = el(
     "button",
@@ -108238,7 +108717,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     actionButtons
   );
   const listBody = el("div", { class: "git-changes-list roadmap-list" });
-  listRoot.append(listHeader, listBody);
+  listRoot.append(listHeader, listBody, filterMenu);
   function appendFilterSection(title, values, enabled, label, defaultChecked) {
     filterMenu.append(el("div", { class: "roadmap-filter-heading" }, title));
     for (const value of values) {
@@ -108285,7 +108764,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     filterToggle.setAttribute("aria-expanded", opening ? "true" : "false");
   });
   const closeFilterOnOutsideClick = (event) => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu();
+    if (event.target instanceof Node && !filter.contains(event.target) && !filterMenu.contains(event.target)) {
+      closeFilterMenu();
+    }
   };
   document.addEventListener("click", closeFilterOnOutsideClick);
   searchInput.addEventListener("input", () => {
@@ -108709,7 +109190,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   }
   function syncViewerMode() {
     importView.hidden = !importing;
-    const reviewPanelActive = reviewing && !reviewPeekId;
+    const reviewPanelActive = reviewing && !reviewPeekId && !reviewPanelHidden;
     reviewView.hidden = !reviewPanelActive;
     if (importing || reviewPanelActive) {
       form.hidden = true;
@@ -108719,7 +109200,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   function renderEditor(opts) {
     errorLine.hidden = true;
     syncViewerMode();
-    if (importing || reviewing && !reviewPeekId) {
+    if (importing || reviewing && !reviewPeekId && !reviewPanelHidden) {
       return;
     }
     const item = selectedId ? items.find((m2) => m2.id === selectedId) : null;
@@ -108837,6 +109318,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     return enabledCategories.has(itemCategory(item)) && enabledComplexities.has(itemComplexity(item)) && enabledStatuses.has(status) && matchesSearch(item);
   }
   function renderList() {
+    const previousScrollTop = listBody.scrollTop;
     clear(listBody);
     const visible = items.filter(isListVisible);
     if (visible.length === 0) {
@@ -109040,7 +109522,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         );
         row2.append(main);
         row2.addEventListener("click", () => {
-          if (reviewing || importing) return;
+          if (reviewing && !reviewPanelHidden || importing) return;
           if (item.id === selectedId) return;
           leaveCurrentEditor();
           cancelResolutionCheckUi();
@@ -109055,6 +109537,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       group.append(groupItems);
       listBody.append(group);
     }
+    listBody.scrollTop = previousScrollTop;
     const selectedRow = listBody.querySelector(".is-selected");
     if (selectedRow) {
       const rowRect = selectedRow.getBoundingClientRect();
@@ -109080,12 +109563,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     if (token !== loadToken) return;
     loading = false;
     items = next;
-    if (!reviewing && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
+    if (!(reviewing && !reviewPanelHidden) && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
       selectedId = null;
     }
     renderList();
     if (reviewing) renderReviewResults();
     renderEditor(opts);
+    void rediscoverPendingReview();
   }
   function startNew() {
     leaveCurrentEditor();
@@ -109422,8 +109906,11 @@ Notes: ${notes}` : prompt;
   }
   function startImport() {
     cancelResolutionCheckUi();
+    if (reviewing) {
+      reviewPanelHidden = true;
+      reviewPeekId = null;
+    }
     importing = true;
-    reviewing = false;
     creating = false;
     selectedId = null;
     openIssues = [];
@@ -109438,6 +109925,7 @@ Notes: ${notes}` : prompt;
     importStatus.textContent = "Loading open issues\u2026";
     renderList();
     renderEditor();
+    syncReviewButtonAffordance();
     void loadMoreOpenIssues(matchToken);
   }
   async function confirmImport() {
@@ -109512,6 +110000,73 @@ Notes: ${notes}` : prompt;
       reviewMarkResolvedBtn.hidden = true;
       reviewArchiveResolvedBtn.hidden = true;
     }
+  }
+  function syncReviewButtonAffordance() {
+    const hiddenAway = reviewing && reviewPanelHidden;
+    reviewBtn.classList.toggle("roadmap-review-btn-live", hiddenAway);
+    reviewBtn.disabled = reviewInFlight && !hiddenAway;
+    if (hiddenAway) {
+      const label = reviewInFlight ? `Review running \u2014 ${String(reviewResults.length)} of ${String(reviewTotal)} judged` : `Review finished \u2014 ${String(reviewResults.length)} item(s) judged`;
+      const full = `${label}. Click to view.`;
+      reviewBtn.setAttribute("aria-label", full);
+      reviewBtn.setAttribute("data-tooltip", full);
+      reviewLiveBadge.hidden = false;
+      reviewLiveBadge.textContent = reviewInFlight ? `${String(reviewResults.length)}/${String(reviewTotal)}` : String(reviewResults.length);
+    } else {
+      reviewBtn.setAttribute("aria-label", "Review roadmap resolution");
+      reviewBtn.setAttribute("data-tooltip", "Review whether roadmap items have been resolved");
+      reviewLiveBadge.hidden = true;
+      reviewLiveBadge.textContent = "";
+    }
+  }
+  function resumeReviewPanel() {
+    importing = false;
+    reviewPanelHidden = false;
+    reviewPeekId = null;
+    selectedId = null;
+    creating = false;
+    renderList();
+    renderEditor();
+    renderReviewResults();
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
+  }
+  function reconstructReviewResults(runId) {
+    const results = [];
+    for (const item of items) {
+      if (item.fields["reviewBulkRun"] !== runId) continue;
+      const verdict = item.fields["reviewVerdict"];
+      if (!isRoadmapReviewVerdict(verdict)) continue;
+      results.push({
+        id: item.id,
+        verdict,
+        detail: item.fields["reviewDetail"] ?? "",
+        depth: "bulk",
+        pinnedIssue: null,
+        linkedIssues: []
+      });
+    }
+    return results;
+  }
+  async function rediscoverPendingReview() {
+    if (reviewing || reviewInFlight || bulkRunId !== null) return;
+    const tokenBefore = reviewRunToken;
+    const checkpoint = await ensureCheckpoint();
+    const runId = checkpoint.pendingBulkRun;
+    if (!runId) return;
+    const results = reconstructReviewResults(runId);
+    if (results.length === 0) return;
+    if (reviewRunToken !== tokenBefore) return;
+    bulkRunId = runId;
+    reviewResults = results;
+    reviewApplied.clear();
+    bulkReviewFinished = false;
+    reviewInFlight = false;
+    reviewTotal = results.length;
+    reviewing = true;
+    reviewPanelHidden = true;
+    reviewStatus.textContent = `Recovered ${String(results.length)} item(s) judged in an unfinished review. View the results or close to discard.`;
+    syncReviewButtonAffordance();
   }
   function renderReviewResults() {
     clear(reviewList);
@@ -109616,6 +110171,7 @@ Notes: ${notes}` : prompt;
     renderList();
     renderEditor();
     if (reviewing) renderReviewResults();
+    syncReviewButtonAffordance();
   }
   async function applyReviewBulkStatus(status) {
     const label = status === "done" ? "mark done" : "archive";
@@ -109648,9 +110204,11 @@ Notes: ${notes}` : prompt;
     const runToken = ++reviewRunToken;
     reviewing = true;
     reviewPeekId = null;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     importing = false;
     creating = false;
     selectedId = null;
@@ -109658,9 +110216,9 @@ Notes: ${notes}` : prompt;
     reviewApplied.clear();
     clear(reviewList);
     reviewStatus.textContent = "Preparing review\u2026";
-    reviewBtn.disabled = true;
     reviewInFlight = true;
     syncReviewActionVisibility();
+    syncReviewButtonAffordance();
     renderList();
     renderEditor();
     try {
@@ -109670,6 +110228,7 @@ Notes: ${notes}` : prompt;
         return;
       }
       bulkRunId = prepared.runId;
+      reviewTotal = prepared.items.length;
       if (prepared.items.length === 0) {
         reviewStatus.textContent = "No active roadmap items to review.";
         return;
@@ -109682,6 +110241,7 @@ Notes: ${notes}` : prompt;
         if (runToken !== reviewRunToken) return;
         reviewResults.push(result);
         renderReviewResults();
+        syncReviewButtonAffordance();
         await refresh({ preserveDirty: true });
       }
       bulkReviewFinished = true;
@@ -109693,8 +110253,9 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = ipcErrorMessage(err2, "Roadmap review failed.");
     } finally {
       reviewInFlight = false;
-      reviewBtn.disabled = false;
       syncReviewActionVisibility();
+      renderReviewResults();
+      syncReviewButtonAffordance();
     }
   }
   function closeReview() {
@@ -109710,13 +110271,43 @@ Notes: ${notes}` : prompt;
       });
     }
     reviewing = false;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     renderEditor();
+    syncReviewButtonAffordance();
+  }
+  function abandonReviewSession() {
+    if (!reviewing && !reviewInFlight && bulkRunId === null) return;
+    reviewRunToken++;
+    const runId = bulkRunId;
+    bulkRunId = null;
+    if (runId) {
+      void api2.roadmap.abortReview(runId).then(() => {
+        cachedCheckpoint = void 0;
+      });
+    }
+    reviewing = false;
+    reviewPanelHidden = false;
+    reviewInFlight = false;
+    bulkReviewFinished = false;
+    reviewPeekId = null;
+    reviewResults = [];
+    reviewApplied.clear();
+    reviewTotal = 0;
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview2());
+  reviewBtn.addEventListener("click", () => {
+    if (reviewing && reviewPanelHidden) {
+      resumeReviewPanel();
+      return;
+    }
+    void startReview2();
+  });
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -109812,15 +110403,16 @@ Notes: ${notes}` : prompt;
       loadToken++;
       loading = false;
       cancelResolutionCheckUi();
+      abandonReviewSession();
       selectedId = null;
       creating = false;
       importing = false;
-      reviewing = false;
       items = [];
       editorDrafts.clear();
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      cachedCheckpoint = void 0;
       renderList();
       renderEditor();
       if (roadmapModeActive(store2)) void refresh();
@@ -110016,6 +110608,24 @@ function webviewUrl(tab) {
   } catch {
     return "";
   }
+}
+function clearUrlLoadStatus(tab) {
+  tab.loadError = null;
+  tab.urlInput.classList.remove("has-error", "has-blocked");
+  setTooltip(tab.urlInput, null);
+  tab.statusLine.textContent = "";
+  tab.statusLine.classList.remove("browser-status-danger", "browser-status-warning");
+  tab.statusLine.hidden = true;
+}
+function setUrlLoadStatus(tab, kind, message2) {
+  tab.loadError = message2;
+  tab.urlInput.classList.toggle("has-error", kind === "error");
+  tab.urlInput.classList.toggle("has-blocked", kind === "blocked");
+  setTooltip(tab.urlInput, message2);
+  tab.statusLine.textContent = message2;
+  tab.statusLine.classList.toggle("browser-status-danger", kind === "error");
+  tab.statusLine.classList.toggle("browser-status-warning", kind === "blocked");
+  tab.statusLine.hidden = false;
 }
 function webviewTitle(tab) {
   if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== "function")
@@ -110348,8 +110958,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     );
   }
   function navigateWebview(tab, url2) {
-    tab.loadError = null;
-    tab.urlInput.classList.remove("has-error");
+    clearUrlLoadStatus(tab);
     if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
@@ -110368,12 +110977,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (activeTabId === tab.id) syncAddressBar(tab);
       scheduleSessionSave();
     };
-    webview.addEventListener("did-navigate", onNavigate);
+    const onNavigateSuccess = () => {
+      clearUrlLoadStatus(tab);
+      onNavigate();
+    };
+    webview.addEventListener("did-navigate", onNavigateSuccess);
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
     });
-    webview.addEventListener("did-navigate-in-page", onNavigate);
+    webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
     webview.addEventListener("focus", closeAllMenus);
     webview.addEventListener("dom-ready", () => {
@@ -110388,11 +111001,31 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     });
     webview.addEventListener("did-fail-load", (event) => {
       const detail = event;
-      tab.loadError = detail.errorDescription ?? "Failed to load page";
-      tab.urlInput.classList.add("has-error");
-      tab.urlInput.title = tab.loadError;
+      if (detail.isMainFrame === false) return;
+      if (detail.errorCode === NET_ERROR_ABORTED) return;
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+        return;
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, "Failed to load page");
+      setUrlLoadStatus(tab, "error", `Couldn't load this page: ${description}`);
     });
     return webview;
+  }
+  function handleNavigationBlocked(webContentsId, url2) {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue;
+      let id;
+      try {
+        id = tab.webview.getWebContentsId();
+      } catch {
+        continue;
+      }
+      if (id !== webContentsId) continue;
+      if (tab.urlInput.value !== url2) continue;
+      setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+      return;
+    }
   }
   function navigateTab(tab, rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
@@ -110725,8 +111358,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotateBtn,
       menuWrap
     );
+    const statusLine = el("div", { class: "browser-status", role: "status", hidden: "" });
     const webviewHost = el("div", { class: "browser-webview-host" });
-    const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id }, toolbar, webviewHost);
+    const panel = el(
+      "div",
+      { class: "browser-tab-panel", "data-tab-id": id },
+      toolbar,
+      statusLine,
+      webviewHost
+    );
     const tab = {
       id,
       partition: options?.partition ?? browserSessionPartition(
@@ -110744,6 +111384,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -111143,6 +111784,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     api2?.browser.onOpenTab((url2, partition) => addTab({ url: url2, partition, activate: false })),
     api2?.browser.onShowTab?.(showTabForUrl),
     api2?.browser.onPreviewStale?.(refreshStalePreviews),
+    api2?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api2?.browser.onShareText(attachSharedText),
     api2?.browser.onShareImage(attachSharedImage),
     api2?.browser.onPluginTabRequest(ensurePluginBrowserTab),
@@ -111171,7 +111813,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS2;
+var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -111189,6 +111831,9 @@ var init_browser_pane = __esm({
     init_annotation_layer();
     init_attach_annotation();
     init_toast();
+    init_tooltip();
+    NET_ERROR_ABORTED = -3;
+    NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
@@ -129056,20 +129701,20 @@ function threadLabel(title) {
 function workingThreadTitles(store2) {
   return store2.getState().threads.filter((thread) => thread.status === "running").map((thread) => threadLabel(thread.title));
 }
-function summariseWorkingThreads(titles) {
-  const listed = titles.slice(0, MAX_LISTED_TITLES);
-  const remaining = titles.length - listed.length;
+function summariseWorkingThreads(titles2) {
+  const listed = titles2.slice(0, MAX_LISTED_TITLES);
+  const remaining = titles2.length - listed.length;
   if (remaining > 0) return `${listed.join(", ")} and ${String(remaining)} more`;
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
 async function confirmClose(store2) {
-  const titles = workingThreadTitles(store2);
-  if (titles.length === 0) return true;
-  const one = titles.length === 1;
+  const titles2 = workingThreadTitles(store2);
+  if (titles2.length === 0) return true;
+  const one = titles2.length === 1;
   return await showConfirmDialog({
-    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -129931,6 +130576,330 @@ var init_command_palette = __esm({
   }
 });
 
+// src/renderer/views/process-manager-dialog.ts
+function sortedRows(rows, column, ascending) {
+  const direction = ascending ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const a3 = column === "cpu" ? left.cpuPercent : left.memoryMiB;
+    const b4 = column === "cpu" ? right.cpuPercent : right.memoryMiB;
+    if (a3 === null) return b4 === null ? left.pid - right.pid : 1;
+    if (b4 === null) return -1;
+    return (a3 - b4) * direction || left.pid - right.pid;
+  });
+}
+function mountProcessManagerDialog(api2, store2) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({
+    id: "process-manager-dialog",
+    className: "process-manager-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "process-manager-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost process-manager-close",
+      "aria-label": "Close process manager"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const cpuHeading = el("th", { scope: "col", "aria-sort": "descending" });
+  const memoryHeading = el("th", { scope: "col", "aria-sort": "none" });
+  const cpuButton = el("button", { type: "button", class: "process-manager-sort" }, "CPU %");
+  const memoryButton = el("button", { type: "button", class: "process-manager-sort" }, "Memory");
+  cpuHeading.append(cpuButton);
+  memoryHeading.append(memoryButton);
+  const body = el("tbody", { class: "process-manager-rows" });
+  const table = el(
+    "table",
+    { class: "process-manager-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        el("th", { scope: "col" }, "Process"),
+        el("th", { scope: "col" }, "Kind"),
+        el("th", { scope: "col" }, "Thread"),
+        cpuHeading,
+        memoryHeading,
+        el("th", { scope: "col" }, "PID"),
+        el("th", { scope: "col", "aria-label": "Actions" })
+      )
+    ),
+    body
+  );
+  const activityCount = el("span", { class: "process-manager-activity-count" });
+  const activityList = el("div", { class: "process-manager-activity-list" });
+  const activity = el(
+    "section",
+    { class: "process-manager-activity", "aria-label": "Agent activity" },
+    el(
+      "div",
+      { class: "process-manager-activity-heading" },
+      el("strong", {}, "Agent activity"),
+      activityCount
+    ),
+    activityList
+  );
+  activity.hidden = true;
+  const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  dialog2.append(
+    el(
+      "div",
+      { class: "process-manager-shell" },
+      el(
+        "header",
+        { class: "process-manager-header" },
+        el(
+          "div",
+          {},
+          el("h2", { id: "process-manager-title" }, "Process Manager"),
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and thread processes")
+        ),
+        closeButton
+      ),
+      activity,
+      el("div", { class: "process-manager-scroll" }, table),
+      el(
+        "footer",
+        { class: "process-manager-footer" },
+        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
+        updated
+      ),
+      status
+    )
+  );
+  let current = null;
+  let column = "cpu";
+  let ascending = false;
+  let timer = null;
+  let generation = 0;
+  let refreshing = false;
+  function projectFor(row2) {
+    if (!row2.threadId) return null;
+    const state = store2.getState();
+    return row2.projectId ?? state.backgroundThreads.find((item) => item.thread.id === row2.threadId)?.projectId ?? (state.threads.some((thread) => thread.id === row2.threadId) ? state.activeProjectId : null);
+  }
+  async function stopManaged(row2) {
+    const handle = row2.managed;
+    if (!handle) return;
+    const label = handle.kind === "terminal" ? "terminal" : "background task";
+    const confirmed = await showConfirmDialog({
+      message: `Stop this ${label}?`,
+      detail: handle.kind === "terminal" ? "This closes the terminal session and stops its shell." : "This stops the background task and its managed subprocesses.",
+      confirmLabel: "Stop",
+      danger: true
+    });
+    if (!confirmed) return;
+    try {
+      if (handle.kind === "terminal") {
+        await api2.terminal.destroy(handle.id);
+      } else {
+        const stopped = await api2.processManager.stopBackground(
+          handle.id,
+          handle.projectId,
+          handle.threadId
+        );
+        if (!stopped) {
+          showErrorToast("Could not stop that task", "It is no longer running.");
+          return;
+        }
+      }
+      status.textContent = `Stopped ${label}.`;
+      void refresh();
+    } catch (error62) {
+      showErrorToast(`Could not stop the ${label}`, error62);
+    }
+  }
+  function menuEntries(row2) {
+    const entries2 = [];
+    const projectId = projectFor(row2);
+    if (row2.threadId && projectId && store2.getState().projects.some((p2) => p2.id === projectId)) {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Jump to thread",
+        onSelect: () => {
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      });
+    }
+    if (row2.threadId && getThreadById(store2, row2.threadId)?.status === "running") {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Stop agent run",
+        onSelect: () => {
+          void api2.agent.abort(threadId).catch((error62) => {
+            showErrorToast("Could not stop the agent run", error62);
+          });
+        }
+      });
+    }
+    if (row2.managed) {
+      entries2.push({
+        label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
+        onSelect: () => {
+          void stopManaged(row2);
+        }
+      });
+    }
+    return entries2;
+  }
+  function render(snapshot) {
+    cpuHeading.setAttribute(
+      "aria-sort",
+      column === "cpu" ? ascending ? "ascending" : "descending" : "none"
+    );
+    memoryHeading.setAttribute(
+      "aria-sort",
+      column === "memory" ? ascending ? "ascending" : "descending" : "none"
+    );
+    clear(body);
+    clear(activityList);
+    activity.hidden = snapshot.activeRunThreadIds.length === 0;
+    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
+    for (const threadId of snapshot.activeRunThreadIds) {
+      const title = getThreadById(store2, threadId)?.title.trim();
+      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
+      activityList.append(
+        el(
+          "span",
+          { class: "process-manager-activity-item", "data-thread-id": threadId },
+          el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+          el("span", { class: "process-manager-activity-state" }, "Working"),
+          el("span", { class: "process-manager-activity-thread", title: label }, label)
+        )
+      );
+    }
+    const state = store2.getState();
+    for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
+      const thread = getThreadById(store2, row2.threadId);
+      const title = thread?.title.trim();
+      const threadLabel2 = row2.threadId ? title && title.length > 0 ? title : `Thread ${row2.threadId.slice(0, 8)}` : "Shared";
+      const entries2 = menuEntries(row2);
+      const actionsCell = el("td", { class: "process-manager-actions" });
+      if (entries2.length > 0) {
+        const actionsButton = el(
+          "button",
+          {
+            type: "button",
+            class: "ui-btn ui-btn-ghost process-manager-actions-button",
+            "aria-label": `Actions for ${row2.label} (${String(row2.pid)})`
+          },
+          moreHorizontalIcon("ui-icon ui-icon-sm")
+        );
+        actionsButton.addEventListener("click", () => {
+          const rect = actionsButton.getBoundingClientRect();
+          showContextMenu(rect.right, rect.bottom, menuEntries(row2), dialog2);
+        });
+        actionsCell.append(actionsButton);
+      }
+      const tableRow = el(
+        "tr",
+        {
+          "data-pid": String(row2.pid),
+          "data-kind": row2.type,
+          "data-thread-id": row2.threadId ?? "",
+          "data-active-thread": String(
+            row2.threadId !== null && row2.threadId === state.activeThreadId
+          )
+        },
+        el("td", { class: "process-manager-name", title: row2.label }, row2.label),
+        el("td", { class: "process-manager-type" }, row2.type),
+        el("td", { class: "process-manager-thread", title: threadLabel2 }, threadLabel2),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.cpuPercent === null ? "\u2014" : `${row2.cpuPercent.toFixed(1)}%`
+        ),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.memoryMiB === null ? "\u2014" : `${row2.memoryMiB.toFixed(1)} MiB`
+        ),
+        el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
+        actionsCell
+      );
+      if (entries2.length > 0) {
+        tableRow.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+        });
+      }
+      body.append(tableRow);
+    }
+    updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
+    dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
+    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+  }
+  function isRequestCurrent(requestGeneration) {
+    return dialog2.open && requestGeneration === generation;
+  }
+  async function refresh() {
+    if (!dialog2.open || refreshing || document.visibilityState === "hidden") return;
+    refreshing = true;
+    const requestGeneration = generation;
+    try {
+      const snapshot = await api2.processManager.snapshot();
+      if (isRequestCurrent(requestGeneration)) {
+        current = snapshot;
+        render(snapshot);
+      }
+    } catch {
+      if (isRequestCurrent(requestGeneration))
+        status.textContent = "Process metrics are unavailable.";
+    } finally {
+      refreshing = false;
+    }
+  }
+  function setSort(next) {
+    ascending = column === next ? !ascending : false;
+    column = next;
+    if (current) render(current);
+  }
+  cpuButton.addEventListener("click", () => {
+    setSort("cpu");
+  });
+  memoryButton.addEventListener("click", () => {
+    setSort("memory");
+  });
+  function onVisibilityChange() {
+    if (document.visibilityState === "visible") void refresh();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  dialog2.addEventListener("close", () => {
+    generation++;
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    refreshing = false;
+  });
+  return () => {
+    if (dialog2.open) return;
+    current = null;
+    clear(body);
+    status.textContent = "Loading processes\u2026";
+    updated.textContent = "";
+    open2();
+    void refresh();
+    timer = setInterval(() => void refresh(), 1e3);
+  };
+}
+var init_process_manager_dialog = __esm({
+  "src/renderer/views/process-manager-dialog.ts"() {
+    init_helpers();
+    init_icons();
+    init_context_menu();
+    init_projects();
+    init_thread_helpers();
+    init_confirm_dialog();
+    init_toast();
+    init_dialog_shell();
+  }
+});
+
 // src/renderer/controller/sync-thread-branch-after-shell.ts
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
@@ -130603,14 +131572,22 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
         break;
       }
       case "review_report": {
-        setThreadReviewReport(store2, threadId, chunk.report);
+        const thread = getThreadById(store2, threadId);
+        const requestedAnchor = getReviewReportTarget(store2, threadId);
+        const anchorId = requestedAnchor !== void 0 ? requestedAnchor : st2.msgId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id ?? null;
+        if (anchorId === null) setThreadReviewReport(store2, threadId, chunk.report);
+        else setMessageReviewReport(store2, threadId, anchorId, chunk.report);
+        if (requestedAnchor !== void 0 && chunk.report.status !== "running") {
+          clearReviewReportTarget(store2, threadId);
+        }
         if (chunk.report.status === "running") {
           emitActivity(threadId, "Reviewing changes\u2026");
         }
@@ -130635,6 +131612,7 @@ function startAgentController(store2, api2) {
         if (st2.msgId) store2.emit("message_done", st2.msgId);
         state.delete(threadId);
         pendingTurn.delete(threadId);
+        clearReviewReportTarget(store2, threadId);
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -130769,6 +131747,7 @@ var init_agent = __esm({
     init_diff_state();
     init_thread_naming();
     init_quiet_runs();
+    init_review_report_target();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
@@ -140766,6 +141745,7 @@ async function boot() {
   mountFileSearchDialog(store, api);
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
+  openProcessManager = mountProcessManagerDialog(api, store);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -140835,6 +141815,7 @@ async function boot() {
   attachThreadHydration(store, api);
   if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
+  api.menu.onProcessManager(() => openProcessManager?.());
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
   });
@@ -141041,7 +142022,11 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       openNewThread(store);
     }
-    if (meta3 && e3.key === "p") {
+    if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
+      e3.preventDefault();
+      openProcessManager?.();
+    }
+    if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       if (store.getState().workspaceRoot) openFileSearchDialog();
     }
@@ -141137,7 +142122,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_tokens();
@@ -141184,6 +142169,7 @@ var init_main = __esm({
     init_command_palette();
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
+    init_process_manager_dialog();
     init_agent();
     init_diff_state();
     init_automations2();
@@ -141249,6 +142235,7 @@ var init_main = __esm({
     layoutMounted = false;
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
+    openProcessManager = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
