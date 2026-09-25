@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedAdvisorDenialFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('advisor denial tool card', () => {
   before(async () => {
@@ -34,6 +34,6 @@ describe('advisor denial tool card', () => {
     expect(visibleText).not.toContain('\\n')
     await expect(card.$('.tool-args summary')).toHaveText('Arguments')
     await card.scrollIntoView()
-    await saveAppScreenshot('advisor-denial-readable.png')
+    await saveElementScreenshot('[data-tool-id="tc-advisor-denial"]', 'advisor-denial-readable.png')
   })
 })

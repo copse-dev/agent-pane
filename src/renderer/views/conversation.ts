@@ -236,10 +236,14 @@ function createToolResultSection(
   }
   const errorMessage = status === 'error' ? mcpErrorMessage(result) : null
   if (errorMessage) {
+    const paragraphs = errorMessage
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
     return el(
       'div',
       { class: 'tool-result tool-result-error-message' },
-      ...errorMessage.split(/\n+/).map((line) => el('p', {}, line)),
+      ...paragraphs.map((line) => el('p', {}, line)),
     )
   }
   // ACP tool output is agent-authored Markdown — render it through the same

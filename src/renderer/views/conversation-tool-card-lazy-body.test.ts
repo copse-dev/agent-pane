@@ -353,7 +353,9 @@ describe('collapsed tool card bodies render lazily', () => {
       status: 'error',
       result: JSON.stringify({
         result: null,
-        error: { message: 'Request denied.\nReason: <script>stay text</script>' },
+        error: {
+          message: '\n  Request denied.  \n   \nReason: <script>stay text</script>\n',
+        },
       }),
       resultFormat: 'markdown',
     })
