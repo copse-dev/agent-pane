@@ -46,7 +46,10 @@ describe('turn-tree shell replay approval', () => {
     await expect(footer).toHaveText(expect.stringContaining('Why this needs approval:'))
     const reasons = await footer.$$('ul.approval-reasons > li').map((item) => item.getText())
     assert.deepEqual(reasons, ['Auto-run for sandbox commands is disabled in Settings'])
-    assert.doesNotMatch(await footer.getText(), /\u2022/)
+    const footerText = await browser.execute(
+      () => document.querySelector('#approval-dialog .approval-footer')?.textContent ?? '',
+    )
+    assert.doesNotMatch(footerText, /\u2022/)
     await saveElementScreenshot('#approval-dialog', 'approval-reasons-list.png')
 
     const leaseOption = dialog.$('.approval-turn-tree')
