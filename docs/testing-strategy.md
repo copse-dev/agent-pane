@@ -448,10 +448,13 @@ the source through a fixture or an e2e env override before committing the PNG.
 
 CI never writes rendered PNGs back to a PR branch. Successful e2e shards upload
 their changed shots, and `screenshot-artifacts` combines them into the immutable
-`reference-screenshot-candidates-<run-id>` artifact. Download that artifact,
-copy its `tests/e2e/screenshots/` contents into the checkout, review the image
-diff, and commit only the intentional updates. `pnpm run filter:screenshots` is
-available locally after copying the candidates to discard known render noise
+`reference-screenshot-candidates-<run-id>` artifact. For a same-repository PR,
+the parent's screenshot comment links a view-only GitHub compare page of those
+PNGs against the rendered head, so reviewing them needs no download. To accept
+them, cherry-pick the compare commit with the command the comment gives, or
+download that artifact, copy its `tests/e2e/screenshots/` contents into the
+checkout, and commit only the intentional updates. `pnpm run filter:screenshots`
+is available locally after copying the candidates to discard known render noise
 and shots outside the diff's ownership map; it is an aid, not an author.
 
 ## Where each tier runs: `main` and `release`
@@ -488,13 +491,21 @@ Two consequences of running e2e on those PRs, both intended:
 - `screenshot-artifacts` preserves reference shots touched by the specs that ran
   as immutable review evidence. It only includes shots the shards actually
   produced, and never edits the branch. A separate trusted `workflow_run`
-  links the filtered artifact from the same-repository parent PR. Ordinary runs
-  create no child PR. Only an explicit `update-screenshots` request publishes
-  candidates on a bot-owned branch and opens a PNG review PR into the source
-  branch. Merging that child applies reviewed references without granting write
-  credentials to the job that executed PR code. Artifacts expire after 14 days;
-  they are evidence to review, not automatic acceptance. Forks and promotion PRs
-  sourced from an integration branch keep the downloadable-artifact/manual path.
+  links the filtered artifact from the same-repository parent PR and, with the
+  job's own `GITHUB_TOKEN`, pushes the validated PNGs as one commit on a
+  view-only `screenshot-compare/pr-<N>/<sha12>` branch. The comment links
+  GitHub's compare view of that commit, whose image diffs need no download,
+  and previews up to 20 before/after pairs inline from raw URLs pinned to
+  commit SHAs (they render because the repository is public). A `GITHUB_TOKEN`
+  push starts no workflows, so that branch runs no CI. It is never merged. A
+  newer successful head deletes it, and so does closing the parent. No run
+  opens a PR for screenshots. Accepting references means committing them to
+  the PR branch, for example by cherry-picking the compare commit with the
+  command the comment gives, so no write credential ever reaches the job that
+  executed PR code. Artifacts expire after 14 days; they are evidence to
+  review, not automatic acceptance. Forks and promotion PRs sourced from an
+  integration branch get no compare branch and keep the
+  downloadable-artifact/manual path.
 
 Two escape hatches on a `main`-targeted PR, both labels:
 
@@ -502,8 +513,11 @@ Two escape hatches on a `main`-targeted PR, both labels:
   change that genuinely needs the signal before it merges (also forces the tier
   on a draft).
 - `update-screenshots` — run e2e specifically and render the complete reference
-  set into a candidate artifact and screenshot review PR. Remove the label after
-  the review PR is created.
+  set into the candidate artifact, which the publisher pushes to the compare
+  branch like any other run. Remove the label after that run to avoid
+  repeating the full refresh. It is not needed just to _see_ changed
+  screenshots: every same-repository run with candidates already links a
+  compare view.
 
 **What this costs.** Broad and LOW-confidence PRs pay for the complete Electron
 suite. That is intentional: those are the changes for which a selector-derived
