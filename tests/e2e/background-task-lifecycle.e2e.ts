@@ -9,7 +9,7 @@ import {
   seedEmptyProject,
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const COMPLETION_SIGNAL = join(E2E_WORKSPACE_ROOT, '.e2e-background-task-complete')
@@ -39,7 +39,7 @@ async function startBackgroundTask(args: Record<string, unknown>): Promise<void>
     ],
   })
   await setComposerValue(user)
-  await $('.submit-btn').click()
+  await submitComposer()
   await browser.waitUntil(
     async () => {
       const stop = $('.stop-btn')
