@@ -151,6 +151,17 @@ export const EXPLORE_BASE_PROMPT_VARS = EXPLORE_MODE_VARS
 /** Vars for the direct-reads base prompt — ablation evals pin against these. */
 export const DIRECT_READS_BASE_PROMPT_VARS = DIRECT_READS_MODE_VARS
 
+// Appended only when the turn runs in the thread's own linked worktree and
+// preflight_worktree is offered (#2493). Linked worktrees start without ignored
+// dependencies, and preparation is deliberately opt-in
+// (docs/plans/project-worktree-preparation.md), so without this steering an
+// agent typechecks an unprepared tree and chases missing-module and
+// missing-Node-type errors as code defects.
+export const WORKTREE_PREPARATION_BLOCK = `
+
+Worktree preparation:
+This thread's linked worktree starts without the project checkout's ignored dependencies and setup outputs (for example node_modules or .venv). Before the first typecheck, test, lint, or build here, call preflight_worktree; if it is not ready, call prepare_worktree with its plan fingerprint rather than an ad-hoc install command. Until preparation succeeds, treat unresolved modules, missing runtime types (such as Cannot find name 'process' or 'node:test'), and the errors they cascade into as an unprepared environment, not code defects: do not edit code to silence them.`
+
 // Appended when the `browserToolsEnabled` setting is on. Describes the built-in
 // headless browser tools so the agent prefers accessibility snapshots over blind
 // clicking and knows localhost is the primary supported target.
