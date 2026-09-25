@@ -2145,18 +2145,15 @@ export function mountInputBar(
     recordThreadVideos(store, id, attachedVideos)
     recordThreadArchives(store, id, attachedArchives)
 
+    const queued = { messageId, payload, createdAt: Date.now() }
     if (getThreadById(store, id)?.status === 'running') {
-      enqueueUserMessage(store, id, {
-        messageId,
-        payload,
-        createdAt: Date.now(),
-      })
+      enqueueUserMessage(store, id, queued)
     } else {
       // A typed prompt at idle starts a fresh turn tree (decision 16): late async
       // hooks from an earlier turn now carry a stale epoch and are held, not
       // auto-submitted, into this new turn.
       startHumanTurnTree(store, id)
-      dispatchAgentRun(store, api, id, payload)
+      dispatchAgentRun(store, api, id, payload, queued)
     }
     // Consume only the submitted draft. A different thread's composer, or a
     // newer edit made while checkout was pending, must survive completion.
