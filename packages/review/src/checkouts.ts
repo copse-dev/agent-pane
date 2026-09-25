@@ -247,7 +247,19 @@ export async function materialiseCheckouts(
     if (includeWorkingTree) {
       // Tracked changes, staged or not, as one binary patch applied to the head
       // worktree. `git diff HEAD` covers both the index and the working tree.
-      const patch = await git(repositoryRoot, ['diff', '--binary', 'HEAD'])
+      // Pinned so the author's own diff settings (noprefix, colour, an
+      // external driver or textconv) cannot change or break the patch.
+      const patch = await git(repositoryRoot, [
+        'diff',
+        '--binary',
+        '--no-color',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--no-relative',
+        '--src-prefix=a/',
+        '--dst-prefix=b/',
+        'HEAD',
+      ])
       if (patch.code !== 0) throw new CheckoutError('Cannot diff the working tree', patch)
       if (patch.stdout.length > 0) {
         dirty = true
@@ -272,7 +284,12 @@ export async function materialiseCheckouts(
         dirty = true
         const target = join(head, relative)
         await mkdir(dirname(target), { recursive: true })
-        await cp(join(repositoryRoot, relative), target, { recursive: true })
+        // Verbatim: a relative link keeps pointing inside the checkout rather
+        // than being rewritten to an absolute path into the author's tree.
+        await cp(join(repositoryRoot, relative), target, {
+          recursive: true,
+          verbatimSymlinks: true,
+        })
       }
     }
 

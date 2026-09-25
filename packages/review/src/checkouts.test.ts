@@ -1,6 +1,16 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { access, chmod, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materialiseCheckouts } from './checkouts.ts'
@@ -130,6 +140,36 @@ describe('materialiseCheckouts', () => {
     })
     await checkouts.cleanup()
     assert.equal(await exists(join(repo.root, 'HOOK_RAN')), false, 'the post-checkout hook ran')
+  })
+
+  it("overlays the working tree whatever the author's diff settings, keeping links relative", async () => {
+    const own = await createTestRepo({ 'a.txt': 'one\n', 'README.md': 'readme\n' })
+    const dir = await mkdtemp(join(tmpdir(), 'review-checkouts-config-'))
+    try {
+      // Each of these alone used to break `git diff HEAD` as a patch for `git apply`.
+      own.git('config', 'diff.noprefix', 'true')
+      own.git('config', 'color.diff', 'always')
+      own.git('config', 'diff.mnemonicPrefix', 'true')
+      await own.write({ 'a.txt': 'two\n' })
+      await mkdir(join(own.root, 'docs'))
+      await symlink('../README.md', join(own.root, 'docs', 'link'))
+      const checkouts = await materialiseCheckouts({
+        repoRoot: own.root,
+        baseRef: 'main',
+        scratchDir: dir,
+        includeWorkingTree: true,
+      })
+      try {
+        assert.equal(await readFile(join(checkouts.head, 'a.txt'), 'utf8'), 'two\n')
+        assert.equal(await readlink(join(checkouts.head, 'docs', 'link')), '../README.md')
+        assert.equal(await readFile(join(checkouts.head, 'docs', 'link'), 'utf8'), 'readme\n')
+      } finally {
+        await checkouts.cleanup()
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+      await own.remove()
+    }
   })
 
   it('fails cleanly on a ref that does not exist', async () => {

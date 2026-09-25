@@ -34,11 +34,24 @@ export function jailPath(root: string, path: string): string {
   return target
 }
 
+/**
+ * Largest checkout file the orchestrator reads. Executed code can write the
+ * checkout, and every reader keeps only a bounded slice, so a file this large
+ * is refused before it is buffered rather than after.
+ */
+const MAX_CHECKOUT_FILE_BYTES = 8 * 1024 * 1024
+
 export function readCheckoutFile(root: string, path: string): string {
   const file = jailPath(root, path)
   const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try {
-    if (!fstatSync(fd).isFile()) throw new Error(`Not a regular file: ${path}`)
+    const info = fstatSync(fd)
+    if (!info.isFile()) throw new Error(`Not a regular file: ${path}`)
+    if (info.size > MAX_CHECKOUT_FILE_BYTES) {
+      throw new Error(
+        `File is too large to read (${String(info.size)} bytes, limit ${String(MAX_CHECKOUT_FILE_BYTES)}): ${path}`,
+      )
+    }
     return readFileSync(fd, 'utf8')
   } finally {
     closeSync(fd)
