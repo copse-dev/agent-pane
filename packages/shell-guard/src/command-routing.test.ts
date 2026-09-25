@@ -105,6 +105,30 @@ describe('resolveCommandRouting', () => {
     assert.equal(r.outcome, 'allow')
   })
 
+  it('defers when an environment assignment precedes any command in the line', () => {
+    for (const command of [
+      'PATH=/tmp/tools xcodebuild build',
+      'FOO=1 BAR=2 xcodebuild build',
+      'nohup FOO=1 xcodebuild build',
+      'FOO=1 nohup xcodebuild build',
+      'FOO=1 mkdir -p build && xcodebuild build',
+      'mkdir -p build && PATH=./bin xcodebuild build',
+    ]) {
+      const r = resolveCommandRouting(command, root, trust('xcodebuild'))
+      assert.equal(r.outcome, 'defer', command)
+      assert.match(r.reasons.join(' '), /environment assignment/, command)
+    }
+    // An assignment is only one before the command word; later `=` is an argument.
+    assert.equal(
+      resolveCommandRouting(
+        'xcodebuild -scheme App OTHER_SWIFT_FLAGS=-DX build',
+        root,
+        trust('xcodebuild'),
+      ).outcome,
+      'allow',
+    )
+  })
+
   it('defers a trusted command chained with a sandbox-DEPENDENT sibling (no laundering)', () => {
     // `npm test` is contained-safe only *inside* the seatbelt; it must NOT run
     // unsandboxed just because xcodebuild is trusted.

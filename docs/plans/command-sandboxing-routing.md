@@ -54,6 +54,11 @@ as before (purely additive: nothing that auto-runs today starts prompting):
    `node`, `python`, `ssh`, `sudo`, `find`, `xargs`, `awk`, …). Trusting one of
    those would turn a single grant into an unbounded escape, so the list entry is
    ignored.
+6. No segment starts with a `NAME=value` environment assignment (before its
+   command word or a transparent wrapper). The environment decides which
+   program a name runs and what it loads, so an assignment would let the line
+   run something other than the trusted binary under the trusted name. This is
+   the same rule deterministic auto-approval applies.
 
 ### Why this is safe (and how it differs from the first attempt)
 

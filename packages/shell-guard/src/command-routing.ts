@@ -238,6 +238,29 @@ export function commandHead(segment: string): string | null {
 }
 
 /**
+ * The name of the first `NAME=value` assignment ahead of a segment's command
+ * word, or null when there is none. A per-command environment changes what the
+ * named binary runs or loads while its head still reads as the trusted name, so
+ * routing refuses it — the rule auto-approval already applies in `effectiveArgv`.
+ */
+function leadingAssignment(segment: string): string | null {
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(segment)
+  } catch {
+    return null
+  }
+  for (const token of tokens) {
+    if (typeof token !== 'string') return null
+    const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(token)
+    if (assignment) return assignment[1] ?? null
+    const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
+    if (!TRANSPARENT_PREFIXES.has(base)) return null
+  }
+  return null
+}
+
+/**
  * Resolve whether {@link command} may run unsandboxed with no prompt.
  *
  * @param trusted allow-listed command basenames (already validated).
@@ -260,6 +283,15 @@ export function resolveCommandRouting(
 
   let anyTrusted = false
   for (const segment of splitSegments(trimmed)) {
+    // The whole line runs unsandboxed once routed, so this applies to prep
+    // segments as well as the trusted one.
+    const assignment = leadingAssignment(segment)
+    if (assignment) {
+      return {
+        outcome: 'defer',
+        reasons: [`environment assignment before the command: ${assignment}`],
+      }
+    }
     const head = commandHead(segment)
     if (head && trusted.has(head) && !NON_TRUSTABLE_COMMANDS.has(head)) {
       anyTrusted = true
