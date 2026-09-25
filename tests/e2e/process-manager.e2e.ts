@@ -71,6 +71,17 @@ describe('Process manager', function () {
       )
     }
 
+    const tableGeometry = await browser.execute(() => {
+      const table = document.querySelector<HTMLTableElement>('.process-manager-table')
+      if (!table) throw new Error('Process table is missing')
+      return {
+        layout: getComputedStyle(table).tableLayout,
+        widths: [...table.querySelectorAll('thead th')].map(
+          (heading) => heading.getBoundingClientRect().width,
+        ),
+      }
+    })
+    assert.equal(tableGeometry.layout, 'fixed')
     const firstSample = Number(await dialog.getAttribute('data-sampled-at'))
     assert.ok(firstSample > 0)
     await browser.waitUntil(
@@ -79,9 +90,42 @@ describe('Process manager', function () {
         timeout: 8_000,
       },
     )
+    assert.deepEqual(
+      await browser.execute(() =>
+        [...document.querySelectorAll('.process-manager-table thead th')].map(
+          (heading) => heading.getBoundingClientRect().width,
+        ),
+      ),
+      tableGeometry.widths,
+      'metric refresh must not shift the table columns',
+    )
 
-    await dialog.$('.process-manager-sort=Memory').click()
+    const memorySort = dialog.$('.process-manager-sort=Memory')
+    await memorySort.click()
     await expect(dialog.$('th[aria-sort="descending"]')).toHaveText('Memory')
+    assert.equal(
+      await browser.execute(() => {
+        const button = document.querySelector(
+          '.process-manager-table th[aria-sort="descending"] button',
+        )
+        if (!button) throw new Error('Descending sort button is missing')
+        return getComputedStyle(button, '::after').borderTopWidth
+      }),
+      '6px',
+    )
+    await memorySort.click()
+    await expect(dialog.$('th[aria-sort="ascending"]')).toHaveText('Memory')
+    assert.equal(
+      await browser.execute(() => {
+        const button = document.querySelector(
+          '.process-manager-table th[aria-sort="ascending"] button',
+        )
+        if (!button) throw new Error('Ascending sort button is missing')
+        return getComputedStyle(button, '::after').borderBottomWidth
+      }),
+      '6px',
+    )
+    await memorySort.click()
     const values = await browser.execute(() =>
       [...document.querySelectorAll('#process-manager-dialog tbody tr td:nth-child(5)')]
         .map((cell) => Number.parseFloat(cell.textContent ?? ''))

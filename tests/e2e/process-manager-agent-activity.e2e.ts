@@ -52,8 +52,37 @@ describe('Process manager agent activity', function () {
     )
     await saveAppScreenshot('process-manager-agent-working.png')
 
+    await dialog.$('[aria-label="Close process manager"]').click()
+    await $('.project-new-thread-btn').click()
+    await browser.waitUntil(
+      async () => (await $('.chat-row.selected').getAttribute('data-thread-id')) !== threadId,
+      { timeout: 10_000 },
+    )
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await activity.waitForDisplayed({ timeout: 10_000 })
+    await activity.click({ button: 'right' })
+    await expect($('.context-menu-item=Jump to thread')).toBeDisplayed()
+    await expect($('.context-menu-item=Stop agent run')).toBeDisplayed()
+    await saveAppScreenshot('process-manager-agent-actions.png')
+    await $('.context-menu-item=Jump to thread').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', threadId)
+
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await activity.waitForDisplayed({ timeout: 10_000 })
+    await activity.click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await expect($('.chat-row.selected')).toHaveAttribute('data-thread-id', threadId)
+
     await scenario.release('inspection')
     await waitForAgentIdle(15_000)
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    await dialog.waitForDisplayed({ timeout: 10_000 })
     await browser.waitUntil(async () => !(await activity.isExisting()), { timeout: 8_000 })
     await expect(dialog.$('.process-manager-activity')).not.toBeDisplayed()
   })
