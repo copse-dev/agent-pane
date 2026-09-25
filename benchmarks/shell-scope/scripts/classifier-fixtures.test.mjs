@@ -133,13 +133,36 @@ async function assertRecordedRun(directory, requestedModel, model, expectedRuns)
   assert.equal(configHashes.size, 1)
 }
 
-test('recorded decider and Winnow outputs match the frozen fixtures and published scores', async () => {
+test('recorded model outputs match the frozen fixtures and published scores', async () => {
   await assertRecordedRun('decider-4b-v2', 'Mapika/decider-4b', 'decider-4b-v2', [
     ['dev-explicit', 52, 42, 6, 0.575, 2792],
     ['dev-original', 47, 46, 7, 0.529, 1821],
     ['holdout-explicit', 87, 13, 0, 0.776, 2779],
     ['holdout-original', 80, 18, 2, 0.676, 1838],
   ])
+  await assertRecordedRun('reflex-4b', 'jev-latest', 'Qwen/Qwen3.5-4B', [
+    ['dev-explicit', 64, 0, 36, 0.55, 3266],
+    ['dev-original', 47, 51, 2, 0.55, 6161],
+    ['holdout-explicit', 30, 0, 70, 0.507, 2439],
+    ['holdout-original', 74, 25, 1, 0.562, 2344],
+  ])
+  await assertRecordedRun('kev-4b', 'kev-latest', 'kev-latest', [
+    ['dev-explicit', 61, 31, 8, 0.642, 2599],
+    ['dev-original', 57, 35, 8, 0.608, 1996],
+    ['holdout-explicit', 81, 11, 8, 0.754, 2587],
+    ['holdout-original', 79, 15, 6, 0.699, 2092],
+  ])
+  await assertRecordedRun(
+    'metask-jev-4b',
+    'wayfind/metask-jev-4b-policy-mix',
+    'wayfind/metask-jev-4b-policy-mix',
+    [
+      ['dev-explicit', 53, 45, 2, 0.6, 3472],
+      ['dev-original', 48, 51, 1, 0.563, 2693],
+      ['holdout-explicit', 86, 13, 1, 0.769, 2758],
+      ['holdout-original', 76, 24, 0, 0.586, 2933],
+    ],
+  )
   await assertRecordedRun('winnow-12b', 'jev-latest', 'Winnow-12B', [
     ['dev-explicit', 87, 0, 13, 0.838, 2475],
     ['dev-original', 62, 31, 7, 0.654, 1906],

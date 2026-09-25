@@ -22,6 +22,9 @@ always-sandbox predictor already agrees with 71/100 labels.
 | OpenJev NLI                            | Explicit            |                    75 |                          20 |                           5 |                    No categorical confidence |
 | decider-4b v2 (2026-09-25)             | Explicit            |                    87 |                          13 |                           0 | Dev-fitted 0.09 → 64 on holdout; not adopted |
 | Winnow-12B Q8 (2026-09-25)             | Explicit            |                    65 |                           0 |                          35 |                  Combined, dev-fitted: 88–90 |
+| reflex 4B stable (2026-09-25)          | Explicit            |                    30 |                           0 |                          70 |                     Combined, dev-fitted: 61 |
+| Kev-4B (2026-09-25)                    | Explicit            |                    81 |                          11 |                           8 |         Combined, dev-fitted: 87 (unchanged) |
+| metask-jev-4b (2026-09-25)             | Explicit            |                    86 |                          13 |                           1 |                     Combined, dev-fitted: 64 |
 
 decider-4b v2 matches the deterministic count only because the holdout is 71%
 sandbox: it misses 13 of 29 external commands, mostly outside paths passed as
@@ -36,6 +39,12 @@ holdout ([run notes](results/2026-09-25/winnow-12b/README.md)); decider-4b's com
 do not transfer ([tables](results/2026-09-25/decider-4b-v2/combinations.md)). The gains
 are one to three cases, and only the filter-first form, where a model can add a warning
 but never remove a deterministic one, keeps every deterministic external verdict.
+
+reflex 4B (the frozen Qwen3.5-4B base) is near chance with either prompt. Kev-4B and
+metask-jev-4b lean towards sandbox, missing 11 and 13 of 29 external commands. Of the
+five models run on 2026-09-25, only Winnow's combinations improve on the deterministic
+holdout under development-only selection; Kev-4B's reproduces it, and decider-4b's,
+reflex's and metask's fall below it.
 
 This table uses the prompt selected on development data, not each model's best
 holdout prompt. See [all prompt results](RESULTS.md), the
