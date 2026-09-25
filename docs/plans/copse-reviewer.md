@@ -924,6 +924,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **Bound Luna's reply size.** _Added 2026-09-25._ The OpenRouter Luna reviewer requests
+  an 8,192-token output ceiling per response, covering hidden reasoning as well as tool
+  calls and text. A small live PR consumed 68,153 output tokens before an upstream 429
+  ended the review; the step budget alone cannot bound a provider's hidden reasoning.
+  Discovery, challenge and reproduction share this ceiling, while reasoning effort,
+  privacy routing and other models retain their existing settings. This is a response
+  budget, not a whole-review spending limit. Completion validation still prevents an
+  unfinished review from being called clean, and provider throttling can still fail a run.
 - **Streamed rate limits need time to clear.** _Added 2026-09-24 after the Luna rollout._
   Two live attempts exhausted HTTP-200 SSE 429 retries in roughly ten seconds. Recognized
   statusless SDK 429 errors now use 10/20/40-second fallback delays plus up to 10% jitter,
