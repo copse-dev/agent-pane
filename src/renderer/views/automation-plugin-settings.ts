@@ -188,7 +188,7 @@ export function createAutomationPluginSettings(
   const list = el('div', { class: 'automation-list' })
 
   const form = el('form', { class: 'automation-form', hidden: true })
-  const formTitle = el('h3', { class: 'automation-form-title' }, 'New automation')
+  const formTitle = el('h4', { class: 'automation-form-title' }, 'New automation')
   const nameInput = el('input', {
     type: 'text',
     class: 'automation-input automation-name-input',

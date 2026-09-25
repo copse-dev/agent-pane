@@ -113,12 +113,30 @@ describe('unattended container run (browser-hosted)', () => {
     expect(summary).toMatch(/Credential\s*one API key, scoped to the run/)
     expect(summary).toMatch(/Effects refused\s*0/)
     // Section headings render uppercase through CSS; compare the source text.
-    await expect(dialog.$('.container-run-deferrals h3')).toHaveText(
+    await expect(dialog.$('.container-run-deferrals h4')).toHaveText(
       'Waiting for your review (1)',
       {
         ignoreCase: true,
       },
     )
+    // Section labels are utility headings, not the h1–h3 display tier: they
+    // stay in the interface face rather than Averia small caps.
+    const labelFonts = await browser.execute(() =>
+      [...document.querySelectorAll('#container-run-dialog .container-run-section')].map(
+        (section) => {
+          const label = section.firstElementChild
+          return {
+            tag: label?.tagName ?? '',
+            family: label ? getComputedStyle(label).fontFamily : '',
+          }
+        },
+      ),
+    )
+    expect(labelFonts.length).toBeGreaterThan(0)
+    for (const label of labelFonts) {
+      expect(label.tag).toBe('H4')
+      expect(label.family).not.toMatch(/averia/i)
+    }
     expect(await dialog.$('.container-run-deferrals').getText()).toContain(
       'git push publishes commits to a remote',
     )
@@ -212,7 +230,7 @@ describe('unattended container run (browser-hosted)', () => {
     await $('.container-run-details').click()
     await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'failed')
     expect(await dialog.$('.container-run-summary').getText()).toContain('missing carry-out bundle')
-    await expect(dialog.$('.container-run-commits h3')).toHaveText(
+    await expect(dialog.$('.container-run-commits h4')).toHaveText(
       'Commits the guest made (not fetched)',
       { ignoreCase: true },
     )

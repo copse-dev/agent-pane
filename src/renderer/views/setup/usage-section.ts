@@ -236,7 +236,7 @@ function renderPlanSection(
 ): void {
   host.replaceChildren()
 
-  const heading = document.createElement('h3')
+  const heading = document.createElement('h4')
   heading.className = 'usage-plan-heading'
   heading.textContent = 'Subscription plan limits'
   host.append(heading)
@@ -303,7 +303,7 @@ export function renderPlanWorthItSection(
 ): void {
   host.replaceChildren()
 
-  const heading = document.createElement('h3')
+  const heading = document.createElement('h4')
   heading.className = 'usage-worth-heading'
   heading.textContent = 'Is your plan worth it?'
   host.append(heading)
@@ -551,7 +551,7 @@ export function createUsageSection(
     <div class="usage-plan-section" id="usage-plan-section"></div>
     <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
-      <h3 class="usage-ledger-heading">Local usage ledger</h3>
+      <h4 class="usage-ledger-heading">Local usage ledger</h4>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
         <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
         <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>

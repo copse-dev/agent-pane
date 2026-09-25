@@ -9,6 +9,7 @@ import {
   prepareE2eScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 
 describe('settings usage panel', function () {
   this.timeout(60_000)
@@ -188,6 +189,20 @@ describe('settings usage panel', function () {
       cloudRows.some((row) => row.includes('gpt-4o') && row.includes('(standard rate)')),
       'a missing tier catalog rate should say that the standard rate was used',
     )
+
+    // Only the section's own <h3> is the display masthead; the plan and ledger
+    // titles nested under it keep their Pliant recipe (docs/ui-taste.md).
+    const masthead = await readHeadingStyle('.settings-section.active > h3')
+    assert.ok(masthead, 'Usage section masthead should render')
+    assert.ok(isDisplayFace(masthead.family), `masthead family: ${masthead.family}`)
+    for (const selector of ['.usage-plan-heading', '.usage-ledger-heading']) {
+      const heading = await readHeadingStyle(selector)
+      assert.ok(heading, `${selector} should render`)
+      assert.equal(heading.tag, 'H4', `${selector} is below the display tier`)
+      assert.ok(!isDisplayFace(heading.family), `${selector} family: ${heading.family}`)
+      assert.equal(heading.weight, '600', `${selector} weight`)
+      assert.ok(heading.size < masthead.size, `${selector} ${String(heading.size)}px < masthead`)
+    }
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')

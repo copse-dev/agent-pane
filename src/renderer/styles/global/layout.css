@@ -1432,6 +1432,8 @@
   justify-content: space-between;
   gap: var(--spacing-sm);
 }
+/* <h4>: the PR title is a utility heading in a dense side pane, not a page
+   masthead, so it stays in the interface family (docs/ui-taste.md). */
 .pr-viewer-title {
   margin: 0;
   font-size: var(--font-size-md);

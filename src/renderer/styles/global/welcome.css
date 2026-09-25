@@ -30,7 +30,8 @@
 }
 .welcome-heading {
   font-size: 24px;
-  font-weight: 600;
+  /* Display face (brand.css); Averia ships only 400. */
+  font-weight: 400;
 }
 .welcome-sub {
   color: var(--text-secondary);

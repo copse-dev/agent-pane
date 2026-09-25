@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 
 describe('settings usage plan worth-it', function () {
   this.timeout(60_000)
@@ -112,6 +113,15 @@ describe('settings usage plan worth-it', function () {
     await expect(worthCard).toBeDisplayed()
     await expect($('.usage-worth-verdict')).toHaveText('Worth it vs inference')
     await expect($('#usage-worth-fee-input')).toHaveValue('100')
+
+    // A nested card title, not the section masthead: Pliant 600, a step below it.
+    const masthead = await readHeadingStyle('.settings-section.active > h3')
+    const worthHeading = await readHeadingStyle('.usage-worth-heading')
+    assert.ok(masthead && worthHeading)
+    assert.equal(worthHeading.tag, 'H4')
+    assert.ok(!isDisplayFace(worthHeading.family), `worth heading: ${worthHeading.family}`)
+    assert.equal(worthHeading.weight, '600')
+    assert.ok(worthHeading.size < masthead.size)
 
     await worthCard.scrollIntoView({ block: 'center' })
     await prepareE2eScreenshot()

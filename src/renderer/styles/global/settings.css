@@ -239,8 +239,10 @@ dialog.settings-overlay::backdrop {
    headings carry the display face, sized so the page has a clear masthead and
    an obvious second tier under it. Everything below that tier — field labels,
    nested card titles, hints — stays in the interface family, so the serif
-   reads as structure rather than decoration. */
-.settings-section h3 {
+   reads as structure rather than decoration. The child combinator is the
+   point: a descendant `h3` would also reach card titles mounted deeper in the
+   section and outrank their own class rules. */
+.settings-section > h3 {
   font-family: var(--font-display);
   font-size: calc(28px * var(--ui-scale));
   /* Averia ships a single 400 weight; asking for 600 only invites Chromium's
@@ -445,8 +447,10 @@ dialog.settings-overlay::backdrop {
   margin-bottom: calc(var(--spacing-xl) * 2);
 }
 /* The group's title is a heading, one step below the section's <h3> and on the
-   same left edge — not a faint caption stamped into a border. Matches the
-   Usage section's headings (.usage-plan-heading and friends). */
+   same left edge — not a faint caption stamped into a border. This base recipe
+   is what nested card legends keep, and it matches the Usage section's <h4>
+   headings (.usage-plan-heading and friends); top-level legends step up to the
+   display face below. */
 .settings-content legend {
   padding: 0;
   color: var(--text-primary);
@@ -1009,6 +1013,8 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: var(--spacing-md);
 }
+/* <h4>, not <h3>: these title groups inside the Usage section, below its
+   masthead, so they stay in the interface family (docs/ui-taste.md). */
 .usage-plan-heading,
 .usage-worth-heading,
 .usage-ledger-heading {
@@ -2405,6 +2411,7 @@ dialog.settings-overlay::backdrop {
   grid-column: 1 / -1;
   margin: 0;
   font-size: var(--font-size-md);
+  font-weight: 600;
 }
 .automation-label {
   display: flex;

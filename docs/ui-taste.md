@@ -30,7 +30,10 @@ landing page's decorative density.
   styled `<span>`, as Plugins' Active/Inactive headings do. Group headings on a destination surface
   may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
   nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
-  every heading on it.
+  every heading on it. A side pane is not a page: its titles (the PR viewer's) are utility
+  headings. `src/renderer/styles/display-headings.test.ts` fails any rule that asks an `h1`–`h3`
+  in the display face for a bold weight, and holds Settings' masthead rule to
+  `.settings-section > h3` so it cannot restyle card titles mounted deeper in a section.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.

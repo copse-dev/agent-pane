@@ -46,11 +46,6 @@
 .onboarding-body > section > :first-child {
   margin-top: 0;
 }
-.onboarding-body h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 var(--spacing-xs);
-}
 .onboarding-body .settings-section-desc {
   margin-bottom: var(--spacing-md);
 }

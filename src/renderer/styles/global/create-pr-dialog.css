@@ -4,7 +4,9 @@
 .create-pr-dialog h3 {
   margin: 0 0 var(--spacing-md);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  /* Display face (brand.css); Averia ships only 400, so 600 would be a
+     synthetic bold that smears the serifs. */
+  font-weight: 400;
 }
 .create-pr-dialog-field {
   display: flex;
