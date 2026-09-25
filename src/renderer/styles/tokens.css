@@ -118,6 +118,11 @@
      Radii, layout max-widths, and the traffic-light inset stay unscaled so OS
      chrome alignment and corner geometry do not drift. */
   --ui-scale: 1;
+  /* Micro chrome only: count badges, uppercase tags, dense meta rows. Every
+     font-size reaches the scale through a token or an inline
+     calc(Npx * var(--ui-scale)); ui-font-scale.test.ts holds that. */
+  --font-size-3xs: calc(9px * var(--ui-scale));
+  --font-size-2xs: calc(10px * var(--ui-scale));
   --font-size-xs: calc(11px * var(--ui-scale));
   --font-size-sm: calc(12px * var(--ui-scale));
   --font-size-base: calc(14px * var(--ui-scale));

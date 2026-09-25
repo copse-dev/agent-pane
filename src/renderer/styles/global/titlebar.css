@@ -129,7 +129,7 @@
   border-radius: 7px;
   background: var(--accent-fill);
   color: var(--text-on-accent);
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   font-weight: 600;
   line-height: 14px;
 }

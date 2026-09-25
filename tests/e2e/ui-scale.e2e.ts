@@ -12,6 +12,14 @@ interface UiScaleSnapshot {
   uiScaleInline: string
   bodyFontSize: string
   spacingSmPx: string
+  /** Resolved --font-size-2xs; no 10px surface is on screen in this fixture. */
+  fontSize2xsPx: string
+  /** Composer footer (branch, context meter): an 11px chip before #3065. */
+  inputFooterFontSize: string | null
+  /** To-do card "3/3 done" summary: 11px. */
+  todoSummaryFontSize: string | null
+  /** To-do card "TO-DOS" eyebrow: 12px. */
+  todoHeaderFontSize: string | null
 }
 
 async function uiScaleSnapshot(): Promise<UiScaleSnapshot | null> {
@@ -23,12 +31,22 @@ async function uiScaleSnapshot(): Promise<UiScaleSnapshot | null> {
     probe.style.position = 'absolute'
     probe.style.visibility = 'hidden'
     body.appendChild(probe)
+    probe.style.fontSize = 'var(--font-size-2xs)'
     const spacingSmPx = getComputedStyle(probe).width
+    const fontSize2xsPx = getComputedStyle(probe).fontSize
     probe.remove()
+    const fontSizeOf = (selector: string): string | null => {
+      const node = document.querySelector(selector)
+      return node ? getComputedStyle(node).fontSize : null
+    }
     return {
       uiScaleInline: document.documentElement.style.getPropertyValue('--ui-scale').trim(),
       bodyFontSize: getComputedStyle(body).fontSize,
       spacingSmPx,
+      fontSize2xsPx,
+      inputFooterFontSize: fontSizeOf('.input-footer'),
+      todoSummaryFontSize: fontSizeOf('.plugin-panel-summary'),
+      todoHeaderFontSize: fontSizeOf('.plugin-panel-header'),
     }
   })
 }
@@ -82,6 +100,10 @@ describe('interface scale (--ui-scale)', () => {
     expect(defaults?.uiScaleInline).toBe('1')
     expect(defaults?.bodyFontSize).toBe('14px')
     expect(defaults?.spacingSmPx).toBe('8px')
+    expect(defaults?.fontSize2xsPx).toBe('10px')
+    expect(defaults?.inputFooterFontSize).toBe('11px')
+    expect(defaults?.todoSummaryFontSize).toBe('11px')
+    expect(defaults?.todoHeaderFontSize).toBe('12px')
 
     const visualViewport = await visualViewportSnapshot()
     expect(visualViewport).not.toBeNull()
@@ -129,7 +151,14 @@ describe('interface scale (--ui-scale)', () => {
     // 14px * 1.25 = 17.5px; spacing-sm 8px * 1.25 = 10px
     expect(scaled?.bodyFontSize).toBe('17.5px')
     expect(scaled?.spacingSmPx).toBe('10px')
+    // Micro chrome follows the scale too (#3065): 11px * 1.25 = 13.75px,
+    // 12px * 1.25 = 15px, 10px * 1.25 = 12.5px. Raw px sizes stayed at 11/12/10.
+    expect(scaled?.inputFooterFontSize).toBe('13.75px')
+    expect(scaled?.todoSummaryFontSize).toBe('13.75px')
+    expect(scaled?.todoHeaderFontSize).toBe('15px')
+    expect(scaled?.fontSize2xsPx).toBe('12.5px')
     await saveAppScreenshot('ui-scale-125.png')
+    await saveElementScreenshot('.input-footer', 'ui-scale-125-composer-footer.png')
   })
 
   it('does not intercept Chromium pinch-shaped wheel events', async () => {

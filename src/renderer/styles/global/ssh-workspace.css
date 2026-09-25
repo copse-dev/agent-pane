@@ -8,7 +8,7 @@
   background: var(--bg-elevated);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   line-height: var(--line-height-base);
 }
 .ssh-status-banner.ssh-status-warn {
@@ -33,7 +33,7 @@
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   cursor: pointer;
 }
 .ssh-status-action:hover {
@@ -42,7 +42,7 @@
 
 .workspace-ssh-target {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary, var(--text-primary));
   opacity: 0.9;
 }

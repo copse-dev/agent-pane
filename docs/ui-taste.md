@@ -245,11 +245,19 @@ like a browser, without reflowing tokens or writing the interface-scale preferen
 
 | Token          | Base | Token              | Base |
 | -------------- | ---- | ------------------ | ---- |
-| `--spacing-xs` | 4px  | `--radius`         | 6px  |
-| `--spacing-sm` | 8px  | `--radius-lg`      | 8px  |
-| `--spacing-md` | 12px | `--font-size-sm`   | 12px |
-| `--spacing-lg` | 16px | `--font-size-base` | 14px |
-| `--spacing-xl` | 24px | `--font-size-lg`   | 16px |
+| `--spacing-xs` | 4px  | `--font-size-3xs`  | 9px  |
+| `--spacing-sm` | 8px  | `--font-size-2xs`  | 10px |
+| `--spacing-md` | 12px | `--font-size-xs`   | 11px |
+| `--spacing-lg` | 16px | `--font-size-sm`   | 12px |
+| `--spacing-xl` | 24px | `--font-size-base` | 14px |
+| `--radius`     | 6px  | `--font-size-md`   | 15px |
+| `--radius-lg`  | 8px  | `--font-size-lg`   | 16px |
+
+Every renderer `font-size` goes through a `--font-size-*` token, or `calc(Npx * var(--ui-scale))`
+for a one-off display size, so badges, eyebrows and labels grow with the rest of the interface.
+`--font-size-2xs` and `--font-size-3xs` are for micro chrome only: count badges, uppercase tags, and
+dense meta rows. `src/renderer/styles/ui-font-scale.test.ts` fails on a raw `px` font size outside
+`tokens.css`; its short allowlist names the few fixed-pixel controls that must not scale, and why.
 
 Chrome band tokens (not spacing, but reach for these before inventing heights):
 `--chrome-action-band-height`, `--browser-chrome-band-height`.

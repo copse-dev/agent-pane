@@ -60,7 +60,7 @@
   content: 'Click to expand';
   display: block;
   margin-top: var(--spacing-xs);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-align: center;
   pointer-events: none;
@@ -142,12 +142,12 @@
 .mermaid-expand-zoom-label {
   min-width: 3.5em;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .mermaid-expand-hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .mermaid-expand-close {
@@ -170,7 +170,7 @@
   margin-bottom: var(--spacing-xs);
 }
 .mermaid-fallback-hint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   margin-bottom: var(--spacing-sm);
 }
@@ -188,7 +188,7 @@
 }
 .mermaid-fallback-source pre {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   white-space: pre-wrap;
   color: var(--text-muted);
   max-height: 240px;

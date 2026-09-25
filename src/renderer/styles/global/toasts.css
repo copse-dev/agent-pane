@@ -17,7 +17,7 @@
   background: var(--bg-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   line-height: var(--line-height-base);
   box-shadow: var(--shadow-md);
   cursor: pointer;

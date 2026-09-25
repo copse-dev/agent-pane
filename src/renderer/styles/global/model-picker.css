@@ -22,7 +22,7 @@
   align-items: center;
   gap: var(--spacing-xs);
   max-width: 100%;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: transparent;
   border: none;
@@ -251,7 +251,7 @@
 }
 .model-picker-group-label {
   padding: var(--spacing-xs) var(--spacing-md);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -260,7 +260,7 @@
   display: block;
   width: 100%;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--text-primary);
   background: transparent;
@@ -326,7 +326,7 @@
 .model-picker-empty {
   padding: var(--spacing-sm) var(--spacing-md);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .model-picker-status {
   padding: var(--spacing-sm) var(--spacing-md);

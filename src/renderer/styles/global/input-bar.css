@@ -21,7 +21,7 @@
 .new-thread-btn {
   padding: 4px 8px;
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 .prompt-input {
   width: 100%;
@@ -134,7 +134,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   overflow: hidden;
 }
 .guarded-yolo-banner {
@@ -190,7 +190,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-image-warning[hidden] {
   display: none;
@@ -296,7 +296,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-context-warning.is-over {
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-base));
@@ -352,7 +352,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-checkout-error[hidden] {
   display: none;
@@ -398,7 +398,7 @@
   padding: 4px 10px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-align: center;
   white-space: nowrap;
 }
@@ -416,7 +416,7 @@
   padding: 4px 10px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-align: center;
   white-space: nowrap;
 }
@@ -438,7 +438,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-dirty-warning[hidden] {
   display: none;
@@ -523,7 +523,7 @@
 /* Where the message goes when the thread has a container run (A14). */
 .composer-target {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   background: transparent;
   border: 1px solid var(--border);
@@ -551,12 +551,12 @@
   padding: 6px 16px;
 }
 .footer-queue {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
 .footer-indexing {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;
   padding-right: var(--spacing-sm);
@@ -574,7 +574,7 @@
   margin-bottom: var(--spacing-xs);
   padding: 1px 6px;
   border-radius: var(--radius);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -621,7 +621,7 @@
    under-drawing it. See docs/ui-taste.md → "An outlined chip needs an edge you
    can find". */
 .queued-action {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: var(--bg-hover);
   border: 1px solid var(--border-strong);
@@ -670,7 +670,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   /* See .prompt-input — keep the frosted shell visible through the footer. */
   background: transparent;
@@ -884,7 +884,7 @@
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: transparent;
   border: none;
@@ -954,7 +954,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 4px 8px;
   outline: 2px solid transparent;
   outline-offset: 1px;
@@ -972,7 +972,7 @@
   align-items: center;
   width: 100%;
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   background: transparent;
   border: none;
@@ -990,7 +990,7 @@
 }
 .branch-picker-action {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .branch-picker-option-label {
   flex: 1;
@@ -1001,7 +1001,7 @@
 }
 .branch-picker-default-badge {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -1013,7 +1013,7 @@
 }
 .branch-picker-empty {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .footer-overflow {
@@ -1047,7 +1047,7 @@
   width: 100%;
   max-width: 100%;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   background: transparent;
   border: none;
@@ -1079,7 +1079,7 @@
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   box-shadow: var(--shadow-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   pointer-events: none;
 }
@@ -1239,7 +1239,7 @@
   transition: stroke-dasharray 0.2s ease;
 }
 .context-wheel-label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   min-width: 2.5ch;
 }
@@ -1256,7 +1256,7 @@
   color: var(--text-secondary);
 }
 .footer-usage {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-decoration: underline dotted;
   text-underline-offset: 2px;
@@ -1275,7 +1275,7 @@
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   box-shadow: var(--shadow-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   pointer-events: none;
 }
@@ -1321,7 +1321,7 @@
   white-space: nowrap;
 }
 .footer-model-select {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: transparent;
   border: none;
@@ -1406,7 +1406,7 @@
   font-size: var(--font-size-sm);
 }
 .lmstudio-test-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .lmstudio-test-status.ok {

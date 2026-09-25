@@ -363,7 +363,7 @@
 }
 .tool-args pre {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
   white-space: pre-wrap;
@@ -395,7 +395,7 @@
   display: none;
 }
 .tool-card-subagent .subagent-model {
-  font-size: var(--font-size-xs, 11px);
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-top: var(--spacing-xs);
 }

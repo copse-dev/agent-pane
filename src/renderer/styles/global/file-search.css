@@ -81,7 +81,7 @@
 .file-search-section {
   padding: var(--spacing-sm) var(--spacing-sm) 2px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

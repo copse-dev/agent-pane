@@ -40,7 +40,7 @@
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -84,7 +84,7 @@
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: left;
@@ -155,7 +155,7 @@
 /* Exceptional statuses only (`blocked` / `conflicts` / `archived`). Default
    `ready` is silent; `done` is strikethrough on the title. */
 .roadmap-status-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -224,7 +224,7 @@
   margin-left: 0;
 }
 .roadmap-issue-chip {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -252,7 +252,7 @@
 
 /* Category is independent from complexity: what kind of work this is. */
 .roadmap-category-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -271,7 +271,7 @@
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
 .roadmap-complexity-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -287,7 +287,7 @@
 
 /* Fit verdict — on-demand model judgement against the pinned issue. */
 .roadmap-fit-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -385,7 +385,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   color: var(--text-muted);
 }
@@ -396,7 +396,7 @@
 
 /* Review verdict — on-demand resolution judgement across the backlog. */
 .roadmap-review-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -435,7 +435,7 @@
   border-radius: 7px;
   background: var(--accent-fill);
   color: var(--text-on-accent);
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   line-height: 1;
 }
 .roadmap-review-result {
@@ -450,7 +450,7 @@
 }
 .roadmap-review-result-meta {
   color: var(--text-muted);
-  font-size: var(--font-size-xs, 11px);
+  font-size: var(--font-size-xs);
   text-transform: lowercase;
 }
 /* A check that failed carries no verdict — mark the label so the box does not
@@ -496,7 +496,7 @@
   align-items: center;
 }
 .roadmap-review-applied-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -572,6 +572,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
