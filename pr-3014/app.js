@@ -3414,7 +3414,7 @@ function handleIntersectionResults(result, left, right) {
     if (!collect(iss, "r"))
       result.issues.push(iss);
   }
-  const bothKeys = [...unrecKeys].filter(([, f3]) => f3.l && f3.r).map(([k2]) => k2);
+  const bothKeys = [...unrecKeys].filter(([, f4]) => f4.l && f4.r).map(([k2]) => k2);
   if (bothKeys.length) {
     const aggregated = unrecIssue ? bothKeys.filter((k2) => unrecIssue.keys.includes(k2)) : [];
     if (aggregated.length)
@@ -3626,9 +3626,9 @@ function partPattern(schema) {
     return own2;
   }
   if (def.options) {
-    const sources2 = def.options.map(partPattern);
-    if (sources2.every(Boolean))
-      return `^(${sources2.map((s16) => cleanRegex(s16)).join("|")})$`;
+    const sources3 = def.options.map(partPattern);
+    if (sources3.every(Boolean))
+      return `^(${sources3.map((s16) => cleanRegex(s16)).join("|")})$`;
   }
   return leafPattern(schema);
 }
@@ -13751,8 +13751,8 @@ var init_registries = __esm({
         if (p2) {
           const pm = { ...this.get(p2) ?? {} };
           delete pm.id;
-          const f3 = { ...pm, ...this._map.get(schema) };
-          return Object.keys(f3).length ? f3 : void 0;
+          const f4 = { ...pm, ...this._map.get(schema) };
+          return Object.keys(f4).length ? f4 : void 0;
         }
         return this._map.get(schema);
       }
@@ -16447,8 +16447,8 @@ var init_api = __esm({
 });
 
 // node_modules/.pnpm/zod@4.6.5/node_modules/zod/v4/core/to-json-schema.js
-function assignProps(target, ...sources2) {
-  for (const source of sources2) {
+function assignProps(target, ...sources3) {
+  for (const source of sources3) {
     for (const key of Reflect.ownKeys(source)) {
       if (Object.prototype.propertyIsEnumerable.call(source, key)) {
         assignProp(target, key, source[key]);
@@ -21735,6 +21735,30 @@ var init_model_usage = __esm({
   }
 });
 
+// src/shared/store/pending-submissions.ts
+function beginThreadSubmission(store2, threadId) {
+  let pending = pendingByStore.get(store2);
+  if (!pending) {
+    pending = /* @__PURE__ */ new Set();
+    pendingByStore.set(store2, pending);
+  }
+  if (pending.has(threadId)) return false;
+  pending.add(threadId);
+  return true;
+}
+function endThreadSubmission(store2, threadId) {
+  pendingByStore.get(store2)?.delete(threadId);
+}
+function isThreadSubmitting(store2, threadId) {
+  return pendingByStore.get(store2)?.has(threadId) ?? false;
+}
+var pendingByStore;
+var init_pending_submissions = __esm({
+  "src/shared/store/pending-submissions.ts"() {
+    pendingByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // packages/std/src/array-utils.ts
 function at(array2, index) {
   const value = array2[index];
@@ -21883,12 +21907,12 @@ function hasUnsubmittedPrompt(thread) {
 function isThreadArchived(thread) {
   return thread.archivedAt != null;
 }
-function isPrunableBlankThread(thread) {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread);
+function isPrunableBlankThread(store2, thread) {
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread) && !isThreadSubmitting(store2, thread.id);
 }
 function pruneBlankThreads(store2, keepIds) {
   const { threads, activeThreadId } = store2.getState();
-  const remaining = threads.filter((t2) => !isPrunableBlankThread(t2) || keepIds.has(t2.id));
+  const remaining = threads.filter((t2) => !isPrunableBlankThread(store2, t2) || keepIds.has(t2.id));
   if (remaining.length === 0 || remaining.length === threads.length) return;
   const newActive = activeThreadId && remaining.some((t2) => t2.id === activeThreadId) ? activeThreadId : remaining[0]?.id ?? null;
   store2.setState({ threads: remaining, activeThreadId: newActive });
@@ -21896,7 +21920,9 @@ function pruneBlankThreads(store2, keepIds) {
 }
 function normalizeBlankThreads(store2) {
   const { threads, activeThreadId } = store2.getState();
-  const blanks = threads.filter((t2) => isBlankThread(t2) && !isThreadArchived(t2));
+  const blanks = threads.filter(
+    (t2) => isBlankThread(t2) && !isThreadArchived(t2) && !isThreadSubmitting(store2, t2.id)
+  );
   const emptyBlanks = blanks.filter((t2) => !hasUnsubmittedPrompt(t2));
   if (emptyBlanks.length <= 1) return;
   const keepEmptyId = emptyBlanks.find((t2) => t2.id === activeThreadId)?.id ?? at(
@@ -21942,9 +21968,7 @@ function createThread(store2, draftPrompt) {
 }
 function openNewThread(store2) {
   const { threads, activeThreadId } = store2.getState();
-  const existing = threads.find(
-    (t2) => isBlankThread(t2) && !hasUnsubmittedPrompt(t2) && !isThreadArchived(t2)
-  );
+  const existing = threads.find((t2) => isPrunableBlankThread(store2, t2));
   if (existing) {
     const defaultModel = store2.getState().settings?.model;
     const reseed = (list) => list.map((t2) => {
@@ -21980,7 +22004,7 @@ function switchThread(store2, id) {
   }
   store2.emit("composer_draft_flush");
   const state = store2.getState();
-  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(t2) || t2.id === id);
+  const pruned = state.threads.filter((t2) => !isPrunableBlankThread(store2, t2) || t2.id === id);
   const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
     if (thread.id !== id || thread.unreadAt === void 0) return thread;
     const { unreadAt: _read, ...readThread } = thread;
@@ -22126,26 +22150,18 @@ function addMessage(store2, threadId, role, content = "", images, attachments, o
   return id;
 }
 function setThreadDraftPrompt(store2, threadId, draftPrompt) {
-  const trimmed2 = draftPrompt.trim();
-  const { threads } = store2.getState();
-  const thread = threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   if (!thread) return;
-  if (trimmed2.length > 0) {
+  if (draftPrompt.trim()) {
     if (thread.draftPrompt === draftPrompt) return;
-    const updated2 = threads.map(
-      (t2) => t2.id !== threadId ? t2 : { ...t2, draftPrompt, updatedAt: Date.now() }
-    );
-    store2.setState({ threads: updated2 });
-    store2.emit("thread_draft_changed", threadId);
-    return;
+    patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, draftPrompt, updatedAt: Date.now() }));
+  } else {
+    if (thread.draftPrompt === void 0) return;
+    patchThreadAnywhere(store2, threadId, (t2) => {
+      const { draftPrompt: _removed, ...rest } = t2;
+      return { ...rest, updatedAt: Date.now() };
+    });
   }
-  if (thread.draftPrompt === void 0) return;
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
-    const { draftPrompt: _removed, ...rest } = t2;
-    return { ...rest, updatedAt: Date.now() };
-  });
-  store2.setState({ threads: updated });
   store2.emit("thread_draft_changed", threadId);
 }
 function messageLocations(store2) {
@@ -22376,10 +22392,42 @@ function setThreadReviewReport(store2, threadId, report) {
     else delete next.reviewReport;
     return next;
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, null);
 }
-function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+function setMessageReviewReport(store2, threadId, messageId, report) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message2) => {
+      if (message2.id !== messageId) return message2;
+      const next = { ...message2 };
+      if (report) next.reviewReport = report;
+      else delete next.reviewReport;
+      return next;
+    })
+  }));
+  store2.emit("review_report_changed", threadId, messageId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messageId = null) {
   patchThreadAnywhere(store2, threadId, (t2) => {
+    if (messageId !== null) {
+      return {
+        ...t2,
+        updatedAt: Date.now(),
+        messages: t2.messages.map((message2) => {
+          if (message2.id !== messageId || !message2.reviewReport) return message2;
+          return {
+            ...message2,
+            reviewReport: {
+              ...message2.reviewReport,
+              findings: message2.reviewReport.findings.map(
+                (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+              )
+            }
+          };
+        })
+      };
+    }
     if (!t2.reviewReport) return t2;
     return {
       ...t2,
@@ -22392,7 +22440,7 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
       }
     };
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
@@ -22419,19 +22467,11 @@ function setThreadTitle(store2, threadId, title, options) {
   store2.emit("threads_changed");
 }
 function setThreadWorkingBrief(store2, threadId, workingBrief) {
-  const { threads } = store2.getState();
-  const updated = threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, workingBrief, updatedAt: Date.now() }
-  );
-  store2.setState({ threads: updated });
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, workingBrief, updatedAt: Date.now() }));
   store2.emit("threads_changed");
 }
 function setThreadGitBranch(store2, threadId, branch) {
-  const { threads } = store2.getState();
-  const updated = threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, gitBranch: branch, updatedAt: Date.now() }
-  );
-  store2.setState({ threads: updated });
+  patchThreadAnywhere(store2, threadId, (t2) => ({ ...t2, gitBranch: branch, updatedAt: Date.now() }));
   store2.emit("threads_changed");
 }
 function applyRenamedThreadWorktree(store2, threadId, worktree) {
@@ -22447,30 +22487,24 @@ function applyRenamedThreadWorktree(store2, threadId, worktree) {
 }
 function recordThreadVideos(store2, threadId, videos) {
   if (videos.length === 0) return;
-  const { threads } = store2.getState();
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const existing = t2.videos ?? [];
     const known = new Set(existing.map((v3) => v3.path));
     const added = videos.filter((v3) => !known.has(v3.path));
     if (added.length === 0) return t2;
     return { ...t2, videos: [...existing, ...added], updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function recordThreadArchives(store2, threadId, archives) {
   if (archives.length === 0) return;
-  const { threads } = store2.getState();
-  const updated = threads.map((t2) => {
-    if (t2.id !== threadId) return t2;
+  patchThreadAnywhere(store2, threadId, (t2) => {
     const existing = t2.archives ?? [];
     const known = new Set(existing.map((a3) => a3.path));
     const added = archives.filter((a3) => !known.has(a3.path));
     if (added.length === 0) return t2;
     return { ...t2, archives: [...existing, ...added], updatedAt: Date.now() };
   });
-  store2.setState({ threads: updated });
   store2.emit("threads_changed");
 }
 function setThreadProposalDecision(store2, threadId, decision) {
@@ -22496,19 +22530,15 @@ function bindThreadGitBranchIfUnset(store2, threadId, branch) {
   setThreadGitBranch(store2, threadId, branch);
 }
 function applyPreparedThreadCheckout(store2, threadId, prepared) {
-  const { threads } = store2.getState();
-  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path;
-  const updated = threads.map((thread) => {
-    if (thread.id !== threadId) return thread;
-    return {
-      ...thread,
-      worktreeChoice: prepared.choice,
-      ...prepared.branch ? { gitBranch: prepared.branch } : {},
-      ...prepared.worktree ? { worktree: prepared.worktree } : {},
-      updatedAt: Date.now()
-    };
-  });
-  store2.setState({ threads: updated });
+  const previousWorktreePath = getThreadById(store2, threadId)?.worktree?.path;
+  const applied = patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    worktreeChoice: prepared.choice,
+    ...prepared.branch ? { gitBranch: prepared.branch } : {},
+    ...prepared.worktree ? { worktree: prepared.worktree } : {},
+    updatedAt: Date.now()
+  }));
+  if (!applied) return;
   store2.emit("threads_changed");
   if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
     store2.emit("thread_checkout_changed", threadId);
@@ -22520,6 +22550,7 @@ var init_thread_helpers = __esm({
   "src/shared/store/thread-helpers.ts"() {
     init_model_usage();
     init_service_tier();
+    init_pending_submissions();
     init_array_utils2();
     init_thread_proposal2();
     init_thread_sort();
@@ -22531,7 +22562,9 @@ var init_thread_helpers = __esm({
 
 // src/renderer/controller/background-threads.ts
 function carryRunningThreads(store2, outgoingProjectId, outgoingThreads) {
-  const running = outgoingThreads.filter((t2) => t2.status === "running");
+  const running = outgoingThreads.filter(
+    (t2) => t2.status === "running" || isThreadSubmitting(store2, t2.id)
+  );
   if (running.length === 0) return;
   const existing = store2.getState().backgroundThreads;
   const carriedIds = new Set(existing.map((b4) => b4.thread.id));
@@ -22577,6 +22610,7 @@ function dropProjectBackgroundThreads(store2, projectId) {
 }
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
+    init_pending_submissions();
   }
 });
 
@@ -22834,9 +22868,28 @@ function attachAutosave(store2, api2) {
       schedule();
     }),
     // Same for the review report: a dismissed finding or a cleared card is a
-    // metadata-only change on an idle thread.
-    store2.on("review_report_changed", () => {
-      schedule();
+    // metadata-only change on an idle thread. A report anchored to a message
+    // lives on that message's spine line instead, so re-finalize the message:
+    // a standalone review (Changes view "Review") ends with a `done` that has
+    // no streaming message, so no `message_done` would ever carry it to disk.
+    store2.on("review_report_changed", (threadId, messageId) => {
+      if (messageId === null) {
+        schedule();
+        return;
+      }
+      const message2 = getThreadById(store2, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId
+      );
+      if (!message2) return;
+      if (message2.reviewReport?.status === "running") return;
+      if (message2.toolCalls.some((toolCall) => toolCall.status === "running")) return;
+      const backgroundProjectId = backgroundProjectOf(store2, threadId);
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+        return;
+      }
+      const { activeProjectId } = store2.getState();
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
     }),
     store2.on("projects_changed", () => {
       projectsDirty = true;
@@ -23592,7 +23645,7 @@ function isPinned(thread, activeThreadId) {
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
-  const inFlight3 = /* @__PURE__ */ new Map();
+  const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
@@ -23616,7 +23669,7 @@ function attachThreadHydration(store2, api2) {
   };
   const fetchInto = (projectId, threadId) => {
     const key = `${projectId}:${threadId}`;
-    const existing = inFlight3.get(key);
+    const existing = inFlight4.get(key);
     if (existing) return existing;
     failedThreadIds.delete(threadId);
     const endHydrate = begin("thread:hydrate");
@@ -23650,9 +23703,9 @@ function attachThreadHydration(store2, api2) {
       failedThreadIds.add(threadId);
       store2.emit("threads_changed");
     }).finally(() => {
-      inFlight3.delete(key);
+      inFlight4.delete(key);
     });
-    inFlight3.set(key, request);
+    inFlight4.set(key, request);
     return request;
   };
   activeHydrator = {
@@ -23704,7 +23757,7 @@ function attachThreadHydration(store2, api2) {
     offPrRefs();
     activeHydrator = null;
     recency = [];
-    inFlight3.clear();
+    inFlight4.clear();
     failedThreadIds.clear();
   };
 }
@@ -23717,6 +23770,35 @@ var init_thread_hydration = __esm({
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
     failedThreadIds = /* @__PURE__ */ new Set();
+  }
+});
+
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
+// src/shared/agent-turn-busy.ts
+function isAgentTurnBusyError(reason) {
+  if (reason instanceof Error && reason.name === AGENT_TURN_BUSY_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${AGENT_TURN_BUSY_ERROR_NAME}:`);
+}
+var AGENT_TURN_BUSY_ERROR_NAME;
+var init_agent_turn_busy = __esm({
+  "src/shared/agent-turn-busy.ts"() {
+    init_errors4();
+    AGENT_TURN_BUSY_ERROR_NAME = "AgentTurnBusyError";
   }
 });
 
@@ -23744,10 +23826,11 @@ function startAutomationTurnTree(store2, threadId) {
 }
 function startRootTurnTree(store2, threadId) {
   const epoch = newEpoch();
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : { ...t2, currentEpoch: epoch, continuationUsed: 0 }
-  );
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    currentEpoch: epoch,
+    continuationUsed: 0
+  }));
   return epoch;
 }
 function foldBackContinuationUsed(store2, threadId, turnTreeId, used) {
@@ -23767,7 +23850,7 @@ function setMessageHookOrigin(store2, messageId, origin) {
   store2.setState({ threads });
 }
 function refreshPayload(store2, threadId, payload) {
-  const thread = store2.getState().threads.find((t2) => t2.id === threadId);
+  const thread = getThreadById(store2, threadId);
   return {
     ...payload,
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
@@ -23787,28 +23870,70 @@ function refreshPayload(store2, threadId, payload) {
     ...thread?.continuationUsed !== void 0 ? { continuationBudgetUsed: thread.continuationUsed } : {}
   };
 }
-function dispatchAgentRun(store2, api2, threadId, payload) {
-  const projectId = store2.getState().activeProjectId;
-  if (!projectId) throw new Error("Cannot run thread without an active project");
+function beginPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2) ?? /* @__PURE__ */ new Map();
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1);
+  pendingDispatches.set(store2, byThread);
+}
+function finishPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2);
+  const count = byThread?.get(threadId) ?? 0;
+  if (count <= 1) byThread?.delete(threadId);
+  else byThread?.set(threadId, count - 1);
+}
+function hasPendingDispatch(store2, threadId) {
+  return (pendingDispatches.get(store2)?.get(threadId) ?? 0) > 0;
+}
+function dispatchAgentRun(store2, api2, threadId, payload, queued) {
+  const { activeProjectId, backgroundThreads } = store2.getState();
+  const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
+  if (!projectId) throw new Error("Cannot run thread without an owning project");
   clearContextSnapshot(store2, threadId);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   mark("ttft:renderer-dispatch");
-  void api2.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store2, threadId, payload)));
+  if (queued) beginPendingDispatch(store2, threadId);
+  const run2 = api2.agent.run(
+    projectId,
+    threadId,
+    JSON.stringify(refreshPayload(store2, threadId, payload))
+  );
+  if (!queued) {
+    void run2;
+    return;
+  }
+  void run2.catch((err2) => {
+    if (!isAgentTurnBusyError(err2)) throw err2;
+    requeueBusyMessage(store2, api2, threadId, queued);
+  }).finally(() => {
+    finishPendingDispatch(store2, threadId);
+    if (getThreadById(store2, threadId)?.status === "idle") {
+      drainMessageQueue(store2, api2, threadId);
+    }
+  });
+}
+function requeueBusyMessage(store2, api2, threadId, item) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const pending = t2.pendingMessages ?? [];
+    if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
+    const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
+  });
+  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("threads_changed");
+  if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
 }
 function enqueueUserMessage(store2, threadId, item) {
-  const threads = store2.getState().threads.map(
-    (t2) => t2.id !== threadId ? t2 : {
-      ...t2,
-      pendingMessages: [...t2.pendingMessages ?? [], item],
-      updatedAt: Date.now()
-    }
-  );
-  store2.setState({ threads });
+  patchThreadAnywhere(store2, threadId, (t2) => ({
+    ...t2,
+    pendingMessages: [...t2.pendingMessages ?? [], item],
+    updatedAt: Date.now()
+  }));
   store2.emit("message_queued", threadId, item.messageId);
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
+  if (hasPendingDispatch(store2, threadId)) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (!thread || thread.status !== "idle" || thread.queuePaused) return;
   const pending = thread.pendingMessages ?? [];
@@ -23846,7 +23971,7 @@ function drainMessageQueue(store2, api2, threadId) {
   store2.setState({ threads });
   if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
   store2.emit("threads_changed");
-  if (next) dispatchAgentRun(store2, api2, threadId, next.payload);
+  if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
 }
 function movePendingUserMessagesToEnd(messages, pending) {
   const messagesById = new Map(messages.map((message2) => [message2.id, message2]));
@@ -24025,6 +24150,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   sendQueuedMessageNow(store2, api2, threadId, messageId);
 }
+var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
@@ -24032,6 +24158,8 @@ var init_message_queue = __esm({
     init_continuation_budget();
     init_thread_hydration();
     init_perf();
+    init_agent_turn_busy();
+    pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -24975,7 +25103,7 @@ function openRemoteFolderDialog(api2) {
   const hostSelect = el("select", { class: "remote-folder-host", "aria-label": "SSH host" });
   const addHostBtn = el(
     "button",
-    { type: "button", class: "remote-folder-add-host-btn" },
+    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-add-host-btn" },
     "Add host"
   );
   const breadcrumbs = el("nav", {
@@ -24990,8 +25118,16 @@ function openRemoteFolderDialog(api2) {
     arrowLeftIcon("ui-icon ui-icon-sm"),
     "Up"
   );
-  const openBtn = el("button", { type: "button", class: "remote-folder-open primary" }, "Open");
-  const cancelBtn = el("button", { type: "button", class: "remote-folder-cancel" }, "Cancel");
+  const openBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary remote-folder-open" },
+    "Open"
+  );
+  const cancelBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel" },
+    "Cancel"
+  );
   const draft = emptySshHostDraft();
   const idInput = el("input", {
     name: "remoteFolderHostId",
@@ -25032,13 +25168,17 @@ function openRemoteFolderDialog(api2) {
   });
   const saveHostBtn = el(
     "button",
-    { type: "button", class: "remote-folder-save-host primary" },
+    { type: "button", class: "ui-btn ui-btn-primary remote-folder-save-host" },
     "Save host"
   );
-  const cancelAddBtn = el("button", { type: "button", class: "remote-folder-cancel-add" }, "Cancel");
+  const cancelAddBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary remote-folder-cancel-add" },
+    "Cancel"
+  );
   const importBtn = el(
     "button",
-    { type: "button", class: "remote-folder-import-config" },
+    { type: "button", class: "ui-btn ui-btn-ghost remote-folder-import-config" },
     "Import from ~/.ssh/config"
   );
   const addHostForm = el(
@@ -26051,9 +26191,20 @@ function ensureDialog3() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog?.close();
   });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
   dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
     activeToken += 1;
+    const closedToken = activeToken;
     releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   });
   return dialog;
 }
@@ -26077,7 +26228,12 @@ function openAttachmentPreview(options) {
   previewTitle.textContent = options.title;
   if (options.content) previewBody.replaceChildren(options.content);
   else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
   const isActive = () => token === activeToken && previewDialog.open;
   return {
     isActive,
@@ -26096,7 +26252,7 @@ function openAttachmentPreview(options) {
     }
   };
 }
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
 var init_attachment_preview = __esm({
   "src/renderer/attachments/attachment-preview.ts"() {
     init_helpers();
@@ -26104,23 +26260,203 @@ var init_attachment_preview = __esm({
     titleEl = null;
     bodyEl = null;
     currentCleanup = null;
+    returnFocus = null;
     activeToken = 0;
   }
 });
 
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
+// src/renderer/dom/context-menu.ts
+function showContextMenu(clientX, clientY, items, withinDialog) {
+  dismissOpenContextMenu?.();
+  if (items.every(isHeading)) return;
+  const buttons = items.map((entry) => {
+    if (isHeading(entry)) {
+      return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
+    }
+    const item = entry;
+    const btn = el(
+      "button",
+      {
+        type: "button",
+        class: "context-menu-item",
+        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
+        ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
+      },
+      el("span", { class: "context-menu-item-label" }, item.label),
+      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
+    );
+    if (item.checked === true) btn.classList.add("is-checked");
+    if (item.disabled) btn.disabled = true;
+    let selected = false;
+    const select = () => {
+      if (selected || item.disabled) return;
+      selected = true;
+      dismiss();
+      item.onSelect();
+    };
+    btn.addEventListener("mousedown", (e3) => {
+      if (item.disabled) return;
+      e3.preventDefault();
+      e3.stopPropagation();
+      select();
+    });
+    btn.addEventListener("click", (e3) => {
+      e3.stopPropagation();
+      select();
+    });
+    return btn;
+  });
+  const menu = el("div", { class: "context-menu", role: "menu" }, ...buttons);
+  menu.style.left = `${String(clientX)}px`;
+  menu.style.top = `${String(clientY)}px`;
+  const dismiss = () => {
+    menu.remove();
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    window.removeEventListener("blur", dismiss);
+    if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
+  };
+  const onPointerDown = (e3) => {
+    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
+    dismiss();
+  };
+  const onKeyDown = (e3) => {
+    if (e3.key === "Escape") dismiss();
+  };
+  const dialog2 = withinDialog?.closest("dialog");
+  (dialog2 ?? document.body).append(menu);
+  dismissOpenContextMenu = dismiss;
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("blur", dismiss);
+  const rect = menu.getBoundingClientRect();
+  const pad = 4;
+  let left = clientX;
+  let top = clientY;
+  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
+  if (left < pad) left = pad;
+  if (top < pad) top = pad;
+  menu.style.left = `${String(left)}px`;
+  menu.style.top = `${String(top)}px`;
 }
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
+function dismissContextMenu() {
+  dismissOpenContextMenu?.();
+}
+var isHeading, dismissOpenContextMenu;
+var init_context_menu = __esm({
+  "src/renderer/dom/context-menu.ts"() {
+    init_helpers();
+    init_icons();
+    isHeading = (entry) => "heading" in entry;
+    dismissOpenContextMenu = null;
   }
 });
 
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
+// src/renderer/attachments/image-expand.ts
+function pngDataUrlToBlob(dataUrl) {
+  if (!/^data:image\/png;base64,/i.test(dataUrl)) throw new Error("Not a PNG data URL");
+  const comma = dataUrl.indexOf(",");
+  const binary = atob(dataUrl.slice(comma + 1));
+  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
+  return new Blob([bytes], { type: "image/png" });
+}
+function renderedImageToPng(image) {
+  if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
+    throw new Error("Image has not loaded");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not create image canvas");
+  context.drawImage(image, 0, 0);
+  return pngDataUrlToBlob(canvas.toDataURL("image/png"));
+}
+async function copyImageToClipboard(image) {
+  const src = image.currentSrc || image.src;
+  const png = /^data:image\/png;base64,/i.test(src) ? pngDataUrlToBlob(src) : renderedImageToPng(image);
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}
+function attachImageCopyMenu(image) {
+  if (image.dataset["imageCopyMenu"] === "true") return;
+  image.dataset["imageCopyMenu"] = "true";
+  image.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showContextMenu(
+      event.clientX,
+      event.clientY,
+      [
+        {
+          label: "Copy image",
+          onSelect: () => {
+            void copyImageToClipboard(image).then(() => showToast("Copied image", { durationMs: 1500 })).catch((error62) => {
+              showErrorToast("Failed to copy image", error62);
+            });
+          }
+        }
+      ],
+      image
+    );
+  });
+}
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
+  if (!src) return;
+  const imageEl = el("img", { class: "image-expand-image", alt });
+  imageEl.src = src;
+  attachImageCopyMenu(imageEl);
+  openAttachmentPreview({
+    kind: "image",
+    title: alt,
+    ariaLabel: `Image preview: ${alt}`,
+    content: imageEl,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
+    onClose: () => {
+      imageEl.removeAttribute("src");
+      imageEl.alt = "Expanded attachment";
+    }
+  });
+}
+function attachImageExpand(img, alt) {
+  if (img.dataset["imageExpand"] === "true") return;
+  img.dataset["imageExpand"] = "true";
+  attachImageCopyMenu(img);
+  img.classList.add("image-expandable");
+  img.setAttribute("role", "button");
+  img.setAttribute("tabindex", "0");
+  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
+  const open2 = () => {
+    const label = alt ?? (img.alt || "Expanded attachment");
+    const src = img.currentSrc || img.src;
+    openImageExpand(src, label, () => {
+      if (img.isConnected) return img;
+      for (const candidate of document.querySelectorAll("img.image-expandable")) {
+        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+          return candidate;
+        }
+      }
+      return null;
+    });
+  };
+  img.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    open2();
+  });
+  img.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    open2();
+  });
+}
+var init_image_expand = __esm({
+  "src/renderer/attachments/image-expand.ts"() {
+    init_context_menu();
+    init_helpers();
+    init_toast();
+    init_attachment_preview();
   }
 });
 
@@ -26164,7 +26500,9 @@ async function openWorkspaceFile(store2, api2, path, reveal) {
         preview.close();
         return;
       }
-      preview.setContent(el("img", { class: "image-expand-image", src, alt: path }));
+      const image = el("img", { class: "image-expand-image", src, alt: path });
+      attachImageCopyMenu(image);
+      preview.setContent(image);
     } catch (error62) {
       if (!isOwner()) {
         preview.close();
@@ -26227,6 +26565,7 @@ var init_files = __esm({
     init_panels();
     init_image_path();
     init_attachment_preview();
+    init_image_expand();
     init_helpers();
     init_errors4();
     LANG = {
@@ -28577,7 +28916,12 @@ function createDemoApi(scenario, options = {}) {
         failed: []
       })
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false)
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -28756,7 +29100,8 @@ function createDemoApi(scenario, options = {}) {
       completeReview: () => resolved(false),
       abortReview: () => resolved(false),
       onChanged: subscribe,
-      setThread: () => resolved(null)
+      setThread: () => resolved(null),
+      findByThread: () => resolved(null)
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),
@@ -29699,6 +30044,7 @@ function createStore(initial) {
     themePreference: DEFAULT_THEME_PREFERENCE,
     fontSize: 14,
     uiScale: 1,
+    animateAgentAvatars: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -29751,6 +30097,8 @@ function createStore(initial) {
     agent_task_selected: /* @__PURE__ */ new Set(),
     shell_tab_activated: /* @__PURE__ */ new Set(),
     request_terminal_command: /* @__PURE__ */ new Set(),
+    code_block_run_requested: /* @__PURE__ */ new Set(),
+    code_block_run_finished: /* @__PURE__ */ new Set(),
     attention_changed: /* @__PURE__ */ new Set()
   };
   function on3(event, handler) {
@@ -31551,94 +31899,6 @@ var init_titlebar = __esm({
   }
 });
 
-// src/renderer/dom/context-menu.ts
-function showContextMenu(clientX, clientY, items, withinDialog) {
-  dismissOpenContextMenu?.();
-  if (items.every(isHeading)) return;
-  const buttons = items.map((entry) => {
-    if (isHeading(entry)) {
-      return el("div", { class: "context-menu-heading", role: "presentation" }, entry.heading);
-    }
-    const item = entry;
-    const btn = el(
-      "button",
-      {
-        type: "button",
-        class: "context-menu-item",
-        role: item.checked === void 0 ? "menuitem" : "menuitemradio",
-        ...item.checked === void 0 ? {} : { "aria-checked": String(item.checked) }
-      },
-      el("span", { class: "context-menu-item-label" }, item.label),
-      ...item.checked === true ? [checkIcon("ui-icon ui-icon-sm context-menu-item-check")] : []
-    );
-    if (item.checked === true) btn.classList.add("is-checked");
-    if (item.disabled) btn.disabled = true;
-    let selected = false;
-    const select = () => {
-      if (selected || item.disabled) return;
-      selected = true;
-      dismiss();
-      item.onSelect();
-    };
-    btn.addEventListener("mousedown", (e3) => {
-      if (item.disabled) return;
-      e3.preventDefault();
-      e3.stopPropagation();
-      select();
-    });
-    btn.addEventListener("click", (e3) => {
-      e3.stopPropagation();
-      select();
-    });
-    return btn;
-  });
-  const menu = el("div", { class: "context-menu", role: "menu" }, ...buttons);
-  menu.style.left = `${String(clientX)}px`;
-  menu.style.top = `${String(clientY)}px`;
-  const dismiss = () => {
-    menu.remove();
-    document.removeEventListener("pointerdown", onPointerDown, true);
-    document.removeEventListener("keydown", onKeyDown, true);
-    window.removeEventListener("blur", dismiss);
-    if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null;
-  };
-  const onPointerDown = (e3) => {
-    if (menu.contains(e3.target instanceof Node ? e3.target : null)) return;
-    dismiss();
-  };
-  const onKeyDown = (e3) => {
-    if (e3.key === "Escape") dismiss();
-  };
-  const dialog2 = withinDialog?.closest("dialog");
-  (dialog2 ?? document.body).append(menu);
-  dismissOpenContextMenu = dismiss;
-  document.addEventListener("pointerdown", onPointerDown, true);
-  document.addEventListener("keydown", onKeyDown, true);
-  window.addEventListener("blur", dismiss);
-  const rect = menu.getBoundingClientRect();
-  const pad = 4;
-  let left = clientX;
-  let top = clientY;
-  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
-  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
-  if (left < pad) left = pad;
-  if (top < pad) top = pad;
-  menu.style.left = `${String(left)}px`;
-  menu.style.top = `${String(top)}px`;
-}
-function dismissContextMenu() {
-  dismissOpenContextMenu?.();
-}
-var isHeading, dismissOpenContextMenu;
-var init_context_menu = __esm({
-  "src/renderer/dom/context-menu.ts"() {
-    init_helpers();
-    init_icons();
-    isHeading = (entry) => "heading" in entry;
-    dismissOpenContextMenu = null;
-  }
-});
-
 // src/renderer/dom/rename-blur.ts
 function bindRenameBlur(input2, commit) {
   const mountedAt = Date.now();
@@ -32102,6 +32362,9 @@ function parseRemoteAgentModelSelection(model) {
   const provider = selection2.agent;
   if (!isRemoteAgentProvider(provider)) return null;
   return selection2.id ? { provider, model: selection2.id } : { provider };
+}
+function parseRemoteAgentModel(model) {
+  return parseRemoteAgentModelSelection(model)?.provider ?? null;
 }
 function remoteAgentGroupLabel(provider) {
   return REMOTE_AGENT_MODELS.find((option) => option.provider === provider)?.label ?? provider;
@@ -61147,6 +61410,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61178,6 +61450,15 @@ var init_appearance = __esm({
       uiTintStrength: "subtle"
     };
     isUiTintStrength = (value) => value === "off" || value === "subtle" || value === "medium" || value === "strong";
+  }
+});
+
+// src/shared/git/commit-attribution.ts
+var GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED;
+var init_commit_attribution = __esm({
+  "src/shared/git/commit-attribution.ts"() {
+    GIT_ATTRIBUTION_SETTING = "gitAttributionEnabled";
+    DEFAULT_GIT_ATTRIBUTION_ENABLED = true;
   }
 });
 
@@ -61604,6 +61885,18 @@ function mountSettingsDialog(store2, api2) {
               </p>
             </fieldset>
 
+            <fieldset data-testid="git-attribution-settings">
+              <legend>Git attribution</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_ATTRIBUTION_SETTING}" />
+                Credit Copse on commits and pull requests
+              </label>
+              <p class="field-hint">
+                Adds Copse as a co-author and lists the models used when Copse creates a commit or
+                pull request. On by default. Turn off to keep your message and description as written.
+              </p>
+            </fieldset>
+
             <div id="settings-gh-cli-host" class="settings-mount"></div>
           </section>
 
@@ -61746,6 +62039,15 @@ function mountSettingsDialog(store2, api2) {
                 private.
               </p>
               <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
+              </p>
+              <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
                 Ask before allowing a new website
               </label>
@@ -61794,8 +62096,10 @@ function mountSettingsDialog(store2, api2) {
                 through ssh-agent. You can remember the signer, key and socket for this project
                 until Copse restarts. Changed configuration requires approval again. Git hooks
                 keep their project sandbox; they receive no ssh-agent access. Turning this off
-                prevents further brokered signing. Private keys remain unreadable. Custom signing
-                programs run with ordinary project access. Scoped socket access is macOS only.
+                prevents further ssh-agent signing. With this off, a configured private key file
+                can be read and used only after a separate approval for each commit. Key contents
+                are never sent to the agent. Custom signing programs run with ordinary project
+                access. Scoped signing is macOS only.
               </p>
             </fieldset>
           </section>
@@ -62063,6 +62367,18 @@ function mountSettingsDialog(store2, api2) {
                 <input type="checkbox" name="alertBounce" />
                 Dock or taskbar animation
               </label>
+            </fieldset>
+
+            <fieldset data-testid="settings-agent-motion">
+              <legend>Agent icons</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="animateAgentAvatars" aria-describedby="agent-motion-hint" />
+                Animate agent icons
+              </label>
+              <p class="field-hint" id="agent-motion-hint">
+                Subtle motion while a remote or named agent is working. Turn off to keep the
+                icons still. Always respects your system's reduced-motion preference.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -62673,7 +62989,7 @@ function mountSettingsDialog(store2, api2) {
       }
       const detail = [
         agent.description,
-        ...agent.unsupportedFields.map((f3) => `${f3.field}: ${f3.reason}`)
+        ...agent.unsupportedFields.map((f4) => `${f4.field}: ${f4.reason}`)
       ].filter(isNonEmptyString).join(" \xB7 ");
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
@@ -63501,10 +63817,10 @@ function mountSettingsDialog(store2, api2) {
       ]);
       fillSourceList(
         "#sources-instructions-list",
-        instructions.map((f3) => makeInstructionRow(f3)),
+        instructions.map((f4) => makeInstructionRow(f4)),
         "No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root; nested directories may add AGENTS.md; or add ~/AGENTS.md globally)."
       );
-      if (instructions.some((f3) => f3.discoveryTruncated)) {
+      if (instructions.some((f4) => f4.discoveryTruncated)) {
         const note = document.createElement("span");
         note.className = "sources-empty";
         note.id = "sources-instructions-truncated";
@@ -63735,7 +64051,7 @@ function mountSettingsDialog(store2, api2) {
       chips.push({
         label: "Follow-ups",
         count: contributions.followUps.length,
-        title: contributions.followUps.map((f3) => `${f3.label} (${f3.action}, ${f3.when})`).join(", ")
+        title: contributions.followUps.map((f4) => `${f4.label} (${f4.action}, ${f4.when})`).join(", ")
       });
     }
     if (contributions.capabilities.length > 0) {
@@ -64146,11 +64462,11 @@ function mountSettingsDialog(store2, api2) {
       const text2 = document.createElement("span");
       text2.textContent = "This workspace defines its own MCP servers. They will not run until you trust this workspace.";
       void api2.instructions.list().then((files) => {
-        const inert = files.filter((f3) => !f3.active);
+        const inert = files.filter((f4) => !f4.active);
         if (inert.length === 0) return;
         const note = document.createElement("span");
         note.className = "mcp-trust-instructions-note";
-        note.textContent = ` It also ships agent instruction files (${inert.map((f3) => f3.name).join(", ")}), inert until trusted.`;
+        note.textContent = ` It also ships agent instruction files (${inert.map((f4) => f4.name).join(", ")}), inert until trusted.`;
         text2.append(note);
       }).catch(() => {
       });
@@ -64724,6 +65040,7 @@ function mountSettingsDialog(store2, api2) {
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
+        animateAgentAvatars: data.get("animateAgentAvatars") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -64793,8 +65110,10 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
+    init_commit_attribution();
     init_appearance();
     init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
@@ -64820,6 +65139,12 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      {
+        name: GIT_ATTRIBUTION_SETTING,
+        kind: "checkbox",
+        default: DEFAULT_GIT_ATTRIBUTION_ENABLED,
+        save: true
+      },
       { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -64841,9 +65166,18 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
+      { name: "animateAgentAvatars", kind: "checkbox", default: true, save: true },
       { name: "alertOnInteraction", kind: "checkbox", default: true, save: true },
       { name: "alertOnThreadFinished", kind: "checkbox", default: true, save: true },
       { name: "alertSystemNotification", kind: "checkbox", default: true, save: true },
@@ -65048,6 +65382,7 @@ function copyMessage(message2) {
     id: _id,
     hookCards: _hookCards,
     review: _review,
+    reviewReport: _reviewReport,
     toolCalls,
     images,
     canvasArtefacts,
@@ -65131,6 +65466,74 @@ var init_fork_thread3 = __esm({
     init_fork_thread2();
     init_thread_helpers();
     init_message_queue();
+  }
+});
+
+// src/renderer/controller/thread-filter.ts
+function createThreadFilter(store2, api2, changed) {
+  const matches2 = /* @__PURE__ */ new Set();
+  let generation = 0;
+  let timer;
+  let scan = Promise.resolve();
+  let pending = false;
+  let failed = false;
+  const cancel = () => {
+    generation += 1;
+    clearTimeout(timer);
+    matches2.clear();
+    pending = false;
+    failed = false;
+  };
+  const search = (query) => {
+    cancel();
+    const { activeProjectId, threads } = store2.getState();
+    if (!query || !activeProjectId) return;
+    const current = generation;
+    const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
+    const candidates = sortThreadsNewestFirst(threads).filter(
+      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+    );
+    const containsRequest = (messages) => messages.some(
+      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
+    );
+    pending = candidates.length > 0;
+    timer = setTimeout(() => {
+      scan = scan.then(async () => {
+        for (const thread of candidates) {
+          if (!isCurrent()) return;
+          try {
+            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            if (!isCurrent()) return;
+            if (matched) {
+              matches2.add(thread.id);
+              changed();
+            }
+          } catch {
+            if (!isCurrent()) return;
+            failed = true;
+          }
+        }
+        if (!isCurrent()) return;
+        pending = false;
+        changed();
+      });
+    }, 200);
+  };
+  return {
+    search,
+    cancel,
+    matches: matches2,
+    get pending() {
+      return pending;
+    },
+    get failed() {
+      return failed;
+    }
+  };
+}
+var init_thread_filter = __esm({
+  "src/renderer/controller/thread-filter.ts"() {
+    init_thread_sort();
   }
 });
 
@@ -65638,11 +66041,11 @@ function settingsIcon(className = "titlebar-btn-icon") {
   svg2.append(path);
   return svg2;
 }
-function automationSetupBtn(label, open2) {
+function automationSetupBtn(label, open2, icon = settingsIcon) {
   const btn = el(
     "button",
     { type: "button", class: "automation-setup-btn", "aria-label": label, title: label },
-    settingsIcon("ui-icon ui-icon-sm")
+    icon("ui-icon ui-icon-sm")
   );
   btn.addEventListener("click", (e3) => {
     e3.stopPropagation();
@@ -65672,16 +66075,20 @@ function mountProjectsPane(root, store2, api2) {
   );
   const header = el("div", { class: "pane-projects-header" }, title, searchToggle, addBtn);
   let threadFilter = "";
+  const contentFilter = createThreadFilter(store2, api2, () => {
+    render();
+  });
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter threads\u2026",
+    placeholder: "Filter titles and requests\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
   const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
   const closeThreadFilter = () => {
+    contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
     searchRow.hidden = true;
@@ -65699,6 +66106,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   searchInput.addEventListener("input", () => {
     threadFilter = searchInput.value.trim().toLowerCase();
+    contentFilter.search(threadFilter);
     render();
   });
   searchInput.addEventListener("keydown", (e3) => {
@@ -65771,7 +66179,7 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
-  const expandedAutomationProjects = /* @__PURE__ */ new Set();
+  let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
   let renaming = null;
@@ -65816,29 +66224,39 @@ function mountProjectsPane(root, store2, api2) {
     archiveThread(store2, threadId);
   }
   function cachedPrLifecycle(key) {
+    return prLifecycleCache.get(key)?.state;
+  }
+  function hasFreshPrLifecycle(key) {
     const entry = prLifecycleCache.get(key);
-    if (!entry) return void 0;
-    if (Date.now() - entry.fetchedAt > PR_STATUS_CACHE_TTL_MS) return void 0;
-    return entry.state;
+    return entry !== void 0 && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS;
   }
   function ensurePrLifecycles(refs) {
-    const missing = refs.filter((ref) => {
+    const stale = refs.filter((ref) => {
       const key = githubPrKey(ref);
-      return cachedPrLifecycle(key) === void 0 && !prFetchInFlight.has(key);
+      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key);
     });
-    if (missing.length === 0) return;
+    if (stale.length === 0) return;
     const generation = prStatusGeneration;
-    for (const ref of missing) {
+    for (const ref of stale) {
       const key = githubPrKey(ref);
+      let lifecycleChanged = false;
       prFetchInFlight.add(key);
       void api2.gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+        if (generation !== prStatusGeneration) return;
         const state = details ? normalizePrLifecycleState(details.state) : "unknown";
+        lifecycleChanged = prLifecycleCache.get(key)?.state !== state;
         prLifecycleCache.set(key, { state, fetchedAt: Date.now() });
       }).catch(() => {
-        prLifecycleCache.set(key, { state: "unknown", fetchedAt: Date.now() });
+        if (generation !== prStatusGeneration) return;
+        const cached2 = prLifecycleCache.get(key);
+        prLifecycleCache.set(key, {
+          state: cached2?.state ?? "unknown",
+          fetchedAt: Date.now()
+        });
       }).finally(() => {
+        if (generation !== prStatusGeneration) return;
         prFetchInFlight.delete(key);
-        if (generation === prStatusGeneration) render();
+        if (lifecycleChanged) render();
       });
     }
   }
@@ -66138,6 +66556,309 @@ function mountProjectsPane(root, store2, api2) {
       list.append(el("div", { class: "sidebar-empty" }, 'No projects yet. Click "+".'));
       return;
     }
+    function renderThreadRow(project2, thread, options = {}) {
+      const activeId = project2.id === activeProjectId ? activeThreadId : null;
+      const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
+      const canMutate = project2.id === activeProjectId;
+      const allowRename = (options.allowRename ?? true) && canMutate;
+      const scheduleId = thread.automation?.scheduleId;
+      const renameState = allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null;
+      let title2;
+      if (renameState) {
+        const input2 = el("input", {
+          type: "text",
+          class: "chat-title-rename",
+          "aria-label": "Rename thread"
+        });
+        input2.value = renameState.draft;
+        input2.addEventListener("input", () => {
+          if (renaming?.threadId === thread.id) renaming.draft = input2.value;
+        });
+        input2.addEventListener("keydown", (e3) => {
+          e3.stopPropagation();
+          if (e3.key === "Enter") {
+            e3.preventDefault();
+            finishThreadRename(true);
+          } else if (e3.key === "Escape") {
+            e3.preventDefault();
+            finishThreadRename(false);
+          }
+        });
+        bindRenameBlur(input2, () => {
+          if (renaming?.threadId !== thread.id) return;
+          finishThreadRename(true);
+        });
+        for (const evt of ["click", "dblclick", "mousedown"]) {
+          input2.addEventListener(evt, (e3) => {
+            e3.stopPropagation();
+          });
+        }
+        title2 = input2;
+      } else {
+        title2 = el("span", { class: "chat-title" }, displayTitle);
+        if (allowRename) {
+          title2.addEventListener("dblclick", (e3) => {
+            e3.stopPropagation();
+            beginThreadRename(thread.id, displayTitle);
+          });
+        }
+      }
+      const chatRow = el(
+        "div",
+        {
+          class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
+          "data-thread-id": thread.id
+        },
+        title2
+      );
+      chatRow.addEventListener("click", () => {
+        if (renaming?.threadId === thread.id) return;
+        switchProjectThread(store2, api2, project2.id, thread.id);
+      });
+      chatRow.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          ...canMutate ? [
+            ...allowRename ? [
+              {
+                label: "Rename",
+                onSelect: () => {
+                  beginThreadRename(thread.id, displayTitle);
+                }
+              }
+            ] : [],
+            {
+              label: "Fork",
+              onSelect: () => {
+                forkProjectThread(project2.id, thread.id);
+              }
+            },
+            {
+              label: "Archive",
+              onSelect: () => {
+                archiveProjectThread(project2.id, thread.id);
+              }
+            }
+          ] : [],
+          // A schedule with a single run has no heading of its own, and a
+          // historical run is several rows below the one that does, so every
+          // automation row carries the way out to its setup. Opens directly
+          // against this run's own project — same as the project menu's
+          // "Automations" entry — rather than switching the active project
+          // just to reach the editor.
+          ...scheduleId ? [
+            {
+              label: "Automation setup\u2026",
+              onSelect: () => {
+                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+              }
+            }
+          ] : []
+        ]);
+      });
+      if (thread.status === "running") {
+        chatRow.classList.add("is-running");
+        chatRow.insertBefore(runningStatus("Agent is working"), title2);
+      } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
+        chatRow.classList.add("is-unread");
+        chatRow.insertBefore(
+          el("span", {
+            class: "chat-unread-dot",
+            role: "img",
+            "aria-label": "Unread agent completion"
+          }),
+          title2
+        );
+      }
+      if (isThreadAwaitingAttention(thread.id)) {
+        chatRow.classList.add("needs-attention");
+        chatRow.append(attentionBell("This thread needs your attention"));
+      }
+      const prRollup = rollupForThread(thread);
+      if (prRollup) {
+        chatRow.classList.add("has-pr-status");
+        chatRow.append(chatPrStatus(prRollup));
+      }
+      if (canMutate) {
+        const del = el(
+          "button",
+          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
+          closeIcon("ui-icon ui-icon-sm")
+        );
+        del.addEventListener("click", (e3) => {
+          e3.stopPropagation();
+          if (getSidebarThreads(store2, project2.id).length > 1) {
+            void api2.agent.clearHistory(project2.id, thread.id);
+            deleteThread(store2, thread.id);
+          }
+        });
+        chatRow.append(del);
+      }
+      return chatRow;
+    }
+    function renderAutomationsSection() {
+      const scheduleOwners = /* @__PURE__ */ new Map();
+      for (const project2 of projects) {
+        for (const thread of getSidebarThreads(store2, project2.id)) {
+          const scheduleId = thread.automation?.scheduleId;
+          if (!scheduleId) continue;
+          const scheduleKey = `${project2.id}\0${scheduleId}`;
+          const owner = scheduleOwners.get(scheduleKey);
+          if (owner) owner.runs.push(thread);
+          else scheduleOwners.set(scheduleKey, { project: project2, scheduleId, runs: [thread] });
+        }
+      }
+      if (scheduleOwners.size === 0) return null;
+      const allRuns = Array.from(scheduleOwners.values()).flatMap((owner) => owner.runs);
+      const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId);
+      const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id));
+      const sectionExpanded = automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0;
+      const section = el("div", { class: "automation-threads-group" });
+      const toggle = el(
+        "button",
+        {
+          type: "button",
+          class: "automation-threads-toggle",
+          "aria-expanded": sectionExpanded ? "true" : "false"
+        },
+        el(
+          "span",
+          { class: `automation-threads-twisty${sectionExpanded ? " expanded" : ""}` },
+          chevronRightIcon("ui-icon ui-icon-sm")
+        ),
+        el("span", { class: "automation-threads-title" }, "Automations"),
+        el("span", { class: "automation-threads-count" }, String(scheduleOwners.size))
+      );
+      if (allRuns.some((thread) => thread.status === "running")) {
+        const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
+        status.setAttribute("role", "img");
+        status.setAttribute("aria-label", "An automation is running");
+        status.removeAttribute("aria-hidden");
+        toggle.append(status);
+      }
+      toggle.addEventListener("click", () => {
+        automationsSectionExpanded = !automationsSectionExpanded;
+        render();
+      });
+      section.append(
+        el(
+          "div",
+          { class: "automation-threads-header" },
+          toggle,
+          // Creates against the active project, same default the plugin editor
+          // itself falls back to when no project is named — there is no single
+          // project this workspace-level heading could otherwise imply.
+          automationSetupBtn(
+            "New automation\u2026",
+            () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            },
+            plusIcon
+          )
+        )
+      );
+      if (sectionExpanded) {
+        const rows = el("div", { class: "automation-thread-rows" });
+        for (const { project: project2, scheduleId, runs } of scheduleOwners.values()) {
+          const firstRun = runs[0];
+          if (!firstRun) continue;
+          const projectSuffix = el(
+            "span",
+            { class: "chat-thread-owner" },
+            `\xB7 ${projectDisplayName(project2)}`
+          );
+          if (runs.length === 1) {
+            const row2 = renderThreadRow(project2, firstRun);
+            row2.querySelector(".chat-title")?.after(projectSuffix);
+            const scheduleName2 = firstRun.automation?.scheduleName ?? firstRun.title;
+            const setupBtn = automationSetupBtn(`${scheduleName2} setup`, () => {
+              openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+            });
+            const del = row2.querySelector(".chat-delete");
+            if (del) del.before(setupBtn);
+            else row2.append(setupBtn);
+            rows.append(row2);
+            continue;
+          }
+          const scheduleKey = `${project2.id}\0${scheduleId}`;
+          const hasActiveRun = runs.some((thread) => thread.id === activeThreadId);
+          const attentionScheduleRuns = runs.filter(
+            (thread) => isThreadAwaitingAttention(thread.id)
+          );
+          const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
+          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0;
+          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
+          const scheduleGroup = el("div", {
+            class: "automation-schedule-group",
+            "data-schedule-id": scheduleId
+          });
+          const scheduleToggle = el(
+            "button",
+            {
+              type: "button",
+              class: "automation-schedule-toggle",
+              "aria-expanded": showingAllRuns ? "true" : "false"
+            },
+            el(
+              "span",
+              { class: `automation-threads-twisty${showingAllRuns ? " expanded" : ""}` },
+              chevronRightIcon("ui-icon ui-icon-sm")
+            ),
+            el("span", { class: "automation-schedule-title" }, scheduleName),
+            projectSuffix,
+            el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
+          );
+          if (runs.some((thread) => thread.status === "running")) {
+            const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
+            status.setAttribute("role", "img");
+            status.setAttribute("aria-label", "This automation is running");
+            status.removeAttribute("aria-hidden");
+            scheduleToggle.append(status);
+          }
+          scheduleToggle.addEventListener("click", () => {
+            if (expandedAutomationSchedules.has(scheduleKey)) {
+              expandedAutomationSchedules.delete(scheduleKey);
+            } else {
+              expandedAutomationSchedules.add(scheduleKey);
+            }
+            render();
+          });
+          scheduleGroup.append(
+            el(
+              "div",
+              { class: "automation-schedule-header" },
+              scheduleToggle,
+              automationSetupBtn(`${scheduleName} setup`, () => {
+                openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+              })
+            )
+          );
+          if (scheduleRevealed) {
+            const runRows = el("div", { class: "automation-schedule-runs" });
+            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
+            for (const thread of visibleRuns) {
+              const index = runs.indexOf(thread);
+              const timestamp = thread.automation?.triggeredAt;
+              const when = timestamp ? new Date(timestamp).toLocaleString([], {
+                dateStyle: "medium",
+                timeStyle: "short"
+              }) : "Unknown time";
+              runRows.append(
+                renderThreadRow(project2, thread, {
+                  displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
+                  allowRename: false
+                })
+              );
+            }
+            scheduleGroup.append(runRows);
+          }
+          rows.append(scheduleGroup);
+        }
+        section.append(rows);
+      }
+      return section;
+    }
     function renderProjectEntry(project2) {
       const entry = el("div", { class: "project-entry", "data-project-id": project2.id });
       const isExpanded = project2.id === expandedId;
@@ -66293,12 +67014,15 @@ function mountProjectsPane(root, store2, api2) {
         projectLine.append(newThreadBtn);
       }
       if (!isExpanded) return entry;
-      const sidebarThreads = getSidebarThreads(store2, project2.id);
-      const isFiltering = threadFilter.length > 0;
+      const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
+      const sidebarThreads = isFiltering ? sortThreadsNewestFirst(store2.getState().threads).filter(
+        (thread) => thread.archivedAt == null
+      ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter)
+        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
+          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
+        )
       ) : sidebarThreads;
-      const automationThreads = matchingThreads.filter((thread) => thread.automation !== void 0);
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
       );
@@ -66328,151 +67052,27 @@ function mountProjectsPane(root, store2, api2) {
       const chats = el("div", { class: "chats-list" });
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store2, project2.id)) {
         chats.append(el("div", { class: "sidebar-empty chats-loading" }, "Loading\u2026"));
+      } else if (isFiltering && contentFilter.pending) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Searching user requests\u2026"
+          )
+        );
+      } else if (isFiltering && contentFilter.failed) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Some threads could not be searched"
+          )
+        );
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
-      function openAutomationSetup(scheduleId) {
-        if (project2.id !== store2.getState().activeProjectId) {
-          switchProject(store2, api2, project2.id);
-          return;
-        }
-        openAutomationDialog(store2, api2, scheduleId ? { scheduleId } : {});
-      }
-      function renderThreadRow(thread, options = {}) {
-        const displayTitle = (options.displayTitle ?? thread.title) || "New Thread";
-        const allowRename = options.allowRename ?? true;
-        const scheduleId = thread.automation?.scheduleId;
-        const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null;
-        let title2;
-        if (renameState) {
-          const input2 = el("input", {
-            type: "text",
-            class: "chat-title-rename",
-            "aria-label": "Rename thread"
-          });
-          input2.value = renameState.draft;
-          input2.addEventListener("input", () => {
-            if (renaming?.threadId === thread.id) renaming.draft = input2.value;
-          });
-          input2.addEventListener("keydown", (e3) => {
-            e3.stopPropagation();
-            if (e3.key === "Enter") {
-              e3.preventDefault();
-              finishThreadRename(true);
-            } else if (e3.key === "Escape") {
-              e3.preventDefault();
-              finishThreadRename(false);
-            }
-          });
-          bindRenameBlur(input2, () => {
-            if (renaming?.threadId !== thread.id) return;
-            finishThreadRename(true);
-          });
-          for (const evt of ["click", "dblclick", "mousedown"]) {
-            input2.addEventListener(evt, (e3) => {
-              e3.stopPropagation();
-            });
-          }
-          title2 = input2;
-        } else {
-          title2 = el("span", { class: "chat-title" }, displayTitle);
-          if (allowRename) {
-            title2.addEventListener("dblclick", (e3) => {
-              e3.stopPropagation();
-              beginThreadRename(thread.id, displayTitle);
-            });
-          }
-        }
-        const chatRow = el(
-          "div",
-          {
-            class: `chat-row${thread.automation ? " is-automation" : ""}${thread.id === activeThreadId && project2.id === activeProjectId ? " selected" : ""}`,
-            "data-thread-id": thread.id
-          },
-          title2
-        );
-        chatRow.addEventListener("click", () => {
-          if (renaming?.threadId === thread.id) return;
-          switchProjectThread(store2, api2, project2.id, thread.id);
-        });
-        chatRow.addEventListener("contextmenu", (e3) => {
-          e3.preventDefault();
-          e3.stopPropagation();
-          showContextMenu(e3.clientX, e3.clientY, [
-            ...allowRename ? [
-              {
-                label: "Rename",
-                onSelect: () => {
-                  beginThreadRename(thread.id, displayTitle);
-                }
-              }
-            ] : [],
-            {
-              label: "Fork",
-              onSelect: () => {
-                forkProjectThread(project2.id, thread.id);
-              }
-            },
-            {
-              label: "Archive",
-              onSelect: () => {
-                archiveProjectThread(project2.id, thread.id);
-              }
-            },
-            // A schedule with a single run has no heading of its own, and a
-            // historical run is several rows below the one that does, so every
-            // automation row carries the way out to its setup.
-            ...scheduleId ? [
-              {
-                label: "Automation setup\u2026",
-                onSelect: () => {
-                  openAutomationSetup(scheduleId);
-                }
-              }
-            ] : []
-          ]);
-        });
-        if (thread.status === "running") {
-          chatRow.classList.add("is-running");
-          chatRow.insertBefore(runningStatus("Agent is working"), title2);
-        } else if (thread.unreadAt !== void 0 && thread.id !== activeId) {
-          chatRow.classList.add("is-unread");
-          chatRow.insertBefore(
-            el("span", {
-              class: "chat-unread-dot",
-              role: "img",
-              "aria-label": "Unread agent completion"
-            }),
-            title2
-          );
-        }
-        if (isThreadAwaitingAttention(thread.id)) {
-          chatRow.classList.add("needs-attention");
-          chatRow.append(attentionBell("This thread needs your attention"));
-        }
-        const prRollup = rollupForThread(thread);
-        if (prRollup) {
-          chatRow.classList.add("has-pr-status");
-          chatRow.append(chatPrStatus(prRollup));
-        }
-        const del = el(
-          "button",
-          { class: "chat-delete", "aria-label": "Delete thread", "data-tooltip": "Delete thread" },
-          closeIcon("ui-icon ui-icon-sm")
-        );
-        del.addEventListener("click", (e3) => {
-          e3.stopPropagation();
-          if (project2.id !== activeProjectId) return;
-          if (sidebarThreads.length > 1) {
-            void api2.agent.clearHistory(project2.id, thread.id);
-            deleteThread(store2, thread.id);
-          }
-        });
-        chatRow.append(del);
-        return chatRow;
-      }
       for (const thread of visibleThreads) {
-        chats.append(renderThreadRow(thread));
+        chats.append(renderThreadRow(project2, thread));
       }
       if (hasMore) {
         const showMoreBtn = el("button", { type: "button", class: "chats-show-more" }, "Show more");
@@ -66481,147 +67081,6 @@ function mountProjectsPane(root, store2, api2) {
           render();
         });
         chats.append(showMoreBtn);
-      }
-      if (automationThreads.length > 0) {
-        const scheduleGroups = /* @__PURE__ */ new Map();
-        for (const thread of automationThreads) {
-          const scheduleId = thread.automation?.scheduleId;
-          if (!scheduleId) continue;
-          const runs = scheduleGroups.get(scheduleId);
-          if (runs) runs.push(thread);
-          else scheduleGroups.set(scheduleId, [thread]);
-        }
-        const hasActiveAutomation = automationThreads.some((thread) => thread.id === activeId);
-        const attentionAutomationThreads = automationThreads.filter(
-          (thread) => isThreadAwaitingAttention(thread.id)
-        );
-        const automationExpanded = isFiltering || expandedAutomationProjects.has(project2.id) || hasActiveAutomation || attentionAutomationThreads.length > 0;
-        const group = el("div", { class: "automation-threads-group" });
-        const toggle = el(
-          "button",
-          {
-            type: "button",
-            class: "automation-threads-toggle",
-            "aria-expanded": automationExpanded ? "true" : "false"
-          },
-          el(
-            "span",
-            { class: `automation-threads-twisty${automationExpanded ? " expanded" : ""}` },
-            chevronRightIcon("ui-icon ui-icon-sm")
-          ),
-          el("span", { class: "automation-threads-title" }, "Automations"),
-          el("span", { class: "automation-threads-count" }, String(scheduleGroups.size))
-        );
-        if (automationThreads.some((thread) => thread.status === "running")) {
-          const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
-          status.setAttribute("role", "img");
-          status.setAttribute("aria-label", "An automation is running");
-          status.removeAttribute("aria-hidden");
-          toggle.append(status);
-        }
-        toggle.addEventListener("click", () => {
-          if (expandedAutomationProjects.has(project2.id)) {
-            expandedAutomationProjects.delete(project2.id);
-          } else {
-            expandedAutomationProjects.add(project2.id);
-          }
-          render();
-        });
-        group.append(
-          el(
-            "div",
-            { class: "automation-threads-header" },
-            toggle,
-            automationSetupBtn("Automation settings", () => {
-              openAutomationSetup();
-            })
-          )
-        );
-        if (automationExpanded) {
-          const automationRows = el("div", { class: "automation-thread-rows" });
-          for (const [scheduleId, runs] of scheduleGroups) {
-            const firstRun = runs[0];
-            if (!firstRun) continue;
-            if (runs.length === 1) {
-              automationRows.append(renderThreadRow(firstRun));
-              continue;
-            }
-            const scheduleKey = `${project2.id}\0${scheduleId}`;
-            const hasActiveRun = runs.some((thread) => thread.id === activeId);
-            const attentionRuns = runs.filter((thread) => isThreadAwaitingAttention(thread.id));
-            const showingAllRuns = isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun;
-            const scheduleRevealed = showingAllRuns || attentionRuns.length > 0;
-            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title;
-            const scheduleGroup = el("div", {
-              class: "automation-schedule-group",
-              "data-schedule-id": scheduleId
-            });
-            const scheduleToggle = el(
-              "button",
-              {
-                type: "button",
-                class: "automation-schedule-toggle",
-                "aria-expanded": showingAllRuns ? "true" : "false"
-              },
-              el(
-                "span",
-                {
-                  class: `automation-threads-twisty${showingAllRuns ? " expanded" : ""}`
-                },
-                chevronRightIcon("ui-icon ui-icon-sm")
-              ),
-              el("span", { class: "automation-schedule-title" }, scheduleName),
-              el("span", { class: "automation-schedule-count" }, `${String(runs.length)} runs`)
-            );
-            if (runs.some((thread) => thread.status === "running")) {
-              const status = runningStatusIcon("ui-icon ui-icon-sm automation-threads-running");
-              status.setAttribute("role", "img");
-              status.setAttribute("aria-label", "This automation is running");
-              status.removeAttribute("aria-hidden");
-              scheduleToggle.append(status);
-            }
-            scheduleToggle.addEventListener("click", () => {
-              if (expandedAutomationSchedules.has(scheduleKey)) {
-                expandedAutomationSchedules.delete(scheduleKey);
-              } else {
-                expandedAutomationSchedules.add(scheduleKey);
-              }
-              render();
-            });
-            scheduleGroup.append(
-              el(
-                "div",
-                { class: "automation-schedule-header" },
-                scheduleToggle,
-                automationSetupBtn(`${scheduleName} setup`, () => {
-                  openAutomationSetup(scheduleId);
-                })
-              )
-            );
-            if (scheduleRevealed) {
-              const runRows = el("div", { class: "automation-schedule-runs" });
-              const visibleRuns = showingAllRuns ? runs : attentionRuns;
-              for (const thread of visibleRuns) {
-                const index = runs.indexOf(thread);
-                const timestamp = thread.automation?.triggeredAt;
-                const when = timestamp ? new Date(timestamp).toLocaleString([], {
-                  dateStyle: "medium",
-                  timeStyle: "short"
-                }) : "Unknown time";
-                runRows.append(
-                  renderThreadRow(thread, {
-                    displayTitle: index === 0 ? `Latest \xB7 ${when}` : when,
-                    allowRename: false
-                  })
-                );
-              }
-              scheduleGroup.append(runRows);
-            }
-            automationRows.append(scheduleGroup);
-          }
-          group.append(automationRows);
-        }
-        chats.append(group);
       }
       entry.append(chats);
       return entry;
@@ -66642,6 +67101,8 @@ function mountProjectsPane(root, store2, api2) {
       block.append(children);
       return block;
     }
+    const automationsSection = renderAutomationsSection();
+    if (automationsSection) list.append(automationsSection);
     for (const node2 of buildProjectTree(projects, projectGroups)) {
       if (node2.kind === "group") list.append(renderGroupEntry(node2.group, node2.projects));
       else list.append(renderProjectEntry(node2.project));
@@ -66650,11 +67111,14 @@ function mountProjectsPane(root, store2, api2) {
   }
   const unsubs = [
     store2.on("projects_changed", render),
+    // Streaming and hydration must not restart the disk scan. Resident human
+    // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
+      closeThreadFilter();
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
@@ -66668,6 +67132,7 @@ function mountProjectsPane(root, store2, api2) {
   render();
   refreshOrphans();
   return () => {
+    contentFilter.cancel();
     prStatusGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -66694,6 +67159,8 @@ var init_projects_pane = __esm({
     init_automation_dialog();
     init_toast();
     init_fork_thread3();
+    init_thread_filter();
+    init_thread_sort();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -66704,6 +67171,339 @@ var init_projects_pane = __esm({
     PR_STATUS_CACHE_TTL_MS = 6e4;
     ICON_SIZE2 = "16";
     SVG_NS3 = "http://www.w3.org/2000/svg";
+  }
+});
+
+// src/renderer/dom/agent-avatar.ts
+function seededDrawing(seed) {
+  const TAU = Math.PI * 2;
+  let state = seed;
+  const mulberry32 = () => {
+    let t2 = state += 1831565813;
+    t2 = Math.imul(t2 ^ t2 >>> 15, t2 | 1);
+    t2 ^= t2 + Math.imul(t2 ^ t2 >>> 7, t2 | 61);
+    return ((t2 ^ t2 >>> 14) >>> 0) / 4294967296;
+  };
+  const random = mulberry32;
+  const rand = (min, max) => min + random() * (max - min);
+  const shuffle = (values) => {
+    const a3 = [...values];
+    for (let i2 = a3.length - 1; i2 > 0; i2--) {
+      const j3 = Math.floor(random() * (i2 + 1));
+      const current = a3[i2] ?? values[0];
+      a3[i2] = a3[j3] ?? values[0];
+      a3[j3] = current;
+    }
+    return a3;
+  };
+  const smoothClosed = (pts) => {
+    const first = pts[0];
+    if (!first) return "";
+    const n2 = pts.length;
+    let d3 = `M${f(first[0])} ${f(first[1])}`;
+    for (let i2 = 0; i2 < n2; i2++) {
+      const p0 = pts[(i2 - 1 + n2) % n2] ?? first;
+      const p1 = pts[i2] ?? first;
+      const p2 = pts[(i2 + 1) % n2] ?? first;
+      const p3 = pts[(i2 + 2) % n2] ?? first;
+      d3 += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+    }
+    return d3 + "Z";
+  };
+  const blob = (cx2, cy, radius, amp = 1) => {
+    const harmonics = [2, 3, 4, 5].map((k2, i2) => ({
+      k: k2,
+      a: rand(0, [0.09, 0.06, 0.04, 0.025][i2] ?? 0) * amp,
+      p: rand(0, TAU)
+    }));
+    const pts = [];
+    const drift = [];
+    for (let i2 = 0; i2 < 40; i2++) {
+      const th = i2 / 40 * TAU;
+      const r2 = radius * (1 + harmonics.reduce((s16, h3) => s16 + h3.a * Math.sin(h3.k * th + h3.p), 0));
+      pts.push([cx2 + Math.cos(th) * r2, cy + Math.sin(th) * r2]);
+      const shifted = radius * (1 + harmonics.reduce((s16, h3) => s16 + h3.a * Math.sin(h3.k * th + h3.p + 0.45), 0));
+      drift.push([cx2 + 10 + Math.cos(th) * shifted, cy - 8 + Math.sin(th) * shifted]);
+    }
+    return { cx: cx2, cy, radius, d: smoothClosed(pts), drift: smoothClosed(drift) };
+  };
+  return { random, rand, shuffle, blob };
+}
+function inkMotion(shapes) {
+  return `<style>@media (prefers-reduced-motion: no-preference) {
+    ${shapes.map(
+    (shape, i2) => `
+      .ink-${String(i2)} { animation: ink-${String(i2)} ${String(16 + i2 * 3)}s ease-in-out infinite; }
+      @keyframes ink-${String(i2)} {
+        0%, 100% { d: path("${shape.d}"); }
+        50% { d: path("${shape.drift}"); }
+      }`
+  ).join("")}
+  }</style>`;
+}
+function risoIconSVG(seed, moving = false) {
+  const { random, rand, shuffle, blob } = seededDrawing(seed);
+  const id = "riso";
+  const pal = RISO_PALETTES[Math.floor(random() * RISO_PALETTES.length)] ?? RISO_PALETTES[0];
+  const [base, overlay, shadow] = shuffle(pal.c);
+  const main = blob(256 + rand(-8, 8), 258 + rand(-8, 8), rand(165, 188));
+  const overprint = blob(
+    main.cx + rand(-60, 60),
+    main.cy + rand(-60, 60),
+    main.radius * rand(0.55, 0.75),
+    1.6
+  );
+  const halftone = blob(
+    main.cx + rand(-70, 70),
+    main.cy + rand(-70, 70),
+    main.radius * rand(0.45, 0.65),
+    1.8
+  );
+  const hole = blob(
+    main.cx + rand(-50, 50),
+    main.cy + rand(-50, 50),
+    main.radius * rand(0.18, 0.3),
+    1.2
+  );
+  const dotRadius = rand(2.2, 3.6);
+  const dotPitch = rand(9, 12);
+  const screenAngle = rand(10, 75);
+  const shadowX = rand(6, 12);
+  const shadowY = rand(5, 11);
+  const outlineX = rand(-5, -2);
+  const outlineY = rand(-4, -1);
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+      <defs>
+        ${moving ? inkMotion([overprint, halftone, hole]) : ""}
+        <clipPath id="${id}-clip">
+          <path d="${main.d}"/>
+        </clipPath>
+
+        <pattern id="${id}-dots" width="${f(dotPitch)}" height="${f(dotPitch)}"
+                 patternUnits="userSpaceOnUse" patternTransform="rotate(${f(screenAngle)})">
+          <circle cx="${f(dotPitch / 2)}" cy="${f(dotPitch / 2)}" r="${f(dotRadius)}"
+                  fill="${pal.ink}" opacity=".55"/>
+        </pattern>
+
+        <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
+          <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .22 0 0 0 0"/>
+        </filter>
+      </defs>
+
+      <rect width="512" height="512" fill="${pal.bg}"/>
+
+      <!-- Offset shadow in the third ink -->
+      <path d="${main.d}" fill="${shadow}"
+            transform="translate(${f(shadowX)} ${f(shadowY)})"
+            style="mix-blend-mode:multiply"/>
+
+      <g clip-path="url(#${id}-clip)">
+        <rect width="512" height="512" fill="${base}"/>
+        <path class="ink-0" d="${overprint.d}" fill="${overlay}" style="mix-blend-mode:multiply"/>
+        <path class="ink-1" d="${halftone.d}" fill="url(#${id}-dots)"/>
+        <path class="ink-2" d="${hole.d}" fill="${pal.bg}"/>
+      </g>
+
+      <!-- Outline printed slightly off register -->
+      <path d="${main.d}" fill="none" stroke="${pal.ink}" stroke-width="5"
+            stroke-linejoin="round" transform="translate(${f(outlineX)} ${f(outlineY)})"/>
+
+      <!-- Paper grain over everything -->
+      <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
+    </svg>
+  `;
+}
+function duotoneIconSVG(seed, moving = false) {
+  const { random, rand, blob } = seededDrawing(seed);
+  const id = "duo";
+  const pair = DUOTONE_INK_PAIRS[Math.floor(random() * DUOTONE_INK_PAIRS.length)] ?? DUOTONE_INK_PAIRS[0];
+  const [firstInk, secondInk] = random() < 0.5 ? [pair[1], pair[0]] : pair;
+  const main = blob(256 + rand(-8, 8), 258 + rand(-8, 8), rand(165, 188));
+  const overprint = blob(
+    main.cx + rand(-55, 55),
+    main.cy + rand(-55, 55),
+    main.radius * rand(0.6, 0.8),
+    1.6
+  );
+  const stripes = blob(
+    main.cx + rand(-60, 60),
+    main.cy + rand(-60, 60),
+    main.radius * rand(0.3, 0.45),
+    1.4
+  );
+  const linePitch = rand(7, 10);
+  const lineAngle = rand(20, 70);
+  const registerX = rand(3, 7);
+  const registerY = rand(2, 6);
+  return `
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+    <defs>
+      ${moving ? inkMotion([overprint, stripes]) : ""}
+      <clipPath id="${id}-clip"><path d="${main.d}"/></clipPath>
+      <pattern id="${id}-lines" width="${f(linePitch)}" height="${f(linePitch)}"
+               patternUnits="userSpaceOnUse" patternTransform="rotate(${f(lineAngle)})">
+        <rect width="${f(linePitch)}" height="${f(linePitch * 0.42)}" fill="${secondInk}"/>
+      </pattern>
+      <filter id="${id}-grain" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="${String(seed % 1e4)}"/>
+        <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .3 0 0 0 0"/>
+      </filter>
+    </defs>
+
+    <rect width="512" height="512" fill="${DUOTONE_PAPER}"/>
+
+    <!-- First ink -->
+    <path d="${main.d}" fill="${firstInk}" opacity=".88"/>
+
+    <!-- Second ink, slightly off register; multiply makes the overlap colour -->
+    <g clip-path="url(#${id}-clip)" style="mix-blend-mode:multiply">
+      <path class="ink-0" d="${overprint.d}" fill="${secondInk}" opacity=".85"
+            transform="translate(${f(registerX)} ${f(registerY)})"/>
+    </g>
+
+    <!-- Striped patch in the second ink -->
+    <path class="ink-1" d="${stripes.d}" fill="url(#${id}-lines)" style="mix-blend-mode:multiply"/>
+
+    <!-- Heavier grain than the pastel version, to read as ink on paper -->
+    <rect width="512" height="512" filter="url(#${id}-grain)" style="mix-blend-mode:multiply"/>
+  </svg>`;
+}
+function createAgentAvatar(identity, style = "riso") {
+  const cacheKey = `${style}:${identity}`;
+  let source = sources.get(cacheKey);
+  if (!source) {
+    let seed = 2166136261;
+    for (let i2 = 0; i2 < identity.length; i2++) {
+      seed = Math.imul(seed ^ identity.charCodeAt(i2), 16777619) >>> 0;
+    }
+    const generate = (moving) => `data:image/svg+xml,${encodeURIComponent(style === "duotone" ? duotoneIconSVG(seed, moving) : risoIconSVG(seed, moving))}`;
+    source = { still: generate(false), animate: () => generate(true) };
+    const oldest = sources.keys().next().value;
+    if (sources.size >= MAX_CACHED_AVATARS && oldest !== void 0) sources.delete(oldest);
+    sources.set(cacheKey, source);
+  }
+  const img = el("img", {
+    class: "agent-avatar",
+    "data-avatar-style": style,
+    src: source.still,
+    alt: "",
+    "aria-hidden": "true",
+    draggable: "false"
+  });
+  imageSources.set(img, source);
+  return img;
+}
+function setMoving(img, moving) {
+  const source = imageSources.get(img);
+  if (!source) return;
+  if (moving) source.moving ??= source.animate();
+  const src = moving ? source.moving ?? source.still : source.still;
+  if (img.src !== src) img.src = src;
+  img.toggleAttribute("data-avatar-animating", moving);
+}
+function createAgentAvatarMotion() {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let active2 = null;
+  let visible = false;
+  const sync = () => {
+    if (active2) setMoving(active2, visible && !document.hidden && !reducedMotion.matches);
+  };
+  const observer = new window.IntersectionObserver((entries2) => {
+    for (const entry of entries2) {
+      if (entry.target === active2) visible = entry.isIntersecting;
+    }
+    sync();
+  });
+  const setActive = (img) => {
+    if (active2 === img) return;
+    if (active2) {
+      observer.unobserve(active2);
+      setMoving(active2, false);
+      active2.removeAttribute("data-avatar-active");
+    }
+    active2 = img;
+    visible = false;
+    if (active2) {
+      active2.setAttribute("data-avatar-active", "");
+      observer.observe(active2);
+    }
+  };
+  reducedMotion.addEventListener("change", sync);
+  document.addEventListener("visibilitychange", sync);
+  return {
+    setActive,
+    dispose: () => {
+      setActive(null);
+      observer.disconnect();
+      reducedMotion.removeEventListener("change", sync);
+      document.removeEventListener("visibilitychange", sync);
+    }
+  };
+}
+var RISO_PALETTES, DUOTONE_INK_PAIRS, DUOTONE_PAPER, f, sources, imageSources, MAX_CACHED_AVATARS;
+var init_agent_avatar = __esm({
+  "src/renderer/dom/agent-avatar.ts"() {
+    init_helpers();
+    RISO_PALETTES = [
+      { bg: "#FFF6EC", ink: "#3D3A4B", c: ["#F2A7A0", "#F7D08A", "#9ED2C6"] },
+      { bg: "#F4F1FA", ink: "#2F3350", c: ["#B8A9E3", "#F5B8C8", "#A8D8EA"] },
+      { bg: "#F3F7F0", ink: "#2E4036", c: ["#A7D3A6", "#F2E394", "#E8A87C"] },
+      { bg: "#FDF3F0", ink: "#4A2F35", c: ["#E58F8B", "#F6C28B", "#8FB8DE"] },
+      { bg: "#EEF5F7", ink: "#1F3A4A", c: ["#7FC8C2", "#FFD6A5", "#FF9AA2"] },
+      { bg: "#FAF6E9", ink: "#39352A", c: ["#C9B6E4", "#BDE0FE", "#FFC8DD"] }
+    ];
+    DUOTONE_INK_PAIRS = [
+      ["#FF48B0", "#0078BF"],
+      ["#FFE800", "#FF48B0"],
+      ["#00838A", "#FF6C2F"],
+      ["#FFB511", "#3255A4"],
+      ["#F15060", "#82D8D5"],
+      ["#765BA7", "#FFE800"]
+    ];
+    DUOTONE_PAPER = "#F7F4EE";
+    f = (n2) => n2.toFixed(1);
+    sources = /* @__PURE__ */ new Map();
+    imageSources = /* @__PURE__ */ new WeakMap();
+    MAX_CACHED_AVATARS = 128;
+  }
+});
+
+// src/renderer/views/chat-agent-identity.ts
+function customAgentId(model) {
+  const id = parseAcpModel(model);
+  return id && !findAcpCatalogEntry(id) ? id : null;
+}
+function namedAgentTitles(value) {
+  const titles2 = /* @__PURE__ */ new Map();
+  const entries2 = Array.isArray(value) ? value : [];
+  for (const entry of entries2) {
+    if (typeof entry === "object" && entry !== null && "id" in entry && typeof entry.id === "string" && "title" in entry && typeof entry.title === "string" && entry.title.trim())
+      titles2.set(entry.id, entry.title.trim());
+  }
+  return titles2;
+}
+function chatAgentIdentity(threadId, message2, names) {
+  const model = message2.model ?? message2.requestedModel;
+  if (!model) return null;
+  const provider = parseRemoteAgentModel(model);
+  if (provider) {
+    return {
+      key: `remote:${threadId}:${provider}`,
+      label: remoteAgentGroupLabel(provider),
+      style: "duotone"
+    };
+  }
+  const id = customAgentId(model);
+  const label = id ? names.get(id) : void 0;
+  return id && label ? { key: `named:${id}`, label, style: "riso" } : null;
+}
+var init_chat_agent_identity = __esm({
+  "src/renderer/views/chat-agent-identity.ts"() {
+    init_acp();
+    init_acp_known_agents();
+    init_remote_agent();
   }
 });
 
@@ -68418,7 +69218,7 @@ var init_eraser = __esm({
             hit = true;
           }
         }
-        if (hit) this.fragments = this.fragments.filter((f3) => !this.erased.includes(f3.element));
+        if (hit) this.fragments = this.fragments.filter((f4) => !this.erased.includes(f4.element));
         return hit;
       }
       onEnd() {
@@ -68572,7 +69372,7 @@ function u(e3, t2) {
 function d(e3, t2, n2) {
   return e3[0] = t2[0] - n2[0], e3[1] = t2[1] - n2[1], e3;
 }
-function f(e3, t2) {
+function f2(e3, t2) {
   return [e3[0] * t2, e3[1] * t2];
 }
 function p(e3, t2, n2) {
@@ -68616,14 +69416,14 @@ function C(e3, t2, n2, r2) {
   return e3[0] = c3 + n2[0], e3[1] = l2 + n2[1], e3;
 }
 function w(e3, t2, n2) {
-  return c(e3, f(u(t2, e3), n2));
+  return c(e3, f2(u(t2, e3), n2));
 }
 function te(e3, t2, n2, r2) {
   let i2 = n2[0] - t2[0], a3 = n2[1] - t2[1];
   return e3[0] = t2[0] + i2 * r2, e3[1] = t2[1] + a3 * r2, e3;
 }
 function T(e3, t2, n2) {
-  return c(e3, f(t2, n2));
+  return c(e3, f2(t2, n2));
 }
 function k(e3, n2) {
   let r2 = T(e3, b(h(u(e3, c(e3, [1, 1])))), -n2), i2 = [], a3 = 1 / 13;
@@ -68636,7 +69436,7 @@ function A2(e3, n2, r2) {
   return i2;
 }
 function j(e3, t2, n2) {
-  let r2 = u(t2, n2), i2 = f(r2, 0.5), a3 = f(r2, 0.51);
+  let r2 = u(t2, n2), i2 = f2(r2, 0.5), a3 = f2(r2, 0.51);
   return [u(e3, i2), u(e3, a3), c(e3, a3), c(e3, i2)];
 }
 function M(e3, n2, r2, i2) {
@@ -68645,7 +69445,7 @@ function M(e3, n2, r2, i2) {
   return a3;
 }
 function ne(e3, t2, n2) {
-  return [c(e3, f(t2, n2)), c(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2 * 0.99)), u(e3, f(t2, n2))];
+  return [c(e3, f2(t2, n2)), c(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2 * 0.99)), u(e3, f2(t2, n2))];
 }
 function N(e3, t2, n2) {
   return e3 === false || e3 === void 0 ? 0 : e3 === true ? Math.max(t2, n2) : e3;
@@ -68657,13 +69457,13 @@ function re(e3, t2, n2) {
   }, e3[0].pressure);
 }
 function P(e3, n2 = {}) {
-  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f3 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
+  let { size: r2 = 16, smoothing: a3 = 0.5, thinning: f4 = 0.5, simulatePressure: m2 = true, easing: _3 = (e4) => e4, start: v3 = {}, end: b4 = {}, last: x2 = false } = n2, { cap: S3 = true, easing: w2 = (e4) => e4 * (2 - e4) } = v3, { cap: T2 = true, easing: P2 = (e4) => --e4 * e4 * e4 + 1 } = b4;
   if (e3.length === 0 || r2 <= 0) return [];
-  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f3, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
+  let F3 = e3[e3.length - 1].runningLength, I2 = N(v3.taper, r2, F3), L3 = N(b4.taper, r2, F3), R2 = (r2 * a3) ** 2, z4 = [], B3 = [], V2 = re(e3, m2, r2), H2 = i(r2, f4, e3[e3.length - 1].pressure, _3), U2, W = e3[0].vector, G2 = e3[0].point, K2 = G2, q2 = G2, J2 = K2, Y3 = false;
   for (let n3 = 0; n3 < e3.length; n3++) {
     let { pressure: a4 } = e3[n3], { point: s16, vector: h3, distance: v4, runningLength: b5 } = e3[n3], x3 = n3 === e3.length - 1;
     if (!x3 && F3 - b5 < 3) continue;
-    f3 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f3, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
+    f4 ? (m2 && (a4 = o(V2, v4, r2)), H2 = i(r2, f4, a4, _3)) : H2 = r2 / 2, U2 === void 0 && (U2 = H2);
     let S4 = b5 < I2 ? w2(b5 / I2) : 1, T3 = F3 - b5 < L3 ? P2((F3 - b5) / L3) : 1;
     H2 = Math.max(0.01, H2 * Math.min(S4, T3));
     let k2 = (x3 ? e3[n3] : e3[n3 + 1]).vector, A3 = x3 ? 1 : ee(h3, k2), j3 = ee(h3, W) < 0 && !Y3, M4 = A3 !== null && A3 < 0;
@@ -68702,14 +69502,14 @@ function L(e3, t2 = {}) {
     for (let t3 = 1; t3 < 5; t3++) l2.push(w(l2[0], e4, t3 / 4));
   }
   l2.length === 1 && (l2 = [...l2, [...c(l2[0], r), ...l2[0].slice(2)]]);
-  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f3 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
+  let u2 = [{ point: [l2[0][0], l2[0][1]], pressure: I(l2[0][2]) ? l2[0][2] : 0.25, vector: [...r], distance: 0, runningLength: 0 }], f4 = false, p2 = 0, m2 = u2[0], h3 = l2.length - 1;
   for (let e4 = 1; e4 < l2.length; e4++) {
     let t3 = o3 && e4 === h3 ? [l2[e4][0], l2[e4][1]] : w(m2.point, l2[e4], s16);
     if (_(m2.point, t3)) continue;
     let r2 = x(t3, m2.point);
-    if (p2 += r2, e4 < h3 && !f3) {
+    if (p2 += r2, e4 < h3 && !f4) {
       if (p2 < a3) continue;
-      f3 = true;
+      f4 = true;
     }
     d(F, m2.point, t3), m2 = { point: t3, pressure: I(l2[e4][2]) ? l2[e4][2] : n, vector: b(F), distance: r2, runningLength: p2 }, u2.push(m2);
   }
@@ -69945,46 +70745,207 @@ var init_container_run_card = __esm({
 function copyButtonText(code) {
   return code.textContent.trimStart();
 }
-function attachCodeBlockCopyButtons(root) {
-  const blocks = root.querySelectorAll("pre:not(.mermaid):not([data-copy-attached])");
+function explicitCodeLanguage(code) {
+  for (const className of code.classList) {
+    if (className.startsWith("lang-")) return className.slice("lang-".length).toLowerCase();
+    if (className.startsWith("language-")) return className.slice("language-".length).toLowerCase();
+  }
+  return null;
+}
+function looksLikeUnlabelledCommand(source) {
+  const line = source.trim().replace(/^\$\s+/, "");
+  if (!line || line.includes("\n")) return false;
+  const words = line.split(/\s+/);
+  let index = 0;
+  while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? "")) index += 1;
+  const head = words[index];
+  if (!head) return false;
+  if (/^(?:\.\.?[\\/])/.test(head)) return true;
+  const slash = Math.max(head.lastIndexOf("/"), head.lastIndexOf("\\"));
+  const basename3 = (slash >= 0 ? head.slice(slash + 1) : head).toLowerCase();
+  return COMMON_SHELL_COMMANDS.has(basename3);
+}
+function isRunnableCodeBlock(code) {
+  const language = explicitCodeLanguage(code);
+  if (language !== null) return SHELL_LANGUAGES.has(language);
+  return looksLikeUnlabelledCommand(copyButtonText(code));
+}
+function setRunButtonState(button, state) {
+  button.dataset["runState"] = state;
+  button.disabled = state === "running";
+  button.classList.toggle("is-running", state === "running");
+  if (state === "running") {
+    button.setAttribute("aria-label", "Command running");
+    button.setAttribute("data-tooltip", "Command running");
+    button.replaceChildren(spinnerIcon("ui-icon ui-icon-sm"));
+  } else if (state === "succeeded") {
+    button.setAttribute("aria-label", "Run command again");
+    button.setAttribute("data-tooltip", "Result attached \xB7 Run again");
+    button.replaceChildren(checkIcon("ui-icon ui-icon-sm"));
+  } else if (state === "failed") {
+    button.setAttribute("aria-label", "Run command again");
+    button.setAttribute("data-tooltip", "Command failed \xB7 Result attached \xB7 Run again");
+    button.replaceChildren(warningIcon("ui-icon ui-icon-sm"));
+  } else {
+    button.setAttribute("aria-label", "Run command");
+    button.setAttribute("data-tooltip", "Run in background and attach result");
+    button.replaceChildren(playIcon("ui-icon ui-icon-sm"));
+  }
+}
+function bindCodeBlockRunRequests(root, handler) {
+  const listener = (event) => {
+    if (!(event instanceof CustomEvent) || !isRecord(event.detail)) return;
+    const id = event.detail["id"];
+    const command = event.detail["command"];
+    if (typeof id !== "string" || typeof command !== "string") return;
+    handler({ id, command });
+  };
+  root.addEventListener(CODE_BLOCK_RUN_REQUEST_EVENT, listener);
+  return () => {
+    root.removeEventListener(CODE_BLOCK_RUN_REQUEST_EVENT, listener);
+  };
+}
+function setCodeBlockRunOutcome(root, requestId, exitCode) {
+  const buttons = root.querySelectorAll(".code-block-run");
+  for (const button of buttons) {
+    if (button.dataset["runId"] !== requestId) continue;
+    setRunButtonState(button, exitCode === 0 ? "succeeded" : "failed");
+    return;
+  }
+}
+function attachCodeBlockCopyButtons(root, options = {}) {
+  const blocks = root.querySelectorAll("pre:not(.mermaid)");
   for (const node2 of blocks) {
     if (!(node2 instanceof HTMLElement)) continue;
     const pre = node2;
     if (pre.closest(".mermaid-diagram")) continue;
     const code = pre.querySelector("code");
     if (!code) continue;
-    const parent = pre.parentNode;
-    if (!parent) continue;
-    pre.dataset["copyAttached"] = "true";
-    pre.classList.add("code-block");
-    const shell3 = el("div", { class: "code-block-shell" });
-    parent.insertBefore(shell3, pre);
-    shell3.append(pre);
-    const copyBtn = el(
-      "button",
-      { class: "code-block-copy", "aria-label": "Copy code" },
-      COPY_LABEL
-    );
-    copyBtn.addEventListener("click", (event) => {
+    let shell3 = pre.parentElement?.classList.contains("code-block-shell") ? pre.parentElement : null;
+    if (!shell3) {
+      const parent = pre.parentNode;
+      if (!parent) continue;
+      pre.dataset["copyAttached"] = "true";
+      pre.classList.add("code-block");
+      shell3 = el("div", { class: "code-block-shell" });
+      parent.insertBefore(shell3, pre);
+      shell3.append(pre);
+      const actions2 = el("div", { class: "code-block-actions" });
+      const copyBtn = el(
+        "button",
+        { class: "code-block-copy", "aria-label": "Copy code" },
+        COPY_LABEL
+      );
+      copyBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const currentCode = pre.querySelector("code");
+        if (!currentCode) return;
+        void navigator.clipboard.writeText(copyButtonText(currentCode)).then(() => {
+          copyBtn.textContent = COPIED_LABEL;
+          setTimeout(() => {
+            copyBtn.textContent = COPY_LABEL;
+          }, FEEDBACK_MS);
+        });
+      });
+      actions2.append(copyBtn);
+      shell3.prepend(actions2);
+    }
+    if (!options.runCommands || !isRunnableCodeBlock(code)) continue;
+    const actions = shell3.querySelector(".code-block-actions");
+    if (!actions || actions.querySelector(".code-block-run")) continue;
+    const runBtn = el("button", { class: "code-block-run", type: "button" });
+    setRunButtonState(runBtn, "idle");
+    runBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      void navigator.clipboard.writeText(copyButtonText(code)).then(() => {
-        copyBtn.textContent = COPIED_LABEL;
-        setTimeout(() => {
-          copyBtn.textContent = COPY_LABEL;
-        }, FEEDBACK_MS);
-      });
+      const currentCode = pre.querySelector("code");
+      if (!currentCode) return;
+      const command = copyButtonText(currentCode).trim();
+      if (!command) return;
+      const id = crypto.randomUUID();
+      runBtn.dataset["runId"] = id;
+      setRunButtonState(runBtn, "running");
+      runBtn.dispatchEvent(
+        new CustomEvent(CODE_BLOCK_RUN_REQUEST_EVENT, {
+          bubbles: true,
+          detail: { id, command }
+        })
+      );
     });
-    shell3.prepend(copyBtn);
+    actions.prepend(runBtn);
   }
 }
-var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS;
+var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS, CODE_BLOCK_RUN_REQUEST_EVENT, SHELL_LANGUAGES, COMMON_SHELL_COMMANDS;
 var init_code_block_copy = __esm({
   "src/renderer/markdown/code-block-copy.ts"() {
+    init_unknown_value3();
     init_helpers();
+    init_icons();
     COPY_LABEL = "Copy";
     COPIED_LABEL = "Copied";
     FEEDBACK_MS = 1200;
+    CODE_BLOCK_RUN_REQUEST_EVENT = "copse:code-block-run-request";
+    SHELL_LANGUAGES = /* @__PURE__ */ new Set([
+      "bash",
+      "bat",
+      "cmd",
+      "console",
+      "fish",
+      "powershell",
+      "pwsh",
+      "sh",
+      "shell",
+      "terminal",
+      "zsh"
+    ]);
+    COMMON_SHELL_COMMANDS = /* @__PURE__ */ new Set([
+      "adb",
+      "bash",
+      "bun",
+      "bundle",
+      "cargo",
+      "cat",
+      "cd",
+      "cmake",
+      "corepack",
+      "curl",
+      "deno",
+      "docker",
+      "electron",
+      "eslint",
+      "gh",
+      "git",
+      "go",
+      "gradle",
+      "java",
+      "make",
+      "mvn",
+      "node",
+      "npm",
+      "npx",
+      "pnpm",
+      "podman",
+      "powershell",
+      "pwsh",
+      "pytest",
+      "python",
+      "python3",
+      "rg",
+      "ruby",
+      "sh",
+      "swift",
+      "terraform",
+      "tofu",
+      "tsc",
+      "uv",
+      "vite",
+      "vitest",
+      "wdio",
+      "xcodebuild",
+      "yarn",
+      "zsh"
+    ]);
   }
 });
 
@@ -70070,7 +71031,7 @@ function createMermaidFrame(source, layoutWidth = 300) {
   );
   const width = Number.isFinite(layoutWidth) && layoutWidth > 0 ? Math.min(layoutWidth, MAX_DIAGRAM_DIMENSION) : 300;
   element.style.width = `${String(width)}px`;
-  sources.set(element, { source, layoutWidth: width });
+  sources2.set(element, { source, layoutWidth: width });
   const ready3 = new Promise((resolve, reject) => {
     if (source.length > MAX_DIAGRAM_SOURCE_LENGTH) {
       reject(new Error("Diagram source is too large"));
@@ -70114,15 +71075,15 @@ function createMermaidFrame(source, layoutWidth = 300) {
   return { element, ready: ready3 };
 }
 function recreateMermaidFrame(element) {
-  const saved = sources.get(element);
+  const saved = sources2.get(element);
   return saved === void 0 ? null : createMermaidFrame(saved.source, saved.layoutWidth);
 }
-var FRAME_TIMEOUT_MS, sources;
+var FRAME_TIMEOUT_MS, sources2;
 var init_mermaid_frame = __esm({
   "src/renderer/markdown/mermaid-frame.ts"() {
     init_mermaid_frame_protocol();
     FRAME_TIMEOUT_MS = 3e4;
-    sources = /* @__PURE__ */ new WeakMap();
+    sources2 = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -70550,6 +71511,230 @@ var init_file_links = __esm({
   }
 });
 
+// src/renderer/markdown/pr-title-cache.ts
+function cachedPrTitle(ref) {
+  return titles.get(githubPrKey(ref));
+}
+function rememberPrTitle(ref, title, isDraft) {
+  const trimmed2 = title.trim();
+  if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
+  const key = githubPrKey(ref);
+  const previous = titles.get(key);
+  titles.delete(key);
+  titles.set(key, {
+    title: trimmed2,
+    ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
+  });
+  if (titles.size > MAX_TITLES) {
+    const oldest = titles.keys().next().value;
+    if (oldest !== void 0) titles.delete(oldest);
+  }
+}
+function loadPrTitle(ref, gh) {
+  const cached2 = cachedPrTitle(ref);
+  if (cached2) return Promise.resolve(cached2);
+  const key = githubPrKey(ref);
+  const pending = inFlight3.get(key);
+  if (pending) return pending;
+  const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+    if (!details) return null;
+    rememberPrTitle(ref, details.title, details.isDraft);
+    return cachedPrTitle(ref) ?? null;
+  }).finally(() => {
+    inFlight3.delete(key);
+  });
+  inFlight3.set(key, request);
+  return request;
+}
+var MAX_TITLES, titles, inFlight3;
+var init_pr_title_cache = __esm({
+  "src/renderer/markdown/pr-title-cache.ts"() {
+    init_github_pr_url2();
+    MAX_TITLES = 128;
+    titles = /* @__PURE__ */ new Map();
+    inFlight3 = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/renderer/markdown/pr-link-preview.ts
+function linkedPr(root, target) {
+  if (!(target instanceof Element)) return null;
+  const link = target.closest("a[href]");
+  if (!link || !root.contains(link)) return null;
+  if (link.dataset["workspaceLink"] || link.dataset["fileReferencePath"]) return null;
+  const ref = parseGithubPrUrl(link.href);
+  return ref ? { link, ref } : null;
+}
+function bindPrLinkPreviews(root, gh) {
+  if (!gh) return () => {
+  };
+  const github = gh;
+  let activeLink = null;
+  let suppressedLink = null;
+  let preview = null;
+  let hoverTimer = null;
+  let requestGen = 0;
+  let disposed = false;
+  const previewId = `pr-link-preview-${String(++nextPreviewId)}`;
+  function ensurePreview() {
+    if (preview) return preview;
+    const node2 = document.createElement("div");
+    node2.id = previewId;
+    node2.className = "pr-link-preview";
+    node2.setAttribute("role", "tooltip");
+    node2.hidden = true;
+    document.body.append(node2);
+    preview = node2;
+    return node2;
+  }
+  function position2() {
+    if (!activeLink || !preview || preview.hidden) return;
+    const anchor2 = activeLink.getBoundingClientRect();
+    const tip = preview.getBoundingClientRect();
+    const placed = computeTooltipPosition({
+      anchor: { left: anchor2.left, top: anchor2.top, width: anchor2.width, height: anchor2.height },
+      tip: { width: tip.width, height: tip.height },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      preferred: "bottom",
+      gap: 9,
+      pad: 12
+    });
+    preview.style.left = `${String(Math.round(placed.left))}px`;
+    preview.style.top = `${String(Math.round(placed.top))}px`;
+  }
+  function describedBy(link, add2) {
+    const values = (link.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+    const next = values.filter((value) => value !== previewId);
+    if (add2) next.push(previewId);
+    if (next.length) link.setAttribute("aria-describedby", next.join(" "));
+    else link.removeAttribute("aria-describedby");
+  }
+  function hide3() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    requestGen++;
+    if (activeLink) describedBy(activeLink, false);
+    activeLink = null;
+    if (preview) preview.hidden = true;
+  }
+  function show2(ref, data) {
+    if (!activeLink) return;
+    const node2 = ensurePreview();
+    node2.replaceChildren();
+    const meta3 = document.createElement("div");
+    meta3.className = "pr-link-preview-meta";
+    meta3.textContent = `Pull request #${String(ref.number)}`;
+    if (data?.isDraft) {
+      const badge = document.createElement("span");
+      badge.className = "pr-link-preview-draft";
+      badge.textContent = "Draft";
+      meta3.append(badge);
+    }
+    const title = document.createElement("div");
+    title.className = "pr-link-preview-title";
+    title.textContent = data?.title ?? "Loading title\u2026";
+    if (!data) title.classList.add("is-loading");
+    const repo = document.createElement("div");
+    repo.className = "pr-link-preview-repo";
+    repo.textContent = `${ref.owner} / ${ref.repo}`;
+    node2.append(meta3, title, repo);
+    node2.hidden = false;
+    describedBy(activeLink, true);
+    position2();
+  }
+  function activate2(link, ref, immediate) {
+    if (activeLink === link) return;
+    hide3();
+    activeLink = link;
+    const cached2 = cachedPrTitle(ref);
+    if (cached2) {
+      show2(ref, cached2);
+      return;
+    }
+    const gen = requestGen;
+    const load = () => {
+      hoverTimer = null;
+      if (disposed || activeLink !== link || gen !== requestGen) return;
+      show2(ref, null);
+      void loadPrTitle(ref, github).then((title) => {
+        if (disposed || activeLink !== link || gen !== requestGen) return;
+        if (title) show2(ref, title);
+        else hide3();
+      }).catch(() => {
+        if (activeLink === link && gen === requestGen) hide3();
+      });
+    };
+    if (immediate) load();
+    else hoverTimer = setTimeout(load, HOVER_DELAY_MS);
+  }
+  const onPointerOver = (event) => {
+    if (event.pointerType === "touch") return;
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, false);
+  };
+  const onPointerOut = (event) => {
+    const target = event.target;
+    const next = event.relatedTarget;
+    if (!(target instanceof Node) || !activeLink || !activeLink.contains(target)) return;
+    if (next instanceof Node && activeLink.contains(next)) return;
+    hide3();
+  };
+  const onPointerMove = (event) => {
+    if (suppressedLink && !(event.target instanceof Node && suppressedLink.contains(event.target))) {
+      suppressedLink = null;
+    }
+  };
+  const onFocusIn = (event) => {
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, true);
+  };
+  const onFocusOut = (event) => {
+    if (activeLink === event.target) hide3();
+  };
+  const onPointerDown = (event) => {
+    suppressedLink = linkedPr(root, event.target)?.link ?? null;
+    hide3();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") hide3();
+  };
+  root.addEventListener("pointerover", onPointerOver);
+  root.addEventListener("pointerout", onPointerOut);
+  root.addEventListener("focusin", onFocusIn);
+  root.addEventListener("focusout", onFocusOut);
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("pointermove", onPointerMove, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("scroll", hide3, true);
+  window.addEventListener("resize", position2);
+  return () => {
+    disposed = true;
+    hide3();
+    root.removeEventListener("pointerover", onPointerOver);
+    root.removeEventListener("pointerout", onPointerOut);
+    root.removeEventListener("focusin", onFocusIn);
+    root.removeEventListener("focusout", onFocusOut);
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("pointermove", onPointerMove, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("scroll", hide3, true);
+    window.removeEventListener("resize", position2);
+    preview?.remove();
+  };
+}
+var HOVER_DELAY_MS, nextPreviewId;
+var init_pr_link_preview = __esm({
+  "src/renderer/markdown/pr-link-preview.ts"() {
+    init_github_pr_url2();
+    init_tooltip();
+    init_pr_title_cache();
+    HOVER_DELAY_MS = 220;
+    nextPreviewId = 0;
+  }
+});
+
 // src/renderer/markdown/browser-links.ts
 function linkHttpHref(link) {
   const href = link.href;
@@ -70584,6 +71769,7 @@ function bindBrowserLinkClicks(root, store2, api2) {
     if (!link || !root.contains(link)) return;
     if (link.dataset["fileReferencePath"]) return;
     if (link.dataset["workspaceLink"]) return;
+    if (link.dataset["workspaceResourcePath"]) return;
     const href = linkHttpHref(link);
     if (!href) return;
     event.preventDefault();
@@ -70610,15 +71796,21 @@ function bindBrowserLinkClicks(root, store2, api2) {
     }
     openPlainLink(href);
   };
+  const unbindPreviews = bindPrLinkPreviews(
+    root,
+    api2?.gh?.prDetails ? { prDetails: api2.gh.prDetails } : void 0
+  );
   root.addEventListener("click", onClick);
   return () => {
     root.removeEventListener("click", onClick);
+    unbindPreviews();
   };
 }
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
+    init_pr_link_preview();
   }
 });
 
@@ -70640,6 +71832,21 @@ function bindWorkspaceLinkClicks(root, store2, api2) {
   const onClick = (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    const resourceLink = target.closest("a[data-workspace-resource-path]");
+    if (resourceLink && root.contains(resourceLink)) {
+      const path = resourceLink.dataset["workspaceResourcePath"];
+      if (!path) return;
+      const owner2 = getActiveThreadOwner(store2);
+      event.preventDefault();
+      event.stopPropagation();
+      void activateWorkspaceReference(store2, api2, path, "file").catch((error62) => {
+        const currentOwner = getActiveThreadOwner(store2);
+        if (currentOwner?.projectId !== owner2?.projectId || currentOwner?.threadId !== owner2?.threadId)
+          return;
+        showErrorToast(`Failed to open ${path}`, error62);
+      });
+      return;
+    }
     const link = target.closest("a[data-workspace-link]");
     if (!link || !root.contains(link)) return;
     if (link.dataset["fileReferencePath"]) return;
@@ -70696,7 +71903,15 @@ function threadAgentId(container) {
   return null;
 }
 function hydrateRemoteArtifactImages(container, api2) {
-  const agentIdFromThread = threadAgentId(container);
+  let agentIdFromThread = null;
+  let threadScanned = false;
+  const fallbackAgentId = () => {
+    if (!threadScanned) {
+      agentIdFromThread = threadAgentId(container);
+      threadScanned = true;
+    }
+    return agentIdFromThread;
+  };
   for (const img of container.querySelectorAll(
     "img[data-remote-artifact-path]"
   )) {
@@ -70704,7 +71919,7 @@ function hydrateRemoteArtifactImages(container, api2) {
       continue;
     }
     const path = img.dataset["remoteArtifactPath"];
-    const agentId = img.dataset["remoteArtifactAgentId"] ?? agentIdFromThread;
+    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
     if (!path || !agentId) {
       img.dataset["remoteArtifactState"] = "missing-agent";
       continue;
@@ -70712,6 +71927,7 @@ function hydrateRemoteArtifactImages(container, api2) {
     img.dataset["remoteArtifactState"] = "loading";
     void api2.remoteAgent.artifactImageDataUrl(agentId, path).then((dataUrl) => {
       img.src = dataUrl;
+      attachImageCopyMenu(img);
       img.dataset["remoteArtifactState"] = "loaded";
     }).catch((err2) => {
       img.dataset["remoteArtifactState"] = "error";
@@ -70722,6 +71938,7 @@ function hydrateRemoteArtifactImages(container, api2) {
 var CURSOR_AGENT_URL_RE;
 var init_remote_artifact_images = __esm({
   "src/renderer/markdown/remote-artifact-images.ts"() {
+    init_image_expand();
     CURSOR_AGENT_URL_RE = /cursor\.com\/agents\/(bc-[\w-]+)/;
   }
 });
@@ -71058,84 +72275,434 @@ var init_attachment_icons = __esm({
   }
 });
 
-// src/renderer/attachments/image-expand.ts
-function dataUrlToBlob(dataUrl) {
-  const comma = dataUrl.indexOf(",");
-  if (comma < 0) throw new Error("Not a data URL");
-  const header = dataUrl.slice(5, comma);
-  const mime = header.split(";")[0] ?? "";
-  const mimeType = mime === "" ? "application/octet-stream" : mime;
-  const binary = atob(dataUrl.slice(comma + 1));
-  const bytes = Uint8Array.from(binary, (c3) => c3.charCodeAt(0));
-  return new Blob([bytes], { type: mimeType });
+// src/shared/fs/workspace-path.ts
+function normalizeWorkspacePath(path) {
+  return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").split("/").filter((segment) => segment !== ".").join("/");
 }
-async function copyImageToClipboard(src) {
-  const blob = dataUrlToBlob(src);
-  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+function workspaceRelativePath(absPath, workspaceRoot) {
+  const path = normalizeWorkspacePath(absPath);
+  const root = normalizeWorkspacePath(workspaceRoot).replace(/\/+$/, "") || "/";
+  const foldCase = DRIVE_PATH_RE.test(root);
+  const comparablePath = foldCase ? path.toLowerCase() : path;
+  const comparableRoot = foldCase ? root.toLowerCase() : root;
+  if (comparablePath === comparableRoot || comparablePath === `${comparableRoot}/`) return "";
+  const prefix = comparableRoot === "/" ? "/" : `${comparableRoot}/`;
+  if (!comparablePath.startsWith(prefix)) return null;
+  const relative = path.slice(prefix.length);
+  return relative.split("/").includes("..") ? null : relative;
 }
-function openImageExpand(src, alt = "Expanded attachment") {
-  if (!src) return;
-  const imageEl = el("img", { class: "image-expand-image", alt });
-  imageEl.src = src;
-  imageEl.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    showContextMenu(
-      event.clientX,
-      event.clientY,
-      [
-        {
-          label: "Copy image",
-          onSelect: () => {
-            void copyImageToClipboard(src).then(() => showToast("Copied image", { durationMs: 1500 })).catch((error62) => {
-              showErrorToast("Failed to copy image", error62);
-            });
-          }
-        }
-      ],
-      imageEl
-    );
-  });
-  openAttachmentPreview({
-    kind: "image",
-    title: alt,
-    ariaLabel: `Image preview: ${alt}`,
-    content: imageEl,
-    onClose: () => {
-      imageEl.removeAttribute("src");
-      imageEl.alt = "Expanded attachment";
+function localPathFromUri(uri) {
+  if (!uri || uri.startsWith("\\") || uri.startsWith("//")) return null;
+  if (/^file:/i.test(uri)) {
+    let url2;
+    try {
+      url2 = new URL(uri);
+    } catch {
+      return null;
     }
-  });
+    if (url2.host !== "" && url2.host.toLowerCase() !== "localhost") return null;
+    let path;
+    try {
+      path = decodeURIComponent(url2.pathname);
+    } catch {
+      return null;
+    }
+    return /^\/[a-z]:\//i.test(path) ? path.slice(1) : path;
+  }
+  if (/^[a-z][a-z\d+.-]*:/i.test(uri) && !/^[a-z]:[\\/]/i.test(uri)) return null;
+  return uri;
 }
-function attachImageExpand(img, alt) {
-  if (img.dataset["imageExpand"] === "true") return;
-  img.dataset["imageExpand"] = "true";
-  img.classList.add("image-expandable");
-  img.setAttribute("role", "button");
-  img.setAttribute("tabindex", "0");
-  img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
-  const open2 = () => {
-    const label = alt ?? (img.alt || "Expanded attachment");
-    openImageExpand(img.currentSrc || img.src, label);
+var DRIVE_PATH_RE;
+var init_workspace_path = __esm({
+  "src/shared/fs/workspace-path.ts"() {
+    DRIVE_PATH_RE = /^[a-z]:\//i;
+  }
+});
+
+// src/renderer/views/acp-resource-previews.ts
+function acpWorkspaceRoot(store2) {
+  return getActiveThread(store2)?.worktree?.path ?? store2.getState().workspaceRoot;
+}
+function workspaceDisplayPath(value, workspaceRoot) {
+  if (!workspaceRoot) return value;
+  const path = localPathFromUri(value);
+  const relative = path === null ? null : workspaceRelativePath(path, workspaceRoot);
+  if (relative === null) return value;
+  return relative || ".";
+}
+function workspaceResourceFilePath(uri, workspaceRoot) {
+  if (!workspaceRoot) return null;
+  const path = localPathFromUri(uri);
+  if (path === null) return null;
+  const relative = /^(?:\/|[a-z]:[\\/])/i.test(path) ? workspaceRelativePath(path, workspaceRoot) : normalizeWorkspacePath(path);
+  if (!relative || relative.split("/").includes("..")) return null;
+  return relative;
+}
+function readResourceImage(api2, owner, workspaceRoot, messageId, path) {
+  const key = [owner.projectId, owner.threadId, workspaceRoot, messageId, path].join("\0");
+  const cached2 = imageReads.get(key);
+  if (cached2) {
+    imageReads.delete(key);
+    imageReads.set(key, cached2);
+    return cached2;
+  }
+  const read = {
+    key,
+    promise: api2.fs.readImage(owner.projectId, owner.threadId, path)
   };
-  img.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    open2();
-  });
-  img.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    event.stopPropagation();
-    open2();
+  imageReads.set(key, read);
+  for (const oldest of imageReads.keys()) {
+    if (imageReads.size <= MAX_IMAGE_READS) break;
+    imageReads.delete(oldest);
+  }
+  read.promise.then(
+    (src) => {
+      read.src = src;
+    },
+    () => {
+      forgetImageRead(read);
+    }
+  );
+  return read;
+}
+function forgetImageRead(read) {
+  if (imageReads.get(read.key) === read) imageReads.delete(read.key);
+}
+function whenImageRead(read, apply2) {
+  if (read.src !== void 0) {
+    apply2(read.src);
+    return;
+  }
+  read.promise.then(apply2, () => {
   });
 }
-var init_image_expand = __esm({
-  "src/renderer/attachments/image-expand.ts"() {
-    init_context_menu();
+function messageIdOf(node2) {
+  return node2.closest("[data-message-id]")?.dataset["messageId"] ?? "";
+}
+function showCardImage(card, src, read) {
+  const path = card.dataset["workspaceResourcePath"] ?? "";
+  const uri = card.dataset["acpResourceUri"] ?? path;
+  const label = card.querySelector(".acp-resource-title")?.textContent ?? path;
+  const image = el("img", { class: "tool-result-preview-image", src, alt: label, loading: "lazy" });
+  attachImageExpand(image, label);
+  const details = Array.from(
+    card.querySelectorAll(".acp-resource-description, .acp-resource-meta"),
+    (node2) => node2.cloneNode(true)
+  );
+  const figure = el(
+    "figure",
+    {
+      class: "tool-result-preview acp-resource-image",
+      title: card.title,
+      "data-acp-resource-uri": uri,
+      "data-workspace-resource-path": path
+    },
+    image,
+    el(
+      "figcaption",
+      { class: "tool-result-preview-caption" },
+      el(
+        "a",
+        { class: "acp-resource-image-link", href: uri, "data-workspace-resource-path": path },
+        path
+      )
+    ),
+    ...details
+  );
+  image.addEventListener(
+    "error",
+    () => {
+      forgetImageRead(read);
+      if (!figure.isConnected) return;
+      card.hidden = figure.hidden;
+      figure.replaceWith(card);
+    },
+    { once: true }
+  );
+  figure.hidden = card.hidden;
+  card.replaceWith(figure);
+}
+function hydrateAcpResourceImages(root, api2, store2) {
+  const owner = getActiveThreadOwner(store2);
+  const workspaceRoot = acpWorkspaceRoot(store2);
+  if (!owner || !workspaceRoot) return;
+  for (const card of root.querySelectorAll(
+    ".acp-resource-link[data-workspace-resource-path]:not([data-image-preview-requested])"
+  )) {
+    const path = card.dataset["workspaceResourcePath"];
+    if (!path || !isRasterImagePath(path)) continue;
+    card.dataset["imagePreviewRequested"] = "true";
+    const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(card), path);
+    whenImageRead(read, (src) => {
+      if (!card.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      showCardImage(card, src, read);
+    });
+  }
+}
+function isCurrentOwner(store2, owner, workspaceRoot) {
+  const current = getActiveThreadOwner(store2);
+  return current?.projectId === owner.projectId && current.threadId === owner.threadId && acpWorkspaceRoot(store2) === workspaceRoot;
+}
+function replaceAcpResourceBlock(current, replacement) {
+  const hidden = /* @__PURE__ */ new Set();
+  for (const resource of current.querySelectorAll(RESOURCE_SELECTOR)) {
+    const path = resource.dataset["workspaceResourcePath"];
+    if (path && resource.hidden) hidden.add(path);
+  }
+  for (const resource of replacement.querySelectorAll(RESOURCE_SELECTOR)) {
+    const path = resource.dataset["workspaceResourcePath"];
+    if (path && hidden.has(path)) resource.hidden = true;
+  }
+  current.replaceWith(replacement);
+}
+function messageOrder(list) {
+  const order = /* @__PURE__ */ new Map();
+  list.querySelectorAll("[data-message-id]").forEach((message2, index) => {
+    order.set(message2, index);
+  });
+  return (node2) => {
+    const message2 = node2.closest("[data-message-id]");
+    return message2 ? order.get(message2) ?? -1 : -1;
+  };
+}
+function syncResourceVisibility(list) {
+  const indexOf = messageOrder(list);
+  const latestReference = /* @__PURE__ */ new Map();
+  for (const reference of list.querySelectorAll(REFERENCE_SELECTOR)) {
+    const path = reference.dataset["workspaceResourcePath"];
+    if (!path) continue;
+    latestReference.set(path, Math.max(latestReference.get(path) ?? -1, indexOf(reference)));
+  }
+  for (const resource of list.querySelectorAll(RESOURCE_SELECTOR)) {
+    const path = resource.dataset["workspaceResourcePath"];
+    if (!path) continue;
+    resource.hidden = (latestReference.get(path) ?? -1) >= indexOf(resource);
+  }
+}
+function linkTarget(link, workspaceRoot) {
+  const cached2 = linkTargets.get(link);
+  if (cached2?.root === workspaceRoot) return cached2;
+  const href = link.getAttribute("href") ?? "";
+  let uri = href;
+  if (!/^file:/i.test(href)) {
+    try {
+      uri = decodeURI(href);
+    } catch {
+    }
+  }
+  const target = { root: workspaceRoot, uri, path: workspaceResourceFilePath(uri, workspaceRoot) };
+  linkTargets.set(link, target);
+  return target;
+}
+function citedResource(entries2, index) {
+  if (!entries2) return null;
+  for (let i2 = entries2.length - 1; i2 >= 0; i2--) {
+    const entry = entries2[i2];
+    if (entry && entry.index <= index) return entry.node;
+  }
+  return null;
+}
+function showReferencedImage(link, { uri, path }, src, read, list) {
+  const label = link.textContent.trim() || path;
+  const image = el("img", { class: "tool-result-preview-image", src, alt: label, loading: "lazy" });
+  attachImageExpand(image, label);
+  const labelIsPath = label === uri || label === path;
+  const preview = el(
+    "figure",
+    {
+      class: "tool-result-preview acp-referenced-image",
+      title: uri,
+      "data-workspace-resource-path": path,
+      "data-workspace-resource-reference": "true"
+    },
+    image,
+    el("figcaption", { class: "tool-result-preview-caption" }, labelIsPath ? path : label),
+    ...labelIsPath ? [] : [el("code", { class: "acp-referenced-image-path" }, path)]
+  );
+  image.addEventListener(
+    "error",
+    () => {
+      forgetImageRead(read);
+      if (!preview.isConnected) return;
+      preview.remove();
+      syncResourceVisibility(list);
+    },
+    { once: true }
+  );
+  const paragraph = link.closest("p");
+  if (paragraph && paragraph.closest(".message-text")) {
+    let anchor2 = paragraph;
+    while (anchor2.nextElementSibling?.classList.contains("acp-referenced-image")) {
+      anchor2 = anchor2.nextElementSibling;
+    }
+    anchor2.after(preview);
+  } else {
+    link.closest(".message-text")?.append(preview);
+  }
+}
+function syncAcpResourceReferences(list, api2, store2) {
+  const owner = getActiveThreadOwner(store2);
+  const workspaceRoot = acpWorkspaceRoot(store2);
+  if (!owner || !workspaceRoot || !list.querySelector(RESOURCE_SELECTOR)) return;
+  hydrateAcpResourceImages(list, api2, store2);
+  const resources = list.querySelectorAll(RESOURCE_SELECTOR);
+  const indexOf = messageOrder(list);
+  const resourcesByPath = /* @__PURE__ */ new Map();
+  for (const node2 of resources) {
+    const path = node2.dataset["workspaceResourcePath"];
+    if (!path) continue;
+    const entries2 = resourcesByPath.get(path) ?? [];
+    entries2.push({ node: node2, index: indexOf(node2) });
+    resourcesByPath.set(path, entries2);
+  }
+  for (const link of list.querySelectorAll(
+    ".msg-assistant .message-text:not(.is-streaming) a[href]:not([data-workspace-resource-reference])"
+  )) {
+    const { uri, path } = linkTarget(link, workspaceRoot);
+    if (!path) continue;
+    const resource = citedResource(resourcesByPath.get(path), indexOf(link));
+    if (!resource) continue;
+    link.dataset["workspaceResourcePath"] = path;
+    if (!isRasterImagePath(path)) {
+      link.dataset["workspaceResourceReference"] = "true";
+      continue;
+    }
+    if (link.dataset["imageReferenceRequested"]) continue;
+    link.dataset["imageReferenceRequested"] = "true";
+    const read = readResourceImage(api2, owner, workspaceRoot, messageIdOf(resource), path);
+    let settled = false;
+    whenImageRead(read, (src) => {
+      if (!link.isConnected || !isCurrentOwner(store2, owner, workspaceRoot)) return;
+      showReferencedImage(link, { uri, path }, src, read, list);
+      if (settled) syncResourceVisibility(list);
+    });
+    settled = true;
+  }
+  syncResourceVisibility(list);
+}
+var RESOURCE_SELECTOR, REFERENCE_SELECTOR, MAX_IMAGE_READS, imageReads, linkTargets;
+var init_acp_resource_previews = __esm({
+  "src/renderer/views/acp-resource-previews.ts"() {
+    init_thread_helpers();
+    init_image_path();
+    init_workspace_path();
+    init_image_expand();
+    init_active_thread_owner();
     init_helpers();
-    init_toast();
-    init_attachment_preview();
+    RESOURCE_SELECTOR = ".acp-resource-link[data-workspace-resource-path], .acp-resource-image";
+    REFERENCE_SELECTOR = ".msg-assistant .message-text:not(.is-streaming) [data-workspace-resource-reference]";
+    MAX_IMAGE_READS = 32;
+    imageReads = /* @__PURE__ */ new Map();
+    linkTargets = /* @__PURE__ */ new WeakMap();
+  }
+});
+
+// src/shared/diff/line-diff.ts
+function splitDiffLines(text2) {
+  const normalized = text2.replace(/\r\n/g, "\n");
+  if (normalized === "") return [];
+  return normalized.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+}
+function outputLine(kind, token) {
+  const terminated = token.endsWith("\n");
+  return {
+    kind,
+    text: terminated ? token.slice(0, -1) : token,
+    ...!terminated ? { noNewlineAtEnd: true } : {}
+  };
+}
+function computeLineDiff(before, after) {
+  const a3 = splitDiffLines(before);
+  const b4 = splitDiffLines(after);
+  let start = 0;
+  while (start < a3.length && start < b4.length && a3[start] === b4[start]) start += 1;
+  let aEnd = a3.length;
+  let bEnd = b4.length;
+  while (aEnd > start && bEnd > start && a3[aEnd - 1] === b4[bEnd - 1]) {
+    aEnd -= 1;
+    bEnd -= 1;
+  }
+  const context = (text2) => outputLine("context", text2);
+  const del = (text2) => outputLine("del", text2);
+  const add2 = (text2) => outputLine("add", text2);
+  const head = a3.slice(0, start).map(context);
+  const tail = a3.slice(aEnd).map(context);
+  const oldMiddle = a3.slice(start, aEnd);
+  const newMiddle = b4.slice(start, bEnd);
+  const n2 = oldMiddle.length;
+  const m2 = newMiddle.length;
+  if (n2 === 0 || m2 === 0 || (n2 + 1) * (m2 + 1) > MAX_TABLE_CELLS) {
+    return [...head, ...oldMiddle.map(del), ...newMiddle.map(add2), ...tail];
+  }
+  const width = m2 + 1;
+  const lcs = new Uint16Array((n2 + 1) * width);
+  for (let i3 = n2 - 1; i3 >= 0; i3 -= 1) {
+    for (let j4 = m2 - 1; j4 >= 0; j4 -= 1) {
+      lcs[i3 * width + j4] = oldMiddle[i3] === newMiddle[j4] ? (lcs[(i3 + 1) * width + j4 + 1] ?? 0) + 1 : Math.max(lcs[(i3 + 1) * width + j4] ?? 0, lcs[i3 * width + j4 + 1] ?? 0);
+    }
+  }
+  const middle = [];
+  let dels = [];
+  let adds = [];
+  const flush = () => {
+    middle.push(...dels, ...adds);
+    dels = [];
+    adds = [];
+  };
+  let i2 = 0;
+  let j3 = 0;
+  while (i2 < n2 || j3 < m2) {
+    const oldLine = oldMiddle[i2];
+    const newLine = newMiddle[j3];
+    if (i2 < n2 && j3 < m2 && oldLine === newLine) {
+      flush();
+      middle.push(context(oldLine ?? ""));
+      i2 += 1;
+      j3 += 1;
+    } else if (j3 >= m2 || i2 < n2 && (lcs[(i2 + 1) * width + j3] ?? 0) >= (lcs[i2 * width + j3 + 1] ?? 0)) {
+      dels.push(del(oldLine ?? ""));
+      i2 += 1;
+    } else {
+      adds.push(add2(newLine ?? ""));
+      j3 += 1;
+    }
+  }
+  flush();
+  return [...head, ...middle, ...tail];
+}
+function foldLineDiff(lines, contextLines = 3) {
+  const keep = new Uint8Array(lines.length);
+  lines.forEach((line, index2) => {
+    if (line.kind === "context") return;
+    const from = Math.max(0, index2 - contextLines);
+    const to = Math.min(lines.length - 1, index2 + contextLines);
+    for (let k2 = from; k2 <= to; k2 += 1) keep[k2] = 1;
+  });
+  const out = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (keep[index]) {
+      const line = lines[index];
+      if (line) out.push(line);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < lines.length && !keep[end]) end += 1;
+    if (end - index === 1) {
+      const line = lines[index];
+      if (line) out.push(line);
+    } else {
+      out.push({ kind: "gap", count: end - index });
+    }
+    index = end;
+  }
+  return out;
+}
+var MAX_TABLE_CELLS;
+var init_line_diff = __esm({
+  "src/shared/diff/line-diff.ts"() {
+    MAX_TABLE_CELLS = 1e6;
   }
 });
 
@@ -71358,7 +72925,7 @@ function buildTextWithAttachments(text2, files, textBlocks = [], options = {}) {
   const videoRefs = options.videoRefs ?? [];
   const archiveRefs = options.archiveRefs ?? [];
   const blocks = [
-    ...files.map((f3) => renderTextBlock(f3.path, f3.content, cap)),
+    ...files.map((f4) => renderTextBlock(f4.path, f4.content, cap)),
     ...textBlocks.map((b4) => renderTextBlock(b4.label, b4.content, cap)),
     // No truncation path — thread, video and archive refs inline nothing, so
     // ATTACHMENT_MAX_CHARS never applies here.
@@ -71404,6 +72971,14 @@ function mountComposerEditor() {
   root.setAttribute("role", "textbox");
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
+  const SCROLL_PIN_THRESHOLD_PX2 = 4;
+  let pinnedToBottom = true;
+  root.addEventListener("scroll", () => {
+    pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
+  });
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight;
+  }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
   const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
@@ -71592,6 +73167,7 @@ function mountComposerEditor() {
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
+      root.scrollTop = root.scrollHeight;
     },
     get selectionStart() {
       const sel = selectionInRoot();
@@ -71640,6 +73216,22 @@ function mountComposerEditor() {
       const state = { thread, onRemove };
       threadChips.set(id, state);
       insertChip(makeThreadChip(id, state));
+    },
+    insertText(text2) {
+      const node2 = document.createTextNode(text2);
+      const sel = editor.isFocused() ? selectionInRoot() : null;
+      if (sel) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(node2);
+        range.setStartAfter(node2);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else {
+        root.append(node2);
+      }
+      emitInput();
     },
     expandedValue() {
       return serializedValue(false);
@@ -71738,6 +73330,96 @@ function toolRunForMessage(messages, messageId) {
 }
 var init_tool_runs = __esm({
   "src/shared/tools/tool-runs.ts"() {
+  }
+});
+
+// src/shared/tools/tool-interruption.ts
+function isHostInterruptedToolCall(toolCall) {
+  return toolCall.status === "error" && toolCall.result === ACP_CANCELLED_TOOL_CALL_RESULT;
+}
+var ACP_CANCELLED_TOOL_CALL_RESULT;
+var init_tool_interruption = __esm({
+  "src/shared/tools/tool-interruption.ts"() {
+    ACP_CANCELLED_TOOL_CALL_RESULT = "Interrupted before completion \u2014 no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.";
+  }
+});
+
+// src/renderer/views/thread-roadmap-origin.ts
+function roadmapOriginIcon() {
+  return outlineIcon(
+    "roadmap",
+    ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"],
+    "thread-roadmap-origin-icon"
+  );
+}
+function mountThreadRoadmapOrigin(store2, api2) {
+  const titleEl2 = el("span", { class: "thread-roadmap-origin-title" });
+  const link = el(
+    "button",
+    { type: "button", class: "thread-roadmap-origin", hidden: true },
+    roadmapOriginIcon(),
+    titleEl2
+  );
+  let itemId = null;
+  let generation = 0;
+  let syncedThreadId;
+  function syncIfThreadChanged() {
+    if (store2.getState().activeThreadId !== syncedThreadId) sync();
+  }
+  function sync() {
+    const gen = ++generation;
+    const threadId = store2.getState().activeThreadId;
+    const threadChanged = threadId !== syncedThreadId;
+    syncedThreadId = threadId;
+    if (!threadId) {
+      itemId = null;
+      link.hidden = true;
+      return;
+    }
+    if (threadChanged) {
+      itemId = null;
+      link.hidden = true;
+    }
+    void api2.roadmap.findByThread(threadId).then((item) => {
+      if (gen !== generation) return;
+      if (!item) {
+        itemId = null;
+        link.hidden = true;
+        return;
+      }
+      itemId = item.id;
+      const title = item.title || "(untitled)";
+      titleEl2.textContent = title;
+      setTooltip(link, `Open roadmap item "${title}"`);
+      link.setAttribute("aria-label", `Open roadmap item "${title}"`);
+      link.hidden = false;
+    }).catch(() => {
+      if (gen !== generation) return;
+      itemId = null;
+      link.hidden = true;
+    });
+  }
+  link.addEventListener("click", () => {
+    if (itemId) navigateToRoadmapItem(store2, itemId);
+  });
+  sync();
+  const unsubscribeThreads = store2.on("threads_changed", syncIfThreadChanged);
+  const unsubscribeRoadmap = api2.roadmap.onChanged(sync);
+  return {
+    element: link,
+    destroy: () => {
+      generation++;
+      unsubscribeThreads();
+      unsubscribeRoadmap();
+    }
+  };
+}
+var init_thread_roadmap_origin = __esm({
+  "src/renderer/views/thread-roadmap-origin.ts"() {
+    init_helpers();
+    init_outline_icon();
+    init_panels();
+    init_tooltip();
   }
 });
 
@@ -72147,7 +73829,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -72291,6 +73976,7 @@ function thumbnail(asset, caption) {
     alt: `${asset.label}: ${caption}`,
     loading: "lazy"
   });
+  attachImageCopyMenu(image);
   return image;
 }
 function evidenceFigure(asset, caption) {
@@ -72715,6 +74401,47 @@ var init_quiet_runs = __esm({
   }
 });
 
+// src/renderer/controller/review-report-target.ts
+function setReviewReportTarget(store2, threadId, messageId) {
+  const targets = targetsByStore.get(store2) ?? /* @__PURE__ */ new Map();
+  targets.set(threadId, messageId);
+  targetsByStore.set(store2, targets);
+}
+function getReviewReportTarget(store2, threadId) {
+  return targetsByStore.get(store2)?.get(threadId);
+}
+function clearReviewReportTarget(store2, threadId) {
+  const targets = targetsByStore.get(store2);
+  if (!targets) return;
+  targets.delete(threadId);
+  if (targets.size === 0) targetsByStore.delete(store2);
+}
+function reviewReportAt(store2, threadId, messageId) {
+  const thread = getThreadById(store2, threadId);
+  if (messageId === null) return thread?.reviewReport;
+  return thread?.messages.find((message2) => message2.id === messageId)?.reviewReport;
+}
+function failRunningReviewReport(store2, threadId, messageId, error62) {
+  const report = reviewReportAt(store2, threadId, messageId);
+  if (report?.status !== "running") return false;
+  const failed = {
+    ...report,
+    status: "error",
+    error: error62,
+    durationMs: Date.now() - report.startedAt
+  };
+  if (messageId === null) setThreadReviewReport(store2, threadId, failed);
+  else setMessageReviewReport(store2, threadId, messageId, failed);
+  return true;
+}
+var targetsByStore;
+var init_review_report_target = __esm({
+  "src/renderer/controller/review-report-target.ts"() {
+    init_thread_helpers();
+    targetsByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // src/renderer/controller/review-actions.ts
 function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -72734,12 +74461,15 @@ function retryReview(store2, api2, threadId, messageId) {
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function startReview(store2, api2, threadId) {
+function startReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (thread?.status === "running") return;
-  setThreadReviewReport(store2, threadId, {
+  const anchorId = messageId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id;
+  setReviewReportTarget(store2, threadId, anchorId ?? null);
+  if (anchorId && thread?.reviewReport) setThreadReviewReport(store2, threadId, null);
+  const runningReport = {
     status: "running",
     startedAt: Date.now(),
     models: { reviewer: thread?.model ?? "", challenger: null },
@@ -72756,19 +74486,15 @@ function startReview(store2, api2, threadId) {
     reviewers: [],
     verification: null,
     durationMs: 0
-  });
+  };
+  if (anchorId) setMessageReviewReport(store2, threadId, anchorId, runningReport);
+  else setThreadReviewReport(store2, threadId, runningReport);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
   void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
-    const report = store2.getState().threads.find((t2) => t2.id === threadId)?.reviewReport;
-    if (report?.status === "running") {
-      setThreadReviewReport(store2, threadId, {
-        ...report,
-        status: "error",
-        error: errorMessage(err2),
-        durationMs: Date.now() - report.startedAt
-      });
+    clearReviewReportTarget(store2, threadId);
+    if (failRunningReviewReport(store2, threadId, anchorId ?? null, errorMessage(err2))) {
       setThreadStatus(store2, threadId, "idle");
       syncAgentActivity(store2, threadId, false);
       takeQuietRun(threadId);
@@ -72776,25 +74502,26 @@ function startReview(store2, api2, threadId) {
     showErrorToast("Review could not start", err2);
   });
 }
-function dismissReviewReport(store2, threadId) {
-  setThreadReviewReport(store2, threadId, null);
+function dismissReviewReport(store2, threadId, messageId) {
+  if (messageId) setMessageReviewReport(store2, threadId, messageId, null);
+  else setThreadReviewReport(store2, threadId, null);
 }
-function dismissReviewFinding(store2, api2, threadId, finding) {
-  setReviewFindingDismissed(store2, threadId, finding.id, true);
+function dismissReviewFinding(store2, api2, threadId, finding, messageId) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true, messageId);
   void api2.review.dismissFinding({
     findingId: finding.id,
     path: finding.path,
     claim: finding.claim,
     class: finding.class
   }).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    setReviewFindingDismissed(store2, threadId, finding.id, false, messageId);
     showErrorToast("Could not save the dismissal", err2);
   });
 }
-function restoreReviewFinding(store2, api2, threadId, findingId) {
-  setReviewFindingDismissed(store2, threadId, findingId, false);
+function restoreReviewFinding(store2, api2, threadId, findingId, messageId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false, messageId);
   void api2.review.restoreFinding(findingId).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, findingId, true);
+    setReviewFindingDismissed(store2, threadId, findingId, true, messageId);
     showErrorToast("Could not restore the finding", err2);
   });
 }
@@ -72803,6 +74530,7 @@ var init_review_actions = __esm({
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_review_report_target();
     init_toast();
     init_errors3();
   }
@@ -72955,6 +74683,23 @@ var init_tool_args_format = __esm({
   "src/renderer/views/tool-args-format.ts"() {
     init_tool_display();
     init_unknown_value3();
+  }
+});
+
+// src/renderer/views/tool-error-format.ts
+function mcpErrorMessage(result) {
+  if (!result.trimStart().startsWith("{")) return null;
+  return safeJsonParse(result, decodeWithSchema(mcpErrorEnvelopeSchema))?.error.message ?? null;
+}
+var mcpErrorEnvelopeSchema;
+var init_tool_error_format = __esm({
+  "src/renderer/views/tool-error-format.ts"() {
+    init_zod();
+    init_safe_json2();
+    mcpErrorEnvelopeSchema = external_exports.object({
+      result: external_exports.null(),
+      error: external_exports.object({ message: external_exports.string().min(1) }).strict()
+    }).strict();
   }
 });
 
@@ -73316,11 +75061,12 @@ function resendLastMessage(store2, api2, threadId, options = {}) {
     images.length > 0 ? [...images] : void 0
   );
   const running = thread.status === "running";
+  const queued = { messageId, payload, createdAt: Date.now() };
   if (running) {
-    enqueueUserMessage(store2, threadId, { messageId, payload, createdAt: Date.now() });
+    enqueueUserMessage(store2, threadId, queued);
   } else {
     startHumanTurnTree(store2, threadId);
-    dispatchAgentRun(store2, api2, threadId, payload);
+    dispatchAgentRun(store2, api2, threadId, payload, queued);
   }
   return {
     messageId,
@@ -73502,7 +75248,366 @@ var init_image_input_support = __esm({
   }
 });
 
+// src/renderer/views/conversation-search.ts
+function findMatchOffsets(haystack, needle) {
+  if (!needle) return [];
+  const hay = haystack.toLowerCase();
+  const q2 = needle.toLowerCase();
+  const offsets = [];
+  let from = 0;
+  for (; ; ) {
+    const idx = hay.indexOf(q2, from);
+    if (idx === -1) break;
+    offsets.push(idx);
+    from = idx + q2.length;
+  }
+  return offsets;
+}
+function normalizeSearchText(text2) {
+  return text2.replace(/\s+/g, " ").trim();
+}
+function buildSearchIndex(segments) {
+  const capacity = segments.reduce((n2, segment) => n2 + segment.text.length + 1, 0);
+  const segmentAt = new Int32Array(capacity);
+  const offsetAt = new Int32Array(capacity);
+  const chars = [];
+  let pendingSpace = false;
+  segments.forEach((segment, seg) => {
+    if (segment.breakBefore && chars.length > 0) pendingSpace = true;
+    for (let i2 = 0; i2 < segment.text.length; i2++) {
+      const ch = segment.text.charAt(i2);
+      if (WHITESPACE_CHAR.test(ch)) {
+        if (chars.length > 0) pendingSpace = true;
+        continue;
+      }
+      if (pendingSpace) {
+        segmentAt[chars.length] = seg;
+        offsetAt[chars.length] = i2;
+        chars.push(" ");
+        pendingSpace = false;
+      }
+      segmentAt[chars.length] = seg;
+      offsetAt[chars.length] = i2;
+      chars.push(ch);
+    }
+  });
+  return {
+    text: chars.join(""),
+    segmentAt: segmentAt.subarray(0, chars.length),
+    offsetAt: offsetAt.subarray(0, chars.length)
+  };
+}
+function findSegmentMatches(index, query) {
+  const needle = normalizeSearchText(query);
+  return findMatchOffsets(index.text, needle).map((start) => {
+    const last = start + needle.length - 1;
+    return {
+      startSegment: index.segmentAt[start] ?? 0,
+      startOffset: index.offsetAt[start] ?? 0,
+      endSegment: index.segmentAt[last] ?? 0,
+      endOffset: (index.offsetAt[last] ?? 0) + 1
+    };
+  });
+}
+function openConversationSearch(query) {
+  openImpl?.(query);
+}
+function closeConversationSearch() {
+  closeImpl?.();
+}
+function isConversationSearchOpen() {
+  return isOpenImpl?.() ?? false;
+}
+function mountConversationSearch(root) {
+  const input2 = el("input", {
+    type: "text",
+    class: "chat-search-input",
+    placeholder: "Find in conversation\u2026",
+    "aria-label": "Find in conversation",
+    spellcheck: "false",
+    autocomplete: "off"
+  });
+  const count = el("span", { class: "chat-search-count", "aria-live": "polite" });
+  const prevBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "chat-search-nav",
+      "aria-label": "Previous match",
+      "data-tooltip": "Previous match (Shift+Enter)"
+    },
+    chevronUpIcon("ui-icon ui-icon-sm")
+  );
+  const nextBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "chat-search-nav",
+      "aria-label": "Next match",
+      "data-tooltip": "Next match (Enter)"
+    },
+    chevronDownIcon("ui-icon ui-icon-sm")
+  );
+  const closeBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "chat-search-close",
+      "aria-label": "Close find",
+      "data-tooltip": "Close find (Esc)"
+    },
+    closeIcon("ui-icon ui-icon-sm")
+  );
+  const bar = el(
+    "div",
+    { class: "chat-search", role: "search", hidden: true },
+    el(
+      "span",
+      { class: "chat-search-icon", "aria-hidden": "true" },
+      searchIcon("ui-icon ui-icon-sm")
+    ),
+    input2,
+    count,
+    el("div", { class: "chat-search-actions" }, prevBtn, nextBtn, closeBtn)
+  );
+  const host = root.closest(".pane-chat") ?? root;
+  host.append(bar);
+  let ranges = [];
+  let currentIdx = 0;
+  let debounce = null;
+  let observer = null;
+  function messagesList() {
+    return root.querySelector(".messages-list");
+  }
+  function clearHighlights() {
+    if (!highlightsSupported) return;
+    CSS.highlights.delete(BASE_HIGHLIGHT);
+    CSS.highlights.delete(CURRENT_HIGHLIGHT);
+  }
+  function collectRanges(query) {
+    const container = messagesList();
+    if (!container || !normalizeSearchText(query)) return [];
+    const nodes = [];
+    const segments = [];
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let previousBlock = null;
+    let node2 = walker.nextNode();
+    while (node2) {
+      const block = node2.parentElement?.closest(SEARCH_BLOCK_SELECTOR) ?? null;
+      nodes.push(node2);
+      segments.push({ text: node2.nodeValue ?? "", breakBefore: block !== previousBlock });
+      previousBlock = block;
+      node2 = walker.nextNode();
+    }
+    const found = [];
+    for (const match of findSegmentMatches(buildSearchIndex(segments), query)) {
+      const start = nodes[match.startSegment];
+      const end = nodes[match.endSegment];
+      if (!start || !end) continue;
+      const range = document.createRange();
+      range.setStart(start, match.startOffset);
+      range.setEnd(end, match.endOffset);
+      found.push(range);
+    }
+    return found;
+  }
+  function paintHighlights() {
+    if (!highlightsSupported) return;
+    if (ranges.length === 0) {
+      clearHighlights();
+      return;
+    }
+    CSS.highlights.set(BASE_HIGHLIGHT, new Highlight(...ranges));
+    const current = ranges[currentIdx];
+    if (current) {
+      const currentHighlight = new Highlight(current);
+      currentHighlight.priority = 1;
+      CSS.highlights.set(CURRENT_HIGHLIGHT, currentHighlight);
+    } else {
+      CSS.highlights.delete(CURRENT_HIGHLIGHT);
+    }
+  }
+  function updateCount() {
+    const total = ranges.length;
+    const query = input2.value;
+    if (!query) {
+      count.textContent = "";
+      input2.classList.remove("chat-search-nomatch");
+      return;
+    }
+    count.textContent = total === 0 ? "0/0" : `${String(currentIdx + 1)}/${String(total)}`;
+    input2.classList.toggle("chat-search-nomatch", total === 0);
+  }
+  function scrollCurrentIntoView() {
+    const current = ranges[currentIdx];
+    const target = current?.startContainer.parentElement;
+    target?.scrollIntoView({ block: "center", behavior: "auto" });
+  }
+  function runSearch(preserveIndex = false) {
+    const query = input2.value;
+    const prev = preserveIndex ? currentIdx : 0;
+    ranges = collectRanges(query);
+    currentIdx = ranges.length === 0 ? 0 : Math.min(prev, ranges.length - 1);
+    paintHighlights();
+    updateCount();
+  }
+  function step(delta) {
+    if (ranges.length === 0) return;
+    currentIdx = (currentIdx + delta + ranges.length) % ranges.length;
+    paintHighlights();
+    updateCount();
+    scrollCurrentIntoView();
+  }
+  input2.addEventListener("input", () => {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      runSearch(false);
+      scrollCurrentIntoView();
+    }, 120);
+  });
+  input2.addEventListener("keydown", (e3) => {
+    if (e3.isComposing) return;
+    if (e3.key === "Enter") {
+      e3.preventDefault();
+      step(e3.shiftKey ? -1 : 1);
+    } else if (e3.key === "Escape") {
+      e3.preventDefault();
+      e3.stopPropagation();
+      close();
+    }
+  });
+  prevBtn.addEventListener("click", () => {
+    step(-1);
+  });
+  nextBtn.addEventListener("click", () => {
+    step(1);
+  });
+  closeBtn.addEventListener("click", () => {
+    close();
+  });
+  function open2(query) {
+    const alreadyOpen = !bar.hidden;
+    bar.hidden = false;
+    if (query !== void 0) input2.value = query;
+    if (!alreadyOpen) {
+      const container = messagesList();
+      if (container) {
+        observer = new MutationObserver(() => {
+          if (debounce) clearTimeout(debounce);
+          debounce = setTimeout(() => {
+            runSearch(true);
+          }, 120);
+        });
+        observer.observe(container, { childList: true, subtree: true, characterData: true });
+      }
+    }
+    input2.focus();
+    input2.select();
+    if (query !== void 0) {
+      runSearch(false);
+      scrollCurrentIntoView();
+    } else if (input2.value) {
+      runSearch(true);
+    }
+  }
+  function close() {
+    if (bar.hidden) return;
+    bar.hidden = true;
+    if (debounce) {
+      clearTimeout(debounce);
+      debounce = null;
+    }
+    observer?.disconnect();
+    observer = null;
+    ranges = [];
+    currentIdx = 0;
+    clearHighlights();
+  }
+  openImpl = open2;
+  closeImpl = close;
+  isOpenImpl = () => !bar.hidden;
+}
+var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, WHITESPACE_CHAR, SEARCH_BLOCK_SELECTOR, openImpl, closeImpl, isOpenImpl;
+var init_conversation_search = __esm({
+  "src/renderer/views/conversation-search.ts"() {
+    init_helpers();
+    init_icons();
+    BASE_HIGHLIGHT = "chat-search";
+    CURRENT_HIGHLIGHT = "chat-search-current";
+    highlightsSupported = typeof CSS !== "undefined" && "highlights" in CSS && typeof globalThis.Highlight === "function";
+    WHITESPACE_CHAR = /\s/;
+    SEARCH_BLOCK_SELECTOR = "p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, td, th, dt, dd, summary, figcaption, div";
+    openImpl = null;
+    closeImpl = null;
+    isOpenImpl = null;
+  }
+});
+
+// src/renderer/dom/markdown-quote.ts
+function formatMarkdownQuote(text2) {
+  return text2.replace(/\r\n/g, "\n").split("\n").map((line) => line ? `> ${line}` : ">").join("\n");
+}
+function trimSelectionText(text2) {
+  return text2.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
+}
+var init_markdown_quote = __esm({
+  "src/renderer/dom/markdown-quote.ts"() {
+  }
+});
+
+// src/renderer/ipc-error-message.ts
+function ipcErrorMessage(err2, fallback) {
+  if (!(err2 instanceof Error)) return fallback;
+  return err2.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, "") || fallback;
+}
+var init_ipc_error_message = __esm({
+  "src/renderer/ipc-error-message.ts"() {
+  }
+});
+
 // src/renderer/views/conversation.ts
+function markUserInterruptedCalls(thread) {
+  if (!thread) return;
+  let turnCalls = [];
+  for (const [index, message2] of thread.messages.entries()) {
+    if (message2.role !== "assistant") turnCalls = [];
+    else turnCalls.push(...message2.toolCalls);
+    if (!message2.turnOutcome) continue;
+    const next = thread.messages[index + 1];
+    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    for (const call of turnCalls) {
+      if (!isHostInterruptedToolCall(call)) continue;
+      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
+        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
+      } else {
+        userInterruptedCalls.delete(call);
+      }
+    }
+    turnCalls = [];
+  }
+}
+function cardStatus2(toolCalls) {
+  if (toolCalls.some((call) => call.status === "running")) return "running";
+  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+    return "error";
+  }
+  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  return "done";
+}
+function interruptionLabel(call) {
+  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+}
+function syncRollupInterruptionNote(body, calls) {
+  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const current = body.querySelector(":scope > .tool-interruption-note");
+  if (!interrupted) {
+    current?.remove();
+    return;
+  }
+  const label = interruptionLabel(interrupted);
+  if (current) current.textContent = label;
+  else body.prepend(el("div", { class: "tool-interruption-note" }, label));
+}
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
@@ -73518,9 +75623,18 @@ function createToolArgsSection(args) {
     el("pre", {}, rendered)
   );
 }
-function createToolResultSection(result, format, showEmptyState = false) {
+function createToolResultSection(result, status, format, showEmptyState = false) {
   if (!result) {
     return showEmptyState ? el("div", { class: "tool-result tool-result-empty" }, "No tool details were provided.") : el("div", { class: "tool-result" });
+  }
+  const errorMessage2 = status === "error" ? mcpErrorMessage(result) : null;
+  if (errorMessage2) {
+    const paragraphs = errorMessage2.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
+    return el(
+      "div",
+      { class: "tool-result tool-result-error-message" },
+      ...paragraphs.map((line) => el("p", {}, line))
+    );
   }
   if (format === "markdown") {
     const wrap = el("div", { class: "tool-result tool-result-markdown message-text" });
@@ -73601,7 +75715,7 @@ function onToolCardBodyBuilt(card, cb) {
 function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const header = createToolHeader(
     label,
-    tc2.status,
+    cardStatus2([tc2]),
     summaryClass,
     count,
     tc2.editStats,
@@ -73612,8 +75726,10 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
       ...appendIfPresent(argsSection),
+      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
+        tc2.status,
         tc2.resultFormat,
         argsSection === null && tc2.status !== "running"
       ),
@@ -73643,10 +75759,16 @@ function createCanvasPreviewCard(threadId, title) {
   open2.addEventListener("click", () => {
     requestArtefactShow(threadId, title);
   });
+  const image = el("img", {
+    class: "canvas-preview-image",
+    src: preview,
+    alt: `Preview of ${title}`
+  });
+  attachImageCopyMenu(image);
   return el(
     "div",
     { class: "canvas-preview-card" },
-    el("img", { class: "canvas-preview-image", src: preview, alt: `Preview of ${title}` }),
+    image,
     el(
       "div",
       { class: "canvas-preview-footer" },
@@ -73660,7 +75782,7 @@ function createCanvasPreviewSection(tc2, threadId) {
   const uri = artefactUriFromToolResult(tc2.result);
   return uri ? createCanvasPreviewCard(threadId, artefactTitleFromUri(uri)) : null;
 }
-function syncToolResultContent(msgEl, toolCalls) {
+function syncToolResultContent(msgEl, toolCalls, workspaceRoot) {
   const previewImageDataUrls = new Set(
     toolCalls.flatMap(
       (toolCall) => (toolCall.images ?? []).filter((image) => image.kind === "screenshot").map((image) => image.dataUrl)
@@ -73686,13 +75808,14 @@ function syncToolResultContent(msgEl, toolCalls) {
   }
   const signature = renderSignature({
     content: visible,
-    previewImageDataUrls: [...previewImageDataUrls]
+    previewImageDataUrls: [...previewImageDataUrls],
+    workspaceRoot
   });
   let rendered = current;
   if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
-    rendered = createToolResultContent(visible, previewImageDataUrls);
+    rendered = createToolResultContent(visible, previewImageDataUrls, workspaceRoot);
     toolResultContentSignatures.set(rendered, signature);
-    if (current) current.replaceWith(rendered);
+    if (current) replaceAcpResourceBlock(current, rendered);
     else msgEl.append(rendered);
   }
   const toolCards = Array.from(msgEl.children).filter(
@@ -73749,7 +75872,7 @@ function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   const card = el("details", {
     class: "tool-card",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(card, tc2, label, "tool-card-header");
   onToolCardBodyBuilt(card, () => {
@@ -73772,7 +75895,7 @@ function createInnerToolCard(tc2, api2) {
   const entry = el("details", {
     class: "tool-group-item subagent-inner-tool",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   onToolCardBodyBuilt(entry, () => {
@@ -73822,14 +75945,14 @@ function setAssistantMarkdown(el3, content, streaming, api2) {
       streamingRenderers.set(el3, renderer);
     }
     renderer.update(display);
-    attachCodeBlockCopyButtons(el3);
+    attachCodeBlockCopyButtons(el3, { runCommands: true });
     syncAcpTransportNoiseDisclosure(el3, transportNoise);
     return;
   }
   el3.classList.remove("is-streaming");
   streamingRenderers.delete(el3);
   el3.innerHTML = renderMarkdown(display);
-  attachCodeBlockCopyButtons(el3);
+  attachCodeBlockCopyButtons(el3, { runCommands: true });
   attachTableCopyButtons(el3);
   void annotateFileReferences(el3, api2);
   hydrateRemoteArtifactImages(el3, api2);
@@ -73888,6 +76011,13 @@ function subagentCardStatus(tc2, session) {
   if (tc2.status === "running" || session.status === "running") return "running";
   if (session.status === "error" || tc2.status === "error") return "error";
   return "done";
+}
+function subagentHeaderMarker() {
+  return el(
+    "span",
+    { class: "tool-subagent-marker", "aria-label": "Subagent", "data-tooltip": "Subagent" },
+    gitBranchIcon("ui-icon ui-icon-sm")
+  );
 }
 function subagentModelBadge(session) {
   if (!session.model) return null;
@@ -73995,7 +76125,9 @@ function populateSubagentCard(card, tc2, label, api2) {
   for (const node2 of Array.from(card.children)) {
     if (node2 !== timeline) node2.remove();
   }
-  card.append(createToolHeader(label, status, "tool-card-header"));
+  const header = createToolHeader(label, status, "tool-card-header");
+  header.querySelector(".tool-name")?.before(subagentHeaderMarker());
+  card.append(header);
   const badge = subagentModelBadge(session);
   if (badge) card.append(badge);
   const preview = session.summary ?? tc2.result ?? "";
@@ -74052,7 +76184,7 @@ function createSubagentToolCard(tc2, label, api2) {
   return card;
 }
 function createGroupToolCard(item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-group",
     "data-group-key": item.key,
@@ -74065,16 +76197,16 @@ function createGroupToolCard(item) {
     const entry = el("details", {
       class: "tool-group-item",
       "data-tool-id": tc2.id,
-      "data-status": tc2.status
+      "data-status": cardStatus2([tc2])
     });
     appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
-    toolGroupItemSignatures.set(entry, renderSignature(tc2));
+    toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
     groupItems.append(entry);
   }
   return card;
 }
 function createRollupToolCard(item, api2, threadId, store2) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-rollup",
     "data-rollup-key": item.key,
@@ -74089,11 +76221,12 @@ function createRollupToolCard(item, api2, threadId, store2) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
+  syncRollupInterruptionNote(body, item.toolCalls);
   card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-step",
     "data-step-key": item.key,
@@ -74123,8 +76256,15 @@ function toolCardKey(item) {
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
+function toolCallSignature(call) {
+  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+}
 function toolCardSignature(item, extra) {
-  const base = renderSignature(item);
+  const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+  const base = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+  });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
 function replaceDirectToolHeader(card, header) {
@@ -74137,7 +76277,7 @@ function replaceDirectToolHeader(card, header) {
 function populateRegularToolCard(card, tc2, label, threadId) {
   const wasOpen = card.open;
   lazyToolCardBodies.delete(card);
-  card.dataset["status"] = tc2.status;
+  card.dataset["status"] = cardStatus2([tc2]);
   card.replaceChildren();
   card.open = wasOpen;
   appendStandardToolSections(card, tc2, label, "tool-card-header");
@@ -74150,15 +76290,15 @@ function populateRegularToolCard(card, tc2, label, threadId) {
 function populateGroupItem(entry, tc2) {
   const wasOpen = entry.open;
   lazyToolCardBodies.delete(entry);
-  entry.dataset["status"] = tc2.status;
+  entry.dataset["status"] = cardStatus2([tc2]);
   entry.replaceChildren();
   entry.open = wasOpen;
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   if (wasOpen) ensureToolCardBodyRendered(entry);
-  toolGroupItemSignatures.set(entry, renderSignature(tc2));
+  toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
 }
 function reconcileGroupCard(card, item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
@@ -74184,10 +76324,10 @@ function reconcileGroupCard(card, item) {
       entry = el("details", {
         class: "tool-group-item",
         "data-tool-id": tc2.id,
-        "data-status": tc2.status
+        "data-status": cardStatus2([tc2])
       });
       populateGroupItem(entry, tc2);
-    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc2)) {
+    } else if (toolGroupItemSignatures.get(entry) !== toolCallSignature(tc2)) {
       populateGroupItem(entry, tc2);
     }
     desired.push(entry);
@@ -74230,7 +76370,7 @@ function reconcileNestedToolCards(host, items, api2, threadId, store2) {
 }
 function reconcileToolCard(card, item, api2, threadId, store2) {
   if (item.type === "rollup" || item.type === "step") {
-    const status = aggregateToolStatus(item.toolCalls);
+    const status = cardStatus2(item.toolCalls);
     card.dataset["status"] = status;
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
@@ -74245,6 +76385,7 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       body = el("div", { class: "tool-rollup-body" });
       card.append(body);
     }
+    if (item.type === "rollup") syncRollupInterruptionNote(body, item.toolCalls);
     reconcileNestedToolCards(body, item.children, api2, threadId, store2);
   } else if (item.type === "group") {
     reconcileGroupCard(card, item);
@@ -74279,7 +76420,7 @@ function acpResourceLabel(uri, title) {
     return tail;
   }
 }
-function createAcpContentBlock(block, context, previewImageDataUrls) {
+function createAcpContentBlock(block, context, workspaceRoot, previewImageDataUrls) {
   if (block.type === "text") return null;
   if (block.type === "image") {
     const label2 = block.uri ? acpResourceLabel(block.uri) : "Agent image";
@@ -74317,16 +76458,31 @@ function createAcpContentBlock(block, context, previewImageDataUrls) {
   }
   if (block.type === "resource_link") {
     const label2 = block.title ?? block.name;
+    const displayLabel = workspaceDisplayPath(label2, workspaceRoot);
+    const displayUri = workspaceDisplayPath(block.uri, workspaceRoot);
+    const filePath = workspaceResourceFilePath(block.uri, workspaceRoot);
     const description = block.description ? el("span", { class: "acp-resource-description" }, block.description) : null;
     const metadata = [block.mimeType, block.size !== void 0 ? `${String(block.size)} B` : null].filter(Boolean).join(" \xB7 ");
-    const labelNode = /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, label2) : el("span", { class: "acp-resource-title" }, label2);
+    const labelNode = filePath ? el(
+      "a",
+      {
+        class: "acp-resource-title",
+        href: block.uri,
+        "data-workspace-resource-path": filePath
+      },
+      displayLabel
+    ) : /^https?:\/\//i.test(block.uri) ? el("a", { class: "acp-resource-title", href: block.uri }, displayLabel) : el("span", { class: "acp-resource-title" }, displayLabel);
     return el(
       "div",
-      { class: "acp-resource-content acp-resource-link" },
+      {
+        class: "acp-resource-content acp-resource-link",
+        ...displayLabel !== label2 || displayUri !== block.uri ? { title: block.uri } : {},
+        ...filePath ? { "data-workspace-resource-path": filePath, "data-acp-resource-uri": block.uri } : {}
+      },
       labelNode,
       ...description ? [description] : [],
       ...metadata ? [el("span", { class: "acp-resource-meta" }, metadata)] : [],
-      el("code", { class: "acp-resource-uri" }, block.uri)
+      el("code", { class: "acp-resource-uri" }, displayUri)
     );
   }
   const label = acpResourceLabel(block.uri);
@@ -74347,15 +76503,74 @@ function createAcpContentBlock(block, context, previewImageDataUrls) {
     el("a", { class: "ui-btn ui-btn-secondary", href: block.dataUrl, download: label }, "Save")
   );
 }
-function createAcpContentBlocks(blocks, context) {
+function createAcpContentBlocks(blocks, context, workspaceRoot) {
   const nodes = blocks.flatMap((block) => {
-    const node2 = createAcpContentBlock(block, context);
+    const node2 = createAcpContentBlock(block, context, workspaceRoot);
     return node2 ? [node2] : [];
   });
   if (nodes.length === 0) return null;
   return el("div", { class: `acp-content-blocks acp-${context}-content` }, ...nodes);
 }
-function createToolResultContent(content, previewImageDataUrls) {
+function createAcpToolDiff(item, workspaceRoot) {
+  const displayPath = workspaceDisplayPath(item.path, workspaceRoot);
+  const lines = computeLineDiff(item.oldText ?? "", item.newText);
+  const additions = lines.filter((line) => line.kind === "add").length;
+  const deletions = lines.filter((line) => line.kind === "del").length;
+  const hasChanges = additions > 0 || deletions > 0;
+  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, "No changes");
+  const details = el(
+    "details",
+    { class: "acp-tool-diff" },
+    el(
+      "summary",
+      {},
+      el(
+        "span",
+        { class: "acp-tool-diff-label" },
+        item.oldText === void 0 ? "New file" : "Diff"
+      ),
+      el(
+        "code",
+        {
+          class: "acp-tool-diff-path",
+          ...displayPath !== item.path ? { title: item.path } : {}
+        },
+        // Isolated so the rtl elision trick cannot move a leading `.` to the end.
+        el("bdi", {}, displayPath)
+      ),
+      el("span", { class: "tool-stat tool-stat-add" }, `+${String(additions)}`),
+      el("span", { class: "tool-stat tool-stat-del" }, `-${String(deletions)}`)
+    ),
+    body
+  );
+  if (!hasChanges) return details;
+  const buildRows = () => {
+    if (!details.open || body.childElementCount > 0) return;
+    const rows = foldLineDiff(lines).flatMap((line) => {
+      if (line.kind === "gap") {
+        return [
+          el(
+            "div",
+            { class: "acp-diff-line acp-diff-gap" },
+            `\u22EF ${String(line.count)} unchanged ${line.count === 1 ? "line" : "lines"}`
+          )
+        ];
+      }
+      const accessibility = line.kind === "add" ? { "aria-label": `Added line: ${line.text}` } : line.kind === "del" ? { "aria-label": `Deleted line: ${line.text}` } : {};
+      const row2 = el(
+        "div",
+        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        el("span", { class: "acp-diff-sign", "aria-hidden": "true" }, acpDiffLineSigns[line.kind]),
+        el("span", { class: "acp-diff-text" }, line.text)
+      );
+      return line.noNewlineAtEnd ? [row2, el("div", { class: "acp-diff-line acp-diff-eof" }, "\\ No newline at end of file")] : [row2];
+    });
+    body.append(...rows);
+  };
+  details.addEventListener("toggle", buildRows);
+  return details;
+}
+function createToolResultContent(content, previewImageDataUrls, workspaceRoot) {
   const imageCount = content.filter(
     (item) => item.type === "content" && item.content.type === "image"
   ).length;
@@ -74365,21 +76580,10 @@ function createToolResultContent(content, previewImageDataUrls) {
   });
   for (const item of content) {
     if (item.type === "content") {
-      const node2 = createAcpContentBlock(item.content, "tool", previewImageDataUrls);
+      const node2 = createAcpContentBlock(item.content, "tool", workspaceRoot, previewImageDataUrls);
       if (node2) wrap.append(node2);
     } else if (item.type === "diff") {
-      const diff = el(
-        "details",
-        { class: "acp-tool-diff" },
-        el("summary", {}, `Diff \xB7 ${item.path}`),
-        ...item.oldText !== void 0 ? [
-          el("div", { class: "acp-content-label" }, "Before"),
-          el("pre", { class: "acp-tool-diff-text" }, item.oldText)
-        ] : [],
-        el("div", { class: "acp-content-label" }, "After"),
-        el("pre", { class: "acp-tool-diff-text" }, item.newText)
-      );
-      wrap.append(diff);
+      wrap.append(createAcpToolDiff(item, workspaceRoot));
     } else {
       wrap.append(
         el(
@@ -74610,13 +76814,19 @@ function createHookCardHost(messageId, cards, load) {
   host.append(group);
   return host;
 }
-function appendMessageContent(body, msg, api2, opts) {
+function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
   if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
     body.append(
-      buildReasoningEl(msg.reasoning ?? "", !msg.content.trim(), false, msg.reasoningBlocks)
+      buildReasoningEl(
+        msg.reasoning ?? "",
+        !msg.content.trim(),
+        false,
+        msg.reasoningBlocks,
+        workspaceRoot
+      )
     );
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
@@ -74631,20 +76841,20 @@ function appendMessageContent(body, msg, api2, opts) {
     textEl.textContent = msg.content;
   }
   if (msg.role === "assistant" && msg.contentBlocks?.length) {
-    const richContent = createAcpContentBlocks(msg.contentBlocks, "message");
+    const richContent = createAcpContentBlocks(msg.contentBlocks, "message", workspaceRoot);
     if (richContent) body.append(richContent);
   }
 }
-function syncAcpMessageContent(msgEl, blocks) {
+function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
   const body = msgEl.querySelector(":scope > .message-body");
   if (!body) return;
   const current = body.querySelector(":scope > .acp-message-content");
-  const replacement = createAcpContentBlocks(blocks, "message");
+  const replacement = createAcpContentBlocks(blocks, "message", workspaceRoot);
   if (!replacement) {
     current?.remove();
     return;
   }
-  if (current) current.replaceWith(replacement);
+  if (current) replaceAcpResourceBlock(current, replacement);
   else body.append(replacement);
 }
 function shouldNestReasoningInTools(toolCalls) {
@@ -74680,7 +76890,8 @@ function setReasoningDisclosureTitle(details, live) {
   if (!live) {
     const textEl = details.querySelector(".message-reasoning-text");
     const state = textEl && reasoningRenders.get(textEl);
-    if (textEl && state?.live) renderReasoningText(textEl, state.text, false, state.blocks);
+    if (textEl && state?.live)
+      renderReasoningText(textEl, state.text, false, state.blocks, state.workspaceRoot);
   }
 }
 function isReasoningDisclosureLive(thread, msg) {
@@ -74745,7 +76956,7 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks) {
+function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
     class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
     open: open2
@@ -74761,17 +76972,17 @@ function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks)
     el("span", { class: "message-reasoning-title" }, reasoningDisclosureTitle(live))
   );
   const text2 = el("div", { class: "message-reasoning-text" });
-  renderReasoningText(text2, reasoning, live, blocks);
+  renderReasoningText(text2, reasoning, live, blocks, workspaceRoot);
   summary.addEventListener("click", () => {
     details.dataset["userToggled"] = "1";
   });
   details.append(summary, text2);
   return details;
 }
-function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks) {
+function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const previous = reasoningRenders.get(el3);
   const markdownChanged = previous?.text !== text2 || previous.live !== live;
-  const blocksChanged = previous?.blocks !== blocks;
+  const blocksChanged = previous?.blocks !== blocks || previous.workspaceRoot !== workspaceRoot;
   if (!markdownChanged && !blocksChanged) return;
   let renderer = previous?.renderer ?? null;
   if (markdownChanged) {
@@ -74786,12 +76997,12 @@ function renderReasoningText(el3, text2, live, blocks = emptyReasoningBlocks) {
   let richContent = previous?.richContent ?? null;
   if (blocksChanged) {
     richContent?.remove();
-    richContent = createAcpContentBlocks(blocks, "reasoning");
+    richContent = createAcpContentBlocks(blocks, "reasoning", workspaceRoot);
   }
   if (richContent && richContent.parentElement !== el3) el3.append(richContent);
-  reasoningRenders.set(el3, { text: text2, blocks, live, renderer, richContent });
+  reasoningRenders.set(el3, { text: text2, blocks, live, renderer, richContent, workspaceRoot });
 }
-function syncReasoningEl(msgEl, msg, live) {
+function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
   const body = msgEl.querySelector(".message-body");
   if (!body) return;
   const rollupBody = msgEl.querySelector(
@@ -74804,17 +77015,18 @@ function syncReasoningEl(msgEl, msg, live) {
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks);
+    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks);
+    if (textEl)
+      renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
   if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
-function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live) {
+function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
   if (!rollupBody) return;
   const body = msgEl.querySelector(".message-body");
@@ -74824,10 +77036,10 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks);
+    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks);
+    if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
   if (details.parentElement !== rollupBody) rollupBody.prepend(details);
@@ -74835,7 +77047,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     if (node2 !== details) node2.remove();
   });
 }
-function syncRunStepReasoning(card, run2, liveStepId) {
+function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
@@ -74848,12 +77060,19 @@ function syncRunStepReasoning(card, run2, liveStepId) {
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(step.reasoning ?? "", live, live, step.reasoningBlocks);
+      details = buildReasoningEl(
+        step.reasoning ?? "",
+        live,
+        live,
+        step.reasoningBlocks,
+        workspaceRoot
+      );
       body.prepend(details);
       continue;
     }
     const textEl = details.querySelector(".message-reasoning-text");
-    if (textEl) renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks);
+    if (textEl)
+      renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
 }
@@ -74887,6 +77106,11 @@ function mountConversation(root, store2, api2) {
   const todoHost = el("div", { class: "conversation-todos-host" });
   const appleDevelopmentHost = createAppleDevelopmentPanel(store2, api2, { allowEnrollment: false });
   const list = el("div", { class: "messages-list", role: "log", "aria-live": "polite" });
+  let agentNames = /* @__PURE__ */ new Map();
+  let agentNamesRequested = false;
+  let agentNamesRevision = 0;
+  let disposed = false;
+  const avatarMotion = createAgentAvatarMotion();
   const scrollToBottomBtn = el(
     "button",
     {
@@ -74914,7 +77138,16 @@ function mountConversation(root, store2, api2) {
     details.scrollIntoView({ block: "nearest" });
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
-  root.append(scrollArea, queuedHost);
+  const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
+  root.append(roadmapOrigin.element, scrollArea, queuedHost);
+  const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
+    const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
+    if (!projectId || !threadId) {
+      setCodeBlockRunOutcome(list, id, null);
+      return;
+    }
+    store2.emit("code_block_run_requested", { id, command, projectId, threadId });
+  });
   list.addEventListener("click", (e3) => {
     const statsBtn = e3.target instanceof Element ? e3.target.closest(".tool-edit-stats") : null;
     const path = statsBtn?.dataset["editPath"];
@@ -74922,6 +77155,58 @@ function mountConversation(root, store2, api2) {
     e3.preventDefault();
     e3.stopPropagation();
     navigateToChange(store2, path);
+  });
+  list.addEventListener("contextmenu", (e3) => {
+    if (e3.defaultPrevented) return;
+    const targetEl = e3.target instanceof Element ? e3.target : null;
+    const msgEl = targetEl?.closest(".msg[data-message-id]") ?? null;
+    const selection2 = document.getSelection();
+    const selectionIsInsideTranscript = selection2 !== null && !selection2.isCollapsed && list.contains(selection2.anchorNode) && list.contains(selection2.focusNode);
+    const selectedText = selectionIsInsideTranscript ? trimSelectionText(selection2.toString()) : "";
+    if (selectedText) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      showContextMenu(e3.clientX, e3.clientY, [
+        {
+          label: "Quote in reply",
+          onSelect: () => {
+            quoteTranscriptSelection(selectedText);
+          }
+        },
+        {
+          label: "Add to roadmap",
+          onSelect: () => {
+            void addTranscriptSelectionToRoadmap(api2, selectedText);
+          }
+        },
+        {
+          label: "Search",
+          onSelect: () => {
+            openConversationSearch(normalizeSearchText(selectedText));
+          }
+        },
+        {
+          label: "Copy",
+          onSelect: () => {
+            void navigator.clipboard.writeText(selectedText);
+          }
+        }
+      ]);
+      return;
+    }
+    const msgId = msgEl?.dataset["messageId"];
+    const messageText = msgId ? messageContentById(store2, msgId) : void 0;
+    if (!messageText) return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    showContextMenu(e3.clientX, e3.clientY, [
+      {
+        label: "Copy message",
+        onSelect: () => {
+          void navigator.clipboard.writeText(messageText);
+        }
+      }
+    ]);
   });
   let editingMessageId = null;
   let editingDraft = "";
@@ -75105,7 +77390,7 @@ function mountConversation(root, store2, api2) {
     if (editing) {
       body.append(buildQueuedEditor(msg.id));
     } else {
-      appendMessageContent(body, msg, api2);
+      appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2));
       body.append(held ? buildHeldActions(msg.id) : buildQueuedActions(msg.id));
     }
     item.append(body);
@@ -75343,6 +77628,20 @@ function mountConversation(root, store2, api2) {
     }
     updateScrollButton();
   }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
   function applyRollupSummaries(item, opts) {
     const { commandSummary, toolSummary } = opts;
     if (item.type === "rollup") {
@@ -75363,17 +77662,34 @@ function mountConversation(root, store2, api2) {
       item.label = commandSummary;
     }
   }
+  function labelUserInterruptions(item) {
+    const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+    if (calls.some((call) => userInterruptedCalls.has(call))) {
+      const failed = calls.filter(
+        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+      ).length;
+      const base = item.label.replace(/ · \d+ failed$/, "");
+      item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
+    }
+    if (item.type === "rollup" || item.type === "step") {
+      for (const child of item.children) labelUserInterruptions(child);
+    }
+  }
   function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
-    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
     card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
     const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
     const failed = itemStatus2 === "error";
+    if (itemStatus2 === "interrupted") {
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+    }
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -75432,6 +77748,7 @@ function mountConversation(root, store2, api2) {
     const msgId = msgEl.dataset["messageId"] ?? "";
     const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
     const activeThread = getActiveThread(store2);
+    markUserInterruptedCalls(activeThread);
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
@@ -75443,6 +77760,7 @@ function mountConversation(root, store2, api2) {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
+    for (const item of items) labelUserInterruptions(item);
     const existing = /* @__PURE__ */ new Map();
     for (const node2 of msgEl.querySelectorAll(":scope > .tool-card")) {
       const key = toolCardKeys.get(node2);
@@ -75473,11 +77791,12 @@ function mountConversation(root, store2, api2) {
           msgEl,
           opts.reasoning,
           opts.reasoningBlocks,
-          opts.reasoningLive === true
+          opts.reasoningLive === true,
+          acpWorkspaceRoot(store2)
         );
       }
       if (item.type === "rollup" && run2 && item.key === RUN_ROLLUP_KEY) {
-        syncRunStepReasoning(card, run2, opts.liveStepId ?? null);
+        syncRunStepReasoning(card, run2, opts.liveStepId ?? null, acpWorkspaceRoot(store2));
       }
       desired.push(card);
     }
@@ -75504,7 +77823,12 @@ function mountConversation(root, store2, api2) {
         msgEl.insertBefore(node2, msgEl.children[base + i2] ?? null);
       }
     }
-    syncToolResultContent(msgEl, run2 ? isRunMember ? [] : run2.toolCalls : toolCalls);
+    syncToolResultContent(
+      msgEl,
+      run2 ? isRunMember ? [] : run2.toolCalls : toolCalls,
+      acpWorkspaceRoot(store2)
+    );
+    hydrateAcpResourceImages(msgEl, api2, store2);
     registerReasoningDisclosures(msgEl);
     syncToolRunMemberVisibility(msgEl);
   }
@@ -75555,7 +77879,7 @@ function mountConversation(root, store2, api2) {
     const msg = thread?.messages.find((m2) => m2.id === msgId);
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`);
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return;
-    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store2));
   }
   function syncRunStepTrail(thread, run2) {
     const runCard = list.querySelector(
@@ -75568,7 +77892,8 @@ function mountConversation(root, store2, api2) {
       renderRunAnchor(thread, run2);
       return;
     }
-    syncRunStepReasoning(runCard, run2, liveStepMessageId(thread));
+    syncRunStepReasoning(runCard, run2, liveStepMessageId(thread), acpWorkspaceRoot(store2));
+    hydrateAcpResourceImages(runCard, api2, store2);
   }
   function buildMessageEl(threadId, msgId) {
     const thread = getThreadById(store2, threadId);
@@ -75588,7 +77913,7 @@ function mountConversation(root, store2, api2) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
       shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
     );
-    appendMessageContent(body, msg, api2, {
+    appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
     msgEl.append(body);
@@ -75613,6 +77938,7 @@ function mountConversation(root, store2, api2) {
     syncMessageVisualEvidence(msgEl, msg);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
     renderMessageTurnRecovery(threadId, msgId);
   }
@@ -75635,7 +77961,9 @@ function mountConversation(root, store2, api2) {
     if (batched) return;
     syncModelLabels();
     syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
     scrollToBottom(msg.role === "user");
+    if (msg.role === "user") scrollUserPromptIntoView(msgEl);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
@@ -75717,6 +78045,20 @@ function mountConversation(root, store2, api2) {
   function syncModelLabels() {
     const thread = getActiveThread(store2);
     if (!thread) return;
+    if (!agentNamesRequested && thread.messages.some((msg) => {
+      const model = msg.model ?? msg.requestedModel;
+      return msg.role === "assistant" && model && customAgentId(model);
+    })) {
+      agentNamesRequested = true;
+      const revision = ++agentNamesRevision;
+      void api2.settings.get("registeredAcpAgents").then((value) => {
+        if (disposed || revision !== agentNamesRevision) return;
+        agentNames = namedAgentTitles(value);
+        syncModelLabels();
+      }).catch((error62) => {
+        console.warn("[conversation] Could not load named agent identities", error62);
+      });
+    }
     const show2 = shouldShowPrimaryChatModelLabels(thread.messages);
     const rendered = /* @__PURE__ */ new Map();
     list.querySelectorAll("[data-message-id]").forEach((node2) => {
@@ -75724,6 +78066,7 @@ function mountConversation(root, store2, api2) {
       if (id !== null && !rendered.has(id)) rendered.set(id, node2);
     });
     let prevLabel;
+    let prevAgentKey;
     for (const msg of thread.messages) {
       if (msg.role !== "assistant") continue;
       const msgEl = rendered.get(msg.id);
@@ -75731,16 +78074,52 @@ function mountConversation(root, store2, api2) {
       const existing = msgEl.querySelector(".message-model");
       const model = msg.model;
       const text2 = model ? formatPrimaryChatModelLabel(model, msg.parameters) : void 0;
-      if (show2 && text2 && text2 !== prevLabel) {
+      const identity = chatAgentIdentity(thread.id, msg, agentNames);
+      let header = msgEl.querySelector(".message-agent");
+      if (identity && identity.key !== prevAgentKey) {
+        if (header?.dataset["agentKey"] !== identity.key) {
+          header?.remove();
+          header = el(
+            "div",
+            { class: "message-agent", "data-agent-key": identity.key },
+            createAgentAvatar(identity.key, identity.style),
+            el("span", { class: "message-agent-name" }, identity.label)
+          );
+          msgEl.prepend(header);
+        } else {
+          const name = header.querySelector(".message-agent-name");
+          if (name) name.textContent = identity.label;
+        }
+      } else {
+        header?.remove();
+        header = null;
+      }
+      if (show2 && model && text2 && text2 !== prevLabel && (!identity || model.includes("#"))) {
         const label = existing ?? el("div", { class: "message-model" });
-        label.textContent = text2;
-        if (!existing) msgEl.prepend(label);
+        label.textContent = identity ? formatPrimaryChatModelLabel(model.slice(model.indexOf("#") + 1), msg.parameters) : text2;
+        if (header) {
+          if (label.parentElement !== header) header.append(label);
+        } else if (label.parentElement !== msgEl) msgEl.prepend(label);
       } else {
         existing?.remove();
       }
       syncToolRunMemberVisibility(msgEl);
       prevLabel = text2;
+      prevAgentKey = identity?.key;
     }
+    syncAvatarMotion();
+  }
+  function syncAvatarMotion() {
+    const thread = getActiveThread(store2);
+    if (!thread || thread.status !== "running" || !store2.getState().animateAgentAvatars) {
+      avatarMotion.setActive(null);
+      return;
+    }
+    const pending = queuedMessageIds(thread);
+    const latest = [...thread.messages].reverse().find((msg) => !pending.has(msg.id));
+    const identity = latest?.role === "assistant" ? chatAgentIdentity(thread.id, latest, agentNames) : null;
+    const header = identity ? [...list.querySelectorAll(".message-agent")].reverse().find((element) => element.dataset["agentKey"] === identity.key) : void 0;
+    avatarMotion.setActive(header?.querySelector(".agent-avatar") ?? null);
   }
   function syncTodoPanel() {
     todoHost.replaceChildren();
@@ -75783,6 +78162,31 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
+  function renderMessageReviewReport(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    if (!msg?.reviewReport || !msgEl) return;
+    const card = createReviewFindingsCardEl(msg.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId, messageId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId, messageId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding, messageId);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id, messageId);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    card.setAttribute("data-review-report-for", messageId);
+    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    (postTurnCard ?? msgEl).after(card);
+  }
   function renderMessageTurnRecovery(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
@@ -75804,7 +78208,9 @@ function mountConversation(root, store2, api2) {
     msgEl.after(card);
   }
   function firstTrailingCard() {
-    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+    return list.querySelector(
+      "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
+    );
   }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
@@ -75819,7 +78225,7 @@ function mountConversation(root, store2, api2) {
     }
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]")?.remove();
+    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
     if (!thread?.reviewReport) return;
     const threadId = thread.id;
@@ -75871,6 +78277,7 @@ function mountConversation(root, store2, api2) {
     if (delta !== 0) setScrollTopProgrammatically(scrollTopBefore + delta);
     syncModelLabels();
     syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
     updateScrollButton();
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -75889,6 +78296,7 @@ function mountConversation(root, store2, api2) {
     }
     disclosureElements.clear();
     disposeInlineArtefacts(list);
+    avatarMotion.setActive(null);
     clear(list);
     backfillGeneration++;
     renderedThreadId = thread?.id ?? null;
@@ -75911,6 +78319,7 @@ function mountConversation(root, store2, api2) {
     }
     syncModelLabels();
     syncUserActions();
+    syncAcpResourceReferences(list, api2, store2);
     if (preservedScrollTop === null) {
       scrollToBottom(true);
     } else {
@@ -75962,11 +78371,20 @@ function mountConversation(root, store2, api2) {
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
     if (run2) syncRunLayout(thread, run2, msgId);
+    syncAcpResourceReferences(list, api2, store2);
     if (wasPinned) {
       scrollToBottom();
     } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
   const unsubs = [
+    store2.on("code_block_run_finished", (result) => {
+      setCodeBlockRunOutcome(list, result.id, result.exitCode);
+    }),
+    store2.on("settings_changed", () => {
+      agentNamesRequested = false;
+      agentNamesRevision++;
+      syncModelLabels();
+    }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
     }),
@@ -76014,11 +78432,18 @@ function mountConversation(root, store2, api2) {
       const msg = thread?.messages.find((message2) => message2.id === mid);
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`);
       if (msg?.role === "assistant" && msgEl) {
-        syncAcpMessageContent(msgEl, msg.contentBlocks ?? []);
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? [], acpWorkspaceRoot(store2));
         const run2 = multiStepRunFor(thread, mid);
         if (run2) syncRunStepTrail(thread, run2);
-        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        else
+          syncReasoningEl(
+            msgEl,
+            msg,
+            isReasoningDisclosureLive(thread, msg),
+            acpWorkspaceRoot(store2)
+          );
         registerReasoningDisclosures(msgEl);
+        syncAcpResourceReferences(list, api2, store2);
         syncToolRunMemberVisibility(msgEl);
         scrollToBottom();
       }
@@ -76030,8 +78455,15 @@ function mountConversation(root, store2, api2) {
       if (msg?.role === "assistant" && msgEl) {
         const run2 = multiStepRunFor(thread, mid);
         if (run2) syncRunStepTrail(thread, run2);
-        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg));
+        else
+          syncReasoningEl(
+            msgEl,
+            msg,
+            isReasoningDisclosureLive(thread, msg),
+            acpWorkspaceRoot(store2)
+          );
         registerReasoningDisclosures(msgEl);
+        hydrateAcpResourceImages(msgEl, api2, store2);
         activityBar.classList.add("agent-activity-clickable");
         setActivity(activityLabel.textContent);
         scrollToBottom();
@@ -76045,6 +78477,7 @@ function mountConversation(root, store2, api2) {
       if (textEl && msg?.role === "assistant") {
         setAssistantMarkdown(textEl, msg.content, false, api2);
         hydrateRemoteArtifactImages(list, api2);
+        syncAcpResourceReferences(list, api2, store2);
       }
       if (msg?.role === "assistant" && msgEl) {
         msgEl.classList.toggle(
@@ -76091,8 +78524,9 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
-    store2.on("review_report_changed", () => {
-      syncReviewReportCard();
+    store2.on("review_report_changed", (tid, mid) => {
+      if (mid) renderMessageReviewReport(tid, mid);
+      else syncReviewReportCard();
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -76123,6 +78557,7 @@ function mountConversation(root, store2, api2) {
         const last = getThreadById(store2, tid)?.messages.at(-1);
         if (last?.role === "assistant") renderMessageTurnRecovery(tid, last.id);
       }
+      syncAvatarMotion();
     }),
     store2.on("agent_activity", (tid, label) => {
       if (tid !== store2.getState().activeThreadId) return;
@@ -76137,6 +78572,8 @@ function mountConversation(root, store2, api2) {
   rebuildForThread();
   syncFromStore();
   return () => {
+    disposed = true;
+    avatarMotion.dispose();
     backfillGeneration++;
     showAcpTransportNoiseDisclosure = () => false;
     revealTimers.forEach((timer) => {
@@ -76151,10 +78588,31 @@ function mountConversation(root, store2, api2) {
     unbindFileLinks();
     unbindWorkspaceLinks();
     unbindBrowserLinks();
+    unbindCodeBlockRuns();
+    roadmapOrigin.destroy();
     unsubs.forEach((u2) => {
       u2();
     });
   };
+}
+function messageContentById(store2, msgId) {
+  return store2.getState().threads.flatMap((t2) => t2.messages).find((m2) => m2.id === msgId)?.content;
+}
+function quoteTranscriptSelection(text2) {
+  const handlers3 = getPromptAttachmentHandlers();
+  if (!handlers3) return;
+  handlers3.quoteText(text2);
+  handlers3.focusComposer?.();
+}
+async function addTranscriptSelectionToRoadmap(api2, text2) {
+  try {
+    await api2.roadmap.create(text2);
+    showToast("Added to roadmap");
+  } catch (err2) {
+    showToast(`Could not add to roadmap: ${ipcErrorMessage(err2, "unknown error")}`, {
+      variant: "error"
+    });
+  }
 }
 function attachCopyButton(body, msgId, store2) {
   const copyBtn = el("button", { class: "msg-copy", "aria-label": "Copy response" }, "Copy");
@@ -76167,10 +78625,12 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
+    init_agent_avatar();
+    init_chat_agent_identity();
     init_reasoning_activity_icon();
     init_icons();
     init_user_prompt_fold();
@@ -76198,13 +78658,17 @@ var init_conversation = __esm({
     init_model_display();
     init_attachment_icons();
     init_image_expand();
+    init_acp_resource_previews();
+    init_line_diff();
     init_text_expand();
     init_video_expand();
     init_composer_editor();
     init_agent_activity();
     init_tool_display();
     init_tool_runs();
+    init_tool_interruption();
     init_panels();
+    init_thread_roadmap_origin();
     init_thread_hydration();
     init_plugin_panel();
     init_plugin_panel2();
@@ -76216,6 +78680,7 @@ var init_conversation = __esm({
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
+    init_tool_error_format();
     init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
@@ -76225,6 +78690,12 @@ var init_conversation = __esm({
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
+    init_context_menu();
+    init_prompt_attachments();
+    init_conversation_search();
+    init_markdown_quote();
+    init_ipc_error_message();
+    userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -76235,6 +78706,7 @@ var init_conversation = __esm({
     toolCardKeys = /* @__PURE__ */ new WeakMap();
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
+    acpDiffLineSigns = { context: " ", add: "+", del: "-" };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
@@ -86827,15 +89299,6 @@ function readAsDataUrl(blob) {
     r2.readAsDataURL(blob);
   });
 }
-function relativeWorkspacePath(absPath, workspaceRoot) {
-  if (!workspaceRoot) return absPath;
-  const root = workspaceRoot.replace(/\/+$/, "");
-  const normalized = absPath.replace(/\\/g, "/");
-  const prefix = root.replace(/\\/g, "/");
-  if (normalized === prefix) return "";
-  if (normalized.startsWith(`${prefix}/`)) return normalized.slice(prefix.length + 1);
-  return absPath;
-}
 async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) {
   const name = path.split(/[\\/]/).pop() ?? path;
   if (isVideoFile({ name })) {
@@ -86855,7 +89318,11 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
       return;
     }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
-    handlers3.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content });
+    const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null;
+    handlers3.attachFile({
+      path: relativePath === null || relativePath === "" ? path : relativePath,
+      content
+    });
   } catch {
   }
 }
@@ -86945,6 +89412,7 @@ var init_handle_file_drop = __esm({
     init_archive_media();
     init_unknown_value3();
     init_image_path();
+    init_workspace_path();
     WORKSPACE_PATH_MIME = "application/x-copse-panel-path";
   }
 });
@@ -87981,6 +90449,7 @@ function isTrunkBranch(branch, defaultBranch) {
   return defaultBranch != null && branch != null && branch === defaultBranch;
 }
 function mountFooterBranchStatus(host, store2, api2) {
+  const listId = `branch-picker-list-${String(++nextPickerId)}`;
   const wrap = el("div", { class: "branch-picker", hidden: "" });
   const trigger = el("button", {
     type: "button",
@@ -87994,7 +90463,25 @@ function mountFooterBranchStatus(host, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm")
   );
   trigger.append(label, chevron);
-  const menu = el("div", { class: "branch-picker-menu", role: "listbox", hidden: "" });
+  const menu = el("div", { class: "branch-picker-menu", hidden: "" });
+  const filterInput = el("input", {
+    type: "search",
+    class: "branch-picker-filter",
+    placeholder: "Filter branches...",
+    "aria-label": "Filter branches",
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-controls": listId,
+    "aria-expanded": "false",
+    autocomplete: "off"
+  });
+  const list = el("div", {
+    id: listId,
+    class: "branch-picker-list",
+    role: "listbox",
+    "aria-label": "Branches"
+  });
+  menu.append(filterInput, list);
   wrap.append(trigger, menu);
   host.append(wrap);
   let status = null;
@@ -88004,6 +90491,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   let defaultBranch = null;
   let open2 = false;
   let refreshToken = 0;
+  let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
@@ -88033,8 +90521,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function setOpen(next) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
-    if (next) menu.removeAttribute("hidden");
-    else menu.setAttribute("hidden", "");
+    filterInput.setAttribute("aria-expanded", String(next));
+    if (next) {
+      menu.removeAttribute("hidden");
+    } else {
+      menu.setAttribute("hidden", "");
+      filterInput.value = "";
+      activeIndex = 0;
+      filterInput.removeAttribute("aria-activedescendant");
+    }
   }
   function renderTrigger() {
     const threadBranch = getActiveThreadBranch();
@@ -88095,33 +90590,102 @@ function mountFooterBranchStatus(host, store2, api2) {
       }
     }
   }
+  function filteredRows() {
+    const pr2 = getVisiblePr();
+    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
+    const query = filterInput.value.trim().toLocaleLowerCase();
+    const matches2 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
+    return { pr: pr2, matches: matches2 };
+  }
+  function rowCount() {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    return (pr2 ? 1 : 0) + matches2.length;
+  }
+  function clampActiveIndex() {
+    const count = rowCount();
+    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
+  }
+  function scrollActiveRowIntoView() {
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
+    const listBounds = list.getBoundingClientRect();
+    if (activeBounds.top < listBounds.top) {
+      list.scrollTop += activeBounds.top - listBounds.top;
+    } else if (activeBounds.bottom > listBounds.bottom) {
+      list.scrollTop += activeBounds.bottom - listBounds.bottom;
+    }
+  }
+  function selectBranch(name) {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.set(thread.id, name);
+    renderTrigger();
+    renderMenu();
+  }
+  function activateRow(index) {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    if (pr2 && index === 0) {
+      setOpen(false);
+      trigger.focus();
+      openBrowserUrl(store2, pr2.url);
+      return;
+    }
+    const branch = matches2[pr2 ? index - 1 : index];
+    if (branch) selectBranch(branch.name);
+  }
+  function moveActive(direction) {
+    const count = rowCount();
+    if (count === 0) return;
+    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction));
+    renderMenu();
+  }
   function renderMenu() {
-    clear(menu);
+    clear(list);
+    filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const pr2 = getVisiblePr();
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    clampActiveIndex();
+    let rowIndex = 0;
     if (pr2) {
       const prItem = el(
         "button",
-        { type: "button", class: "branch-picker-option branch-picker-action" },
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-action",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
         `Open PR #${String(pr2.number)}`
       );
+      if (rowIndex === activeIndex) prItem.classList.add("is-active");
       prItem.addEventListener("click", () => {
         setOpen(false);
+        trigger.focus();
         openBrowserUrl(store2, pr2.url);
       });
-      menu.append(prItem);
+      list.append(prItem);
+      rowIndex++;
     }
-    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
-    for (const branch of ordered) {
+    for (const branch of matches2) {
       const nameEl = el("span", { class: "branch-picker-option-label" }, branch.name);
       const item = el(
         "button",
         {
           type: "button",
           class: "branch-picker-option",
+          id: `${listId}-option-${String(rowIndex)}`,
+          tabindex: "-1",
           role: "option",
-          "aria-selected": branch.name === selected ? "true" : "false"
+          // The listbox selection follows the keyboard highlight. Keep the
+          // committed branch separately marked with `is-selected` below so a
+          // pending choice remains visible while the user explores options.
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
         },
         nameEl
       );
@@ -88129,19 +90693,24 @@ function mountFooterBranchStatus(host, store2, api2) {
         item.append(el("span", { class: "branch-picker-default-badge" }, "default"));
       }
       if (branch.name === selected) item.classList.add("is-selected");
+      if (rowIndex === activeIndex) item.classList.add("is-active");
       item.addEventListener("click", () => {
-        setOpen(false);
-        const thread = getActiveThread2();
-        if (!thread) return;
-        baseBranchByThread.set(thread.id, branch.name);
-        renderTrigger();
-        renderMenu();
+        selectBranch(branch.name);
       });
-      menu.append(item);
+      list.append(item);
+      rowIndex++;
     }
-    if (ordered.length === 0 && !pr2) {
-      menu.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+    if (matches2.length === 0) {
+      const query = filterInput.value.trim();
+      if (query) {
+        list.append(el("div", { class: "branch-picker-empty" }, `No branches match "${query}".`));
+      } else if (!pr2) {
+        list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+      }
     }
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
+    scrollActiveRowIntoView();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -88249,6 +90818,8 @@ function mountFooterBranchStatus(host, store2, api2) {
     const next = !open2;
     setOpen(next);
     if (next) {
+      renderMenu();
+      filterInput.focus();
       void (async () => {
         const token = refreshToken;
         try {
@@ -88259,6 +90830,28 @@ function mountFooterBranchStatus(host, store2, api2) {
         if (token !== refreshToken) return;
         renderMenu();
       })();
+    }
+  });
+  filterInput.addEventListener("input", () => {
+    activeIndex = 0;
+    renderMenu();
+  });
+  menu.addEventListener("keydown", (e3) => {
+    if (e3.isComposing) return;
+    if (e3.key === "ArrowDown") {
+      e3.preventDefault();
+      moveActive(1);
+    } else if (e3.key === "ArrowUp") {
+      e3.preventDefault();
+      moveActive(-1);
+    } else if (e3.key === "Enter" && e3.target === filterInput) {
+      e3.preventDefault();
+      activateRow(activeIndex);
+    } else if (e3.key === "Escape") {
+      e3.preventDefault();
+      e3.stopPropagation();
+      setOpen(false);
+      trigger.focus();
     }
   });
   const unsubs = [
@@ -88307,7 +90900,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_helpers();
@@ -88319,6 +90912,7 @@ var init_footer_branch_status = __esm({
     init_active_thread_owner();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
+    nextPickerId = 0;
   }
 });
 
@@ -88728,6 +91322,7 @@ function threadToJsonl(thread) {
         ...msg.parameters !== void 0 ? { parameters: msg.parameters } : {},
         ...msg.turnOutcome !== void 0 ? { turnOutcome: msg.turnOutcome } : {},
         ...msg.review !== void 0 ? { review: msg.review } : {},
+        ...msg.reviewReport !== void 0 ? { reviewReport: msg.reviewReport } : {},
         ...msg.origin !== void 0 ? { origin: msg.origin } : {},
         ...msg.editedByUser !== void 0 ? { editedByUser: msg.editedByUser } : {},
         toolCalls: msg.toolCalls
@@ -88900,55 +91495,6 @@ var init_debug_trace_prompt2 = __esm({
 });
 
 // src/shared/usage/footer-usage-summary.ts
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    return { inputTokens, outputTokens, estimated: false };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const cost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
-// src/shared/usage/footer-usage-tooltip.ts
 function collectSubagentUsage(toolCalls, totals) {
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent;
@@ -88970,12 +91516,84 @@ function sumSubagentUsage(messages) {
   }
   return totals;
 }
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls ?? []) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    return {
+      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
+      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+  }
+});
+
+// src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
   if (isLocalModel(model)) return `${tokens} \xB7 free`;
   const cost = costForModelUsage(model, usage, pricing);
   if (!hasModelPricing(model, pricing)) return `${tokens} \xB7 unpriced`;
   return `${tokens} \xB7 ${cost > 0 ? formatUsd(cost) : "free"}`;
+}
+function freeReason(model, pricing) {
+  if (isLocalModel(model)) return "local model";
+  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  return null;
+}
+function buildFreeNote(models, pricing) {
+  const reasons = [];
+  for (const model of models) {
+    const reason = freeReason(model, pricing);
+    if (reason && !reasons.includes(reason)) reasons.push(reason);
+  }
+  return reasons.length > 0 ? `Free: ${reasons.join("; ")}` : null;
 }
 function buildFooterUsageTooltip(display, opts) {
   const { inputTokens, outputTokens, estimated } = display;
@@ -88984,13 +91602,18 @@ function buildFooterUsageTooltip(display, opts) {
     { label: "Input", value: `${approx}${formatTokenCount(inputTokens)}` },
     { label: "Output", value: `${approx}${formatTokenCount(outputTokens)}` }
   ];
+  const threadRows = [];
   const usage = opts.measuredUsage;
   const cacheRead = estimated ? 0 : usage.cacheReadTokens ?? 0;
   const cacheCreation = estimated ? 0 : usage.cacheCreationTokens ?? 0;
-  if (cacheRead > 0) rows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
-  if (cacheCreation > 0) rows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  if (cacheRead > 0) {
+    threadRows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
+  }
+  if (cacheCreation > 0) {
+    threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  }
   const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
-  if (cost) rows.push({ label: "Cost", value: cost });
+  if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
     label: "Subagents",
@@ -88998,6 +91621,8 @@ function buildFooterUsageTooltip(display, opts) {
       subagents.inputTokens
     )} in / ${formatTokenCount(subagents.outputTokens)} out`
   } : null;
+  const conversationLabel = subagentRow ? "Excluding subagents" : null;
+  const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
   const byModel = Object.entries(usage.byModel ?? {}).filter(
     ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
@@ -89012,18 +91637,25 @@ function buildFooterUsageTooltip(display, opts) {
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
   const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
+    conversationLabel,
     rows,
+    threadLabel: threadLabel2,
+    threadRows,
     subagentRow,
     modelRows,
-    note
+    note,
+    freeNote
   };
 }
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
+    init_footer_usage_summary();
     init_format_usage_summary();
+    init_footer_usage_summary();
   }
 });
 
@@ -89049,9 +91681,19 @@ function createFooterUsagePopover() {
         return;
       }
       root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+      if (model.conversationLabel) {
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+      }
       for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.subagentRow || model.modelRows.length > 0) {
+      if (model.threadLabel) {
         root.append(el("div", { class: "footer-usage-popover-divider" }));
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+      } else {
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+        if (model.subagentRow || model.modelRows.length > 0) {
+          root.append(el("div", { class: "footer-usage-popover-divider" }));
+        }
       }
       if (model.subagentRow) {
         root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
@@ -89060,6 +91702,9 @@ function createFooterUsagePopover() {
         root.append(row(entry, "footer-usage-popover-row is-model"));
       }
       if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+      if (model.freeNote) {
+        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+      }
     },
     show() {
       if (hasContent) root.hidden = false;
@@ -89961,8 +92606,8 @@ function startBlocker(state) {
   return null;
 }
 function agentModelsNote() {
-  const titles = containerAcpAgentTitles();
-  const named = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  const titles2 = containerAcpAgentTitles();
+  const named = titles2.length > 1 ? `${titles2.slice(0, -1).join(", ")} and ${titles2[titles2.length - 1] ?? ""}` : titles2[0] ?? "";
   return `Agent models run as their own process. ${named} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
 }
 function mountContainerRunControl(api2, context, onStateChanged) {
@@ -91183,7 +93828,8 @@ function mountInputBar(root, store2, api2, opts = {}) {
   let descriptionPicker = null;
   const checkoutChoices = /* @__PURE__ */ new Map();
   const dirtyWarningAcknowledged = /* @__PURE__ */ new Set();
-  let checkoutPreparationInProgress = false;
+  const checkoutPreparations = /* @__PURE__ */ new Set();
+  const checkoutErrors = /* @__PURE__ */ new Map();
   let automaticCheckoutMode = "shared";
   let automaticCheckoutPreviewSeq = 0;
   function shortModelLabel(option) {
@@ -91395,6 +94041,10 @@ ${description}
   }
   function updateCheckoutControl() {
     const thread = getActiveThread(store2);
+    const error62 = thread ? checkoutErrors.get(thread.id) : void 0;
+    checkoutErrorText.textContent = error62 ?? "";
+    checkoutError.hidden = error62 === void 0;
+    const checkoutPreparationInProgress = thread ? checkoutPreparations.has(thread.id) : false;
     if (!thread) {
       checkoutHost.hidden = true;
       checkoutMenu.hidden = true;
@@ -91412,6 +94062,8 @@ ${description}
     checkoutBtn.textContent = checkoutPreparationInProgress ? "Preparing checkout\u2026" : checkoutLabel(checkoutChoice(thread.id));
   }
   function hideCheckoutError() {
+    const id = getActiveThreadId();
+    if (id) checkoutErrors.delete(id);
     checkoutError.hidden = true;
     checkoutErrorText.textContent = "";
   }
@@ -91511,6 +94163,17 @@ ${description}
       threadDraftValue: threads.length > 0 ? composer.draftValue() : null
     };
   }
+  function draftFingerprint(text2, attachments) {
+    return JSON.stringify([
+      text2,
+      attachments.files,
+      attachments.images.map((image) => [image.dataUrl, image.mimeType, image.detail ?? "auto"]),
+      attachments.videos,
+      attachments.archives,
+      attachments.threads,
+      attachments.shells
+    ]);
+  }
   function stashDraftAttachments(threadId) {
     const snapshot = snapshotDraftAttachments();
     const empty = snapshot.files.length === 0 && snapshot.images.length === 0 && snapshot.videos.length === 0 && snapshot.archives.length === 0 && snapshot.threads.length === 0 && snapshot.shells.length === 0;
@@ -91553,6 +94216,16 @@ ${description}
     snapshot.archives.push({ ...ref });
     draftAttachmentsByThread.set(threadId, snapshot);
   }
+  function placeStoredShell(threadId, ref) {
+    if (activeComposerThreadId === threadId) {
+      addShellChip(ref);
+      return;
+    }
+    const snapshot = draftAttachmentsByThread.get(threadId) ?? emptyDraftAttachments();
+    if (snapshot.shells.some((shell3) => shell3.tabId === ref.tabId)) return;
+    snapshot.shells.push({ ...ref });
+    draftAttachmentsByThread.set(threadId, snapshot);
+  }
   function syncComposerThread() {
     const id = getActiveThreadId();
     if (id === activeComposerThreadId) return;
@@ -91568,8 +94241,8 @@ ${description}
     composer.value = thread?.draftPrompt ?? "";
     activeComposerThreadId = id;
     if (id) restoreDraftAttachments(id);
-    hideCheckoutError();
     hideDirtyWarning();
+    updateCheckoutControl();
     lastBreakdown = null;
     breakdownModel = null;
     scheduleContextEstimate(0);
@@ -91610,6 +94283,8 @@ ${description}
   }
   function updateState() {
     const running = isRunning();
+    const id = getActiveThreadId();
+    submitBtn.disabled = imageDescriptionInProgress || id !== null && isThreadSubmitting(store2, id);
     stopBtn.hidden = !running;
     updateTargetPicker();
     submitBtn.textContent = running ? "Queue" : "Send";
@@ -91824,7 +94499,7 @@ ${description}
     void submit();
   });
   checkoutBtn.addEventListener("click", () => {
-    if (checkoutPreparationInProgress) return;
+    if (checkoutPreparations.has(getActiveThreadId() ?? "")) return;
     checkoutMenu.hidden = !checkoutMenu.hidden;
     checkoutBtn.setAttribute("aria-expanded", String(!checkoutMenu.hidden));
   });
@@ -91930,44 +94605,71 @@ ${description}
     e3.preventDefault();
     void submit();
   });
-  let submitInProgress = false;
   async function submit() {
-    if (submitInProgress || imageDescriptionInProgress) return;
-    submitInProgress = true;
+    const id = getActiveThreadId();
+    if (!id || imageDescriptionInProgress || !beginThreadSubmission(store2, id)) return;
+    updateState();
     try {
-      await performSubmit();
+      await performSubmit(id);
+    } catch (error62) {
+      console.error("Could not send prompt", { threadId: id, error: error62 });
+      checkoutErrors.set(id, error62 instanceof Error ? error62.message : "Could not send message");
     } finally {
-      submitInProgress = false;
+      endThreadSubmission(store2, id);
+      updateState();
+      updateCheckoutControl();
     }
   }
-  async function performSubmit() {
+  async function performSubmit(id) {
     mark("ttft:composer-submit");
     followUps.clearSuggestions();
     nextStepHint.clear();
     updateComposerPlaceholder();
     const visibleText2 = composer.value.trim();
-    const rawText = composer.expandedValue().trim();
-    if (!rawText && attachedFiles.length === 0 && attachedImages.length === 0 && attachedVideos.length === 0 && attachedArchives.length === 0 && attachedThreads.length === 0 && attachedShells.length === 0)
+    const draftText = composer.expandedValue();
+    const rawText = draftText.trim();
+    const draftAttachments = snapshotDraftAttachments();
+    const draftKey = draftFingerprint(draftText, draftAttachments);
+    const {
+      files: attachedFiles2,
+      images: attachedImages2,
+      videos: attachedVideos2,
+      archives: attachedArchives2,
+      threads: attachedThreads2,
+      shells: attachedShells2
+    } = draftAttachments;
+    const inlineChips = composer.getInlineChips().map(
+      (chip2) => chip2.kind === "paste" ? { kind: "paste", block: { ...chip2.block } } : { kind: "thread", thread: { ...chip2.thread } }
+    );
+    const shellBlocks = currentShellBlocks();
+    const textAttachments = {
+      threadRefs: currentThreadRefs(),
+      videoRefs: currentVideoRefs(),
+      archiveRefs: currentArchiveRefs()
+    };
+    if (!rawText && attachedFiles2.length === 0 && attachedImages2.length === 0 && attachedVideos2.length === 0 && attachedArchives2.length === 0 && attachedThreads2.length === 0 && attachedShells2.length === 0)
       return;
-    const id = getActiveThreadId();
-    if (!id) return;
     const projectId = store2.getState().activeProjectId;
-    if (!projectId) return;
+    const thread = getThreadById(store2, id);
+    if (!projectId || !thread) return;
+    const choice = checkoutChoice(id);
+    const model = thread.model ?? store2.getState().settings?.model;
+    const baseBranch = branchControl.pendingBaseBranch(id);
     if (!targetSelect.hidden && targetSelect.value === "container") {
       if (!rawText) return;
       const started = await containerRun.followUp(rawText);
       if (started) updateState();
       return;
     }
-    if (attachedImages.length > 0) {
+    const invocationSources = Promise.allSettled([api2.skills.list(), api2.agents.list()]);
+    if (attachedImages2.length > 0) {
       const incompatibility = await incompatibleImageModel();
       if (incompatibility) {
-        await refreshImageCompatibilityWarning();
+        if (getActiveThreadId() === id) await refreshImageCompatibilityWarning();
         return;
       }
     }
-    const thread = getThreadById(store2, id);
-    const requiresCheckoutPreparation = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    const requiresCheckoutPreparation = thread.messages.length === 0 && !thread.worktreeChoice;
     const prefetchedGitState = requiresCheckoutPreparation ? null : await Promise.allSettled([
       api2.git.currentBranch(projectId, id),
       api2.git.promptState(projectId, id)
@@ -91977,32 +94679,44 @@ ${description}
     const currentBranch = requiresCheckoutPreparation && !thread.gitBranch ? null : branchResult?.status === "fulfilled" ? branchResult.value : await api2.git.currentBranch(projectId, id);
     const prefetchedPromptState = prefetchedGitState?.[1];
     let preparedPromptState;
-    const threadBranch = thread?.gitBranch;
-    const isolatedWorktree = thread !== void 0 && thread.worktree !== void 0;
+    const threadBranch = thread.gitBranch;
+    const isolatedWorktree = thread.worktree !== void 0;
     if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })) {
-      showBranchMismatch(threadBranch);
+      if (getActiveThreadId() === id) showBranchMismatch(threadBranch);
       return;
     }
-    hideBranchMismatch();
-    const isBlankSharedCandidate = thread !== void 0 && thread.messages.length === 0 && !thread.worktreeChoice;
+    if (getActiveThreadId() === id) hideBranchMismatch();
+    const isBlankSharedCandidate = thread.messages.length === 0 && !thread.worktreeChoice;
     if (isBlankSharedCandidate && !dirtyWarningAcknowledged.has(id)) {
-      const choice = checkoutChoice(id);
-      const effectiveCheckoutMode = choice === "worktree" ? "worktree" : choice === "shared" ? "shared" : automaticCheckoutMode;
+      const choice2 = checkoutChoice(id);
+      const effectiveCheckoutMode = choice2 === "worktree" ? "worktree" : choice2 === "shared" ? "shared" : automaticCheckoutMode;
       if (effectiveCheckoutMode === "shared") {
         const state = await api2.git.promptState(projectId, id);
-        if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
-          return;
         if (state.dirty) {
+          if (getActiveThreadId() !== id || activeComposerThreadId !== id || store2.getState().activeProjectId !== projectId)
+            return;
           showDirtyWarning(id);
           return;
         }
       }
     }
     hideDirtyWarning();
-    const [skills, agentsResult] = await Promise.all([api2.skills.list(), api2.agents.list()]);
-    skillsCache = skills;
-    agentsCache = agentsResult.agents;
-    const invocation = resolveInvocation(rawText, currentInvocables());
+    const [skillsResult, agentsResult] = await invocationSources;
+    if (skillsResult.status === "rejected") throw skillsResult.reason;
+    if (agentsResult.status === "rejected") throw agentsResult.reason;
+    const skills = skillsResult.value;
+    const agents = agentsResult.value.agents;
+    if (store2.getState().activeProjectId === projectId) {
+      skillsCache = skills;
+      agentsCache = agents;
+    }
+    const invocation = resolveInvocation(
+      rawText,
+      mergeInvocables(
+        skills.map((skill) => skill.name),
+        agents.map((agent) => agent.name)
+      )
+    );
     const invokedSkills = invocation?.kind === "skill" ? [invocation.name] : [];
     const invokedAgent = invocation?.kind === "agent" ? invocation.name : void 0;
     const invokedSkill = invocation?.kind === "skill" ? skills.find((skill) => skill.name === invocation.name) : void 0;
@@ -92027,12 +94741,12 @@ ${description}
     ) : invocation ? buildSkillUserText(
       invocation.name,
       invocation.remainder,
-      attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0 || attachedArchives.length > 0
+      attachedFiles2.length > 0 || attachedImages2.length > 0 || attachedVideos2.length > 0 || attachedArchives2.length > 0
     ) : rawText;
     let fullContent;
-    if (attachedImages.length > 0) {
+    if (attachedImages2.length > 0) {
       fullContent = [
-        ...attachedImages.map((img) => ({
+        ...attachedImages2.map((img) => ({
           type: "image",
           dataUrl: img.dataUrl,
           // Omitted at 'auto' so an untouched attachment sends the same content
@@ -92041,55 +94755,45 @@ ${description}
         })),
         {
           type: "text",
-          text: buildTextWithAttachments(text2, attachedFiles, currentShellBlocks(), {
-            threadRefs: currentThreadRefs(),
-            videoRefs: currentVideoRefs(),
-            archiveRefs: currentArchiveRefs()
-          })
+          text: buildTextWithAttachments(text2, attachedFiles2, shellBlocks, textAttachments)
         }
       ];
     } else {
-      fullContent = buildTextWithAttachments(text2, attachedFiles, currentShellBlocks(), {
-        threadRefs: currentThreadRefs(),
-        videoRefs: currentVideoRefs(),
-        archiveRefs: currentArchiveRefs()
-      });
+      fullContent = buildTextWithAttachments(text2, attachedFiles2, shellBlocks, textAttachments);
     }
     if (requiresCheckoutPreparation) {
-      const projectId2 = store2.getState().activeProjectId;
-      if (!projectId2) return;
-      hideCheckoutError();
-      checkoutPreparationInProgress = true;
+      checkoutErrors.delete(id);
+      checkoutPreparations.add(id);
       updateCheckoutControl();
       try {
         const prepared = await api2.agent.prepareCheckout(
-          projectId2,
+          projectId,
           id,
           rawText,
-          checkoutChoice(id),
-          thread.model ?? store2.getState().settings?.model,
+          choice,
+          model,
           // The footer picker only names a branch; this is where that selection
           // becomes the worktree's base, or the shared checkout's branch.
-          branchControl.pendingBaseBranch(id)
+          baseBranch
         );
+        if (!getThreadById(store2, id)) return;
         preparedPromptState = prepared.promptState;
         applyPreparedThreadCheckout(store2, id, prepared);
-        if (getActiveThreadId() !== id) return;
       } catch (error62) {
         await api2.agent.resetDefaultBranchCache().catch(() => void 0);
-        checkoutErrorText.textContent = checkoutErrorMessage(error62);
-        checkoutError.hidden = false;
+        checkoutErrors.set(id, checkoutErrorMessage(error62));
         return;
       } finally {
-        checkoutPreparationInProgress = false;
+        checkoutPreparations.delete(id);
         updateCheckoutControl();
       }
     }
     if (prefetchedPromptState?.status === "rejected") throw prefetchedPromptState.reason;
     const promptState = preparedPromptState ?? (prefetchedPromptState?.status === "fulfilled" ? prefetchedPromptState.value : await api2.git.promptState(projectId, id));
-    const priorTodos = thread?.todos ?? [];
-    const workingBrief = nextWorkingBrief(thread?.workingBrief, fullContent);
-    if (workingBrief && workingBrief !== thread?.workingBrief) {
+    if (!getThreadById(store2, id)) return;
+    const priorTodos = thread.todos ?? [];
+    const workingBrief = nextWorkingBrief(thread.workingBrief, fullContent);
+    if (workingBrief && workingBrief !== thread.workingBrief) {
       setThreadWorkingBrief(store2, id, workingBrief);
     }
     const payload = {
@@ -92099,7 +94803,6 @@ ${description}
       priorTodos,
       ...workingBrief !== void 0 ? { workingBrief } : {}
     };
-    const inlineChips = composer.getInlineChips();
     const inlineThreadIds = new Set(
       inlineChips.flatMap((chip2) => chip2.kind === "thread" ? [chip2.thread.threadId] : [])
     );
@@ -92110,36 +94813,36 @@ ${description}
         }
         return [{ kind: "thread", label: chip2.thread.label }];
       }),
-      ...attachedFiles.map((file2) => ({
+      ...attachedFiles2.map((file2) => ({
         kind: "file",
         label: file2.path.split("/").pop() ?? file2.path,
         content: file2.content
       })),
       // Defensive fallback: a thread reference should always have an inline chip,
       // but retaining an unmatched attachment preserves its agent context.
-      ...attachedThreads.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
+      ...attachedThreads2.filter((thread2) => !inlineThreadIds.has(thread2.threadId)).map((thread2) => ({
         kind: "thread",
         label: thread2.title || "Untitled thread"
       })),
-      ...attachedShells.map((s16) => ({
+      ...attachedShells2.map((s16) => ({
         kind: "shell",
         label: s16.label,
         content: s16.content
       })),
-      ...attachedVideos.map((v3) => ({
+      ...attachedVideos2.map((v3) => ({
         kind: "video",
         label: v3.name,
         // Carried so the sent chip can still play the recording after a reload,
         // when the composer's own state is long gone.
         path: v3.path
       })),
-      ...attachedArchives.map((a3) => ({
+      ...attachedArchives2.map((a3) => ({
         kind: "archive",
         label: a3.name,
         path: a3.path
       }))
     ];
-    const imageUrls = attachedImages.map((img) => img.dataUrl);
+    const imageUrls = attachedImages2.map((img) => img.dataUrl);
     const messageId = addMessage(
       store2,
       id,
@@ -92153,23 +94856,27 @@ ${description}
       }
     );
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
-    recordThreadVideos(store2, id, attachedVideos);
-    recordThreadArchives(store2, id, attachedArchives);
-    if (isRunning()) {
-      enqueueUserMessage(store2, id, {
-        messageId,
-        payload,
-        createdAt: Date.now()
-      });
+    recordThreadVideos(store2, id, attachedVideos2);
+    recordThreadArchives(store2, id, attachedArchives2);
+    const queued = { messageId, payload, createdAt: Date.now() };
+    if (getThreadById(store2, id)?.status === "running") {
+      enqueueUserMessage(store2, id, queued);
     } else {
       startHumanTurnTree(store2, id);
-      dispatchAgentRun(store2, api2, id, payload);
+      dispatchAgentRun(store2, api2, id, payload, queued);
     }
-    composer.clear();
-    setThreadDraftPrompt(store2, id, "");
-    draftAttachmentsByThread.delete(id);
-    clearAttachments();
-    scheduleContextEstimate(0);
+    const visible = activeComposerThreadId === id;
+    const currentDraft = visible ? composer.expandedValue() : getThreadById(store2, id)?.draftPrompt ?? "";
+    const currentAttachments = visible ? snapshotDraftAttachments() : draftAttachmentsByThread.get(id) ?? emptyDraftAttachments();
+    if (draftFingerprint(currentDraft, currentAttachments) === draftKey) {
+      if (visible) {
+        composer.clear();
+        clearAttachments();
+        scheduleContextEstimate(0);
+      }
+      draftAttachmentsByThread.delete(id);
+      setThreadDraftPrompt(store2, id, "");
+    }
   }
   function addChip(file2) {
     attachedFiles.push(file2);
@@ -92184,7 +94891,7 @@ ${description}
     const remove = document.createElement("button");
     remove.append(closeIcon("ui-icon ui-icon-sm"));
     remove.addEventListener("click", () => {
-      attachedFiles = attachedFiles.filter((f3) => f3.path !== file2.path);
+      attachedFiles = attachedFiles.filter((f4) => f4.path !== file2.path);
       chip2.remove();
       scheduleContextEstimate();
     });
@@ -92375,6 +95082,18 @@ ${description}
     attachTextBlock: (content, label) => {
       composer.insertPasteChip(content, label);
     },
+    // Unlike attachTextBlock, a quote lands as literal editable text so the
+    // user can trim or edit it inline before sending, matching how a reply
+    // quote behaves everywhere else.
+    quoteText: (content) => {
+      const quote = formatMarkdownQuote(content);
+      const caret = composer.selectionStart;
+      const prevChar = caret > 0 ? composer.value[caret - 1] : void 0;
+      const needsLeadingBreak = prevChar !== void 0 && prevChar !== "\n";
+      composer.insertText(`${needsLeadingBreak ? "\n\n" : ""}${quote}
+
+`);
+    },
     attachImage: addImageChip,
     attachVideo: addVideoChip,
     attachArchive: addArchiveChip,
@@ -92501,6 +95220,16 @@ ${description}
       skillPicker.refresh();
       refreshSkillsCache();
       scheduleContextEstimate(0);
+    }),
+    store2.on("code_block_run_finished", (result) => {
+      const active2 = result.threadId === activeComposerThreadId;
+      placeStoredShell(result.threadId, result.shell);
+      if (!active2) return;
+      targetSelect.value = "thread";
+      showToast(
+        result.exitCode === 0 ? "Command finished \u2014 result attached." : `Command ${result.exitCode === null ? "could not start" : `exited with code ${String(result.exitCode)}`} \u2014 result attached.`,
+        result.exitCode === 0 ? void 0 : { variant: "error" }
+      );
     }),
     store2.on("new_thread_opened", () => {
       void api2.agent.refreshModelContext().finally(() => {
@@ -92637,10 +95366,12 @@ var init_input_bar = __esm({
     init_icons();
     init_attachment_icons();
     init_context_menu();
+    init_markdown_quote();
     init_image_expand();
     init_text_expand();
     init_video_expand();
     init_wire_types2();
+    init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
     init_working_brief();
@@ -93858,12 +96589,12 @@ function sl(s16, t2, e3, i2, r2, n2) {
     }
     let c3 = 0, d3 = ri(h3, c3, t2), _3 = 1, p2 = 0;
     for (; _3 < h3.length; ) {
-      let f3 = ri(h3, _3, t2), A3 = f3 - p2, R2 = e3 - d3, O2 = Math.min(A3, R2);
-      h3[c3].copyCellsFrom(h3[_3], p2, d3, O2, false), d3 += O2, d3 === e3 && (c3++, d3 = 0), p2 += O2, p2 === f3 && (_3++, p2 = 0), d3 === 0 && c3 !== 0 && h3[c3 - 1].getWidth(e3 - 1) === 2 && (h3[c3].copyCellsFrom(h3[c3 - 1], e3 - 1, d3++, 1, false), h3[c3 - 1].setCell(e3 - 1, r2));
+      let f4 = ri(h3, _3, t2), A3 = f4 - p2, R2 = e3 - d3, O2 = Math.min(A3, R2);
+      h3[c3].copyCellsFrom(h3[_3], p2, d3, O2, false), d3 += O2, d3 === e3 && (c3++, d3 = 0), p2 += O2, p2 === f4 && (_3++, p2 = 0), d3 === 0 && c3 !== 0 && h3[c3 - 1].getWidth(e3 - 1) === 2 && (h3[c3].copyCellsFrom(h3[c3 - 1], e3 - 1, d3++, 1, false), h3[c3 - 1].setCell(e3 - 1, r2));
     }
     h3[c3].replaceCells(d3, e3, r2);
     let m2 = 0;
-    for (let f3 = h3.length - 1; f3 > 0 && (f3 > c3 || h3[f3].getTrimmedLength() === 0); f3--) m2++;
+    for (let f4 = h3.length - 1; f4 > 0 && (f4 > c3 || h3[f4].getTrimmedLength() === 0); f4--) m2++;
     m2 > 0 && (o3.push(l2 + h3.length - m2), o3.push(m2)), l2 += h3.length - 1;
   }
   return o3;
@@ -94193,15 +96924,15 @@ var init_xterm = __esm({
         if (this.interim[0]) {
           let _3 = false, p2 = this.interim[0];
           p2 &= (p2 & 224) === 192 ? 31 : (p2 & 240) === 224 ? 15 : 7;
-          let m2 = 0, f3;
-          for (; (f3 = this.interim[++m2] & 63) && m2 < 4; ) p2 <<= 6, p2 |= f3;
+          let m2 = 0, f4;
+          for (; (f4 = this.interim[++m2] & 63) && m2 < 4; ) p2 <<= 6, p2 |= f4;
           let A3 = (this.interim[0] & 224) === 192 ? 2 : (this.interim[0] & 240) === 224 ? 3 : 4, R2 = A3 - m2;
           for (; h3 < R2; ) {
             if (h3 >= i2) return 0;
-            if (f3 = t2[h3++], (f3 & 192) !== 128) {
+            if (f4 = t2[h3++], (f4 & 192) !== 128) {
               h3--, _3 = true;
               break;
-            } else this.interim[m2++] = f3, p2 <<= 6, p2 |= f3 & 63;
+            } else this.interim[m2++] = f4, p2 <<= 6, p2 |= f4 & 63;
           }
           _3 || (A3 === 2 ? p2 < 128 ? h3-- : e3[r2++] = p2 : A3 === 3 ? p2 < 2048 || p2 >= 55296 && p2 <= 57343 || p2 === 65279 || (e3[r2++] = p2) : p2 < 65536 || p2 > 1114111 || (e3[r2++] = p2)), this.interim.fill(0);
         }
@@ -94518,7 +97249,7 @@ var init_xterm = __esm({
               } catch {
                 p2 = true;
               }
-              p2 || r2.push({ text: d3, range: _3, activate: (m2, f3) => n2 ? n2.activate(m2, f3, _3) : Ol(m2, f3), hover: (m2, f3) => n2?.hover?.(m2, f3, _3), leave: (m2, f3) => n2?.leave?.(m2, f3, _3) });
+              p2 || r2.push({ text: d3, range: _3, activate: (m2, f4) => n2 ? n2.activate(m2, f4, _3) : Ol(m2, f4), hover: (m2, f4) => n2?.hover?.(m2, f4, _3), leave: (m2, f4) => n2?.leave?.(m2, f4, _3) });
             }
             h3 = false, o3.hasExtendedAttrs() && o3.extended.urlId ? (u2 = c3, a3 = o3.extended.urlId) : (u2 = -1, a3 = -1);
           }
@@ -94798,10 +97529,10 @@ var init_xterm = __esm({
         return oe;
       }
       O2.reduce = m2;
-      function* f3(I2, k2, P2 = I2.length) {
+      function* f4(I2, k2, P2 = I2.length) {
         for (k2 < 0 && (k2 += I2.length), P2 < 0 ? P2 += I2.length : P2 > I2.length && (P2 = I2.length); k2 < P2; k2++) yield I2[k2];
       }
-      O2.slice = f3;
+      O2.slice = f4;
       function A3(I2, k2 = Number.POSITIVE_INFINITY) {
         let P2 = [];
         if (k2 === 0) return [P2, I2];
@@ -94891,9 +97622,9 @@ var init_xterm = __esm({
             d3 = `(shared with ${n2.get(u2.slice(0, c3 + 1).join(`
 `)).size}/${i2.length} leaks) at ${d3}`;
             let p2 = n2.get(u2.slice(0, c3).join(`
-`)), m2 = co([...p2].map((f3) => r2(f3)[c3]), (f3) => f3);
+`)), m2 = co([...p2].map((f4) => r2(f4)[c3]), (f4) => f4);
             delete m2[u2[c3]];
-            for (let [f3, A3] of Object.entries(m2)) h3.unshift(`    - stacktraces of ${A3.length} other leaks continue with ${f3}`);
+            for (let [f4, A3] of Object.entries(m2)) h3.unshift(`    - stacktraces of ${A3.length} other leaks continue with ${f4}`);
             h3.unshift(d3);
           }
           o3 += `
@@ -95209,7 +97940,7 @@ ${h3.join(`
         return [Qe.filter(y2, T2, g2), Qe.filter(y2, (w2) => !T2(w2), g2)];
       }
       Qe.split = m2;
-      function f3(y2, T2 = false, g2 = [], w2) {
+      function f4(y2, T2 = false, g2 = [], w2) {
         let E2 = g2.slice(), x2 = y2((te2) => {
           E2 ? E2.push(te2) : Z.fire(te2);
         });
@@ -95225,7 +97956,7 @@ ${h3.join(`
         } });
         return w2 && w2.add(Z), Z.event;
       }
-      Qe.buffer = f3;
+      Qe.buffer = f4;
       function A3(y2, T2) {
         return (w2, E2, x2) => {
           let N2 = T2(new O2());
@@ -96519,8 +99250,8 @@ ${h3.join(`
             let c3 = this.newGestureEvent(He.Contextmenu, u2.initialTarget);
             c3.pageX = Se(u2.rollingPageX), c3.pageY = Se(u2.rollingPageY), this.dispatchEvent(c3);
           } else if (n2 === 1) {
-            let c3 = Se(u2.rollingPageX), d3 = Se(u2.rollingPageY), _3 = Se(u2.rollingTimestamps) - u2.rollingTimestamps[0], p2 = c3 - u2.rollingPageX[0], m2 = d3 - u2.rollingPageY[0], f3 = [...this.targets].filter((A3) => u2.initialTarget instanceof Node && A3.contains(u2.initialTarget));
-            this.inertia(e3, f3, r2, Math.abs(p2) / _3, p2 > 0 ? 1 : -1, c3, Math.abs(m2) / _3, m2 > 0 ? 1 : -1, d3);
+            let c3 = Se(u2.rollingPageX), d3 = Se(u2.rollingPageY), _3 = Se(u2.rollingTimestamps) - u2.rollingTimestamps[0], p2 = c3 - u2.rollingPageX[0], m2 = d3 - u2.rollingPageY[0], f4 = [...this.targets].filter((A3) => u2.initialTarget instanceof Node && A3.contains(u2.initialTarget));
+            this.inertia(e3, f4, r2, Math.abs(p2) / _3, p2 > 0 ? 1 : -1, c3, Math.abs(m2) / _3, m2 > 0 ? 1 : -1, d3);
           }
           this.dispatchEvent(this.newGestureEvent(He.End, u2.initialTarget)), delete this.activeTouches[a3.identifier];
         }
@@ -96551,8 +99282,8 @@ ${h3.join(`
         this.handle = mt(e3, () => {
           let c3 = Date.now(), d3 = c3 - r2, _3 = 0, p2 = 0, m2 = true;
           n2 += Q2.SCROLL_FRICTION * d3, a3 += Q2.SCROLL_FRICTION * d3, n2 > 0 && (m2 = false, _3 = o3 * n2 * d3), a3 > 0 && (m2 = false, p2 = u2 * a3 * d3);
-          let f3 = this.newGestureEvent(He.Change);
-          f3.translationX = _3, f3.translationY = p2, i2.forEach((A3) => A3.dispatchEvent(f3)), m2 || this.inertia(e3, i2, c3, n2, o3, l2 + _3, a3, u2, h3 + p2);
+          let f4 = this.newGestureEvent(He.Change);
+          f4.translationX = _3, f4.translationY = p2, i2.forEach((A3) => A3.dispatchEvent(f4)), m2 || this.inertia(e3, i2, c3, n2, o3, l2 + _3, a3, u2, h3 + p2);
         });
       }
       onTouchMove(e3) {
@@ -97502,8 +100233,8 @@ ${h3.join(`
         if (J = (u2.rgba & 255) / 255, J === 1) return { css: u2.css, rgba: u2.rgba };
         let h3 = u2.rgba >> 24 & 255, c3 = u2.rgba >> 16 & 255, d3 = u2.rgba >> 8 & 255, _3 = a3.rgba >> 24 & 255, p2 = a3.rgba >> 16 & 255, m2 = a3.rgba >> 8 & 255;
         ue = _3 + Math.round((h3 - _3) * J), he = p2 + Math.round((c3 - p2) * J), de = m2 + Math.round((d3 - m2) * J);
-        let f3 = j2.toCss(ue, he, de), A3 = j2.toRgba(ue, he, de);
-        return { css: f3, rgba: A3 };
+        let f4 = j2.toCss(ue, he, de), A3 = j2.toRgba(ue, he, de);
+        return { css: f4, rgba: A3 };
       }
       l2.blend = s16;
       function t2(a3) {
@@ -97586,8 +100317,8 @@ ${h3.join(`
           if (h3 < u2) {
             let p2 = e3(o3, l2, a3), m2 = Xe(u2, ve.relativeLuminance(p2 >> 8));
             if (m2 < a3) {
-              let f3 = i2(o3, l2, a3), A3 = Xe(u2, ve.relativeLuminance(f3 >> 8));
-              return m2 > A3 ? p2 : f3;
+              let f4 = i2(o3, l2, a3), A3 = Xe(u2, ve.relativeLuminance(f4 >> 8));
+              return m2 > A3 ? p2 : f4;
             }
             return p2;
           }
@@ -97748,7 +100479,7 @@ ${h3.join(`
       createRow(t2, e3, i2, r2, n2, o3, l2, a3, u2, h3, c3) {
         let d3 = [], _3 = this._characterJoinerService.getJoinedCharacters(e3), p2 = this._themeService.colors, m2 = t2.getNoBgTrimmedLength();
         i2 && m2 < o3 + 1 && (m2 = o3 + 1);
-        let f3, A3 = 0, R2 = "", O2 = 0, I2 = 0, k2 = 0, P2 = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V2 = [], Qe = h3 !== -1 && c3 !== -1;
+        let f4, A3 = 0, R2 = "", O2 = 0, I2 = 0, k2 = 0, P2 = 0, oe = false, Me = 0, Pe = false, Ke = 0, di = 0, V2 = [], Qe = h3 !== -1 && c3 !== -1;
         for (let y2 = 0; y2 < m2; y2++) {
           t2.loadCell(y2, this._workCell);
           let T2 = this._workCell.getWidth();
@@ -97764,11 +100495,11 @@ ${h3.join(`
             Oe = true;
           });
           let ze = x2.getChars() || we;
-          if (ze === " " && (x2.isUnderline() || x2.isOverline()) && (ze = "\xA0"), Ke = T2 * a3 - u2.get(ze, x2.isBold(), x2.isItalic()), !f3) f3 = this._document.createElement("span");
+          if (ze === " " && (x2.isUnderline() || x2.isOverline()) && (ze = "\xA0"), Ke = T2 * a3 - u2.get(ze, x2.isBold(), x2.isItalic()), !f4) f4 = this._document.createElement("span");
           else if (A3 && (N2 && Pe || !N2 && !Pe && x2.bg === I2) && (N2 && Pe && p2.selectionForeground || x2.fg === k2) && x2.extended.ext === P2 && te2 === oe && Ke === Me && !Z && !g2 && !Oe && w2) {
             x2.isInvisible() ? R2 += we : R2 += ze, A3++;
             continue;
-          } else A3 && (f3.textContent = R2), f3 = this._document.createElement("span"), A3 = 0, R2 = "";
+          } else A3 && (f4.textContent = R2), f4 = this._document.createElement("span"), A3 = 0, R2 = "";
           if (I2 = x2.bg, k2 = x2.fg, P2 = x2.extended.ext, oe = te2, Me = Ke, Pe = N2, g2 && o3 >= y2 && o3 <= E2 && (o3 = y2), !this._coreService.isCursorHidden && Z && this._coreService.isCursorInitialized) {
             if (V2.push("xterm-cursor"), this._coreBrowserService.isFocused) l2 && V2.push("xterm-cursor-blink"), V2.push(r2 === "bar" ? "xterm-cursor-bar" : r2 === "underline" ? "xterm-cursor-underline" : "xterm-cursor-block");
             else if (n2) switch (n2) {
@@ -97788,12 +100519,12 @@ ${h3.join(`
                 break;
             }
           }
-          if (x2.isBold() && V2.push("xterm-bold"), x2.isItalic() && V2.push("xterm-italic"), x2.isDim() && V2.push("xterm-dim"), x2.isInvisible() ? R2 = we : R2 = x2.getChars() || we, x2.isUnderline() && (V2.push(`xterm-underline-${x2.extended.underlineStyle}`), R2 === " " && (R2 = "\xA0"), !x2.isUnderlineColorDefault())) if (x2.isUnderlineColorRGB()) f3.style.textDecorationColor = `rgb(${De.toColorRGB(x2.getUnderlineColor()).join(",")})`;
+          if (x2.isBold() && V2.push("xterm-bold"), x2.isItalic() && V2.push("xterm-italic"), x2.isDim() && V2.push("xterm-dim"), x2.isInvisible() ? R2 = we : R2 = x2.getChars() || we, x2.isUnderline() && (V2.push(`xterm-underline-${x2.extended.underlineStyle}`), R2 === " " && (R2 = "\xA0"), !x2.isUnderlineColorDefault())) if (x2.isUnderlineColorRGB()) f4.style.textDecorationColor = `rgb(${De.toColorRGB(x2.getUnderlineColor()).join(",")})`;
           else {
             let W = x2.getUnderlineColor();
-            this._optionsService.rawOptions.drawBoldTextInBrightColors && x2.isBold() && W < 8 && (W += 8), f3.style.textDecorationColor = p2.ansi[W].css;
+            this._optionsService.rawOptions.drawBoldTextInBrightColors && x2.isBold() && W < 8 && (W += 8), f4.style.textDecorationColor = p2.ansi[W].css;
           }
-          x2.isOverline() && (V2.push("xterm-overline"), R2 === " " && (R2 = "\xA0")), x2.isStrikethrough() && V2.push("xterm-strikethrough"), te2 && (f3.style.textDecoration = "underline");
+          x2.isOverline() && (V2.push("xterm-overline"), R2 === " " && (R2 = "\xA0")), x2.isStrikethrough() && V2.push("xterm-strikethrough"), te2 && (f4.style.textDecoration = "underline");
           let le = x2.getFgColor(), et = x2.getFgColorMode(), me = x2.getBgColor(), ht = x2.getBgColorMode(), fi = !!x2.isInverse();
           if (fi) {
             let W = le;
@@ -97812,7 +100543,7 @@ ${h3.join(`
               it = p2.ansi[me], V2.push(`xterm-bg-${me}`);
               break;
             case 50331648:
-              it = j2.toColor(me >> 16, me >> 8 & 255, me & 255), this._addStyle(f3, `background-color:#${qo((me >>> 0).toString(16), "0", 6)}`);
+              it = j2.toColor(me >> 16, me >> 8 & 255, me & 255), this._addStyle(f4, `background-color:#${qo((me >>> 0).toString(16), "0", 6)}`);
               break;
             case 0:
             default:
@@ -97821,19 +100552,19 @@ ${h3.join(`
           switch (tt || x2.isDim() && (tt = U.multiplyOpacity(it, 0.5)), et) {
             case 16777216:
             case 33554432:
-              x2.isBold() && le < 8 && this._optionsService.rawOptions.drawBoldTextInBrightColors && (le += 8), this._applyMinimumContrast(f3, it, p2.ansi[le], x2, tt, void 0) || V2.push(`xterm-fg-${le}`);
+              x2.isBold() && le < 8 && this._optionsService.rawOptions.drawBoldTextInBrightColors && (le += 8), this._applyMinimumContrast(f4, it, p2.ansi[le], x2, tt, void 0) || V2.push(`xterm-fg-${le}`);
               break;
             case 50331648:
               let W = j2.toColor(le >> 16 & 255, le >> 8 & 255, le & 255);
-              this._applyMinimumContrast(f3, it, W, x2, tt, Qi) || this._addStyle(f3, `color:#${qo(le.toString(16), "0", 6)}`);
+              this._applyMinimumContrast(f4, it, W, x2, tt, Qi) || this._addStyle(f4, `color:#${qo(le.toString(16), "0", 6)}`);
               break;
             case 0:
             default:
-              this._applyMinimumContrast(f3, it, p2.foreground, x2, tt, Qi) || fi && V2.push(`xterm-fg-${257}`);
+              this._applyMinimumContrast(f4, it, p2.foreground, x2, tt, Qi) || fi && V2.push(`xterm-fg-${257}`);
           }
-          V2.length && (f3.className = V2.join(" "), V2.length = 0), !Z && !g2 && !Oe && w2 ? A3++ : f3.textContent = R2, Ke !== this.defaultSpacing && (f3.style.letterSpacing = `${Ke}px`), d3.push(f3), y2 = E2;
+          V2.length && (f4.className = V2.join(" "), V2.length = 0), !Z && !g2 && !Oe && w2 ? A3++ : f4.textContent = R2, Ke !== this.defaultSpacing && (f4.style.letterSpacing = `${Ke}px`), d3.push(f4), y2 = E2;
         }
-        return f3 && A3 && (f3.textContent = R2), d3;
+        return f4 && A3 && (f4.textContent = R2), d3;
       }
       _applyMinimumContrast(t2, e3, i2, r2, n2, o3) {
         if (this._optionsService.rawOptions.minimumContrastRatio === 1 || $o(r2.getCode())) return false;
@@ -97954,7 +100685,7 @@ ${h3.join(`
         this._rowElements = [];
         this._selectionRenderModel = Yo();
         this.onRequestRedraw = this._register(new v2()).event;
-        this._rowContainer = this._document.createElement("div"), this._rowContainer.classList.add(Le), this._rowContainer.style.lineHeight = "normal", this._rowContainer.setAttribute("aria-hidden", "true"), this._refreshRowElements(this._bufferService.cols, this._bufferService.rows), this._selectionContainer = this._document.createElement("div"), this._selectionContainer.classList.add(Xr), this._selectionContainer.setAttribute("aria-hidden", "true"), this.dimensions = Vo(), this._updateDimensions(), this._register(this._optionsService.onOptionChange(() => this._handleOptionsChanged())), this._register(this._themeService.onChangeColors((f3) => this._injectCss(f3))), this._injectCss(this._themeService.colors), this._rowFactory = u2.createInstance(Vt, document), this._element.classList.add(_s + this._terminalClass), this._screenElement.appendChild(this._rowContainer), this._screenElement.appendChild(this._selectionContainer), this._register(this._linkifier2.onShowLinkUnderline((f3) => this._handleLinkHover(f3))), this._register(this._linkifier2.onHideLinkUnderline((f3) => this._handleLinkLeave(f3))), this._register(C2(() => {
+        this._rowContainer = this._document.createElement("div"), this._rowContainer.classList.add(Le), this._rowContainer.style.lineHeight = "normal", this._rowContainer.setAttribute("aria-hidden", "true"), this._refreshRowElements(this._bufferService.cols, this._bufferService.rows), this._selectionContainer = this._document.createElement("div"), this._selectionContainer.classList.add(Xr), this._selectionContainer.setAttribute("aria-hidden", "true"), this.dimensions = Vo(), this._updateDimensions(), this._register(this._optionsService.onOptionChange(() => this._handleOptionsChanged())), this._register(this._themeService.onChangeColors((f4) => this._injectCss(f4))), this._injectCss(this._themeService.colors), this._rowFactory = u2.createInstance(Vt, document), this._element.classList.add(_s + this._terminalClass), this._screenElement.appendChild(this._rowContainer), this._screenElement.appendChild(this._selectionContainer), this._register(this._linkifier2.onShowLinkUnderline((f4) => this._handleLinkHover(f4))), this._register(this._linkifier2.onHideLinkUnderline((f4) => this._handleLinkLeave(f4))), this._register(C2(() => {
           this._element.classList.remove(_s + this._terminalClass), this._rowContainer.remove(), this._selectionContainer.remove(), this._widthCache.dispose(), this._themeStyleElement.remove(), this._dimensionsStyleElement.remove();
         })), this._widthCache = new Yr(this._document, this._helperContainer), this._widthCache.setFont(this._optionsService.rawOptions.fontFamily, this._optionsService.rawOptions.fontSize, this._optionsService.rawOptions.fontWeight, this._optionsService.rawOptions.fontWeightBold), this._setDefaultSpacing();
       }
@@ -98053,9 +100784,9 @@ ${h3.join(`
         r2 = Math.max(Math.min(r2, a3), 0), n2 = Math.max(Math.min(n2, a3), 0), o3 = Math.min(o3, this._bufferService.cols);
         let u2 = this._bufferService.buffer, h3 = u2.ybase + u2.y, c3 = Math.min(u2.x, o3 - 1), d3 = this._optionsService.rawOptions.cursorBlink, _3 = this._optionsService.rawOptions.cursorStyle, p2 = this._optionsService.rawOptions.cursorInactiveStyle;
         for (let m2 = r2; m2 <= n2; ++m2) {
-          let f3 = m2 + u2.ydisp, A3 = this._rowElements[m2], R2 = u2.lines.get(f3);
+          let f4 = m2 + u2.ydisp, A3 = this._rowElements[m2], R2 = u2.lines.get(f4);
           if (!A3 || !R2) break;
-          A3.replaceChildren(...this._rowFactory.createRow(R2, f3, f3 === h3, _3, p2, c3, d3, this.dimensions.css.cell.width, this._widthCache, l2 ? m2 === r2 ? e3 : 0 : -1, l2 ? (m2 === n2 ? i2 : o3) - 1 : -1));
+          A3.replaceChildren(...this._rowFactory.createRow(R2, f4, f4 === h3, _3, p2, c3, d3, this.dimensions.css.cell.width, this._widthCache, l2 ? m2 === r2 ? e3 : 0 : -1, l2 ? (m2 === n2 ? i2 : o3) - 1 : -1));
         }
       }
     };
@@ -98727,26 +101458,26 @@ ${h3.join(`
           }
         }
         h3++;
-        let f3 = u2 + c3 - d3 + p2, A3 = Math.min(this._bufferService.cols, h3 - u2 + d3 + _3 - p2 - m2);
+        let f4 = u2 + c3 - d3 + p2, A3 = Math.min(this._bufferService.cols, h3 - u2 + d3 + _3 - p2 - m2);
         if (!(!i2 && a3.slice(u2, h3).trim() === "")) {
-          if (r2 && f3 === 0 && l2.getCodePoint(0) !== 32) {
+          if (r2 && f4 === 0 && l2.getCodePoint(0) !== 32) {
             let R2 = o3.lines.get(e3[1] - 1);
             if (R2 && l2.isWrapped && R2.getCodePoint(this._bufferService.cols - 1) !== 32) {
               let O2 = this._getWordAt([this._bufferService.cols - 1, e3[1] - 1], false, true, false);
               if (O2) {
                 let I2 = this._bufferService.cols - O2.start;
-                f3 -= I2, A3 += I2;
+                f4 -= I2, A3 += I2;
               }
             }
           }
-          if (n2 && f3 + A3 === this._bufferService.cols && l2.getCodePoint(this._bufferService.cols - 1) !== 32) {
+          if (n2 && f4 + A3 === this._bufferService.cols && l2.getCodePoint(this._bufferService.cols - 1) !== 32) {
             let R2 = o3.lines.get(e3[1] + 1);
             if (R2?.isWrapped && R2.getCodePoint(0) !== 32) {
               let O2 = this._getWordAt([0, e3[1] + 1], false, false, true);
               O2 && (A3 += O2.length);
             }
           }
-          return { start: f3, length: A3 };
+          return { start: f4, length: A3 };
         }
       }
       _selectWordAt(e3, i2) {
@@ -99361,13 +102092,13 @@ ${h3.join(`
             p2.push(k2);
           }
           p2.length > 0 && (n2.push({ start: l2 + u2.length + o3, newLines: p2 }), o3 += p2.length), u2.push(...p2);
-          let m2 = c3.length - 1, f3 = c3[m2];
-          f3 === 0 && (m2--, f3 = c3[m2]);
+          let m2 = c3.length - 1, f4 = c3[m2];
+          f4 === 0 && (m2--, f4 = c3[m2]);
           let A3 = u2.length - d3 - 1, R2 = h3;
           for (; A3 >= 0; ) {
-            let I2 = Math.min(R2, f3);
+            let I2 = Math.min(R2, f4);
             if (u2[m2] === void 0) break;
-            if (u2[m2].copyCellsFrom(u2[A3], R2 - I2, f3 - I2, I2, true), f3 -= I2, f3 === 0 && (m2--, f3 = c3[m2]), R2 -= I2, R2 === 0) {
+            if (u2[m2].copyCellsFrom(u2[A3], R2 - I2, f4 - I2, I2, true), f4 -= I2, f4 === 0 && (m2--, f4 = c3[m2]), R2 -= I2, R2 === 0) {
               A3--;
               let k2 = Math.max(A3, 0);
               R2 = ri(u2, k2, this._cols);
@@ -99380,16 +102111,16 @@ ${h3.join(`
         }
         if (n2.length > 0) {
           let l2 = [], a3 = [];
-          for (let f3 = 0; f3 < this.lines.length; f3++) a3.push(this.lines.get(f3));
+          for (let f4 = 0; f4 < this.lines.length; f4++) a3.push(this.lines.get(f4));
           let u2 = this.lines.length, h3 = u2 - 1, c3 = 0, d3 = n2[c3];
           this.lines.length = Math.min(this.lines.maxLength, this.lines.length + o3);
           let _3 = 0;
-          for (let f3 = Math.min(this.lines.maxLength - 1, u2 + o3 - 1); f3 >= 0; f3--) if (d3 && d3.start > h3 + _3) {
-            for (let A3 = d3.newLines.length - 1; A3 >= 0; A3--) this.lines.set(f3--, d3.newLines[A3]);
-            f3++, l2.push({ index: h3 + 1, amount: d3.newLines.length }), _3 += d3.newLines.length, d3 = n2[++c3];
-          } else this.lines.set(f3, a3[h3--]);
+          for (let f4 = Math.min(this.lines.maxLength - 1, u2 + o3 - 1); f4 >= 0; f4--) if (d3 && d3.start > h3 + _3) {
+            for (let A3 = d3.newLines.length - 1; A3 >= 0; A3--) this.lines.set(f4--, d3.newLines[A3]);
+            f4++, l2.push({ index: h3 + 1, amount: d3.newLines.length }), _3 += d3.newLines.length, d3 = n2[++c3];
+          } else this.lines.set(f4, a3[h3--]);
           let p2 = 0;
-          for (let f3 = l2.length - 1; f3 >= 0; f3--) l2[f3].index += p2, this.lines.onInsertEmitter.fire(l2[f3]), p2 += l2[f3].amount;
+          for (let f4 = l2.length - 1; f4 >= 0; f4--) l2[f4].index += p2, this.lines.onInsertEmitter.fire(l2[f4]), p2 += l2[f4].amount;
           let m2 = Math.max(0, u2 + o3 - this.lines.maxLength);
           m2 > 0 && this.lines.onTrimEmitter.fire(m2);
         }
@@ -100424,10 +103155,10 @@ ${h3.join(`
             let O2 = l2[String.fromCharCode(n2)];
             O2 && (n2 = O2.charCodeAt(0));
           }
-          let f3 = this._unicodeService.charProperties(n2, p2);
-          o3 = Ae.extractWidth(f3);
-          let A3 = Ae.extractShouldJoin(f3), R2 = A3 ? Ae.extractWidth(p2) : 0;
-          if (p2 = f3, a3 && this._onA11yChar.fire(Ce(n2)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), this._activeBuffer.x + o3 - R2 > u2) {
+          let f4 = this._unicodeService.charProperties(n2, p2);
+          o3 = Ae.extractWidth(f4);
+          let A3 = Ae.extractShouldJoin(f4), R2 = A3 ? Ae.extractWidth(p2) : 0;
+          if (p2 = f4, a3 && this._onA11yChar.fire(Ce(n2)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), this._activeBuffer.x + o3 - R2 > u2) {
             if (h3) {
               let O2 = _3, I2 = this._activeBuffer.x - R2;
               for (this._activeBuffer.x = R2, this._activeBuffer.y++, this._activeBuffer.y === this._activeBuffer.scrollBottom + 1 ? (this._activeBuffer.y--, this._bufferService.scroll(this._eraseAttrData(), true)) : (this._activeBuffer.y >= this._bufferService.rows && (this._activeBuffer.y = this._bufferService.rows - 1), this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).isWrapped = true), _3 = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y), R2 > 0 && _3 instanceof Ze && _3.copyCellsFrom(O2, I2, 0, R2, false); I2 < u2; ) O2.setCellFromCodepoint(I2++, 0, 1, d3);
@@ -100866,8 +103597,8 @@ ${h3.join(`
       requestMode(e3, i2) {
         let r2;
         ((P2) => (P2[P2.NOT_RECOGNIZED = 0] = "NOT_RECOGNIZED", P2[P2.SET = 1] = "SET", P2[P2.RESET = 2] = "RESET", P2[P2.PERMANENTLY_SET = 3] = "PERMANENTLY_SET", P2[P2.PERMANENTLY_RESET = 4] = "PERMANENTLY_RESET"))(r2 ||= {});
-        let n2 = this._coreService.decPrivateModes, { activeProtocol: o3, activeEncoding: l2 } = this._coreMouseService, a3 = this._coreService, { buffers: u2, cols: h3 } = this._bufferService, { active: c3, alt: d3 } = u2, _3 = this._optionsService.rawOptions, p2 = (A3, R2) => (a3.triggerDataEvent(`${b2.ESC}[${i2 ? "" : "?"}${A3};${R2}$y`), true), m2 = (A3) => A3 ? 1 : 2, f3 = e3.params[0];
-        return i2 ? f3 === 2 ? p2(f3, 4) : f3 === 4 ? p2(f3, m2(a3.modes.insertMode)) : f3 === 12 ? p2(f3, 3) : f3 === 20 ? p2(f3, m2(_3.convertEol)) : p2(f3, 0) : f3 === 1 ? p2(f3, m2(n2.applicationCursorKeys)) : f3 === 3 ? p2(f3, _3.windowOptions.setWinLines ? h3 === 80 ? 2 : h3 === 132 ? 1 : 0 : 0) : f3 === 6 ? p2(f3, m2(n2.origin)) : f3 === 7 ? p2(f3, m2(n2.wraparound)) : f3 === 8 ? p2(f3, 3) : f3 === 9 ? p2(f3, m2(o3 === "X10")) : f3 === 12 ? p2(f3, m2(_3.cursorBlink)) : f3 === 25 ? p2(f3, m2(!a3.isCursorHidden)) : f3 === 45 ? p2(f3, m2(n2.reverseWraparound)) : f3 === 66 ? p2(f3, m2(n2.applicationKeypad)) : f3 === 67 ? p2(f3, 4) : f3 === 1e3 ? p2(f3, m2(o3 === "VT200")) : f3 === 1002 ? p2(f3, m2(o3 === "DRAG")) : f3 === 1003 ? p2(f3, m2(o3 === "ANY")) : f3 === 1004 ? p2(f3, m2(n2.sendFocus)) : f3 === 1005 ? p2(f3, 4) : f3 === 1006 ? p2(f3, m2(l2 === "SGR")) : f3 === 1015 ? p2(f3, 4) : f3 === 1016 ? p2(f3, m2(l2 === "SGR_PIXELS")) : f3 === 1048 ? p2(f3, 1) : f3 === 47 || f3 === 1047 || f3 === 1049 ? p2(f3, m2(c3 === d3)) : f3 === 2004 ? p2(f3, m2(n2.bracketedPasteMode)) : f3 === 2026 ? p2(f3, m2(n2.synchronizedOutput)) : p2(f3, 0);
+        let n2 = this._coreService.decPrivateModes, { activeProtocol: o3, activeEncoding: l2 } = this._coreMouseService, a3 = this._coreService, { buffers: u2, cols: h3 } = this._bufferService, { active: c3, alt: d3 } = u2, _3 = this._optionsService.rawOptions, p2 = (A3, R2) => (a3.triggerDataEvent(`${b2.ESC}[${i2 ? "" : "?"}${A3};${R2}$y`), true), m2 = (A3) => A3 ? 1 : 2, f4 = e3.params[0];
+        return i2 ? f4 === 2 ? p2(f4, 4) : f4 === 4 ? p2(f4, m2(a3.modes.insertMode)) : f4 === 12 ? p2(f4, 3) : f4 === 20 ? p2(f4, m2(_3.convertEol)) : p2(f4, 0) : f4 === 1 ? p2(f4, m2(n2.applicationCursorKeys)) : f4 === 3 ? p2(f4, _3.windowOptions.setWinLines ? h3 === 80 ? 2 : h3 === 132 ? 1 : 0 : 0) : f4 === 6 ? p2(f4, m2(n2.origin)) : f4 === 7 ? p2(f4, m2(n2.wraparound)) : f4 === 8 ? p2(f4, 3) : f4 === 9 ? p2(f4, m2(o3 === "X10")) : f4 === 12 ? p2(f4, m2(_3.cursorBlink)) : f4 === 25 ? p2(f4, m2(!a3.isCursorHidden)) : f4 === 45 ? p2(f4, m2(n2.reverseWraparound)) : f4 === 66 ? p2(f4, m2(n2.applicationKeypad)) : f4 === 67 ? p2(f4, 4) : f4 === 1e3 ? p2(f4, m2(o3 === "VT200")) : f4 === 1002 ? p2(f4, m2(o3 === "DRAG")) : f4 === 1003 ? p2(f4, m2(o3 === "ANY")) : f4 === 1004 ? p2(f4, m2(n2.sendFocus)) : f4 === 1005 ? p2(f4, 4) : f4 === 1006 ? p2(f4, m2(l2 === "SGR")) : f4 === 1015 ? p2(f4, 4) : f4 === 1016 ? p2(f4, m2(l2 === "SGR_PIXELS")) : f4 === 1048 ? p2(f4, 1) : f4 === 47 || f4 === 1047 || f4 === 1049 ? p2(f4, m2(c3 === d3)) : f4 === 2004 ? p2(f4, m2(n2.bracketedPasteMode)) : f4 === 2026 ? p2(f4, m2(n2.synchronizedOutput)) : p2(f4, 0);
       }
       _updateAttrColor(e3, i2, r2, n2, o3) {
         return i2 === 2 ? (e3 |= 50331648, e3 &= -16777216, e3 |= De.fromColorRGB([r2, n2, o3])) : i2 === 5 && (e3 &= -50331904, e3 |= 33554432 | r2 & 255), e3;
@@ -102807,9 +105538,14 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   const unsubExit = api2.terminal.onExit((id, code) => {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
-    tab.term.writeln(`\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`);
     tab.sessionId = null;
+    tab.term.writeln(
+      code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
+      () => {
+        finishCodeBlockRun(tab, code);
+      }
+    );
   });
   function createXterm() {
     const term = new Dl({
@@ -102830,6 +105566,30 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   }
   function readTerminalText(tab, maxLines = READ_TERMINAL_DEFAULT_LINES) {
     return readXtermScrollback(tab.term, maxLines);
+  }
+  function finishCodeBlockRun(tab, exitCode) {
+    const request = tab.codeBlockRun;
+    if (!request) return;
+    tab.codeBlockRun = null;
+    const output2 = readTerminalText(tab);
+    const exitLabel = exitCode === null ? "unavailable" : String(exitCode);
+    const content = [
+      `Command:
+${request.command}`,
+      `Exit code: ${exitLabel}`,
+      output2 ? `Terminal output:
+${output2}` : "Terminal output: (none)"
+    ].join("\n\n");
+    store2.emit("code_block_run_finished", {
+      id: request.id,
+      threadId: request.threadId,
+      exitCode,
+      shell: {
+        tabId: tab.id,
+        label: `${tab.label} \xB7 exit ${exitLabel}`,
+        content
+      }
+    });
   }
   function publishMeta(tab) {
     if (!tab.sessionId) return;
@@ -102926,13 +105686,17 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   async function ensureSession(tab) {
     if (tab.sessionId || tab.creating) return;
     if (!store2.getState().workspaceRoot || !tab.scopeProjectId) {
-      tab.term.writeln("\x1B[90mOpen a folder to use the terminal.\x1B[0m");
+      tab.term.writeln("\x1B[90mOpen a folder to use the terminal.\x1B[0m", () => {
+        finishCodeBlockRun(tab, null);
+      });
       return;
     }
     tab.creating = true;
     try {
-      openTerminalSurface(tab);
-      fitTab(tab);
+      if (!tab.codeBlockRun) {
+        openTerminalSurface(tab);
+        fitTab(tab);
+      }
       const created = await createTerminalAfterPersist(
         api2.terminal.create.bind(api2.terminal),
         tab.term.cols,
@@ -102955,7 +105719,10 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     } catch (err2) {
       console.error("[terminals] could not start a shell:", err2);
       tab.term.writeln(
-        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`
+        `\x1B[31mFailed to start terminal: ${terminalStartFailureMessage(err2)}\x1B[0m`,
+        () => {
+          finishCodeBlockRun(tab, null);
+        }
       );
     } finally {
       tab.creating = false;
@@ -103036,7 +105803,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   function addTab(options) {
     tabCounter += 1;
     const id = crypto.randomUUID();
-    const label = `Terminal ${String(tabCounter)}`;
+    const label = options?.label ?? `Terminal ${String(tabCounter)}`;
     const closeBtn = el(
       "span",
       {
@@ -103096,6 +105863,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
       // flushes pending input right after create.
       pendingInput: options?.initialInput ? [options.initialInput] : [],
+      codeBlockRun: options?.codeBlockRun ?? null,
       termOpened: false,
       commandRan: false,
       autoNamed: false,
@@ -103157,6 +105925,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     if (tab.nameTimer != null) clearTimeout(tab.nameTimer);
     tab.fileLinks.dispose();
     await destroySession(tab);
+    finishCodeBlockRun(tab, null);
     tab.term.dispose();
     tab.tabBtn.remove();
     tab.panel.remove();
@@ -103241,6 +106010,23 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       store2.emit("right_panel_mode_changed");
     }
   }
+  function runCodeBlockInBackground(request) {
+    const command = request.command.trim();
+    if (!command) return;
+    const oneLine = command.split(/\s+/).join(" ");
+    const summary = oneLine.length > 48 ? `${oneLine.slice(0, 47)}\u2026` : oneLine;
+    const initialInput = `${command.replace(/\r\n?|\n/g, "\r")}\rexit\r`;
+    const tabId = addTab({
+      activate: false,
+      initialInput,
+      label: `Run \xB7 ${summary}`,
+      codeBlockRun: request,
+      scopeProjectId: request.projectId,
+      scopeId: request.threadId
+    });
+    const tab = tabs.get(tabId);
+    if (tab) void ensureSession(tab);
+  }
   onTerminalModeChange();
   function onAgentTaskSelected(taskId) {
     for (const tab of tabs.values()) {
@@ -103291,7 +106077,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     store2.on("threads_changed", onThreadMaybeChanged),
     store2.on("thread_checkout_changed", onThreadCheckoutChanged),
     store2.on("workspace_changed", onThreadMaybeChanged),
-    store2.on("request_terminal_command", runCommandInNewShell)
+    store2.on("request_terminal_command", runCommandInNewShell),
+    store2.on("code_block_run_requested", runCodeBlockInBackground)
   ];
   const unregisterCatalog = registerShellCatalog(
     () => [...tabs.values()].map((tab) => ({
@@ -103910,29 +106697,29 @@ function renderImageDiff(container, diff) {
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (diff.beforeImage) {
+    const alt = `${diff.path} (before)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.beforeImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "Before"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.beforeImage,
-        alt: `${diff.path} (before)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
     grid.append(pane);
   }
   if (diff.afterImage) {
+    const alt = `${diff.path} (after)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.afterImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "After"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.afterImage,
-        alt: `${diff.path} (after)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
     grid.append(pane);
   }
   if (!diff.beforeImage && !diff.afterImage) {
@@ -103942,6 +106729,7 @@ function renderImageDiff(container, diff) {
 }
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
+    init_image_expand();
     init_helpers();
   }
 });
@@ -105262,7 +108050,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let otherLoading = false;
   const checksCache = /* @__PURE__ */ new Map();
   const checksInFlight = /* @__PURE__ */ new Set();
-  const titlesCache = /* @__PURE__ */ new Map();
   const titleInFlight = /* @__PURE__ */ new Set();
   const titleAttempted = /* @__PURE__ */ new Set();
   let ciEls = /* @__PURE__ */ new Map();
@@ -105389,27 +108176,22 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!ghStatus?.authenticated) return;
     for (const pr2 of prs) {
       const key = githubPrKey(pr2);
-      const cached2 = titlesCache.get(key);
+      const cached2 = cachedPrTitle(pr2);
       if (cached2) {
-        if (pr2.title !== cached2) pr2.title = cached2;
+        if (pr2.title !== cached2.title) pr2.title = cached2.title;
         continue;
       }
       if (!isPlaceholderPr(pr2)) {
-        if (pr2.title && pr2.title !== placeholderPrTitle(pr2.number)) {
-          titlesCache.set(key, pr2.title);
-        }
+        rememberPrTitle(pr2, pr2.title);
         continue;
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
       titleInFlight.add(key);
       const gen = titleGen;
-      void api2.gh.prDetails(pr2.owner, pr2.repo, pr2.number).then((details) => {
-        if (disposed || gen !== titleGen) return;
-        const title = details?.title.trim();
-        if (!title || title === placeholderPrTitle(pr2.number)) return;
-        titlesCache.set(key, title);
-        pr2.title = title;
+      void loadPrTitle(pr2, api2.gh).then((title) => {
+        if (disposed || gen !== titleGen || !title) return;
+        pr2.title = title.title;
         scheduleTitleRepaint();
       }).catch(() => {
       }).finally(() => {
@@ -105942,7 +108724,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        titlesCache.set(key, details.title);
+        rememberPrTitle(details, details.title, details.isDraft);
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
         if (row2 && row2.title !== details.title) {
           row2.title = details.title;
@@ -106204,6 +108986,7 @@ var init_pr_pane = __esm({
     init_prompt_attachments();
     init_dist();
     init_browser_links();
+    init_pr_title_cache();
     init_workspace_links();
     init_git_diff_viewer();
     init_ui_scale();
@@ -107121,10 +109904,6 @@ function attachmentName(file2) {
 function itemThreadId(item) {
   return item.fields["thread"] ?? "";
 }
-function ipcErrorMessage(err2, fallback) {
-  if (!(err2 instanceof Error)) return fallback;
-  return err2.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, "");
-}
 function toRoadmapStatus(value) {
   return STATUS_OPTIONS.find((status) => status === value) ?? "ready";
 }
@@ -107138,11 +109917,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   let importing = false;
   let reviewing = false;
   let reviewPeekId = null;
+  let reviewPanelHidden = false;
   let reviewResults = [];
   const reviewApplied = /* @__PURE__ */ new Map();
   let bulkReviewFinished = false;
   let reviewInFlight = false;
   let bulkRunId = null;
+  let reviewTotal = 0;
   let reviewRunToken = 0;
   let cachedCheckpoint;
   let openIssues = [];
@@ -107196,7 +109977,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "aria-label": "Roadmap filters",
     hidden: true
   });
-  filter.append(searchInput, filterToggle, filterMenu);
+  filter.append(searchInput, filterToggle);
   const actionButtons = el("div", { class: "roadmap-action-buttons" });
   const newBtn = el(
     "button",
@@ -107218,6 +109999,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     },
     downloadIcon("ui-icon ui-icon-sm")
   );
+  const reviewLiveBadge = el("span", { class: "roadmap-review-live-badge", hidden: true });
   const reviewBtn = el(
     "button",
     {
@@ -107226,7 +110008,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       "aria-label": "Review roadmap resolution",
       "data-tooltip": "Review whether roadmap items have been resolved"
     },
-    searchIcon("ui-icon ui-icon-sm")
+    searchIcon("ui-icon ui-icon-sm"),
+    reviewLiveBadge
   );
   const refreshBtn = el(
     "button",
@@ -107270,7 +110053,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     actionButtons
   );
   const listBody = el("div", { class: "git-changes-list roadmap-list" });
-  listRoot.append(listHeader, listBody);
+  listRoot.append(listHeader, listBody, filterMenu);
   function appendFilterSection(title, values, enabled, label, defaultChecked) {
     filterMenu.append(el("div", { class: "roadmap-filter-heading" }, title));
     for (const value of values) {
@@ -107317,7 +110100,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     filterToggle.setAttribute("aria-expanded", opening ? "true" : "false");
   });
   const closeFilterOnOutsideClick = (event) => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu();
+    if (event.target instanceof Node && !filter.contains(event.target) && !filterMenu.contains(event.target)) {
+      closeFilterMenu();
+    }
   };
   document.addEventListener("click", closeFilterOnOutsideClick);
   searchInput.addEventListener("input", () => {
@@ -107741,7 +110526,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   }
   function syncViewerMode() {
     importView.hidden = !importing;
-    const reviewPanelActive = reviewing && !reviewPeekId;
+    const reviewPanelActive = reviewing && !reviewPeekId && !reviewPanelHidden;
     reviewView.hidden = !reviewPanelActive;
     if (importing || reviewPanelActive) {
       form.hidden = true;
@@ -107751,7 +110536,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   function renderEditor(opts) {
     errorLine.hidden = true;
     syncViewerMode();
-    if (importing || reviewing && !reviewPeekId) {
+    if (importing || reviewing && !reviewPeekId && !reviewPanelHidden) {
       return;
     }
     const item = selectedId ? items.find((m2) => m2.id === selectedId) : null;
@@ -107869,6 +110654,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     return enabledCategories.has(itemCategory(item)) && enabledComplexities.has(itemComplexity(item)) && enabledStatuses.has(status) && matchesSearch(item);
   }
   function renderList() {
+    const previousScrollTop = listBody.scrollTop;
     clear(listBody);
     const visible = items.filter(isListVisible);
     if (visible.length === 0) {
@@ -108072,7 +110858,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         );
         row2.append(main);
         row2.addEventListener("click", () => {
-          if (reviewing || importing) return;
+          if (reviewing && !reviewPanelHidden || importing) return;
           if (item.id === selectedId) return;
           leaveCurrentEditor();
           cancelResolutionCheckUi();
@@ -108087,6 +110873,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       group.append(groupItems);
       listBody.append(group);
     }
+    listBody.scrollTop = previousScrollTop;
     const selectedRow = listBody.querySelector(".is-selected");
     if (selectedRow) {
       const rowRect = selectedRow.getBoundingClientRect();
@@ -108112,12 +110899,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     if (token !== loadToken) return;
     loading = false;
     items = next;
-    if (!reviewing && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
+    if (!(reviewing && !reviewPanelHidden) && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
       selectedId = null;
     }
     renderList();
     if (reviewing) renderReviewResults();
     renderEditor(opts);
+    void rediscoverPendingReview();
   }
   function startNew() {
     leaveCurrentEditor();
@@ -108342,7 +111130,7 @@ Notes: ${notes}` : prompt;
       }
     }
     if (selectedId) {
-      void api2.roadmap.setThread(selectedId, threadId).then(() => refresh({ preserveDirty: true })).catch(() => {
+      void api2.roadmap.setThread(selectedId, threadId).catch(() => {
       });
     }
     handlers3?.focusComposer?.();
@@ -108454,8 +111242,11 @@ Notes: ${notes}` : prompt;
   }
   function startImport() {
     cancelResolutionCheckUi();
+    if (reviewing) {
+      reviewPanelHidden = true;
+      reviewPeekId = null;
+    }
     importing = true;
-    reviewing = false;
     creating = false;
     selectedId = null;
     openIssues = [];
@@ -108470,6 +111261,7 @@ Notes: ${notes}` : prompt;
     importStatus.textContent = "Loading open issues\u2026";
     renderList();
     renderEditor();
+    syncReviewButtonAffordance();
     void loadMoreOpenIssues(matchToken);
   }
   async function confirmImport() {
@@ -108544,6 +111336,73 @@ Notes: ${notes}` : prompt;
       reviewMarkResolvedBtn.hidden = true;
       reviewArchiveResolvedBtn.hidden = true;
     }
+  }
+  function syncReviewButtonAffordance() {
+    const hiddenAway = reviewing && reviewPanelHidden;
+    reviewBtn.classList.toggle("roadmap-review-btn-live", hiddenAway);
+    reviewBtn.disabled = reviewInFlight && !hiddenAway;
+    if (hiddenAway) {
+      const label = reviewInFlight ? `Review running \u2014 ${String(reviewResults.length)} of ${String(reviewTotal)} judged` : `Review finished \u2014 ${String(reviewResults.length)} item(s) judged`;
+      const full = `${label}. Click to view.`;
+      reviewBtn.setAttribute("aria-label", full);
+      reviewBtn.setAttribute("data-tooltip", full);
+      reviewLiveBadge.hidden = false;
+      reviewLiveBadge.textContent = reviewInFlight ? `${String(reviewResults.length)}/${String(reviewTotal)}` : String(reviewResults.length);
+    } else {
+      reviewBtn.setAttribute("aria-label", "Review roadmap resolution");
+      reviewBtn.setAttribute("data-tooltip", "Review whether roadmap items have been resolved");
+      reviewLiveBadge.hidden = true;
+      reviewLiveBadge.textContent = "";
+    }
+  }
+  function resumeReviewPanel() {
+    importing = false;
+    reviewPanelHidden = false;
+    reviewPeekId = null;
+    selectedId = null;
+    creating = false;
+    renderList();
+    renderEditor();
+    renderReviewResults();
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
+  }
+  function reconstructReviewResults(runId) {
+    const results = [];
+    for (const item of items) {
+      if (item.fields["reviewBulkRun"] !== runId) continue;
+      const verdict = item.fields["reviewVerdict"];
+      if (!isRoadmapReviewVerdict(verdict)) continue;
+      results.push({
+        id: item.id,
+        verdict,
+        detail: item.fields["reviewDetail"] ?? "",
+        depth: "bulk",
+        pinnedIssue: null,
+        linkedIssues: []
+      });
+    }
+    return results;
+  }
+  async function rediscoverPendingReview() {
+    if (reviewing || reviewInFlight || bulkRunId !== null) return;
+    const tokenBefore = reviewRunToken;
+    const checkpoint = await ensureCheckpoint();
+    const runId = checkpoint.pendingBulkRun;
+    if (!runId) return;
+    const results = reconstructReviewResults(runId);
+    if (results.length === 0) return;
+    if (reviewRunToken !== tokenBefore) return;
+    bulkRunId = runId;
+    reviewResults = results;
+    reviewApplied.clear();
+    bulkReviewFinished = false;
+    reviewInFlight = false;
+    reviewTotal = results.length;
+    reviewing = true;
+    reviewPanelHidden = true;
+    reviewStatus.textContent = `Recovered ${String(results.length)} item(s) judged in an unfinished review. View the results or close to discard.`;
+    syncReviewButtonAffordance();
   }
   function renderReviewResults() {
     clear(reviewList);
@@ -108648,6 +111507,7 @@ Notes: ${notes}` : prompt;
     renderList();
     renderEditor();
     if (reviewing) renderReviewResults();
+    syncReviewButtonAffordance();
   }
   async function applyReviewBulkStatus(status) {
     const label = status === "done" ? "mark done" : "archive";
@@ -108658,11 +111518,12 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = `Nothing left to ${label}.`;
       return;
     }
-    if (!confirm(
-      `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`
-    )) {
-      return;
-    }
+    const confirmed = await showConfirmDialog({
+      message: `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`,
+      detail: status === "done" ? "Marks each one done; you can reopen any of them later." : "Archives each one; you can restore any of them later.",
+      confirmLabel: status === "done" ? "Mark done" : "Archive"
+    });
+    if (!confirmed) return;
     reviewMarkResolvedBtn.disabled = true;
     reviewArchiveResolvedBtn.disabled = true;
     let applied = 0;
@@ -108679,9 +111540,11 @@ Notes: ${notes}` : prompt;
     const runToken = ++reviewRunToken;
     reviewing = true;
     reviewPeekId = null;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     importing = false;
     creating = false;
     selectedId = null;
@@ -108689,9 +111552,9 @@ Notes: ${notes}` : prompt;
     reviewApplied.clear();
     clear(reviewList);
     reviewStatus.textContent = "Preparing review\u2026";
-    reviewBtn.disabled = true;
     reviewInFlight = true;
     syncReviewActionVisibility();
+    syncReviewButtonAffordance();
     renderList();
     renderEditor();
     try {
@@ -108701,6 +111564,7 @@ Notes: ${notes}` : prompt;
         return;
       }
       bulkRunId = prepared.runId;
+      reviewTotal = prepared.items.length;
       if (prepared.items.length === 0) {
         reviewStatus.textContent = "No active roadmap items to review.";
         return;
@@ -108713,6 +111577,7 @@ Notes: ${notes}` : prompt;
         if (runToken !== reviewRunToken) return;
         reviewResults.push(result);
         renderReviewResults();
+        syncReviewButtonAffordance();
         await refresh({ preserveDirty: true });
       }
       bulkReviewFinished = true;
@@ -108724,8 +111589,9 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = ipcErrorMessage(err2, "Roadmap review failed.");
     } finally {
       reviewInFlight = false;
-      reviewBtn.disabled = false;
       syncReviewActionVisibility();
+      renderReviewResults();
+      syncReviewButtonAffordance();
     }
   }
   function closeReview() {
@@ -108741,13 +111607,43 @@ Notes: ${notes}` : prompt;
       });
     }
     reviewing = false;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     renderEditor();
+    syncReviewButtonAffordance();
+  }
+  function abandonReviewSession() {
+    if (!reviewing && !reviewInFlight && bulkRunId === null) return;
+    reviewRunToken++;
+    const runId = bulkRunId;
+    bulkRunId = null;
+    if (runId) {
+      void api2.roadmap.abortReview(runId).then(() => {
+        cachedCheckpoint = void 0;
+      });
+    }
+    reviewing = false;
+    reviewPanelHidden = false;
+    reviewInFlight = false;
+    bulkReviewFinished = false;
+    reviewPeekId = null;
+    reviewResults = [];
+    reviewApplied.clear();
+    reviewTotal = 0;
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview2());
+  reviewBtn.addEventListener("click", () => {
+    if (reviewing && reviewPanelHidden) {
+      resumeReviewPanel();
+      return;
+    }
+    void startReview2();
+  });
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -108843,15 +111739,16 @@ Notes: ${notes}` : prompt;
       loadToken++;
       loading = false;
       cancelResolutionCheckUi();
+      abandonReviewSession();
       selectedId = null;
       creating = false;
       importing = false;
-      reviewing = false;
       items = [];
       editorDrafts.clear();
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      cachedCheckpoint = void 0;
       renderList();
       renderEditor();
       if (roadmapModeActive(store2)) void refresh();
@@ -108880,6 +111777,7 @@ var STATUS_OPTIONS, LIST_STATUS_BADGES, isRoadmapStatus, NEW_ITEM_DRAFT_KEY;
 var init_roadmap_pane = __esm({
   "src/renderer/views/roadmap-pane.ts"() {
     init_helpers();
+    init_ipc_error_message();
     init_confirm_dialog();
     init_context_menu();
     init_pane_loading();
@@ -109047,6 +111945,24 @@ function webviewUrl(tab) {
   } catch {
     return "";
   }
+}
+function clearUrlLoadStatus(tab) {
+  tab.loadError = null;
+  tab.urlInput.classList.remove("has-error", "has-blocked");
+  setTooltip(tab.urlInput, null);
+  tab.statusLine.textContent = "";
+  tab.statusLine.classList.remove("browser-status-danger", "browser-status-warning");
+  tab.statusLine.hidden = true;
+}
+function setUrlLoadStatus(tab, kind, message2) {
+  tab.loadError = message2;
+  tab.urlInput.classList.toggle("has-error", kind === "error");
+  tab.urlInput.classList.toggle("has-blocked", kind === "blocked");
+  setTooltip(tab.urlInput, message2);
+  tab.statusLine.textContent = message2;
+  tab.statusLine.classList.toggle("browser-status-danger", kind === "error");
+  tab.statusLine.classList.toggle("browser-status-warning", kind === "blocked");
+  tab.statusLine.hidden = false;
 }
 function webviewTitle(tab) {
   if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== "function")
@@ -109379,8 +112295,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     );
   }
   function navigateWebview(tab, url2) {
-    tab.loadError = null;
-    tab.urlInput.classList.remove("has-error");
+    clearUrlLoadStatus(tab);
     if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
@@ -109399,12 +112314,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (activeTabId === tab.id) syncAddressBar(tab);
       scheduleSessionSave();
     };
-    webview.addEventListener("did-navigate", onNavigate);
+    const onNavigateSuccess = () => {
+      clearUrlLoadStatus(tab);
+      onNavigate();
+    };
+    webview.addEventListener("did-navigate", onNavigateSuccess);
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
     });
-    webview.addEventListener("did-navigate-in-page", onNavigate);
+    webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
     webview.addEventListener("focus", closeAllMenus);
     webview.addEventListener("dom-ready", () => {
@@ -109419,11 +112338,31 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     });
     webview.addEventListener("did-fail-load", (event) => {
       const detail = event;
-      tab.loadError = detail.errorDescription ?? "Failed to load page";
-      tab.urlInput.classList.add("has-error");
-      tab.urlInput.title = tab.loadError;
+      if (detail.isMainFrame === false) return;
+      if (detail.errorCode === NET_ERROR_ABORTED) return;
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+        return;
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, "Failed to load page");
+      setUrlLoadStatus(tab, "error", `Couldn't load this page: ${description}`);
     });
     return webview;
+  }
+  function handleNavigationBlocked(webContentsId, url2) {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue;
+      let id;
+      try {
+        id = tab.webview.getWebContentsId();
+      } catch {
+        continue;
+      }
+      if (id !== webContentsId) continue;
+      if (tab.urlInput.value !== url2) continue;
+      setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+      return;
+    }
   }
   function navigateTab(tab, rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
@@ -109756,8 +112695,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotateBtn,
       menuWrap
     );
+    const statusLine = el("div", { class: "browser-status", role: "status", hidden: "" });
     const webviewHost = el("div", { class: "browser-webview-host" });
-    const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id }, toolbar, webviewHost);
+    const panel = el(
+      "div",
+      { class: "browser-tab-panel", "data-tab-id": id },
+      toolbar,
+      statusLine,
+      webviewHost
+    );
     const tab = {
       id,
       partition: options?.partition ?? browserSessionPartition(
@@ -109775,6 +112721,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -110174,6 +113121,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     api2?.browser.onOpenTab((url2, partition) => addTab({ url: url2, partition, activate: false })),
     api2?.browser.onShowTab?.(showTabForUrl),
     api2?.browser.onPreviewStale?.(refreshStalePreviews),
+    api2?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api2?.browser.onShareText(attachSharedText),
     api2?.browser.onShareImage(attachSharedImage),
     api2?.browser.onPluginTabRequest(ensurePluginBrowserTab),
@@ -110202,7 +113150,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS2;
+var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -110220,6 +113168,9 @@ var init_browser_pane = __esm({
     init_annotation_layer();
     init_attach_annotation();
     init_toast();
+    init_tooltip();
+    NET_ERROR_ABORTED = -3;
+    NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
@@ -113132,7 +116083,7 @@ function gen_bitlen(s16, desc) {
   var n2, m2;
   var bits;
   var xbits;
-  var f3;
+  var f4;
   var overflow = 0;
   for (bits = 0; bits <= MAX_BITS; bits++) {
     s16.bl_count[bits] = 0;
@@ -113154,10 +116105,10 @@ function gen_bitlen(s16, desc) {
     if (n2 >= base) {
       xbits = extra[n2 - base];
     }
-    f3 = tree[n2 * 2];
-    s16.opt_len += f3 * (bits + xbits);
+    f4 = tree[n2 * 2];
+    s16.opt_len += f4 * (bits + xbits);
     if (has_stree) {
-      s16.static_len += f3 * (stree[n2 * 2 + 1] + xbits);
+      s16.static_len += f4 * (stree[n2 * 2 + 1] + xbits);
     }
   }
   if (overflow === 0) {
@@ -113714,8 +116665,8 @@ function err(strm, errorCode) {
   strm.msg = messages_default[errorCode];
   return errorCode;
 }
-function rank(f3) {
-  return (f3 << 1) - (f3 > 4 ? 9 : 0);
+function rank(f4) {
+  return (f4 << 1) - (f4 > 4 ? 9 : 0);
 }
 function zero2(buf) {
   var len = buf.length;
@@ -119144,7 +122095,7 @@ var init_aes = __esm({
 });
 
 // node_modules/.pnpm/@novnc+novnc@1.7.0/node_modules/@novnc/novnc/core/crypto/des.js
-var PC2, totrot, z3, a2, b3, c2, d2, e2, f2, SP1, SP2, SP3, SP4, SP5, SP6, SP7, SP8, DES, DESECBCipher, DESCBCCipher;
+var PC2, totrot, z3, a2, b3, c2, d2, e2, f3, SP1, SP2, SP3, SP4, SP5, SP6, SP7, SP8, DES, DESECBCipher, DESCBCCipher;
 var init_des = __esm({
   "node_modules/.pnpm/@novnc+novnc@1.7.0/node_modules/@novnc/novnc/core/crypto/des.js"() {
     PC2 = [
@@ -119204,42 +122155,42 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 2;
     e2 = 1 << 10;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP1 = [
       c2 | e2,
       z3 | z3,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       c2 | d2,
-      a2 | f2,
+      a2 | f3,
       z3 | d2,
       a2 | z3,
       z3 | e2,
       c2 | e2,
-      c2 | f2,
+      c2 | f3,
       z3 | e2,
-      b3 | f2,
+      b3 | f3,
       c2 | d2,
       b3 | z3,
       z3 | d2,
-      z3 | f2,
+      z3 | f3,
       b3 | e2,
       b3 | e2,
       a2 | e2,
       a2 | e2,
       c2 | z3,
       c2 | z3,
-      b3 | f2,
+      b3 | f3,
       a2 | d2,
       b3 | d2,
       b3 | d2,
       a2 | d2,
       z3 | z3,
-      z3 | f2,
-      a2 | f2,
+      z3 | f3,
+      a2 | f3,
       b3 | z3,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       z3 | d2,
       c2 | z3,
       c2 | e2,
@@ -119252,17 +122203,17 @@ var init_des = __esm({
       b3 | d2,
       z3 | e2,
       z3 | d2,
-      b3 | f2,
-      a2 | f2,
-      c2 | f2,
+      b3 | f3,
+      a2 | f3,
+      c2 | f3,
       a2 | d2,
       c2 | z3,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
-      z3 | f2,
-      a2 | f2,
+      z3 | f3,
+      a2 | f3,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | e2,
       b3 | e2,
       z3 | z3,
@@ -119276,18 +122227,18 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 5;
     e2 = 1 << 15;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP2 = [
-      c2 | f2,
+      c2 | f3,
       b3 | e2,
       z3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       z3 | d2,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
-      c2 | f2,
+      c2 | f3,
       c2 | e2,
       b3 | z3,
       b3 | e2,
@@ -119296,51 +122247,51 @@ var init_des = __esm({
       c2 | d2,
       a2 | e2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
       b3 | z3,
       z3 | e2,
-      a2 | f2,
+      a2 | f3,
       c2 | z3,
       a2 | d2,
       b3 | d2,
       z3 | z3,
       a2 | e2,
-      z3 | f2,
+      z3 | f3,
       c2 | e2,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | d2,
       a2 | z3,
-      b3 | f2,
+      b3 | f3,
       c2 | z3,
       c2 | e2,
       z3 | e2,
       c2 | z3,
       b3 | e2,
       z3 | d2,
-      c2 | f2,
-      a2 | f2,
+      c2 | f3,
+      a2 | f3,
       z3 | d2,
       z3 | e2,
       b3 | z3,
-      z3 | f2,
+      z3 | f3,
       c2 | e2,
       a2 | z3,
       b3 | d2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
       a2 | d2,
       a2 | e2,
       z3 | z3,
       b3 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | z3,
       c2 | d2,
-      c2 | f2,
+      c2 | f3,
       a2 | e2
     ];
     a2 = 1 << 17;
@@ -119348,24 +122299,24 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 3;
     e2 = 1 << 9;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP3 = [
-      z3 | f2,
+      z3 | f3,
       c2 | e2,
       z3 | z3,
       c2 | d2,
       b3 | e2,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       b3 | e2,
       a2 | d2,
       b3 | d2,
       b3 | d2,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | d2,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       b3 | z3,
       z3 | d2,
       c2 | e2,
@@ -119373,44 +122324,44 @@ var init_des = __esm({
       a2 | e2,
       c2 | z3,
       c2 | d2,
-      a2 | f2,
-      b3 | f2,
+      a2 | f3,
+      b3 | f3,
       a2 | e2,
       a2 | z3,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
-      c2 | f2,
+      c2 | f3,
       z3 | e2,
       b3 | z3,
       c2 | e2,
       b3 | z3,
       a2 | d2,
-      z3 | f2,
+      z3 | f3,
       a2 | z3,
       c2 | e2,
       b3 | e2,
       z3 | z3,
       z3 | e2,
       a2 | d2,
-      c2 | f2,
+      c2 | f3,
       b3 | e2,
       b3 | d2,
       z3 | e2,
       z3 | z3,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       a2 | z3,
       b3 | z3,
-      c2 | f2,
+      c2 | f3,
       z3 | d2,
-      a2 | f2,
+      a2 | f3,
       a2 | e2,
       b3 | d2,
       c2 | z3,
-      b3 | f2,
-      z3 | f2,
+      b3 | f3,
+      z3 | f3,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       z3 | d2,
       c2 | d2,
       a2 | e2
@@ -119420,21 +122371,21 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 0;
     e2 = 1 << 7;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP4 = [
       c2 | d2,
-      a2 | f2,
-      a2 | f2,
+      a2 | f3,
+      a2 | f3,
       z3 | e2,
       c2 | e2,
-      b3 | f2,
+      b3 | f3,
       b3 | d2,
       a2 | d2,
       z3 | z3,
       c2 | z3,
       c2 | z3,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       z3 | z3,
       b3 | e2,
       b3 | d2,
@@ -119446,38 +122397,38 @@ var init_des = __esm({
       b3 | z3,
       a2 | d2,
       a2 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       a2 | e2,
       b3 | e2,
       a2 | z3,
       c2 | e2,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       b3 | e2,
       b3 | d2,
       c2 | z3,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       z3 | z3,
       z3 | z3,
       c2 | z3,
       a2 | e2,
       b3 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       c2 | d2,
-      a2 | f2,
-      a2 | f2,
+      a2 | f3,
+      a2 | f3,
       z3 | e2,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       z3 | d2,
       a2 | z3,
       b3 | d2,
       a2 | d2,
       c2 | e2,
-      b3 | f2,
+      b3 | f3,
       a2 | d2,
       a2 | e2,
       b3 | z3,
@@ -119492,40 +122443,40 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 8;
     e2 = 1 << 19;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP5 = [
       z3 | d2,
-      a2 | f2,
+      a2 | f3,
       a2 | e2,
       c2 | d2,
       z3 | e2,
       z3 | d2,
       b3 | z3,
       a2 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | e2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       c2 | d2,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | z3,
       a2 | z3,
       b3 | e2,
       b3 | e2,
       z3 | z3,
       b3 | d2,
-      c2 | f2,
-      c2 | f2,
+      c2 | f3,
+      c2 | f3,
       a2 | d2,
       c2 | e2,
       b3 | d2,
       z3 | z3,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       z3 | e2,
       c2 | d2,
       z3 | d2,
@@ -119533,30 +122484,30 @@ var init_des = __esm({
       b3 | z3,
       a2 | e2,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       a2 | d2,
       b3 | z3,
       c2 | e2,
-      a2 | f2,
-      b3 | f2,
+      a2 | f3,
+      b3 | f3,
       z3 | d2,
       a2 | z3,
       c2 | e2,
-      c2 | f2,
-      z3 | f2,
+      c2 | f3,
+      z3 | f3,
       c2 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       z3 | z3,
       b3 | e2,
       c2 | z3,
-      z3 | f2,
+      z3 | f3,
       a2 | d2,
       b3 | d2,
       z3 | e2,
       z3 | z3,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       b3 | d2
     ];
     a2 = 1 << 22;
@@ -119564,37 +122515,37 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 4;
     e2 = 1 << 14;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP6 = [
       b3 | d2,
       c2 | z3,
       z3 | e2,
-      c2 | f2,
+      c2 | f3,
       c2 | z3,
       z3 | d2,
-      c2 | f2,
+      c2 | f3,
       a2 | z3,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       b3 | d2,
       a2 | d2,
       b3 | e2,
       b3 | z3,
-      z3 | f2,
+      z3 | f3,
       z3 | z3,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | e2,
       a2 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       c2 | d2,
       c2 | d2,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       a2 | e2,
       c2 | e2,
       b3 | z3,
@@ -119602,60 +122553,60 @@ var init_des = __esm({
       z3 | d2,
       c2 | d2,
       a2 | e2,
-      c2 | f2,
+      c2 | f3,
       a2 | z3,
-      z3 | f2,
+      z3 | f3,
       b3 | d2,
       a2 | z3,
       b3 | e2,
       b3 | z3,
-      z3 | f2,
+      z3 | f3,
       b3 | d2,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | e2,
       z3 | z3,
       c2 | d2,
       z3 | d2,
       z3 | e2,
       c2 | z3,
-      a2 | f2,
+      a2 | f3,
       z3 | e2,
       a2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
       c2 | e2,
       b3 | z3,
       a2 | d2,
-      b3 | f2
+      b3 | f3
     ];
     a2 = 1 << 21;
     b3 = 1 << 26;
     c2 = a2 | b3;
     d2 = 1 << 1;
     e2 = 1 << 11;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP7 = [
       a2 | z3,
       c2 | d2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
       z3 | e2,
-      b3 | f2,
-      a2 | f2,
+      b3 | f3,
+      a2 | f3,
       c2 | e2,
-      c2 | f2,
+      c2 | f3,
       a2 | z3,
       z3 | z3,
       b3 | d2,
       z3 | d2,
       b3 | z3,
       c2 | d2,
-      z3 | f2,
+      z3 | f3,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | d2,
       b3 | e2,
       b3 | d2,
@@ -119664,8 +122615,8 @@ var init_des = __esm({
       a2 | d2,
       c2 | z3,
       z3 | e2,
-      z3 | f2,
-      c2 | f2,
+      z3 | f3,
+      c2 | f3,
       a2 | e2,
       z3 | d2,
       b3 | z3,
@@ -119673,8 +122624,8 @@ var init_des = __esm({
       b3 | z3,
       a2 | e2,
       a2 | z3,
-      b3 | f2,
-      b3 | f2,
+      b3 | f3,
+      b3 | f3,
       c2 | d2,
       c2 | d2,
       z3 | d2,
@@ -119683,19 +122634,19 @@ var init_des = __esm({
       b3 | e2,
       a2 | z3,
       c2 | e2,
-      z3 | f2,
-      a2 | f2,
+      z3 | f3,
+      a2 | f3,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       b3 | d2,
-      c2 | f2,
+      c2 | f3,
       c2 | z3,
       a2 | e2,
       z3 | z3,
       z3 | d2,
-      c2 | f2,
+      c2 | f3,
       z3 | z3,
-      a2 | f2,
+      a2 | f3,
       c2 | z3,
       z3 | e2,
       b3 | d2,
@@ -119708,48 +122659,48 @@ var init_des = __esm({
     c2 = a2 | b3;
     d2 = 1 << 6;
     e2 = 1 << 12;
-    f2 = d2 | e2;
+    f3 = d2 | e2;
     SP8 = [
-      b3 | f2,
+      b3 | f3,
       z3 | e2,
       a2 | z3,
-      c2 | f2,
+      c2 | f3,
       b3 | z3,
-      b3 | f2,
+      b3 | f3,
       z3 | d2,
       b3 | z3,
       a2 | d2,
       c2 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       c2 | e2,
-      a2 | f2,
+      a2 | f3,
       z3 | e2,
       z3 | d2,
       c2 | z3,
       b3 | d2,
       b3 | e2,
-      z3 | f2,
+      z3 | f3,
       a2 | e2,
       a2 | d2,
       c2 | d2,
       c2 | e2,
-      z3 | f2,
+      z3 | f3,
       z3 | z3,
       z3 | z3,
       c2 | d2,
       b3 | d2,
       b3 | e2,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
-      a2 | f2,
+      a2 | f3,
       a2 | z3,
       c2 | e2,
       z3 | e2,
       z3 | d2,
       c2 | d2,
       z3 | e2,
-      a2 | f2,
+      a2 | f3,
       b3 | e2,
       z3 | d2,
       b3 | d2,
@@ -119757,20 +122708,20 @@ var init_des = __esm({
       c2 | d2,
       b3 | z3,
       a2 | z3,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | d2,
       b3 | d2,
       c2 | z3,
       b3 | e2,
-      b3 | f2,
+      b3 | f3,
       z3 | z3,
-      c2 | f2,
+      c2 | f3,
       a2 | e2,
       a2 | e2,
-      z3 | f2,
-      z3 | f2,
+      z3 | f3,
+      z3 | f3,
       a2 | d2,
       b3 | z3,
       c2 | e2
@@ -120190,11 +123141,11 @@ async function MD5(d3) {
   return M3(V(Y2(X2(s16), 8 * s16.length)));
 }
 function M3(d3) {
-  let f3 = new Uint8Array(d3.length);
+  let f4 = new Uint8Array(d3.length);
   for (let i2 = 0; i2 < d3.length; i2++) {
-    f3[i2] = d3.charCodeAt(i2);
+    f4[i2] = d3.charCodeAt(i2);
   }
-  return f3;
+  return f4;
 }
 function X2(d3) {
   let r2 = Array(d3.length >> 2);
@@ -120209,27 +123160,27 @@ function V(d3) {
 }
 function Y2(d3, g2) {
   d3[g2 >> 5] |= 128 << g2 % 32, d3[14 + (g2 + 64 >>> 9 << 4)] = g2;
-  let m2 = 1732584193, f3 = -271733879, r2 = -1732584194, i2 = 271733878;
+  let m2 = 1732584193, f4 = -271733879, r2 = -1732584194, i2 = 271733878;
   for (let n2 = 0; n2 < d3.length; n2 += 16) {
-    let h3 = m2, t2 = f3, g3 = r2, e3 = i2;
-    f3 = ii2(f3 = ii2(f3 = ii2(f3 = ii2(f3 = hh(f3 = hh(f3 = hh(f3 = hh(f3 = gg(f3 = gg(f3 = gg(f3 = gg(f3 = ff(f3 = ff(f3 = ff(f3 = ff(f3, r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 0], 7, -680876936), f3, r2, d3[n2 + 1], 12, -389564586), m2, f3, d3[n2 + 2], 17, 606105819), i2, m2, d3[n2 + 3], 22, -1044525330), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 4], 7, -176418897), f3, r2, d3[n2 + 5], 12, 1200080426), m2, f3, d3[n2 + 6], 17, -1473231341), i2, m2, d3[n2 + 7], 22, -45705983), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 8], 7, 1770035416), f3, r2, d3[n2 + 9], 12, -1958414417), m2, f3, d3[n2 + 10], 17, -42063), i2, m2, d3[n2 + 11], 22, -1990404162), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f3, r2, i2, d3[n2 + 12], 7, 1804603682), f3, r2, d3[n2 + 13], 12, -40341101), m2, f3, d3[n2 + 14], 17, -1502002290), i2, m2, d3[n2 + 15], 22, 1236535329), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 1], 5, -165796510), f3, r2, d3[n2 + 6], 9, -1069501632), m2, f3, d3[n2 + 11], 14, 643717713), i2, m2, d3[n2 + 0], 20, -373897302), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 5], 5, -701558691), f3, r2, d3[n2 + 10], 9, 38016083), m2, f3, d3[n2 + 15], 14, -660478335), i2, m2, d3[n2 + 4], 20, -405537848), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 9], 5, 568446438), f3, r2, d3[n2 + 14], 9, -1019803690), m2, f3, d3[n2 + 3], 14, -187363961), i2, m2, d3[n2 + 8], 20, 1163531501), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f3, r2, i2, d3[n2 + 13], 5, -1444681467), f3, r2, d3[n2 + 2], 9, -51403784), m2, f3, d3[n2 + 7], 14, 1735328473), i2, m2, d3[n2 + 12], 20, -1926607734), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 5], 4, -378558), f3, r2, d3[n2 + 8], 11, -2022574463), m2, f3, d3[n2 + 11], 16, 1839030562), i2, m2, d3[n2 + 14], 23, -35309556), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 1], 4, -1530992060), f3, r2, d3[n2 + 4], 11, 1272893353), m2, f3, d3[n2 + 7], 16, -155497632), i2, m2, d3[n2 + 10], 23, -1094730640), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 13], 4, 681279174), f3, r2, d3[n2 + 0], 11, -358537222), m2, f3, d3[n2 + 3], 16, -722521979), i2, m2, d3[n2 + 6], 23, 76029189), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f3, r2, i2, d3[n2 + 9], 4, -640364487), f3, r2, d3[n2 + 12], 11, -421815835), m2, f3, d3[n2 + 15], 16, 530742520), i2, m2, d3[n2 + 2], 23, -995338651), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 0], 6, -198630844), f3, r2, d3[n2 + 7], 10, 1126891415), m2, f3, d3[n2 + 14], 15, -1416354905), i2, m2, d3[n2 + 5], 21, -57434055), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 12], 6, 1700485571), f3, r2, d3[n2 + 3], 10, -1894986606), m2, f3, d3[n2 + 10], 15, -1051523), i2, m2, d3[n2 + 1], 21, -2054922799), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 8], 6, 1873313359), f3, r2, d3[n2 + 15], 10, -30611744), m2, f3, d3[n2 + 6], 15, -1560198380), i2, m2, d3[n2 + 13], 21, 1309151649), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f3, r2, i2, d3[n2 + 4], 6, -145523070), f3, r2, d3[n2 + 11], 10, -1120210379), m2, f3, d3[n2 + 2], 15, 718787259), i2, m2, d3[n2 + 9], 21, -343485551), m2 = add(m2, h3), f3 = add(f3, t2), r2 = add(r2, g3), i2 = add(i2, e3);
+    let h3 = m2, t2 = f4, g3 = r2, e3 = i2;
+    f4 = ii2(f4 = ii2(f4 = ii2(f4 = ii2(f4 = hh(f4 = hh(f4 = hh(f4 = hh(f4 = gg(f4 = gg(f4 = gg(f4 = gg(f4 = ff(f4 = ff(f4 = ff(f4 = ff(f4, r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 0], 7, -680876936), f4, r2, d3[n2 + 1], 12, -389564586), m2, f4, d3[n2 + 2], 17, 606105819), i2, m2, d3[n2 + 3], 22, -1044525330), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 4], 7, -176418897), f4, r2, d3[n2 + 5], 12, 1200080426), m2, f4, d3[n2 + 6], 17, -1473231341), i2, m2, d3[n2 + 7], 22, -45705983), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 8], 7, 1770035416), f4, r2, d3[n2 + 9], 12, -1958414417), m2, f4, d3[n2 + 10], 17, -42063), i2, m2, d3[n2 + 11], 22, -1990404162), r2 = ff(r2, i2 = ff(i2, m2 = ff(m2, f4, r2, i2, d3[n2 + 12], 7, 1804603682), f4, r2, d3[n2 + 13], 12, -40341101), m2, f4, d3[n2 + 14], 17, -1502002290), i2, m2, d3[n2 + 15], 22, 1236535329), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 1], 5, -165796510), f4, r2, d3[n2 + 6], 9, -1069501632), m2, f4, d3[n2 + 11], 14, 643717713), i2, m2, d3[n2 + 0], 20, -373897302), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 5], 5, -701558691), f4, r2, d3[n2 + 10], 9, 38016083), m2, f4, d3[n2 + 15], 14, -660478335), i2, m2, d3[n2 + 4], 20, -405537848), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 9], 5, 568446438), f4, r2, d3[n2 + 14], 9, -1019803690), m2, f4, d3[n2 + 3], 14, -187363961), i2, m2, d3[n2 + 8], 20, 1163531501), r2 = gg(r2, i2 = gg(i2, m2 = gg(m2, f4, r2, i2, d3[n2 + 13], 5, -1444681467), f4, r2, d3[n2 + 2], 9, -51403784), m2, f4, d3[n2 + 7], 14, 1735328473), i2, m2, d3[n2 + 12], 20, -1926607734), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 5], 4, -378558), f4, r2, d3[n2 + 8], 11, -2022574463), m2, f4, d3[n2 + 11], 16, 1839030562), i2, m2, d3[n2 + 14], 23, -35309556), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 1], 4, -1530992060), f4, r2, d3[n2 + 4], 11, 1272893353), m2, f4, d3[n2 + 7], 16, -155497632), i2, m2, d3[n2 + 10], 23, -1094730640), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 13], 4, 681279174), f4, r2, d3[n2 + 0], 11, -358537222), m2, f4, d3[n2 + 3], 16, -722521979), i2, m2, d3[n2 + 6], 23, 76029189), r2 = hh(r2, i2 = hh(i2, m2 = hh(m2, f4, r2, i2, d3[n2 + 9], 4, -640364487), f4, r2, d3[n2 + 12], 11, -421815835), m2, f4, d3[n2 + 15], 16, 530742520), i2, m2, d3[n2 + 2], 23, -995338651), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 0], 6, -198630844), f4, r2, d3[n2 + 7], 10, 1126891415), m2, f4, d3[n2 + 14], 15, -1416354905), i2, m2, d3[n2 + 5], 21, -57434055), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 12], 6, 1700485571), f4, r2, d3[n2 + 3], 10, -1894986606), m2, f4, d3[n2 + 10], 15, -1051523), i2, m2, d3[n2 + 1], 21, -2054922799), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 8], 6, 1873313359), f4, r2, d3[n2 + 15], 10, -30611744), m2, f4, d3[n2 + 6], 15, -1560198380), i2, m2, d3[n2 + 13], 21, 1309151649), r2 = ii2(r2, i2 = ii2(i2, m2 = ii2(m2, f4, r2, i2, d3[n2 + 4], 6, -145523070), f4, r2, d3[n2 + 11], 10, -1120210379), m2, f4, d3[n2 + 2], 15, 718787259), i2, m2, d3[n2 + 9], 21, -343485551), m2 = add(m2, h3), f4 = add(f4, t2), r2 = add(r2, g3), i2 = add(i2, e3);
   }
-  return Array(m2, f3, r2, i2);
+  return Array(m2, f4, r2, i2);
 }
-function cmn(d3, g2, m2, f3, r2, i2) {
-  return add(rol(add(add(g2, d3), add(f3, i2)), r2), m2);
+function cmn(d3, g2, m2, f4, r2, i2) {
+  return add(rol(add(add(g2, d3), add(f4, i2)), r2), m2);
 }
-function ff(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(g2 & m2 | ~g2 & f3, d3, g2, r2, i2, n2);
+function ff(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(g2 & m2 | ~g2 & f4, d3, g2, r2, i2, n2);
 }
-function gg(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(g2 & f3 | m2 & ~f3, d3, g2, r2, i2, n2);
+function gg(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(g2 & f4 | m2 & ~f4, d3, g2, r2, i2, n2);
 }
-function hh(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(g2 ^ m2 ^ f3, d3, g2, r2, i2, n2);
+function hh(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(g2 ^ m2 ^ f4, d3, g2, r2, i2, n2);
 }
-function ii2(d3, g2, m2, f3, r2, i2, n2) {
-  return cmn(m2 ^ (g2 | ~f3), d3, g2, r2, i2, n2);
+function ii2(d3, g2, m2, f4, r2, i2, n2) {
+  return cmn(m2 ^ (g2 | ~f4), d3, g2, r2, i2, n2);
 }
 function add(d3, g2) {
   let m2 = (65535 & d3) + (65535 & g2);
@@ -127805,7 +130756,15 @@ function mountAskUserDialog(api2, store2) {
         "div",
         { class: "ask-user-buttons" },
         cancelBtn,
-        el("button", { type: "submit", class: "ask-user-submit" }, "Send answer")
+        el(
+          "button",
+          {
+            type: "submit",
+            class: "ask-user-submit",
+            title: "Send answer (\u2318Enter or Ctrl+Enter)"
+          },
+          "Send answer"
+        )
       )
     );
     dialog2.showModal();
@@ -127847,6 +130806,21 @@ function mountAskUserDialog(api2, store2) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     submit();
+  });
+  dialog2.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      return;
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    event.stopPropagation();
+    if (event.isComposing || event.repeat) return;
+    event.preventDefault();
+    submit();
+  });
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancel();
   });
   api2.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
@@ -128064,20 +131038,20 @@ function threadLabel(title) {
 function workingThreadTitles(store2) {
   return store2.getState().threads.filter((thread) => thread.status === "running").map((thread) => threadLabel(thread.title));
 }
-function summariseWorkingThreads(titles) {
-  const listed = titles.slice(0, MAX_LISTED_TITLES);
-  const remaining = titles.length - listed.length;
+function summariseWorkingThreads(titles2) {
+  const listed = titles2.slice(0, MAX_LISTED_TITLES);
+  const remaining = titles2.length - listed.length;
   if (remaining > 0) return `${listed.join(", ")} and ${String(remaining)} more`;
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
 async function confirmClose(store2) {
-  const titles = workingThreadTitles(store2);
-  if (titles.length === 0) return true;
-  const one = titles.length === 1;
+  const titles2 = workingThreadTitles(store2);
+  if (titles2.length === 0) return true;
+  const one = titles2.length === 1;
   return await showConfirmDialog({
-    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -128108,7 +131082,7 @@ ${Object.values(item.fields).join(" ")}`.toLowerCase();
   }).slice(0, ROADMAP_RESULT_LIMIT);
 }
 function openFileSearchDialog() {
-  openImpl?.();
+  openImpl2?.();
 }
 function closeFileSearchDialog() {
   if (dialogEl4?.open) dialogEl4.close();
@@ -128268,7 +131242,7 @@ function mountFileSearchDialog(store2, api2) {
   dialog2.addEventListener("mousedown", (e3) => {
     if (e3.target === dialog2) closeFileSearchDialog();
   });
-  openImpl = () => {
+  openImpl2 = () => {
     if (dialog2.open) return;
     input2.value = "";
     results = [];
@@ -128284,7 +131258,7 @@ function mountFileSearchDialog(store2, api2) {
     void runQuery("");
   };
 }
-var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl;
+var ROADMAP_RESULT_LIMIT, ROADMAP_ICON_PATHS, dialogEl4, openImpl2;
 var init_file_search_dialog = __esm({
   "src/renderer/views/file-search-dialog.ts"() {
     init_helpers();
@@ -128296,7 +131270,7 @@ var init_file_search_dialog = __esm({
     ROADMAP_RESULT_LIMIT = 8;
     ROADMAP_ICON_PATHS = ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"];
     dialogEl4 = null;
-    openImpl = null;
+    openImpl2 = null;
   }
 });
 
@@ -128413,242 +131387,6 @@ var init_keyboard_shortcuts_dialog = __esm({
       }
     ];
     dialogEl5 = null;
-  }
-});
-
-// src/renderer/views/conversation-search.ts
-function findMatchOffsets(haystack, needle) {
-  if (!needle) return [];
-  const hay = haystack.toLowerCase();
-  const q2 = needle.toLowerCase();
-  const offsets = [];
-  let from = 0;
-  for (; ; ) {
-    const idx = hay.indexOf(q2, from);
-    if (idx === -1) break;
-    offsets.push(idx);
-    from = idx + q2.length;
-  }
-  return offsets;
-}
-function openConversationSearch() {
-  openImpl2?.();
-}
-function closeConversationSearch() {
-  closeImpl?.();
-}
-function isConversationSearchOpen() {
-  return isOpenImpl?.() ?? false;
-}
-function mountConversationSearch(root) {
-  const input2 = el("input", {
-    type: "text",
-    class: "chat-search-input",
-    placeholder: "Find in conversation\u2026",
-    "aria-label": "Find in conversation",
-    spellcheck: "false",
-    autocomplete: "off"
-  });
-  const count = el("span", { class: "chat-search-count", "aria-live": "polite" });
-  const prevBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "chat-search-nav",
-      "aria-label": "Previous match",
-      "data-tooltip": "Previous match (Shift+Enter)"
-    },
-    chevronUpIcon("ui-icon ui-icon-sm")
-  );
-  const nextBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "chat-search-nav",
-      "aria-label": "Next match",
-      "data-tooltip": "Next match (Enter)"
-    },
-    chevronDownIcon("ui-icon ui-icon-sm")
-  );
-  const closeBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "chat-search-close",
-      "aria-label": "Close find",
-      "data-tooltip": "Close find (Esc)"
-    },
-    closeIcon("ui-icon ui-icon-sm")
-  );
-  const bar = el(
-    "div",
-    { class: "chat-search", role: "search", hidden: true },
-    el(
-      "span",
-      { class: "chat-search-icon", "aria-hidden": "true" },
-      searchIcon("ui-icon ui-icon-sm")
-    ),
-    input2,
-    count,
-    el("div", { class: "chat-search-actions" }, prevBtn, nextBtn, closeBtn)
-  );
-  const host = root.closest(".pane-chat") ?? root;
-  host.append(bar);
-  let ranges = [];
-  let currentIdx = 0;
-  let debounce = null;
-  let observer = null;
-  function messagesList() {
-    return root.querySelector(".messages-list");
-  }
-  function clearHighlights() {
-    if (!highlightsSupported) return;
-    CSS.highlights.delete(BASE_HIGHLIGHT);
-    CSS.highlights.delete(CURRENT_HIGHLIGHT);
-  }
-  function collectRanges(query) {
-    const container = messagesList();
-    if (!container || !query) return [];
-    const found = [];
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode(node3) {
-        return node3.nodeValue && node3.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-      }
-    });
-    let node2 = walker.nextNode();
-    while (node2) {
-      const text2 = node2.nodeValue ?? "";
-      for (const offset of findMatchOffsets(text2, query)) {
-        const range = new Range();
-        range.setStart(node2, offset);
-        range.setEnd(node2, offset + query.length);
-        found.push(range);
-      }
-      node2 = walker.nextNode();
-    }
-    return found;
-  }
-  function paintHighlights() {
-    if (!highlightsSupported) return;
-    if (ranges.length === 0) {
-      clearHighlights();
-      return;
-    }
-    CSS.highlights.set(BASE_HIGHLIGHT, new Highlight(...ranges));
-    const current = ranges[currentIdx];
-    if (current) {
-      const currentHighlight = new Highlight(current);
-      currentHighlight.priority = 1;
-      CSS.highlights.set(CURRENT_HIGHLIGHT, currentHighlight);
-    } else {
-      CSS.highlights.delete(CURRENT_HIGHLIGHT);
-    }
-  }
-  function updateCount() {
-    const total = ranges.length;
-    const query = input2.value;
-    if (!query) {
-      count.textContent = "";
-      input2.classList.remove("chat-search-nomatch");
-      return;
-    }
-    count.textContent = total === 0 ? "0/0" : `${String(currentIdx + 1)}/${String(total)}`;
-    input2.classList.toggle("chat-search-nomatch", total === 0);
-  }
-  function scrollCurrentIntoView() {
-    const current = ranges[currentIdx];
-    const target = current?.startContainer.parentElement;
-    target?.scrollIntoView({ block: "center", behavior: "auto" });
-  }
-  function runSearch(preserveIndex = false) {
-    const query = input2.value;
-    const prev = preserveIndex ? currentIdx : 0;
-    ranges = collectRanges(query);
-    currentIdx = ranges.length === 0 ? 0 : Math.min(prev, ranges.length - 1);
-    paintHighlights();
-    updateCount();
-  }
-  function step(delta) {
-    if (ranges.length === 0) return;
-    currentIdx = (currentIdx + delta + ranges.length) % ranges.length;
-    paintHighlights();
-    updateCount();
-    scrollCurrentIntoView();
-  }
-  input2.addEventListener("input", () => {
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(() => {
-      runSearch(false);
-      scrollCurrentIntoView();
-    }, 120);
-  });
-  input2.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
-    if (e3.key === "Enter") {
-      e3.preventDefault();
-      step(e3.shiftKey ? -1 : 1);
-    } else if (e3.key === "Escape") {
-      e3.preventDefault();
-      e3.stopPropagation();
-      close();
-    }
-  });
-  prevBtn.addEventListener("click", () => {
-    step(-1);
-  });
-  nextBtn.addEventListener("click", () => {
-    step(1);
-  });
-  closeBtn.addEventListener("click", () => {
-    close();
-  });
-  function open2() {
-    const alreadyOpen = !bar.hidden;
-    bar.hidden = false;
-    if (!alreadyOpen) {
-      const container = messagesList();
-      if (container) {
-        observer = new MutationObserver(() => {
-          if (debounce) clearTimeout(debounce);
-          debounce = setTimeout(() => {
-            runSearch(true);
-          }, 120);
-        });
-        observer.observe(container, { childList: true, subtree: true, characterData: true });
-      }
-    }
-    input2.focus();
-    input2.select();
-    if (input2.value) runSearch(true);
-  }
-  function close() {
-    if (bar.hidden) return;
-    bar.hidden = true;
-    if (debounce) {
-      clearTimeout(debounce);
-      debounce = null;
-    }
-    observer?.disconnect();
-    observer = null;
-    ranges = [];
-    currentIdx = 0;
-    clearHighlights();
-  }
-  openImpl2 = open2;
-  closeImpl = close;
-  isOpenImpl = () => !bar.hidden;
-}
-var BASE_HIGHLIGHT, CURRENT_HIGHLIGHT, highlightsSupported, openImpl2, closeImpl, isOpenImpl;
-var init_conversation_search = __esm({
-  "src/renderer/views/conversation-search.ts"() {
-    init_helpers();
-    init_icons();
-    BASE_HIGHLIGHT = "chat-search";
-    CURRENT_HIGHLIGHT = "chat-search-current";
-    highlightsSupported = typeof CSS !== "undefined" && "highlights" in CSS && typeof globalThis.Highlight === "function";
-    openImpl2 = null;
-    closeImpl = null;
-    isOpenImpl = null;
   }
 });
 
@@ -128936,6 +131674,380 @@ var init_command_palette = __esm({
     PROJECT_LIMIT = 25;
     dialogEl6 = null;
     openImpl3 = null;
+  }
+});
+
+// src/renderer/views/process-manager-dialog.ts
+function sortedRows(rows, column, ascending) {
+  const direction = ascending ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const a3 = column === "cpu" ? left.cpuPercent : left.memoryMiB;
+    const b4 = column === "cpu" ? right.cpuPercent : right.memoryMiB;
+    if (a3 === null) return b4 === null ? left.pid - right.pid : 1;
+    if (b4 === null) return -1;
+    return (a3 - b4) * direction || left.pid - right.pid;
+  });
+}
+function mountProcessManagerDialog(api2, store2) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({
+    id: "process-manager-dialog",
+    className: "process-manager-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "process-manager-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost process-manager-close",
+      "aria-label": "Close process manager"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const cpuHeading = el("th", { scope: "col", "aria-sort": "descending" });
+  const memoryHeading = el("th", { scope: "col", "aria-sort": "none" });
+  const cpuButton = el("button", { type: "button", class: "process-manager-sort" }, "CPU %");
+  const memoryButton = el("button", { type: "button", class: "process-manager-sort" }, "Memory");
+  cpuHeading.append(cpuButton);
+  memoryHeading.append(memoryButton);
+  const body = el("tbody", { class: "process-manager-rows" });
+  const table = el(
+    "table",
+    { class: "process-manager-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        el("th", { scope: "col" }, "Process"),
+        el("th", { scope: "col" }, "Kind"),
+        el("th", { scope: "col" }, "Thread"),
+        cpuHeading,
+        memoryHeading,
+        el("th", { scope: "col" }, "PID"),
+        el("th", { scope: "col", "aria-label": "Actions" })
+      )
+    ),
+    body
+  );
+  const activityCount = el("span", { class: "process-manager-activity-count" });
+  const activityList = el("div", { class: "process-manager-activity-list" });
+  const activity = el(
+    "section",
+    { class: "process-manager-activity", "aria-label": "Agent activity" },
+    el(
+      "div",
+      { class: "process-manager-activity-heading" },
+      el("strong", {}, "Agent activity"),
+      activityCount
+    ),
+    activityList
+  );
+  activity.hidden = true;
+  const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  dialog2.append(
+    el(
+      "div",
+      { class: "process-manager-shell" },
+      el(
+        "header",
+        { class: "process-manager-header" },
+        el(
+          "div",
+          {},
+          el("h2", { id: "process-manager-title" }, "Process Manager"),
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and managed task processes")
+        ),
+        closeButton
+      ),
+      activity,
+      el("div", { class: "process-manager-scroll" }, table),
+      el(
+        "footer",
+        { class: "process-manager-footer" },
+        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
+        updated
+      ),
+      status
+    )
+  );
+  let current = null;
+  let column = "cpu";
+  let ascending = false;
+  let timer = null;
+  let generation = 0;
+  let refreshing = false;
+  function projectForThread(threadId, projectId) {
+    const state = store2.getState();
+    return projectId ?? state.backgroundThreads.find((item) => item.thread.id === threadId)?.projectId ?? (state.threads.some((thread) => thread.id === threadId) ? state.activeProjectId : null);
+  }
+  function jumpToThread(projectId, threadId) {
+    close();
+    switchProjectThread(store2, api2, projectId, threadId);
+  }
+  function stopAgentRun(threadId) {
+    void api2.agent.abort(threadId).catch((error62) => {
+      showErrorToast("Could not stop the agent run", error62);
+    });
+  }
+  async function stopManaged(row2) {
+    const handle = row2.managed;
+    if (!handle) return;
+    const label = handle.kind === "terminal" ? "terminal" : "background task";
+    const confirmed = await showConfirmDialog({
+      message: `Stop this ${label}?`,
+      detail: handle.kind === "terminal" ? "This closes the terminal session and stops its shell." : "This stops the background task and its managed subprocesses.",
+      confirmLabel: "Stop",
+      danger: true
+    });
+    if (!confirmed) return;
+    try {
+      if (handle.kind === "terminal") {
+        await api2.terminal.destroy(handle.id);
+      } else {
+        const stopped = await api2.processManager.stopBackground(
+          handle.id,
+          handle.projectId,
+          handle.threadId
+        );
+        if (!stopped) {
+          showErrorToast("Could not stop that task", "It is no longer running.");
+          return;
+        }
+      }
+      status.textContent = `Stopped ${label}.`;
+      void refresh();
+    } catch (error62) {
+      showErrorToast(`Could not stop the ${label}`, error62);
+    }
+  }
+  function threadMenuEntries(threadId, projectId, running) {
+    const entries2 = [];
+    if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
+      entries2.push({
+        label: "Jump to thread",
+        onSelect: () => {
+          jumpToThread(projectId, threadId);
+        }
+      });
+    }
+    if (running) {
+      entries2.push({
+        label: "Stop agent run",
+        onSelect: () => {
+          stopAgentRun(threadId);
+        }
+      });
+    }
+    return entries2;
+  }
+  function menuEntries(row2) {
+    const entries2 = row2.threadId ? threadMenuEntries(
+      row2.threadId,
+      projectForThread(row2.threadId, row2.projectId),
+      getThreadById(store2, row2.threadId)?.status === "running"
+    ) : [];
+    if (row2.managed) {
+      entries2.push({
+        label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
+        onSelect: () => {
+          void stopManaged(row2);
+        }
+      });
+    }
+    return entries2;
+  }
+  function render(snapshot) {
+    const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
+    cpuHeading.setAttribute(
+      "aria-sort",
+      column === "cpu" ? ascending ? "ascending" : "descending" : "none"
+    );
+    memoryHeading.setAttribute(
+      "aria-sort",
+      column === "memory" ? ascending ? "ascending" : "descending" : "none"
+    );
+    clear(body);
+    clear(activityList);
+    activity.hidden = snapshot.activeRunThreadIds.length === 0;
+    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
+    for (const threadId of snapshot.activeRunThreadIds) {
+      const title = getThreadById(store2, threadId)?.title.trim();
+      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
+      const projectId = projectForThread(threadId);
+      const canNavigate = Boolean(
+        projectId && store2.getState().projects.some((project2) => project2.id === projectId)
+      );
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: "process-manager-activity-item",
+          "data-thread-id": threadId,
+          "aria-label": canNavigate ? `Working ${label}: open thread` : `Working ${label}`
+        },
+        el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+        el("span", { class: "process-manager-activity-state" }, "Working"),
+        el("span", { class: "process-manager-activity-thread", title: label }, label)
+      );
+      if (projectId && canNavigate) {
+        item.addEventListener("click", () => {
+          jumpToThread(projectId, threadId);
+        });
+      } else {
+        item.setAttribute("aria-disabled", "true");
+      }
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        showContextMenu(
+          event.clientX,
+          event.clientY,
+          threadMenuEntries(threadId, projectId, true),
+          dialog2
+        );
+      });
+      item.addEventListener("keydown", (event) => {
+        if (event.key !== "F10" || !event.shiftKey) return;
+        event.preventDefault();
+        const rect = item.getBoundingClientRect();
+        showContextMenu(
+          rect.left,
+          rect.bottom,
+          threadMenuEntries(threadId, projectId, true),
+          dialog2
+        );
+      });
+      activityList.append(item);
+      if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
+    }
+    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
+      closeButton.focus({ preventScroll: true });
+    }
+    const state = store2.getState();
+    for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
+      const thread = getThreadById(store2, row2.threadId);
+      const title = thread?.title.trim();
+      const threadLabel2 = row2.threadId ? title && title.length > 0 ? title : `Thread ${row2.threadId.slice(0, 8)}` : "Shared";
+      const entries2 = menuEntries(row2);
+      const actionsCell = el("td", { class: "process-manager-actions" });
+      if (entries2.length > 0) {
+        const actionsButton = el(
+          "button",
+          {
+            type: "button",
+            class: "ui-btn ui-btn-ghost process-manager-actions-button",
+            "aria-label": `Actions for ${row2.label} (${String(row2.pid)})`
+          },
+          moreHorizontalIcon("ui-icon ui-icon-sm")
+        );
+        actionsButton.addEventListener("click", () => {
+          const rect = actionsButton.getBoundingClientRect();
+          showContextMenu(rect.right, rect.bottom, menuEntries(row2), dialog2);
+        });
+        actionsCell.append(actionsButton);
+      }
+      const tableRow = el(
+        "tr",
+        {
+          "data-pid": String(row2.pid),
+          "data-kind": row2.type,
+          "data-thread-id": row2.threadId ?? "",
+          "data-active-thread": String(
+            row2.threadId !== null && row2.threadId === state.activeThreadId
+          )
+        },
+        el("td", { class: "process-manager-name", title: row2.label }, row2.label),
+        el("td", { class: "process-manager-type" }, row2.type),
+        el("td", { class: "process-manager-thread", title: threadLabel2 }, threadLabel2),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.cpuPercent === null ? "\u2014" : `${row2.cpuPercent.toFixed(1)}%`
+        ),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.memoryMiB === null ? "\u2014" : `${row2.memoryMiB.toFixed(1)} MiB`
+        ),
+        el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
+        actionsCell
+      );
+      if (entries2.length > 0) {
+        tableRow.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+        });
+      }
+      body.append(tableRow);
+    }
+    updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
+    dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
+    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+  }
+  function isRequestCurrent(requestGeneration) {
+    return dialog2.open && requestGeneration === generation;
+  }
+  async function refresh() {
+    if (!dialog2.open || refreshing || document.visibilityState === "hidden") return;
+    refreshing = true;
+    const requestGeneration = generation;
+    try {
+      const snapshot = await api2.processManager.snapshot();
+      if (isRequestCurrent(requestGeneration)) {
+        current = snapshot;
+        render(snapshot);
+      }
+    } catch {
+      if (isRequestCurrent(requestGeneration))
+        status.textContent = "Process metrics are unavailable.";
+    } finally {
+      refreshing = false;
+    }
+  }
+  function setSort(next) {
+    ascending = column === next ? !ascending : false;
+    column = next;
+    if (current) render(current);
+  }
+  cpuButton.addEventListener("click", () => {
+    setSort("cpu");
+  });
+  memoryButton.addEventListener("click", () => {
+    setSort("memory");
+  });
+  function onVisibilityChange() {
+    if (document.visibilityState === "visible") void refresh();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  dialog2.addEventListener("close", () => {
+    generation++;
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    refreshing = false;
+  });
+  return () => {
+    if (dialog2.open) return;
+    current = null;
+    clear(body);
+    status.textContent = "Loading processes\u2026";
+    updated.textContent = "";
+    open2();
+    void refresh();
+    timer = setInterval(() => void refresh(), 1e3);
+  };
+}
+var init_process_manager_dialog = __esm({
+  "src/renderer/views/process-manager-dialog.ts"() {
+    init_helpers();
+    init_icons();
+    init_context_menu();
+    init_projects();
+    init_thread_helpers();
+    init_confirm_dialog();
+    init_toast();
+    init_dialog_shell();
   }
 });
 
@@ -129611,14 +132723,22 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
         break;
       }
       case "review_report": {
-        setThreadReviewReport(store2, threadId, chunk.report);
+        const thread = getThreadById(store2, threadId);
+        const requestedAnchor = getReviewReportTarget(store2, threadId);
+        const anchorId = requestedAnchor !== void 0 ? requestedAnchor : st2.msgId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id ?? null;
+        if (anchorId === null) setThreadReviewReport(store2, threadId, chunk.report);
+        else setMessageReviewReport(store2, threadId, anchorId, chunk.report);
+        if (requestedAnchor !== void 0 && chunk.report.status !== "running") {
+          clearReviewReportTarget(store2, threadId);
+        }
         if (chunk.report.status === "running") {
           emitActivity(threadId, "Reviewing changes\u2026");
         }
@@ -129643,6 +132763,16 @@ function startAgentController(store2, api2) {
         if (st2.msgId) store2.emit("message_done", st2.msgId);
         state.delete(threadId);
         pendingTurn.delete(threadId);
+        const reviewTarget = getReviewReportTarget(store2, threadId);
+        if (reviewTarget !== void 0) {
+          failRunningReviewReport(
+            store2,
+            threadId,
+            reviewTarget,
+            "The review ended before it produced a report."
+          );
+          clearReviewReportTarget(store2, threadId);
+        }
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -129777,6 +132907,7 @@ var init_agent = __esm({
     init_diff_state();
     init_thread_naming();
     init_quiet_runs();
+    init_review_report_target();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
@@ -130520,6 +133651,7 @@ async function loadStartupSettings(settings) {
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
+    animateAgentAvatars,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -130534,6 +133666,7 @@ async function loadStartupSettings(settings) {
     settings.get("openLinksInBuiltInBrowser"),
     settings.get("theme"),
     settings.get("fontSize"),
+    settings.get("animateAgentAvatars"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -130549,6 +133682,7 @@ async function loadStartupSettings(settings) {
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
+    animateAgentAvatars,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -131249,15 +134383,15 @@ function _arrayWithHoles(r2) {
 function _iterableToArrayLimit(r2, l2) {
   var t2 = null == r2 ? null : "undefined" != typeof Symbol && r2[Symbol.iterator] || r2["@@iterator"];
   if (null != t2) {
-    var e3, n2, i2, u2, a3 = [], f3 = true, o3 = false;
+    var e3, n2, i2, u2, a3 = [], f4 = true, o3 = false;
     try {
       if (i2 = (t2 = t2.call(r2)).next, 0 === l2) ;
-      else for (; !(f3 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f3 = true) ;
+      else for (; !(f4 = (e3 = i2.call(t2)).done) && (a3.push(e3.value), a3.length !== l2); f4 = true) ;
     } catch (r3) {
       o3 = true, n2 = r3;
     } finally {
       try {
-        if (!f3 && null != t2.return && (u2 = t2.return(), Object(u2) !== u2)) return;
+        if (!f4 && null != t2.return && (u2 = t2.return(), Object(u2) !== u2)) return;
       } finally {
         if (o3) throw n2;
       }
@@ -139771,6 +142905,7 @@ async function boot() {
   mountFileSearchDialog(store, api);
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
+  openProcessManager = mountProcessManagerDialog(api, store);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -139812,6 +142947,7 @@ async function boot() {
     themePreference,
     fontSize,
     uiScale,
+    animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
@@ -139839,6 +142975,7 @@ async function boot() {
   attachThreadHydration(store, api);
   if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
+  api.menu.onProcessManager(() => openProcessManager?.());
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
   });
@@ -140045,7 +143182,11 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       openNewThread(store);
     }
-    if (meta3 && e3.key === "p") {
+    if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
+      e3.preventDefault();
+      openProcessManager?.();
+    }
+    if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       if (store.getState().workspaceRoot) openFileSearchDialog();
     }
@@ -140141,7 +143282,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_tokens();
@@ -140188,6 +143329,7 @@ var init_main = __esm({
     init_command_palette();
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
+    init_process_manager_dialog();
     init_agent();
     init_diff_state();
     init_automations2();
@@ -140253,6 +143395,7 @@ var init_main = __esm({
     layoutMounted = false;
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
+    openProcessManager = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
