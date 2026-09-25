@@ -1,6 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { readFocusedFilterStyle, readModelPickerMenuStyle } from './helpers/model-picker-style.ts'
 
 const PROJECT_ID = 'e2e-settings-model-picker-bounds'
 const CHAT_MODEL_HOST = '[data-model-picker-for="model"]'
@@ -142,7 +143,55 @@ describe('settings model picker bounds', function () {
     expect(opened?.verticalGap).toBeLessThanOrEqual(5)
     expect(opened?.containedInSurface).toBe(true)
     expect(opened?.escapesPaneClip).toBe(true)
+
+    // #3065: options show display labels ("Most capable — Highest intelligence
+    // available, ignoring price"), so they read in the interface font like the
+    // trigger above them, and the applied one is the selection fill, not
+    // accent text.
+    const style = await readModelPickerMenuStyle(`${CHAT_MODEL_HOST} .model-picker-menu`)
+    expect(style).not.toBeNull()
+    expect(style?.listHorizontalOverflow).toBeLessThanOrEqual(0)
+    expect(style?.labelTextOverflow).toEqual(['ellipsis'])
+    expect(style?.optionFontFamily).toBe(style?.tokens.fontFamily)
+    expect(style?.optionFontFamily).not.toBe(style?.tokens.fontMono)
+    expect(style?.optionFontSize).toBe(style?.tokens.fontSizeSm)
+    expect(style?.selectedColor).not.toBeNull()
+    expect(style?.selectedColor).not.toBe(style?.tokens.accent)
+    expect(style?.selectedColor).toBe(style?.tokens.textPrimary)
+    expect(style?.selectedBackground).toBe(style?.tokens.bgSelected)
+    const filterFocus = await readFocusedFilterStyle(`${CHAT_MODEL_HOST} .model-picker-filter`)
+    expect(filterFocus?.focused).toBe(true)
+    expect(filterFocus?.outlineStyle === 'none' || filterFocus?.outlineWidth === '0px').toBe(true)
+    expect(filterFocus?.borderColor).toBe(filterFocus?.accent)
+    expect(filterFocus?.boxShadow).toBe('none')
     await saveAppScreenshot('settings-model-picker-anchored.png')
+
+    // The reported clipping (#3065): once the menu's width cap binds — its
+    // `90vw` term in a narrow window — a label wider than the menu scrolled the
+    // list sideways and was cut mid-word, because a field picker's option was a
+    // block with an inline label that `text-overflow` never applies to. Pin the
+    // menu to a narrow window's width (its floor is the trigger's width, so
+    // both bounds) so the catalog's long labels exceed it.
+    await browser.execute((hostSelector) => {
+      const menu = document.querySelector<HTMLElement>(`${hostSelector} .model-picker-menu`)
+      if (!menu) return
+      menu.style.minWidth = '260px'
+      menu.style.maxWidth = '260px'
+    }, CHAT_MODEL_HOST)
+    const narrow = await readModelPickerMenuStyle(`${CHAT_MODEL_HOST} .model-picker-menu`)
+    expect(narrow?.listHorizontalOverflow).toBeLessThanOrEqual(0)
+    expect(narrow?.truncated).not.toBeNull()
+    expect(narrow?.truncated?.title).toBe(narrow?.truncated?.text)
+    await saveElementScreenshot(
+      `${CHAT_MODEL_HOST} .model-picker-menu`,
+      'settings-model-picker-narrow.png',
+    )
+    await browser.execute((hostSelector) => {
+      const menu = document.querySelector<HTMLElement>(`${hostSelector} .model-picker-menu`)
+      if (!menu) return
+      menu.style.minWidth = ''
+      menu.style.maxWidth = ''
+    }, CHAT_MODEL_HOST)
 
     // The reported case: a right-aligned field (plugin settings put the control
     // in a `justify-self: end` column) left the menu growing off the surface.
@@ -202,6 +251,8 @@ describe('settings model picker bounds', function () {
     expect(flipped?.verticalGap).toBeGreaterThanOrEqual(3)
     expect(flipped?.verticalGap).toBeLessThanOrEqual(5)
     expect(flipped?.containedInSurface).toBe(true)
+    const flippedStyle = await readModelPickerMenuStyle(`${CHAT_MODEL_HOST} .model-picker-menu`)
+    expect(flippedStyle?.listHorizontalOverflow).toBeLessThanOrEqual(0)
     await saveAppScreenshot('settings-model-picker-flipped.png')
   })
 

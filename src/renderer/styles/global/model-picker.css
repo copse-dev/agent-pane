@@ -217,7 +217,6 @@
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
-.model-picker-filter:focus-visible,
 .model-picker-back:focus-visible,
 .model-picker-browse:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -232,10 +231,15 @@
   border-radius: var(--radius);
   font: inherit;
   padding: var(--spacing-xs) var(--spacing-sm);
-  outline: 2px solid transparent;
-  outline-offset: 1px;
+  /* Focus is the global `input:focus` accent border (forms.css), the one ring
+     every text field in the app draws. A second outline here stacked a 2px ring
+     a pixel outside that border (#3065). */
 }
 .model-picker-list {
+  /* `overflow-y: auto` alone computes overflow-x to auto as well, so a long
+     label scrolled the list sideways and clipped mid-word; labels ellipsize
+     instead (below). */
+  overflow-x: hidden;
   overflow-y: auto;
   min-height: 0;
   /* Let the list scroll within the menu's max-height so the last option
@@ -256,12 +260,15 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* Options show the model's display label — the same text the trigger shows in
+   the interface font — so they read in that font too, not the id monospace. */
 .model-picker-option {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   text-align: left;
-  font-size: 11px;
-  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
   color: var(--text-primary);
   background: transparent;
   border: none;
@@ -282,37 +289,32 @@
   padding: var(--spacing-xs) var(--spacing-md);
   border-radius: var(--radius-sm);
 }
+/* A block box with a zero floor, so a label wider than the menu's cap shrinks
+   inside its flex row and ellipsizes rather than overflowing it. */
 .model-picker-option-label {
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-/* Choices inside a value group are agent-authored prose ("High", "Accept
-   edits"), so they read in the UI font rather than the model-id monospace. */
-.model-picker-option.is-group-choice {
-  font-family: inherit;
-  font-size: var(--font-size-sm);
+  white-space: nowrap;
 }
 .model-picker-option-check {
   flex-shrink: 0;
-}
-.model-picker-recent-mode .model-picker-option.is-active {
-  background: var(--bg-selected);
 }
 .model-picker-option:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
-/* The selected model carries a row fill as well as accent text (issue #2483).
-   Text colour alone was the whole signal, and it is the one cue that does not
-   survive the theme flip: against the row's ordinary --text-primary, the dark
-   theme's neon accent stands at ΔE 51 while light's dark derivation manages 19,
-   so in light the selected row read as "the same text, very slightly warmer".
-   --bg-selected is the token whose stated job is exactly this ("selection fill
-   for list rows ... stays consistent everywhere"), and a whole-row fill does not
-   care how light or dark the accent resolves. */
+/* The selected model is marked by the row fill plus weight, the list-selection
+   recipe in docs/ui-taste.md ("Sidebar selections"). Accent text was the whole
+   signal once (#2483) and does not survive the theme flip; --bg-selected is the
+   token whose stated job is this, and it belongs to the checked row alone — the
+   keyboard-highlighted row takes --bg-hover plus the outline below, so the two
+   never read as two selections. */
 .model-picker-option.is-selected {
-  color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
   background: var(--bg-selected);
 }
 .model-picker-option.is-active {

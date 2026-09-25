@@ -61,6 +61,8 @@ describe('shared model picker', () => {
       matches.map((option) => option.textContent),
       ['Claude Opus 4.8'],
     )
+    // Long labels ellipsize in the menu; the tooltip keeps the whole label.
+    assert.equal(matches[0]?.title ?? '', 'Claude Opus 4.8')
     matches[0]?.click()
 
     assert.equal(current, 'claude-opus-4-8')
