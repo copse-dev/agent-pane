@@ -9,6 +9,74 @@ const SCHEDULE_A_ID = 'schedule-workspace-docs'
 const SCHEDULE_B_ID = 'schedule-workspace-ops'
 
 /**
+ * Where the Automations heading's chevron and title sit relative to a project
+ * row's. Measured against a project row, never a project-group row.
+ */
+async function headingAlignment(): Promise<{
+  arrowOffset: number
+  titleOffset: number
+  automationTopBorder: string
+  headerBottomBorder: string
+} | null> {
+  return browser.execute(() => {
+    const automationArrow = document.querySelector('.automation-threads-twisty')
+    const automationTitle = document.querySelector('.automation-threads-title')
+    const projectArrow = document.querySelector('.project-entry .project-row .project-twisty')
+    const projectTitle = document.querySelector('.project-entry .project-row .project-name')
+    const automationGroup = document.querySelector('.automation-threads-group')
+    const projectsHeader = document.querySelector('.pane-projects-header')
+    if (
+      !automationArrow ||
+      !automationTitle ||
+      !projectArrow ||
+      !projectTitle ||
+      !automationGroup ||
+      !projectsHeader
+    ) {
+      return null
+    }
+    return {
+      arrowOffset:
+        automationArrow.getBoundingClientRect().left - projectArrow.getBoundingClientRect().left,
+      titleOffset:
+        automationTitle.getBoundingClientRect().left - projectTitle.getBoundingClientRect().left,
+      automationTopBorder: getComputedStyle(automationGroup).borderTopWidth,
+      headerBottomBorder: getComputedStyle(projectsHeader).borderBottomWidth,
+    }
+  })
+}
+
+/** Save an interface scale through Settings ▸ Appearance, as a user would. */
+async function setUiScaleThroughSettings(value: string): Promise<void> {
+  await $('[aria-label="Settings"]').click()
+  await $('.settings-nav-btn[data-section="appearance"]').click()
+  const scaleInput = await $('input[name="uiScale"]')
+  await scaleInput.waitForDisplayed({ timeout: 30_000 })
+  await browser.waitUntil(async () => (await scaleInput.getValue()) !== '', {
+    timeout: 30_000,
+    timeoutMsg: 'expected uiScale to load into Appearance settings',
+  })
+  await browser.execute((next) => {
+    const input = document.querySelector<HTMLInputElement>('input[name="uiScale"]')
+    if (!input) return
+    input.value = next
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }, value)
+  await browser.execute(() => {
+    document.querySelector<HTMLButtonElement>('.settings-buttons button[type="submit"]')?.click()
+  })
+  await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
+  await browser.waitUntil(
+    async () =>
+      (await browser.execute(() =>
+        document.documentElement.style.getPropertyValue('--ui-scale').trim(),
+      )) === value,
+    { timeout: 10_000, timeoutMsg: `expected --ui-scale=${value} after saving settings` },
+  )
+}
+
+/**
  * Collating automations under one workspace-level heading (#2511) instead of
  * inside each project. Automation data stays strictly project-owned
  * (`AutomationSchedule.projectId`), and the sidebar only has thread data for
@@ -156,53 +224,20 @@ describe('workspace-level automations section', function () {
     await $('.project-row*=Docs project').click()
     await expect(toggle.$('.automation-threads-count')).toHaveText('2')
 
-    const alignment = await browser.execute(() => {
-      const automationArrow = document.querySelector('.automation-threads-twisty')
-      const automationTitle = document.querySelector('.automation-threads-title')
-      const projectArrow = document.querySelector('.project-twisty')
-      const projectTitle = document.querySelector('.project-name')
-      const automationGroup = document.querySelector('.automation-threads-group')
-      const projectsHeader = document.querySelector('.pane-projects-header')
-      if (
-        !automationArrow ||
-        !automationTitle ||
-        !projectArrow ||
-        !projectTitle ||
-        !automationGroup ||
-        !projectsHeader
-      ) {
-        return null
-      }
-      return {
-        arrowOffset:
-          automationArrow.getBoundingClientRect().left - projectArrow.getBoundingClientRect().left,
-        titleOffset:
-          automationTitle.getBoundingClientRect().left - projectTitle.getBoundingClientRect().left,
-        automationTopBorder: getComputedStyle(automationGroup).borderTopWidth,
-        headerBottomBorder: getComputedStyle(projectsHeader).borderBottomWidth,
-      }
-    })
+    const alignment = await headingAlignment()
     assert.ok(alignment)
     assert.ok(Math.abs(alignment.arrowOffset) < 1, 'automation and project arrows should align')
     assert.ok(Math.abs(alignment.titleOffset) < 1, 'automation and project titles should align')
     assert.equal(alignment.automationTopBorder, '0px')
     assert.equal(alignment.headerBottomBorder, '1px')
 
-    const scaledTitleOffset = await browser.execute(() => {
-      const root = document.documentElement
-      const previousScale = root.style.getPropertyValue('--ui-scale')
-      root.style.setProperty('--ui-scale', '1.25')
-      const automationTitle = document.querySelector('.automation-threads-title')
-      const projectTitle = document.querySelector('.project-name')
-      const offset =
-        automationTitle && projectTitle
-          ? automationTitle.getBoundingClientRect().left - projectTitle.getBoundingClientRect().left
-          : null
-      root.style.setProperty('--ui-scale', previousScale)
-      return offset
-    })
-    assert.ok(scaledTitleOffset !== null)
-    assert.ok(Math.abs(scaledTitleOffset) < 1, 'titles should also align at 125% interface scale')
+    // Scale through the product's own Appearance setting, then restore it.
+    await setUiScaleThroughSettings('1.25')
+    const scaled = await headingAlignment()
+    await setUiScaleThroughSettings('1')
+    assert.ok(scaled)
+    assert.ok(Math.abs(scaled.arrowOffset) < 1, 'arrows should also align at 125% interface scale')
+    assert.ok(Math.abs(scaled.titleOffset) < 1, 'titles should also align at 125% interface scale')
     await saveElementScreenshot('.pane-projects', 'automation-workspace-sidebar.png')
 
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -224,6 +259,20 @@ describe('workspace-level automations section', function () {
       { title: 'Docs freshness', owner: '· Docs project' },
       { title: 'Ops review', owner: '· Ops project' },
     ])
+
+    // Runs under the Automations heading start where a project's own threads
+    // do under their project heading.
+    const childOffset = await browser.execute(() => {
+      const automationRun = document.querySelector('.automation-thread-rows .chat-row .chat-title')
+      const projectThread = document.querySelector(
+        '.project-entry .chats-list .chat-row:not(.is-automation) .chat-title',
+      )
+      return automationRun && projectThread
+        ? automationRun.getBoundingClientRect().left - projectThread.getBoundingClientRect().left
+        : null
+    })
+    assert.ok(childOffset !== null)
+    assert.ok(Math.abs(childOffset) < 1, 'automation runs should align with project threads')
 
     // Not duplicated inside either project's own (collapsed) thread list.
     assert.equal((await $$('.project-entry .chats-list .chat-row.is-automation')).length, 0)
