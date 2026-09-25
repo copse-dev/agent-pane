@@ -607,7 +607,12 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             // files touched by verification. Working-tree findings stay in the body.
             diffForPath: async (path) =>
               checkouts !== null && mergeBase !== null && headCommit !== null && !dirtyWorkingTree
-                ? readFileDiff(checkouts.head, mergeBase, path, headCommit)
+                ? readFileDiff(
+                    { gitDir: checkouts.headGitDir, workTree: checkouts.head },
+                    mergeBase,
+                    path,
+                    headCommit,
+                  )
                 : '',
           },
         )
