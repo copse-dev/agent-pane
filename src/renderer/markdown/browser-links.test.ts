@@ -97,6 +97,24 @@ describe('markdown browser links', () => {
     assert.equal(requested, false)
   })
 
+  it('leaves cited ACP resource links to the workspace link handler', () => {
+    const root = document.createElement('div')
+    // On the http-hosted web demo a relative resource href resolves to http.
+    root.innerHTML =
+      '<a href="https://copse.dev/demo/images/out.png" data-workspace-resource-path="images/out.png">output</a>'
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    let requested = false
+    store.on('browser_url_requested', () => (requested = true))
+    const unbind = bindBrowserLinkClicks(root, store)
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+
+    unbind()
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(requested, false)
+  })
+
   it('leaves generated file reference links to the file link handler', () => {
     const root = document.createElement('div')
     root.innerHTML =
