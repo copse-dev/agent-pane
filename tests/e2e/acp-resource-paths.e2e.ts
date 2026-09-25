@@ -88,6 +88,7 @@ describe('ACP resource paths', () => {
 
   it('previews workspace images with relative captions and absolute hover paths', async function () {
     this.timeout(90_000)
+    const scratch = join(process.cwd(), SCRATCH_PATH)
     const inlinePreview = $(`[data-message-id="${REPLY_ID}"] .acp-referenced-image`)
     await inlinePreview.waitForExist({ timeout: 45_000 })
     const content = await $(`[data-message-id="${MESSAGE_ID}"] > .tool-result-content`)
@@ -114,6 +115,17 @@ describe('ACP resource paths', () => {
     }
     await expect(previews[0]).toHaveAttribute('hidden')
     await expect(previews[1]).not.toHaveAttribute('hidden')
+    const replySentence = $(`[data-message-id="${REPLY_ID}"] .message-text > p`)
+    await expect(replySentence).toHaveText('Here is the generated screenshot.')
+    await expect(replySentence.$(`a[href="${scratch}"]`)).toHaveText('the generated screenshot')
+    assert.equal(
+      await browser.execute((replyId) => {
+        const sentence = document.querySelector(`[data-message-id="${replyId}"] .message-text > p`)
+        return sentence?.nextElementSibling?.classList.contains('acp-referenced-image') ?? false
+      }, REPLY_ID),
+      true,
+      'the preview follows the complete sentence',
+    )
     await expect(inlinePreview).toHaveAttribute('title', join(process.cwd(), SCRATCH_PATH))
     await expect(inlinePreview.$('.acp-referenced-image-path')).toHaveText(SCRATCH_PATH)
     await expect(inlinePreview.$('img')).toHaveAttribute('role', 'button')

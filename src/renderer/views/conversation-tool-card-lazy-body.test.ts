@@ -466,7 +466,7 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.equal(cards.item(1).querySelector('.acp-resource-uri')?.textContent, outside)
   })
 
-  it('places a cited tool image in the reply and hides the duplicate tool preview', async () => {
+  it('places a cited tool image after its sentence and hides the duplicate tool preview', async () => {
     const workspace = '/repo'
     const cited = `${workspace}/images/cited.png`
     const uncited = `${workspace}/images/uncited.png`
@@ -497,14 +497,19 @@ describe('collapsed tool card bodies render lazily', () => {
 
     const reply = host.querySelector(`[data-message-id="${replyId}"]`)
     const preview = reply?.querySelector<HTMLElement>('.message-text .acp-referenced-image')
-    assert.ok(preview, 'the reply link becomes an inline image')
+    assert.ok(preview, 'the cited image gains a preview')
     assert.equal(preview.querySelector('img')?.alt, 'the image')
     assert.equal(
       preview.querySelector('.acp-referenced-image-path')?.textContent,
       'images/cited.png',
     )
     assert.equal(preview.title, cited)
-    assert.equal(reply?.querySelector(`a[href="${cited}"]`), null)
+    const link = reply?.querySelector<HTMLAnchorElement>(`a[href="${cited}"]`)
+    assert.ok(link, 'the authored link stays in the sentence')
+    const sentence = link.parentElement
+    assert.ok(sentence)
+    assert.equal(sentence.textContent, 'Here is the image.')
+    assert.equal(sentence.nextElementSibling, preview)
 
     const toolOutput = host.querySelector(`[data-message-id="${toolMessageId}"]`)
     const citedPreview = Array.from(

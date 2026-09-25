@@ -15,8 +15,8 @@ import { el } from '../dom/helpers.ts'
  * ACP resource links that name workspace files. Tool output and message content
  * render them as cards (see createAcpContentBlock); this module loads image
  * cards as previews, and lets a finished reply cite one with an ordinary
- * Markdown link, which opens the file or shows the image inline and hides the
- * earlier duplicate card.
+ * Markdown link, which opens the file and shows an image preview beneath the
+ * sentence while hiding the earlier duplicate card.
  *
  * Cards and citations are matched by workspace-relative path, so `/repo/a.png`,
  * `file:///repo/a.png` and `a.png` are one resource.
@@ -287,7 +287,7 @@ function showReferencedImage(
   attachImageExpand(image, label)
   const labelIsPath = label === uri || label === path
   const preview = el(
-    'span',
+    'figure',
     {
       class: 'tool-result-preview acp-referenced-image',
       title: uri,
@@ -295,7 +295,7 @@ function showReferencedImage(
       'data-workspace-resource-reference': 'true',
     },
     image,
-    el('span', { class: 'tool-result-preview-caption' }, labelIsPath ? path : label),
+    el('figcaption', { class: 'tool-result-preview-caption' }, labelIsPath ? path : label),
     ...(labelIsPath ? [] : [el('code', { class: 'acp-referenced-image-path' }, path)]),
   )
   image.addEventListener(
@@ -303,12 +303,23 @@ function showReferencedImage(
     () => {
       forgetImageRead(read)
       if (!preview.isConnected) return
-      preview.replaceWith(link)
+      preview.remove()
       syncResourceVisibility(list)
     },
     { once: true },
   )
-  link.replaceWith(preview)
+  // Keep the authored sentence intact. Replacing its link with a block preview
+  // can strand punctuation (or the rest of the sentence) on a line of its own.
+  const paragraph = link.closest('p')
+  if (paragraph && paragraph.closest('.message-text')) {
+    let anchor: Element = paragraph
+    while (anchor.nextElementSibling?.classList.contains('acp-referenced-image')) {
+      anchor = anchor.nextElementSibling
+    }
+    anchor.after(preview)
+  } else {
+    link.closest('.message-text')?.append(preview)
+  }
 }
 
 /**
