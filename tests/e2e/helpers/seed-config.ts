@@ -4254,6 +4254,65 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
   })
 }
 
+/** Failed advisor MCP response captured in the transcript as a JSON error envelope. */
+export function seedAdvisorDenialFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-advisor-denial-project'
+  const threadId = 'e2e-advisor-denial-thread'
+  const now = Date.now()
+  const denial = [
+    'This action was rejected due to unacceptable risk.',
+    'Reason: The advisor receives the full transcript and verified repository state, which may contain sensitive source or user data; the user authorized UI investigation, not exporting that payload to the advisor destination.',
+    'Do not bypass this rejection through a workaround or indirect execution.',
+    'Continue with a safer alternative, or carry out checks to prove that the action is authorized or low risk before trying again.',
+    'Complete unaffected work without asking for confirmation. Report anything that remains blocked, clarify why it was blocked by auto-review, inform the user of the risk and ask for approval.',
+  ].join('\n')
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Advisor review',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-advisor-denial',
+            role: 'user',
+            content: 'Please investigate the Process Manager controls and subprocess list.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-advisor-denial',
+            role: 'assistant',
+            content: '',
+            toolCalls: [
+              {
+                id: 'tc-advisor-denial',
+                name: 'mcp.copse.advisor',
+                args: {
+                  server: 'copse',
+                  tool: 'advisor',
+                  arguments: { question: 'What should I inspect?' },
+                },
+                status: 'error',
+                result: JSON.stringify({ result: null, error: { message: denial } }, null, 2),
+                resultFormat: 'markdown',
+              },
+            ],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
 /** MCP and Copse-wrapped tool cards without internal server prefixes in their labels. */
 export function seedMcpToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-mcp-tool-display-project'
