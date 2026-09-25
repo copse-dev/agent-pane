@@ -64,7 +64,9 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--spacing-sm);
-  border: 1px solid color-mix(in srgb, var(--sev) 45%, var(--border));
+  /* A hatched status plate like Review and Comparison (todo.css): the texture
+     sets it apart, so no perimeter border (docs/ui-taste.md). */
+  border: 0;
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   background:
@@ -87,9 +89,12 @@
 }
 
 .turn-recovery-title {
-  color: var(--text-primary);
+  /* Plate title recipe shared with `.review-panel-header`: severity-tinted caps. */
+  color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .turn-recovery-detail,
@@ -700,6 +705,15 @@
   max-width: 720px;
   font-size: var(--font-size-lg);
   line-height: var(--sm-line-height);
+}
+/* Fenced code keeps tool-output density. The package shrinks only the inner
+   `code`, so without this the `pre` keeps the 16px/1.65 prose line box and
+   12px code lines sit ~26px apart. Size the block itself to the code size and
+   put it back on the shared line box that tool output uses (22px at the base
+   scale) rather than the reading rhythm above. */
+.msg-assistant > .message-body > .message-text pre {
+  font-size: var(--sm-font-size-sm);
+  line-height: var(--line-height-base);
 }
 .msg-assistant > .message-body > .message-text :is(li + li) {
   margin-top: var(--spacing-xs);

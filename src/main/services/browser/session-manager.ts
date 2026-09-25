@@ -5,6 +5,7 @@ import type { BrowserWindow, BrowserWindowConstructorOptions, Session } from 'el
 import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
 import type { CanvasArtefactIdentity } from '@shared/types/canvas.ts'
+import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -49,6 +50,11 @@ export interface BrowserNavigateOptions {
   viewId?: string | undefined
   /** Backdrop used when a page leaves its root transparent. */
   backgroundColor?: string | undefined
+  /**
+   * Text colour for a page that leaves its root transparent, paired with
+   * `backgroundColor` so the backdrop's text stays legible (see guest-surface.ts).
+   */
+  defaultTextColor?: string | undefined
 }
 
 export interface TabInfo {
@@ -66,6 +72,25 @@ export interface BrowserScreenshot {
   width: number
   height: number
   capturedAt: number
+}
+
+/**
+ * Mirror of the Browser pane's canvas guest treatment: a page whose roots are
+ * transparent takes the host text colour. Best-effort — a page that cannot be
+ * probed keeps its own defaults rather than failing the navigation.
+ */
+async function applyDefaultTextColor(
+  wc: BrowserWindow['webContents'],
+  color: string,
+): Promise<void> {
+  const css = canvasGuestTextCss(color)
+  if (!css) return
+  try {
+    const transparent: unknown = await wc.executeJavaScript(CANVAS_TRANSPARENT_ROOT_PROBE, false)
+    if (transparent === true) await wc.insertCSS(css)
+  } catch {
+    // The page navigated away or refused the probe; its own defaults stand.
+  }
 }
 
 /**
@@ -150,6 +175,7 @@ export class BrowserSessionManager {
       }
     }
     const wc = tab.window.webContents
+    if (opts?.defaultTextColor) await applyDefaultTextColor(wc, opts.defaultTextColor)
     return { viewId: tab.id, title: wc.getTitle(), url: wc.getURL() }
   }
 

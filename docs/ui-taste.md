@@ -95,7 +95,10 @@ and 1.65 line-height inside the existing chat column. Paragraph and section
 spacing use the markdown package's tokens so pending and committed text share
 the same rhythm. Keep this treatment on text that shares a message with tools
 as well; adding a tool must not change the prose size or wrapping. Tool output
-and reasoning disclosures keep their own density. Display headings use the same
+and reasoning disclosures keep their own density, and so do fenced code blocks
+inside the prose: the `pre` takes the code size and the shared
+`--line-height-base` that tool output uses (12px on 22px at the base scale)
+instead of the prose line box. Display headings use the same
 family and weight while pending and after completion.
 
 The browser fixture and real renderer interaction checks live in
@@ -857,12 +860,18 @@ is supplementary. Visual eval: `tests/e2e/agent-avatars.e2e.ts`.
 
 ## Transcript status callouts
 
-Review and comparison results should read as annotations in the transcript, not cards or pills. They
-are Copse annotating its own turn rather than part of the answer, so they take the **hatched plate**
-with `--sev` set to their state hue — `--text-secondary` for a normal review, `--accent` for a
-comparison, and `--danger` when either run failed. Mix the background at the component using
+Review and comparison results, and the Turn interrupted recovery offer, should read as annotations
+in the transcript, not cards or pills. They are Copse annotating its own turn rather than part of the
+answer, so they take the **hatched plate** with `--sev` set to their state hue — `--text-secondary`
+for a normal review, `--accent` for a comparison, `--warning` for turn recovery, and `--danger` when
+a review or comparison run failed. Mix the background at the component using
 `--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch` from `global/base.css`.
-No perimeter border, no elevation, no chips.
+No perimeter border, no elevation, no chips. The plate's title is caps in the `--sev` hue.
+
+A classified failure that ends a turn is written into the message stream, so it takes the flat plate
+instead: a `> [!CAUTION]` GitHub alert built by `agentErrorNotice` (`src/main/services/agent-errors.ts`),
+never bare answer prose behind an "An error occurred:" lead-in. Guidance that already carries its own
+alert (ACP sign-in, `> [!WARNING]`) keeps it.
 
 This used to be a thin status rail plus a horizontal wash that faded out to the right, and the rule
 here used to forbid a tinted block outright. The texture is what earns the block back: a flat wash

@@ -2111,8 +2111,11 @@
   min-height: 0;
   overflow: hidden;
   /* Transparent canvas artefacts expose this surface. The headless mirror
-     captures against the resolved value of the same token. */
+     captures against the resolved value of the same token. The text colour is
+     read back and injected into such guests (browser-pane.ts), since host CSS
+     does not inherit into a webview. */
   background: var(--bg-base);
+  color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
 }

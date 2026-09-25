@@ -2,8 +2,10 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
 import OpenAI from 'openai'
+import { renderMarkdownUnsafe } from '@copse/streaming-markdown'
 import {
   acpTurnInterruptionMarker,
+  agentErrorNotice,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -139,7 +141,7 @@ describe('classifyAgentError', () => {
     )
     assert.equal(
       classifyAgentError(anthropic),
-      'An error occurred: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
+      'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
     )
     assert.doesNotMatch(classifyAgentError(anthropic), /request_id|invalid_request_error|[{}]/)
   })
@@ -199,7 +201,7 @@ describe('classifyAgentError', () => {
     )
     assert.equal(
       classifyAgentError(err),
-      'An error occurred: max_tokens: 200000 > 64000, which is the maximum allowed.',
+      'max_tokens: 200000 > 64000, which is the maximum allowed.',
     )
   })
 
@@ -230,10 +232,41 @@ describe('classifyAgentError', () => {
   })
 
   it('falls back to error message', () => {
+    assert.equal(classifyAgentError(new Error('something else')), 'something else')
+  })
+
+  it('keeps ACP env-var guidance out of the numbered sign-in steps', () => {
+    // The markdown package folds unindented prose after a blank line into the
+    // preceding ordered-list item, so the alternative must not be a bare
+    // paragraph straight after the steps (#3065).
+    const out = classifyAgentError(RequestError.authRequired(), { acpAgentId: 'claude-agent-acp' })
+    const html = renderMarkdownUnsafe(out)
+    const list = /<ol>[\s\S]*?<\/ol>/.exec(html)?.[0] ?? ''
+    assert.match(list, /re-send your message/)
+    assert.doesNotMatch(list, /ANTHROPIC_API_KEY/)
+    assert.match(html, /<blockquote>[\s\S]*<code>ANTHROPIC_API_KEY<\/code>[\s\S]*<\/blockquote>/)
+  })
+})
+
+describe('agentErrorNotice', () => {
+  it('quotes a classified failure as a caution callout without a generic prefix', () => {
+    const notice = agentErrorNotice(classifyAgentError(new Error('something else')))
+    assert.equal(notice, '> [!CAUTION]\n> something else')
+    assert.match(renderMarkdownUnsafe(notice), /markdown-alert-caution/)
+  })
+
+  it('keeps every line of a multi-paragraph failure inside the callout', () => {
     assert.equal(
-      classifyAgentError(new Error('something else')),
-      'An error occurred: something else',
+      agentErrorNotice('ACP error -32603 (Internal error): boom\n\nDetails: {"a":1}'),
+      '> [!CAUTION]\n> ACP error -32603 (Internal error): boom\n>\n> Details: {"a":1}',
     )
+  })
+
+  it('passes guidance that already leads with its own alert through unchanged', () => {
+    const guidance = classifyAgentError(RequestError.authRequired(), {
+      acpAgentId: 'claude-agent-acp',
+    })
+    assert.equal(agentErrorNotice(guidance), guidance)
   })
 })
 

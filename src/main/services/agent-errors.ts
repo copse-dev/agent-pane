@@ -283,15 +283,25 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
 }
 
 /**
- * Where to configure the agent's credentials instead of running its login
- * command. Names the agent rather than a settings sub-path: Providers groups
- * agents under their vendor chip (Claude sits under Anthropic), and that mapping
- * lives in the renderer — repeating it here would be a second copy to rot.
+ * Why Copse's own keys do not reach the agent, plus — when the catalog knows the
+ * agent's credential variables — where to configure them instead of running its
+ * login command. Names the agent rather than a settings sub-path: Providers
+ * groups agents under their vendor chip (Claude sits under Anthropic), and that
+ * mapping lives in the renderer — repeating it here would be a second copy to rot.
+ *
+ * The alternative lives inside this quote rather than as a paragraph of its own
+ * straight after the numbered steps: `@copse/streaming-markdown` deliberately
+ * folds unindented prose after a blank line into the preceding ordered-list item
+ * (its LLM-shaped numbered-list divergence), which rendered the hint as part of
+ * step 2. A blockquote always closes the list.
  */
-function acpEnvHint(known: { title: string; envHints?: string[] } | undefined): string {
-  if (!known?.envHints || known.envHints.length === 0) return ''
+function acpCredentialsNote(known: { title: string; envHints?: string[] } | undefined): string {
+  const lead =
+    '> Copse’s built-in provider credentials are not automatically shared with external agents.'
+  if (!known?.envHints || known.envHints.length === 0)
+    return `${lead} Configure credentials for the agent itself.`
   const variables = known.envHints.map((name) => `\`${name}\``).join(' or ')
-  return `Alternatively, set ${variables} for ${known.title} in Settings → General → Providers.`
+  return `${lead} Configure credentials for the agent itself, or set ${variables} for ${known.title} in Settings → General → Providers.`
 }
 
 /** The agent's own words, kept verbatim below the guidance rather than leading with it. */
@@ -343,9 +353,6 @@ function acpTechnicalDetails(rpc: JsonRpcError | null): string | null {
   return `**Technical details**\n\n${markdownCodeBlock(report)}`
 }
 
-const ACP_KEYS_NOT_FORWARDED =
-  '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.'
-
 function formatAcpAuthError(
   rpc: JsonRpcError | null,
   kind: AcpAuthFailureKind,
@@ -363,8 +370,7 @@ function formatAcpAuthError(
     return [
       acpAuthNotice(agentName, kind),
       acpAuthSteps(reauth),
-      acpEnvHint(known),
-      ACP_KEYS_NOT_FORWARDED,
+      acpCredentialsNote(known),
       acpTechnicalDetails(rpc),
     ]
       .filter(isNonEmptyString)
@@ -374,8 +380,7 @@ function formatAcpAuthError(
   return [
     acpAuthNotice(agentName, kind),
     acpAuthSteps(known?.setup ?? null),
-    acpEnvHint(known),
-    ACP_KEYS_NOT_FORWARDED,
+    acpCredentialsNote(known),
     acpTechnicalDetails(rpc ?? { code: -32000, message: 'Authentication required' }),
   ]
     .filter(isNonEmptyString)
@@ -446,10 +451,10 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   // OpenAI returns HTTP 429 for both rate limits and exhausted credit, so key
   // out-of-credit off the structured quota signals *before* the 429 check.
   if (status === 402 || code === 'insufficient_quota' || type === 'insufficient_quota')
-    return `An error occurred: ${
+    return (
       message ??
       'Your provider account is out of credit. Add credit or update billing with your provider, then try again.'
-    }`
+    )
 
   // OpenRouter routing-policy failure: with ZDR-only routing (Copse's default)
   // or training exclusion active, a model with no compliant endpoint fails
@@ -496,8 +501,25 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   if (rpc && ctx?.acpAgentId) {
     const dataDetail = formatErrorData(rpc.data)
     const suffix = dataDetail ? `\n\nDetails: ${dataDetail}` : ''
-    return `An error occurred: ${formatJsonRpcErrorCode(rpc.code, rpc.message)}${suffix}`
+    return `${formatJsonRpcErrorCode(rpc.code, rpc.message)}${suffix}`
   }
 
-  return `An error occurred: ${message ?? raw}`
+  return message ?? raw
+}
+
+/**
+ * Present a classified failure in the transcript as an error callout rather than
+ * as answer prose. `classifyAgentError` returns the words; this is the chat
+ * wrapper, so surfaces that show the words in their own chrome (the post-turn
+ * review card) keep calling the classifier directly. A message that already
+ * leads with its own GitHub alert — ACP sign-in guidance opens with
+ * `> [!WARNING]` — passes through unchanged.
+ */
+export function agentErrorNotice(message: string): string {
+  if (message.startsWith('> [!')) return message
+  const quoted = message
+    .split('\n')
+    .map((line) => (line.trim() ? `> ${line}` : '>'))
+    .join('\n')
+  return `> [!CAUTION]\n${quoted}`
 }

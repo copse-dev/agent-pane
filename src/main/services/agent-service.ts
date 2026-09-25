@@ -36,6 +36,7 @@ import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import {
   acpTurnInterruptionMarker,
+  agentErrorNotice,
   classifyAcpAuthFailure,
   classifyAgentError,
   classifyProviderAccessFailure,
@@ -1269,7 +1270,7 @@ export async function runAgent(
       const authFailure = aborted
         ? null
         : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
-      const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
+      const msg = agentErrorNotice(classifyAgentError(err, { acpAgentId: acpRunAgentId }))
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
       // the chat alone — the fix lives in a separate program's login flow. Offer
@@ -1427,7 +1428,7 @@ export async function runAgent(
           sendChunk({ type: 'done', stopReason: 'CANCELLED' })
           return { kind: 'done', result: emptyTurn }
         }
-        const msg = classifyAgentError(err)
+        const msg = agentErrorNotice(classifyAgentError(err))
         const access = classifyProviderAccessFailure(err)
         if (access)
           return { kind: 'blocked', reason: access, message: msg, error: turnErrorDetail(err) }
@@ -2403,7 +2404,7 @@ export async function runAgent(
       },
     )
   } catch (err) {
-    const msg = classifyAgentError(err)
+    const msg = agentErrorNotice(classifyAgentError(err))
     sendChunk({ type: 'text', text: msg })
     // Fold back any in-run spend even on the error path — grants consumed before
     // the failure still count against the turn tree (decision 5).

@@ -336,12 +336,37 @@ async function currentCanvasBackgroundColor(): Promise<string> {
   }
 }
 
+/**
+ * The app's text colour (`--text-primary` on body, as the Browser pane's webview
+ * host also uses) for transparent artefacts in the mirror. Undefined when it
+ * cannot be read: the mirror then keeps the page's own defaults.
+ */
+async function currentCanvasTextColor(): Promise<string | undefined> {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed()) return undefined
+  try {
+    const value: unknown = await win.webContents.executeJavaScript(
+      'getComputedStyle(document.body).color',
+      true,
+    )
+    return typeof value === 'string' && value.trim() ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // Load every artefact into the headless agent session as well, so the model can
 // snapshot and screenshot the canvas it just rendered instead of working blind.
 // The preview window is otherwise white by default, while the visible webview
-// exposes Copse's theme through a transparent artefact.
+// exposes Copse's theme through a transparent artefact — and the host's text
+// colour, which the preview must match too.
 setCanvasArtefactMirror(async (artefact) =>
-  mirrorArtefactToAgent(artefact, getBrowserSession(), await currentCanvasBackgroundColor()),
+  mirrorArtefactToAgent(
+    artefact,
+    getBrowserSession(),
+    await currentCanvasBackgroundColor(),
+    await currentCanvasTextColor(),
+  ),
 )
 
 setContextEstimateRefreshSink(() => {

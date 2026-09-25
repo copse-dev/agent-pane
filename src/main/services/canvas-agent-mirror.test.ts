@@ -15,6 +15,7 @@ interface Call {
         newTab?: boolean | undefined
         viewId?: string | undefined
         backgroundColor?: string | undefined
+        defaultTextColor?: string | undefined
       }
     | undefined
 }
@@ -59,6 +60,20 @@ describe('mirrorArtefactToAgent', () => {
       newTab: true,
       backgroundColor: 'rgb(17, 29, 23)',
     })
+  })
+
+  it('pairs the host text colour with the backdrop it was chosen against', async () => {
+    const s = session()
+    await mirrorArtefactToAgent(artefact(), s, 'rgb(17, 29, 23)', 'rgb(204, 204, 204)')
+    // Without a backdrop the page keeps its own (light-surface) defaults.
+    await mirrorArtefactToAgent(artefact({ title: 'Pricing Page' }), s, undefined, 'rgb(1, 2, 3)')
+
+    assert.deepEqual(s.calls[0]?.opts, {
+      newTab: true,
+      backgroundColor: 'rgb(17, 29, 23)',
+      defaultTextColor: 'rgb(204, 204, 204)',
+    })
+    assert.deepEqual(s.calls[1]?.opts, { newTab: true })
   })
 
   it('reuses the tab for a re-render of the same title', async () => {

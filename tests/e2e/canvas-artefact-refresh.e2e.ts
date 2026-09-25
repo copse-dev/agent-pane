@@ -44,6 +44,28 @@ async function activeArtefactHeading(): Promise<string | null> {
   })
 }
 
+/**
+ * The heading's text colour inside the active artefact guest and the host text
+ * colour. The dashboard declares no colours, so it sits on the host surface.
+ */
+async function activeArtefactTextColors(): Promise<{ guest: string | null; host: string }> {
+  return await browser.execute(async () => {
+    const host = document.querySelector<HTMLElement>(
+      '.browser-tab-panel.is-active .browser-webview-host',
+    )
+    const webview = host?.querySelector('webview') as {
+      executeJavaScript?: (code: string) => Promise<unknown>
+    } | null
+    const guest = await webview
+      ?.executeJavaScript?.('getComputedStyle(document.getElementById("version")).color')
+      .catch(() => null)
+    return {
+      guest: typeof guest === 'string' ? guest : null,
+      host: host ? getComputedStyle(host).color : '',
+    }
+  })
+}
+
 /** Drive a built-in tool through the mock model, the same way renderVersion does. */
 async function runTool(name: string, args: Record<string, unknown>): Promise<void> {
   const reply = 'The browser tool result is available above.'
@@ -97,6 +119,16 @@ describe('canvas artefact refresh', () => {
       timeout: 20_000,
       timeoutMsg: 'expected the first artefact version to render in the canvas',
     })
+    // Host CSS does not reach the guest; the transparent dashboard takes the
+    // host text colour instead of default black on the dark surface.
+    await browser.waitUntil(
+      async () => {
+        const colors = await activeArtefactTextColors()
+        return colors.guest !== null && colors.guest === colors.host
+      },
+      { timeout: 15_000, timeoutMsg: 'expected the artefact heading to take the host text colour' },
+    )
+    expect((await activeArtefactTextColors()).guest).not.toBe('rgb(0, 0, 0)')
     labelsAfterFirstRender = await tabLabels()
     expect(labelsAfterFirstRender.filter((label) => label === 'Sales Dashboard')).toHaveLength(1)
   })
