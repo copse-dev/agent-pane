@@ -822,6 +822,7 @@ copse-ui-field input[type=password],
 .pane-projects {
   --projects-action-size: 24px;
   --projects-action-inset: var(--spacing-xs);
+  --projects-disclosure-size: 12px;
   width: var(--projects-width, 240px);
   flex-shrink: 0;
   display: flex;
@@ -947,7 +948,7 @@ copse-ui-field input[type=password],
 .project-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   width: 100%;
   text-align: left;
   padding: var(--list-row-padding-block) var(--spacing-sm);
@@ -1039,7 +1040,7 @@ copse-ui-field input[type=password],
 .project-group-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   width: 100%;
   padding: 5px var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -1075,11 +1076,11 @@ copse-ui-field input[type=password],
 }
 .project-group-children .project-row,
 .project-group-children .sidebar-empty {
-  padding-left: calc(12px + var(--spacing-md));
+  padding-left: calc(var(--projects-disclosure-size) + var(--spacing-md));
 }
 .project-twisty {
-  width: 12px;
-  height: 12px;
+  width: var(--projects-disclosure-size);
+  height: var(--projects-disclosure-size);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -1098,7 +1099,6 @@ copse-ui-field input[type=password],
 .automation-threads-group {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
 }
 .automation-threads-header,
 .automation-schedule-header {
@@ -1115,7 +1115,7 @@ copse-ui-field input[type=password],
   gap: var(--spacing-xs);
   flex: 1;
   min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   text-align: left;
@@ -1143,8 +1143,8 @@ copse-ui-field input[type=password],
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--font-size-sm);
-  height: var(--font-size-sm);
+  width: var(--projects-disclosure-size);
+  height: var(--projects-disclosure-size);
   transition: transform 0.1s ease;
 }
 .automation-threads-twisty.expanded {
@@ -3576,36 +3576,6 @@ label {
 }
 
 /* src/renderer/styles/global/conversation.css */
-.thread-roadmap-origin {
-  flex-shrink: 0;
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  max-width: calc(100% - 2 * var(--spacing-xl));
-  margin: var(--spacing-sm) var(--spacing-xl) 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.thread-roadmap-origin:hover {
-  color: var(--accent);
-}
-.thread-roadmap-origin-icon {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-}
-.thread-roadmap-origin-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .messages-list {
   flex: 1;
   overflow-y: auto;
@@ -4127,36 +4097,10 @@ label {
 .msg-assistant {
   background: transparent;
 }
-.agent-avatar {
-  display: block;
-  width: calc(var(--spacing-xl) + var(--spacing-xs));
-  height: calc(var(--spacing-xl) + var(--spacing-xs));
-  flex-shrink: 0;
-  border-radius: var(--radius);
-}
-.message-agent {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-.message-agent-name {
-  font-weight: 500;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
-}
-.message-agent .message-model {
-  margin-bottom: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
@@ -5256,13 +5200,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-group-item[data-status=error] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
-.tool-interruption-note {
-  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
-  color: var(--text-secondary);
-}
-.tool-rollup-body > .tool-interruption-note {
-  margin: var(--spacing-xs) 0;
-}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -5312,15 +5249,6 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
-}
-.tool-subagent-marker {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
-  color: var(--text-secondary);
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
@@ -6777,6 +6705,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+.footer-usage-popover-section {
+  color: var(--text-muted);
+  margin-bottom: 2px;
   white-space: nowrap;
 }
 .footer-usage-popover-row {
