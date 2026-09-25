@@ -1049,6 +1049,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       recovery: 'not-backed-up',
       automatic: true,
       migrationFailed: true,
+      migrationBlocker: 'saved API key “openai”',
     },
   },
   {

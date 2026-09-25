@@ -37,4 +37,17 @@ describe('vault profile ownership', () => {
       rmSync(path, { recursive: true, force: true })
     }
   })
+  it('tolerates releasing a gate that is already gone', () => {
+    const path = mkdtempSync(join(tmpdir(), 'copse-vault-access-'))
+    try {
+      const release = acquireVaultMaintenance(path)
+      retireVaultMaintenance(path)
+      release()
+      release()
+      retireVaultMaintenance(path)
+      acquireVaultMaintenance(path)()
+    } finally {
+      rmSync(path, { recursive: true, force: true })
+    }
+  })
 })

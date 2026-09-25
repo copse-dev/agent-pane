@@ -23,7 +23,11 @@ import {
   readVaultSource,
   writeVaultFile,
 } from '@copse/store-kit/profile-vault-files.ts'
-import { migrateVaultStores } from '@copse/store-kit/profile-vault-migration.ts'
+import {
+  inventoryVaultStores,
+  migrateVaultStores,
+  VaultMigrationBlockedError,
+} from '@copse/store-kit/profile-vault-migration.ts'
 import type { SecretCipher } from './secret-cipher.ts'
 
 export interface ProfileVaultDependencies {
@@ -43,6 +47,8 @@ export class AppProfileVault {
   #operation: AbortController | null = null
   #startup: Promise<boolean> | null = null
   #migrationFailed = false
+  #migrationBlocker: string | null = null
+  readonly #unlockListeners = new Set<() => void>()
   readonly cipher: SecretCipher
   constructor(dependencies: ProfileVaultDependencies) {
     this.#deps = dependencies
@@ -151,11 +157,29 @@ export class AppProfileVault {
       requireAuth: reply.requireAuth ?? this.#manifest?.requireAuth ?? true,
       automatic: reply.automatic === true,
       migrationFailed: this.#migrationFailed,
+      ...(this.#migrationBlocker ? { migrationBlocker: this.#migrationBlocker } : {}),
     }
   }
   async unlock(): Promise<void> {
     if (this.#busy || !this.#session) throw new VaultError('unavailable')
     await this.#session.unlock()
+    for (const listener of this.#unlockListeners) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[vault] Post-unlock refresh failed:', error)
+      }
+    }
+  }
+  /**
+   * Run after every successful unlock, so consumers that treated a locked vault
+   * as "no key yet" during startup can re-check their credentials.
+   */
+  onUnlocked(listener: () => void): () => void {
+    this.#unlockListeners.add(listener)
+    return (): void => {
+      this.#unlockListeners.delete(listener)
+    }
   }
   /** Initialize before credential consumers. True means migration requested a restart.
    * One attempt per process; cancellation/failure never starts a prompt loop.
@@ -198,6 +222,10 @@ export class AppProfileVault {
       if (!support.ok || !support.automatic) throw new VaultError('unavailable')
       releaseMaintenance = acquireVaultMaintenance(this.#deps.userData)
       await this.#deps.beforeMigration()
+      // Prove every source record decodes before native creates a device key:
+      // there is no native delete, so a failure after `create` would orphan a
+      // Keychain item on every retry.
+      this.#inventorySources()
       const identity = newVaultIdentity()
       const reply = await this.#deps.invoke(
         nativeRequest('create', this.#deps.userData, identity),
@@ -218,18 +246,31 @@ export class AppProfileVault {
       const ssh = readVaultSource(this.#deps.userData, 'ssh-credentials.json')
       const migrated = migrateVaultStores(settings, ssh, this.#deps.legacy, key, manifest)
       commitVaultMigration(this.#deps.userData, migrated, manifest)
+      this.#migrationFailed = false
+      this.#migrationBlocker = null
       this.#installSession(manifest)
       this.#deps.restart()
     } catch (error) {
       this.#migrationFailed = true
+      this.#migrationBlocker = error instanceof VaultMigrationBlockedError ? error.record : null
       throw error
     } finally {
       key?.fill(0)
-      releaseMaintenance?.()
       this.#operation = null
       // If a durable transaction needs replay, no legacy use is allowed until restart.
       this.#busy = existsSync(join(this.#deps.userData, '.vault-migration'))
+      releaseMaintenance?.()
     }
+  }
+  #inventorySources(): void {
+    const read = (file: 'settings.json' | 'ssh-credentials.json'): Record<string, unknown> => {
+      try {
+        return readVaultSource(this.#deps.userData, file)
+      } catch {
+        throw new VaultMigrationBlockedError(`${file} (it must be a regular, readable JSON file)`)
+      }
+    }
+    inventoryVaultStores(read('settings.json'), read('ssh-credentials.json'), this.#deps.legacy)
   }
   async backup(): Promise<void> {
     if (this.#busy || !this.#manifest) throw new VaultError('unsupported')
@@ -281,8 +322,9 @@ export class AppProfileVault {
   async recover(): Promise<void> {
     if (this.#busy || !this.#manifest) throw new VaultError('unsupported')
     const manifest = this.#manifest
+    // `#busy` already stops every cipher use. The live session is replaced only
+    // once recovery succeeds, so a refused gate or cancelled dialog keeps it.
     this.#busy = true
-    this.#session?.lock()
     const operation = new AbortController()
     this.#operation = operation
     let key: Buffer | null = null
@@ -309,9 +351,9 @@ export class AppProfileVault {
       this.#deps.restart()
     } finally {
       key?.fill(0)
-      releaseMaintenance?.()
       this.#busy = false
       this.#operation = null
+      releaseMaintenance?.()
     }
   }
 }

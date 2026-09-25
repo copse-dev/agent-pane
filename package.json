@@ -4,7 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Jonathan Kingston",
-  "description": "Copse \u2014 AI coding assistant desktop app",
+  "description": "Copse — AI coding assistant desktop app",
   "main": "dist/main/index.js",
   "type": "commonjs",
   "scripts": {
@@ -113,7 +113,7 @@
   "build": {
     "appId": "dev.copse.app",
     "productName": "Copse",
-    "copyright": "Copyright \u00a9 2026 Jonathan Kingston",
+    "copyright": "Copyright © 2026 Jonathan Kingston",
     "asar": true,
     "directories": {
       "output": "release"

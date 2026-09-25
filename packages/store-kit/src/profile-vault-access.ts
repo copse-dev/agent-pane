@@ -39,8 +39,10 @@ export function acquireVaultMaintenance(profile: string): () => void {
   const clients = clientsDirectory(profile)
   const gate = join(profile, GATE)
   mkdirSync(gate, { mode: 0o700 })
+  // Idempotent: a gate already retired (or removed by hand) must not turn the
+  // caller's cleanup into a throw that skips the rest of its `finally`.
   const release = (): void => {
-    rmdirSync(gate)
+    removeGate(gate)
   }
   try {
     for (const name of readdirSync(clients)) {
@@ -71,6 +73,19 @@ export function acquireVaultMaintenance(profile: string): () => void {
 }
 /** A prior desktop may have crashed. The new single-instance owner retires its empty gate. */
 export function retireVaultMaintenance(profile: string): void {
-  const gate = join(profile, GATE)
-  if (existsSync(gate)) rmdirSync(gate)
+  removeGate(join(profile, GATE))
+}
+function removeGate(gate: string): void {
+  try {
+    rmdirSync(gate)
+  } catch (error) {
+    if (
+      !(
+        error instanceof Error &&
+        Object.hasOwn(error, 'code') &&
+        Reflect.get(error, 'code') === 'ENOENT'
+      )
+    )
+      throw error
+  }
 }

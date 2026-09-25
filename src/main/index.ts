@@ -1,4 +1,6 @@
-import { profileSingleInstanceLock } from './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
+// MUST be second — owns the profile (single-instance lock, vault replay) before any store opens.
+import { profileSingleInstanceLock } from './app-profile-owner.ts'
 import { savedSecretEnvironment } from '@copse/store-kit/secret-environment.ts'
 import { join } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
@@ -68,6 +70,8 @@ import {
   registerSkillTools,
   syncCiInvestigatorTools,
   syncGhTools,
+  syncImageGenerationTools,
+  syncParallelSearchTools,
 } from './services/registry-bootstrap.ts'
 import { getPluginService } from './services/plugins/plugin-service.ts'
 import {
@@ -606,6 +610,13 @@ app
     win.once('closed', disposeAppRunHandlers)
     const disposeSimulatorDesktopHandlers = initSimulatorDesktop(win)
     registerProfileVaultIpc(win, profileVault)
+    // Startup treats a locked vault as "no key yet" for credential-gated tools;
+    // re-check them once the user unlocks from Settings.
+    const disposeVaultUnlockSync = profileVault.onUnlocked(() => {
+      syncImageGenerationTools(registry)
+      syncParallelSearchTools(registry)
+    })
+    win.once('closed', disposeVaultUnlockSync)
     // An unlocked vault session survives sleep and screen lock. Shutdown or loss
     // of the selected profile clears it.
     const vaultVolume = statSync(app.getPath('userData'))

@@ -2,7 +2,11 @@ import { $, browser, expect } from '@wdio/globals'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { createVaultManifest, newVaultIdentity } from '@copse/store-kit/profile-vault-crypto.ts'
+import {
+  createVaultManifest,
+  newVaultIdentity,
+  sealVaultRecord,
+} from '@copse/store-kit/profile-vault-crypto.ts'
 import { readVaultSource, writeVaultFile } from '@copse/store-kit/profile-vault-files.ts'
 import { copseUserDataDir } from '../../src/main/services/storage/copse-paths.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
@@ -37,12 +41,21 @@ describe('saved-secret encryption IPC', () => {
     const userData = copseUserDataDir()
     const key = randomBytes(32)
     const manifest = createVaultManifest(key, newVaultIdentity(), randomUUID(), 'c3ludGhldGlj')
+    // A stored OpenAI key makes startup's image-tool gating read the locked vault;
+    // that read must not abort the rest of startup (and with it this IPC).
+    const openAiRecord = sealVaultRecord(
+      key,
+      manifest,
+      { store: 'api-key', record: 'openai' },
+      'sk-synthetic-e2e',
+    )
     key.fill(0)
     writeVaultFile(
       userData,
       'settings.json',
       JSON.stringify({
         ...readVaultSource(userData, 'settings.json'),
+        apiKey: { openai: { v: 1, enc: openAiRecord.toString('base64'), plain: false } },
         savedSecretEncryption: { version: 1, profileId: manifest.profileId, keyId: manifest.keyId },
       }),
     )

@@ -14,7 +14,10 @@ describe('saved-secret encryption settings', () => {
     const section = $('.profile-vault-section')
     await expect(section).toHaveAttribute('data-state', 'disabled')
     await expect(section).toHaveText(
-      expect.stringContaining('Automatic migration could not finish.'),
+      expect.stringContaining('Automatic migration could not finish'),
+    )
+    await expect(section).toHaveText(
+      expect.stringContaining('the saved API key “openai” could not be read'),
     )
     await expect(section.$('button=Retry migration')).toBeDisplayed()
     await expect(section.$('button=Enable encryption')).not.toExist()

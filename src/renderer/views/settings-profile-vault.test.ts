@@ -93,4 +93,24 @@ describe('saved-secret encryption controls', () => {
     assert.equal(root.querySelector('input'), null)
     assert.match(root.textContent, /existing OS secure storage/)
   })
+  it('names the saved credential that blocks migration', async () => {
+    const root = createProfileVaultSection({
+      status: async () => ({
+        state: 'disabled',
+        enabled: false,
+        available: true,
+        automatic: true,
+        migrationFailed: true,
+        migrationBlocker: 'saved API key “openai”',
+        recovery: 'not-backed-up',
+      }),
+      run: async () => ({ ok: false, reason: 'corrupt' }),
+    })
+    await flush()
+    assert.match(root.textContent, /the saved API key “openai” could not be read/)
+    button(root, 'Retry migration').click()
+    await flush()
+    assert.match(root.textContent, /Migration did not finish/)
+    assert.ok(!root.textContent.includes('recovery key'))
+  })
 })

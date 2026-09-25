@@ -1,4 +1,3 @@
-import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 /**
  * Persistent SSH secrets, encrypted by the app's OS-keyring-backed cipher.
  *
@@ -9,6 +8,7 @@ import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
  * available, the session cache remains the only remember option.
  */
 import { createHash } from 'node:crypto'
+import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getSecretCipher, isSecretEncryptionAvailable } from '../storage/secret-cipher.ts'
 import { openPersistentStore } from '../storage/persistent-store.ts'

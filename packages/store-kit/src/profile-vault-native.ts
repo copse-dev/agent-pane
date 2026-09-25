@@ -56,6 +56,25 @@ export function vaultHelperRequirement(teamId: string): string {
   return `=identifier "dev.copse.vault" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}" and ! entitlement["com.apple.security.cs.disable-library-validation"] exists and ! entitlement["com.apple.security.cs.allow-dyld-environment-variables"] exists and ! entitlement["com.apple.security.get-task-allow"] exists`
 }
 
+/**
+ * Status, enrollment and startup unlock are bounded so a hung helper cannot
+ * hold startup. Backup, recovery and policy changes run native dialogs the
+ * user is working in (reading or pasting a recovery key); they end when the
+ * user finishes or cancels there, or when the caller aborts (quit, lost profile).
+ */
+export function nativeVaultTimeoutMs(operation: NativeVaultOperation): number | null {
+  switch (operation) {
+    case 'status':
+    case 'create':
+    case 'unlock':
+      return 120_000
+    case 'backup':
+    case 'recover':
+    case 'set-auth':
+      return null
+  }
+}
+
 /** Signature and private channel checks happen on every invocation, including status. */
 export async function callNativeVault(
   options: NativeVaultOptions,
@@ -92,7 +111,7 @@ export async function callNativeVault(
     const finish = (reply: NativeVaultReply | null, reason: VaultFailure): void => {
       if (finished) return
       finished = true
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
       socket.destroy()
       if (child.exitCode === null) child.kill()
@@ -103,7 +122,8 @@ export async function callNativeVault(
     const abort = (): void => {
       finish(null, 'cancelled')
     }
-    const timer = setTimeout(abort, 120_000)
+    const timeoutMs = nativeVaultTimeoutMs(request.operation)
+    const timer = timeoutMs === null ? undefined : setTimeout(abort, timeoutMs)
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) {
       abort()
