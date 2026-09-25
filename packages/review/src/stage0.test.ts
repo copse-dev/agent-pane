@@ -28,11 +28,18 @@ import { createReviewerToolExecutor } from './reviewer-tools.ts'
  * reads a marker file the scenario writes on head or base.
  */
 const CHECK_SCRIPT = `
-const { readFileSync } = require('node:fs')
+const { readFileSync, writeFileSync } = require('node:fs')
 const kind = process.argv[2]
 let spec = {}
 try { spec = JSON.parse(readFileSync('checks.json', 'utf8')) } catch {}
-const entry = spec[kind] ?? { exit: 0 }
+let entry = spec[kind] ?? { exit: 0 }
+if (Array.isArray(entry)) {
+  const marker = kind + '.attempt'
+  let attempt = 0
+  try { attempt = Number(readFileSync(marker, 'utf8')) } catch {}
+  writeFileSync(marker, String(attempt + 1))
+  entry = entry[Math.min(attempt, entry.length - 1)]
+}
 if (entry.stdout) process.stdout.write(entry.stdout)
 if (entry.env) process.stdout.write(JSON.stringify(process.env))
 if (entry.sleepMs) setTimeout(() => process.exit(entry.exit ?? 0), entry.sleepMs)
@@ -364,6 +371,7 @@ describe('runStage0', () => {
       [
         ['head', 1],
         ['base', 0],
+        ['head', 1],
       ],
     )
     const testCheck = report.checks.find((check) => check.kind === 'test')
@@ -374,6 +382,63 @@ describe('runStage0', () => {
     // The findings list is its own contract.
     assert.deepEqual(decodeFindings(JSON.parse(JSON.stringify(report.findings))), report.findings)
     assert.match(renderStage0Report(report), /1 finding\(s\):\n1\. \[test\] package\.json:\d+ —/)
+  })
+
+  it('keeps intermittent test failures unverified and skips the base run', async () => {
+    for (const confirmation of [{ exit: 0 }, { exit: 1, sleepMs: 2_000 }]) {
+      const repo = await scenario(
+        {},
+        { test: [{ exit: 1, stdout: 'first failure' }, confirmation] },
+        {
+          kinds: ['test'],
+          timeoutsMs: { test: 500 },
+        },
+      )
+      const report = await run(repo)
+      assert.deepEqual(report.findings, [])
+      assert.equal(report.checks[0]?.verdict, 'undetermined')
+      assert.equal(report.checks[0].head?.status, 'failed')
+      assert.equal(
+        report.checks[0].headConfirmation?.status,
+        confirmation.exit === 0 ? 'passed' : 'timed-out',
+      )
+      assert.equal(report.checks[0].base, null)
+      assert.match(report.coverage.notChecked[0]?.reason ?? '', /on confirmation/)
+      assert.deepEqual(decodeStage0Report(JSON.parse(JSON.stringify(report))), report)
+    }
+  })
+
+  it('does not equate changing or missing failure inventories across head attempts', async () => {
+    const inventory = (name: string): string =>
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: 1,
+        failures: [{ path: 'src/example.test.ts', name }],
+      }) +
+      '\n'
+    for (const stdout of [inventory('a different failure'), 'missing inventory']) {
+      const repo = await scenario(
+        {},
+        {
+          test: [
+            { exit: 1, stdout: inventory('original failure') },
+            { exit: 1, stdout },
+          ],
+        },
+        { kinds: ['test'] },
+      )
+      const report = await run(repo)
+      assert.deepEqual(report.findings, [])
+      assert.equal(report.checks[0]?.verdict, 'undetermined')
+      assert.equal(report.checks[0].base, null)
+      assert.match(report.coverage.notChecked[0]?.reason ?? '', /same complete failure list/)
+    }
+    const clean = await scenario({}, { test: [{ exit: 0 }, { exit: 1 }] }, { kinds: ['test'] })
+    const report = await run(clean)
+    assert.equal(report.checks[0]?.verdict, 'clean')
+    assert.equal(report.checks[0].headConfirmation, undefined)
   })
 
   it('compares individual failures when both aggregate test commands fail', async () => {
