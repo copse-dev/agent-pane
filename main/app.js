@@ -130258,7 +130258,7 @@ function mountProcessManagerDialog(api2, store2) {
           "div",
           {},
           el("h2", { id: "process-manager-title" }, "Process Manager"),
-          el("p", { class: "process-manager-subtitle" }, "Live Copse and thread processes")
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and managed task processes")
         ),
         closeButton
       ),
@@ -130279,10 +130279,18 @@ function mountProcessManagerDialog(api2, store2) {
   let timer = null;
   let generation = 0;
   let refreshing = false;
-  function projectFor(row2) {
-    if (!row2.threadId) return null;
+  function projectForThread(threadId, projectId) {
     const state = store2.getState();
-    return row2.projectId ?? state.backgroundThreads.find((item) => item.thread.id === row2.threadId)?.projectId ?? (state.threads.some((thread) => thread.id === row2.threadId) ? state.activeProjectId : null);
+    return projectId ?? state.backgroundThreads.find((item) => item.thread.id === threadId)?.projectId ?? (state.threads.some((thread) => thread.id === threadId) ? state.activeProjectId : null);
+  }
+  function jumpToThread(projectId, threadId) {
+    close();
+    switchProjectThread(store2, api2, projectId, threadId);
+  }
+  function stopAgentRun(threadId) {
+    void api2.agent.abort(threadId).catch((error62) => {
+      showErrorToast("Could not stop the agent run", error62);
+    });
   }
   async function stopManaged(row2) {
     const handle = row2.managed;
@@ -130315,30 +130323,32 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function menuEntries(row2) {
+  function threadMenuEntries(threadId, projectId, running) {
     const entries2 = [];
-    const projectId = projectFor(row2);
-    if (row2.threadId && projectId && store2.getState().projects.some((p2) => p2.id === projectId)) {
-      const threadId = row2.threadId;
+    if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
         label: "Jump to thread",
         onSelect: () => {
-          close();
-          switchProjectThread(store2, api2, projectId, threadId);
+          jumpToThread(projectId, threadId);
         }
       });
     }
-    if (row2.threadId && getThreadById(store2, row2.threadId)?.status === "running") {
-      const threadId = row2.threadId;
+    if (running) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
-          void api2.agent.abort(threadId).catch((error62) => {
-            showErrorToast("Could not stop the agent run", error62);
-          });
+          stopAgentRun(threadId);
         }
       });
     }
+    return entries2;
+  }
+  function menuEntries(row2) {
+    const entries2 = row2.threadId ? threadMenuEntries(
+      row2.threadId,
+      projectForThread(row2.threadId, row2.projectId),
+      getThreadById(store2, row2.threadId)?.status === "running"
+    ) : [];
     if (row2.managed) {
       entries2.push({
         label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
@@ -130365,15 +130375,50 @@ function mountProcessManagerDialog(api2, store2) {
     for (const threadId of snapshot.activeRunThreadIds) {
       const title = getThreadById(store2, threadId)?.title.trim();
       const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
-      activityList.append(
-        el(
-          "span",
-          { class: "process-manager-activity-item", "data-thread-id": threadId },
-          el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
-          el("span", { class: "process-manager-activity-state" }, "Working"),
-          el("span", { class: "process-manager-activity-thread", title: label }, label)
-        )
+      const projectId = projectForThread(threadId);
+      const canNavigate = Boolean(
+        projectId && store2.getState().projects.some((project2) => project2.id === projectId)
       );
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: "process-manager-activity-item",
+          "data-thread-id": threadId,
+          "aria-label": `Open thread ${label}`
+        },
+        el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+        el("span", { class: "process-manager-activity-state" }, "Working"),
+        el("span", { class: "process-manager-activity-thread", title: label }, label)
+      );
+      if (projectId && canNavigate) {
+        item.addEventListener("click", () => {
+          jumpToThread(projectId, threadId);
+        });
+      } else {
+        item.setAttribute("aria-disabled", "true");
+      }
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        showContextMenu(
+          event.clientX,
+          event.clientY,
+          threadMenuEntries(threadId, projectId, true),
+          dialog2
+        );
+      });
+      item.addEventListener("keydown", (event) => {
+        if (event.key !== "F10" || !event.shiftKey) return;
+        event.preventDefault();
+        const rect = item.getBoundingClientRect();
+        showContextMenu(
+          rect.left,
+          rect.bottom,
+          threadMenuEntries(threadId, projectId, true),
+          dialog2
+        );
+      });
+      activityList.append(item);
     }
     const state = store2.getState();
     for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
