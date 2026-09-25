@@ -22392,10 +22392,42 @@ function setThreadReviewReport(store2, threadId, report) {
     else delete next.reviewReport;
     return next;
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, null);
 }
-function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+function setMessageReviewReport(store2, threadId, messageId, report) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message2) => {
+      if (message2.id !== messageId) return message2;
+      const next = { ...message2 };
+      if (report) next.reviewReport = report;
+      else delete next.reviewReport;
+      return next;
+    })
+  }));
+  store2.emit("review_report_changed", threadId, messageId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messageId = null) {
   patchThreadAnywhere(store2, threadId, (t2) => {
+    if (messageId !== null) {
+      return {
+        ...t2,
+        updatedAt: Date.now(),
+        messages: t2.messages.map((message2) => {
+          if (message2.id !== messageId || !message2.reviewReport) return message2;
+          return {
+            ...message2,
+            reviewReport: {
+              ...message2.reviewReport,
+              findings: message2.reviewReport.findings.map(
+                (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+              )
+            }
+          };
+        })
+      };
+    }
     if (!t2.reviewReport) return t2;
     return {
       ...t2,
@@ -22408,7 +22440,7 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
       }
     };
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
@@ -22836,9 +22868,28 @@ function attachAutosave(store2, api2) {
       schedule();
     }),
     // Same for the review report: a dismissed finding or a cleared card is a
-    // metadata-only change on an idle thread.
-    store2.on("review_report_changed", () => {
-      schedule();
+    // metadata-only change on an idle thread. A report anchored to a message
+    // lives on that message's spine line instead, so re-finalize the message:
+    // a standalone review (Changes view "Review") ends with a `done` that has
+    // no streaming message, so no `message_done` would ever carry it to disk.
+    store2.on("review_report_changed", (threadId, messageId) => {
+      if (messageId === null) {
+        schedule();
+        return;
+      }
+      const message2 = getThreadById(store2, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId
+      );
+      if (!message2) return;
+      if (message2.reviewReport?.status === "running") return;
+      if (message2.toolCalls.some((toolCall) => toolCall.status === "running")) return;
+      const backgroundProjectId = backgroundProjectOf(store2, threadId);
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+        return;
+      }
+      const { activeProjectId } = store2.getState();
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
     }),
     store2.on("projects_changed", () => {
       projectsDirty = true;
@@ -23722,6 +23773,35 @@ var init_thread_hydration = __esm({
   }
 });
 
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
+// src/shared/agent-turn-busy.ts
+function isAgentTurnBusyError(reason) {
+  if (reason instanceof Error && reason.name === AGENT_TURN_BUSY_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${AGENT_TURN_BUSY_ERROR_NAME}:`);
+}
+var AGENT_TURN_BUSY_ERROR_NAME;
+var init_agent_turn_busy = __esm({
+  "src/shared/agent-turn-busy.ts"() {
+    init_errors4();
+    AGENT_TURN_BUSY_ERROR_NAME = "AgentTurnBusyError";
+  }
+});
+
 // src/renderer/controller/message-queue.ts
 function isHeldMessage(item) {
   return item.autoDispatch === false;
@@ -23790,7 +23870,21 @@ function refreshPayload(store2, threadId, payload) {
     ...thread?.continuationUsed !== void 0 ? { continuationBudgetUsed: thread.continuationUsed } : {}
   };
 }
-function dispatchAgentRun(store2, api2, threadId, payload) {
+function beginPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2) ?? /* @__PURE__ */ new Map();
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1);
+  pendingDispatches.set(store2, byThread);
+}
+function finishPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2);
+  const count = byThread?.get(threadId) ?? 0;
+  if (count <= 1) byThread?.delete(threadId);
+  else byThread?.set(threadId, count - 1);
+}
+function hasPendingDispatch(store2, threadId) {
+  return (pendingDispatches.get(store2)?.get(threadId) ?? 0) > 0;
+}
+function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const { activeProjectId, backgroundThreads } = store2.getState();
   const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
   if (!projectId) throw new Error("Cannot run thread without an owning project");
@@ -23798,7 +23892,36 @@ function dispatchAgentRun(store2, api2, threadId, payload) {
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   mark("ttft:renderer-dispatch");
-  void api2.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store2, threadId, payload)));
+  if (queued) beginPendingDispatch(store2, threadId);
+  const run2 = api2.agent.run(
+    projectId,
+    threadId,
+    JSON.stringify(refreshPayload(store2, threadId, payload))
+  );
+  if (!queued) {
+    void run2;
+    return;
+  }
+  void run2.catch((err2) => {
+    if (!isAgentTurnBusyError(err2)) throw err2;
+    requeueBusyMessage(store2, api2, threadId, queued);
+  }).finally(() => {
+    finishPendingDispatch(store2, threadId);
+    if (getThreadById(store2, threadId)?.status === "idle") {
+      drainMessageQueue(store2, api2, threadId);
+    }
+  });
+}
+function requeueBusyMessage(store2, api2, threadId, item) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const pending = t2.pendingMessages ?? [];
+    if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
+    const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
+  });
+  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("threads_changed");
+  if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
 }
 function enqueueUserMessage(store2, threadId, item) {
   patchThreadAnywhere(store2, threadId, (t2) => ({
@@ -23810,6 +23933,7 @@ function enqueueUserMessage(store2, threadId, item) {
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
+  if (hasPendingDispatch(store2, threadId)) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (!thread || thread.status !== "idle" || thread.queuePaused) return;
   const pending = thread.pendingMessages ?? [];
@@ -23847,7 +23971,7 @@ function drainMessageQueue(store2, api2, threadId) {
   store2.setState({ threads });
   if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
   store2.emit("threads_changed");
-  if (next) dispatchAgentRun(store2, api2, threadId, next.payload);
+  if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
 }
 function movePendingUserMessagesToEnd(messages, pending) {
   const messagesById = new Map(messages.map((message2) => [message2.id, message2]));
@@ -24026,6 +24150,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   sendQueuedMessageNow(store2, api2, threadId, messageId);
 }
+var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
@@ -24033,6 +24158,8 @@ var init_message_queue = __esm({
     init_continuation_budget();
     init_thread_hydration();
     init_perf();
+    init_agent_turn_busy();
+    pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -26318,22 +26445,6 @@ var init_image_expand = __esm({
     init_helpers();
     init_toast();
     init_attachment_preview();
-  }
-});
-
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
-  }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
   }
 });
 
@@ -65241,6 +65352,7 @@ function copyMessage(message2) {
     id: _id,
     hookCards: _hookCards,
     review: _review,
+    reviewReport: _reviewReport,
     toolCalls,
     images,
     canvasArtefacts,
@@ -65324,6 +65436,74 @@ var init_fork_thread3 = __esm({
     init_fork_thread2();
     init_thread_helpers();
     init_message_queue();
+  }
+});
+
+// src/renderer/controller/thread-filter.ts
+function createThreadFilter(store2, api2, changed) {
+  const matches2 = /* @__PURE__ */ new Set();
+  let generation = 0;
+  let timer;
+  let scan = Promise.resolve();
+  let pending = false;
+  let failed = false;
+  const cancel = () => {
+    generation += 1;
+    clearTimeout(timer);
+    matches2.clear();
+    pending = false;
+    failed = false;
+  };
+  const search = (query) => {
+    cancel();
+    const { activeProjectId, threads } = store2.getState();
+    if (!query || !activeProjectId) return;
+    const current = generation;
+    const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
+    const candidates = sortThreadsNewestFirst(threads).filter(
+      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+    );
+    const containsRequest = (messages) => messages.some(
+      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
+    );
+    pending = candidates.length > 0;
+    timer = setTimeout(() => {
+      scan = scan.then(async () => {
+        for (const thread of candidates) {
+          if (!isCurrent()) return;
+          try {
+            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            if (!isCurrent()) return;
+            if (matched) {
+              matches2.add(thread.id);
+              changed();
+            }
+          } catch {
+            if (!isCurrent()) return;
+            failed = true;
+          }
+        }
+        if (!isCurrent()) return;
+        pending = false;
+        changed();
+      });
+    }, 200);
+  };
+  return {
+    search,
+    cancel,
+    matches: matches2,
+    get pending() {
+      return pending;
+    },
+    get failed() {
+      return failed;
+    }
+  };
+}
+var init_thread_filter = __esm({
+  "src/renderer/controller/thread-filter.ts"() {
+    init_thread_sort();
   }
 });
 
@@ -65865,16 +66045,20 @@ function mountProjectsPane(root, store2, api2) {
   );
   const header = el("div", { class: "pane-projects-header" }, title, searchToggle, addBtn);
   let threadFilter = "";
+  const contentFilter = createThreadFilter(store2, api2, () => {
+    render();
+  });
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter threads\u2026",
+    placeholder: "Filter titles and requests\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
   const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
   const closeThreadFilter = () => {
+    contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
     searchRow.hidden = true;
@@ -65892,6 +66076,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   searchInput.addEventListener("input", () => {
     threadFilter = searchInput.value.trim().toLowerCase();
+    contentFilter.search(threadFilter);
     render();
   });
   searchInput.addEventListener("keydown", (e3) => {
@@ -66799,10 +66984,14 @@ function mountProjectsPane(root, store2, api2) {
         projectLine.append(newThreadBtn);
       }
       if (!isExpanded) return entry;
-      const sidebarThreads = getSidebarThreads(store2, project2.id);
-      const isFiltering = threadFilter.length > 0;
+      const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
+      const sidebarThreads = isFiltering ? sortThreadsNewestFirst(store2.getState().threads).filter(
+        (thread) => thread.archivedAt == null
+      ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter)
+        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
+          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
+        )
       ) : sidebarThreads;
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
@@ -66833,6 +67022,22 @@ function mountProjectsPane(root, store2, api2) {
       const chats = el("div", { class: "chats-list" });
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store2, project2.id)) {
         chats.append(el("div", { class: "sidebar-empty chats-loading" }, "Loading\u2026"));
+      } else if (isFiltering && contentFilter.pending) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Searching user requests\u2026"
+          )
+        );
+      } else if (isFiltering && contentFilter.failed) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Some threads could not be searched"
+          )
+        );
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
@@ -66876,11 +67081,14 @@ function mountProjectsPane(root, store2, api2) {
   }
   const unsubs = [
     store2.on("projects_changed", render),
+    // Streaming and hydration must not restart the disk scan. Resident human
+    // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
+      closeThreadFilter();
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
@@ -66894,6 +67102,7 @@ function mountProjectsPane(root, store2, api2) {
   render();
   refreshOrphans();
   return () => {
+    contentFilter.cancel();
     prStatusGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -66920,6 +67129,8 @@ var init_projects_pane = __esm({
     init_automation_dialog();
     init_toast();
     init_fork_thread3();
+    init_thread_filter();
+    init_thread_sort();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -71313,7 +71524,15 @@ function threadAgentId(container) {
   return null;
 }
 function hydrateRemoteArtifactImages(container, api2) {
-  const agentIdFromThread = threadAgentId(container);
+  let agentIdFromThread = null;
+  let threadScanned = false;
+  const fallbackAgentId = () => {
+    if (!threadScanned) {
+      agentIdFromThread = threadAgentId(container);
+      threadScanned = true;
+    }
+    return agentIdFromThread;
+  };
   for (const img of container.querySelectorAll(
     "img[data-remote-artifact-path]"
   )) {
@@ -71321,7 +71540,7 @@ function hydrateRemoteArtifactImages(container, api2) {
       continue;
     }
     const path = img.dataset["remoteArtifactPath"];
-    const agentId = img.dataset["remoteArtifactAgentId"] ?? agentIdFromThread;
+    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
     if (!path || !agentId) {
       img.dataset["remoteArtifactState"] = "missing-agent";
       continue;
@@ -72288,6 +72507,17 @@ var init_tool_runs = __esm({
   }
 });
 
+// src/shared/tools/tool-interruption.ts
+function isHostInterruptedToolCall(toolCall) {
+  return toolCall.status === "error" && toolCall.result === ACP_CANCELLED_TOOL_CALL_RESULT;
+}
+var ACP_CANCELLED_TOOL_CALL_RESULT;
+var init_tool_interruption = __esm({
+  "src/shared/tools/tool-interruption.ts"() {
+    ACP_CANCELLED_TOOL_CALL_RESULT = "Interrupted before completion \u2014 no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.";
+  }
+});
+
 // src/renderer/views/thread-roadmap-origin.ts
 function roadmapOriginIcon() {
   return outlineIcon(
@@ -72313,11 +72543,16 @@ function mountThreadRoadmapOrigin(store2, api2) {
   function sync() {
     const gen = ++generation;
     const threadId = store2.getState().activeThreadId;
+    const threadChanged = threadId !== syncedThreadId;
     syncedThreadId = threadId;
     if (!threadId) {
       itemId = null;
       link.hidden = true;
       return;
+    }
+    if (threadChanged) {
+      itemId = null;
+      link.hidden = true;
     }
     void api2.roadmap.findByThread(threadId).then((item) => {
       if (gen !== generation) return;
@@ -73340,6 +73575,47 @@ var init_quiet_runs = __esm({
   }
 });
 
+// src/renderer/controller/review-report-target.ts
+function setReviewReportTarget(store2, threadId, messageId) {
+  const targets = targetsByStore.get(store2) ?? /* @__PURE__ */ new Map();
+  targets.set(threadId, messageId);
+  targetsByStore.set(store2, targets);
+}
+function getReviewReportTarget(store2, threadId) {
+  return targetsByStore.get(store2)?.get(threadId);
+}
+function clearReviewReportTarget(store2, threadId) {
+  const targets = targetsByStore.get(store2);
+  if (!targets) return;
+  targets.delete(threadId);
+  if (targets.size === 0) targetsByStore.delete(store2);
+}
+function reviewReportAt(store2, threadId, messageId) {
+  const thread = getThreadById(store2, threadId);
+  if (messageId === null) return thread?.reviewReport;
+  return thread?.messages.find((message2) => message2.id === messageId)?.reviewReport;
+}
+function failRunningReviewReport(store2, threadId, messageId, error62) {
+  const report = reviewReportAt(store2, threadId, messageId);
+  if (report?.status !== "running") return false;
+  const failed = {
+    ...report,
+    status: "error",
+    error: error62,
+    durationMs: Date.now() - report.startedAt
+  };
+  if (messageId === null) setThreadReviewReport(store2, threadId, failed);
+  else setMessageReviewReport(store2, threadId, messageId, failed);
+  return true;
+}
+var targetsByStore;
+var init_review_report_target = __esm({
+  "src/renderer/controller/review-report-target.ts"() {
+    init_thread_helpers();
+    targetsByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // src/renderer/controller/review-actions.ts
 function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -73359,12 +73635,15 @@ function retryReview(store2, api2, threadId, messageId) {
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function startReview(store2, api2, threadId) {
+function startReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (thread?.status === "running") return;
-  setThreadReviewReport(store2, threadId, {
+  const anchorId = messageId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id;
+  setReviewReportTarget(store2, threadId, anchorId ?? null);
+  if (anchorId && thread?.reviewReport) setThreadReviewReport(store2, threadId, null);
+  const runningReport = {
     status: "running",
     startedAt: Date.now(),
     models: { reviewer: thread?.model ?? "", challenger: null },
@@ -73381,19 +73660,15 @@ function startReview(store2, api2, threadId) {
     reviewers: [],
     verification: null,
     durationMs: 0
-  });
+  };
+  if (anchorId) setMessageReviewReport(store2, threadId, anchorId, runningReport);
+  else setThreadReviewReport(store2, threadId, runningReport);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
   void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
-    const report = store2.getState().threads.find((t2) => t2.id === threadId)?.reviewReport;
-    if (report?.status === "running") {
-      setThreadReviewReport(store2, threadId, {
-        ...report,
-        status: "error",
-        error: errorMessage(err2),
-        durationMs: Date.now() - report.startedAt
-      });
+    clearReviewReportTarget(store2, threadId);
+    if (failRunningReviewReport(store2, threadId, anchorId ?? null, errorMessage(err2))) {
       setThreadStatus(store2, threadId, "idle");
       syncAgentActivity(store2, threadId, false);
       takeQuietRun(threadId);
@@ -73401,25 +73676,26 @@ function startReview(store2, api2, threadId) {
     showErrorToast("Review could not start", err2);
   });
 }
-function dismissReviewReport(store2, threadId) {
-  setThreadReviewReport(store2, threadId, null);
+function dismissReviewReport(store2, threadId, messageId) {
+  if (messageId) setMessageReviewReport(store2, threadId, messageId, null);
+  else setThreadReviewReport(store2, threadId, null);
 }
-function dismissReviewFinding(store2, api2, threadId, finding) {
-  setReviewFindingDismissed(store2, threadId, finding.id, true);
+function dismissReviewFinding(store2, api2, threadId, finding, messageId) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true, messageId);
   void api2.review.dismissFinding({
     findingId: finding.id,
     path: finding.path,
     claim: finding.claim,
     class: finding.class
   }).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    setReviewFindingDismissed(store2, threadId, finding.id, false, messageId);
     showErrorToast("Could not save the dismissal", err2);
   });
 }
-function restoreReviewFinding(store2, api2, threadId, findingId) {
-  setReviewFindingDismissed(store2, threadId, findingId, false);
+function restoreReviewFinding(store2, api2, threadId, findingId, messageId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false, messageId);
   void api2.review.restoreFinding(findingId).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, findingId, true);
+    setReviewFindingDismissed(store2, threadId, findingId, true, messageId);
     showErrorToast("Could not restore the finding", err2);
   });
 }
@@ -73428,6 +73704,7 @@ var init_review_actions = __esm({
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_review_report_target();
     init_toast();
     init_errors3();
   }
@@ -73941,11 +74218,12 @@ function resendLastMessage(store2, api2, threadId, options = {}) {
     images.length > 0 ? [...images] : void 0
   );
   const running = thread.status === "running";
+  const queued = { messageId, payload, createdAt: Date.now() };
   if (running) {
-    enqueueUserMessage(store2, threadId, { messageId, payload, createdAt: Date.now() });
+    enqueueUserMessage(store2, threadId, queued);
   } else {
     startHumanTurnTree(store2, threadId);
-    dispatchAgentRun(store2, api2, threadId, payload);
+    dispatchAgentRun(store2, api2, threadId, payload, queued);
   }
   return {
     messageId,
@@ -74128,6 +74406,48 @@ var init_image_input_support = __esm({
 });
 
 // src/renderer/views/conversation.ts
+function markUserInterruptedCalls(thread) {
+  if (!thread) return;
+  let turnCalls = [];
+  for (const [index, message2] of thread.messages.entries()) {
+    if (message2.role !== "assistant") turnCalls = [];
+    else turnCalls.push(...message2.toolCalls);
+    if (!message2.turnOutcome) continue;
+    const next = thread.messages[index + 1];
+    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    for (const call of turnCalls) {
+      if (!isHostInterruptedToolCall(call)) continue;
+      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
+        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
+      } else {
+        userInterruptedCalls.delete(call);
+      }
+    }
+    turnCalls = [];
+  }
+}
+function cardStatus2(toolCalls) {
+  if (toolCalls.some((call) => call.status === "running")) return "running";
+  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+    return "error";
+  }
+  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  return "done";
+}
+function interruptionLabel(call) {
+  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+}
+function syncRollupInterruptionNote(body, calls) {
+  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const current = body.querySelector(":scope > .tool-interruption-note");
+  if (!interrupted) {
+    current?.remove();
+    return;
+  }
+  const label = interruptionLabel(interrupted);
+  if (current) current.textContent = label;
+  else body.prepend(el("div", { class: "tool-interruption-note" }, label));
+}
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
@@ -74226,7 +74546,7 @@ function onToolCardBodyBuilt(card, cb) {
 function appendStandardToolSections(card, tc2, label, summaryClass, count) {
   const header = createToolHeader(
     label,
-    tc2.status,
+    cardStatus2([tc2]),
     summaryClass,
     count,
     tc2.editStats,
@@ -74237,6 +74557,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
       ...appendIfPresent(argsSection),
+      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
         tc2.resultFormat,
@@ -74380,7 +74701,7 @@ function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   const card = el("details", {
     class: "tool-card",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(card, tc2, label, "tool-card-header");
   onToolCardBodyBuilt(card, () => {
@@ -74403,7 +74724,7 @@ function createInnerToolCard(tc2, api2) {
   const entry = el("details", {
     class: "tool-group-item subagent-inner-tool",
     "data-tool-id": tc2.id,
-    "data-status": tc2.status
+    "data-status": cardStatus2([tc2])
   });
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   onToolCardBodyBuilt(entry, () => {
@@ -74683,7 +75004,7 @@ function createSubagentToolCard(tc2, label, api2) {
   return card;
 }
 function createGroupToolCard(item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-group",
     "data-group-key": item.key,
@@ -74696,16 +75017,16 @@ function createGroupToolCard(item) {
     const entry = el("details", {
       class: "tool-group-item",
       "data-tool-id": tc2.id,
-      "data-status": tc2.status
+      "data-status": cardStatus2([tc2])
     });
     appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
-    toolGroupItemSignatures.set(entry, renderSignature(tc2));
+    toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
     groupItems.append(entry);
   }
   return card;
 }
 function createRollupToolCard(item, api2, threadId, store2) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-rollup",
     "data-rollup-key": item.key,
@@ -74720,11 +75041,12 @@ function createRollupToolCard(item, api2, threadId, store2) {
     toolCardSignatures.set(childCard, toolCardSignature(child));
     body.append(childCard);
   }
+  syncRollupInterruptionNote(body, item.toolCalls);
   card.append(createToolHeader(item.label, status, "tool-card-header", count), body);
   return card;
 }
 function createStepToolCard(item, api2, threadId) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   const card = el("details", {
     class: "tool-card tool-card-step",
     "data-step-key": item.key,
@@ -74754,8 +75076,15 @@ function toolCardKey(item) {
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
 }
+function toolCallSignature(call) {
+  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+}
 function toolCardSignature(item, extra) {
-  const base = renderSignature(item);
+  const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+  const base = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+  });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
 function replaceDirectToolHeader(card, header) {
@@ -74768,7 +75097,7 @@ function replaceDirectToolHeader(card, header) {
 function populateRegularToolCard(card, tc2, label, threadId) {
   const wasOpen = card.open;
   lazyToolCardBodies.delete(card);
-  card.dataset["status"] = tc2.status;
+  card.dataset["status"] = cardStatus2([tc2]);
   card.replaceChildren();
   card.open = wasOpen;
   appendStandardToolSections(card, tc2, label, "tool-card-header");
@@ -74781,15 +75110,15 @@ function populateRegularToolCard(card, tc2, label, threadId) {
 function populateGroupItem(entry, tc2) {
   const wasOpen = entry.open;
   lazyToolCardBodies.delete(entry);
-  entry.dataset["status"] = tc2.status;
+  entry.dataset["status"] = cardStatus2([tc2]);
   entry.replaceChildren();
   entry.open = wasOpen;
   appendStandardToolSections(entry, tc2, getToolCallLabel(tc2), "tool-group-item-header");
   if (wasOpen) ensureToolCardBodyRendered(entry);
-  toolGroupItemSignatures.set(entry, renderSignature(tc2));
+  toolGroupItemSignatures.set(entry, toolCallSignature(tc2));
 }
 function reconcileGroupCard(card, item) {
-  const status = aggregateToolStatus(item.toolCalls);
+  const status = cardStatus2(item.toolCalls);
   card.dataset["status"] = status;
   replaceDirectToolHeader(
     card,
@@ -74815,10 +75144,10 @@ function reconcileGroupCard(card, item) {
       entry = el("details", {
         class: "tool-group-item",
         "data-tool-id": tc2.id,
-        "data-status": tc2.status
+        "data-status": cardStatus2([tc2])
       });
       populateGroupItem(entry, tc2);
-    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc2)) {
+    } else if (toolGroupItemSignatures.get(entry) !== toolCallSignature(tc2)) {
       populateGroupItem(entry, tc2);
     }
     desired.push(entry);
@@ -74861,7 +75190,7 @@ function reconcileNestedToolCards(host, items, api2, threadId, store2) {
 }
 function reconcileToolCard(card, item, api2, threadId, store2) {
   if (item.type === "rollup" || item.type === "step") {
-    const status = aggregateToolStatus(item.toolCalls);
+    const status = cardStatus2(item.toolCalls);
     card.dataset["status"] = status;
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
@@ -74876,6 +75205,7 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
       body = el("div", { class: "tool-rollup-body" });
       card.append(body);
     }
+    if (item.type === "rollup") syncRollupInterruptionNote(body, item.toolCalls);
     reconcileNestedToolCards(body, item.children, api2, threadId, store2);
   } else if (item.type === "group") {
     reconcileGroupCard(card, item);
@@ -76017,17 +76347,34 @@ function mountConversation(root, store2, api2) {
       item.label = commandSummary;
     }
   }
+  function labelUserInterruptions(item) {
+    const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
+    if (calls.some((call) => userInterruptedCalls.has(call))) {
+      const failed = calls.filter(
+        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+      ).length;
+      const base = item.label.replace(/ · \d+ failed$/, "");
+      item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
+    }
+    if (item.type === "rollup" || item.type === "step") {
+      for (const child of item.children) labelUserInterruptions(child);
+    }
+  }
   function applyToolCardOpenState(card, item, threadId, messageId, autoRevealEligible) {
     if (card.classList.contains("thread-proposal")) return;
     const key = `${threadId}:${messageId}:${toolCardKey(item)}`;
     card.dataset["disclosureKey"] = key;
-    const itemStatus2 = item.type === "individual" ? item.toolCall.status : aggregateToolStatus(item.toolCalls);
+    const itemStatus2 = item.type === "individual" ? cardStatus2([item.toolCall]) : cardStatus2(item.toolCalls);
     card.dataset["status"] = itemStatus2;
     disclosureElements.set(key, card);
     wireDisclosurePreference(card, key);
     const preference = disclosurePreferences.get(key);
     const running = item.type === "individual" ? item.toolCall.status === "running" || item.toolCall.subagent?.status === "running" : itemStatus2 === "running";
     const failed = itemStatus2 === "error";
+    if (itemStatus2 === "interrupted") {
+      autoOpenedDisclosures.delete(key);
+      autoOpenedAt.delete(key);
+    }
     if (running) runningDisclosures.add(key);
     else {
       runningDisclosures.delete(key);
@@ -76086,6 +76433,7 @@ function mountConversation(root, store2, api2) {
     const msgId = msgEl.dataset["messageId"] ?? "";
     const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null;
     const activeThread = getActiveThread(store2);
+    markUserInterruptedCalls(activeThread);
     if (messageKey && activeThread?.status === "running" && toolCalls.some((tool) => !tool.subagent)) {
       liveRollupMessages.add(messageKey);
     }
@@ -76097,6 +76445,7 @@ function mountConversation(root, store2, api2) {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
+    for (const item of items) labelUserInterruptions(item);
     const existing = /* @__PURE__ */ new Map();
     for (const node2 of msgEl.querySelectorAll(":scope > .tool-card")) {
       const key = toolCardKeys.get(node2);
@@ -76267,6 +76616,7 @@ function mountConversation(root, store2, api2) {
     syncMessageVisualEvidence(msgEl, msg);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
     renderMessageTurnRecovery(threadId, msgId);
   }
@@ -76438,6 +76788,31 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
+  function renderMessageReviewReport(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    if (!msg?.reviewReport || !msgEl) return;
+    const card = createReviewFindingsCardEl(msg.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId, messageId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId, messageId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding, messageId);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id, messageId);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    card.setAttribute("data-review-report-for", messageId);
+    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    (postTurnCard ?? msgEl).after(card);
+  }
   function renderMessageTurnRecovery(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
@@ -76459,7 +76834,9 @@ function mountConversation(root, store2, api2) {
     msgEl.after(card);
   }
   function firstTrailingCard() {
-    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+    return list.querySelector(
+      "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
+    );
   }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
@@ -76474,7 +76851,7 @@ function mountConversation(root, store2, api2) {
     }
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]")?.remove();
+    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
     if (!thread?.reviewReport) return;
     const threadId = thread.id;
@@ -76749,8 +77126,9 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
-    store2.on("review_report_changed", () => {
-      syncReviewReportCard();
+    store2.on("review_report_changed", (tid, mid) => {
+      if (mid) renderMessageReviewReport(tid, mid);
+      else syncReviewReportCard();
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -76827,7 +77205,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -76864,6 +77242,7 @@ var init_conversation = __esm({
     init_agent_activity();
     init_tool_display();
     init_tool_runs();
+    init_tool_interruption();
     init_panels();
     init_thread_roadmap_origin();
     init_thread_hydration();
@@ -76886,6 +77265,7 @@ var init_conversation = __esm({
     init_turn_recovery_card();
     init_image_input_support();
     init_toast();
+    userInterruptedCalls = /* @__PURE__ */ new WeakMap();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -89515,6 +89895,7 @@ function threadToJsonl(thread) {
         ...msg.parameters !== void 0 ? { parameters: msg.parameters } : {},
         ...msg.turnOutcome !== void 0 ? { turnOutcome: msg.turnOutcome } : {},
         ...msg.review !== void 0 ? { review: msg.review } : {},
+        ...msg.reviewReport !== void 0 ? { reviewReport: msg.reviewReport } : {},
         ...msg.origin !== void 0 ? { origin: msg.origin } : {},
         ...msg.editedByUser !== void 0 ? { editedByUser: msg.editedByUser } : {},
         toolCalls: msg.toolCalls
@@ -93050,15 +93431,12 @@ ${description}
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
     recordThreadVideos(store2, id, attachedVideos2);
     recordThreadArchives(store2, id, attachedArchives2);
+    const queued = { messageId, payload, createdAt: Date.now() };
     if (getThreadById(store2, id)?.status === "running") {
-      enqueueUserMessage(store2, id, {
-        messageId,
-        payload,
-        createdAt: Date.now()
-      });
+      enqueueUserMessage(store2, id, queued);
     } else {
       startHumanTurnTree(store2, id);
-      dispatchAgentRun(store2, api2, id, payload);
+      dispatchAgentRun(store2, api2, id, payload, queued);
     }
     const visible = activeComposerThreadId === id;
     const currentDraft = visible ? composer.expandedValue() : getThreadById(store2, id)?.draftPrompt ?? "";
@@ -130179,7 +130557,7 @@ function mountProcessManagerDialog(api2, store2) {
           "div",
           {},
           el("h2", { id: "process-manager-title" }, "Process Manager"),
-          el("p", { class: "process-manager-subtitle" }, "Live Copse and thread processes")
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and managed task processes")
         ),
         closeButton
       ),
@@ -130200,10 +130578,18 @@ function mountProcessManagerDialog(api2, store2) {
   let timer = null;
   let generation = 0;
   let refreshing = false;
-  function projectFor(row2) {
-    if (!row2.threadId) return null;
+  function projectForThread(threadId, projectId) {
     const state = store2.getState();
-    return row2.projectId ?? state.backgroundThreads.find((item) => item.thread.id === row2.threadId)?.projectId ?? (state.threads.some((thread) => thread.id === row2.threadId) ? state.activeProjectId : null);
+    return projectId ?? state.backgroundThreads.find((item) => item.thread.id === threadId)?.projectId ?? (state.threads.some((thread) => thread.id === threadId) ? state.activeProjectId : null);
+  }
+  function jumpToThread(projectId, threadId) {
+    close();
+    switchProjectThread(store2, api2, projectId, threadId);
+  }
+  function stopAgentRun(threadId) {
+    void api2.agent.abort(threadId).catch((error62) => {
+      showErrorToast("Could not stop the agent run", error62);
+    });
   }
   async function stopManaged(row2) {
     const handle = row2.managed;
@@ -130236,30 +130622,32 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function menuEntries(row2) {
+  function threadMenuEntries(threadId, projectId, running) {
     const entries2 = [];
-    const projectId = projectFor(row2);
-    if (row2.threadId && projectId && store2.getState().projects.some((p2) => p2.id === projectId)) {
-      const threadId = row2.threadId;
+    if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
         label: "Jump to thread",
         onSelect: () => {
-          close();
-          switchProjectThread(store2, api2, projectId, threadId);
+          jumpToThread(projectId, threadId);
         }
       });
     }
-    if (row2.threadId && getThreadById(store2, row2.threadId)?.status === "running") {
-      const threadId = row2.threadId;
+    if (running) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
-          void api2.agent.abort(threadId).catch((error62) => {
-            showErrorToast("Could not stop the agent run", error62);
-          });
+          stopAgentRun(threadId);
         }
       });
     }
+    return entries2;
+  }
+  function menuEntries(row2) {
+    const entries2 = row2.threadId ? threadMenuEntries(
+      row2.threadId,
+      projectForThread(row2.threadId, row2.projectId),
+      getThreadById(store2, row2.threadId)?.status === "running"
+    ) : [];
     if (row2.managed) {
       entries2.push({
         label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
@@ -130271,6 +130659,7 @@ function mountProcessManagerDialog(api2, store2) {
     return entries2;
   }
   function render(snapshot) {
+    const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
       column === "cpu" ? ascending ? "ascending" : "descending" : "none"
@@ -130286,15 +130675,54 @@ function mountProcessManagerDialog(api2, store2) {
     for (const threadId of snapshot.activeRunThreadIds) {
       const title = getThreadById(store2, threadId)?.title.trim();
       const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
-      activityList.append(
-        el(
-          "span",
-          { class: "process-manager-activity-item", "data-thread-id": threadId },
-          el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
-          el("span", { class: "process-manager-activity-state" }, "Working"),
-          el("span", { class: "process-manager-activity-thread", title: label }, label)
-        )
+      const projectId = projectForThread(threadId);
+      const canNavigate = Boolean(
+        projectId && store2.getState().projects.some((project2) => project2.id === projectId)
       );
+      const item = el(
+        "button",
+        {
+          type: "button",
+          class: "process-manager-activity-item",
+          "data-thread-id": threadId,
+          "aria-label": canNavigate ? `Working ${label}: open thread` : `Working ${label}`
+        },
+        el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+        el("span", { class: "process-manager-activity-state" }, "Working"),
+        el("span", { class: "process-manager-activity-thread", title: label }, label)
+      );
+      if (projectId && canNavigate) {
+        item.addEventListener("click", () => {
+          jumpToThread(projectId, threadId);
+        });
+      } else {
+        item.setAttribute("aria-disabled", "true");
+      }
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        showContextMenu(
+          event.clientX,
+          event.clientY,
+          threadMenuEntries(threadId, projectId, true),
+          dialog2
+        );
+      });
+      item.addEventListener("keydown", (event) => {
+        if (event.key !== "F10" || !event.shiftKey) return;
+        event.preventDefault();
+        const rect = item.getBoundingClientRect();
+        showContextMenu(
+          rect.left,
+          rect.bottom,
+          threadMenuEntries(threadId, projectId, true),
+          dialog2
+        );
+      });
+      activityList.append(item);
+      if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
+    }
+    if (focusedActivityThread && !snapshot.activeRunThreadIds.includes(focusedActivityThread)) {
+      closeButton.focus({ preventScroll: true });
     }
     const state = store2.getState();
     for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
@@ -131102,7 +131530,14 @@ function startAgentController(store2, api2) {
         break;
       }
       case "review_report": {
-        setThreadReviewReport(store2, threadId, chunk.report);
+        const thread = getThreadById(store2, threadId);
+        const requestedAnchor = getReviewReportTarget(store2, threadId);
+        const anchorId = requestedAnchor !== void 0 ? requestedAnchor : st2.msgId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id ?? null;
+        if (anchorId === null) setThreadReviewReport(store2, threadId, chunk.report);
+        else setMessageReviewReport(store2, threadId, anchorId, chunk.report);
+        if (requestedAnchor !== void 0 && chunk.report.status !== "running") {
+          clearReviewReportTarget(store2, threadId);
+        }
         if (chunk.report.status === "running") {
           emitActivity(threadId, "Reviewing changes\u2026");
         }
@@ -131127,6 +131562,16 @@ function startAgentController(store2, api2) {
         if (st2.msgId) store2.emit("message_done", st2.msgId);
         state.delete(threadId);
         pendingTurn.delete(threadId);
+        const reviewTarget = getReviewReportTarget(store2, threadId);
+        if (reviewTarget !== void 0) {
+          failRunningReviewReport(
+            store2,
+            threadId,
+            reviewTarget,
+            "The review ended before it produced a report."
+          );
+          clearReviewReportTarget(store2, threadId);
+        }
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -131261,6 +131706,7 @@ var init_agent = __esm({
     init_diff_state();
     init_thread_naming();
     init_quiet_runs();
+    init_review_report_target();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
