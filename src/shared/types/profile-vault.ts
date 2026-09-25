@@ -6,6 +6,8 @@ export interface ProfileVaultStatus {
   requireAuth?: boolean
   automatic?: boolean
   migrationFailed?: boolean
+  /** Names the saved credential (store and key, never its value) that stopped migration. */
+  migrationBlocker?: string
 }
 export type ProfileVaultAction =
   | { action: 'set-auth'; requireAuth: boolean }

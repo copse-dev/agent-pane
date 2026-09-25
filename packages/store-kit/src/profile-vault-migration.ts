@@ -34,6 +34,125 @@ function decodeBytes(encoded: string): Buffer {
   return bytes
 }
 
+/**
+ * A source record that stops migration. `record` names the store and record
+ * key only (provider, host id); it never carries credential material.
+ */
+export class VaultMigrationBlockedError extends VaultError {
+  readonly record: string
+  constructor(record: string) {
+    super('corrupt')
+    this.record = record
+  }
+}
+const SETTINGS_ROOTS = [
+  ['apiKey', 'api-key'],
+  ['vncUsername', 'vnc-username'],
+  ['vncPassword', 'vnc-password'],
+] as const
+function describeRecord(store: (typeof SETTINGS_ROOTS)[number][1], record: string): string {
+  switch (store) {
+    case 'api-key':
+      return `saved API key “${record}”`
+    case 'vnc-username':
+      return `saved VNC username for “${record}”`
+    case 'vnc-password':
+      return `saved VNC password for “${record}”`
+  }
+}
+
+/**
+ * Walk every saved credential, decoding each with the legacy cipher. `seal`
+ * replaces the record; without it the walk is a read-only inventory.
+ */
+function transformVaultStores(
+  settingsValue: unknown,
+  sshValue: unknown,
+  legacy: SecretCipher,
+  seal?: (identity: SecretRecordIdentity, plain: string) => unknown,
+): VaultMigrationResult {
+  const settings = structuredClone(object(settingsValue))
+  const sshCredentials = structuredClone(object(sshValue))
+  let count = 0
+  const migrate = (
+    value: unknown,
+    identity: SecretRecordIdentity,
+    allowPlaintext: boolean,
+    label: string,
+  ): unknown => {
+    const parsed = secretSchema.safeParse(value)
+    if (!parsed.success || (parsed.data.plain && !allowPlaintext))
+      throw new VaultMigrationBlockedError(label)
+    let bytes: Buffer
+    try {
+      bytes = decodeBytes(parsed.data.enc)
+    } catch {
+      throw new VaultMigrationBlockedError(label)
+    }
+    let plain: string
+    try {
+      plain = parsed.data.plain ? bytes.toString('utf8') : legacy.decryptString(bytes, identity)
+    } catch {
+      throw new VaultMigrationBlockedError(label)
+    } finally {
+      bytes.fill(0)
+    }
+    count++
+    return seal ? seal(identity, plain) : value
+  }
+  const records = (value: unknown, label: string): Record<string, unknown> => {
+    try {
+      return object(value)
+    } catch {
+      throw new VaultMigrationBlockedError(label)
+    }
+  }
+  for (const [root, store] of SETTINGS_ROOTS) {
+    if (!Object.hasOwn(settings, root)) continue
+    settings[root] = Object.fromEntries(
+      Object.entries(records(settings[root], `settings.json “${root}”`)).map(([record, value]) => [
+        record,
+        migrate(value, { store, record }, root === 'apiKey', describeRecord(store, record)),
+      ]),
+    )
+  }
+  if (Object.hasOwn(sshCredentials, 'hosts')) {
+    sshCredentials['hosts'] = Object.fromEntries(
+      Object.entries(records(sshCredentials['hosts'], 'ssh-credentials.json “hosts”')).map(
+        ([hostId, values]) => [
+          hostId,
+          Object.fromEntries(
+            Object.entries(records(values, `saved SSH credentials for host “${hostId}”`)).map(
+              ([digest, value]) => [
+                digest,
+                migrate(
+                  value,
+                  { store: 'ssh', record: JSON.stringify([hostId, digest]) },
+                  false,
+                  `saved SSH credential for host “${hostId}”`,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    )
+  }
+  return { settings, sshCredentials, count }
+}
+
+/**
+ * Read-only dry run of {@link migrateVaultStores}: proves every source record
+ * decodes before any native key is created. Returns the record count.
+ */
+export function inventoryVaultStores(
+  settingsValue: unknown,
+  sshValue: unknown,
+  legacy: SecretCipher,
+): number {
+  return transformVaultStores(settingsValue, sshValue, legacy).count
+}
+
 /** Inventory is all-or-nothing. No input mutation, lazy sweeps or unreadable-record omission. */
 export function migrateVaultStores(
   settingsValue: unknown,
@@ -43,62 +162,17 @@ export function migrateVaultStores(
   manifest: VaultManifest,
 ): VaultMigrationResult {
   verifyManifest(key, manifest)
-  const settings = structuredClone(object(settingsValue))
-  const sshCredentials = structuredClone(object(sshValue))
-  let count = 0
-  const migrate = (
-    value: unknown,
-    identity: SecretRecordIdentity,
-    allowPlaintext: boolean,
-  ): unknown => {
-    const parsed = secretSchema.safeParse(value)
-    if (!parsed.success || (parsed.data.plain && !allowPlaintext)) throw new VaultError('corrupt')
-    const bytes = decodeBytes(parsed.data.enc)
-    let plain: string
-    try {
-      plain = parsed.data.plain ? bytes.toString('utf8') : legacy.decryptString(bytes, identity)
-    } catch {
-      throw new VaultError('corrupt')
-    } finally {
-      bytes.fill(0)
-    }
+  const result = transformVaultStores(settingsValue, sshValue, legacy, (identity, plain) => {
     const sealed = sealVaultRecord(key, manifest, identity, plain)
     if (openVaultRecord(key, manifest, identity, sealed) !== plain) throw new VaultError('corrupt')
-    count++
     return { v: 1, enc: sealed.toString('base64'), plain: false }
-  }
-  for (const [root, store] of [
-    ['apiKey', 'api-key'],
-    ['vncUsername', 'vnc-username'],
-    ['vncPassword', 'vnc-password'],
-  ] as const) {
-    if (!Object.hasOwn(settings, root)) continue
-    settings[root] = Object.fromEntries(
-      Object.entries(object(settings[root])).map(([record, value]) => [
-        record,
-        migrate(value, { store, record }, root === 'apiKey'),
-      ]),
-    )
-  }
-  if (Object.hasOwn(sshCredentials, 'hosts')) {
-    sshCredentials['hosts'] = Object.fromEntries(
-      Object.entries(object(sshCredentials['hosts'])).map(([hostId, values]) => [
-        hostId,
-        Object.fromEntries(
-          Object.entries(object(values)).map(([digest, value]) => [
-            digest,
-            migrate(value, { store: 'ssh', record: JSON.stringify([hostId, digest]) }, false),
-          ]),
-        ),
-      ]),
-    )
-  }
-  settings['savedSecretEncryption'] = {
+  })
+  result.settings['savedSecretEncryption'] = {
     version: 1,
     profileId: manifest.profileId,
     keyId: manifest.keyId,
   }
-  return { settings, sshCredentials, count }
+  return result
 }
 
 /** Before replaying an interrupted commit, reject any staged plaintext or downgraded record. */

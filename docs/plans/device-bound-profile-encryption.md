@@ -106,12 +106,19 @@ Migration acquires the profile maintenance gate, refuses participating headless
 writers, drains pending writes and inventories the complete API/SSH/VNC registry.
 It includes consented legacy plaintext records and existing encrypted formats.
 Every source credential must decode and encrypt successfully. No partial success
-or silent omission is reported.
+or silent omission is reported. A read-only inventory proves every record decodes
+before native creates the device key, so a blocked migration never leaves an
+orphaned Keychain item; Settings names the blocking record (store and key, never
+its value).
 
 Commit uses a ciphertext-only staged journal with fsync/atomic replacement. The
 manifest is installed last. Startup replays an interrupted committed transaction
 under single-instance ownership before stores open. A settings marker pins
-profile/key identity; missing manifests and orphan CPS3 records fail closed.
+profile/key identity; missing manifests and orphan CPS3 records fail closed:
+startup stops before any store opens and explains how to restore a consistent
+profile. Only the desktop entry takes the single-instance lock and runs replay;
+a second instance exits first, and headless clients (ACP, smoke, agent and
+classifier evals) join as leaseholders.
 Successful migration restarts once to discard cached legacy stores and keys.
 The next startup opens the vault under its selected authentication policy.
 
@@ -138,6 +145,12 @@ memory lifetime. It relies on OS session security and does not protect against
 an attacker already able to read Copse's process memory. Swift/JavaScript strings
 and SDK copies cannot be promised securely erased. Quit clears managed consumers;
 it cannot revoke a completed request or credentials given to an external process.
+
+Credential-gated startup work (for example tool registration) treats a locked
+vault as "no key yet" and re-checks after **Unlock**, so a locked profile still
+reaches Settings. Status, enrollment and startup unlock have a bounded native
+timeout; backup, recovery and policy dialogs end only when the user finishes or
+cancels them, or on quit.
 
 Recovery display/import is native-only. Export uses a fresh authentication
 context independent of the startup policy and verifies the manifest before

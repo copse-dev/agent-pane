@@ -1,5 +1,6 @@
 import { savedSecretEnvironment } from '@copse/store-kit/secret-environment.ts'
 import { VaultError } from '@copse/store-kit/profile-vault-crypto.ts'
+import { unlessVaultLocked } from './vault-locked.ts'
 import { getSecretCipher, isSecretEncryptionAvailable, type SecretCipher } from './secret-cipher.ts'
 import { clearKeyReadability, resolveKeyReadability } from './api-key-readability.ts'
 import { registerSecretSweep, requestSecretSweep } from './secret-migration.ts'
@@ -322,6 +323,14 @@ export function resolveApiKey(provider: KeyProvider): string | null {
   if (stored) return stored
   const envVar = envVarFor(provider)
   return envVar ? (firstNonEmptyString(process.env[envVar]) ?? null) : null
+}
+
+/**
+ * {@link resolveApiKey} for availability probes: a locked saved-secret vault
+ * reads as "no key yet" so startup and tool registration never abort on it.
+ */
+export function resolveApiKeyIfUnlocked(provider: KeyProvider): string | null {
+  return unlessVaultLocked(() => resolveApiKey(provider), null)
 }
 
 export function getLmStudioApiKey(): string {

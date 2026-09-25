@@ -45,17 +45,19 @@ export function createProfileVaultSection(api: ProfileVaultApi | undefined): HTM
           : action.action === 'set-auth'
             ? 'Updated. The startup authentication setting takes effect next time you launch Copse.'
             : 'Done.'
-        : result.reason === 'cancelled'
-          ? 'Cancelled. Your saved credentials are unchanged.'
-          : result.reason === 'locked'
-            ? 'Unlock saved secrets to continue.'
-            : result.reason === 'recovery-required'
-              ? 'This Mac does not have the device key. Restore access with your recovery key.'
-              : result.reason === 'corrupt'
-                ? 'Verification failed. Check the recovery key and restore a complete profile backup if needed.'
-                : result.reason === 'unavailable'
-                  ? 'The native encryption helper or macOS authentication is unavailable.'
-                  : result.reason
+        : action.action === 'retry-migration' && result.reason === 'corrupt'
+          ? 'Migration did not finish. Your saved credentials are unchanged.'
+          : result.reason === 'cancelled'
+            ? 'Cancelled. Your saved credentials are unchanged.'
+            : result.reason === 'locked'
+              ? 'Unlock saved secrets to continue.'
+              : result.reason === 'recovery-required'
+                ? 'This Mac does not have the device key. Restore access with your recovery key.'
+                : result.reason === 'corrupt'
+                  ? 'Verification failed. Check the recovery key and restore a complete profile backup if needed.'
+                  : result.reason === 'unavailable'
+                    ? 'The native encryption helper or macOS authentication is unavailable.'
+                    : result.reason
     } catch {
       notice.textContent = 'Could not reach the encryption service.'
     } finally {
@@ -85,7 +87,9 @@ export function createProfileVaultSection(api: ProfileVaultApi | undefined): HTM
     }
     if (!current.enabled) {
       status.textContent = current.migrationFailed
-        ? 'Automatic migration could not finish. Your credentials still use the existing OS secure storage. Close other Copse processes and retry.'
+        ? current.migrationBlocker
+          ? `Automatic migration could not finish: the ${current.migrationBlocker} could not be read. Your credentials still use the existing OS secure storage. Re-enter or remove it, then retry.`
+          : 'Automatic migration could not finish. Your credentials still use the existing OS secure storage. Close other Copse processes and retry.'
         : current.automatic
           ? 'This profile will migrate automatically when Copse starts.'
           : 'Uses existing OS secure storage. Automatic device encryption requires a supported signed Copse release.'
