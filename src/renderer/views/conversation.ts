@@ -1551,6 +1551,7 @@ function createAcpContentBlocks(
 }
 
 const acpDiffLineSigns = { context: ' ', add: '+', del: '-' } as const
+const acpDiffLineNames = { add: 'Added: ', del: 'Deleted: ' } as const
 
 /**
  * An ACP edit as a unified line diff: the workspace-relative path and +/- counts
@@ -1565,9 +1566,13 @@ function createAcpToolDiff(
   const additions = lines.filter((line) => line.kind === 'add').length
   const deletions = lines.filter((line) => line.kind === 'del').length
   const hasChanges = additions > 0 || deletions > 0
+  // The line diff normalises CRLF, so texts that still differ changed only
+  // their line endings; saying "No changes" there would be false.
+  const unchangedLabel =
+    (item.oldText ?? '') === item.newText ? 'No changes' : 'Only line endings changed'
   const body = hasChanges
     ? el('div', { class: 'acp-tool-diff-lines' })
-    : el('div', { class: 'acp-content-label' }, 'No changes')
+    : el('div', { class: 'acp-content-label' }, unchangedLabel)
   const details = el(
     'details',
     { class: 'acp-tool-diff' },
@@ -1607,16 +1612,16 @@ function createAcpToolDiff(
           ),
         ]
       }
-      const accessibility =
-        line.kind === 'add'
-          ? { 'aria-label': `Added line: ${line.text}` }
-          : line.kind === 'del'
-            ? { 'aria-label': `Deleted line: ${line.text}` }
-            : {}
+      // Visually hidden text rather than an `aria-label`: naming a generic
+      // `div` is prohibited, so screen readers may drop the label and with it
+      // the only cue (the sign is aria-hidden) that a line was added or removed.
       const row = el(
         'div',
-        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        { class: `acp-diff-line acp-diff-${line.kind}` },
         el('span', { class: 'acp-diff-sign', 'aria-hidden': 'true' }, acpDiffLineSigns[line.kind]),
+        ...(line.kind === 'context'
+          ? []
+          : [el('span', { class: 'acp-diff-sr' }, acpDiffLineNames[line.kind])]),
         el('span', { class: 'acp-diff-text' }, line.text),
       )
       return line.noNewlineAtEnd

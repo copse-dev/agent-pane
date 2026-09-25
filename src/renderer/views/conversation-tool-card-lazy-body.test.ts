@@ -263,7 +263,8 @@ describe('collapsed tool card bodies render lazily', () => {
           newText: [...context, "it('queues quote-replies', async () => {", ...context].join('\n'),
         },
         { type: 'diff', path: '/elsewhere/new.ts', newText: 'one\ntwo\n' },
-        { type: 'diff', path: '/repo/same.ts', oldText: 'same\r\n', newText: 'same\n' },
+        { type: 'diff', path: '/repo/crlf.ts', oldText: 'same\r\n', newText: 'same\n' },
+        { type: 'diff', path: '/repo/same.ts', oldText: 'same\n', newText: 'same\n' },
         { type: 'diff', path: '/repo/eof.ts', oldText: 'a\nb', newText: 'a\nb\n' },
       ],
     })
@@ -271,10 +272,11 @@ describe('collapsed tool card bodies render lazily', () => {
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    const [edit, created, unchanged, finalNewline] =
+    const [edit, created, lineEndings, unchanged, finalNewline] =
       host.querySelectorAll<HTMLElement>('.acp-tool-diff')
     assert.ok(edit)
     assert.ok(created)
+    assert.ok(lineEndings)
     assert.ok(unchanged)
     assert.ok(finalNewline)
     const editPath = edit.querySelector<HTMLElement>('.acp-tool-diff-path')
@@ -290,7 +292,12 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.deepEqual(
       Array.from(edit.querySelectorAll('.acp-diff-line'), (line) => [
         line.classList.item(1),
-        line.textContent,
+        // What is seen: the screen-reader-only name is checked below.
+        Array.from(line.childNodes, (node) =>
+          node instanceof HTMLElement && node.classList.contains('acp-diff-sr')
+            ? ''
+            : node.textContent,
+        ).join(''),
       ]),
       [
         ['acp-diff-gap', '⋯ 3 unchanged lines'],
@@ -305,14 +312,17 @@ describe('collapsed tool card bodies render lazily', () => {
         ['acp-diff-gap', '⋯ 3 unchanged lines'],
       ],
     )
-    assert.match(
-      edit.querySelector('.acp-diff-add')?.getAttribute('aria-label') ?? '',
-      /^Added line:/,
-    )
-    assert.match(
-      edit.querySelector('.acp-diff-del')?.getAttribute('aria-label') ?? '',
-      /^Deleted line:/,
-    )
+    // The sign is aria-hidden, so the change is named in text a screen reader
+    // reads, not in an aria-label on a role-less div that it may ignore.
+    const added = edit.querySelector('.acp-diff-add')
+    const deleted = edit.querySelector('.acp-diff-del')
+    assert.ok(added)
+    assert.ok(deleted)
+    assert.equal(added.querySelector('.acp-diff-sign')?.getAttribute('aria-hidden'), 'true')
+    assert.equal(added.hasAttribute('aria-label'), false)
+    assert.equal(added.querySelector('.acp-diff-sr')?.textContent, 'Added: ')
+    assert.equal(deleted.querySelector('.acp-diff-sr')?.textContent, 'Deleted: ')
+    assert.equal(edit.querySelector('.acp-diff-context .acp-diff-sr'), null)
 
     assert.match(created.querySelector('summary')?.textContent ?? '', /^New file/)
     assert.equal(created.querySelector('.acp-tool-diff-path')?.textContent, '/elsewhere/new.ts')
@@ -321,6 +331,11 @@ describe('collapsed tool card bodies render lazily', () => {
     created.setAttribute('open', '')
     created.dispatchEvent(new Event('toggle'))
     assert.equal(created.querySelectorAll('.acp-diff-add').length, 2)
+    assert.equal(
+      lineEndings.querySelector('.acp-content-label')?.textContent,
+      'Only line endings changed',
+    )
+    assert.equal(lineEndings.querySelectorAll('.acp-diff-line').length, 0)
     assert.equal(unchanged.querySelector('.acp-content-label')?.textContent, 'No changes')
     assert.equal(unchanged.querySelectorAll('.acp-diff-line').length, 0)
 
