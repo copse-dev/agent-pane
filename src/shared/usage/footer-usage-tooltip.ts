@@ -19,16 +19,19 @@ export interface FooterUsageTooltipRow {
 }
 
 export interface FooterUsageTooltipModel {
-  /** Headline: parent-only tokens, `~`-prefixed when the counts are estimated. */
+  /** Headline: thread tokens excluding recorded subagent runs, `~`-prefixed when estimated. */
   header: string
   /**
-   * Label for `rows` ("This conversation"), shown only alongside `subagentRow`
-   * — with nothing to contrast against, the breakdown obviously *is* the whole
-   * conversation and the label would be noise.
+   * Label for `rows` ("Excluding subagents"), shown only alongside
+   * `subagentRow` so the scope of the headline is explicit.
    */
   conversationLabel: string | null
-  /** In/out (plus cache and cost when known) for the parent loop — one row per line. */
+  /** Input/output matching the headline — one row per line. */
   rows: FooterUsageTooltipRow[]
+  /** Label for whole-thread cache, cost, subagent, and per-model accounting. */
+  threadLabel: string | null
+  /** Cache and cost rows, which use the provider's whole-thread accounting. */
+  threadRows: FooterUsageTooltipRow[]
   /**
    * How much of the total came from delegated work; null when no subagent in
    * the thread has reported usage. Not folded into `rows` above.
@@ -96,17 +99,22 @@ export function buildFooterUsageTooltip(
     { label: 'Input', value: `${approx}${formatTokenCount(inputTokens)}` },
     { label: 'Output', value: `${approx}${formatTokenCount(outputTokens)}` },
   ]
+  const threadRows: FooterUsageTooltipRow[] = []
 
   const usage = opts.measuredUsage
   // Cache splits and pricing only make sense against provider-reported usage —
   // an estimate has neither a cache breakdown nor a trustworthy dollar figure.
   const cacheRead = estimated ? 0 : (usage.cacheReadTokens ?? 0)
   const cacheCreation = estimated ? 0 : (usage.cacheCreationTokens ?? 0)
-  if (cacheRead > 0) rows.push({ label: 'Cache read', value: formatTokenCount(cacheRead) })
-  if (cacheCreation > 0) rows.push({ label: 'Cache write', value: formatTokenCount(cacheCreation) })
+  if (cacheRead > 0) {
+    threadRows.push({ label: 'Cache read', value: formatTokenCount(cacheRead) })
+  }
+  if (cacheCreation > 0) {
+    threadRows.push({ label: 'Cache write', value: formatTokenCount(cacheCreation) })
+  }
 
   const cost = estimated ? '' : formatThreadUsageCost(usage, opts.model, opts.pricing)
-  if (cost) rows.push({ label: 'Cost', value: cost })
+  if (cost) threadRows.push({ label: 'Cost', value: cost })
 
   // Subagent tokens are already counted in the parent's raw totals upstream
   // (see `resolveFooterUsage`), which folds them back out of `display` before
@@ -124,7 +132,8 @@ export function buildFooterUsageTooltip(
           )} in / ${formatTokenCount(subagents.outputTokens)} out`,
         }
       : null
-  const conversationLabel = subagentRow ? 'This conversation' : null
+  const conversationLabel = subagentRow ? 'Excluding subagents' : null
+  const threadLabel = subagentRow ? 'Whole thread' : null
 
   const modelRows: FooterUsageTooltipRow[] = []
   const byModel = Object.entries(usage.byModel ?? {}).filter(
@@ -153,6 +162,8 @@ export function buildFooterUsageTooltip(
     header: `Usage · ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
     conversationLabel,
     rows,
+    threadLabel,
+    threadRows,
     subagentRow,
     modelRows,
     note,

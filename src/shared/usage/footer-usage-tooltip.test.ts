@@ -26,7 +26,7 @@ describe('buildFooterUsageTooltip', () => {
     assert.equal(value(tooltip.rows, 'Input'), '12.9M')
     assert.equal(value(tooltip.rows, 'Output'), '211.0k')
     // Catalog prices move, so pin the shape of the cost line, not the amount.
-    assert.match(value(tooltip.rows, 'Cost') ?? '', /^(~\$\d|<\$0\.01)/)
+    assert.match(value(tooltip.threadRows, 'Cost') ?? '', /^(~\$\d|<\$0\.01)/)
     assert.equal(tooltip.note, null)
   })
 
@@ -45,8 +45,8 @@ describe('buildFooterUsageTooltip', () => {
       },
     )
 
-    assert.equal(value(tooltip.rows, 'Cache read'), '90.0k')
-    assert.equal(value(tooltip.rows, 'Cache write'), '6.0k')
+    assert.equal(value(tooltip.threadRows, 'Cache read'), '90.0k')
+    assert.equal(value(tooltip.threadRows, 'Cache write'), '6.0k')
   })
 
   it('marks estimated usage and omits cost and cache detail', () => {
@@ -63,8 +63,8 @@ describe('buildFooterUsageTooltip', () => {
     assert.equal(tooltip.header, 'Usage · ~1.3k tokens')
     assert.equal(value(tooltip.rows, 'Input'), '~1.2k')
     assert.equal(value(tooltip.rows, 'Output'), '~80')
-    assert.equal(value(tooltip.rows, 'Cache read'), undefined)
-    assert.equal(value(tooltip.rows, 'Cost'), undefined)
+    assert.equal(value(tooltip.threadRows, 'Cache read'), undefined)
+    assert.equal(value(tooltip.threadRows, 'Cost'), undefined)
     assert.equal(tooltip.note, 'Estimated — provider usage not reported yet')
   })
 
@@ -78,7 +78,7 @@ describe('buildFooterUsageTooltip', () => {
       },
     )
 
-    assert.equal(value(tooltip.rows, 'Cost'), undefined)
+    assert.equal(value(tooltip.threadRows, 'Cost'), undefined)
     assert.equal(tooltip.note, 'No pricing for this model')
   })
 
@@ -95,7 +95,7 @@ describe('buildFooterUsageTooltip', () => {
       },
     )
 
-    assert.equal(value(tooltip.rows, 'Cost'), 'free')
+    assert.equal(value(tooltip.threadRows, 'Cost'), 'free')
     assert.equal(tooltip.note, null)
   })
 
@@ -116,7 +116,7 @@ describe('buildFooterUsageTooltip', () => {
       },
     )
 
-    assert.equal(value(tooltip.rows, 'Cost'), '~$3.00 (partial)')
+    assert.equal(value(tooltip.threadRows, 'Cost'), '~$3.00 (partial)')
     assert.equal(tooltip.note, 'Cost excludes models without pricing')
     assert.equal(
       value(tooltip.modelRows, 'openrouter:vendor/unknown'),
@@ -163,7 +163,7 @@ describe('buildFooterUsageTooltip', () => {
     assert.deepEqual(tooltip.modelRows, [])
   })
 
-  it('omits the "This conversation" label when there is nothing to contrast it with', () => {
+  it('omits scope labels when there is nothing to contrast', () => {
     const tooltip = buildFooterUsageTooltip(
       { inputTokens: 2000, outputTokens: 300, estimated: false },
       {
@@ -174,6 +174,7 @@ describe('buildFooterUsageTooltip', () => {
     )
 
     assert.equal(tooltip.conversationLabel, null)
+    assert.equal(tooltip.threadLabel, null)
   })
 })
 
@@ -270,7 +271,7 @@ describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
   })
 })
 
-describe('buildFooterUsageTooltip "This conversation" label (#2464)', () => {
+describe('buildFooterUsageTooltip usage scopes (#2464)', () => {
   const messagesWithSubagent: Message[] = [
     {
       id: 'a1',
@@ -299,9 +300,9 @@ describe('buildFooterUsageTooltip "This conversation" label (#2464)', () => {
     },
   ]
 
-  it('labels the parent rows once there is a Subagents row to contrast them with', () => {
+  it('labels the subagent-excluded rows once there is a Subagents row to contrast them with', () => {
     const tooltip = buildFooterUsageTooltip(
-      // Already parent-only, as resolveFooterUsage would produce it.
+      // Already excludes recorded subagents, as resolveFooterUsage would produce it.
       { inputTokens: 12_100_000, outputTokens: 196_000, estimated: false },
       {
         model: 'claude-sonnet-4-6',
@@ -310,10 +311,81 @@ describe('buildFooterUsageTooltip "This conversation" label (#2464)', () => {
       },
     )
 
-    assert.equal(tooltip.conversationLabel, 'This conversation')
+    assert.equal(tooltip.conversationLabel, 'Excluding subagents')
+    assert.equal(tooltip.threadLabel, 'Whole thread')
     assert.equal(tooltip.header, 'Usage · 12.3M tokens')
     assert.equal(value(tooltip.rows, 'Input'), '12.1M')
     assert.equal(value(tooltip.rows, 'Output'), '196.0k')
+  })
+
+  it('keeps paid-subagent cache and cost in the explicitly whole-thread group', () => {
+    const paidSubagentMessages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        createdAt: 1,
+        toolCalls: [
+          {
+            id: 't1',
+            name: 'explore',
+            args: {},
+            status: 'done',
+            result: 'done',
+            subagent: {
+              id: 'sub-paid',
+              kind: 'explore',
+              status: 'done',
+              prompt: 'q',
+              summary: null,
+              messages: [],
+              model: 'claude-haiku-4-5',
+              usage: {
+                inputTokens: 500_000,
+                outputTokens: 15_000,
+                cacheReadTokens: 300_000,
+                cacheCreationTokens: 50_000,
+              },
+            },
+          },
+        ],
+      },
+    ]
+    const tooltip = buildFooterUsageTooltip(
+      { inputTokens: 1_000_000, outputTokens: 100_000, estimated: false },
+      {
+        model: 'claude-sonnet-4-6',
+        messages: paidSubagentMessages,
+        measuredUsage: {
+          inputTokens: 1_500_000,
+          outputTokens: 115_000,
+          cacheReadTokens: 1_100_000,
+          cacheCreationTokens: 80_000,
+          byModel: {
+            'claude-sonnet-4-6': {
+              inputTokens: 1_000_000,
+              outputTokens: 100_000,
+              cacheReadTokens: 800_000,
+              cacheCreationTokens: 30_000,
+            },
+            'claude-haiku-4-5': {
+              inputTokens: 500_000,
+              outputTokens: 15_000,
+              cacheReadTokens: 300_000,
+              cacheCreationTokens: 50_000,
+            },
+          },
+        },
+      },
+    )
+
+    assert.equal(tooltip.conversationLabel, 'Excluding subagents')
+    assert.equal(value(tooltip.rows, 'Cache read'), undefined)
+    assert.equal(value(tooltip.rows, 'Cost'), undefined)
+    assert.equal(tooltip.threadLabel, 'Whole thread')
+    assert.equal(value(tooltip.threadRows, 'Cache read'), '1.1M')
+    assert.equal(value(tooltip.threadRows, 'Cache write'), '80.0k')
+    assert.match(value(tooltip.threadRows, 'Cost') ?? '', /^(~\$\d|<\$0\.01)/)
   })
 })
 

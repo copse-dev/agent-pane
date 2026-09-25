@@ -10,7 +10,7 @@ import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { formatTokenCount } from './format-usage-summary.ts'
 
 export interface FooterUsageDisplay {
-  /** Parent-loop tokens only — subagent runs are folded out (see `sumSubagentUsage`). */
+  /** Thread tokens with recorded tool-call subagent runs folded out. */
   inputTokens: number
   outputTokens: number
   /** True when provider-reported usage is unavailable and counts are approximated. */
@@ -93,10 +93,10 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
 
 /**
  * Prefer measured provider usage; fall back to context/output estimates when
- * zero. Measured `inputTokens`/`outputTokens` are the parent loop's own —
- * subagent usage is already folded into `input.measured` upstream, so it is
- * subtracted back out here (see `sumSubagentUsage`) rather than left inflating
- * the headline the footer counter shows.
+ * zero. Recorded subagent usage is already folded into `input.measured`
+ * upstream, so it is subtracted back out here (see `sumSubagentUsage`) rather
+ * than left inflating the headline. Other background work without a persisted
+ * subagent session remains in the total.
  */
 export function resolveFooterUsage(input: FooterUsageInput): FooterUsageDisplay | null {
   const { inputTokens, outputTokens } = input.measured
@@ -153,9 +153,13 @@ export function formatFooterUsageDetail(
   const { inputTokens, outputTokens, estimated } = display
   const approx = estimated ? '~' : ''
   const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`
-  const cost = estimated
+  const rawCost = estimated
     ? 'est.'
     : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing)
+  const cost =
+    !estimated && rawCost && display.subagentInputTokens !== undefined
+      ? `whole-thread cost ${rawCost}`
+      : rawCost
   const parts = [formatFooterUsageSummary(display), split, ...(cost ? [cost] : [])]
   return `Usage: ${parts.join(' · ')}`
 }

@@ -113,7 +113,7 @@ describe('resolveFooterUsage', () => {
   it('folds subagent tokens back out of the measured total (#2464)', () => {
     // The main process folds a subagent's usage into the thread's raw totals
     // (subagent-usage.ts); resolveFooterUsage must subtract it back out so the
-    // footer headline reads as the parent conversation, not parent+subagents.
+    // footer headline excludes recorded subagent sessions.
     const messages: Message[] = [
       {
         id: 'a1',
@@ -269,6 +269,24 @@ describe('formatFooterUsageDetail', () => {
       ),
       'Usage: 1.3k tokens · 1.2k in / 80 out · free',
     )
+  })
+
+  it('labels cost as whole-thread when the token total excludes subagents', () => {
+    const detail = formatFooterUsageDetail(
+      {
+        inputTokens: 1200,
+        outputTokens: 80,
+        estimated: false,
+        subagentInputTokens: 500,
+        subagentOutputTokens: 20,
+      },
+      {
+        model: 'claude-sonnet-4-6',
+        measuredUsage: { inputTokens: 1700, outputTokens: 100 },
+      },
+    )
+
+    assert.match(detail, /· whole-thread cost (~\$|<\$)/)
   })
 })
 

@@ -180,15 +180,15 @@ describe('footer usage popover subagent row (component)', () => {
   })
 })
 
-describe('footer usage popover parent-only headline and free explanation (component, #2464)', () => {
-  it('labels the parent rows "This conversation", keeps Subagents separate, and explains the free model', () => {
+describe('footer usage popover subagent-excluded headline and free explanation (component, #2464)', () => {
+  it('labels the headline and whole-thread groups, keeps Subagents separate, and explains the free model', () => {
     const popover = createFooterUsagePopover()
     document.body.append(popover.root)
 
     popover.render(
       buildFooterUsageTooltip(
         // resolveFooterUsage has already folded the subagent's 800.0k in / 15.0k
-        // out back out of these — this is the parent-only headline.
+        // out back out of these — this is the subagent-excluded headline.
         { inputTokens: 12_100_000, outputTokens: 196_000, estimated: false },
         {
           model: 'claude-sonnet-4-6',
@@ -235,11 +235,13 @@ describe('footer usage popover parent-only headline and free explanation (compon
     const header = popover.root.querySelector('.footer-usage-popover-header')
     assert.equal(header?.textContent, 'Usage · 12.3M tokens')
 
-    const section = popover.root.querySelector('.footer-usage-popover-section')
-    assert.ok(section)
-    assert.equal(section.textContent, 'This conversation')
+    const sections = [...popover.root.querySelectorAll('.footer-usage-popover-section')]
+    assert.deepEqual(
+      sections.map((section) => section.textContent),
+      ['Excluding subagents', 'Whole thread'],
+    )
     // The section label sits above the parent's own Input/Output rows.
-    assert.equal(section.nextElementSibling?.textContent, 'Input12.1M')
+    assert.equal(sections[0]?.nextElementSibling?.textContent, 'Input12.1M')
 
     const subagents = popover.root.querySelector('.footer-usage-popover-row.is-subagents')
     assert.match(subagents?.textContent ?? '', /Subagents/)

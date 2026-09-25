@@ -3342,7 +3342,7 @@ describe('input bar footer usage counter', () => {
     assert.equal(popover?.hidden, true)
   })
 
-  it('shows the parent-only total on the counter and explains delegated + free usage on hover (#2464)', async () => {
+  it('shows the subagent-excluded total and explains delegated + free usage on hover (#2464)', async () => {
     // #2464: the counter used to fold subagent tokens into the headline, with
     // no explanation for why a local subagent's usage reads as free next to a
     // paid parent model.
@@ -3399,7 +3399,7 @@ describe('input bar footer usage counter', () => {
 
     const counter = host.querySelector<HTMLElement>('.footer-usage')
     assert.ok(counter)
-    // Parent-only: 12.1M in + 196.0k out, not the raw 13.1M thread total.
+    // Excluding subagents: 12.1M in + 196.0k out, not the raw 13.1M thread total.
     assert.equal(counter.textContent, '12.3M tokens')
 
     const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
@@ -3407,7 +3407,8 @@ describe('input bar footer usage counter', () => {
     counter.dispatchEvent(new Event('mouseenter'))
     assert.equal(popover.hidden, false)
     assert.match(popover.textContent, /Usage · 12\.3M tokens/)
-    assert.match(popover.textContent, /This conversation/)
+    assert.match(popover.textContent, /Excluding subagents/)
+    assert.match(popover.textContent, /Whole thread/)
     assert.match(popover.textContent, /Input\s*12\.1M/)
     assert.match(popover.textContent, /Output\s*196\.0k/)
     assert.match(popover.textContent, /Subagents\s*1 run · 800\.0k in \/ 15\.0k out/)
