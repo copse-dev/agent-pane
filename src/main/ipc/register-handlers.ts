@@ -506,7 +506,7 @@ export function registerAllHandlers(
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
-    () => readOwnedProcessRows(win.webContents.id),
+    (appPids) => readOwnedProcessRows(win.webContents.id, appPids),
     listRunningThreadIds,
   )
   const reloadMcpForWorkspace = (): void => {

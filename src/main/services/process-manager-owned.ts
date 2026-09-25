@@ -1,19 +1,27 @@
 import { execFile } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
 import type { ManagedProcessHandle, ProcessManagerRow } from '@shared/types/process-manager.ts'
 import { listTerminalProcesses } from './exec/terminal-service.ts'
 import { listBackgroundProcessPids } from './exec/background-process.ts'
+import { gortexDaemonPidPath } from './search/semantic-index.ts'
 
 const execFileAsync = promisify(execFile)
 
 export interface OwnedProcessRoot {
   pid: number
   label: string
-  type: 'Terminal' | 'Background task'
+  type: 'Terminal' | 'Background task' | 'Indexer' | 'Subprocess'
   threadId: string | null
   projectId?: string | null
   managed?: ManagedProcessHandle
+  /**
+   * The executable name a live sample must have. Set for pids read from a pid
+   * file, which can outlive their process; such a root is dropped rather than
+   * shown when it is not sampled or the pid now belongs to something else.
+   */
+  command?: string
 }
 
 export interface OsProcessSample {
@@ -78,7 +86,15 @@ export function ownedProcessRows(
   samples: readonly OsProcessSample[],
 ): ProcessManagerRow[] {
   const byPid = new Map(samples.map((sample) => [sample.pid, sample]))
-  const rootByPid = new Map(roots.map((root) => [root.pid, root]))
+  const rootByPid = new Map(
+    roots
+      .filter(
+        (root) =>
+          root.command === undefined ||
+          basename(byPid.get(root.pid)?.command ?? '') === root.command,
+      )
+      .map((root) => [root.pid, root]),
+  )
   const rows: ProcessManagerRow[] = []
   for (const sample of samples) {
     const owner = ownerOf(sample.pid, byPid, rootByPid)
@@ -97,7 +113,7 @@ export function ownedProcessRows(
     })
   }
   for (const root of roots) {
-    if (byPid.has(root.pid)) continue
+    if (byPid.has(root.pid) || root.command !== undefined) continue
     rows.push({
       pid: root.pid,
       startedAt: 0,
@@ -113,8 +129,92 @@ export function ownedProcessRows(
   return rows
 }
 
-/** Read only processes Copse launched for terminals and background work. */
-export async function readOwnedProcessRows(managingOwnerId: number): Promise<ProcessManagerRow[]> {
+/**
+ * Copse's own non-Electron children — agent CLIs, MCP and language servers,
+ * short-lived git or search commands — that no terminal or task already owns.
+ */
+export function copseChildRoots(
+  samples: readonly OsProcessSample[],
+  mainPid: number,
+  appPids: ReadonlySet<number>,
+  claimedPids: ReadonlySet<number>,
+): OwnedProcessRoot[] {
+  return samples
+    .filter(
+      (sample) =>
+        sample.parentPid === mainPid && !appPids.has(sample.pid) && !claimedPids.has(sample.pid),
+    )
+    .map((sample) => ({
+      pid: sample.pid,
+      label: basename(sample.command),
+      type: 'Subprocess',
+      threadId: null,
+    }))
+}
+
+/** Friendly names for the worker scripts Copse runs as `<execPath> <worker>.js`. */
+const SELF_WORKER_LABELS = new Map([
+  ['acp-session-host-worker', 'Agent session host'],
+  ['acp-probe-worker', 'Agent probe'],
+  ['sandbox-fs-worker', 'Sandbox file server'],
+  ['plugin-tool-worker', 'Plugin tool host'],
+])
+
+/** Name a Copse-as-Node child from its command line; the executable alone reads "Electron". */
+export function selfHelperLabel(args: string): string {
+  const script = /([^/\s]+)\.[cm]?js(?:\s|$)/.exec(args)?.[1]
+  if (!script) return 'Copse helper'
+  return SELF_WORKER_LABELS.get(script) ?? script
+}
+
+/** Parse `ps -o pid=,args=` output into full command lines by pid. */
+export function parseProcessArgs(output: string): Map<number, string> {
+  const argsByPid = new Map<number, string>()
+  for (const line of output.split('\n')) {
+    const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(line)
+    if (match?.[1] && match[2]) argsByPid.set(Number(match[1]), match[2])
+  }
+  return argsByPid
+}
+
+async function labelSelfHelpers(roots: readonly OwnedProcessRoot[]): Promise<OwnedProcessRoot[]> {
+  const self = basename(process.execPath)
+  const pids = roots.filter((root) => root.label === self).map((root) => root.pid)
+  if (pids.length === 0) return [...roots]
+  let argsByPid = new Map<number, string>()
+  try {
+    const { stdout } = await execFileAsync('ps', ['-o', 'pid=,args=', '-p', pids.join(',')], {
+      timeout: 1_500,
+      maxBuffer: 1024 * 1024,
+    })
+    argsByPid = parseProcessArgs(stdout)
+  } catch {
+    // `ps -p` exits non-zero when a helper exited between samples.
+  }
+  return roots.map((root) =>
+    root.label === self ? { ...root, label: selfHelperLabel(argsByPid.get(root.pid) ?? '') } : root,
+  )
+}
+
+async function readGortexDaemonRoot(): Promise<OwnedProcessRoot | null> {
+  try {
+    const pid = Number((await readFile(gortexDaemonPidPath(), 'utf8')).trim())
+    if (!Number.isInteger(pid) || pid <= 0) return null
+    return { pid, label: 'gortex daemon', type: 'Indexer', threadId: null, command: 'gortex' }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Read processes Copse launched: terminals and background work (with their
+ * descendants), the detached gortex code-index daemon, and other direct
+ * children of the main process that are not Electron's own (`appPids`).
+ */
+export async function readOwnedProcessRows(
+  managingOwnerId: number,
+  appPids: ReadonlySet<number>,
+): Promise<ProcessManagerRow[]> {
   const roots: OwnedProcessRoot[] = [
     ...listTerminalProcesses().map(
       ({ id, pid, label, threadId, projectId, ownerId }): OwnedProcessRoot => ({
@@ -137,14 +237,20 @@ export async function readOwnedProcessRows(managingOwnerId: number): Promise<Pro
       }),
     ),
   ]
-  if (roots.length === 0) return []
   if (process.platform === 'win32') return ownedProcessRows(roots, [])
+  const gortex = await readGortexDaemonRoot()
+  if (gortex) roots.push(gortex)
   try {
-    const { stdout } = await execFileAsync('ps', ['-Ao', 'pid=,ppid=,%cpu=,rss=,comm='], {
+    const table = execFileAsync('ps', ['-Ao', 'pid=,ppid=,%cpu=,rss=,comm='], {
       timeout: 1_500,
       maxBuffer: 4 * 1024 * 1024,
     })
-    return ownedProcessRows(roots, parseProcessTable(stdout))
+    const { stdout } = await table
+    const samples = parseProcessTable(stdout)
+    // The sampling `ps` is itself a child of main; don't report it.
+    const claimed = new Set([...roots.map((root) => root.pid), table.child.pid ?? 0])
+    const helpers = await labelSelfHelpers(copseChildRoots(samples, process.pid, appPids, claimed))
+    return ownedProcessRows([...roots, ...helpers], samples)
   } catch {
     return ownedProcessRows(roots, [])
   }
