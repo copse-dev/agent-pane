@@ -10,7 +10,7 @@ import { el } from '../dom/helpers.ts'
 import { maximizeIcon, penLineIcon, spinnerIcon } from '../dom/icons.ts'
 import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
 import { attachAnnotation } from '../drawing/attach-annotation.ts'
-import { trackGuestScroll } from '../drawing/scroll-tracker.ts'
+import { trackGuestScroll, type GuestScrollTracker } from '../drawing/scroll-tracker.ts'
 import {
   getArtefactContent,
   getArtefactPreview,
@@ -209,7 +209,7 @@ export function createInlineArtefact(
     'Annotate',
   )
   let annotation: AnnotationLayer | null = null
-  let annotationScroll: { kick: () => void; dispose: () => void } | null = null
+  let annotationScroll: GuestScrollTracker | null = null
   let inlineWebview: HTMLElement | null = null
   let disposed = false
   let firstMountFrame: number | null = null
@@ -232,6 +232,12 @@ export function createInlineArtefact(
     }
     return getArtefactPreview(threadId, title) ?? null
   }
+  /** Poll the guest only while there are marks to keep anchored or the layer is in use. */
+  const syncAnnotationScroll = (): void => {
+    annotationScroll?.setEnabled(
+      annotation !== null && (annotation.active || !annotation.isEmpty()),
+    )
+  }
   annotate.addEventListener('click', () => {
     if (!annotation) {
       annotation = mountAnnotationLayer(stage, {
@@ -242,6 +248,7 @@ export function createInlineArtefact(
         },
         onDeactivate: (): void => {
           annotate.setAttribute('aria-pressed', 'false')
+          syncAnnotationScroll()
         },
       })
       // Page-anchored marks track the artefact's own scrolling too.
@@ -259,6 +266,10 @@ export function createInlineArtefact(
       })
     }
     annotate.setAttribute('aria-pressed', String(annotation.toggle()))
+    // Enabling reads the guest's current offsets straight away, so the first
+    // stroke on an already-scrolled artefact lands where the page is now.
+    syncAnnotationScroll()
+    annotationScroll?.kick()
   })
 
   const card = el(

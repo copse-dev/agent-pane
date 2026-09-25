@@ -277,17 +277,63 @@ describe('annotation layer', () => {
     }
   })
 
-  it('ignores garbage scroll offsets', () => {
+  it('ignores non-finite scroll offsets but keeps a negative X', () => {
     const el = host()
     const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
     try {
       layer.activate()
       const svg = surfaceOf(el)
-      layer.setScrollOffset(-5, Number.NaN)
+      layer.setScrollOffset(Number.NaN, Number.POSITIVE_INFINITY)
       assert.equal(svg.getAttribute('viewBox'), '0 0 400 300')
+      layer.setScrollOffset(-120, 60)
+      assert.equal(svg.getAttribute('viewBox'), '-120 60 400 300')
+      layer.setScrollOffset(Number.NaN, 90)
+      assert.equal(svg.getAttribute('viewBox'), '-120 90 400 300', 'a bad axis keeps its value')
     } finally {
       layer.dispose()
       el.remove()
+    }
+  })
+
+  it('re-applies the viewBox when the host resizes, even with no scroll change', () => {
+    const had = Object.hasOwn(globalThis, 'ResizeObserver')
+    const previous = globalThis.ResizeObserver
+    const observers: { callback: () => void; disconnected: boolean }[] = []
+    class FakeResizeObserver {
+      readonly entry: { callback: () => void; disconnected: boolean }
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = {
+          callback: (): void => {
+            callback([], this)
+          },
+          disconnected: false,
+        }
+        observers.push(this.entry)
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {
+        this.entry.disconnected = true
+      }
+    }
+    globalThis.ResizeObserver = FakeResizeObserver
+    const el = host()
+    const layer = mountAnnotationLayer(el, { label: 'page', onSend: () => true })
+    try {
+      layer.activate()
+      layer.setScrollOffset(0, 240)
+      const svg = surfaceOf(el)
+      assert.equal(svg.getAttribute('viewBox'), '0 240 400 300')
+      el.getBoundingClientRect = (): DOMRect => new DOMRect(0, 0, 640, 480)
+      for (const observer of observers) observer.callback()
+      assert.equal(svg.getAttribute('viewBox'), '0 240 640 480')
+      layer.dispose()
+      assert.ok(observers.length > 0 && observers.every((o) => o.disconnected))
+    } finally {
+      layer.dispose()
+      el.remove()
+      if (had) globalThis.ResizeObserver = previous
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
     }
   })
 })

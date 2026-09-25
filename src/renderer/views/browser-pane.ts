@@ -39,7 +39,7 @@ import type { BrowserPaneSession, BrowserPaneSessionTab } from '@shared/types/ma
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
 import { attachAnnotation } from '../drawing/attach-annotation.ts'
-import { trackGuestScroll } from '../drawing/scroll-tracker.ts'
+import { trackGuestScroll, type GuestScrollTracker } from '../drawing/scroll-tracker.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
 import { setTooltip } from '../dom/tooltip.ts'
@@ -92,8 +92,11 @@ interface BrowserTab {
   closeMenu: () => void
   /** Drawing overlay, mounted on first use; null until the user annotates. */
   annotation: AnnotationLayer | null
-  /** Guest scroll polling that keeps the overlay page-anchored; with the overlay. */
-  annotationScroll: { kick: () => void; dispose: () => void } | null
+  /**
+   * Guest scroll polling that keeps the overlay page-anchored; with the
+   * overlay, and running only while {@link syncAnnotationScroll} says so.
+   */
+  annotationScroll: GuestScrollTracker | null
 }
 
 /** The current page URL when it is a real http(s) address (not about:blank or a
@@ -561,6 +564,21 @@ export function mountBrowserPane(
     syncTabLabel(tab)
   }
 
+  /**
+   * Each poll is an IPC and a script run in the guest, so a tab tracks its
+   * guest's scroll only while there is something to keep anchored — marks on
+   * the page or the layer in use — and only while the tab is on screen.
+   */
+  function syncAnnotationScroll(tab: BrowserTab): void {
+    const layer = tab.annotation
+    tab.annotationScroll?.setEnabled(
+      layer !== null &&
+        (layer.active || !layer.isEmpty()) &&
+        tab.id === activeTabId &&
+        browserModeActive(store),
+    )
+  }
+
   function syncWebviewSize(tab: BrowserTab): void {
     const webview = tab.webview
     if (!webview || !tab.panel.classList.contains('is-active')) return
@@ -662,6 +680,7 @@ export function mountBrowserPane(
     webview.addEventListener('did-navigate', () => {
       tab.annotation?.deactivate()
       tab.annotation?.clear()
+      syncAnnotationScroll(tab)
     })
     webview.addEventListener('did-navigate-in-page', onNavigateSuccess)
     webview.addEventListener('page-title-updated', onNavigate)
@@ -790,6 +809,7 @@ export function mountBrowserPane(
       const active = tab.id === tabId
       tab.panel.classList.toggle('is-active', active)
       tab.tabBtn.classList.toggle('is-active', active)
+      syncAnnotationScroll(tab)
     }
     const tab = tabs.get(tabId)
     if (!tab) return
@@ -1256,6 +1276,8 @@ export function mountBrowserPane(
           },
           onDeactivate: (): void => {
             annotateBtn.setAttribute('aria-pressed', 'false')
+            // Marks left on the page keep tracking; an empty, idle layer stops.
+            syncAnnotationScroll(tab)
           },
         })
         // Marks are anchored to the page: poll the guest's scroll offsets
@@ -1273,8 +1295,6 @@ export function mountBrowserPane(
             layer.setScrollOffset(position.x, position.y)
           },
         })
-        // Baseline the guest's current offsets without waiting for input.
-        tab.annotationScroll.kick()
       }
       return tab.annotation
     }
@@ -1282,6 +1302,9 @@ export function mountBrowserPane(
       setMenuOpen(false)
       const on = annotationLayer().toggle()
       annotateBtn.setAttribute('aria-pressed', String(on))
+      // Enabling re-reads the guest's offsets at once, so the first stroke
+      // lands on the page where it is scrolled to now.
+      syncAnnotationScroll(tab)
     })
 
     let menuOpen = false
@@ -1408,6 +1431,7 @@ export function mountBrowserPane(
     // Whether the pane was open is part of the session: a window that quit
     // showing the canvas comes back showing it.
     scheduleSessionSave()
+    for (const tab of tabs.values()) syncAnnotationScroll(tab)
     if (active) {
       if (tabs.size === 0) addTab()
       const tab = activeTabId ? tabs.get(activeTabId) : null

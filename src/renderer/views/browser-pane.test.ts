@@ -1622,7 +1622,20 @@ describe('browser pane annotation scroll tracking', () => {
       const webview = qsRequired<FakeWebview>(host, '.browser-webview')
       stubWebviewMethods(webview)
       webview.getURL = (): string => 'https://example.com/page'
+      // The frame's own first load commits as a navigation, which clears marks
+      // and stops tracking; let it land before annotating the page it shows.
+      const firstNavigation = new Promise<void>((resolve) => {
+        webview.addEventListener(
+          'did-navigate',
+          () => {
+            resolve()
+          },
+          { once: true },
+        )
+        setTimeout(resolve, 500)
+      })
       webview.dispatchEvent(new Event('dom-ready'))
+      await firstNavigation
 
       const annotateBtn = qsRequired<HTMLButtonElement>(panel, '.browser-annotate-btn')
       annotateBtn.click()
@@ -1657,6 +1670,30 @@ describe('browser pane annotation scroll tracking', () => {
       await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
       assert.equal(svg.getAttribute('viewBox'), '0 720 640 480')
       assert.equal(host.querySelector('.annotation-layer')?.getAttribute('hidden'), null)
+
+      // A background tab's marks cannot be seen, so it stops polling; coming
+      // back re-reads at once to catch up with anything that moved meanwhile.
+      const firstTabBtn = qsRequired<HTMLButtonElement>(list, '.browser-tabs-tab.is-active')
+      qsRequired<HTMLButtonElement>(list, '.browser-tabs-new-btn').click()
+      await new Promise((r) => setTimeout(r, 0))
+      const readsWhileHidden = scrollReads
+      host.dispatchEvent(new window.Event('wheel', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
+      assert.equal(scrollReads, readsWhileHidden, 'a hidden tab does not poll its guest')
+      scroll = { x: 0, y: 960 }
+      firstTabBtn.click()
+      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => setTimeout(r, 0))
+      assert.equal(svg.getAttribute('viewBox'), '0 960 640 480')
+
+      // A navigation clears the marks, and with nothing left to anchor the tab
+      // stops asking its guest where it is scrolled.
+      webview.dispatchEvent(new Event('did-navigate'))
+      await new Promise((r) => setTimeout(r, 0))
+      const readsAfterClear = scrollReads
+      host.dispatchEvent(new window.Event('wheel', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, SCROLL_TRACK_INTERVAL_MS + 120))
+      assert.equal(scrollReads, readsAfterClear, 'no guest reads without marks')
     } finally {
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
       else Reflect.deleteProperty(globalThis, 'ResizeObserver')

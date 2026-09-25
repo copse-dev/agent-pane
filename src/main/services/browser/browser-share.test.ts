@@ -63,26 +63,29 @@ describe('browser thread sharing', () => {
     })
   })
 
-  it('reads the guest scroll position, tolerating failure and garbage', async () => {
+  it('reads the guest scroll position without a user gesture, tolerating failure and garbage', async () => {
     let script = ''
+    let gesture: boolean | undefined
     const position = await captureBrowserScrollPosition({
-      executeJavaScript: (code) => {
+      executeJavaScript: (code, userGesture) => {
         script = code
+        gesture = userGesture
         return Promise.resolve({ x: 12, y: 340 })
       },
     })
     assert.match(script, /window\.scrollX/)
+    assert.equal(gesture, false, 'a polled read must not grant the guest a user activation')
     assert.deepEqual(position, { x: 12, y: 340 })
 
-    const fallback = await captureBrowserScrollPosition({
+    const failed = await captureBrowserScrollPosition({
       executeJavaScript: () => Promise.reject(new Error('guest crashed')),
     })
-    assert.deepEqual(fallback, { x: 0, y: 0 })
+    assert.equal(failed, null, 'no answer, not the page origin')
 
     const garbage = await captureBrowserScrollPosition({
       executeJavaScript: () => Promise.resolve('scrolled?'),
     })
-    assert.deepEqual(garbage, { x: 0, y: 0 })
+    assert.equal(garbage, null)
   })
 
   it('turns the exact context-menu selection into sourced text', () => {

@@ -21,22 +21,21 @@ export const GUEST_SCROLL_SCRIPT = `(${String((): GuestScrollPosition => {
 })})()`
 
 function clampOffset(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
-  return Math.min(value, MAX_SCROLL_OFFSET)
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  // Negative offsets are real: a right-to-left page scrolled horizontally
+  // reports a negative scrollX, and elastic overscroll a briefly negative Y.
+  return Math.min(Math.max(value, -MAX_SCROLL_OFFSET), MAX_SCROLL_OFFSET)
 }
 
 /**
- * Validate the guest's answer. Anything that is not a pair of finite,
- * non-negative offsets (a cross-origin failure, a hostile page, an older
- * guest) is treated as "no scroll" rather than a parse error so the overlay
- * simply falls back to viewport anchoring.
+ * Validate the guest's answer. Anything that is not a pair of finite offsets
+ * (a cross-origin failure, a hostile page, an older guest) is null — "no
+ * answer" — so the overlay keeps the last position it knew instead of
+ * snapping every mark to the page origin.
  */
-export function parseGuestScrollPosition(value: unknown): GuestScrollPosition {
-  if (value && typeof value === 'object' && 'x' in value && 'y' in value) {
-    const { x, y } = value
-    const cx = clampOffset(x)
-    const cy = clampOffset(y)
-    if (cx !== null && cy !== null) return { x: cx, y: cy }
-  }
-  return { x: 0, y: 0 }
+export function parseGuestScrollPosition(value: unknown): GuestScrollPosition | null {
+  if (typeof value !== 'object' || value === null) return null
+  const cx = clampOffset(Reflect.get(value, 'x'))
+  const cy = clampOffset(Reflect.get(value, 'y'))
+  return cx !== null && cy !== null ? { x: cx, y: cy } : null
 }

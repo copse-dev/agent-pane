@@ -20,25 +20,47 @@ export const SCROLL_SAFETY_INTERVAL_MS = 1_000
 const IDLE_STOP_MS = 1_000
 
 interface WheelTarget {
-  addEventListener(type: 'wheel', listener: (event: Event) => void, options?: object): void
-  removeEventListener(type: 'wheel', listener: (event: Event) => void): void
+  addEventListener(
+    type: 'wheel' | 'pointerdown',
+    listener: (event: Event) => void,
+    options?: object | boolean,
+  ): void
+  removeEventListener(
+    type: 'wheel' | 'pointerdown',
+    listener: (event: Event) => void,
+    options?: boolean,
+  ): void
 }
 
-/** Window listeners are captured and removed with `useCapture`, matching add/remove pairing. */
+/** Pointer listeners are captured and removed with `useCapture`, matching add/remove pairing. */
 const CAPTURE = true
+
+/** A guest scroll tracker; see {@link trackGuestScroll}. */
+export interface GuestScrollTracker {
+  /** Caller-driven nudge: navigation committed, size changed, layer shown. No-op while disabled. */
+  kick(): void
+  /**
+   * Run only while it is worth an IPC per poll — marks exist or the layer is
+   * active, and the guest is on screen. Disabling stops every timer and
+   * listener; enabling re-reads the position at once, since the page may have
+   * moved while nothing watched it.
+   */
+  setEnabled(enabled: boolean): void
+  dispose(): void
+}
 
 /**
  * A `<webview>` gives its embedder no scroll events: the offset lives in the
  * guest process, and scroll is composited without so much as a repaint
  * notification crossing the boundary. This tracker watches for the signals
- * that precede movement — wheel input over the host, an in-progress stroke,
- * or a navigation/size change the caller reports — and polls the guest's
+ * that precede movement — wheel input over the host, a stroke started on the
+ * host, or a navigation/size change the caller reports — and polls the guest's
  * `window.scrollX/Y` through `fetchPosition` while any of them is live, then
  * goes quiet. A slow safety poll covers keyboard/scrollbar drags, which the
- * embedder cannot observe at all.
+ * embedder cannot observe at all. Nothing runs while the tracker is disabled.
  */
 export function trackGuestScroll(options: {
-  /** Receives wheel activity on the overlay's host element. */
+  /** Receives wheel and stroke-start input on the overlay's host element. */
   wheelTarget: WheelTarget
   /** Reads the guest's current offsets; returns null when it cannot answer. */
   fetchPosition: () => Promise<GuestScrollPosition | null>
@@ -46,16 +68,19 @@ export function trackGuestScroll(options: {
   onScroll: (position: GuestScrollPosition) => void
   /** Injected for tests; defaults to the window timers. */
   timer?: ScrollTimer
-}): { kick: () => void; dispose: () => void } {
+}): GuestScrollTracker {
   const timer = options.timer ?? window
 
   let lastX: number | null = null
   let lastY: number | null = null
   let strokeDepth = 0
   let disposed = false
+  let enabled = false
   let polling = false
   let inFlight = false
   let idleTimer: number | null = null
+  let interval: number | null = null
+  let safetyInterval: number | null = null
 
   const emit = (position: GuestScrollPosition): void => {
     if (position.x === lastX && position.y === lastY) return
@@ -73,11 +98,13 @@ export function trackGuestScroll(options: {
   }
 
   const poll = (force = false): void => {
-    if (disposed || inFlight || (!force && !polling && strokeDepth === 0)) return
+    if (disposed || !enabled || inFlight || (!force && !polling && strokeDepth === 0)) return
     inFlight = true
     void options
       .fetchPosition()
       .then((position) => {
+        // A failed read (null) keeps the last position rather than snapping
+        // every mark to the page origin.
         if (!disposed && position) emit(position)
       })
       .catch(() => {})
@@ -86,12 +113,8 @@ export function trackGuestScroll(options: {
       })
   }
 
-  const interval = timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS)
-  const safetyInterval = timer.setInterval(() => {
-    poll(true)
-  }, SCROLL_SAFETY_INTERVAL_MS)
-
   const wake = (): void => {
+    if (!enabled) return
     polling = true
     scheduleIdleStop()
     poll()
@@ -100,6 +123,8 @@ export function trackGuestScroll(options: {
   const onWheel = (): void => {
     wake()
   }
+  // Strokes start on the overlay inside the host, so the host hears them; a
+  // window-wide listener would make every click anywhere cost one IPC per tracker.
   const onPointerDown = (): void => {
     strokeDepth += 1
     poll()
@@ -108,23 +133,49 @@ export function trackGuestScroll(options: {
     strokeDepth = Math.max(0, strokeDepth - 1)
   }
 
-  options.wheelTarget.addEventListener('wheel', onWheel, { passive: true })
-  window.addEventListener('pointerdown', onPointerDown, CAPTURE)
-  window.addEventListener('pointerup', onPointerUp, CAPTURE)
-  window.addEventListener('pointercancel', onPointerUp, CAPTURE)
+  const start = (): void => {
+    enabled = true
+    interval = timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS)
+    safetyInterval = timer.setInterval(() => {
+      poll(true)
+    }, SCROLL_SAFETY_INTERVAL_MS)
+    options.wheelTarget.addEventListener('wheel', onWheel, { passive: true })
+    options.wheelTarget.addEventListener('pointerdown', onPointerDown, CAPTURE)
+    // The release can land outside the host, so it is heard window-wide; it
+    // only settles a counter and never polls.
+    window.addEventListener('pointerup', onPointerUp, CAPTURE)
+    window.addEventListener('pointercancel', onPointerUp, CAPTURE)
+    wake()
+  }
+
+  const stop = (): void => {
+    enabled = false
+    polling = false
+    strokeDepth = 0
+    if (interval !== null) timer.clearInterval(interval)
+    if (safetyInterval !== null) timer.clearInterval(safetyInterval)
+    interval = null
+    safetyInterval = null
+    if (idleTimer !== null) timer.clearTimeout(idleTimer)
+    idleTimer = null
+    options.wheelTarget.removeEventListener('wheel', onWheel)
+    options.wheelTarget.removeEventListener('pointerdown', onPointerDown, CAPTURE)
+    window.removeEventListener('pointerup', onPointerUp, CAPTURE)
+    window.removeEventListener('pointercancel', onPointerUp, CAPTURE)
+  }
+
+  start()
 
   return {
-    /** Caller-driven nudge: navigation committed, size changed, layer shown. */
     kick: wake,
+    setEnabled(next: boolean): void {
+      if (disposed || next === enabled) return
+      if (next) start()
+      else stop()
+    },
     dispose(): void {
+      if (enabled) stop()
       disposed = true
-      timer.clearInterval(interval)
-      timer.clearInterval(safetyInterval)
-      if (idleTimer !== null) timer.clearTimeout(idleTimer)
-      options.wheelTarget.removeEventListener('wheel', onWheel)
-      window.removeEventListener('pointerdown', onPointerDown, CAPTURE)
-      window.removeEventListener('pointerup', onPointerUp, CAPTURE)
-      window.removeEventListener('pointercancel', onPointerUp, CAPTURE)
     },
   }
 }

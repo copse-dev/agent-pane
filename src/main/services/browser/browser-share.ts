@@ -107,14 +107,18 @@ export async function captureBrowserScreenshot(
 /**
  * Where the guest's viewport sits on its page. The annotation overlay is
  * page-anchored, so the renderer re-reads this while the user scrolls. A guest
- * that cannot answer (unusual failure inside the page) reports no scroll, and
- * the overlay falls back to viewport anchoring rather than failing.
+ * that cannot answer (unusual failure inside the page) reports null, and the
+ * overlay keeps the last position it knew rather than failing.
+ *
+ * Run without a user gesture: the renderer polls this for as long as marks are
+ * on screen, and a gesture on every read would hand the guest page a standing
+ * user activation (popups, fullscreen, clipboard writes without a click).
  */
 export async function captureBrowserScrollPosition(
   contents: BrowserPageTextContents,
-): Promise<GuestScrollPosition> {
+): Promise<GuestScrollPosition | null> {
   const raw: unknown = await contents
-    .executeJavaScript(GUEST_SCROLL_SCRIPT, true)
+    .executeJavaScript(GUEST_SCROLL_SCRIPT, false)
     .catch(() => undefined)
   return parseGuestScrollPosition(raw)
 }

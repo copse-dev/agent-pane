@@ -11,20 +11,23 @@ describe('parseGuestScrollPosition', () => {
     assert.deepEqual(parseGuestScrollPosition({ x: 0, y: 0 }), { x: 0, y: 0 })
   })
 
-  it('falls back to no scroll for malformed answers', () => {
-    const origin = { x: 0, y: 0 }
-    assert.deepEqual(parseGuestScrollPosition(undefined), origin)
-    assert.deepEqual(parseGuestScrollPosition(null), origin)
-    assert.deepEqual(parseGuestScrollPosition('120,480'), origin)
-    assert.deepEqual(parseGuestScrollPosition({ x: 10 }), origin)
-    assert.deepEqual(parseGuestScrollPosition({ x: '10', y: 5 }), origin)
-    assert.deepEqual(parseGuestScrollPosition({ x: Number.NaN, y: 5 }), origin)
-    assert.deepEqual(parseGuestScrollPosition({ x: Number.POSITIVE_INFINITY, y: 5 }), origin)
-    assert.deepEqual(parseGuestScrollPosition({ x: -1, y: 5 }), origin)
+  it('answers null for malformed answers, so the caller keeps its last position', () => {
+    assert.equal(parseGuestScrollPosition(undefined), null)
+    assert.equal(parseGuestScrollPosition(null), null)
+    assert.equal(parseGuestScrollPosition('120,480'), null)
+    assert.equal(parseGuestScrollPosition({ x: 10 }), null)
+    assert.equal(parseGuestScrollPosition({ x: '10', y: 5 }), null)
+    assert.equal(parseGuestScrollPosition({ x: Number.NaN, y: 5 }), null)
+    assert.equal(parseGuestScrollPosition({ x: Number.POSITIVE_INFINITY, y: 5 }), null)
+  })
+
+  it('keeps a negative scrollX (right-to-left pages) without dropping Y', () => {
+    assert.deepEqual(parseGuestScrollPosition({ x: -240, y: 800 }), { x: -240, y: 800 })
   })
 
   it('clamps absurd offsets instead of rejecting them', () => {
     assert.deepEqual(parseGuestScrollPosition({ x: 9_999_999, y: 2 }), { x: 1_000_000, y: 2 })
+    assert.deepEqual(parseGuestScrollPosition({ x: -9_999_999, y: 2 }), { x: -1_000_000, y: 2 })
   })
 })
 

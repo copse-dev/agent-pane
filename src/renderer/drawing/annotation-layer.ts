@@ -186,6 +186,7 @@ export function mountAnnotationLayer(
   options: AnnotationLayerOptions,
 ): AnnotationLayer {
   let root: HTMLElement | null = null
+  let resizeObserver: ResizeObserver | null = null
   let svg: SVGSVGElement | null = null
   let drauu: Drauu | null = null
   let active = false
@@ -383,6 +384,13 @@ export function mountAnnotationLayer(
     root = el('div', { class: 'annotation-layer', 'data-active': 'false' }, svg, strip)
     root.hidden = true
     host.append(root)
+    // The viewBox carries the host's size as well as the guest's scroll, and a
+    // pane resize need not move the scroll at all, so size changes re-apply it
+    // directly rather than waiting for a scroll report that may never come.
+    if (typeof ResizeObserver === 'function') {
+      resizeObserver = new ResizeObserver(applyViewBox)
+      resizeObserver.observe(host)
+    }
 
     drauu = createDrauu({
       el: svg,
@@ -453,8 +461,10 @@ export function mountAnnotationLayer(
       applyBrush()
     },
     setScrollOffset(x: number, y: number): void {
-      scrollX = Number.isFinite(x) ? Math.max(0, x) : 0
-      scrollY = Number.isFinite(y) ? Math.max(0, y) : 0
+      // Negative offsets are real (right-to-left pages scroll to negative X);
+      // a non-finite one is not, and keeps the axis where it was.
+      if (Number.isFinite(x)) scrollX = x
+      if (Number.isFinite(y)) scrollY = y
       applyViewBox()
     },
     async export(): Promise<AnnotationExport> {
@@ -506,6 +516,8 @@ export function mountAnnotationLayer(
     },
     dispose(): void {
       layer.deactivate()
+      resizeObserver?.disconnect()
+      resizeObserver = null
       drauu?.unmount()
       drauu = null
       root?.remove()

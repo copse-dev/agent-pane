@@ -191,10 +191,11 @@ export interface ApiClient {
      */
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /**
-     * The guest's scroll offsets in CSS pixels. The page-anchored annotation
-     * overlay re-reads this while the user scrolls so marks track the content.
+     * The guest's scroll offsets in CSS pixels, or null when the guest could
+     * not answer. The page-anchored annotation overlay re-reads this while the
+     * user scrolls so marks track the content.
      */
-    scrollPosition: (webContentsId: number) => Promise<{ x: number; y: number }>
+    scrollPosition: (webContentsId: number) => Promise<{ x: number; y: number } | null>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void

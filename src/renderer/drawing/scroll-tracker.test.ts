@@ -163,7 +163,9 @@ describe('trackGuestScroll', () => {
       timer: timers,
     })
     try {
-      window.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+      await flush()
+      timers.runTimeouts() // let the creation read go idle
+      target.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
       timers.fireInterval()
       await flush()
       const duringStroke = calls
@@ -175,7 +177,7 @@ describe('trackGuestScroll', () => {
 
       tracker.dispose()
       const settled = calls
-      window.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+      target.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
       timers.fireInterval()
       await flush()
       assert.equal(calls, settled, 'no polling after dispose')
@@ -211,6 +213,119 @@ describe('trackGuestScroll', () => {
     } finally {
       tracker.dispose()
       target.remove()
+    }
+  })
+})
+
+describe('trackGuestScroll lifecycle', () => {
+  function counted(): {
+    tracker: ReturnType<typeof trackGuestScroll>
+    target: HTMLElement
+    wheel: () => void
+    timers: FakeTimer
+    calls: () => number
+    seen: GuestScrollPosition[]
+    setAnswer: (answer: GuestScrollPosition | null) => void
+  } {
+    const timers = fakeTimer()
+    const { target, wheel } = wheelTarget()
+    let calls = 0
+    let answer: GuestScrollPosition | null = { x: 0, y: 0 }
+    const seen: GuestScrollPosition[] = []
+    const tracker = trackGuestScroll({
+      wheelTarget: target,
+      fetchPosition: () => {
+        calls += 1
+        return Promise.resolve(answer)
+      },
+      onScroll: (p) => {
+        seen.push(p)
+      },
+      timer: timers,
+    })
+    return {
+      tracker,
+      target,
+      wheel,
+      timers,
+      calls: () => calls,
+      seen,
+      setAnswer: (next: GuestScrollPosition | null): void => {
+        answer = next
+      },
+    }
+  }
+
+  it('reads the position as soon as it starts, without waiting for input', async () => {
+    const t = counted()
+    try {
+      t.setAnswer({ x: 0, y: 420 })
+      await flush()
+      assert.deepEqual(t.seen, [{ x: 0, y: 0 }], 'the creation read is the baseline')
+      t.tracker.kick()
+      await flush()
+      assert.deepEqual(t.seen.at(-1), { x: 0, y: 420 })
+    } finally {
+      t.tracker.dispose()
+      t.target.remove()
+    }
+  })
+
+  it('does nothing while disabled, and re-reads at once when enabled again', async () => {
+    const t = counted()
+    try {
+      await flush()
+      t.tracker.setEnabled(false)
+      const before = t.calls()
+      t.setAnswer({ x: 0, y: 900 })
+      t.wheel()
+      t.target.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+      t.tracker.kick()
+      t.timers.fireInterval()
+      t.timers.fireInterval(SCROLL_SAFETY_INTERVAL_MS)
+      await flush()
+      assert.equal(t.calls(), before, 'no timers, listeners or kicks while disabled')
+
+      t.tracker.setEnabled(true)
+      await flush()
+      assert.equal(t.calls(), before + 1)
+      assert.deepEqual(t.seen.at(-1), { x: 0, y: 900 }, 'movement while paused is picked up')
+    } finally {
+      t.tracker.dispose()
+      t.target.remove()
+    }
+  })
+
+  it('ignores pointer input outside its own host', async () => {
+    const t = counted()
+    try {
+      await flush()
+      t.timers.runTimeouts()
+      const before = t.calls()
+      window.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+      t.timers.fireInterval()
+      await flush()
+      assert.equal(t.calls(), before, 'a click elsewhere in the app costs no IPC')
+    } finally {
+      t.tracker.dispose()
+      t.target.remove()
+    }
+  })
+
+  it('keeps the last position when the guest cannot answer', async () => {
+    const t = counted()
+    try {
+      t.setAnswer({ x: 0, y: 300 })
+      await flush()
+      t.tracker.kick()
+      await flush()
+      t.setAnswer(null)
+      t.tracker.kick()
+      await flush()
+      assert.deepEqual(t.seen.at(-1), { x: 0, y: 300 })
+    } finally {
+      t.tracker.dispose()
+      t.target.remove()
     }
   })
 })
