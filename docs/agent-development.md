@@ -264,22 +264,23 @@ Before/After table of up to 20 candidates, sorted by name, with a link to the co
 rest. Its images are raw URLs pinned to the head SHA and the compare commit SHA, never a branch, so
 they cannot change under the comment; they render inline only because this repository is public. The
 compare branch is never merged, opens no PR, and runs no CI. A newer successful head replaces it,
-and closing the parent deletes it. Ordinary runs do not open another PR or update references. Review
-the screenshots with the change; a compare view or artifact is evidence, not visual acceptance. The
-candidate set is filtered for noise, drift, and ownership; raw renders remain in the run's shard
-artifacts.
+and closing the parent deletes it. Runs never open a PR or update references. Review the screenshots
+with the change; a compare view or artifact is evidence, not visual acceptance. The candidate set is
+filtered for noise, drift, and ownership; raw renders remain in the run's shard artifacts.
 
 CI invokes screenshot freshness checking with `--plan`, which is advisory. A broad regeneration
 plan alone does not require `update-screenshots`; reserve that label for an intentional reference
 refresh. The standalone `pnpm run check:screenshots` command reports stale references as a local
 diagnostic and is not part of `pnpm run check`.
 
-When references intentionally need updating, add `update-screenshots`. It runs the complete e2e
-reference set and asks the trusted publisher to open a bot-owned PNG review PR into the source
-branch. Review GitHub's image diffs, then merge the accepted references. Remove the label once the
-review PR is created to avoid repeating the full refresh. A newer successful source-head run closes
-stale review PRs. Do not accept unrelated drift just because CI captured it. You can also download
-and commit reviewed PNGs manually. Forks and promotion PRs whose source is an integration branch get
-neither a compare branch nor a review PR, and always use that download-and-commit path. Local
-filtering is implemented by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier
-selection are documented in [`testing-strategy.md`](testing-strategy.md).
+Accepting references means committing the PNGs to the PR branch. The comment gives the exact
+command: `git fetch origin screenshot-compare/pr-<N>/<sha12> && git cherry-pick <compare-commit>`
+applies every candidate, and `git checkout <compare-commit> -- tests/e2e/screenshots/<name>.png`
+after the fetch takes only some. When the whole reference set should be re-rendered, add
+`update-screenshots`: CI runs the complete e2e reference set and the publisher pushes all of it to
+the compare branch, previewing the first 20 in the comment. Remove the label after that run to avoid
+repeating the full refresh. Nothing opens a PR for screenshots. Do not accept unrelated drift just
+because CI captured it. Forks and promotion PRs whose source is an integration branch get no compare
+branch; download the artifact and commit the reviewed PNGs manually. Local filtering is implemented
+by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
+[`testing-strategy.md`](testing-strategy.md).

@@ -436,14 +436,12 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(
       workflow,
       /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
-      'fork runs receive secrets on workflow_run and must be rejected before token minting',
+      'fork runs receive secrets on workflow_run and must be rejected before any write',
     )
     assert.match(
       workflow,
       /^permissions:\n {2}actions: read\n {2}contents: read\n {2}pull-requests: read$/m,
     )
-    assert.match(workflow, /permission-contents: write/)
-    assert.match(workflow, /permission-pull-requests: write/)
   })
 
   it('binds publication to one open parent at the exact rendered head', () => {
@@ -457,8 +455,8 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /persist-credentials: false/)
     assert.match(
       workflow,
-      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA[\s\S]*?state: 'closed'/,
-      'a parent-head race after child creation must close the stale review PR',
+      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA\) \{\n {14}if \(compareUrl\) \{[\s\S]*?deleteRef[\s\S]*?return;/,
+      'a parent-head race must remove the just-pushed compare branch and post nothing',
     )
   })
 
@@ -490,33 +488,30 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.ok(total >= 2 * bytes, `size budget ${String(total)} < 2 × ${String(bytes)} bytes`)
   })
 
-  it('opens a bot-owned child PR into the source branch and links it from the parent', () => {
-    assert.match(workflow, /uses: peter-evans\/create-pull-request@v8/)
-    assert.match(workflow, /base: \$\{\{ steps\.discover\.outputs\.head-ref \}\}/)
-    assert.match(workflow, /branch: \$\{\{ steps\.discover\.outputs\.review-branch \}\}/)
-    assert.match(workflow, /add-paths: tests\/e2e\/screenshots\//)
-    assert.doesNotMatch(workflow, /^ {10}base: main$/m)
+  it('never opens a PR or mints an App token; screenshot changes are viewed via the compare branch', () => {
+    // `update-screenshots` only makes CI render the full reference set. An App
+    // token's pushes and PRs start workflows, and a child PR is review noise,
+    // so the publisher must not regain either.
+    assert.doesNotMatch(workflow, /create-pull-request|create-github-app-token|app-token/)
+    assert.doesNotMatch(workflow, /secrets\./)
+    assert.doesNotMatch(workflow, /rest\.pulls\.create\b/)
+    assert.doesNotMatch(workflow, /review-branch|create-review/)
     assert.match(workflow, /<!-- copse-e2e-screenshot-review -->/)
-    assert.match(workflow, /REVIEW_URL: \$\{\{ steps\.review-pr\.outputs\.pull-request-url \}\}/)
-    assert.match(workflow, /Review GitHub’s image diffs in \[screenshot PR #/)
-    assert.match(workflow, /Close superseded screenshot review PRs/)
+    assert.match(workflow, /Close legacy screenshot review PRs/)
+    assert.match(workflow, /git cherry-pick \$\{commit\}/)
   })
 
-  it('pushes a view-only compare branch with the job token, never the App token', () => {
-    // Every eligible run with candidates gets a compare view; only the labelled
-    // review-PR path may mint or use the App token, whose pushes start CI.
+  it('pushes a view-only compare branch with the job token', () => {
+    // Every eligible run with candidates gets a compare view. GITHUB_TOKEN
+    // pushes start no workflows, so the branch never runs CI.
     assert.match(workflow, /\/\^\[0-9a-f\]\{40\}\$\/\.test\(runHeadSha/)
     assert.match(
       workflow,
       /`screenshot-compare\/pr-\$\{number\}\/\$\{runHeadSha\.slice\(0, 12\)\}`/,
     )
     assert.match(workflow, /PUSH_TOKEN: \$\{\{ github\.token \}\}/)
-    assert.equal(
-      workflow.match(/steps\.app-token\.outputs\.token/g)?.length,
-      1,
-      'the App token belongs to the explicit review-PR step alone',
-    )
     assert.doesNotMatch(workflow, /persist-credentials: true/)
+    assert.match(workflow, /fetch-depth: 1\n/)
     assert.match(
       workflow,
       /compare\/\$\{process\.env\.EXPECTED_HEAD_SHA\}\.\.\.\$\{process\.env\.COMPARE_BRANCH\}/,

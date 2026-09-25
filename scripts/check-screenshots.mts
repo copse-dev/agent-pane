@@ -116,8 +116,9 @@ function main(): void {
   console.error(
     '\n  On CI the e2e gate re-renders these shots into an immutable candidate\n' +
       '  artifact; same-repository PRs also get a view-only compare link. Review\n' +
-      '  them, then commit the intended PNGs. Add the `update-screenshots` label\n' +
-      '  when you need the complete reference set rendered.\n',
+      '  them, then commit the intended PNGs (the PR comment gives a cherry-pick\n' +
+      '  command). Add the `update-screenshots` label when you need the complete\n' +
+      '  reference set rendered.\n',
   )
   process.exit(1)
 }

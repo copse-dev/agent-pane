@@ -102,14 +102,21 @@ async function discover(
 }
 
 describe('screenshot publication', () => {
-  it('retains evidence without requesting a child PR for ordinary runs', async () => {
+  it('publishes evidence for an ordinary run without any review-PR outputs', async () => {
     const outputs = await discover()
     assert.equal(outputs.get('eligible'), 'true')
     assert.equal(outputs.get('has-artifact'), 'true')
     assert.equal(outputs.get('artifact-id'), '42')
-    assert.equal(outputs.get('create-review'), 'false')
     assert.equal(outputs.get('compare-branch'), COMPARE_BRANCH)
-    assert.equal(outputs.get('review-branch'), 'screenshots/pr-123/abc123abc123')
+    assert.deepEqual(
+      [...outputs.keys()].filter((key) => /review/.test(key)),
+      [],
+    )
+  })
+
+  it('treats a labelled refresh like any other run with candidates', async () => {
+    const outputs = await discover(parent({ labels: ['update-screenshots'] }))
+    assert.deepEqual(outputs, await discover())
   })
 
   it('refuses to derive bot refs from anything but a full hex head SHA', async () => {
@@ -129,88 +136,18 @@ describe('screenshot publication', () => {
     }
   })
 
-  it('preserves a requested review on a same-head rerun after label removal, and closes older reviews', async () => {
-    const outputs = new Map<string, string>()
-    const closed: number[] = []
-    await execute('Close superseded screenshot review PRs', {
-      context,
-      core: {
-        ...core,
-        info: () => {},
-        setOutput: (key: string, value: string) => outputs.set(key, value),
-      },
-      process: {
-        env: {
-          PARENT_NUMBER: '123',
-          BASE_REF: 'codex/feature',
-          REVIEW_BRANCH: 'screenshots/pr-123/abc123',
-          EXPECTED_HEAD_SHA: SHA,
-        },
-      },
-      github: {
-        rest: {
-          pulls: {
-            get: async () => ({ data: parent() }),
-            list: () => {},
-            update: async ({ pull_number }: { pull_number: number }) => {
-              closed.push(pull_number)
-            },
-          },
-        },
-        paginate: async () => [
-          {
-            number: 456,
-            html_url: 'https://github.com/copse-dev/agent-pane/pull/456',
-            head: { ref: 'screenshots/pr-123/abc123', repo: { full_name: 'copse-dev/agent-pane' } },
-          },
-          {
-            number: 455,
-            head: {
-              ref: 'screenshots/pr-123/old-sha',
-              repo: { full_name: 'copse-dev/agent-pane' },
-            },
-          },
-          {
-            number: 789,
-            head: { ref: 'screenshots/pr-789/abc123', repo: { full_name: 'copse-dev/agent-pane' } },
-          },
-        ],
-      },
-    })
-    assert.deepEqual(closed, [455])
-    assert.equal(outputs.get('existing-number'), '456')
-    assert.equal(outputs.get('existing-url'), 'https://github.com/copse-dev/agent-pane/pull/456')
-  })
-
-  it('does not let a stale publisher close reviews belonging to a newer head', async () => {
-    await execute('Close superseded screenshot review PRs', {
-      context,
-      core,
-      process: { env: { PARENT_NUMBER: '123', EXPECTED_HEAD_SHA: SHA } },
-      github: {
-        rest: { pulls: { get: async () => ({ data: parent({ sha: 'new-tip' }) }) } },
-        paginate: assert.fail,
-      },
-    })
-  })
-
-  it('creates a review only for an explicit refresh with an unexpired artifact', async () => {
-    assert.equal(
-      (await discover(parent({ labels: ['update-screenshots'] }))).get('create-review'),
-      'true',
-    )
-    assert.equal((await discover(parent({ labels: ['ci-full'] }))).get('create-review'), 'false')
+  it('publishes nothing without an unexpired artifact', async () => {
     for (const artifacts of [
       [],
       [{ id: 42, name: 'reference-screenshot-candidates-99', expired: true }],
     ]) {
       const outputs = await discover(parent({ labels: ['update-screenshots'] }), artifacts)
+      assert.equal(outputs.get('eligible'), 'true')
       assert.equal(outputs.get('has-artifact'), 'false')
-      assert.equal(outputs.get('create-review'), 'false')
     }
   })
 
-  it('does not publish evidence or reviews for stale, closed, external, or integration parents', async () => {
+  it('does not publish evidence for stale, closed, external, or integration parents', async () => {
     for (const overrides of [
       { sha: 'new-tip' },
       { state: 'closed' },
@@ -220,15 +157,18 @@ describe('screenshot publication', () => {
     ]) {
       const outputs = await discover(parent({ ...overrides, labels: ['update-screenshots'] }))
       assert.equal(outputs.get('eligible'), 'false')
-      assert.equal(outputs.get('create-review'), 'false')
+      assert.equal(outputs.get('has-artifact'), 'false')
     }
   })
 
-  it('gates only token minting and PR creation on the explicit request', () => {
-    const byId = (id: string): (typeof steps)[number] | undefined =>
-      steps.find((step) => step.id === id)
-    for (const id of ['app-token', 'review-pr'])
-      assert.equal(byId(id)?.if, "steps.discover.outputs.create-review == 'true'")
+  it('never opens a PR or mints an App token', () => {
+    assert.doesNotMatch(
+      JSON.stringify(steps),
+      /create-pull-request|create-github-app-token|app-token|secrets\.|pulls\.create\b/,
+    )
+  })
+
+  it('gates artifact handling on the artifact and every API step on eligibility', () => {
     const artifactSteps = steps.filter(
       (step) =>
         ['candidates', 'compare'].includes(step.id ?? '') ||
@@ -238,18 +178,14 @@ describe('screenshot publication', () => {
     for (const step of artifactSteps)
       assert.equal(step.if, "steps.discover.outputs.has-artifact == 'true'")
     for (const name of [
-      'Close superseded screenshot review PRs',
+      'Close legacy screenshot review PRs',
       'Delete superseded screenshot compare branches',
       'Link screenshot evidence from the parent',
     ]) {
       const step = steps.find((candidate) => candidate.name === name)
       assert.ok(step)
       assert.equal(step.if, "steps.discover.outputs.eligible == 'true'")
-      assert.equal(
-        step.with?.['github-token'],
-        undefined,
-        'artifact-only publication must not depend on an App token',
-      )
+      assert.equal(step.with?.['github-token'], undefined)
     }
   })
 
@@ -259,10 +195,8 @@ describe('screenshot publication', () => {
     const compare = steps[index((step) => step.id === 'compare')]
     assert.ok(compare)
     assert.ok(index((step) => step.id === 'candidates') < index((step) => step.id === 'compare'))
-    assert.ok(index((step) => step.id === 'compare') < index((step) => step.id === 'review-pr'))
     assert.equal(compare['continue-on-error'], true)
     assert.equal(compare.env?.['PUSH_TOKEN'], '${{ github.token }}')
-    assert.doesNotMatch(JSON.stringify(compare), /app-token|secrets\./)
     assert.match(compare.run ?? '', /git commit-tree "\$tree" -p HEAD/)
     assert.match(compare.run ?? '', /"\$commit:refs\/heads\/\$COMPARE_BRANCH"/)
     assert.doesNotMatch(compare.run ?? '', /git (?:config|commit |checkout|remote)/)
@@ -270,11 +204,63 @@ describe('screenshot publication', () => {
     const checkout = steps.find((step) => step.uses === 'actions/checkout@v7.0.1')
     assert.ok(checkout?.with)
     assert.equal(checkout.with['persist-credentials'], false)
-    assert.equal(
-      checkout.with['fetch-depth'],
-      "${{ steps.discover.outputs.create-review == 'true' && '0' || '1' }}",
-      'the view-only path must not fetch the full PNG history',
-    )
+    assert.equal(checkout.with['fetch-depth'], 1, 'nothing needs the full PNG history')
+  })
+})
+
+async function closeLegacyReviews(
+  liveParent = parent(),
+): Promise<{ closed: number[]; deleted: string[] }> {
+  const closed: number[] = []
+  const deleted: string[] = []
+  const list = (): void => {}
+  const repo = { full_name: 'copse-dev/agent-pane' }
+  await execute('Close legacy screenshot review PRs', {
+    context,
+    core: { ...core, info: () => {} },
+    process: { env: { PARENT_NUMBER: '123', EXPECTED_HEAD_SHA: SHA } },
+    github: {
+      rest: {
+        pulls: {
+          get: async () => ({ data: liveParent }),
+          list,
+          update: async ({ pull_number }: { pull_number: number }) => {
+            closed.push(pull_number)
+          },
+        },
+        git: {
+          deleteRef: async ({ ref }: { ref: string }) => {
+            deleted.push(ref)
+            if (ref.endsWith('gone')) throw new Error('Reference does not exist')
+          },
+        },
+      },
+      paginate: async (method: unknown) => {
+        assert.equal(method, list)
+        return [
+          { number: 455, head: { ref: 'screenshots/pr-123/gone', repo } },
+          { number: 456, head: { ref: 'screenshots/pr-123/abc123abc123', repo } },
+          { number: 457, head: { ref: 'screenshots/pr-123/abc', repo: { full_name: 'fork/x' } } },
+          { number: 789, head: { ref: 'screenshots/pr-1234/abc123abc123', repo } },
+          { number: 790, head: { ref: COMPARE_BRANCH, repo } },
+        ]
+      },
+    },
+  })
+  return { closed, deleted }
+}
+
+describe('legacy screenshot review PR cleanup', () => {
+  it('closes every open legacy review PR for a live parent and deletes its branch', async () => {
+    assert.deepEqual(await closeLegacyReviews(), {
+      closed: [455, 456],
+      deleted: ['heads/screenshots/pr-123/gone', 'heads/screenshots/pr-123/abc123abc123'],
+    })
+  })
+
+  it('does nothing when the parent moved or closed', async () => {
+    for (const liveParent of [parent({ sha: 'new-tip' }), parent({ state: 'closed' })])
+      assert.deepEqual(await closeLegacyReviews(liveParent), { closed: [], deleted: [] })
   })
 })
 
@@ -385,9 +371,8 @@ async function publish(
   env: Record<string, string> = {},
   liveParent = parent(),
   previous = false,
-): Promise<{ bodies: string[]; closed: number[]; deleted: string[] }> {
+): Promise<{ bodies: string[]; deleted: string[] }> {
   const bodies: string[] = []
-  const closed: number[] = []
   const deleted: string[] = []
   const recordBody = async ({ body }: { body: string }): Promise<void> => {
     bodies.push(body)
@@ -399,7 +384,6 @@ async function publish(
       env: {
         PARENT_NUMBER: '123',
         EXPECTED_HEAD_SHA: SHA,
-        HEAD_REF: 'codex/feature',
         ARTIFACT_ID: '42',
         COMPARE_BRANCH,
         COMPARE_PUSHED: 'true',
@@ -416,12 +400,7 @@ async function publish(
     },
     github: {
       rest: {
-        pulls: {
-          get: async () => ({ data: liveParent }),
-          update: async ({ pull_number }: { pull_number: number }) => {
-            closed.push(pull_number)
-          },
-        },
+        pulls: { get: async () => ({ data: liveParent }) },
         git: {
           deleteRef: async ({ ref }: { ref: string }) => {
             deleted.push(ref)
@@ -435,24 +414,40 @@ async function publish(
           : [],
     },
   })
-  return { bodies, closed, deleted }
+  return { bodies, deleted }
 }
 
 describe('parent screenshot evidence comment', () => {
-  it('links the compare view first, keeps the artifact, and explains how to accept references', async () => {
+  it('links the compare view first, keeps the artifact, and gives the exact cherry-pick command', async () => {
     const { bodies } = await publish()
     assert.equal(bodies.length, 1)
     const body = bodies[0] ?? ''
     assert.ok(body.includes(`](${COMPARE_URL})`), body)
     assert.ok(body.indexOf(COMPARE_URL) < body.indexOf('actions/runs/99/artifacts/42'))
     assert.match(body, /for viewing only/)
-    assert.match(body, /Accepting references still needs `update-screenshots` or a manual commit/)
+    assert.ok(
+      body.includes(
+        '```sh\n' +
+          `git fetch origin ${COMPARE_BRANCH} && git cherry-pick ${COMPARE_COMMIT}\n` +
+          '```',
+      ),
+      body,
+    )
+    assert.ok(body.includes(`git checkout ${COMPARE_COMMIT} -- tests/e2e/screenshots/<name>.png`))
     assert.match(body, /actions\/runs\/99\/artifacts\/42/)
     assert.match(body, /abc123abc123/)
     assert.match(body, /14 days/)
-    assert.match(body, /No baseline-update PR was opened/)
-    assert.match(body, /add `update-screenshots`/)
+    assert.match(body, /add `update-screenshots`, then remove it after that run/)
     assert.match(body, /Do not refresh references merely to absorb unrelated rendering drift/)
+    assert.doesNotMatch(body, /review PR|screenshot PR|PNG review|merge (?:it|this)/i)
+  })
+
+  it('tells a labelled refresh to drop the label now that the full set is rendered', async () => {
+    const body = (await publish({}, parent({ labels: ['update-screenshots'] }))).bodies[0] ?? ''
+    assert.match(body, /rendered every reference because `update-screenshots` is set/)
+    assert.match(body, /Remove the label now to avoid repeating full runs/)
+    assert.ok(body.includes(`git cherry-pick ${COMPARE_COMMIT}`))
+    assert.doesNotMatch(body, /review PR|screenshot PR/i)
   })
 
   it('previews before and after images pinned to immutable commits', async () => {
@@ -499,19 +494,16 @@ describe('parent screenshot evidence comment', () => {
       name: `${String(index).padStart(2, '0')}${'x'.repeat(240)}.png`,
       new: false,
     }))
-    for (const env of [
-      {},
-      { REVIEW_NUMBER: '456', REVIEW_URL: 'https://github.com/copse-dev/agent-pane/pull/456' },
-    ]) {
+    for (const labels of [[], ['update-screenshots']]) {
       const body =
         (
-          await publish({
-            ...env,
-            CANDIDATE_NAMES: candidateNames(entries),
-            CANDIDATE_COUNT: '2048',
-          })
+          await publish(
+            { CANDIDATE_NAMES: candidateNames(entries), CANDIDATE_COUNT: '2048' },
+            parent({ labels }),
+          )
         ).bodies[0] ?? ''
       assert.equal(body.split('\n').filter((line) => line.startsWith('| `')).length, 20)
+      assert.ok(body.includes('…and 2028 more'))
       assert.ok(body.length < 32_768, String(body.length))
     }
   })
@@ -528,12 +520,18 @@ describe('parent screenshot evidence comment', () => {
       { CANDIDATE_NAMES: '[{"name":"a.png","new":"yes"}]' },
       { CANDIDATE_NAMES: 'not json' },
       { CANDIDATE_NAMES: '' },
-      { COMPARE_COMMIT: COMPARE_BRANCH },
-      { COMPARE_COMMIT: '' },
     ]) {
       const body = (await publish(env)).bodies[0] ?? ''
       assert.doesNotMatch(body, /\| Screenshot \||<img/, JSON.stringify(env))
       assert.ok(body.includes(COMPARE_URL))
+    }
+  })
+
+  it('never offers a cherry-pick or preview without an immutable compare commit', async () => {
+    for (const env of [{ COMPARE_COMMIT: COMPARE_BRANCH }, { COMPARE_COMMIT: '' }]) {
+      const body = (await publish(env)).bodies[0] ?? ''
+      assert.doesNotMatch(body, /\| Screenshot \||<img|cherry-pick|compare\//, JSON.stringify(env))
+      assert.match(body, /download the artifact and commit the intended PNGs/)
     }
   })
 
@@ -552,43 +550,15 @@ describe('parent screenshot evidence comment', () => {
     const { bodies } = await publish({ COMPARE_PUSHED: '' })
     assert.match(bodies[0] ?? '', /Changed reference candidates for `abc123abc123` are in/)
     assert.match(bodies[0] ?? '', /actions\/runs\/99\/artifacts\/42/)
-    assert.doesNotMatch(bodies[0] ?? '', /compare/)
-  })
-
-  it('links an explicitly requested PNG review without recommending automatic acceptance', async () => {
-    const { bodies } = await publish({
-      REVIEW_NUMBER: '456',
-      REVIEW_URL: 'https://github.com/copse-dev/agent-pane/pull/456',
-    })
-    assert.match(bodies[0] ?? '', /screenshot PR #456/)
-    assert.match(bodies[0] ?? '', /Remove `update-screenshots`/)
-    assert.ok((bodies[0] ?? '').includes(`[view-only compare](${COMPARE_URL})`))
-    assert.ok(
-      (bodies[0] ?? '').includes(`${RAW}/${COMPARE_COMMIT}/tests/e2e/screenshots/b-new.png`),
-    )
-    assert.doesNotMatch(bodies[0] ?? '', /auto-merge/)
-  })
-
-  it('keeps a same-head review linked after the refresh label is removed', async () => {
-    const { bodies } = await publish({
-      EXISTING_REVIEW_NUMBER: '456',
-      EXISTING_REVIEW_URL: 'https://github.com/copse-dev/agent-pane/pull/456',
-    })
-    assert.match(bodies[0] ?? '', /screenshot PR #456/)
-    assert.match(bodies[0] ?? '', /records its source run/)
-    assert.doesNotMatch(bodies[0] ?? '', /No baseline-update PR was opened/)
-  })
-
-  it('closes a just-created review when the parent advances, without posting stale evidence', async () => {
-    const result = await publish({ REVIEW_NUMBER: '456' }, parent({ sha: 'new-tip' }))
-    assert.deepEqual(result, { bodies: [], closed: [456], deleted: [`heads/${COMPARE_BRANCH}`] })
+    assert.doesNotMatch(bodies[0] ?? '', /compare\/|cherry-pick|<img/)
+    assert.match(bodies[0] ?? '', /download the artifact and commit the intended PNGs/)
   })
 
   it('deletes the just-pushed compare branch and posts no stale link when the parent advances', async () => {
     const result = await publish({}, parent({ sha: 'new-tip' }), true)
-    assert.deepEqual(result, { bodies: [], closed: [], deleted: [`heads/${COMPARE_BRANCH}`] })
+    assert.deepEqual(result, { bodies: [], deleted: [`heads/${COMPARE_BRANCH}`] })
     const unpushed = await publish({ COMPARE_PUSHED: '' }, parent({ state: 'closed' }), true)
-    assert.deepEqual(unpushed, { bodies: [], closed: [], deleted: [] })
+    assert.deepEqual(unpushed, { bodies: [], deleted: [] })
   })
 
   it('does not add no-change comments, but replaces an older evidence comment', async () => {
