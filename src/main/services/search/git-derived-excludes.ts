@@ -30,17 +30,124 @@ const REPO_SCAN_MAX_DEPTH = 8
  * Each ignored dir becomes an un-anchored `name/` pattern, so one `.build/`
  * covers every package's `.build` at any depth — turning hundreds of anchored
  * paths into a handful of patterns.
+ *
+ * When `ruleFor` names the `.gitignore` rule that ignored a dir and that rule is
+ * itself an un-anchored basename pattern, the rule is emitted instead of the
+ * dir's name. Uniquely-named scratch dirs (`.wdio-profile-0K8Umz/`, one per e2e
+ * run) then collapse to the single `.wdio-profile-*\/` glob instead of adding a
+ * pattern per run: gortex matches every watcher event against every pattern, so
+ * 870 such names cut its event throughput to ~550 events/s and let checkout
+ * churn overflow its event queue into full-tree reconciles.
+ *
+ * With `ruleFor`, a dir no rule ignores is skipped: `--directory` also lists an
+ * untracked dir whose contents are all ignored (`assets/icons/wave/` holding
+ * only a `.DS_Store`), and its bare name would exclude every `wave/` in the
+ * workspace. Its ignored subdirs are listed, and handled, on their own lines.
  */
-export function deriveExcludePatterns(ignoredPaths: Iterable<string>): string[] {
+export function deriveExcludePatterns(
+  ignoredPaths: Iterable<string>,
+  ruleFor?: ReadonlyMap<string, string>,
+): string[] {
   const names = new Set<string>()
   for (const raw of ignoredPaths) {
     const path = raw.trim()
     // git emits a trailing slash for directories with `--directory`.
     if (!path || !path.endsWith('/')) continue
+    if (ruleFor) {
+      const rule = ruleFor.get(path)
+      if (rule === undefined) continue
+      if (isBasenameRule(rule)) {
+        names.add(rule)
+        continue
+      }
+    }
     const name = path.replace(/\/+$/, '').split('/').pop()
     if (name && name !== '.' && name !== '..') names.add(`${name}/`)
   }
   return [...names].sort()
+}
+
+/**
+ * Whether a `.gitignore` rule matches by basename at any depth — no negation, no
+ * anchoring slash — so it keeps git's meaning when handed to gortex unchanged.
+ */
+function isBasenameRule(rule: string): boolean {
+  if (!rule || rule.startsWith('!') || rule.startsWith('#') || rule.startsWith('\\')) return false
+  const body = rule.endsWith('/') ? rule.slice(0, -1) : rule
+  return body !== '' && !body.includes('/') && !/\s$/.test(body)
+}
+
+/**
+ * Parse `git check-ignore -v -z` output — `source NUL line NUL pattern NUL path
+ * NUL` per ignored path — into path → the rule that ignored it.
+ */
+export function parseCheckIgnoreRules(stdout: string): Map<string, string> {
+  const fields = stdout.split('\0')
+  const rules = new Map<string, string>()
+  for (let i = 0; i + 3 < fields.length; i += 4) {
+    const pattern = fields[i + 2]
+    const path = fields[i + 3]
+    if (pattern && path) rules.set(path, pattern)
+  }
+  return rules
+}
+
+/**
+ * Single-segment gitignore glob → anchored regex, or null for anything this
+ * does not model (so the caller treats it as covering nothing). Supports `*`,
+ * `?`, `[…]` classes and `\`-escapes — the syntax a basename rule can use.
+ */
+function basenameGlobRegex(glob: string): RegExp | null {
+  let source = ''
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob.charAt(i)
+    if (ch === '*') source += '[^/]*'
+    else if (ch === '?') source += '[^/]'
+    else if (ch === '\\') {
+      const next = glob.charAt(++i)
+      if (!next) return null
+      source += next.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+    } else if (ch === '[') {
+      const end = glob.indexOf(']', i + 2)
+      if (end === -1) return null
+      const body = glob
+        .slice(i + 1, end)
+        .replace(/^!/, '^')
+        .replace(/\\/g, '\\\\')
+      source += `[${body}]`
+      i = end
+    } else source += ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  }
+  try {
+    return new RegExp(`^${source}$`)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Literal basename patterns (`.wdio-profile-0K8Umz/`) already covered by a
+ * wildcard basename pattern in the same list (`.wdio-profile-*\/`). They were
+ * written by builds of {@link deriveExcludePatterns} that emitted instance names,
+ * and cost gortex a regex match per watcher event while excluding nothing extra.
+ * A directory-only wildcard (`name/`) covers only directory entries.
+ */
+export function redundantExcludePatterns(patterns: Iterable<string>): string[] {
+  const list = [...patterns]
+  const covers = list
+    .filter((p) => isBasenameRule(p) && /[*?[]/.test(p))
+    .flatMap((p) => {
+      const dirOnly = p.endsWith('/')
+      const regex = basenameGlobRegex(dirOnly ? p.slice(0, -1) : p)
+      return regex ? [{ regex, dirOnly }] : []
+    })
+  if (covers.length === 0) return []
+  return list.filter((p) => {
+    if (!isBasenameRule(p) || /[*?[\\]/.test(p)) return false
+    const isDir = p.endsWith('/')
+    const name = isDir ? p.slice(0, -1) : p
+    return covers.some((c) => (isDir || !c.dirOnly) && c.regex.test(name))
+  })
 }
 
 /** Parse `find … -name .git` output into the repo roots (the parent of each `.git`). */
@@ -128,6 +235,30 @@ async function ignoredEntriesFor(repoRoot: string): Promise<string[]> {
 }
 
 /**
+ * The `.gitignore` rule behind each ignored directory, keyed by the
+ * repo-relative path `ignoredEntriesFor` reported. Undefined when git could not
+ * answer, which falls back to per-directory names.
+ */
+async function ignoreRulesFor(
+  repoRoot: string,
+  entries: string[],
+): Promise<Map<string, string> | undefined> {
+  const dirs = entries.map((e) => e.trim()).filter((e) => e.endsWith('/'))
+  if (dirs.length === 0) return new Map()
+  try {
+    const { stdout, code } = await runCommand('git', ['check-ignore', '-v', '-z', '--stdin'], {
+      cwd: repoRoot,
+      ...GIT_CMD_OPTS,
+      stdin: Buffer.from(`${dirs.join('\0')}\0`),
+    })
+    // 0: some paths matched, 1: none did; anything else is a git failure.
+    return code === 0 || code === 1 ? parseCheckIgnoreRules(stdout) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Compute the gortex exclude patterns for a workspace by unioning every
  * contained repo's git-ignored directories. Returns a small, deduped,
  * gitignore-semantics pattern list (empty if there are no git repos / no
@@ -136,7 +267,11 @@ async function ignoredEntriesFor(repoRoot: string): Promise<string[]> {
 export async function computeGitIgnoreExcludes(workspaceRoot: string): Promise<string[]> {
   const repos = await findGitRepos(workspaceRoot)
   if (repos.length === 0) return []
-  const ignored: string[] = []
-  for (const repo of repos) ignored.push(...(await ignoredEntriesFor(repo)))
-  return deriveExcludePatterns(ignored)
+  const patterns = new Set<string>()
+  for (const repo of repos) {
+    const ignored = await ignoredEntriesFor(repo)
+    const rules = await ignoreRulesFor(repo, ignored)
+    for (const pattern of deriveExcludePatterns(ignored, rules)) patterns.add(pattern)
+  }
+  return [...patterns].sort()
 }
