@@ -54,6 +54,21 @@ describe('provider selection', () => {
     assert.equal(compatibleRemote.remote, true)
   })
 
+  it('redacts for an LM Studio endpoint on another host and ignores blank settings', () => {
+    const remoteStudio = selectProvider(
+      { kind: 'lmstudio', model: 'qwen' },
+      { LM_STUDIO_URL: 'https://gpu.example:1234/v1' },
+    )
+    assert.equal(remoteStudio.remote, true)
+    const blankUrl = selectProvider({ model: 'qwen3-coder' }, { LM_STUDIO_URL: '' })
+    assert.equal(blankUrl.kind, 'lmstudio')
+    assert.equal(blankUrl.remote, false, 'a blank URL falls back to the local default')
+    assert.throws(
+      () => selectProvider({ kind: 'lmstudio' }, { LM_STUDIO_MODEL: ' ' }),
+      /--model \(or LM_STUDIO_MODEL\)/,
+    )
+  })
+
   it('accepts the CI model key for each hosted provider', () => {
     const env = { COPSE_REVIEW_API_KEY: 'offline-ci-key' }
     for (const model of ['claude-sonnet-5', 'gpt-5', 'anthropic/claude-sonnet-5']) {
