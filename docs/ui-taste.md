@@ -899,6 +899,24 @@ Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.
 Complexity / fit / review chips stay when present (they are rare); tuck those
 further only if the list gets noisy again.
 
+### A panel's own controls dock as a footer, never float over its list
+
+The roadmap filter panel (`.roadmap-filter-menu`) used to be a `position: absolute`
+dropdown anchored under the "Filter" toggle in the list header. At any list length it
+painted directly over the rows below it — on the seeded fixture even a handful of
+rows sat entirely underneath it — leaving nothing clickable until the dropdown was
+dismissed (issue #2467). It is now a sticky footer: `roadmap-pane.ts` appends
+`filterMenu` after `.roadmap-list` (a plain sibling in the same flex column, not a
+child of the header's `.roadmap-filter` group any more), and it is styled with
+`flex-shrink: 0` plus its own `overflow-y: auto`, never `position: absolute`. That
+keeps it out of the list's own scrollport, the same bottom-anchored relationship
+`#input-bar` (titlebar.css) has to the transcript scrolling above it. Moving a
+toggled panel out of a click-outside-to-close container needs care: the outside-click
+guard must also exclude the panel itself, or clicking one of its own controls (a
+facet checkbox here) reads as "outside" and closes it immediately.
+
+Spec: [`tests/e2e/roadmap-filter-sticky-footer.e2e.ts`](../tests/e2e/roadmap-filter-sticky-footer.e2e.ts).
+
 ## Rails mark nesting and standing asks
 
 A rail — a slim bar on one inline edge of a block, drawn as `border-left` or as an inset shadow
