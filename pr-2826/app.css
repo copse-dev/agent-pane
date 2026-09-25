@@ -6707,6 +6707,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   margin-bottom: 6px;
   white-space: nowrap;
 }
+.footer-usage-popover-section {
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
 .footer-usage-popover-row {
   display: flex;
   align-items: center;
