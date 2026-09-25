@@ -71941,6 +71941,14 @@ function mountComposerEditor() {
   root.setAttribute("role", "textbox");
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
+  const SCROLL_PIN_THRESHOLD_PX2 = 4;
+  let pinnedToBottom = true;
+  root.addEventListener("scroll", () => {
+    pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
+  });
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight;
+  }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
   const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
@@ -72129,6 +72137,7 @@ function mountComposerEditor() {
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
+      root.scrollTop = root.scrollHeight;
     },
     get selectionStart() {
       const sel = selectionInRoot();
