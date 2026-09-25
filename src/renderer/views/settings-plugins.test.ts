@@ -489,6 +489,31 @@ describe('settings → plugins list', () => {
     assert.equal(stringInput.value, 'hi')
   })
 
+  it('renders manifest markdown in pack descriptions and setting hints (#2450)', async () => {
+    const markdownPlugin: PluginSummary = {
+      ...demoPlugin,
+      description: 'Adds the `demo_tool` tool.',
+      settings: [
+        {
+          id: 'budget',
+          kind: 'number',
+          title: 'Budget per turn',
+          description: 'Caps `demo_tool` calls; **0** disables it.',
+          value: 3,
+          default: 3,
+        },
+      ],
+    }
+    const list = await openPlugins({ plugins: [markdownPlugin] }, spy)
+    const desc = list.querySelector('.plugin-row-desc')
+    assert.equal(desc?.querySelector('code')?.textContent, 'demo_tool')
+    const hint = list.querySelector('.plugin-setting-desc')
+    assert.ok(hint)
+    assert.equal(hint.querySelector('code')?.textContent, 'demo_tool')
+    assert.equal(hint.querySelector('strong')?.textContent, '0')
+    assert.doesNotMatch(hint.textContent, /`/)
+  })
+
   it('renders a model setting field with the shared searchable picker', async () => {
     const list = await openPlugins({ plugins: [modelFieldPlugin] }, spy)
     const modelSelect = list.querySelector<HTMLSelectElement>('.plugin-setting-model')

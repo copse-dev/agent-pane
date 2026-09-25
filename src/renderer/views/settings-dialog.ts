@@ -3738,7 +3738,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (field.description) {
       const hint = document.createElement('span')
       hint.className = 'plugin-setting-desc'
-      hint.textContent = field.description
+      // Manifest copy is markdown (backticked setting names, links), like the
+      // pack description above it.
+      hint.innerHTML = renderMarkdown(field.description)
       label.append(hint)
     }
     if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput))
@@ -3938,7 +3940,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (plugin.description) {
       const desc = document.createElement('div')
       desc.className = 'plugin-row-desc'
-      desc.textContent = plugin.description
+      desc.innerHTML = renderMarkdown(plugin.description)
       row.append(desc)
     }
 

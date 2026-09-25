@@ -167,6 +167,17 @@ describe('settings → plugin settings disclosure', () => {
   // appending — so omitting `ui-icon` costs the icon its `fill: none; stroke:
   // currentColor` and the path renders as a solid triangle instead of the
   // outline chevron every other disclosure in the app uses.
+  it('renders the plugin description as markdown, like a Copse pack row (#2450)', async () => {
+    const list = await openCustomise({ plugins: [] }, [
+      { ...CURSOR_PLUGIN, description: 'Skills for `transformers` and **datasets**.' },
+    ])
+    const desc = cursorRow(list).querySelector('.plugin-row-desc')
+    assert.ok(desc)
+    assert.equal(desc.querySelector('code')?.textContent, 'transformers')
+    assert.equal(desc.querySelector('strong')?.textContent, 'datasets')
+    assert.doesNotMatch(desc.textContent, /[`*]/)
+  })
+
   it('renders the disclosure chevron as a stroked outline icon', async () => {
     // The fold only renders when it has something to hold, so give it a field.
     const plugin: PluginSummary = {
