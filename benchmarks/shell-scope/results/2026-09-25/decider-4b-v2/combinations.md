@@ -9,26 +9,26 @@ on development data only, then applied unchanged to the holdout.
 
 Dev-fitted: add-external P ≥ 0.11; sum weight 0.05 on deterministic, external at ≥ 0.11
 
-| Strategy | Dev correct | Dev wrong sandbox / wrong external | Dev balanced | Holdout correct | Holdout wrong sandbox / wrong external | Holdout balanced |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| deterministic alone | 76 | 16 / 8 | 0.767 | 87 | 3 / 10 | 0.878 |
-| model alone (P ≥ 0.5) | 52 | 42 / 6 | 0.575 | 87 | 13 / 0 | 0.776 |
-| filter: deterministic external final, model can add external (P ≥ 0.5) | 72 | 16 / 12 | 0.717 | 89 | 1 / 10 | 0.912 |
-| filter: deterministic external final, model can add external (dev-fitted P) | 82 | 3 / 15 | 0.787 | 66 | 1 / 33 | 0.750 |
-| filter: deterministic sandbox final, model can relax external (P < 0.5) | 56 | 42 / 2 | 0.625 | 85 | 15 / 0 | 0.741 |
-| sum: equal weights, external at ≥ 0.5 | 76 | 16 / 8 | 0.767 | 87 | 3 / 10 | 0.878 |
-| sum: dev-fitted weight and threshold | 84 | 4 / 12 | 0.817 | 70 | 2 / 28 | 0.768 |
+| Strategy                                                                    | Dev correct | Dev wrong sandbox / wrong external | Dev balanced | Holdout correct | Holdout wrong sandbox / wrong external | Holdout balanced |
+| --------------------------------------------------------------------------- | ----------: | ---------------------------------: | -----------: | --------------: | -------------------------------------: | ---------------: |
+| deterministic alone                                                         |          76 |                             16 / 8 |        0.767 |              87 |                                 3 / 10 |            0.878 |
+| model alone (P ≥ 0.5)                                                       |          52 |                             42 / 6 |        0.575 |              87 |                                 13 / 0 |            0.776 |
+| filter: deterministic external final, model can add external (P ≥ 0.5)      |          72 |                            16 / 12 |        0.717 |              89 |                                 1 / 10 |            0.912 |
+| filter: deterministic external final, model can add external (dev-fitted P) |          82 |                             3 / 15 |        0.787 |              66 |                                 1 / 33 |            0.750 |
+| filter: deterministic sandbox final, model can relax external (P < 0.5)     |          56 |                             42 / 2 |        0.625 |              85 |                                 15 / 0 |            0.741 |
+| sum: equal weights, external at ≥ 0.5                                       |          76 |                             16 / 8 |        0.767 |              87 |                                 3 / 10 |            0.878 |
+| sum: dev-fitted weight and threshold                                        |          84 |                             4 / 12 |        0.817 |              70 |                                 2 / 28 |            0.768 |
 
 ## original prompt
 
 Dev-fitted: add-external P ≥ 0.98; sum weight 0.5 on deterministic, external at ≥ 0.49
 
-| Strategy | Dev correct | Dev wrong sandbox / wrong external | Dev balanced | Holdout correct | Holdout wrong sandbox / wrong external | Holdout balanced |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| deterministic alone | 76 | 16 / 8 | 0.767 | 87 | 3 / 10 | 0.878 |
-| model alone (P ≥ 0.5) | 47 | 46 / 7 | 0.529 | 80 | 18 / 2 | 0.676 |
-| filter: deterministic external final, model can add external (P ≥ 0.5) | 72 | 16 / 12 | 0.717 | 89 | 1 / 10 | 0.912 |
-| filter: deterministic external final, model can add external (dev-fitted P) | 76 | 16 / 8 | 0.767 | 87 | 3 / 10 | 0.878 |
-| filter: deterministic sandbox final, model can relax external (P < 0.5) | 51 | 46 / 3 | 0.579 | 78 | 20 / 2 | 0.641 |
-| sum: equal weights, external at ≥ 0.5 | 76 | 16 / 8 | 0.767 | 87 | 3 / 10 | 0.878 |
-| sum: dev-fitted weight and threshold | 76 | 16 / 8 | 0.767 | 87 | 3 / 10 | 0.878 |
+| Strategy                                                                    | Dev correct | Dev wrong sandbox / wrong external | Dev balanced | Holdout correct | Holdout wrong sandbox / wrong external | Holdout balanced |
+| --------------------------------------------------------------------------- | ----------: | ---------------------------------: | -----------: | --------------: | -------------------------------------: | ---------------: |
+| deterministic alone                                                         |          76 |                             16 / 8 |        0.767 |              87 |                                 3 / 10 |            0.878 |
+| model alone (P ≥ 0.5)                                                       |          47 |                             46 / 7 |        0.529 |              80 |                                 18 / 2 |            0.676 |
+| filter: deterministic external final, model can add external (P ≥ 0.5)      |          72 |                            16 / 12 |        0.717 |              89 |                                 1 / 10 |            0.912 |
+| filter: deterministic external final, model can add external (dev-fitted P) |          76 |                             16 / 8 |        0.767 |              87 |                                 3 / 10 |            0.878 |
+| filter: deterministic sandbox final, model can relax external (P < 0.5)     |          51 |                             46 / 3 |        0.579 |              78 |                                 20 / 2 |            0.641 |
+| sum: equal weights, external at ≥ 0.5                                       |          76 |                             16 / 8 |        0.767 |              87 |                                 3 / 10 |            0.878 |
+| sum: dev-fitted weight and threshold                                        |          76 |                             16 / 8 |        0.767 |              87 |                                 3 / 10 |            0.878 |

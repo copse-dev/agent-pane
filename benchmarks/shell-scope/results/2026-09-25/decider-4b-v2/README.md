@@ -39,3 +39,6 @@ commands; decider's balanced accuracy is 0.776 against the deterministic check's
 0.878. A P(external) cut-off fitted on development data (0.09, development balanced
 accuracy 0.792) does not transfer: on the holdout it gives 64 correct, 2 wrong
 sandbox and 34 wrong external. No threshold or policy is adopted from this run.
+Combinations with the deterministic check are in [combinations.md](combinations.md): the
+equal-weight sum equals the deterministic check, filtering first helps the holdout (89)
+but hurts development data (72 against 76), and the dev-fitted variants do not transfer.

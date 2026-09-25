@@ -21,11 +21,21 @@ always-sandbox predictor already agrees with 71/100 labels.
 | Kev 0.5B                               | Explicit            |                    29 |                           0 |                          71 |                                        5 / 2 |
 | OpenJev NLI                            | Explicit            |                    75 |                          20 |                           5 |                    No categorical confidence |
 | decider-4b v2 (2026-09-25)             | Explicit            |                    87 |                          13 |                           0 | Dev-fitted 0.09 → 64 on holdout; not adopted |
+| Winnow-12B Q8 (2026-09-25)             | Explicit            |                    65 |                           0 |                          35 |                  Combined, dev-fitted: 88–90 |
 
 decider-4b v2 matches the deterministic count only because the holdout is 71%
 sandbox: it misses 13 of 29 external commands, mostly outside paths passed as
 arguments, and its balanced accuracy is 0.776 against the deterministic check's
 0.878. See [its run notes](results/2026-09-25/decider-4b-v2/README.md).
+
+Winnow-12B's development-selected explicit prompt misses no external command but flags
+35 of 71 sandbox ones; its original prompt scores 94/100 on the holdout but only 62/100
+on development data, so that result is not validated. Combined with the deterministic
+check, with every choice fitted on development data, Winnow reaches 88–90/100 on the
+holdout ([run notes](results/2026-09-25/winnow-12b/README.md)); decider-4b's combinations
+do not transfer ([tables](results/2026-09-25/decider-4b-v2/combinations.md)). The gains
+are one to three cases, and only the filter-first form, where a model can add a warning
+but never remove a deterministic one, keeps every deterministic external verdict.
 
 This table uses the prompt selected on development data, not each model's best
 holdout prompt. See [all prompt results](RESULTS.md), the

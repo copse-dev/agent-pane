@@ -30,8 +30,12 @@ Assistant labels; independent human review pending. This is not an authorization
 | decider-4b v2 | dev     | explicit (dev-selected) |         100/100 |      52 |            42 |              6 |             not computed | dev-fitted 0.09 not adopted |
 | decider-4b v2 | holdout | original                |         100/100 |      80 |            18 |              2 |             not computed |                 not adopted |
 | decider-4b v2 | holdout | explicit (dev-selected) |         100/100 |      87 |            13 |              0 |             not computed |                 not adopted |
+| winnow-12b    | dev     | original                |         100/100 |      62 |            31 |              7 |             not computed |            see combinations |
+| winnow-12b    | dev     | explicit (dev-selected) |         100/100 |      87 |             0 |             13 |             not computed |            see combinations |
+| winnow-12b    | holdout | original                |         100/100 |      94 |             4 |              2 |             not computed |            see combinations |
+| winnow-12b    | holdout | explicit (dev-selected) |         100/100 |      65 |             0 |             35 |             not computed |            see combinations |
 
-decider-4b v2 (2026-09-25) ran through `eval:classifier`; see [its run notes](results/2026-09-25/decider-4b-v2/README.md).
+decider-4b v2 and Winnow-12B (2026-09-25) ran through `eval:classifier`; see their run notes ([decider](results/2026-09-25/decider-4b-v2/README.md), [Winnow](results/2026-09-25/winnow-12b/README.md)) and combinations with the deterministic check ([decider](results/2026-09-25/decider-4b-v2/combinations.md), [Winnow](results/2026-09-25/winnow-12b/combinations.md)).
 
 No probability policy exists for categorical-only models. Missing/context-error outputs are not correct judgments; their planned cases remain in coverage denominators.
 
