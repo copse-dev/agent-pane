@@ -137,3 +137,34 @@ copse-ui-field input[type='password'],
   line-height: var(--line-height-base);
   padding-top: 2px;
 }
+
+/* Badge: a label on the thing, not a shouted status (docs/ui-taste.md →
+   "Badges are labels"). Neutral by default; a modifier may colour it only when
+   the badge reports a status (status tokens) or is the documented accent case.
+   Sentence case comes from `::first-letter`, because most labels are data values
+   that arrive lowercase (`project`, `stable`, `in use`) and `capitalize` would
+   title-case the multi-word ones. `inline-block` gives `::first-letter` a block
+   container to apply to outside a flex row. */
+.ui-badge {
+  display: inline-block;
+  flex: none;
+  font-size: var(--badge-font-size);
+  font-weight: var(--badge-font-weight);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--badge-radius);
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+}
+.ui-badge::first-letter {
+  text-transform: uppercase;
+}
+/* A literal — a directory name, an identifier — is shown exactly as written. */
+.ui-badge-literal {
+  font-family: var(--font-mono);
+}
+.ui-badge-literal::first-letter {
+  text-transform: none;
+}

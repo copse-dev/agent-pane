@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser } from '@wdio/globals'
+import { assertNeutralBadge, readBadgeStyles, signalColours } from './helpers/badge-style.ts'
 import { resetUserData, seedEmptyProject, seedRoadmapNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -42,6 +43,9 @@ describe('roadmap category grouping and filters', () => {
         body: 'Move persistence to the new format.',
         category: 'project',
         complexity: 'high',
+        // Blocked, so the status badge sits beside the `project` category badge
+        // in the same row: only the status may take the warning hue.
+        status: 'blocked',
       },
     ])
     seedEmptyProject(workspaceRoot, 'e2e-roadmap-category-filter', {
@@ -69,6 +73,23 @@ describe('roadmap category grouping and filters', () => {
     assert.equal(await bugHeader.getAttribute('aria-expanded'), 'true')
     assert.equal(await $('[data-category="bug"] .roadmap-category-count').getText(), '2')
     assert.equal((await $$('.roadmap-category-badge')).length, 4)
+
+    // Category is a label, not a status: every category chip is the same neutral
+    // colour, and `project` no longer matches the `blocked` status beside it.
+    const signals = await signalColours()
+    const categories = await readBadgeStyles('.roadmap-category-badge')
+    for (const category of categories) assertNeutralBadge(category, signals)
+    assert.equal(
+      new Set(categories.map((category) => category.color)).size,
+      1,
+      'categories are not colour-coded',
+    )
+    const [blocked] = await readBadgeStyles('.roadmap-status-badge.is-blocked')
+    assert.ok(blocked, 'the blocked status badge renders')
+    assert.equal(blocked.color, signals.find((signal) => signal.token === '--warning')?.value)
+    const project = categories.find((category) => category.text === 'project')
+    assert.ok(project)
+    assert.notEqual(project.color, blocked.color, 'project category ≠ blocked status colour')
     // The `done` toolbar toggle is gone; status is a filter facet now.
     assert.equal((await $$('.roadmap-show-done-btn')).length, 0)
 

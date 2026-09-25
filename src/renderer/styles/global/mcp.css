@@ -50,21 +50,12 @@
 
 /* Origin chip: who asked for this server. Sits at the end of the header so the
    name stays the thing you read first, and the answer to "and where is this
-   from?" is in a fixed place down the right-hand edge of every row. */
+   from?" is in a fixed place down the right-hand edge of every row. Shape,
+   case, and colour come from `.ui-badge`; this only bounds its width. */
 .mcp-origin-chip {
-  flex: none;
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 /* Only the repo-supplied origin is coloured. Every other source is one the user
    or Copse chose; a project config is the one that arrives with a checkout, so

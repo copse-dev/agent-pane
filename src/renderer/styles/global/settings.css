@@ -828,26 +828,10 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-base);
   color: var(--text-primary);
 }
-.provider-form-tag {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-xs);
-}
-/* Data-policy badge in the provider form title: where prompts go by default.
-   Kinds mirror privacyBadge() in @copse/llm/data-policies.ts. */
-.provider-privacy-badge {
-  font-size: 10px;
-  letter-spacing: 0.02em;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
+/* `.provider-form-tag` (built-in / custom) and `.provider-privacy-badge` take
+   their shape from `.ui-badge`. The data-policy badge says where prompts go by
+   default, which is a status; its kinds mirror privacyBadge() in
+   @copse/llm/data-policies.ts. */
 .provider-privacy-badge.zdr,
 .provider-privacy-badge.local {
   color: var(--success);
@@ -1594,21 +1578,9 @@ dialog.settings-overlay::backdrop {
   text-overflow: ellipsis;
   word-break: normal;
 }
-.sources-badge {
-  flex: none;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px 6px;
-}
-.sources-badge-project {
-  color: var(--warning, #d29922);
-  border-color: var(--warning, #d29922);
-}
+/* `.sources-badge` takes its shape from `.ui-badge`. Scope (`user`, `project`,
+   `bundled`), rule kind, agent container, and a worktree's owner are labels, so
+   they stay neutral; only the modifiers below that report a status are coloured. */
 /* Hooks list states: authoring warnings, unwired events, runtime failures. */
 .sources-badge-warning {
   color: var(--warning, #d29922);
@@ -1636,9 +1608,11 @@ dialog.settings-overlay::backdrop {
   word-break: break-word;
   margin-top: 2px;
 }
-.sources-badge-auto {
-  color: var(--accent, #3b82f6);
-  border-color: var(--accent, #3b82f6);
+/* A nested instruction file the latest turn selected: the accent outline marks
+   "active this turn" (docs/ui-taste.md → "Sources lists"). */
+.sources-badge-active {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 /* Instruction file discovered but inert: untrusted workspace (issue #100 gate). */
 .sources-badge-untrusted {
@@ -1973,41 +1947,27 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+/* The publisher eyebrow is a caption over the name, not a badge: no frame and
+   wide-tracked caps. It is not a status either, so it stays in text colours —
+   Copse's own plugins are told apart by the mark beside them, not by a warning
+   hue on everyone else's. */
 .plugin-badge {
   flex: none;
-  font-size: 11px;
+  align-self: flex-start;
+  font-size: var(--badge-font-size);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px 6px;
-}
-/* The publisher eyebrow is a caption, not a chip: no frame, wide tracking, and
-   it keeps the trust colour that told first-party from user-installed. */
-.plugin-badge-first-party,
-.plugin-badge-user {
-  align-self: flex-start;
-  border: none;
-  padding: 0;
   letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 .plugin-badge-first-party {
   color: var(--text-secondary);
 }
-.plugin-badge-user {
-  color: var(--warning, #d29922);
-}
-/* Cursor-installed: same eyebrow treatment as the trust badges, but muted —
-   it names an owner Copse does not control rather than a trust tier. The row
-   itself is styled identically to every other one: origin belongs in the badge,
-   not in a different-shaped card. */
+/* User-installed and Cursor-installed name an owner Copse does not control. The
+   row itself is styled identically to every other one: origin belongs in the
+   eyebrow, not in a different-shaped card. */
+.plugin-badge-user,
 .plugin-badge-cursor {
-  align-self: flex-start;
-  border: none;
-  padding: 0;
-  letter-spacing: 0.08em;
   color: var(--text-muted);
 }
 .plugin-source-path {
@@ -2078,20 +2038,10 @@ dialog.settings-overlay::backdrop {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
-/* Stability sits next to the plugin's name as a pill in sentence case — a label
-   on the thing, not a shouted status. `plugin.stability` arrives lowercase, so the
-   capital comes from CSS. */
-.plugin-badge-stable,
-.plugin-badge-experimental {
-  border-radius: var(--action-radius);
-  padding: 1px var(--spacing-sm);
-  text-transform: capitalize;
-  letter-spacing: 0;
-}
-.plugin-badge-stable {
-  color: var(--success, #3fb950);
-  border-color: var(--success, #3fb950);
-}
+/* Stability sits next to the plugin's name as a `.ui-badge` — a label on the
+   thing, not a shouted status. `plugin.stability` arrives lowercase; the badge
+   recipe supplies the capital. Stable is the default, so it keeps the quiet
+   neutral outline rather than a success hue. */
 /* Experimental is the one thing on the card you must read before flipping the
    switch, so it takes the interaction accent rather than a status hue — the
    documented exception in docs/ui-taste.md. */

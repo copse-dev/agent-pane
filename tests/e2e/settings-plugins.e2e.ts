@@ -3,6 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import {
+  assertBadgeRecipe,
+  assertNeutralBadge,
+  readBadgeStyles,
+  signalColours,
+} from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -116,7 +122,9 @@ describe('settings plugins (about:addons)', function () {
     await expect(longHorizonRow).toBeDisplayed()
     assert.equal(await longHorizonRow.$('.plugin-name').getText(), 'Long horizon tasks')
     await expect(longHorizonRow.$('.plugin-badge-first-party')).toBeDisplayed()
-    await expect(longHorizonRow.$('.plugin-badge-experimental')).toHaveText('Experimental')
+    await expect(longHorizonRow.$('.plugin-badge-experimental')).toHaveText('Experimental', {
+      ignoreCase: true,
+    })
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
     // Roadmap plans plugin (#556): listed, default-OFF (ships disabled).
     const roadmapPlansRow = plugins.$('.plugin-row[data-plugin-id="copse.roadmap-plans"]')
@@ -157,7 +165,9 @@ describe('settings plugins (about:addons)', function () {
     // fresh-profile opt-in. Loopback binding still prompts separately at use time.
     const backgroundTasksRow = plugins.$('.plugin-row[data-plugin-id="copse.background-tasks"]')
     await expect(backgroundTasksRow).toBeDisplayed()
-    await expect(backgroundTasksRow.$('.plugin-badge-stable')).toHaveText('Stable')
+    await expect(backgroundTasksRow.$('.plugin-badge-stable')).toHaveText('Stable', {
+      ignoreCase: true,
+    })
     assert.equal(await backgroundTasksRow.getAttribute('data-enabled'), 'true')
     await backgroundTasksRow.scrollIntoView()
     await saveElementScreenshot(
@@ -170,7 +180,9 @@ describe('settings plugins (about:addons)', function () {
     const siteBuildingRow = plugins.$('.plugin-row[data-plugin-id="copse.site-building"]')
     await expect(siteBuildingRow).toBeDisplayed()
     assert.equal(await siteBuildingRow.$('.plugin-name').getText(), 'Site building')
-    await expect(siteBuildingRow.$('.plugin-badge-stable')).toHaveText('Stable')
+    await expect(siteBuildingRow.$('.plugin-badge-stable')).toHaveText('Stable', {
+      ignoreCase: true,
+    })
     assert.equal(await siteBuildingRow.getAttribute('data-enabled'), 'true')
     assert.match(await siteBuildingRow.getText(), /design, implementation, accessibility/i)
     await siteBuildingRow.scrollIntoView()
@@ -184,7 +196,7 @@ describe('settings plugins (about:addons)', function () {
     // existing seeded profiles migrate to the historical combined behavior.
     const agentsMdRow = plugins.$('.plugin-row[data-plugin-id="copse.agents-md"]')
     await expect(agentsMdRow).toBeDisplayed()
-    await expect(agentsMdRow.$('.plugin-badge-stable')).toHaveText('Stable')
+    await expect(agentsMdRow.$('.plugin-badge-stable')).toHaveText('Stable', { ignoreCase: true })
     assert.equal(await agentsMdRow.getAttribute('data-enabled'), 'true')
     assert.match(await agentsMdRow.getText(), /Instruction sources × 1/)
     await agentsMdRow.$('.plugin-settings-summary').click()
@@ -228,7 +240,9 @@ describe('settings plugins (about:addons)', function () {
     // once-per-run delay is plugin-scoped and it stays off until the user opts in.
     const checkpointRow = plugins.$('.plugin-row[data-plugin-id="copse.artifact-checkpoint"]')
     await expect(checkpointRow).toBeDisplayed()
-    await expect(checkpointRow.$('.plugin-badge-experimental')).toHaveText('Experimental')
+    await expect(checkpointRow.$('.plugin-badge-experimental')).toHaveText('Experimental', {
+      ignoreCase: true,
+    })
     assert.equal(await checkpointRow.getAttribute('data-enabled'), 'false')
     await checkpointRow.$('.plugin-settings-summary').click()
     const checkpointDelay = checkpointRow.$(
@@ -248,6 +262,32 @@ describe('settings plugins (about:addons)', function () {
     const pluginToolRow = plugins.$('.plugin-row[data-plugin-id="personal.reference-tools"]')
     await expect(pluginToolRow).toBeDisplayed()
     await expect(pluginToolRow.$('.plugin-badge-user')).toBeDisplayed()
+
+    // Badges are labels (docs/ui-taste.md): Stable is the quiet default, the
+    // publisher eyebrow stays in text colours, and only Experimental takes the
+    // accent. Both stability badges share the one badge recipe.
+    const signals = await signalColours()
+    const [stable] = await readBadgeStyles(
+      '.plugin-row[data-plugin-id="copse.agents-md"] .plugin-badge-stable',
+    )
+    const [experimental] = await readBadgeStyles(
+      '.plugin-row[data-plugin-id="copse.artifact-checkpoint"] .plugin-badge-experimental',
+    )
+    const [userEyebrow] = await readBadgeStyles(
+      '.plugin-row[data-plugin-id="personal.reference-tools"] .plugin-badge-user',
+    )
+    assert.ok(stable, 'stable badge rendered')
+    assert.ok(experimental, 'experimental badge rendered')
+    assert.ok(userEyebrow, 'user publisher eyebrow rendered')
+    assertNeutralBadge(stable, signals)
+    assertBadgeRecipe(stable)
+    assertBadgeRecipe(experimental)
+    assert.equal(
+      experimental.color,
+      signals.find((signal) => signal.token === '--accent')?.value,
+      'experimental is the documented accent exception',
+    )
+    assertNeutralBadge(userEyebrow, signals)
     assert.equal(await pluginToolRow.getAttribute('data-enabled'), 'false')
     assert.equal(await pluginToolRow.$('input.plugin-toggle-input').isEnabled(), true)
     const localText = await pluginToolRow.getText()
@@ -280,7 +320,7 @@ describe('settings plugins (about:addons)', function () {
 
     // Trust tier badge is shown. Stability reads as a sentence-case pill.
     await expect(todosRow.$('.plugin-badge-first-party')).toBeDisplayed()
-    await expect(todosRow.$('.plugin-badge-stable')).toHaveText('Stable')
+    await expect(todosRow.$('.plugin-badge-stable')).toHaveText('Stable', { ignoreCase: true })
 
     // The toggle is a checkbox and starts enabled.
     const toggle = todosRow.$('input.plugin-toggle-input')

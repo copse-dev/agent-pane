@@ -2024,7 +2024,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
     for (const agent of result.agents) {
       const extraBadges: Array<{ text: string; className: string }> = [
-        { text: agent.container, className: 'sources-badge-auto' },
+        // The container is a directory name (`.cursor`, `.claude`): a literal,
+        // shown as written rather than as a sentence-case label.
+        { text: agent.container, className: 'ui-badge-literal' },
       ]
       if (agent.unsupportedFields.length > 0) {
         extraBadges.push({ text: 'partly supported', className: 'sources-badge-unsupported' })
@@ -2037,7 +2039,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .join(' · ')
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
-          badgeClass: agent.source === 'project' ? 'sources-badge-project' : undefined,
           extraBadges,
           titleAttr: agent.agentPath,
           hoverDetail: agent.agentPath,
@@ -2116,13 +2117,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     header.append(primary)
     if (badge) {
       const badgeEl = document.createElement('span')
-      badgeEl.className = opts.badgeClass ? `sources-badge ${opts.badgeClass}` : 'sources-badge'
+      badgeEl.className = opts.badgeClass
+        ? `ui-badge sources-badge ${opts.badgeClass}`
+        : 'ui-badge sources-badge'
       badgeEl.textContent = badge
       header.append(badgeEl)
     }
     for (const extra of opts.extraBadges ?? []) {
       const badgeEl = document.createElement('span')
-      badgeEl.className = `sources-badge ${extra.className}`
+      badgeEl.className = `ui-badge sources-badge ${extra.className}`
       badgeEl.textContent = extra.text
       header.append(badgeEl)
     }
@@ -2155,7 +2158,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
     const detail = `${familyLabel} · ${h.command}`
     const row = makeSourceRow(title, h.scope, detail, {
-      badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
       extraBadges,
     })
     if (h.lastError) {
@@ -2294,7 +2296,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     w: import('@shared/types/hooks.ts').HookValidationWarning,
   ): HTMLElement {
     const row = makeSourceRow(w.message, w.scope, w.source, {
-      badgeClass: w.scope === 'project' ? 'sources-badge-project' : undefined,
       extraBadges: [{ text: 'warning', className: 'sources-badge-warning' }],
     })
     row.classList.add('sources-row-warning')
@@ -2338,7 +2339,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     text: string
     className: string | undefined
   } {
-    if (entry.usage?.running) return { text: 'in use', className: 'sources-badge-project' }
+    if (entry.usage?.running) return { text: 'in use', className: undefined }
     if (!entry.managed) return { text: 'external', className: undefined }
     if (!entry.usage) return { text: 'orphaned', className: 'sources-badge-warning' }
     if (!entry.usage.linked) return { text: 'released', className: 'sources-badge-warning' }
@@ -2576,7 +2577,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               target.row.querySelector('.sources-worktree-changes')?.remove()
               if (result.changedCount !== null && result.changedCount > 0) {
                 const badge = document.createElement('span')
-                badge.className = 'sources-badge sources-badge-warning sources-worktree-changes'
+                badge.className =
+                  'ui-badge sources-badge sources-badge-warning sources-worktree-changes'
                 badge.textContent = `${String(result.changedCount)} uncommitted`
                 target.row.querySelector('.sources-worktree-terminal-btn')?.before(badge)
               }
@@ -3084,13 +3086,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const row = makeSourceRow(file.name, badge, detail, {
       badgeClass: !file.trusted
         ? 'sources-badge-untrusted'
-        : file.scopePath !== undefined
-          ? file.active && file.duplicateOf === undefined
-            ? 'sources-badge-auto'
-            : undefined
-          : file.scope === 'project'
-            ? 'sources-badge-project'
-            : undefined,
+        : file.scopePath !== undefined && file.active && file.duplicateOf === undefined
+          ? 'sources-badge-active'
+          : undefined,
       titleAction: {
         label: `Open ${file.name}`,
         run: () => {
@@ -3157,14 +3155,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           if (r.globs?.length) bits.push(`globs: ${r.globs.join(', ')}`)
           if (r.description) bits.push(r.description)
           bits.push(r.path)
-          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '), {
-            badgeClass:
-              r.kind === 'always'
-                ? 'sources-badge-project'
-                : r.kind === 'auto'
-                  ? 'sources-badge-auto'
-                  : undefined,
-          })
+          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '))
         }),
         'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
@@ -3183,7 +3174,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         '#sources-skills-list',
         skills.map((s) =>
           makeSourceRow(s.name, s.source, s.description || null, {
-            badgeClass: s.source === 'project' ? 'sources-badge-project' : undefined,
             // Keep the resting list uncluttered: path lives on hover (and as a
             // native tooltip fallback). Description stays as the always-visible
             // detail; when a skill has none, the hover line is the only path.
@@ -3331,7 +3321,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       nameLine.append(versionEl)
     }
     const stabilityBadge = document.createElement('span')
-    stabilityBadge.className = `plugin-badge plugin-badge-${plugin.stability}`
+    stabilityBadge.className = `ui-badge plugin-badge-${plugin.stability}`
     stabilityBadge.textContent = plugin.stability
     stabilityBadge.title =
       plugin.stability === 'experimental'
@@ -3990,9 +3980,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       'built-in': 'Built in',
     }
     const chip = document.createElement('span')
-    chip.className = `mcp-origin-chip mcp-origin-${s.origin}`
+    // A plugin's id is an identifier, shown as written rather than sentence-cased.
+    const pluginId = s.origin === 'plugin' && s.originDetail ? s.originDetail : undefined
+    chip.className = pluginId
+      ? `ui-badge ui-badge-literal mcp-origin-chip mcp-origin-${s.origin}`
+      : `ui-badge mcp-origin-chip mcp-origin-${s.origin}`
     chip.dataset['mcpOrigin'] = s.origin
-    chip.textContent = s.originDetail && s.origin === 'plugin' ? s.originDetail : labels[s.origin]
+    chip.textContent = pluginId ?? labels[s.origin]
     chip.title = s.originDetail ? `${labels[s.origin]} — ${s.originDetail}` : labels[s.origin]
     return chip
   }
@@ -4229,7 +4223,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       title.append(`${s.name} (${s.transport}): `, inlineStatus('idle', 'not running'))
 
       const chip = document.createElement('span')
-      chip.className = 'mcp-origin-chip mcp-origin-plugin'
+      chip.className = 'ui-badge ui-badge-literal mcp-origin-chip mcp-origin-plugin'
       chip.dataset['mcpOrigin'] = 'plugin'
       chip.textContent = s.pluginId
       chip.title = `Declared by the plugin ${s.pluginId}`

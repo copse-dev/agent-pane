@@ -129,7 +129,7 @@ const LOCAL_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
 // local / zdr / no-training / trains / unknown; the hint carries the detail
 // and the primary source.
 function privacyBadgeEl(badge: PrivacyBadge): HTMLElement {
-  return el('span', { class: `provider-privacy-badge ${badge.kind}` }, badge.label)
+  return el('span', { class: `ui-badge provider-privacy-badge ${badge.kind}` }, badge.label)
 }
 
 function policyHintEl(policy: ProviderDataPolicy): HTMLElement {
@@ -595,7 +595,7 @@ export function createCustomProvidersSection(
       'h4',
       { class: 'provider-form-title' },
       provider.label,
-      el('span', { class: 'provider-form-tag' }, provider.builtin ? 'built-in' : 'custom'),
+      el('span', { class: 'ui-badge provider-form-tag' }, provider.builtin ? 'built-in' : 'custom'),
       privacyBadgeEl(privacyBadge(policy, { local: provider.local })),
     )
     form.append(title)

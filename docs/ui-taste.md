@@ -171,6 +171,48 @@ Guarded at two levels, because a stylesheet assertion alone is not visual eviden
 contrast against the surface behind the row and capture `.message-queued-actions` on its
 own.
 
+### Badges are labels
+
+A badge is a label on the thing, not a shouted status. Settings used to set four different
+chips side by side — shouted caps (`BUILT-IN`, `PROJECT`, `YOUR CONFIG`) next to sentence
+case (`Zero data retention`, `Stable`), full pills next to `--radius` corners, at 10px and
+11px, regular and semibold — and to colour them as a code nobody could read: every
+project-scope row in `--warning` beside a neutral `user`, the agent container in the accent,
+`Stable` in `--success`.
+
+- **One recipe.** `.ui-badge` in [`ui.css`](../src/renderer/styles/global/ui.css), built from
+  the `--badge-*` tokens in `tokens.css`: `--font-size-xs`, weight 500, normal tracking,
+  `--radius` corners, a 1px `--border` outline, muted text. A chip class
+  (`.sources-badge`, `.provider-form-tag`, `.provider-privacy-badge`, `.mcp-origin-chip`,
+  `.plugin-badge-stable` / `-experimental`) adds a colour or a width bound, never its own
+  size, case, or corner.
+- **Sentence case.** Author labels in sentence case. Most badge text is a data value that
+  arrives lowercase (`project`, `stable`, `in use`), so the recipe supplies the capital with
+  `::first-letter` — `capitalize` would title-case `In Use`. A literal (a directory name
+  such as `.cursor`, a plugin id) adds `.ui-badge-literal`: monospace, shown exactly as
+  written.
+- **A `--radius` corner, not a pill.** Full rounding (`--action-radius`) is the action
+  recipe; a badge that looks like a button invites a click it cannot answer.
+- **Neutral unless it reports a status.** `--warning` / `--error` / `--success` /
+  `--danger` mean how the thing is doing (warning, not loaded, orphaned, outside sandbox,
+  data policy); the accent means interaction emphasis (a nested instruction file active
+  this turn) plus the "experimental" exception above. A scope, kind, category, owner, or
+  the default state (`Stable`) stays neutral, even when it would be convenient to tell
+  categories apart by hue.
+- **Eyebrows are not badges.** The plugin publisher line over a name is a wide-tracked caps
+  caption without a frame, in text colours.
+
+Roadmap row chips (status, category, complexity) keep their own lowercase, filled shape —
+see "Roadmap list rows" — but the colour rule is the same: the category chip is neutral so
+`project` cannot be mistaken for the `blocked` status beside it.
+
+Guarded by [`badge-colour.test.ts`](../src/renderer/styles/badge-colour.test.ts), which
+allowlists every badge rule allowed a status or accent token (with the reason) and forbids
+a chip class from restating the recipe's shape. Visual eval: `settings-sources-agents`,
+`settings-worktree-actions`, `settings-plugins`, `settings-zdr-provider-presets`,
+`settings-tool-permissions`, and `roadmap-category-filter` in `tests/e2e/` measure the
+rendered colour, case, and corner.
+
 ### Agent-authored dialog copy and secrets
 
 - Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript
@@ -791,7 +833,7 @@ Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.
 
 ## Sources lists: origin on hover, not in the resting row
 
-Settings → Customise rows already carry a coarse source badge (`bundled`, `project`, …). When the
+Settings → Customise rows already carry a coarse, neutral source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
 `.sources-row-hover-detail` inside `.sources-row-primary` (the title slot between name and badge),
 revealed on `:hover` / `:focus-within` without growing the row or widening the settings column.
@@ -926,6 +968,10 @@ sidebar taste as thread rows and PR status icons:
   `aria-label` carries the thread title); attachments are a muted paperclip +
   count with no pill wash. Mark-done / reopen are check / refresh icons, hidden
   until row hover or focus (same idea as `.chat-delete`).
+- **Status colours mean status.** Only the status chip is coloured (`blocked` in
+  `--warning`, `conflicts` in `--danger`). The category chip (`bug`, `feature`,
+  `project`) is a neutral label: tinting categories with status hues made `project`
+  read as `blocked` in the same row (see "Badges are labels").
 - **Palette matches.** Cmd/Ctrl+P roadmap hits follow the same hide-ready rule.
 
 Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.ts).

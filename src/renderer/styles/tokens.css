@@ -135,6 +135,15 @@
   --action-min-height: calc(36px * var(--ui-scale));
   --action-padding-block: calc(6.8px * var(--ui-scale));
   --action-padding-inline: calc(14px * var(--ui-scale));
+  /* Badge recipe (`.ui-badge`, global/ui.css): a label on the thing, not a
+     shouted status. Sentence case, a restrained corner (full rounding belongs to
+     the actions above), and neutral unless the badge reports a status. See
+     docs/ui-taste.md → "Badges are labels". */
+  --badge-font-size: var(--font-size-xs);
+  --badge-font-weight: 500;
+  --badge-radius: var(--radius);
+  --badge-padding-block: 1px;
+  --badge-padding-inline: calc(6px * var(--ui-scale));
   --spacing-xs: calc(4px * var(--ui-scale));
   --spacing-sm: calc(8px * var(--ui-scale));
   --spacing-md: calc(12px * var(--ui-scale));

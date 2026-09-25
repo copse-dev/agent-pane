@@ -250,7 +250,9 @@
   height: 12px;
 }
 
-/* Category is independent from complexity: what kind of work this is. */
+/* Category is independent from complexity: what kind of work this is. It is a
+   label, not a status, so every category is the same neutral chip — a warning hue
+   on `project` would read as the `blocked` status badge sitting beside it. */
 .roadmap-category-badge {
   font-size: 10px;
   line-height: 1.4;
@@ -258,15 +260,6 @@
   border-radius: var(--radius);
   background: var(--bg-hover);
   color: var(--text-muted);
-}
-.roadmap-category-badge.is-bug {
-  color: var(--danger, #f14c4c);
-}
-.roadmap-category-badge.is-feature {
-  color: var(--accent);
-}
-.roadmap-category-badge.is-project {
-  color: var(--warning, #d29922);
 }
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */

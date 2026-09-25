@@ -20,8 +20,8 @@ import {
  * more — that badge's rendering is pinned in the component test
  * `src/renderer/views/settings-sources-hooks.test.ts` with a synthetic fixture.
  *
- * Note: `.sources-badge` is CSS-upcased (text-transform), so badge text is
- * matched case-insensitively (#879).
+ * Note: `.sources-badge` takes its capital from CSS (`::first-letter` in the
+ * `.ui-badge` recipe), so badge text is matched case-insensitively (#879).
  */
 describe('settings sources hooks', () => {
   before(async () => {
