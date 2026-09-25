@@ -501,6 +501,51 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /Review GitHub’s image diffs in \[screenshot PR #/)
     assert.match(workflow, /Close superseded screenshot review PRs/)
   })
+
+  it('pushes a view-only compare branch with the job token, never the App token', () => {
+    // Every eligible run with candidates gets a compare view; only the labelled
+    // review-PR path may mint or use the App token, whose pushes start CI.
+    assert.match(workflow, /\/\^\[0-9a-f\]\{40\}\$\/\.test\(runHeadSha/)
+    assert.match(
+      workflow,
+      /`screenshot-compare\/pr-\$\{number\}\/\$\{runHeadSha\.slice\(0, 12\)\}`/,
+    )
+    assert.match(workflow, /PUSH_TOKEN: \$\{\{ github\.token \}\}/)
+    assert.equal(
+      workflow.match(/steps\.app-token\.outputs\.token/g)?.length,
+      1,
+      'the App token belongs to the explicit review-PR step alone',
+    )
+    assert.doesNotMatch(workflow, /persist-credentials: true/)
+    assert.match(
+      workflow,
+      /compare\/\$\{process\.env\.EXPECTED_HEAD_SHA\}\.\.\.\$\{process\.env\.COMPARE_BRANCH\}/,
+    )
+    assert.match(
+      workflow,
+      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA\) \{\n {14}if \(process\.env\.COMPARE_PUSHED === 'true'\) await deleteBranch\(current\);/,
+      'a stale publisher may delete only the compare branch it pushed',
+    )
+  })
+})
+
+describe('close-orphaned-screenshot-reviews.yml workflow invariants', () => {
+  const workflow = readFileSync(
+    resolve('.github/workflows/close-orphaned-screenshot-reviews.yml'),
+    'utf8',
+  )
+
+  it('cleans up every review PR and compare branch for a closed same-repo parent', () => {
+    assert.match(workflow, /^ {2}pull_request:\n {4}types: \[closed\]$/m)
+    assert.doesNotMatch(workflow, /^ +pull_request_target:|uses: actions\/checkout/m)
+    assert.match(
+      workflow,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+    )
+    assert.match(workflow, /const prefix = `screenshots\/pr-\$\{parentNumber\}\/`/)
+    assert.match(workflow, /const comparePrefix = `screenshot-compare\/pr-\$\{parentNumber\}\/`/)
+    assert.match(workflow, /github\.rest\.git\.listMatchingRefs/)
+  })
 })
 
 describe('promote-develop.yml workflow invariants', () => {

@@ -256,10 +256,18 @@ A typical Electron fixture flow is:
 
 The test oracle defines screenshot ownership. The CI run remains read-only and attaches changed
 renders as an immutable artifact retained for 14 days. After a successful same-repository run, a
-trusted follow-up links that evidence from the parent PR. Ordinary runs do not open another PR or
-update references. Review the screenshots with the change; an artifact is evidence, not visual
-acceptance. The candidate artifact is filtered for noise, drift, and ownership; raw renders remain
-in the run's shard artifacts.
+trusted follow-up validates those PNGs and pushes them as one bot commit on top of the rendered head
+to a view-only `screenshot-compare/pr-<N>/<sha12>` branch. The parent PR's screenshot comment links
+GitHub's compare view for that commit, so the image diff (2-up, swipe, onion skin) opens in the
+browser with no download; the artifact link stays as the immutable record. The comment also shows a
+Before/After table of up to 20 candidates, sorted by name, with a link to the compare view for the
+rest. Its images are raw URLs pinned to the head SHA and the compare commit SHA, never a branch, so
+they cannot change under the comment; they render inline only because this repository is public. The
+compare branch is never merged, opens no PR, and runs no CI. A newer successful head replaces it,
+and closing the parent deletes it. Ordinary runs do not open another PR or update references. Review
+the screenshots with the change; a compare view or artifact is evidence, not visual acceptance. The
+candidate set is filtered for noise, drift, and ownership; raw renders remain in the run's shard
+artifacts.
 
 CI invokes screenshot freshness checking with `--plan`, which is advisory. A broad regeneration
 plan alone does not require `update-screenshots`; reserve that label for an intentional reference
@@ -271,7 +279,7 @@ reference set and asks the trusted publisher to open a bot-owned PNG review PR i
 branch. Review GitHub's image diffs, then merge the accepted references. Remove the label once the
 review PR is created to avoid repeating the full refresh. A newer successful source-head run closes
 stale review PRs. Do not accept unrelated drift just because CI captured it. You can also download
-and commit reviewed PNGs manually. Forks and promotion PRs whose source is an integration branch
-always use that manual path. Local filtering is implemented by
-`scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
-[`testing-strategy.md`](testing-strategy.md).
+and commit reviewed PNGs manually. Forks and promotion PRs whose source is an integration branch get
+neither a compare branch nor a review PR, and always use that download-and-commit path. Local
+filtering is implemented by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier
+selection are documented in [`testing-strategy.md`](testing-strategy.md).

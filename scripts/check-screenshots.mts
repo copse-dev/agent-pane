@@ -115,8 +115,9 @@ function main(): void {
   for (const p of gate.missing) console.error(`      tests/e2e/screenshots/${p}`)
   console.error(
     '\n  On CI the e2e gate re-renders these shots into an immutable candidate\n' +
-      '  artifact. Download and review it, then commit the intended PNGs. Add the\n' +
-      '  `update-screenshots` label when you need the complete reference set rendered.\n',
+      '  artifact; same-repository PRs also get a view-only compare link. Review\n' +
+      '  them, then commit the intended PNGs. Add the `update-screenshots` label\n' +
+      '  when you need the complete reference set rendered.\n',
   )
   process.exit(1)
 }

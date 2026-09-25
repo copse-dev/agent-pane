@@ -1,10 +1,24 @@
 name: Publish screenshot candidates
 
 # CI itself stays read-only. Once a successful PR run has produced the immutable
-# candidate artifact, this trusted-default-branch workflow links it from the
-# parent PR. Only an explicit `update-screenshots` request creates a child PR.
+# candidate artifact, this trusted-default-branch workflow makes it reviewable
+# from the parent PR:
+#
+# - Every eligible run with candidates pushes a view-only compare branch,
+#   `screenshot-compare/pr-<N>/<sha12>`: one bot commit of validated PNGs on top
+#   of the exact rendered head. The parent comment links GitHub's compare view
+#   for that commit, so image diffs (2-up/swipe/onion skin) need no download and
+#   no PR, and previews up to 20 before/after pairs inline from raw URLs pinned
+#   to the head and compare commit SHAs (the repository is public, so GitHub
+#   renders them in the comment). It is pushed with this job's GITHUB_TOKEN, which starts no workflows,
+#   so the branch never runs CI or demo previews. It is never merged; accepting
+#   references still needs a manual commit or the review PR below.
+# - Only an explicit `update-screenshots` request mints the App token and
+#   creates a child review PR into the source branch.
+#
 # `workflow_run` is deliberately used instead of adding a
-# write token to the job that executes pull-request code.
+# write token to the job that executes pull-request code. Nothing from the
+# checkout is ever executed here; the candidate PNGs are validated as data.
 on:
   workflow_run:
     workflows: [CI]
@@ -22,8 +36,8 @@ permissions:
 jobs:
   publish:
     # A workflow_run receives secrets even when its source run came from a fork.
-    # Reject forks before minting a write token. Failed/cancelled runs have no
-    # accepted evidence to publish.
+    # Reject forks before minting a write token or pushing any branch.
+    # Failed/cancelled runs have no accepted evidence to publish.
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
@@ -51,6 +65,12 @@ jobs:
             core.setOutput('eligible', 'false');
             core.setOutput('has-artifact', 'false');
             core.setOutput('create-review', 'false');
+            // Every bot ref below is derived from this SHA; refuse anything but
+            // a full hex object id before it can shape a branch name.
+            if (!/^[0-9a-f]{40}$/.test(runHeadSha || '')) {
+              core.setFailed(`Run ${runId} reported an unexpected head SHA.`);
+              return;
+            }
             if (candidates.length !== 1) {
               core.notice(`Expected one parent PR for run ${runId}; found ${candidates.length}.`);
               return;
@@ -93,6 +113,12 @@ jobs:
             core.setOutput('head-ref', parent.head.ref);
             core.setOutput('head-sha', runHeadSha);
             core.setOutput('review-branch', `screenshots/pr-${number}/${runHeadSha.slice(0, 12)}`);
+            // A separate prefix: `screenshots/pr-<N>/` belongs to review PR heads,
+            // whose cleanup matches on it. View-only branches stay out of it.
+            core.setOutput(
+              'compare-branch',
+              `screenshot-compare/pr-${number}/${runHeadSha.slice(0, 12)}`,
+            );
             core.setOutput('artifact-name', artifactName);
             if (matches.length === 1) {
               core.setOutput('has-artifact', 'true');
@@ -117,16 +143,19 @@ jobs:
           permission-pull-requests: write
 
       # Checkout by the immutable SHA discovered above, never by an
-      # attacker-controlled ref. Nothing from this checkout is executed.
+      # attacker-controlled ref. Nothing from this checkout is executed, and no
+      # credential is left in it: the one push below carries its own header.
+      # Full history (GiBs of PNG revisions) only for the review-PR action; the
+      # compare commit needs nothing but the head, which the remote already has.
       - uses: actions/checkout@v7.0.1
-        if: steps.discover.outputs.create-review == 'true'
+        if: steps.discover.outputs.has-artifact == 'true'
         with:
           ref: ${{ steps.discover.outputs.head-sha }}
-          fetch-depth: 0
+          fetch-depth: ${{ steps.discover.outputs.create-review == 'true' && '0' || '1' }}
           persist-credentials: false
 
       - name: Download the immutable candidate artifact
-        if: steps.discover.outputs.create-review == 'true'
+        if: steps.discover.outputs.has-artifact == 'true'
         uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ steps.discover.outputs.artifact-id }}
@@ -137,11 +166,13 @@ jobs:
           path: ${{ runner.temp }}/screenshot-candidates
 
       - name: Validate and apply candidate PNGs
-        if: steps.discover.outputs.create-review == 'true'
+        if: steps.discover.outputs.has-artifact == 'true'
         id: candidates
         env:
           CANDIDATE_ROOT: ${{ runner.temp }}/screenshot-candidates
         run: |
+          listing="$RUNNER_TEMP/screenshot-candidate-names"
+          : > "$listing"
           if find "$CANDIDATE_ROOT" -type l -print -quit | grep -q .; then
             echo '::error::Screenshot candidate artifact contains a symlink.'
             exit 1
@@ -180,6 +211,12 @@ jobs:
                   echo '::error::Screenshot candidate artifact exceeds its count or size budget.'
                   exit 1
                 fi
+                # Recorded before applying: a name absent from the head tree is new.
+                if git cat-file -e "HEAD:tests/e2e/screenshots/$name" 2> /dev/null; then
+                  printf '%s changed\n' "$name" >> "$listing"
+                else
+                  printf '%s new\n' "$name" >> "$listing"
+                fi
                 install -m 0644 "$path" "tests/e2e/screenshots/$name"
                 ;;
               *)
@@ -194,6 +231,84 @@ jobs:
             exit 1
           fi
           echo "count=$count" >> "$GITHUB_OUTPUT"
+
+          # The parent comment previews the first names in byte order. Emit only
+          # a bounded prefix: a full refresh can carry thousands of names, and one
+          # environment variable is capped at 128 KiB on Linux. `count` stays
+          # the exact total. Names already matched the strict pattern above, so
+          # they need no JSON escaping.
+          names="$(LC_ALL=C sort "$listing" | awk '
+            NR <= 50 {
+              printf "%s{\"name\":\"%s\",\"new\":%s}", (NR > 1 ? "," : ""), $1, ($2 == "new" ? "true" : "false")
+            }')"
+          echo "names=[$names]" >> "$GITHUB_OUTPUT"
+
+      # A view-only branch for GitHub's compare page: one commit holding exactly
+      # the validated PNGs, parented on the rendered head. It is built with a
+      # throwaway index and `git commit-tree`, so no hook runs and the checkout's
+      # HEAD, index, and working tree stay as the review-PR step expects them.
+      # GITHUB_TOKEN pushes trigger no workflows. The token reaches git only
+      # through env-scoped config for this one push, never argv or .git/config.
+      # A refused push (for example a ruleset) degrades to the artifact-only
+      # comment instead of blocking publication; bad candidates already failed
+      # the validation step above.
+      - name: Push the view-only screenshot compare branch
+        id: compare
+        if: steps.discover.outputs.has-artifact == 'true'
+        continue-on-error: true
+        env:
+          COMPARE_BRANCH: ${{ steps.discover.outputs.compare-branch }}
+          HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
+          PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          PUSH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$COMPARE_BRANCH" =~ ^screenshot-compare/pr-[1-9][0-9]*/[0-9a-f]{12}$ ]] ||
+            [ "$COMPARE_BRANCH" != "screenshot-compare/pr-$PARENT_NUMBER/${HEAD_SHA:0:12}" ] ||
+            [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo '::error::Refusing an unexpected compare branch or checkout.'
+            exit 1
+          fi
+
+          index="$RUNNER_TEMP/screenshot-compare.index"
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree HEAD
+          GIT_INDEX_FILE="$index" git add -- tests/e2e/screenshots/
+          tree="$(GIT_INDEX_FILE="$index" git write-tree)"
+          rm -f "$index"
+          if [ "$tree" = "$(git rev-parse 'HEAD^{tree}')" ]; then
+            echo "::notice::Candidates already match $HEAD_SHA; no compare branch needed."
+            exit 0
+          fi
+          unexpected="$(git diff-tree -r --name-only HEAD "$tree" |
+            grep -Ev '^tests/e2e/screenshots/[A-Za-z0-9][A-Za-z0-9._-]*\.png$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo '::error::Compare commit would touch files outside tests/e2e/screenshots/.'
+            exit 1
+          fi
+
+          commit="$(
+            GIT_AUTHOR_NAME='github-actions[bot]' \
+            GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
+            GIT_COMMITTER_NAME='github-actions[bot]' \
+            GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
+            git commit-tree "$tree" -p HEAD \
+              -m "chore(e2e): screenshot candidates for #$PARENT_NUMBER at ${HEAD_SHA:0:12}" \
+              -m "View-only: rendered by CI run $RUN_ID. Do not merge this branch."
+          )"
+
+          basic="$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$basic"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.$SERVER_URL/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $basic" \
+            git push --force "$SERVER_URL/$REPOSITORY.git" "$commit:refs/heads/$COMPARE_BRANCH"
+          echo 'pushed=true' >> "$GITHUB_OUTPUT"
+          # The parent comment pins its "after" images to this immutable commit.
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
       # The review branch is derived only from the numeric PR id and immutable
       # source SHA. It targets the contributor's branch, never main: merging it
@@ -283,6 +398,63 @@ jobs:
               }
             }
 
+      # Same guard as closing superseded reviews: only a publisher whose parent
+      # is still open at its exact head may delete another run's branch. A
+      # stale publisher deletes only the branch it just pushed, so it can never
+      # remove evidence for a newer head.
+      - name: Delete superseded screenshot compare branches
+        id: compare-cleanup
+        if: steps.discover.outputs.eligible == 'true'
+        uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          EXPECTED_HEAD_SHA: ${{ steps.discover.outputs.head-sha }}
+          COMPARE_BRANCH: ${{ steps.discover.outputs.compare-branch }}
+          COMPARE_PUSHED: ${{ steps.compare.outputs.pushed }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const parentNumber = Number(process.env.PARENT_NUMBER);
+            const prefix = `screenshot-compare/pr-${parentNumber}/`;
+            const current = process.env.COMPARE_BRANCH;
+            if (!Number.isSafeInteger(parentNumber) || parentNumber < 1 || !current?.startsWith(prefix)) {
+              core.setFailed('Refusing to clean up an unexpected compare branch prefix.');
+              return;
+            }
+            const deleteBranch = async (branch) => {
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+                core.info(`Deleted screenshot compare branch ${branch}.`);
+              } catch (error) {
+                // Best-effort: a concurrent publisher or the close workflow may
+                // already have removed it.
+                core.info(`Could not delete ${branch}: ${error.message}`);
+              }
+            };
+
+            const { data: parent } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: parentNumber,
+            });
+            if (parent.state !== 'open' || parent.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              if (process.env.COMPARE_PUSHED === 'true') await deleteBranch(current);
+              core.notice(`Parent PR #${parentNumber} moved while publishing; removed the stale compare branch.`);
+              return;
+            }
+
+            const refs = await github.paginate(github.rest.git.listMatchingRefs, {
+              owner,
+              repo,
+              ref: `heads/${prefix}`,
+              per_page: 100,
+            });
+            for (const { ref } of refs) {
+              if (!ref.startsWith(`refs/heads/${prefix}`)) continue;
+              const branch = ref.slice('refs/heads/'.length);
+              if (branch !== current) await deleteBranch(branch);
+            }
+
       - name: Link screenshot evidence from the parent
         if: steps.discover.outputs.eligible == 'true'
         uses: actions/github-script@v9
@@ -295,6 +467,11 @@ jobs:
           EXISTING_REVIEW_NUMBER: ${{ steps.reviews.outputs.existing-number }}
           EXISTING_REVIEW_URL: ${{ steps.reviews.outputs.existing-url }}
           ARTIFACT_ID: ${{ steps.discover.outputs.artifact-id }}
+          COMPARE_BRANCH: ${{ steps.discover.outputs.compare-branch }}
+          COMPARE_PUSHED: ${{ steps.compare.outputs.pushed }}
+          COMPARE_COMMIT: ${{ steps.compare.outputs.commit }}
+          CANDIDATE_NAMES: ${{ steps.candidates.outputs.names }}
+          CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         with:
@@ -304,6 +481,61 @@ jobs:
             const parentNumber = Number(process.env.PARENT_NUMBER);
             const reviewNumber = Number(process.env.REVIEW_NUMBER || process.env.EXISTING_REVIEW_NUMBER || 0);
             const reviewUrl = process.env.REVIEW_URL || process.env.EXISTING_REVIEW_URL;
+            const sha12 = process.env.EXPECTED_HEAD_SHA.slice(0, 12);
+            const compareUrl =
+              process.env.COMPARE_PUSHED === 'true'
+                ? `https://github.com/${owner}/${repo}/compare/${process.env.EXPECTED_HEAD_SHA}...${process.env.COMPARE_BRANCH}`
+                : '';
+
+            // Inline before/after previews. Both sides are raw URLs pinned to
+            // immutable commits (never a branch), so an image cannot change
+            // under the comment. Names are re-checked here because they reach
+            // markdown and HTML; anything unexpected drops the whole table.
+            const previewLimit = 20;
+            const previewTable = () => {
+              const commit = process.env.COMPARE_COMMIT || '';
+              if (!compareUrl || !/^[0-9a-f]{40}$/.test(commit)) return [];
+              let entries;
+              try {
+                entries = JSON.parse(process.env.CANDIDATE_NAMES || '[]');
+              } catch {
+                return [];
+              }
+              const namePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/;
+              if (
+                !Array.isArray(entries) ||
+                entries.length === 0 ||
+                !entries.every(
+                  (entry) =>
+                    typeof entry?.name === 'string' &&
+                    namePattern.test(entry.name) &&
+                    typeof entry.new === 'boolean',
+                )
+              ) {
+                return [];
+              }
+              const sorted = [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+              const shown = sorted.slice(0, previewLimit);
+              const total = Math.max(Number(process.env.CANDIDATE_COUNT) || 0, entries.length);
+              const raw = (sha, name) =>
+                `https://github.com/${owner}/${repo}/raw/${sha}/tests/e2e/screenshots/${name}`;
+              const image = (sha, name) => `<img src="${raw(sha, name)}" width="360">`;
+              const lines = [
+                '| Screenshot | Before | After |',
+                '| --- | --- | --- |',
+                ...shown.map(
+                  (entry) =>
+                    `| \`${entry.name}\` | ` +
+                    `${entry.new ? '*new*' : image(process.env.EXPECTED_HEAD_SHA, entry.name)} | ` +
+                    `${image(commit, entry.name)} |`,
+                ),
+              ];
+              if (total > shown.length) {
+                lines.push('', `…and ${total - shown.length} more — see [the compare view](${compareUrl}).`);
+              }
+              return ['', ...lines];
+            };
+            const table = previewTable();
             const { data: parent } = await github.rest.pulls.get({
               owner,
               repo,
@@ -311,7 +543,8 @@ jobs:
             });
 
             // The source branch can move while this workflow is preparing the
-            // child PR. Never leave a stale review link merge-ready.
+            // child PR. Never leave a stale review link merge-ready, and never
+            // post a compare link for a head the parent no longer has.
             if (parent.state !== 'open' || parent.head.sha !== process.env.EXPECTED_HEAD_SHA) {
               if (reviewNumber) {
                 await github.rest.pulls.update({
@@ -320,6 +553,17 @@ jobs:
                   pull_number: reviewNumber,
                   state: 'closed',
                 });
+              }
+              if (compareUrl) {
+                try {
+                  await github.rest.git.deleteRef({
+                    owner,
+                    repo,
+                    ref: `heads/${process.env.COMPARE_BRANCH}`,
+                  });
+                } catch (error) {
+                  core.info(`Could not delete ${process.env.COMPARE_BRANCH}: ${error.message}`);
+                }
               }
               core.notice(`Parent PR #${parentNumber} moved while publishing; closed the stale review.`);
               return;
@@ -344,19 +588,34 @@ jobs:
                 `After review, merge it to apply the accepted PNGs to \`${process.env.HEAD_REF}\`.`,
                 'Remove `update-screenshots` now to avoid repeating the full refresh.',
                 '',
-                `The review PR records its source run and candidates for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\`.`,
+                `The review PR records its source run and candidates for \`${sha12}\`.`,
                 `Latest successful evidence: [CI run ${process.env.RUN_ID}](${process.env.RUN_URL}).`,
+                ...(compareUrl
+                  ? [`The same candidates are also in a [view-only compare](${compareUrl}) against \`${sha12}\`.`]
+                  : []),
+                ...table,
                 '',
                 'If this source branch moves, a later successful render closes the stale review PR and replaces this link.',
               ].join('\n');
             } else if (process.env.ARTIFACT_ID) {
               const artifactUrl = `${process.env.RUN_URL}/artifacts/${process.env.ARTIFACT_ID}`;
+              const artifactLink =
+                `[the screenshot artifact](${artifactUrl}) from [CI run ${process.env.RUN_ID}](${process.env.RUN_URL})`;
               body = [
                 marker,
                 '### Screenshot evidence',
                 '',
-                `Changed reference candidates for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\` are in ` +
-                  `[the screenshot artifact](${artifactUrl}) from [CI run ${process.env.RUN_ID}](${process.env.RUN_URL}).`,
+                ...(compareUrl
+                  ? [
+                      `**[View the changed reference screenshots](${compareUrl})** for \`${sha12}\` in ` +
+                        'GitHub’s image diff (2-up, swipe, onion skin).',
+                      'The compare view is for viewing only: it shows one bot commit of candidate PNGs on top of this ' +
+                        'head and is never merged. Accepting references still needs `update-screenshots` or a manual commit.',
+                      ...table,
+                      '',
+                      `The same candidates are in ${artifactLink}.`,
+                    ]
+                  : [`Changed reference candidates for \`${sha12}\` are in ${artifactLink}.`]),
                 'The artifact is retained for 14 days; its presence does not mean the visual changes have been accepted.',
                 '',
                 'Review this evidence with the parent PR. No baseline-update PR was opened.',
@@ -371,8 +630,8 @@ jobs:
                 '### Reference screenshots',
                 '',
                 `CI run [${process.env.RUN_ID}](${process.env.RUN_URL}) published no filtered screenshot candidates ` +
-                  `for \`${process.env.EXPECTED_HEAD_SHA.slice(0, 12)}\`.`,
-                'Any review PR for an older source SHA has been closed.',
+                  `for \`${sha12}\`.`,
+                'Review PRs and compare branches for older source SHAs have been closed or deleted.',
               ].join('\n');
             }
 

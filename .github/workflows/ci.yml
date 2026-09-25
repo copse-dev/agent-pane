@@ -1801,7 +1801,8 @@ jobs:
   # those slices into one downloadable candidate set. It deliberately has no
   # write permission and never checks out or pushes the PR branch. The trusted
   # publish-screenshot-candidates workflow links the finished artifact from the
-  # parent. Only `update-screenshots` requests a bot-owned child PR for accepting
+  # parent, together with a view-only compare branch for GitHub's image diff.
+  # Only `update-screenshots` requests a bot-owned child PR for accepting
   # baseline changes. Forks retain the artifact-only/manual path.
   screenshot-artifacts:
     needs: [build, e2e]
@@ -1896,7 +1897,8 @@ jobs:
             else
               echo "${#files[@]} changed reference screenshot(s) are attached as an immutable artifact."
               echo
-              echo "A trusted follow-up workflow links this evidence from the same-repository parent PR."
+              echo "A trusted follow-up workflow links this evidence from the same-repository parent PR,"
+              echo "including a view-only compare view of the PNGs in GitHub's image diff."
               echo 'Only the `update-screenshots` label requests a separate PNG review PR.'
               echo "The artifact remains the immutable record and the manual fallback for forks."
               echo
