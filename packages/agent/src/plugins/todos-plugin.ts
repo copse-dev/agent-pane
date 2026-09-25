@@ -90,7 +90,7 @@ export const todosPlugin: RegisteredPlugin = definePlugin(
   {
     name: TODOS_PLUGIN_ID,
     description:
-      'Structured plan pilot plugin — owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.',
+      'Owns the `update_todos` tool, todo steering + closeout hooks, and the plan panel contribution.',
     trust: 'first-party',
     stability: 'stable',
     tools: { native: [TODOS_TOOL_NAME] },

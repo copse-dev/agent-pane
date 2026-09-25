@@ -192,7 +192,7 @@ export const RETIRED_ACP_AGENTS: readonly RetiredAcpAgent[] = [
     },
     sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
-    note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
+    note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or `ANTHROPIC_API_KEY`.",
   },
 ]
 
@@ -233,7 +233,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'gemini', // first run walks through Google sign-in; or set GEMINI_API_KEY
     reauth: 'gemini', // re-running the CLI re-prompts once the stored token lapses
     docsUrl: 'https://github.com/google-gemini/gemini-cli',
-    note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
+    note: 'Sign in by running `gemini` once, or set `GEMINI_API_KEY`.',
   },
   {
     id: 'claude-acp',
@@ -284,7 +284,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'claude setup-token',
     reauth: 'claude /login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
-    note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
+    note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or `ANTHROPIC_API_KEY`).',
   },
   {
     id: 'cursor',
@@ -350,7 +350,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'codex login', // ChatGPT sign-in; set NO_BROWSER=1 for headless, or use CODEX_API_KEY
     reauth: 'codex login',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/codex-acp',
-    note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set CODEX_API_KEY.',
+    note: 'OpenAI Codex over ACP. Sign in with `codex login` (ChatGPT), or set `CODEX_API_KEY`.',
   },
 ]
 

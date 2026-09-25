@@ -17,6 +17,8 @@ This directory keeps the app-side integration only:
   `remote-artifact-image` placeholders (see the sink allowlist notes in the
   package's `sanitize.ts`).
 - `code-block-copy.ts` — copy buttons on rendered fenced blocks.
+- `inline-markdown.ts` — the phrasing-only subset (`code`, emphasis, strong) for single-line
+  hosts: buttons, hints, list rows, and inline statuses.
 - `mermaid.ts`, `mermaid-frame.ts`, `mermaid-expand.ts`, `mermaid-fallback.ts` —
   isolated diagram frames after final insertion, expansion in a fresh frame,
   and the inert source fallback. `mermaid-frame-entry.ts` and `mermaid-render.ts`

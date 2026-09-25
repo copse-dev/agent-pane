@@ -89,6 +89,9 @@ describe('settings plaintext secret storage', () => {
     await expect(dialog).toBeDisplayed()
     assert.match(await status.getText(), /secure storage is unavailable/i)
     assert.match(await status.getText(), /plaintext secret storage is disabled/i)
+    // Lowercase after the colon, and the environment variable renders as code.
+    assert.match(await status.getText(), /^Not saved: secure storage is unavailable/)
+    await expect(status.$('code')).toHaveText('COPSE_ALLOW_PLAINTEXT_SECRETS=1')
     assert.equal(
       await browser.execute(
         () => document.querySelector<HTMLDialogElement>('#confirm-dialog')?.open ?? false,

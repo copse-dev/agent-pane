@@ -208,7 +208,7 @@ export function decideShellPermission(
   }
 
   if (!opts.autoRun) {
-    return { action: 'prompt', reasons: ['auto-run for sandbox commands is disabled in Settings'] }
+    return { action: 'prompt', reasons: ['Auto-run for sandbox commands is disabled in Settings'] }
   }
 
   const analysis = analyzeShellCommand(command, opts.workspaceRoot)

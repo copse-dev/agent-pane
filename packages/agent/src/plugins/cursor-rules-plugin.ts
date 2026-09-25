@@ -20,7 +20,7 @@ export const cursorRulesPlugin: RegisteredPlugin = definePlugin(
   {
     name: CURSOR_RULES_PLUGIN_ID,
     description:
-      'Cursor rules compatibility — supplies .cursor/rules instruction sources while Copse retains trust, containment, and rendering.',
+      'Supplies `.cursor/rules` instruction sources while Copse retains trust, containment, and rendering.',
     trust: 'first-party',
     stability: 'stable',
   },

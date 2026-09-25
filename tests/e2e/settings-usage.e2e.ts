@@ -266,6 +266,16 @@ describe('settings usage panel', function () {
     await rightmost.moveTo()
     const tooltip = $('.frontier-tooltip:not([hidden])')
     await expect(tooltip).toBeDisplayed()
+    // Derivation rows read as sentences, never "<step id>: <detail>".
+    const tipRows = await browser.execute(() =>
+      [...document.querySelectorAll('.frontier-tooltip:not([hidden]) .tt-muted')].map(
+        (row) => row.textContent,
+      ),
+    )
+    assert.ok(
+      tipRows.every((row) => !/^(measured|equated):/i.test(row)),
+      `tooltip rows: ${tipRows.join(' | ')}`,
+    )
 
     const geometry = await browser.execute(() => {
       const tip = document.querySelector('.frontier-tooltip:not([hidden])')

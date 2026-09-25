@@ -31,7 +31,8 @@ function catalog(): ToolPermissionCatalog {
             id: 'copse:prepare-worktree',
             executionName: 'prepare_worktree',
             name: 'Prepare worktree',
-            description: 'Create an isolated checkout for a new thread.',
+            description:
+              'Create an isolated checkout for a new thread. Use this instead of `git worktree`.',
             policy: 'ask',
             defaultPolicy: 'ask',
             overridden: false,
@@ -184,6 +185,16 @@ describe('tool permissions panel', () => {
     assert.ok(fixedAllow)
     assert.equal(fixedAllow.disabled, true)
     assert.equal(fixedAllow.title, 'Worktree preparation always requires approval.')
+  })
+
+  it('shows backticked names in a tool description as inline code', async () => {
+    const root = await mount(apiHarness())
+    const description = root.querySelector(
+      '[data-tool-id="copse:prepare-worktree"] .tool-permission-description',
+    )
+    assert.ok(description)
+    assert.equal(description.querySelector('code')?.textContent, 'git worktree')
+    assert.doesNotMatch(description.textContent, /`/)
   })
 
   it('summarises a group whose effective defaults all match', async () => {

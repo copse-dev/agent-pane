@@ -54,7 +54,14 @@ describe('settings usage model value map cost axis', () => {
     const chart = fieldset.$('.frontier-chart svg')
     await expect(chart).toBeDisplayed()
     assert.equal(await chart.getAttribute('data-cost-axis'), 'blended')
-    assert.match(await chart.getText(), /blended price/)
+    assert.match(await chart.getText(), /Blended price/)
+    // Axis labels are sentence case, like the AA task-cost axis.
+    assert.equal(
+      await browser.execute(
+        () => document.querySelector('.frontier-chart svg text[transform^="rotate"]')?.textContent,
+      ),
+      'Intellect',
+    )
     // The chart shares the picker's available ACP model list. A statically
     // tracked model that this agent does not advertise stays behind Discover.
     assert.equal(

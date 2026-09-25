@@ -5,7 +5,7 @@ import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const SERVER_NAME = 'copse-canvas'
-const TOOL_NAME = 'Render Html Artefact'
+const TOOL_NAME = 'Render HTML artefact'
 
 async function openMcpSettings() {
   await $('[aria-label="Settings"]').click()
@@ -102,6 +102,14 @@ describe('settings tool permissions', () => {
     await guiLaunchRow.waitForExist({ timeout: 15_000 })
     await guiLaunchRow.scrollIntoView({ block: 'center' })
     assert.equal(await guiLaunchRow.getAttribute('data-policy'), 'ask')
+    // The machine name reads as a sentence-case label with its acronym intact,
+    // and the model-facing description shows commands as code, not backticks.
+    await expect(guiLaunchRow.$('.tool-permission-name')).toHaveText(
+      expect.stringContaining('Launch GUI app'),
+    )
+    const guiDescription = guiLaunchRow.$('.tool-permission-description')
+    await expect(guiDescription.$('code=run_shell')).toBeExisting()
+    assert.doesNotMatch(await guiDescription.getText(), /`/)
     const allowGuiLaunch = guiLaunchRow.$('[data-policy="allow"]')
     assert.equal(await allowGuiLaunch.isEnabled(), false)
     assert.match(

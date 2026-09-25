@@ -1,5 +1,6 @@
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
 
@@ -201,12 +202,12 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   // Codex reports connection failures as synthetic MCP startup calls. Their
   // server is the useful identity; stripping it makes every failure "Startup".
   if (mcp?.tool === 'startup') return `${mcp.server} startup`
-  if (mcp) return formatToolNameFallback(mcp.tool)
+  if (mcp) return humanizeIdentifier(mcp.tool)
   // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
   // user sees just the tool name, not the internal server alias.
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, '')
-  if (stripped !== name) return formatToolNameFallback(stripped)
-  return formatToolNameFallback(name)
+  if (stripped !== name) return humanizeIdentifier(stripped)
+  return humanizeIdentifier(name)
 }
 
 function stringArg(args: unknown, key: string): string | null {
@@ -349,21 +350,6 @@ export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): 
   const group = TOOL_GROUPS[key]
   if (!group) return key
   return pickLabel(group.label, tense)
-}
-
-/** Words that read as acronyms and stay fully upper case in tool labels. */
-const TOOL_NAME_ACRONYMS = new Set(['gh', 'pr', 'ci', 'url', 'id'])
-
-function formatToolNameFallback(name: string): string {
-  return name
-    .split('_')
-    .filter(Boolean)
-    .map((word) =>
-      TOOL_NAME_ACRONYMS.has(word.toLowerCase())
-        ? word.toUpperCase()
-        : word.charAt(0).toUpperCase() + word.slice(1),
-    )
-    .join(' ')
 }
 
 export function aggregateToolStatus(toolCalls: ToolCall[]): ToolCall['status'] {

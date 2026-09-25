@@ -39,10 +39,14 @@ describe('settings usage panel plan errors', () => {
       claudeText,
       /HTTP 401|authentication_error|request_id|req_011Cd5RChA2NLVzY1EV634KW/,
     )
+    // The recovery command renders as inline code, never as raw backticks.
+    await expect(claude.$('.usage-plan-status code')).toHaveText('claude /login')
+    assert.doesNotMatch(claudeText, /`/)
     // A rejected Claude credential offers an inline recovery affordance.
     const signIn = claude.$('.usage-plan-signin-btn')
     await expect(signIn).toBeDisplayed()
     assert.match(await signIn.getText(), /Sign in to Claude/i)
+    assert.doesNotMatch((await signIn.getAttribute('title')) ?? '', /`/)
 
     await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
 
@@ -56,6 +60,11 @@ describe('settings usage panel plan errors', () => {
     const cursor = $('.usage-plan-provider[data-provider="cursor"][data-status="unavailable"]')
     await expect(cursor).toBeDisplayed()
     assert.match(await cursor.$('.usage-plan-status').getText(), /Cursor session was rejected/i)
+
+    const planText = await browser.execute(() =>
+      [...document.querySelectorAll('.usage-plan-provider')].map((card) => card.textContent).join(),
+    )
+    assert.doesNotMatch(planText, /`/, 'no plan-usage copy shows raw backtick delimiters')
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-auth-errors.png')

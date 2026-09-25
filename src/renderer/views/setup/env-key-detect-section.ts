@@ -47,9 +47,15 @@ export function createEnvKeyDetectSection(
     el(
       'p',
       { class: 'field-hint' },
-      'Scans your exported environment and shell start-up files (e.g. ~/.zshrc, ~/.bashrc) ' +
-        'for keys like ANTHROPIC_API_KEY or OPENAI_API_KEY. Nothing is read until you click ' +
-        'Scan, and existing keys are never overwritten.',
+      'Scans your exported environment and shell start-up files (e.g. ',
+      el('code', {}, '~/.zshrc'),
+      ', ',
+      el('code', {}, '~/.bashrc'),
+      ') for keys like ',
+      el('code', {}, 'ANTHROPIC_API_KEY'),
+      ' or ',
+      el('code', {}, 'OPENAI_API_KEY'),
+      '. Nothing is read until you click Scan, and existing keys are never overwritten.',
     ),
     actions,
     results,

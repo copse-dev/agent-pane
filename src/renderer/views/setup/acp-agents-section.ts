@@ -8,6 +8,7 @@ import {
   type KnownAcpAgent,
 } from '@shared/acp-known-agents.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { setInlineMarkdown } from '../../markdown/inline-markdown.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
@@ -547,7 +548,11 @@ export function createAcpAgentsSection(
     )
     if (!installed && known.install) form.append(commandRow('Install', known.install))
     if (known.setup) form.append(commandRow('Sign in', known.setup))
-    if (known.note) form.append(el('p', { class: 'field-hint' }, known.note))
+    if (known.note) {
+      const note = el('p', { class: 'field-hint acp-known-agent-note' })
+      setInlineMarkdown(note, known.note)
+      form.append(note)
+    }
     if (known.docsUrl) {
       form.append(
         el(

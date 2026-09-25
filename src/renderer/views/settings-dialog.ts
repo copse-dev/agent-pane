@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import {
   AUTO_APPROVAL_LEVEL_LABELS,
   AUTO_APPROVAL_LEVEL_SETTING,
@@ -36,7 +37,7 @@ import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { openAttachmentPreview } from '../attachments/attachment-preview.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { qsRequired } from '../dom/helpers.ts'
+import { el, qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import {
   fetchDynamicModelOptions,
@@ -133,44 +134,18 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
   value === 'experimental'
 
 /**
- * Segments of a plugin id that are acronyms, and must stay uppercase rather than
- * being sentence-cased. Without this `copse.pii-redaction` reads "Pii
- * redaction" — a machine transformation showing through as user-facing copy.
- */
-const PLUGIN_NAME_ACRONYMS = new Set(['acp', 'api', 'ci', 'llm', 'mcp', 'okf', 'pii', 'ui'])
-
-/**
  * Friendly display name for a plugin row. First-party plugins ship with a
  * `copse.<kebab>` id; rather than showing that machine id verbatim, strip the
- * `copse.` prefix and present the rest space-separated and sentence-cased —
- * only the first word capitalised (e.g. `copse.post-turn-review` → "Post turn
- * review"), with known acronyms left uppercase (`copse.pii-redaction` → "PII
- * redaction"). User plugins with their own human name keep it as-is.
+ * `copse.` prefix and present the rest in sentence case through the shared
+ * identifier humanizer (`copse.post-turn-review` → "Post-turn review",
+ * `copse.pii-redaction` → "PII redaction", `copse.agents-md` → "AGENTS.md").
+ * User plugins with their own human name keep it as-is.
  */
 function pluginDisplayName(plugin: import('@shared/types/plugins.ts').PluginSummary): string {
   const raw = plugin.name || plugin.id
-  if (plugin.trust === 'first-party') {
-    const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
-    const words = stripped
-      .replace(/[-_.]+/g, ' ')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-    if (words.length === 0) return raw
-    const sentence = words
-      .map((word, index) => {
-        const lower = word.toLowerCase()
-        if (PLUGIN_NAME_ACRONYMS.has(lower)) return lower.toUpperCase()
-        // Sentence case: lead word capitalised, the rest lowercase. Plugin ids are
-        // kebab-lowercase already, so the lowercasing only matters for ids that
-        // arrive mixed-case.
-        if (index === 0) return lower.charAt(0).toUpperCase() + lower.slice(1)
-        return lower
-      })
-      .join(' ')
-    return sentence
-  }
-  return raw
+  if (plugin.trust !== 'first-party') return raw
+  const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
+  return stripped ? humanizeIdentifier(stripped) : raw
 }
 
 /**
@@ -872,6 +847,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Trusted commands
                 <textarea
+                  class="settings-code-input"
                   name="trustedShellCommands"
                   rows="5"
                   spellcheck="false"
@@ -959,6 +935,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Allowed websites
                 <textarea
+                  class="settings-code-input"
                   name="webAllowedOrigins"
                   rows="6"
                   spellcheck="false"
@@ -977,6 +954,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Allowed provider addresses
                 <textarea
+                  class="settings-code-input"
                   name="approvedProviderHosts"
                   rows="4"
                   spellcheck="false"
@@ -2302,16 +2280,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   function fillSourceList(selector: string, rows: HTMLElement[], emptyText: string): void {
-    const el = qsRequired(overlay, selector)
-    el.innerHTML = ''
+    const list = qsRequired(overlay, selector)
+    list.innerHTML = ''
     if (rows.length === 0) {
       const empty = document.createElement('span')
       empty.className = 'sources-empty'
       empty.textContent = emptyText
-      el.append(empty)
+      list.append(empty)
       return
     }
-    for (const row of rows) el.append(row)
+    for (const row of rows) list.append(row)
   }
 
   /** Coarse "when", accurate enough for a list that is scanned, not audited. */
@@ -2629,14 +2607,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         const shown = preview.directories.slice(0, 12)
         const confirmed = await showConfirmDialog({
           message: `Remove ${String(preview.directories.length)} package director${preview.directories.length === 1 ? 'y' : 'ies'}?`,
-          detail: [
-            ...shown.map((directory) => directory.path),
+          detail: el(
+            'span',
+            {},
+            ...shown.flatMap((directory, index) => [
+              ...(index > 0 ? ['\n'] : []),
+              el('code', {}, directory.path),
+            ]),
             ...(preview.directories.length > shown.length
-              ? [`…and ${String(preview.directories.length - shown.length)} more`]
+              ? [`\n…and ${String(preview.directories.length - shown.length)} more`]
               : []),
-            '',
-            `This will reclaim ${size}. Your package manager can recreate these directories.`,
-          ].join('\n'),
+            `\n\nThis will reclaim ${size}. Your package manager can recreate these directories.`,
+          ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
@@ -2649,11 +2631,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       } else {
         const confirmed = await showConfirmDialog({
           message: `Clean up package directories in ${String(entries.length)} worktrees?`,
-          detail: [
-            'Copse will find and remove ignored package-manager directories such as node_modules and .venv.',
-            'Cleanup starts immediately; reclaimed size is measured as each worktree completes.',
-            'Your package manager can recreate these directories.',
-          ].join('\n\n'),
+          detail: el(
+            'span',
+            {},
+            'Copse will find and remove ignored package-manager directories such as ',
+            el('code', {}, 'node_modules'),
+            ' and ',
+            el('code', {}, '.venv'),
+            '.\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.' +
+              '\n\nYour package manager can recreate these directories.',
+          ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
@@ -3490,11 +3477,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const chipRow = document.createElement('div')
       chipRow.className = 'plugin-chips'
       for (const chip of chips) {
-        const el = document.createElement('span')
-        el.className = 'plugin-chip'
-        el.textContent = `${chip.label} × ${String(chip.count)}`
-        if (chip.title) el.title = chip.title
-        chipRow.append(el)
+        const chipEl = document.createElement('span')
+        chipEl.className = 'plugin-chip'
+        chipEl.textContent = `${chip.label} × ${String(chip.count)}`
+        if (chip.title) chipEl.title = chip.title
+        chipRow.append(chipEl)
       }
       row.append(chipRow)
     } else {
@@ -4153,7 +4140,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.append(`${s.name} (${s.transport}): `, badge)
+      title.append(`${s.name} (${s.transport}) `, badge)
 
       header.append(toggleLabel, title, mcpOriginChip(s))
       const permissionsButton = document.createElement('button')
@@ -4226,7 +4213,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       header.className = 'mcp-server-header'
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.append(`${s.name} (${s.transport}): `, inlineStatus('idle', 'not running'))
+      title.append(`${s.name} (${s.transport}) `, inlineStatus('idle', 'not running'))
 
       const chip = document.createElement('span')
       chip.className = 'mcp-origin-chip mcp-origin-plugin'

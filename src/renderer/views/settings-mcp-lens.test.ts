@@ -145,7 +145,8 @@ describe('settings → MCP servers origin lens', () => {
     const row = document.querySelector<HTMLElement>('#mcp-declared-list .mcp-declared-row')
     assert.ok(row)
     assert.equal(row.dataset['pluginId'], 'acme.reviewer')
-    assert.match(row.textContent, /reviewer \(stdio\)/)
+    assert.match(row.textContent, /reviewer \(stdio\) not running/)
+    assert.doesNotMatch(row.textContent, /\):/)
     assert.match(row.textContent, /not running/)
     assert.match(row.textContent, /turned off/)
 

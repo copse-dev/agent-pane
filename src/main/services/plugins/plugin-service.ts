@@ -77,7 +77,6 @@ import {
 import { setPluginBrowserService } from './plugin-browser-service.ts'
 import type { DeclaredMcpServer } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { agentPluginMcpServerName } from './agent-plugin-mcp-runtime.ts'
 
 // P1 of #1336: selected-plugin discovery is part of the production graph before
 // the isolated behavior runtime is wired by the host.
@@ -615,7 +614,7 @@ export function createPluginService(registry: PluginRegistry): PluginService {
       for (const [name, server] of candidate.mcpServers) {
         if (enabled && server.type !== 'sse') continue
         out.push({
-          name: agentPluginMcpServerName(id, name),
+          name,
           transport: server.type === 'stdio' ? 'stdio' : 'http',
           pluginId: id,
           pluginEnabled: enabled,

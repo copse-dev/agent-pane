@@ -50,6 +50,28 @@ describe('environment API-key detection (Settings → General)', () => {
     // Import button is hidden until a scan finds an importable key.
     await expect(host.$('button=Import keys')).not.toBeDisplayed()
 
+    // File paths and environment variable names in the hint are code, set in
+    // the code face rather than the interface font.
+    const hintCode = await browser.execute(() => {
+      const codes = document.querySelectorAll<HTMLElement>(
+        '#settings-env-detect-host .field-hint code',
+      )
+      return [...codes].map((code) => ({
+        text: code.textContent,
+        mono:
+          getComputedStyle(code).fontFamily !==
+          getComputedStyle(code.parentElement ?? code).fontFamily,
+      }))
+    })
+    assert.deepEqual(
+      hintCode.map((code) => code.text),
+      ['~/.zshrc', '~/.bashrc', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
+    )
+    assert.ok(
+      hintCode.every((code) => code.mono),
+      'hint code uses a different face from its prose',
+    )
+
     await saveElementScreenshot('#settings-env-detect-host', 'settings-env-key-detect.png')
 
     // Clicking Scan is the explicit opt-in; it runs the real scan over the

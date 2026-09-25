@@ -68,7 +68,7 @@ export const okfMemoriesPlugin: RegisteredPlugin = definePlugin(
   {
     name: OKF_MEMORIES_PLUGIN_ID,
     description:
-      'OKF memories — the agent persists and recalls durable project knowledge (conventions, decisions, gotchas) across sessions via the `remember`/`recall` tools, saved per project as portable Open Knowledge Format markdown notes, with a Memories pane to browse and edit them.',
+      'Lets the agent persist and recall durable project knowledge (conventions, decisions, gotchas) across sessions via the `remember`/`recall` tools, saved per project as portable Open Knowledge Format markdown notes, with a Memories pane to browse and edit them.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [...OKF_MEMORIES_TOOL_NAMES] },

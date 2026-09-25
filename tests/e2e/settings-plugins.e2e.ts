@@ -114,7 +114,7 @@ describe('settings plugins (about:addons)', function () {
     // Long-horizon tasks plugin (#558): listed, default-OFF (ships disabled).
     const longHorizonRow = plugins.$('.plugin-row[data-plugin-id="copse.long-horizon-tasks"]')
     await expect(longHorizonRow).toBeDisplayed()
-    assert.equal(await longHorizonRow.$('.plugin-name').getText(), 'Long horizon tasks')
+    assert.equal(await longHorizonRow.$('.plugin-name').getText(), 'Long-horizon tasks')
     await expect(longHorizonRow.$('.plugin-badge-first-party')).toBeDisplayed()
     await expect(longHorizonRow.$('.plugin-badge-experimental')).toHaveText('Experimental')
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
@@ -187,6 +187,10 @@ describe('settings plugins (about:addons)', function () {
     await expect(agentsMdRow.$('.plugin-badge-stable')).toHaveText('Stable')
     assert.equal(await agentsMdRow.getAttribute('data-enabled'), 'true')
     assert.match(await agentsMdRow.getText(), /Instruction sources × 1/)
+    // A Markdown instruction-file slug reads as the file it names, and the
+    // description no longer restates that name before its first sentence.
+    assert.equal(await agentsMdRow.$('.plugin-name').getText(), 'AGENTS.md')
+    assert.match(await agentsMdRow.$('.plugin-row-desc').getText(), /^Reads AGENTS\.md/)
     await agentsMdRow.$('.plugin-settings-summary').click()
     const instructionMode = agentsMdRow.$(
       'select.plugin-setting-enum[data-setting-key="instructionFiles"]',
@@ -211,12 +215,26 @@ describe('settings plugins (about:addons)', function () {
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-agents-md-plugin.png')
 
-    for (const pluginId of ['copse.claude-md', 'copse.cursor-rules']) {
+    for (const [pluginId, name] of [
+      ['copse.claude-md', 'CLAUDE.md'],
+      ['copse.cursor-rules', 'Cursor rules'],
+    ] as const) {
       const instructionRow = plugins.$(`.plugin-row[data-plugin-id="${pluginId}"]`)
       await expect(instructionRow).toBeDisplayed()
+      assert.equal(await instructionRow.$('.plugin-name').getText(), name)
       assert.equal(await instructionRow.getAttribute('data-enabled'), 'true')
       assert.match(await instructionRow.getText(), /Instruction sources × 1/)
     }
+
+    // No first-party description opens by restating its row's name ("Post-turn
+    // review — reads …"): the name is already the row title.
+    const restated = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.plugin-row')]
+        .filter((row) => row.querySelector('.plugin-badge-first-party'))
+        .map((row) => row.querySelector('.plugin-row-desc')?.textContent?.trim() ?? '')
+        .filter((desc) => /^[^—.]{1,40} — /.test(desc)),
+    )
+    assert.deepEqual(restated, [])
 
     // Local cron automations are a new, explicit opt-in. Upgrading
     // must not arm a clock-driven feature until the user enables the plugin.
@@ -256,6 +274,20 @@ describe('settings plugins (about:addons)', function () {
     assert.match(localText, /Models × 1/)
     assert.match(localText, /Browser origins × 1/)
     assert.match(localText, /sha256:[a-f0-9]{64}/)
+    // The source path and content hash are code, so they use the code face.
+    const sourceFonts = await browser.execute(() => {
+      const probe = document.createElement('span')
+      probe.style.fontFamily = 'var(--font-mono)'
+      document.body.append(probe)
+      const mono = getComputedStyle(probe).fontFamily
+      probe.remove()
+      const dds = document.querySelectorAll<HTMLElement>(
+        '.plugin-row[data-plugin-id="personal.reference-tools"] .plugin-source-details dd',
+      )
+      return { mono, dd: [...dds].map((dd) => getComputedStyle(dd).fontFamily) }
+    })
+    assert.equal(sourceFonts.dd.length, 2)
+    for (const family of sourceFonts.dd) assert.equal(family, sourceFonts.mono)
 
     await pluginToolRow.scrollIntoView()
     await saveElementScreenshot(
@@ -270,6 +302,7 @@ describe('settings plugins (about:addons)', function () {
     // re-review.
     const postTurnReviewRow = plugins.$('.plugin-row[data-plugin-id="copse.post-turn-review"]')
     await expect(postTurnReviewRow).toBeDisplayed()
+    assert.equal(await postTurnReviewRow.$('.plugin-name').getText(), 'Post-turn review')
     // A plugin's fields live behind its closed "Plugin settings" disclosure.
     await postTurnReviewRow.$('.plugin-settings-summary').click()
     const reviewCyclesInput = postTurnReviewRow.$(

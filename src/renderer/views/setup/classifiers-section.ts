@@ -273,7 +273,13 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         el(
           'span',
           { class: 'field-hint' },
-          'Custom connections use COPSE_CLASSIFIER_* variables. TYPESAFE_API_KEY and FEATHERLESS_API_KEY work only with their matching official endpoints. Leave blank to use a saved key.',
+          'Custom connections use ',
+          el('code', {}, 'COPSE_CLASSIFIER_*'),
+          ' variables. ',
+          el('code', {}, 'TYPESAFE_API_KEY'),
+          ' and ',
+          el('code', {}, 'FEATHERLESS_API_KEY'),
+          ' work only with their matching official endpoints. Leave blank to use a saved key.',
         ),
       )
       const updateAuth = (): void => {

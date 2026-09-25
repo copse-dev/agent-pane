@@ -39,7 +39,7 @@ describe('tool-display', () => {
   it('identifies which MCP server failed to start', () => {
     assert.equal(getToolDisplayName('mcp__docs__startup'), 'docs startup')
     assert.equal(getToolDisplayName('mcp__issue_tracker__startup'), 'issue_tracker startup')
-    assert.equal(getToolDisplayName('mcp__docs__read_page'), 'Read Page')
+    assert.equal(getToolDisplayName('mcp__docs__read_page'), 'Read page')
   })
 
   it('labels worktree preparation tools and groups them by effect', () => {
@@ -196,7 +196,7 @@ describe('tool-display', () => {
   })
 
   it('formats unknown tools from snake_case', () => {
-    assert.equal(getToolDisplayName('custom_tool_name'), 'Custom Tool Name')
+    assert.equal(getToolDisplayName('custom_tool_name'), 'Custom tool name')
   })
 
   it('rolls up explore with reading tools under Read files', () => {
@@ -386,16 +386,21 @@ describe('tool-display', () => {
   })
 
   it('humanizes MCP and ACP tool names without their server prefix', () => {
-    assert.equal(getToolDisplayName('mcp__github__create_issue'), 'Create Issue')
-    assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Run Shell')
+    assert.equal(getToolDisplayName('mcp__github__create_issue'), 'Create issue')
+    assert.equal(getToolDisplayName('mcp.copse.run_shell'), 'Run shell')
   })
 
-  it('keeps acronyms upper case in humanized tool names', () => {
-    assert.equal(getToolDisplayName('mcp__copse__gh_pr_create'), 'GH PR Create')
-    assert.equal(getToolDisplayName('gh_pr_files'), 'GH PR Files')
-    assert.equal(getToolDisplayName('mcp__copse__get_ci_failure_logs'), 'Get CI Failure Logs')
+  it('sentence-cases humanized tool names and keeps acronyms canonical', () => {
+    assert.equal(getToolDisplayName('mcp__copse__gh_pr_create'), 'GitHub PR create')
+    assert.equal(getToolDisplayName('gh_pr_files'), 'GitHub PR files')
+    assert.equal(getToolDisplayName('mcp__copse__get_ci_failure_logs'), 'Get CI failure logs')
     assert.equal(getToolDisplayName('resolve_url'), 'Resolve URL')
-    assert.equal(getToolDisplayName('get_thread_id'), 'Get Thread ID')
+    assert.equal(getToolDisplayName('get_thread_id'), 'Get thread ID')
+  })
+
+  it('prefers a curated display name over the humanized fallback', () => {
+    assert.equal(getToolDisplayName('read_file'), 'Read file')
+    assert.equal(getToolDisplayName('list_dir'), 'Listed directory')
   })
 
   it('groups MCP tools by server without exposing an internal MCP marker', () => {

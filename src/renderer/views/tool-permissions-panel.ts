@@ -9,6 +9,7 @@ import {
 } from '@shared/types/tool-permissions.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { banIcon, checkIcon, chevronDownIcon, handIcon } from '../dom/icons.ts'
+import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 
 const isToolPermissionPolicy = memberOf(TOOL_PERMISSION_POLICIES)
 
@@ -283,7 +284,9 @@ export function createToolPermissionsPanel(
     if (tool.description) {
       const description = document.createElement('p')
       description.className = 'tool-permission-description'
-      description.textContent = tool.description
+      // Tool descriptions are written for the model and name commands and
+      // parameters in backticks; show those as inline code, not delimiters.
+      setInlineMarkdown(description, tool.description)
       copy.append(description)
     }
 

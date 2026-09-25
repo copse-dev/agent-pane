@@ -2073,9 +2073,16 @@ dialog.settings-overlay::backdrop {
 .plugin-source-details dt {
   color: var(--text-muted);
 }
+/* Lists of origins, host names, and command names are code, not prose, so they
+   use the code face like every other command or path in Settings. */
+.settings-code-input {
+  font-family: var(--font-mono);
+}
 .plugin-source-details dd {
   margin: 0;
   color: var(--text-secondary);
+  /* A path and a content hash: code, not prose. */
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 /* Stability sits next to the plugin's name as a pill in sentence case — a label

@@ -10,7 +10,8 @@ import {
 import { blendedRate } from '@copse/llm/pareto-frontier.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon, plusIcon } from '../../dom/icons.ts'
-import { setInlineStatus } from '../../dom/inline-status.ts'
+import { setInlineStatus, setInlineStatusMarkdown } from '../../dom/inline-status.ts'
+import { PLAINTEXT_STORAGE_DISABLED_REASON } from './api-keys-section.ts'
 import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 
@@ -887,7 +888,7 @@ export function createCustomProvidersSection(
               ...root.querySelectorAll<HTMLElement>('[data-provider-key-status]'),
             ].find((candidate) => candidate.dataset['providerKeyStatus'] === slug)
             if (keyStatus) {
-              setInlineStatus(
+              setInlineStatusMarkdown(
                 keyStatus,
                 'error',
                 `Provider saved, but the key was not stored: ${keyFailure}`,
@@ -1063,8 +1064,8 @@ export function createCustomProvidersSection(
       ok: false,
       message:
         result.reason === 'plaintext-storage-disabled'
-          ? 'Secure storage is unavailable and plaintext secret storage is disabled. Start Copse with COPSE_ALLOW_PLAINTEXT_SECRETS=1 to opt in.'
-          : `Unencrypted storage for ${label} was declined.`,
+          ? PLAINTEXT_STORAGE_DISABLED_REASON
+          : `unencrypted storage for ${label} was declined.`,
     }
   }
 
@@ -1081,7 +1082,7 @@ export function createCustomProvidersSection(
         (candidate) => candidate.dataset['providerKeyStatus'] === slug,
       )
       if (status) {
-        setInlineStatus(status, 'error', `Not saved: ${result.message}`)
+        setInlineStatusMarkdown(status, 'error', `Not saved: ${result.message}`)
         status.className = 'key-status err'
       }
     }

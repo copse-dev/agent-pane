@@ -178,6 +178,18 @@ own.
   Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
   strong text); block or interactive Markdown remains literal because buttons are controls, not
   document containers.
+- The same applies to system copy that names commands, paths, or environment variables in
+  backticks (plan-usage sign-in hints, known ACP agent notes, tool descriptions in Tool
+  permissions, key-storage errors): render it with `setInlineMarkdown`
+  ([`inline-markdown.ts`](../src/renderer/markdown/inline-markdown.ts)) so `code` becomes `<code>`,
+  rather than assigning it to `textContent`. Native `title` tooltips cannot hold markup, so write
+  their text without delimiters.
+- Machine identifiers shown as labels — tool names without a curated display name, first-party
+  plugin ids — go through `humanizeIdentifier`
+  ([`humanize-identifier.ts`](../src/shared/humanize-identifier.ts)): sentence case, acronyms and
+  product names in their canonical spelling ("Launch GUI app", "GitHub PR create"), prose compounds
+  hyphenated ("Post-turn review"), and a Markdown-file slug as the file ("AGENTS.md"). Extend its
+  word lists rather than special-casing a label at one call site.
 - Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
   provider/ACP wording in a visually subordinate technical-details block so it remains copyable
   without competing with the fix.
@@ -198,6 +210,8 @@ install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action:
   Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
 - Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
   one-line PR target does not look like a `<pre>` of JSON.
+- Reasons are sentences (capitalised, one concern each) and render as a real list: the main
+  process sends them as `• ` lines and the dialog turns each run into `ul.approval-reasons`.
 
 Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
 

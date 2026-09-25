@@ -1,5 +1,6 @@
 import { clear, el } from '../dom/helpers.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
+import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
@@ -9,23 +10,6 @@ interface AskUserRequest {
   /** Thread this question belongs to; undefined = not tied to a run (show anywhere). */
   threadId: string | undefined
   questions: { question: string; options?: string[] }[]
-}
-
-/** Render the small, phrasing-only Markdown subset that is valid inside a button. */
-function setControlMarkdown(target: HTMLButtonElement, source: string): void {
-  const host = el('div')
-  host.innerHTML = renderMarkdown(source)
-  const paragraph = host.firstElementChild
-  const inlineTags = new Set(['CODE', 'EM', 'STRONG', 'S', 'DEL'])
-  const isInline =
-    host.children.length === 1 &&
-    paragraph?.tagName === 'P' &&
-    Array.from(paragraph.querySelectorAll('*')).every((node) => inlineTags.has(node.tagName))
-  if (!paragraph || !isInline) {
-    target.textContent = source
-    return
-  }
-  target.replaceChildren(...Array.from(paragraph.childNodes))
 }
 
 /**
@@ -83,7 +67,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
       // Questions are agent-authored content, so render the same sanitized
       // Markdown as chat. In particular, commands should look like commands
       // rather than showing their backtick delimiters. Quick-pick controls use
-      // only the phrasing subset that is valid inside a button (see above).
+      // only the phrasing subset that is valid inside a button (setInlineMarkdown).
       const question = el('div', {
         id: questionId,
         class: 'ask-user-question streaming-markdown',
@@ -94,7 +78,7 @@ export function mountAskUserDialog(api: ApiClient, store: AppStore): void {
         const optionRow = el('div', { class: 'ask-user-options' })
         for (const option of q.options) {
           const button = el('button', { type: 'button', class: 'ask-user-option' })
-          setControlMarkdown(button, option)
+          setInlineMarkdown(button, option)
           button.addEventListener('click', () => {
             // Insert the rendered label, not its Markdown source, so selecting
             // a command does not put raw backticks back into the visible field.

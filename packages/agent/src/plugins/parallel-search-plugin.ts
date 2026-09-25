@@ -16,7 +16,7 @@ export const parallelSearchPlugin: RegisteredPlugin = definePlugin(
   {
     name: PARALLEL_SEARCH_PLUGIN_ID,
     description:
-      'Parallel Search — sends an objective and focused queries to Parallel’s Search API and returns ranked URLs with token-dense excerpts. Requires a Parallel API key; Zero Data Retention is an account/contract property, not enabled by this plugin.',
+      'Sends an objective and focused queries to Parallel’s Search API and returns ranked URLs with token-dense excerpts. Requires a Parallel API key; Zero Data Retention is an account/contract property, not enabled by this plugin.',
     trust: 'first-party',
     stability: 'experimental',
     tools: {

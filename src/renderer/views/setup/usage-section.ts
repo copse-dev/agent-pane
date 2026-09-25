@@ -9,6 +9,7 @@ import {
 import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import { qsRequired } from '../../dom/helpers.ts'
+import { setInlineMarkdown } from '../../markdown/inline-markdown.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
 import {
   createIntellectFrontierPanel,
@@ -149,14 +150,14 @@ export function renderPlanProvider(
   if (result.status === 'unavailable') {
     const hint = document.createElement('p')
     hint.className = 'usage-plan-status field-hint'
-    hint.textContent = result.reason
+    setInlineMarkdown(hint, result.reason)
     card.append(hint)
     if (result.provider === 'claude' && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
       const signIn = document.createElement('button')
       signIn.type = 'button'
       signIn.className = 'usage-plan-signin-btn'
       signIn.textContent = 'Sign in to Claude'
-      signIn.title = 'Open a terminal and run `claude /login`'
+      signIn.title = 'Open a terminal and run claude /login'
       signIn.addEventListener('click', () => {
         onClaudeSignIn()
       })
@@ -170,9 +171,11 @@ export function renderPlanProvider(
     const hint = document.createElement('p')
     hint.className = 'usage-plan-status usage-plan-status-error field-hint'
     const label = PROVIDER_LABELS[result.provider] ?? result.provider
-    hint.textContent = isAbortTimeoutMessage(result.message)
-      ? `Timed out while checking ${label} plan usage.`
-      : `Couldn’t load ${label} plan usage: ${result.message}`
+    if (isAbortTimeoutMessage(result.message)) {
+      hint.textContent = `Timed out while checking ${label} plan usage.`
+    } else {
+      setInlineMarkdown(hint, `Couldn’t load ${label} plan usage: ${result.message}`)
+    }
     card.append(hint)
     host.append(card)
     return
