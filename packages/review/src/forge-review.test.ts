@@ -146,7 +146,7 @@ function fakeFetch(statuses: number[]): { fetch: FetchLike; calls: Call[] } {
   const calls: Call[] = []
   const queue = [...statuses]
   const fetch: FetchLike = (url, init) => {
-    const body: unknown = JSON.parse(init.body)
+    const body: unknown = JSON.parse(init.body ?? '{}')
     assert.ok(typeof body === 'object' && body !== null)
     calls.push({ url, headers: init.headers, body: { ...body } })
     const status = queue.shift() ?? 200
@@ -424,6 +424,75 @@ describe('forge review', () => {
     assert.deepEqual(call.body['comments'], [
       { path: 'src/math.ts', line: 4, side: 'RIGHT', body: renderFindingComment(anchored) },
     ])
+  })
+
+  it("supersedes its own earlier reviews on a re-run and leaves everyone else's alone", async () => {
+    const sha = 'c'.repeat(40)
+    const reviews = [
+      { id: 1, user: { login: 'copse-bot[bot]' }, body: `old <!-- copse-review:${sha} -->` },
+      { id: 2, user: { login: 'someone' }, body: `quoted <!-- copse-review:${sha} -->` },
+      { id: 3, user: { login: 'copse-bot[bot]' }, body: 'an unrelated review by the same app' },
+      { id: 9, user: { login: 'copse-bot[bot]' }, body: `new <!-- copse-review:${sha} -->` },
+    ]
+    const calls: { method: string; url: string; body: unknown }[] = []
+    const fetch: FetchLike = (url, init) => {
+      calls.push({
+        method: init.method,
+        url,
+        body: init.body === undefined ? undefined : JSON.parse(init.body),
+      })
+      const json = (value: unknown): ReturnType<FetchLike> =>
+        Promise.resolve({ status: 200, text: () => Promise.resolve(JSON.stringify(value)) })
+      if (init.method === 'POST' && url.endsWith('/reviews')) {
+        return json({
+          id: 9,
+          html_url: 'https://github.com/o/r/pull/42#pullrequestreview-9',
+          user: { login: 'copse-bot[bot]' },
+        })
+      }
+      if (init.method === 'GET' && url.includes('/reviews?')) return json(reviews)
+      if (init.method === 'GET' && url.endsWith('/reviews/1/comments?per_page=100')) {
+        return json([{ node_id: 'PRRC_a' }, { node_id: 'PRRC_b' }])
+      }
+      return json({})
+    }
+    const posted = await postForgeReview(target, report(), { toolVersion: 'test', fetch })
+    assert.equal(posted.superseded, 1)
+    assert.equal(posted.supersedeError, undefined)
+    const edits = calls.filter((call) => call.method === 'PUT')
+    assert.deepEqual(
+      edits.map((call) => call.url),
+      ['https://api.github.com/repos/copse-dev/agent-pane/pulls/42/reviews/1'],
+    )
+    assert.match(
+      JSON.stringify(edits[0]?.body),
+      /Superseded by \[a newer review\]\(https:\/\/github\.com\/o\/r\/pull\/42#pullrequestreview-9\)/,
+    )
+    const hidden = calls.filter((call) => call.url === 'https://api.github.com/graphql')
+    assert.deepEqual(
+      hidden.map((call) => JSON.stringify(call.body)).map((body) => /PRRC_[ab]/.exec(body)?.[0]),
+      ['PRRC_a', 'PRRC_b'],
+    )
+    assert.ok(hidden.every((call) => /classifier: OUTDATED/.test(JSON.stringify(call.body))))
+    assert.ok(
+      calls.filter((call) => call.method === 'GET').every((call) => call.body === undefined),
+    )
+  })
+
+  it('still reports the posted review when superseding earlier ones fails', async () => {
+    const fetch: FetchLike = (_url, init) => {
+      if (init.method === 'POST') {
+        return Promise.resolve({
+          status: 200,
+          text: () =>
+            Promise.resolve(JSON.stringify({ id: 9, html_url: 'u', user: { login: 'bot' } })),
+        })
+      }
+      return Promise.resolve({ status: 403, text: () => Promise.resolve('forbidden') })
+    }
+    const posted = await postForgeReview(target, report(), { toolVersion: 'test', fetch })
+    assert.equal(posted.inline, 1)
+    assert.match(posted.supersedeError ?? '', /403/)
   })
 
   it('speaks Forgejo: /api/v1, token auth, new_position', async () => {
