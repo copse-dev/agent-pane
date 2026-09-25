@@ -204,10 +204,12 @@ and the challenger over the checkouts, no `run_command`) and says so with exit `
 ## In CI
 
 The plan's job A and job B (`.github/workflows/review-ground.yml` and
-`review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) are opt-in by the
-`copse-review` label on a pull request. On GitHub, `review-trigger.yml` receives the
-`pull_request_target:labeled` event so an older pull request still selects trusted default-branch
-workflow code. That target-context job has PR-read and Actions-dispatch permission, but it checks
+`review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) review every ready (non-draft)
+owner pull request from this repository when it is opened, reopened or marked ready for review.
+The `copse-review` label reviews a draft or re-reviews a newer head, and `copse-review-skip` opts a
+pull request out; pushes alone do not re-review, since each run posts a new review. On GitHub,
+`review-trigger.yml` receives those `pull_request_target` events so an older pull request still
+selects trusted default-branch workflow code. That target-context job has PR-read and Actions-dispatch permission, but it checks
 out and executes nothing; it resolves current PR metadata and dispatches the separate ground
 workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head with the runner as
 the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
@@ -224,8 +226,9 @@ explicitly dispatches the findings workflow after grounding succeeds. This uses 
 `workflow_dispatch` exception because GitHub suppresses an implicit `workflow_run` event after a
 run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the successful ground
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
-than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
-newer head.
+than trusting the artefact or a dynamic run association; it rechecks that the pull request is ready
+or labelled and not `copse-review-skip`. Add (or remove and re-add) the label to review a newer
+head.
 Repeated PR reviews first look for clean grounding from the previous 24 hours. Reuse
 requires the same PR head and merge-base, all four checks completed successfully, and
 unchanged trusted runner code and dependencies. Producer identity comes from GitHub's
@@ -275,8 +278,9 @@ Review context is secret-redacted before it leaves the runner, but it does leave
 the configured model endpoint.
 
 `.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
-each night, including drafts because that is where most active Copse work lives
-(already-labelled PRs, generated screenshot-review PRs and `copse-review-skip` are excluded),
+each night from its drafts, because that is where most active Copse work lives and ready pull
+requests are already reviewed (already-labelled PRs, generated screenshot-review PRs and
+`copse-review-skip` are excluded),
 using the same secret-free Stage 0 / container-backed focused-validation split. It can also be dispatched for a
 specific same-repository PR, draft or otherwise. Both paths remain advisory and retain the full
 findings JSON and SARIF for 30 days so latency, token use and human adjudication can be collected
