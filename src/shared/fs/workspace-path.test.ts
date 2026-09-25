@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { localPathFromUri, workspaceRelativePath } from './workspace-path.ts'
+import {
+  localPathFromUri,
+  normalizeWorkspacePath,
+  workspaceRelativePath,
+} from './workspace-path.ts'
 
 describe('workspaceRelativePath', () => {
   it('strips the workspace root and trailing separators', () => {
@@ -14,6 +18,13 @@ describe('workspaceRelativePath', () => {
     assert.equal(workspaceRelativePath('/repo-other/a.ts', '/repo'), null)
     assert.equal(workspaceRelativePath('/elsewhere/a.ts', '/repo'), null)
     assert.equal(workspaceRelativePath('/repo/../secret', '/repo'), null)
+  })
+
+  it('collapses repeated separators and dot segments before comparing', () => {
+    assert.equal(workspaceRelativePath('/repo//a.png', '/repo'), 'a.png')
+    assert.equal(workspaceRelativePath('/repo/./images/a.png', '/repo'), 'images/a.png')
+    assert.equal(workspaceRelativePath('/repo/src/a.ts', '/repo//'), 'src/a.ts')
+    assert.equal(normalizeWorkspacePath('./images//a.png'), 'images/a.png')
   })
 
   it('normalizes Windows separators and drive letter case', () => {

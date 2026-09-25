@@ -67,7 +67,11 @@ async function attachWorkspacePath(
     }
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
     const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null
-    handlers.attachFile({ path: relativePath ?? path, content })
+    // The root itself is '' — keep the absolute path rather than an empty one.
+    handlers.attachFile({
+      path: relativePath === null || relativePath === '' ? path : relativePath,
+      content,
+    })
   } catch {
     /* ignore read errors */
   }

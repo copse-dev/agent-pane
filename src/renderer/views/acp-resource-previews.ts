@@ -1,7 +1,11 @@
 import type { AppStore } from '@shared/store/store.ts'
 import { getActiveThread } from '@shared/store/thread-helpers.ts'
 import { isRasterImagePath } from '@shared/fs/image-path.ts'
-import { localPathFromUri, workspaceRelativePath } from '@shared/fs/workspace-path.ts'
+import {
+  localPathFromUri,
+  normalizeWorkspacePath,
+  workspaceRelativePath,
+} from '@shared/fs/workspace-path.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
@@ -46,7 +50,7 @@ export function workspaceResourceFilePath(
   if (path === null) return null
   const relative = /^(?:\/|[a-z]:[\\/])/i.test(path)
     ? workspaceRelativePath(path, workspaceRoot)
-    : path.replace(/\\/g, '/')
+    : normalizeWorkspacePath(path)
   if (!relative || relative.split('/').includes('..')) return null
   return relative
 }
@@ -319,10 +323,11 @@ export function syncAcpResourceReferences(
 ): void {
   const owner = getActiveThreadOwner(store)
   const workspaceRoot = acpWorkspaceRoot(store)
-  if (!owner || !workspaceRoot) return
+  // Most transcripts have no resources: one short-circuiting scan, then out.
+  if (!owner || !workspaceRoot || !list.querySelector(RESOURCE_SELECTOR)) return
   hydrateAcpResourceImages(list, api, store)
+  // Hydration can swap cards for previews, so collect resources after it.
   const resources = list.querySelectorAll<HTMLElement>(RESOURCE_SELECTOR)
-  if (resources.length === 0) return
   const indexOf = messageOrder(list)
   const resourcesByPath = new Map<string, { node: HTMLElement; index: number }[]>()
   for (const node of resources) {

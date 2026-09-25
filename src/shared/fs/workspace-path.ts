@@ -1,17 +1,27 @@
 const DRIVE_PATH_RE = /^[a-z]:\//i
 
+/** `/`-separated, with repeated separators collapsed and `.` segments dropped. */
+export function normalizeWorkspacePath(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/')
+    .split('/')
+    .filter((segment) => segment !== '.')
+    .join('/')
+}
+
 /**
  * The workspace-relative form of an absolute path: `''` for the root itself,
  * `null` when the path is outside the root or climbs out with `..`. Separators
  * are normalized to `/`, and Windows drive paths compare case-insensitively.
  */
 export function workspaceRelativePath(absPath: string, workspaceRoot: string): string | null {
-  const path = absPath.replace(/\\/g, '/')
-  const root = workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '') || '/'
+  const path = normalizeWorkspacePath(absPath)
+  const root = normalizeWorkspacePath(workspaceRoot).replace(/\/+$/, '') || '/'
   const foldCase = DRIVE_PATH_RE.test(root)
   const comparablePath = foldCase ? path.toLowerCase() : path
   const comparableRoot = foldCase ? root.toLowerCase() : root
-  if (comparablePath === comparableRoot) return ''
+  if (comparablePath === comparableRoot || comparablePath === `${comparableRoot}/`) return ''
   const prefix = comparableRoot === '/' ? '/' : `${comparableRoot}/`
   if (!comparablePath.startsWith(prefix)) return null
   const relative = path.slice(prefix.length)
