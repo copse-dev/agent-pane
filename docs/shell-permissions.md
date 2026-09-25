@@ -368,8 +368,9 @@ writable. Linux and Windows are unchanged.
 - `safety-classifier.ts`: optional model classifier used only when the OS sandbox is unavailable.
   It asks the Instruct / safety model, or the classifier connection chosen under Settings →
   Classifiers → Safety screening (`safety-classifier-profile.ts`). Both produce the same
-  `ClassificationResult`; a connection's chosen-option probability is its confidence, and any
-  failure yields no verdict. Terminal-read screening (`terminal-read-guard.ts`) uses the same choice.
+  `ClassificationResult`; a connection's verdict is read from its probabilities (ties read as
+  external), and any failure yields no verdict. Terminal-read screening (`terminal-read-guard.ts`)
+  uses the same choice; through a connection it shares without asking only at P(safe) ≥ 0.80.
 - `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
   are additionally capped at `read` if a caller reaches the level helper without a sandbox.

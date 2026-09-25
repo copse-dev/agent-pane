@@ -9,21 +9,28 @@ they never appear as chat models or change model routing or the agent loop.
 ## Safety screening
 
 **Settings → Classifiers → Safety screening** chooses what screens shell commands and terminal reads:
-the Instruct / safety model (the default, set under Models) or one saved connection. Choosing makes
-no inference call. The choice is stored with the profiles, so removing the chosen connection hands
-screening back to the safety model. **Settings → Permissions → Check commands for danger** still
-turns screening on or off for both.
+the Instruct / safety model (the default, set under Models) or one saved HTTP connection. SemIf is
+not offered: it starts its scorer for every call, which cannot fit the budget, and its token limit
+could cut a snapshot the verdict must cover in full. Choosing makes no inference call. The choice
+is its own `safetyScreeningClassifier` setting, so builds that predate it still read the profiles;
+a choice naming a removed connection reads as none, and removing the chosen connection clears it.
+**Settings → Permissions → Check commands for danger** still turns screening on or off for both.
 
 The classifier answers one two-way choice question — `sandbox` / `external` for a command, `safe` /
-`risky` for a terminal snapshot — with the same rules the safety model's prompt states. The
-probability of the chosen option becomes the verdict's confidence, so the existing thresholds apply
-unchanged: a `safe` terminal read needs at least 0.5, and strict mode's
-`safetyExternalDenyThreshold` compares against the `external` probability. Each call has the safety
-model's 8-second budget. A timeout, connection failure, missing key, removed connection, or
-malformed answer yields no verdict, which asks the user; the lasting faults are recorded once per
-thread in the decision log. A hosted classifier receives the command or terminal text, with known
-saved keys redacted. A SemIf profile starts its scorer for every call and will usually miss the
-budget; prefer a running server. See [`shell-permissions.md`](shell-permissions.md) for where
+`risky` for a terminal snapshot — with the same rules the safety model's prompt states. Verdicts are
+read from the returned probabilities, never from the provider's `choice`:
+
+- A terminal snapshot is shared without asking only when P(`safe`) is at least 0.80. Anything less
+  is flagged and the user is asked. (The chat path's 0.5 floor is on a model's self-reported
+  confidence; on a two-way distribution the chosen side always clears 0.5.)
+- A command's scope is the likelier side, with a tie reading as `external`. Its probability is the
+  confidence strict mode compares with `safetyExternalDenyThreshold`.
+
+Each call has the safety model's 8-second budget, and a connection that keeps missing it is skipped
+for a while, like a slow safety model. A timeout, connection failure, missing key, removed
+connection, or malformed answer yields no verdict, which asks the user; lasting faults are recorded
+once per thread in the decision log. A hosted classifier receives the command or terminal text,
+with known saved keys redacted. See [`shell-permissions.md`](shell-permissions.md) for where
 screening can and cannot affect a decision.
 
 Remote HTTP profiles use an HTTPS endpoint and, when configured, a bearer key. Loopback HTTP is

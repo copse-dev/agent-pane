@@ -144,7 +144,23 @@ beforeEach(() => {
 
 describe('classifier connections settings', () => {
   it('routes safety screening to a saved connection and back without an inference call', async () => {
-    const { section, state } = setup([HTTP_PROFILE, { ...HTTP_PROFILE, id: 'other', label: 'Other' }])
+    const { section, state } = setup([
+      HTTP_PROFILE,
+      { ...HTTP_PROFILE, id: 'other', label: 'Other' },
+      {
+        id: 'local-semif',
+        label: 'Local SemIf',
+        model: '/models/semif',
+        timeoutMs: 30_000,
+        connection: {
+          type: 'semif',
+          executable: 'semif-score',
+          backend: 'torch',
+          revision: 'local',
+          mode: 'direct',
+        },
+      },
+    ])
     state.screening = 'other'
     await section.refresh()
     const screening = qsRequired<HTMLSelectElement>(section.root, '[name="classifierScreening"]')
@@ -156,6 +172,7 @@ describe('classifier connections settings', () => {
         ['other', 'Other'],
       ],
     )
+    // A per-call SemIf scorer cannot answer within the screening budget.
     assert.equal(screening.value, 'other')
 
     screening.value = 'fixture'

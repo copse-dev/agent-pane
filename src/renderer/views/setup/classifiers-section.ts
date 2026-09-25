@@ -131,7 +131,9 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   function renderScreening(): void {
     clear(screening)
     screening.append(el('option', { value: '' }, 'Instruct / safety model'))
+    // SemIf starts its scorer per call, too slowly to screen; only HTTP connections are offered.
     for (const { profile } of profiles) {
+      if (profile.connection.type !== 'http') continue
       screening.append(el('option', { value: profile.id }, profile.label))
     }
     screening.value = profiles.some((item) => item.profile.id === screeningId)

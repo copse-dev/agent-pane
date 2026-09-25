@@ -446,11 +446,26 @@ describe('linkRefNodeModules', () => {
       symlinkSync('.pnpm/zod/node_modules/zod', join(base, 'node_modules/zod'))
       symlinkSync('../../packages/removed', join(base, 'node_modules/@copse/removed'))
 
+      // A package's own dependencies: another workspace package, and an install only it has.
+      mkdirSync(join(base, 'packages/llm/node_modules/@copse'), { recursive: true })
+      mkdirSync(join(base, 'packages/std'))
+      mkdirSync(join(worktree, 'packages/std'))
+      mkdirSync(join(base, 'packages/llm/node_modules/only-llm'))
+      symlinkSync('../../../std', join(base, 'packages/llm/node_modules/@copse/std'))
+
       linkRefNodeModules(base, worktree)
 
       assert.equal(
         realpathSync(join(worktree, 'node_modules/@copse/llm')),
         join(worktree, 'packages/llm'),
+      )
+      assert.equal(
+        realpathSync(join(worktree, 'packages/llm/node_modules/@copse/std')),
+        join(worktree, 'packages/std'),
+      )
+      assert.equal(
+        realpathSync(join(worktree, 'packages/llm/node_modules/only-llm')),
+        join(base, 'packages/llm/node_modules/only-llm'),
       )
       assert.equal(
         realpathSync(join(worktree, 'node_modules/zod')),

@@ -19,7 +19,9 @@ import type {
 import { isLocalBaseUrl } from '@copse/llm/extra-providers.ts'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import {
+  deleteSetting,
   getSetting,
+  setSetting,
   updateSetting,
   getApiKey,
   hasApiKey,
@@ -39,24 +41,34 @@ import { firstNonEmptyString } from '@shared/unknown-value.ts'
 interface ClassifierConfiguration {
   version: 1
   profiles: ClassifierProfile[]
-  /** Saved in the same record as the profiles, so it can never name a removed one. */
-  screeningProfileId?: string
 }
 
 const EMPTY_CONFIGURATION: ClassifierConfiguration = { version: 1, profiles: [] }
 const CONFIGURATION_KEY = 'classifierProviders'
-
-function configuration(): ClassifierConfiguration {
-  return getSetting<ClassifierConfiguration>(CONFIGURATION_KEY, EMPTY_CONFIGURATION)
-}
+const SCREENING_KEY = 'safetyScreeningClassifier'
 
 function configuredProfiles(): ClassifierProfile[] {
-  return configuration().profiles
+  return getSetting<ClassifierConfiguration>(CONFIGURATION_KEY, EMPTY_CONFIGURATION).profiles
 }
 
-/** The saved connection that screens shell commands and terminal reads, if one is chosen. */
+/**
+ * SemIf starts its scorer, and loads weights, for every call: it cannot answer
+ * inside the screening budget, and its token limit could cut a snapshot the
+ * verdict must cover in full. Screening therefore uses HTTP connections only.
+ */
+function canScreen(profile: ClassifierProfile): boolean {
+  return profile.connection.type === 'http'
+}
+
+/**
+ * The saved connection that screens shell commands and terminal reads, if one
+ * is chosen. A choice naming a connection that no longer exists, or cannot
+ * screen, reads as none: screening falls back to the safety model.
+ */
 export function screeningClassifierId(): string | null {
-  return configuration().screeningProfileId ?? null
+  const id = getSetting<string>(SCREENING_KEY, '')
+  const profile = configuredProfiles().find((entry) => entry.id === id)
+  return profile && canScreen(profile) ? id : null
 }
 
 function credentialForProfile(id: string): string {
@@ -127,18 +139,16 @@ export function listClassifierProfiles(): ClassifierProfileStatus[] {
  * makes no inference call; the host was approved when the connection was saved.
  */
 export async function setScreeningClassifier(id: string | null): Promise<string | null> {
-  if (id !== null) getClassifierProfile(id)
-  await updateSetting<ClassifierConfiguration>(
-    CONFIGURATION_KEY,
-    EMPTY_CONFIGURATION,
-    ({ screeningProfileId: _previous, ...current }) => {
-      if (id === null) return current
-      if (!current.profiles.some((profile) => profile.id === id)) {
-        throw new Error('Classifier profile is not configured')
-      }
-      return { ...current, screeningProfileId: id }
-    },
-  )
+  if (id === null) {
+    await deleteSetting(SCREENING_KEY)
+    return null
+  }
+  if (!canScreen(getClassifierProfile(id))) {
+    throw new Error(
+      'SemIf starts its scorer for every call and cannot screen within the time limit. Choose an HTTP classifier.',
+    )
+  }
+  await setSetting(SCREENING_KEY, id)
   return screeningClassifierId()
 }
 
@@ -162,7 +172,6 @@ export async function saveClassifierProfile(
         deleteApiKey(credential)
       }
       return {
-        ...current,
         version: 1,
         profiles: previous
           ? current.profiles.map((entry) => (entry.id === profile.id ? profile : entry))
@@ -178,17 +187,14 @@ export async function removeClassifierProfile(id: string): Promise<ClassifierPro
   await updateSetting<ClassifierConfiguration>(
     CONFIGURATION_KEY,
     EMPTY_CONFIGURATION,
-    ({ screeningProfileId, ...current }) => ({
-      ...current,
+    (current) => ({
       version: 1,
       profiles: current.profiles.filter((profile) => profile.id !== id),
-      // Removing the screening connection hands screening back to the safety model.
-      ...(screeningProfileId === undefined || screeningProfileId === id
-        ? {}
-        : { screeningProfileId }),
     }),
   )
   deleteApiKey(credential)
+  // Removing the screening connection hands screening back to the safety model.
+  if (getSetting<string>(SCREENING_KEY, '') === id) await deleteSetting(SCREENING_KEY)
   return listClassifierProfiles()
 }
 
@@ -196,7 +202,11 @@ function credentialScope(profile: ClassifierProfile): string {
   const connection = profile.connection
   return connection.type === 'semif'
     ? 'semif'
-    : JSON.stringify([connection.protocol, connection.auth, classifierEndpointKey(connection.baseUrl)])
+    : JSON.stringify([
+        connection.protocol,
+        connection.auth,
+        classifierEndpointKey(connection.baseUrl),
+      ])
 }
 
 function knownSecrets(): string[] {
