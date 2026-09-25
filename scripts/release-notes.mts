@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs'
-import { getReleaseChannel, getUpdateChannel } from '../src/shared/release-channel.mts'
+import {
+  RELEASE_NOTES_CHANGELOG_MARKER,
+  getReleaseChannel,
+  getUpdateChannel,
+} from '../src/shared/release-channel.mts'
 
 /**
  * Render the GitHub Release body for a version from its `## <version>` section
@@ -90,6 +94,9 @@ export function renderReleaseNotes(version: string, changelog: string): string {
     '- Download the `arm64` build for Apple Silicon or the `x64` build for Intel.',
     `- Updates are served from the \`${feed}\` feed. ${advance}`,
     '- Releases are forward-fix only; downgrade is not a supported rollback.',
+    '',
+    // The in-app update prompt lists every missed version's notes from here down.
+    RELEASE_NOTES_CHANGELOG_MARKER,
     '',
     extractReleaseSection(changelog, version),
     '',

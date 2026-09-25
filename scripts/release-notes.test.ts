@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { RELEASE_NOTES_CHANGELOG_MARKER } from '../src/shared/release-channel.mts'
 import { extractReleaseSection, renderReleaseNotes, splitChangelog } from './release-notes.mts'
 
 const changelog = [
@@ -96,6 +97,17 @@ describe('renderReleaseNotes', () => {
     assert.match(notes, /^Copse 1\.2\.3 — stable channel\.$/m)
     assert.match(notes, /`latest` feed/)
     assert.match(notes, /never offered a beta build/)
+  })
+
+  it('marks where the changelog starts, after the boilerplate', () => {
+    // The update prompt shows only what follows the marker for each missed version.
+    const notes = renderReleaseNotes('0.1.0-beta.1', changelog)
+    const marker = notes.indexOf(RELEASE_NOTES_CHANGELOG_MARKER)
+    assert.ok(marker > notes.indexOf('macOS 26'))
+    assert.equal(
+      notes.slice(marker + RELEASE_NOTES_CHANGELOG_MARKER.length).trim(),
+      '- Fixed the thing.\n- Fixed the other thing.',
+    )
   })
 
   it('records the supported macOS version and both architectures', () => {

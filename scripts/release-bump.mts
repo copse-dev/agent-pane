@@ -1,5 +1,9 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { getReleaseChannel } from '../src/shared/release-channel.mts'
+import {
+  compareReleaseVersions,
+  getReleaseChannel,
+  parseReleaseVersion,
+} from '../src/shared/release-channel.mts'
 import {
   UNRELEASED,
   findSectionBody,
@@ -21,42 +25,16 @@ import {
  * version to cut a stable release or jump a minor.
  */
 
-interface ParsedVersion {
-  major: number
-  minor: number
-  patch: number
-  /** null for a stable version, which sorts after every beta of the same X.Y.Z. */
-  beta: number | null
-}
-
-function parseVersion(version: string): ParsedVersion {
-  // The shared classifier rejects every shape but X.Y.Z and X.Y.Z-beta.N.
-  getReleaseChannel(version)
-  const [core = '', beta] = version.split('-beta.')
-  const [major = 0, minor = 0, patch = 0] = core.split('.').map(Number)
-  return { major, minor, patch, beta: beta === undefined ? null : Number(beta) }
-}
-
-export function compareVersions(a: string, b: string): number {
-  const left = parseVersion(a)
-  const right = parseVersion(b)
-  const parts: ('major' | 'minor' | 'patch')[] = ['major', 'minor', 'patch']
-  for (const key of parts) {
-    if (left[key] !== right[key]) return left[key] - right[key]
-  }
-  if (left.beta === right.beta) return 0
-  if (left.beta === null) return 1
-  if (right.beta === null) return -1
-  return left.beta - right.beta
-}
-
 /**
  * The version the scheduled cadence releases next. It only ever cuts betas:
  * after a stable X.Y.Z the next is X.Y.(Z+1)-beta.1, so promoting a build to
  * stable stays a deliberate, human-chosen version.
  */
 export function nextBetaVersion(current: string): string {
-  const { major, minor, patch, beta } = parseVersion(current)
+  const {
+    core: [major, minor, patch],
+    beta,
+  } = parseReleaseVersion(current)
   return beta === null
     ? `${[major, minor, patch + 1].join('.')}-beta.1`
     : `${[major, minor, patch].join('.')}-beta.${String(beta + 1)}`
@@ -133,7 +111,7 @@ function main(): void {
 
   const current = packageVersion()
   const next = requested ?? nextBetaVersion(current)
-  if (compareVersions(next, current) <= 0) {
+  if (compareReleaseVersions(next, current) <= 0) {
     throw new Error(`${next} is not newer than the current version ${current}`)
   }
 

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  compareVersions,
   hasUnreleasedNotes,
   nextBetaVersion,
   setPackageVersion,
@@ -41,23 +40,6 @@ describe('nextBetaVersion', () => {
 
   it('rejects a version shape neither channel supports', () => {
     assert.throws(() => nextBetaVersion('0.1.0-rc.1'), /Unsupported release version/)
-  })
-})
-
-describe('compareVersions', () => {
-  it('orders betas numerically, not lexically', () => {
-    assert.ok(compareVersions('0.1.0-beta.10', '0.1.0-beta.9') > 0)
-  })
-
-  it('orders a stable release after every beta of the same version', () => {
-    assert.ok(compareVersions('0.1.0', '0.1.0-beta.99') > 0)
-    assert.ok(compareVersions('0.1.0-beta.1', '0.1.0') < 0)
-  })
-
-  it('orders by major, minor, then patch', () => {
-    assert.ok(compareVersions('1.0.0-beta.1', '0.9.9') > 0)
-    assert.ok(compareVersions('0.2.0', '0.10.0') < 0)
-    assert.equal(compareVersions('0.1.0-beta.3', '0.1.0-beta.3'), 0)
   })
 })
 

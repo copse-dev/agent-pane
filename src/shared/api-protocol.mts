@@ -43,4 +43,5 @@
 // v14 versions ACP rich-content blocks on streamed agent chunks.
 // v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
 // v16 conservatively versions the optional post-turn review follow-up note on agent chunks.
-export const API_PROTOCOL_VERSION = 16 as const
+// v17 conservatively versions the optional release changelog on update prompts.
+export const API_PROTOCOL_VERSION = 17 as const

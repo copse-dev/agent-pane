@@ -84,6 +84,17 @@ export interface DemoScenario {
   }[]
   /** Browser-hosted state for the first-party Apple Development panel. */
   appleDevelopmentState?: AppleProjectState
+  /** Seed auto-update prompts so a browser spec can inspect the real dialog. */
+  updatePromptRequests?: readonly {
+    id: string
+    message: string
+    detail?: string
+    changelog?: readonly { version: string; notes: string }[]
+    changelogUrl?: string
+    buttons: readonly string[]
+    defaultIndex?: number
+    cancelIndex?: number
+  }[]
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -968,6 +979,58 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           'The project sandbox would block this command:\n• Reaches outside the project with a ../ path',
         bodyFooter: 'Allow running it once outside the sandbox?',
         type: 'shell',
+      },
+    ],
+  },
+  {
+    id: 'update-prompt-changelog',
+    label: 'Update prompt listing every missed release',
+    project: project('demo-update-prompt-changelog-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-update-prompt-changelog-thread',
+        title: 'Weekly release cadence',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    updatePromptRequests: [
+      {
+        id: 'demo-update-prompt-changelog',
+        message: 'Copse 0.1.0-beta.11 is available',
+        detail: 'Download the update now? You can install it immediately once downloaded.',
+        changelog: [
+          {
+            version: '0.1.0-beta.11',
+            notes: [
+              '- The Browser pane restores its tabs when Copse is reopened.',
+              '- Tool calls that miss a numeric bound run at the cap instead of failing.',
+              '',
+              '## Known issues',
+              '',
+              '- Restored tabs do not keep their scroll position.',
+            ].join('\n'),
+          },
+          {
+            version: '0.1.0-beta.10',
+            // Release notes arrive over the network: markup must render inert.
+            notes:
+              '- Faster `find_files` on large repositories.\n- <img src="x" onerror="document.body.dataset.pwned=1"><script>document.body.dataset.pwned=1</script>Hardened update checks.',
+          },
+          { version: '0.1.0-beta.9', notes: '' },
+        ],
+        changelogUrl: 'https://github.com/copse-dev/copse-releases/releases',
+        buttons: ['Download', 'Later'],
+        defaultIndex: 0,
+        cancelIndex: 1,
       },
     ],
   },
