@@ -71579,6 +71579,7 @@ function bindBrowserLinkClicks(root, store2, api2) {
     if (!link || !root.contains(link)) return;
     if (link.dataset["fileReferencePath"]) return;
     if (link.dataset["workspaceLink"]) return;
+    if (link.dataset["workspaceResourcePath"]) return;
     const href = linkHttpHref(link);
     if (!href) return;
     event.preventDefault();
@@ -72077,13 +72078,16 @@ var init_attachment_icons = __esm({
 });
 
 // src/shared/fs/workspace-path.ts
+function normalizeWorkspacePath(path) {
+  return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").split("/").filter((segment) => segment !== ".").join("/");
+}
 function workspaceRelativePath(absPath, workspaceRoot) {
-  const path = absPath.replace(/\\/g, "/");
-  const root = workspaceRoot.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+  const path = normalizeWorkspacePath(absPath);
+  const root = normalizeWorkspacePath(workspaceRoot).replace(/\/+$/, "") || "/";
   const foldCase = DRIVE_PATH_RE.test(root);
   const comparablePath = foldCase ? path.toLowerCase() : path;
   const comparableRoot = foldCase ? root.toLowerCase() : root;
-  if (comparablePath === comparableRoot) return "";
+  if (comparablePath === comparableRoot || comparablePath === `${comparableRoot}/`) return "";
   const prefix = comparableRoot === "/" ? "/" : `${comparableRoot}/`;
   if (!comparablePath.startsWith(prefix)) return null;
   const relative = path.slice(prefix.length);
@@ -72132,7 +72136,7 @@ function workspaceResourceFilePath(uri, workspaceRoot) {
   if (!workspaceRoot) return null;
   const path = localPathFromUri(uri);
   if (path === null) return null;
-  const relative = /^(?:\/|[a-z]:[\\/])/i.test(path) ? workspaceRelativePath(path, workspaceRoot) : path.replace(/\\/g, "/");
+  const relative = /^(?:\/|[a-z]:[\\/])/i.test(path) ? workspaceRelativePath(path, workspaceRoot) : normalizeWorkspacePath(path);
   if (!relative || relative.split("/").includes("..")) return null;
   return relative;
 }
@@ -72332,10 +72336,9 @@ function showReferencedImage(link, { uri, path }, src, read, list) {
 function syncAcpResourceReferences(list, api2, store2) {
   const owner = getActiveThreadOwner(store2);
   const workspaceRoot = acpWorkspaceRoot(store2);
-  if (!owner || !workspaceRoot) return;
+  if (!owner || !workspaceRoot || !list.querySelector(RESOURCE_SELECTOR)) return;
   hydrateAcpResourceImages(list, api2, store2);
   const resources = list.querySelectorAll(RESOURCE_SELECTOR);
-  if (resources.length === 0) return;
   const indexOf = messageOrder(list);
   const resourcesByPath = /* @__PURE__ */ new Map();
   for (const node2 of resources) {
@@ -88846,7 +88849,10 @@ async function attachWorkspacePath(path, handlers3, api2, workspaceRoot, owner) 
     }
     const content = await api2.fs.readFile(owner.projectId, owner.threadId, path);
     const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null;
-    handlers3.attachFile({ path: relativePath ?? path, content });
+    handlers3.attachFile({
+      path: relativePath === null || relativePath === "" ? path : relativePath,
+      content
+    });
   } catch {
   }
 }
