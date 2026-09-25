@@ -17,12 +17,14 @@ portable_root="$(cd "${1:-$portable_source/../../.portable}" && pwd -P)"
 cache="$portable_root/cache/downloads/lm-studio-runtimes"
 runtime_root="$portable_root/apps/darwin-arm64/lm-studio-runtimes"
 backup="$runtime_root.previous"
-if [ -e "$backup" ] || [ -L "$backup" ]; then
-  echo "A previous runtime installation needs recovery: $backup" >&2
-  exit 1
-fi
 if ! mkdir "$portable_root/.local-ai-runtime-setup-lock" 2>/dev/null; then
   echo 'Another runtime setup is running (or left .local-ai-runtime-setup-lock after interruption).' >&2
+  exit 1
+fi
+# Checked under the lock: a concurrent setup legitimately holds a backup while installing.
+if [ -e "$backup" ] || [ -L "$backup" ]; then
+  echo "A previous runtime installation needs recovery: $backup" >&2
+  rmdir "$portable_root/.local-ai-runtime-setup-lock"
   exit 1
 fi
 stage=''

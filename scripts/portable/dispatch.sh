@@ -27,8 +27,16 @@ case "${1:-doctor}" in
     ;;
   doctor)
     test -d .git || { echo 'An independent clone is required, not a linked worktree.' >&2; exit 1; }
-    test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
-    test "$(pnpm --version)" = "$PNPM_VERSION"
+    node_version="$(node -p 'process.versions.node')"
+    if [ "$node_version" != "$NODE_VERSION" ]; then
+      echo "Node $node_version is on PATH; expected pinned $NODE_VERSION. Run portable setup." >&2
+      exit 1
+    fi
+    pnpm_version="$(pnpm --version)"
+    if [ "$pnpm_version" != "$PNPM_VERSION" ]; then
+      echo "pnpm $pnpm_version is on PATH; expected pinned $PNPM_VERSION. Run portable setup." >&2
+      exit 1
+    fi
     /usr/bin/xcrun --find clang
     /usr/bin/python3 --version
     for tool in node corepack pnpm rg claude codex claude-agent-acp codex-acp; do
@@ -76,7 +84,7 @@ case "${1:-doctor}" in
     ;;
   exec)
     shift
-    test "$#" -gt 0
+    if [ "$#" -eq 0 ]; then echo 'Usage: portable-dev exec COMMAND...' >&2; exit 1; fi
     exec "$@"
     ;;
   *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|local-ai-enable|local-ai-disable|local-ai-serve|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;

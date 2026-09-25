@@ -77,8 +77,11 @@ fi
 
 claude_download="$portable_root/cache/downloads/claude-$CLAUDE_VERSION-darwin-arm64"
 download "https://downloads.claude.ai/claude-code-releases/$CLAUDE_VERSION/darwin-arm64/claude" "$claude_download" "$CLAUDE_SHA256"
-cp "$claude_download" "$portable_tools/bin/claude"
-chmod 755 "$portable_tools/bin/claude"
+# Replace, never overwrite in place: macOS kills a running signed binary whose pages change.
+claude_staging="$(mktemp "$portable_tools/bin/.claude.XXXXXX")"
+cp "$claude_download" "$claude_staging"
+chmod 755 "$claude_staging"
+mv -f "$claude_staging" "$portable_tools/bin/claude"
 
 # npm is bundled with pinned Node. The separate lock covers all adapter transitive
 # dependencies; no global install, unpinned npx, or host package manager is used.

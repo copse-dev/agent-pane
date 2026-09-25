@@ -80,7 +80,8 @@ migrates a host's legacy `~/Library/Application Support/copse-panel` profile ont
 drive. The scratch directory is a Git discovery ceiling, so a temporary non-repository
 does not inherit the enclosing Copse checkout. Explicitly initialized scratch
 repositories still work. The unit runner clears inherited Copse/Claude profile
-overrides before starting test processes, preserving their fixture isolation.
+overrides before starting test processes, so tests see the same environment as an
+ordinary developer or CI run and never write into the drive profile.
 
 Launchers derive the root from their own location. After moving the checkout or
 changing the mount path, run `prepare` (or `prepare --offline`): it invalidates the dependency
@@ -258,8 +259,9 @@ duplicate destinations, path traversal and destination symlinks. Each first
 occurrence of a checksum is verified; later identical files are materialized
 with APFS copy-on-write (ordinary copies on filesystems without clone support).
 This preserves complete model directories without downloading identical bytes
-again. Offline mode refuses missing or corrupt files unless an identical,
-already-verified file in the collection can supply them.
+again. Offline mode refuses a missing or corrupt file unless an identical file
+from an earlier row of the same collection was already verified in that run
+(rows are processed in manifest order, so a later row cannot supply an earlier one).
 
 Runtime software is installed at
 `.portable/apps/darwin-arm64/lm-studio-runtimes/`. The official registry's pinned
@@ -365,10 +367,14 @@ and Gemma with `portable-local-ai-library`; enabling with only one installed
 configures that engine alone and says how to add the other. This MLX integration
 serves text; it does not expose the vision/audio features of the downloaded
 multimodal models. The engines appear as local providers in Copse. A profile
-without a chat model routes chat, small tasks, subagents, the advisor and the
-post-turn review to the first engine; once a chat model has been chosen, the
-launcher never changes model routing. Onboarding still runs for a fresh profile.
-Changed settings are backed up beside `settings.json`.
+without a chat model routes chat, the post-turn review and the coder, small-tasks,
+research and advisor roles (as `roleModels` assignments) to the first engine,
+leaving any role the user already assigned; once a chat model has been chosen,
+the launcher never changes model routing. Onboarding still runs for a fresh profile.
+Each launch updates only what an engine owns (its address, model id and context);
+labels, pricing and other edits made in Copse are kept, and unchanged settings
+are not rewritten. Changed settings are backed up beside `settings.json`; only the
+five newest backups are kept, since each holds a copy of the encrypted secrets.
 
 Configuration lives in `.portable/data/local-engines.json`, initialized from
 `scripts/portable/local-engines.json`. Quit portable Copse before editing it.

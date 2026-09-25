@@ -13,10 +13,11 @@ download() {
   if [[ "$url" = https://huggingface.co/* ]] && [ -n "${HF_TOKEN:-}" ]; then
     case "$HF_TOKEN" in *$'\n'*|*$'\r'*) echo 'HF_TOKEN contains a line break.' >&2; return 1 ;; esac
     # Keep the token out of command arguments and files. Curl drops Authorization
-    # on cross-origin redirects; never enable --location-trusted here.
-    printf 'Authorization: Bearer %s\n' "$HF_TOKEN" | /usr/bin/curl --header @- "${curl_args[@]}"
+    # on cross-origin redirects; never enable --location-trusted here. `-q` must come
+    # first: it stops curl reading ~/.curlrc, which could otherwise enable it.
+    printf 'Authorization: Bearer %s\n' "$HF_TOKEN" | /usr/bin/curl -q --header @- "${curl_args[@]}"
   else
-    /usr/bin/curl "${curl_args[@]}"
+    /usr/bin/curl -q "${curl_args[@]}"
   fi
   actual="$(/usr/bin/openssl dgst -sha256 -r "$destination.part" | /usr/bin/cut -d ' ' -f 1)"
   if [ "$actual" != "$checksum" ]; then

@@ -131,7 +131,60 @@ class PortableEnginesTest(unittest.TestCase):
         result = json.loads(self.settings.read_text())
         first = "portable-gguf:" + self.models[0]["id"]
         for key in engines.ROUTED_KEYS:
-            self.assertEqual(result[key], "user:small" if key == "smallTasksModel" else first)
+            self.assertEqual(result[key], first)
+        # Roles route through roleModels, which Copse reads before any legacy key; the advisor
+        # reads nothing else. A role whose legacy key the user set stays unassigned.
+        self.assertEqual(result["roleModels"], {"coder": first, "research": first, "advisor": first})
+        self.assertEqual(result["smallTasksModel"], "user:small")
+        self.assertNotIn("advisorModel", result)
+
+    def test_existing_role_assignments_are_never_replaced(self):
+        engines.atomic_json(self.settings, {"roleModels": {"advisor": "user:advisor"}})
+        engines.configure_settings(self.root, self.models)
+        result = json.loads(self.settings.read_text())
+        self.assertEqual(result["roleModels"]["advisor"], "user:advisor")
+
+    def test_relaunch_keeps_edits_to_drive_providers_and_leaves_unchanged_settings_alone(self):
+        engines.configure_settings(self.root, self.models)
+        settings = json.loads(self.settings.read_text())
+        settings["extraProviders"][0]["label"] = "My drive"
+        settings["extraProviders"][0]["models"][0]["inputPricePerMTok"] = 1
+        engines.atomic_json(self.settings, settings)
+        before = self.settings.stat().st_mtime_ns
+        engines.configure_settings(self.root, self.models)
+        self.assertEqual(self.settings.stat().st_mtime_ns, before)
+        self.assertEqual(json.loads(self.settings.read_text()), settings)
+        # The engine still owns where it listens and its context.
+        moved = [dict(self.models[0], port=self.models[0]["port"] + 1, context=8192)] + self.models[1:]
+        engines.configure_settings(self.root, moved)
+        provider = json.loads(self.settings.read_text())["extraProviders"][0]
+        self.assertEqual(provider["label"], "My drive")
+        self.assertEqual(provider["models"][0]["inputPricePerMTok"], 1)
+        self.assertEqual(provider["models"][0]["contextWindow"], 8192)
+        self.assertEqual(provider["baseUrl"], "http://127.0.0.1:{}/v1".format(moved[0]["port"]))
+
+    def test_settings_backups_are_pruned_to_the_newest_few(self):
+        self.profile.mkdir(parents=True)
+        for stamp in range(engines.KEPT_BACKUPS + 3):
+            (self.profile / "{}{}.json".format(engines.BACKUP_PREFIX, stamp)).write_text("{}")
+        engines.atomic_json(self.settings, {"theme": "dark"})
+        engines.configure_settings(self.root, self.models)
+        backups = sorted(self.profile.glob(engines.BACKUP_PREFIX + "*.json"), key=engines.backup_time)
+        self.assertEqual(len(backups), engines.KEPT_BACKUPS)
+        self.assertEqual(json.loads(backups[-1].read_text()), {"theme": "dark"})
+        self.assertFalse((self.profile / (engines.BACKUP_PREFIX + "0.json")).exists())
+
+    def test_disable_clears_legacy_selections_written_by_earlier_launchers(self):
+        engines.atomic_json(self.settings, {"advisorModel": "portable-gguf:x",
+                                            "subagentModel": "user:research"})
+        engines.remove_settings(self.root)
+        self.assertEqual(json.loads(self.settings.read_text()), {"subagentModel": "user:research"})
+
+    def test_disable_after_routing_an_unconfigured_profile_restores_it(self):
+        engines.atomic_json(self.settings, {"theme": "dark"})
+        engines.configure_settings(self.root, self.models)
+        engines.remove_settings(self.root)
+        self.assertEqual(json.loads(self.settings.read_text()), {"theme": "dark", "extraProviders": []})
 
     def test_disable_removes_drive_providers_and_selections_but_nothing_else(self):
         engines.atomic_json(self.settings, {

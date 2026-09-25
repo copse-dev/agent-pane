@@ -24,7 +24,11 @@ if ! mkdir "$portable_root/.local-ai-setup-lock" 2>/dev/null; then
 fi
 mount=''
 cleanup() {
-  if [ -n "$mount" ]; then /usr/bin/hdiutil detach "$mount" >/dev/null || true; fi
+  if [ -n "$mount" ]; then
+    /usr/bin/hdiutil detach "$mount" >/dev/null 2>&1 || true
+    # Also covers a failed attach; rmdir leaves a directory that is still mounted.
+    rmdir "$mount" 2>/dev/null || true
+  fi
   rmdir "$portable_root/.local-ai-setup-lock"
 }
 trap cleanup EXIT

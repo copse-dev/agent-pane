@@ -18,8 +18,16 @@ RUNTIMES = Path("apps/darwin-arm64/lm-studio-runtimes")
 # runtime-setup.sh records the path at which it regenerated the runtimes' absolute paths.
 RUNTIME_LOCATION = ".installed-path"
 PORTABLE_SLUGS = ("portable-gguf", "portable-mlx")
-ROUTED_KEYS = ("model", "localDefaultModel", "smallTasksModel", "subagentModel", "advisorModel",
-               "reviewModel")
+# Selections Copse still reads as top-level settings.
+ROUTED_KEYS = ("model", "reviewModel")
+# Routing roles are read from `roleModels` first (providers/role-models.ts); the advisor plugin
+# no longer reads the legacy top-level `advisorModel` at all. Each role's legacy key is still
+# honoured as a fallback, so a user's legacy choice keeps its role unassigned.
+ROUTED_ROLES = {"coder": "localDefaultModel", "small-tasks": "smallTasksModel",
+                "research": "subagentModel", "advisor": "advisorModel"}
+# Settings backups each hold a copy of the encrypted secrets: keep only the newest few.
+KEPT_BACKUPS = 5
+BACKUP_PREFIX = "settings.before-local-engines-"
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 # Runs in its own session so closing the terminal cannot kill it first. When the supervisor
 # dies by any means, including SIGKILL, its pipe closes and this stops the engine's group.
@@ -122,19 +130,54 @@ def is_portable_selection(value):
 
 def load_settings(path):
     settings = json.loads(path.read_text()) if path.exists() else {}
-    if not isinstance(settings, dict) or not isinstance(settings.get("extraProviders", []), list):
+    if (not isinstance(settings, dict) or not isinstance(settings.get("extraProviders", []), list)
+            or not isinstance(settings.get("roleModels", {}), dict)):
         raise ValueError("Invalid existing Copse settings; left unchanged")
     return settings
+
+
+def backup_time(backup):
+    stamp = backup.name[len(BACKUP_PREFIX):-len(".json")]
+    return int(stamp) if stamp.isdigit() else -1
+
+
+def prune_backups(profile):
+    backups = sorted(profile.glob(BACKUP_PREFIX + "*.json"), key=backup_time)
+    for backup in backups[:-KEPT_BACKUPS]:
+        backup.unlink()
 
 
 def save_settings(path, settings, previous):
     if previous == json.dumps(settings, sort_keys=True):
         return
     if path.exists():
-        backup = path.parent / ("settings.before-local-engines-{}.json".format(time.time_ns()))
+        backup = path.parent / "{}{}.json".format(BACKUP_PREFIX, time.time_ns())
         backup.write_bytes(path.read_bytes())
         backup.chmod(0o600)
+        prune_backups(path.parent)
     atomic_json(path, settings)
+
+
+def drive_provider(existing, engine):
+    """The provider for one engine, keeping the user's edits to anything the engine does not own.
+
+    The engine owns where it listens, its model id and its context size; the label, usage
+    reporting, pricing and any other field edited in Copse survive every launch.
+    """
+    slug = "portable-" + engine["kind"]
+    provider = dict(existing) if isinstance(existing, dict) else {
+        "label": "Drive · " + ("llama.cpp" if engine["kind"] == "gguf" else "MLX"),
+        "includeUsage": False,
+    }
+    provider.update(slug=slug, baseUrl="http://127.0.0.1:{}/v1".format(engine["port"]),
+                    fallbackContextWindow=engine["context"])
+    models = provider.get("models")
+    kept = [m for m in models if isinstance(m, dict) and m.get("id") == engine["id"]] \
+        if isinstance(models, list) else []
+    model = dict(kept[0]) if kept else {"inputPricePerMTok": 0, "outputPricePerMTok": 0}
+    model.update(id=engine["id"], contextWindow=engine["context"])
+    provider["models"] = [model]
+    return provider
 
 
 def configure_settings(root, engines):
@@ -143,27 +186,27 @@ def configure_settings(root, engines):
     path = profile / "settings.json"
     settings = load_settings(path)
     previous = json.dumps(settings, sort_keys=True)
+    existing = {p.get("slug"): p for p in settings.get("extraProviders", [])
+                if isinstance(p, dict) and p.get("slug") in PORTABLE_SLUGS}
     providers = [p for p in settings.get("extraProviders", [])
                  if not isinstance(p, dict) or p.get("slug") not in PORTABLE_SLUGS]
     for engine in engines:
-        providers.append({
-            "slug": "portable-" + engine["kind"],
-            "label": "Drive · " + ("llama.cpp" if engine["kind"] == "gguf" else "MLX"),
-            "baseUrl": "http://127.0.0.1:{}/v1".format(engine["port"]),
-            "fallbackContextWindow": engine["context"],
-            "includeUsage": False,
-            "models": [{"id": engine["id"], "contextWindow": engine["context"],
-                        "inputPricePerMTok": 0, "outputPricePerMTok": 0}],
-        })
+        providers.append(drive_provider(existing.get("portable-" + engine["kind"]), engine))
     settings["extraProviders"] = providers
-    # A profile without a chat model is unconfigured: route every role, including the review
-    # that otherwise defaults to LM Studio, to the first engine. Once a chat model is chosen,
-    # the user's routing (including roles left on automatic) is never changed.
+    # A profile without a chat model is unconfigured: route chat, every routing role and the
+    # review that otherwise defaults to LM Studio to the first engine. Once a chat model is
+    # chosen, the user's routing (including roles left on automatic) is never changed.
     if not settings.get("model"):
         first = engines[0]
         selection = "portable-{}:{}".format(first["kind"], first["id"])
         for key in ROUTED_KEYS:
             settings.setdefault(key, selection)
+        role_models = settings.get("roleModels", {})
+        unassigned = [role for role, legacy in ROUTED_ROLES.items()
+                      if not str(role_models.get(role) or "").strip()
+                      and not str(settings.get(legacy) or "").strip()]
+        if unassigned:
+            settings["roleModels"] = dict(role_models, **{role: selection for role in unassigned})
     save_settings(path, settings, previous)
 
 
@@ -179,13 +222,18 @@ def remove_settings(root):
     if "extraProviders" in settings:
         settings["extraProviders"] = [p for p in settings["extraProviders"]
                                       if not isinstance(p, dict) or p.get("slug") not in PORTABLE_SLUGS]
-    for key in ROUTED_KEYS:
+    # Legacy keys are cleared too: earlier launcher versions wrote them.
+    for key in ROUTED_KEYS + tuple(ROUTED_ROLES.values()):
         if is_portable_selection(settings.get(key)):
             del settings[key]
     role_models = settings.get("roleModels")
     if isinstance(role_models, dict):
-        for role in [role for role, value in role_models.items() if is_portable_selection(value)]:
+        removed = [role for role, value in role_models.items() if is_portable_selection(value)]
+        for role in removed:
             del role_models[role]
+        # An empty assignment map means the same as none; drop the one this launcher emptied.
+        if removed and not role_models:
+            del settings["roleModels"]
     save_settings(path, settings, previous)
 
 
