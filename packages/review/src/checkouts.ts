@@ -26,10 +26,22 @@ const execFailureSchema = z.object({
 })
 
 /**
- * `core.hooksPath=/dev/null` so a repository cannot run a hook on the host, and
- * no fsmonitor so a status-refreshing command never spawns one over a checkout.
+ * `core.hooksPath=/dev/null` so a repository cannot run a hook on the host, no
+ * fsmonitor so a status-refreshing command never spawns one over a checkout,
+ * and `diff.ignoreSubmodules=all` so a diff does not start a child git inside a
+ * submodule directory, whose `.git` the cell can write and whose config can
+ * define filter drivers. The config is only a default: a per-submodule
+ * `ignore` in the checkout's `.gitmodules` outranks it, so every host-side
+ * diff over a checkout also passes `--ignore-submodules=all` itself.
  */
-const DISABLE_GIT_HOOKS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] as const
+const DISABLE_GIT_HOOKS = [
+  '-c',
+  'core.hooksPath=/dev/null',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'diff.ignoreSubmodules=all',
+] as const
 
 export interface GitResult {
   readonly stdout: string
