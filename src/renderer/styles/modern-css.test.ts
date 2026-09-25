@@ -31,6 +31,55 @@ function declares(css: string, selector: string, prop: RegExp): boolean {
 }
 
 describe('modern CSS adoptions', () => {
+  it('paints native form controls with the accent (#3065)', () => {
+    // accent-color inherits, so one declaration on the root surface reaches every
+    // checkbox, radio and range input. Per-control copies are what let the rest
+    // of Settings fall back to Chromium's default blue.
+    assert.ok(
+      declares(read('base.css'), 'html,\nbody', /accent-color:\s*var\(--accent\)/),
+      'html/body must set accent-color from the accent token',
+    )
+    for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
+      if (file === 'base.css') continue
+      assert.doesNotMatch(
+        read(file),
+        /(?<![-\w])accent-color:/,
+        `${file} re-declares accent-color; inherit it from base.css instead`,
+      )
+    }
+  })
+
+  it('keeps left-elided change paths from moving their leading dot (#3065)', () => {
+    const layout = read('layout.css')
+    assert.ok(
+      declares(layout, '.git-change-path:not(.pr-list-title)', /direction:\s*rtl/),
+      'change paths elide from the left via direction: rtl',
+    )
+    assert.match(
+      layout,
+      /\.git-change-path:not\(\.pr-list-title\)::before,\s*\.git-change-path:not\(\.pr-list-title\)::after\s*\{[^}]*content:\s*'\\200E'/,
+      'an RTL paragraph needs left-to-right marks at both ends or `.bashrc` renders as `bashrc.`',
+    )
+    const settings = read('settings.css')
+    assert.match(
+      settings,
+      /\.sources-row-hover-detail::before,\s*\.sources-row-hover-detail::after\s*\{[^}]*content:\s*'\\200E'/,
+      'left-elided source paths need the same bidi guards',
+    )
+  })
+
+  it('does not bump weight on the active Usage period toggle', () => {
+    const settings = read('settings.css')
+    assert.ok(
+      declares(settings, '.usage-period-btn.active', /border-color:\s*var\(--accent\)/),
+      'the active period is signalled by colour and border',
+    )
+    assert.ok(
+      !declares(settings, '.usage-period-btn.active', /font-weight/),
+      'a bold active label widens the pill and the row jitters (docs/ui-taste.md)',
+    )
+  })
+
   it('keeps chrome on the shared rhythm and scopes Reading to assistant prose', () => {
     const tokens = readFileSync(resolve(process.cwd(), 'src/renderer/styles/tokens.css'), 'utf8')
     const base = read('base.css')

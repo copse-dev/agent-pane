@@ -61,6 +61,11 @@ describe('primary-chat model labels', () => {
 
     const labels = [...document.querySelectorAll('.message-model')].map((n) => n.textContent)
     assert.deepEqual(labels, ['Claude Sonnet 4.6', 'qwen/qwen3.6-35b-a3b · local'])
+    assert.equal(
+      document.querySelectorAll('.agent-avatar').length,
+      0,
+      'ordinary chat stays unadorned',
+    )
   })
 
   it('omits labels on same-model continuations after a switch', () => {

@@ -71,6 +71,17 @@ describe('Process manager', function () {
       )
     }
 
+    const tableGeometry = await browser.execute(() => {
+      const table = document.querySelector<HTMLTableElement>('.process-manager-table')
+      if (!table) throw new Error('Process table is missing')
+      return {
+        layout: getComputedStyle(table).tableLayout,
+        widths: [...table.querySelectorAll('thead th')].map(
+          (heading) => heading.getBoundingClientRect().width,
+        ),
+      }
+    })
+    assert.equal(tableGeometry.layout, 'fixed')
     const firstSample = Number(await dialog.getAttribute('data-sampled-at'))
     assert.ok(firstSample > 0)
     await browser.waitUntil(
@@ -79,9 +90,57 @@ describe('Process manager', function () {
         timeout: 8_000,
       },
     )
+    assert.deepEqual(
+      await browser.execute(() =>
+        [...document.querySelectorAll('.process-manager-table thead th')].map(
+          (heading) => heading.getBoundingClientRect().width,
+        ),
+      ),
+      tableGeometry.widths,
+      'metric refresh must not shift the table columns',
+    )
 
-    await dialog.$('.process-manager-sort=Memory').click()
+    const memorySort = dialog.$('.process-manager-sort=Memory')
+    const sortIndicator = async (direction: 'ascending' | 'descending') =>
+      browser.execute((order) => {
+        const button = document.querySelector(
+          `.process-manager-table th[aria-sort="${order}"] button`,
+        )
+        if (!button) throw new Error(`${order} sort button is missing`)
+        const style = getComputedStyle(button, '::after')
+        return {
+          width: style.width,
+          height: style.height,
+          visibility: style.visibility,
+          clipPath: style.clipPath,
+        }
+      }, direction)
+
+    await memorySort.click()
     await expect(dialog.$('th[aria-sort="descending"]')).toHaveText('Memory')
+    const descendingIndicator = await sortIndicator('descending')
+    assert.deepEqual(
+      {
+        width: descendingIndicator.width,
+        height: descendingIndicator.height,
+        visibility: descendingIndicator.visibility,
+      },
+      { width: '8px', height: '6px', visibility: 'visible' },
+    )
+    assert.match(descendingIndicator.clipPath, /^polygon\(0(?:px)? 0(?:px)?, 100% 0/)
+    await memorySort.click()
+    await expect(dialog.$('th[aria-sort="ascending"]')).toHaveText('Memory')
+    const ascendingIndicator = await sortIndicator('ascending')
+    assert.deepEqual(
+      {
+        width: ascendingIndicator.width,
+        height: ascendingIndicator.height,
+        visibility: ascendingIndicator.visibility,
+      },
+      { width: '8px', height: '6px', visibility: 'visible' },
+    )
+    assert.match(ascendingIndicator.clipPath, /^polygon\(50% 0(?:px)?, 100% 100%/)
+    await memorySort.click()
     const values = await browser.execute(() =>
       [...document.querySelectorAll('#process-manager-dialog tbody tr td:nth-child(5)')]
         .map((cell) => Number.parseFloat(cell.textContent ?? ''))

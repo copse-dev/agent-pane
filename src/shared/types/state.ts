@@ -125,6 +125,7 @@ export interface AppState {
   theme: Theme // Resolved effective theme (never `system`); what panes render.
   themePreference: ThemePreference // The user's choice; `system` tracks the OS.
   fontSize: number // 12–20, applied to Monaco + xterm (then multiplied by uiScale)
+  animateAgentAvatars: boolean // Animate the active remote or named agent identity in chat.
   uiScale: number // 0.75–1.5 interface scale; drives CSS --ui-scale tokens
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
