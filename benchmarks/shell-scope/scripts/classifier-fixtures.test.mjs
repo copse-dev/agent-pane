@@ -86,13 +86,7 @@ test('scoring reads the verdict from probabilities, ties read external, failures
   })
 })
 
-test('recorded decider outputs match the frozen fixtures and published scores', async () => {
-  const expectedRuns = [
-    ['dev-explicit', 52, 42, 6, 0.575, 2792],
-    ['dev-original', 47, 46, 7, 0.529, 1821],
-    ['holdout-explicit', 87, 13, 0, 0.776, 2779],
-    ['holdout-original', 80, 18, 2, 0.676, 1838],
-  ]
+async function assertRecordedRun(directory, requestedModel, model, expectedRuns) {
   const configHashes = new Set()
   for (const [
     name,
@@ -104,7 +98,7 @@ test('recorded decider outputs match the frozen fixtures and published scores', 
   ] of expectedRuns) {
     const [fixtures, records] = await Promise.all([
       readJsonl(new URL(`../inputs/classifier/${name}.jsonl`, import.meta.url)),
-      readJsonl(new URL(`../results/2026-09-25/decider-4b-v2/${name}.jsonl`, import.meta.url)),
+      readJsonl(new URL(`../results/2026-09-25/${directory}/${name}.jsonl`, import.meta.url)),
     ])
     assert.equal(records.length, 100)
     assert.equal(fixtures.length, records.length)
@@ -114,8 +108,8 @@ test('recorded decider outputs match the frozen fixtures and published scores', 
       assert.deepEqual(record.expected, fixture.expected)
       assert.equal(record.fixtureHash, sha256(JSON.stringify(fixture)))
       assert.equal(record.result?.adapter, 'systemone@1')
-      assert.equal(record.result?.requestedModel, 'Mapika/decider-4b')
-      assert.equal(record.result?.model, 'decider-4b-v2')
+      assert.equal(record.result?.requestedModel, requestedModel)
+      assert.equal(record.result?.model, model)
       configHashes.add(record.configHash)
     })
     const metrics = scoreRecords(records)
@@ -137,6 +131,21 @@ test('recorded decider outputs match the frozen fixtures and published scores', 
     )
   }
   assert.equal(configHashes.size, 1)
+}
+
+test('recorded decider and Winnow outputs match the frozen fixtures and published scores', async () => {
+  await assertRecordedRun('decider-4b-v2', 'Mapika/decider-4b', 'decider-4b-v2', [
+    ['dev-explicit', 52, 42, 6, 0.575, 2792],
+    ['dev-original', 47, 46, 7, 0.529, 1821],
+    ['holdout-explicit', 87, 13, 0, 0.776, 2779],
+    ['holdout-original', 80, 18, 2, 0.676, 1838],
+  ])
+  await assertRecordedRun('winnow-12b', 'jev-latest', 'Winnow-12B', [
+    ['dev-explicit', 87, 0, 13, 0.838, 2475],
+    ['dev-original', 62, 31, 7, 0.654, 1906],
+    ['holdout-explicit', 65, 0, 35, 0.754, 2471],
+    ['holdout-original', 94, 4, 2, 0.917, 2059],
+  ])
 })
 
 test('combinations: an equal-weight sum with a binary deterministic verdict is the deterministic verdict', () => {
