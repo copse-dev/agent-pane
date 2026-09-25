@@ -142,7 +142,7 @@ import {
   runWithOrchestrationContext,
   resolveOrchestrationWorkerModelId,
 } from './orchestration-runner.ts'
-import { runThreadReview, setReviewToolContext } from './review/review-service.ts'
+import { runThreadReview, runWithReviewToolContext } from './review/review-service.ts'
 import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
@@ -2068,17 +2068,10 @@ export async function runAgent(
             if (executionRoot === undefined) {
               return 'Error: review is not available without a thread checkout.'
             }
-            setReviewToolContext({
-              threadId,
-              root: executionRoot,
-              chatModel: model,
-              onChunk: sendChunk,
-            })
-            try {
-              return await registry.executeNormalized(name, args, signal)
-            } finally {
-              setReviewToolContext(null)
-            }
+            return await runWithReviewToolContext(
+              { threadId, root: executionRoot, chatModel: model, onChunk: sendChunk },
+              () => registry.executeNormalized(name, args, signal),
+            )
           }
           if (name === 'run_shell') {
             // Tag the command's streamed output with this tool-call id so the
