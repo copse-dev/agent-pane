@@ -475,9 +475,13 @@ Save/Cancel) with `width: min(100%, var(--settings-content-max)); margin-inline:
 split chat uses for `.messages-list` / `.msg`.
 
 At large interface scales or short window heights, the Settings sidebar can also exceed the body.
-Keep the native dialog itself `overflow: hidden` and give `.settings-nav` its own vertical overflow
-with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole sidebar moves upward,
-then ends above the window bottom and exposes a large blank surface beneath it.
+Keep the native dialog itself (and `.settings-body`) `overflow: clip` and give `.settings-nav` its
+own vertical overflow with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole
+sidebar moves upward, then ends above the window bottom and exposes a large blank surface beneath
+it. `clip`, not `hidden`: an `overflow: hidden` box is still a scroll container, so
+`scrollIntoView()` on a group near the end of a section (the sidebar's jump links) scrolled the
+dialog once `.settings-content` ran out of travel and pushed the Settings header off the top.
+`settings-styling.e2e.ts` asserts the header stays put after a jump.
 
 ## Settings is a destination, not a dialog's worth of chrome
 
@@ -489,7 +493,19 @@ It fills the window and its sections run several screens, so it is typed and spa
   Active / Inactive — stays in the interface family, so the serif marks structure and not decoration.
 - **Group gaps are the page's punctuation.** Top-level groups clear `calc(var(--spacing-xl) * 2)`;
   a field and its own hint stay tight while the gap lives _between_ fields.
-- **Controls are targets, not text.** Nav rows, the search box, selects, text/number inputs, colour
+- **Top-level groups are flat; cards hold their title inside.** A top-level group (a section's own
+  fieldset, a mounted one, a search hit, and Usage's value map) has no fill or padding and a
+  display-face legend. A nested fieldset is a card, and its legend is floated so it sits inside the
+  card's padding — a rendered `<legend>` lives in the fieldset's border area and straddles the card's
+  top edge.
+- **Group introductions are `.settings-fieldset-desc`; `.field-hint` is for one field.** Two adjacent
+  groups should never introduce themselves in different sizes and colours.
+- **Disclosures use one recipe.** A `<details>` in a form takes `disclosureSummary()`
+  (`src/renderer/dom/disclosure-summary.ts`): the label, then the outline chevron that turns when
+  open — the same recipe as the plugin card's `Plugin settings` fold. Never the UA's filled ▶.
+- **A rejected field says so.** Set `aria-invalid="true"` on the field a save rejected (and clear it
+  when edited); `forms.css` paints it with `--error`, over the focus accent.
+- **Controls are targets, not text.** Nav rows, the search box, selects, text/number/url inputs, colour
   wells, and the provider chips all take `--action-min-height`; a checkbox's whole line is
   clickable (padding on `.checkbox-label`, pulled back with a negative `margin-inline-start` so the
   box still sits on the section's left edge).

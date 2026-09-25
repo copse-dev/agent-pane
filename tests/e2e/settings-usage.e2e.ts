@@ -243,6 +243,32 @@ describe('settings usage panel', function () {
     await fieldset.scrollIntoView({ block: 'start', inline: 'nearest' })
     await prepareE2eScreenshot()
 
+    // The value map is a top-level group like every other in Settings: flat
+    // (no card fill or inset) under a display-face legend, even though Usage
+    // mounts it one wrapper deeper (#3065).
+    const groupStyle = await browser.execute(() => {
+      const read = (selector: string) => {
+        const group = document.querySelector<HTMLElement>(selector)
+        const legend = group?.querySelector<HTMLElement>(':scope > legend')
+        if (!group || !legend) return null
+        const groupCss = getComputedStyle(group)
+        const legendCss = getComputedStyle(legend)
+        return {
+          background: groupCss.backgroundColor,
+          padding: groupCss.padding,
+          legendFamily: legendCss.fontFamily,
+          legendSize: legendCss.fontSize,
+          legendWeight: legendCss.fontWeight,
+        }
+      }
+      return {
+        valueMap: read('.frontier-fieldset'),
+        sibling: read('.settings-section[data-section="general"] > fieldset'),
+      }
+    })
+    assert.ok(groupStyle.valueMap && groupStyle.sibling, 'expected both top-level groups')
+    assert.deepEqual(groupStyle.valueMap, groupStyle.sibling, 'top-level groups look alike')
+
     const discover = fieldset.$('button.frontier-discover')
     await discover.waitForClickable({ timeout: 20_000 })
     await discover.click()

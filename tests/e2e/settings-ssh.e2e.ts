@@ -95,6 +95,38 @@ describe('SSH settings section', () => {
       'Port must be a whole number from 1 to 65535.',
     )
     await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    // The rejected field itself is marked, in the error hue, not just the
+    // status line; and every host field takes the Settings field recipe (#3065).
+    const fields = await browser.execute(() => {
+      const section = document.querySelector('.settings-section[data-section="ssh"]')
+      const port = section?.querySelector<HTMLInputElement>('input[name="sshHostPort"]')
+      const host = section?.querySelector<HTMLInputElement>('input[name="sshHostHost"]')
+      const policy = section?.querySelector<HTMLSelectElement>('select[name="sshStrictHostKeys"]')
+      if (!port || !host || !policy) return null
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--error)'
+      port.parentElement?.append(probe)
+      const errorColor = getComputedStyle(probe).color
+      probe.remove()
+      const widths = ['sshHostId', 'sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']
+        .map((name) => section?.querySelector<HTMLInputElement>(`input[name="${name}"]`))
+        .map((input) => input?.getBoundingClientRect().width ?? 0)
+      return {
+        portInvalid: port.getAttribute('aria-invalid'),
+        hostInvalid: host.getAttribute('aria-invalid'),
+        portBorder: getComputedStyle(port).borderTopColor,
+        errorColor,
+        widths,
+        policyWidth: policy.getBoundingClientRect().width,
+      }
+    })
+    assert.ok(fields, 'SSH host form must render')
+    assert.equal(fields.portInvalid, 'true', 'the bad port is marked aria-invalid')
+    assert.equal(fields.hostInvalid, null, 'fields that passed stay unmarked')
+    assert.equal(fields.portBorder, fields.errorColor, 'the invalid port draws in --error')
+    for (const width of fields.widths) {
+      assert.equal(width, fields.policyWidth, 'host fields share the Settings field width')
+    }
     await browser.execute(() => {
       document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
     })

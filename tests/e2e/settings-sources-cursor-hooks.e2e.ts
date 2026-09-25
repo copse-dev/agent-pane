@@ -123,6 +123,32 @@ describe('settings sources hooks', () => {
     // the last row scrolled into view (the full list is taller than the dialog
     // scrollport, so a whole-list element capture would clip behind the sticky
     // Save/Cancel footer).
+    // The per-hook Test action is a kit button, not a twin of the USER badge
+    // beside it: different chrome, so it reads as something to press (#3065).
+    const testVsBadge = await browser.execute(() => {
+      const row = Array.from(document.querySelectorAll('#sources-hooks-list .sources-row')).find(
+        (node) =>
+          node.querySelector('.sources-hook-test-btn') && node.querySelector('.sources-badge'),
+      )
+      const btn = row?.querySelector<HTMLElement>('.sources-hook-test-btn')
+      const badge = row?.querySelector<HTMLElement>('.sources-badge')
+      if (!btn || !badge) return null
+      const look = (node: HTMLElement) => {
+        const css = getComputedStyle(node)
+        return `${css.fontSize}|${css.fontWeight}|${css.textTransform}|${css.letterSpacing}`
+      }
+      return {
+        classes: btn.className,
+        textTransform: getComputedStyle(btn).textTransform,
+        sameLook: look(btn) === look(badge),
+      }
+    })
+    assert.ok(testVsBadge, 'expected a hook row with both a Test button and a badge')
+    assert.match(testVsBadge.classes, /\bui-btn\b/)
+    assert.match(testVsBadge.classes, /\bui-btn-secondary\b/)
+    assert.equal(testVsBadge.textTransform, 'none', 'Test is sentence text, not badge caps')
+    assert.equal(testVsBadge.sameLook, false, 'Test must not share the badge treatment')
+
     await saveElementScreenshot('fieldset:has(#sources-hooks-list)', 'settings-sources-hooks.png')
     await browser.execute(() => {
       document

@@ -208,6 +208,25 @@ describe('classifier connections settings', () => {
     })
   }
 
+  it('labels connection option choices in words while storing the enum values', async () => {
+    const { section } = setup()
+    await section.refresh()
+    const choices = (name: string): Array<[string, string]> =>
+      Array.from(qsRequired(section.root, `select[name="classifier${name}"]`).children).map(
+        (option) => [option.getAttribute('value') ?? '', option.textContent],
+      )
+    assert.deepEqual(choices('Protocol'), [
+      ['systemone', 'SystemOne'],
+      ['featherless', 'Featherless classifier'],
+    ])
+    assert.deepEqual(choices('Auth'), [
+      ['none', 'None'],
+      ['bearer', 'Bearer token (API key)'],
+    ])
+    assert.equal(field(section.root, 'Protocol').value, 'systemone')
+    assert.equal(field(section.root, 'Auth').value, 'bearer')
+  })
+
   it('explains key removal when editing a saved destination, but ignores equivalent trailing slashes', async () => {
     const { section, state } = setup()
     const saved = state.profiles[0]

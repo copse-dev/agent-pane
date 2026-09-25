@@ -107,6 +107,21 @@ describe('settings styling', function () {
       'Settings title typography and alignment must match the regular panel title',
     )
 
+    // Adjacent groups introduce themselves in one voice (#3065): "Detected
+    // settings" used a 12px muted field hint beside Providers' 14px blurb.
+    const blurbs = await browser.execute(() =>
+      ['#settings-env-detect-host', '#settings-providers-host'].map((host) => {
+        const blurb = document.querySelector<HTMLElement>(`${host} > fieldset > legend + p`)
+        if (!blurb) return null
+        const style = getComputedStyle(blurb)
+        return { className: blurb.className, fontSize: style.fontSize, color: style.color }
+      }),
+    )
+    const [detectBlurb, providersBlurb] = blurbs
+    assert.ok(detectBlurb && providersBlurb, 'both General group blurbs must render')
+    assert.equal(detectBlurb.className, 'settings-fieldset-desc')
+    assert.deepEqual(detectBlurb, providersBlurb, 'adjacent group blurbs share one style')
+
     await saveElementScreenshot('#settings-dialog', 'settings-styling-general.png')
   })
 
@@ -149,6 +164,35 @@ describe('settings styling', function () {
     assert.ok(subheadings.labels.length >= 2, 'Appearance has several groups')
     assert.ok(subheadings.minHeight >= 26, 'subheadings are clickable rows, not bare text')
 
+    // Children never outweigh their parent row, and the arrow sits on a wrapped
+    // label's first line (baseline) while a one-line row stays centred (#3065).
+    const subheadingType = await browser.execute(() => {
+      const row = document.querySelector<HTMLElement>('.settings-nav-btn:not(.active)')
+      const sub = document.querySelector<HTMLElement>('.settings-nav-subheading')
+      const text = sub?.lastChild
+      if (!row || !sub || !text) return null
+      const range = document.createRange()
+      range.selectNodeContents(text)
+      const textRect = range.getBoundingClientRect()
+      const subRect = sub.getBoundingClientRect()
+      const style = getComputedStyle(sub)
+      return {
+        rowWeight: getComputedStyle(row).fontWeight,
+        subWeight: style.fontWeight,
+        alignItems: style.alignItems,
+        centreOffset: Math.abs(
+          textRect.top + textRect.height / 2 - (subRect.top + subRect.height / 2),
+        ),
+      }
+    })
+    assert.ok(subheadingType, 'sub-heading type must be measurable')
+    assert.equal(subheadingType.subWeight, subheadingType.rowWeight, 'sub-heading weight = row')
+    assert.equal(subheadingType.alignItems, 'baseline', 'arrow aligns to the first line')
+    assert.ok(
+      subheadingType.centreOffset <= 1.5,
+      `one-line sub-heading label centred in its row (off by ${String(subheadingType.centreOffset)}px)`,
+    )
+
     // Clicking one scrolls that group into the scrollport.
     const subheadingEls = await $$('.settings-nav-subheading')
     const lastSubheading = subheadingEls.at(-1)
@@ -161,6 +205,39 @@ describe('settings styling', function () {
         ),
       { timeout: 10_000, timeoutMsg: 'clicking a subheading must scroll to its group' },
     )
+    // Let the smooth scroll settle, then prove it moved only the content pane:
+    // jumping to the last group used to scroll the (overflow: hidden) dialog too
+    // and hide the Settings header (#3065).
+    let lastTop = -1
+    await browser.waitUntil(
+      async () => {
+        const top = await browser.execute(
+          () => document.querySelector<HTMLElement>('.settings-content')?.scrollTop ?? 0,
+        )
+        const settled = top === lastTop
+        lastTop = top
+        return settled
+      },
+      { timeout: 10_000, interval: 200, timeoutMsg: 'the sub-heading jump never settled' },
+    )
+    const chrome = await browser.execute(() => {
+      const dialog = document.querySelector<HTMLElement>('#settings-dialog')
+      const header = document.querySelector<HTMLElement>('.settings-header')
+      const body = document.querySelector<HTMLElement>('.settings-body')
+      if (!dialog || !header || !body) return null
+      return {
+        dialogScrollTop: dialog.scrollTop,
+        bodyScrollTop: body.scrollTop,
+        headerTop: header.getBoundingClientRect().top,
+        dialogTop: dialog.getBoundingClientRect().top,
+        headerVisible: header.getBoundingClientRect().bottom > 0,
+      }
+    })
+    assert.ok(chrome, 'settings chrome must be present')
+    assert.equal(chrome.dialogScrollTop, 0, 'the dialog itself must not scroll')
+    assert.equal(chrome.bodyScrollTop, 0, 'the settings body must not scroll')
+    assert.equal(chrome.headerTop, chrome.dialogTop, 'the Settings header stays at the top')
+    assert.equal(chrome.headerVisible, true, 'the Settings header stays visible')
 
     await saveElementScreenshot('#settings-dialog', 'settings-styling-nav-subheadings.png')
   })

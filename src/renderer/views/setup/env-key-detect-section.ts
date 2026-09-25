@@ -46,7 +46,7 @@ export function createEnvKeyDetectSection(
     el('legend', {}, legend),
     el(
       'p',
-      { class: 'field-hint' },
+      { class: 'settings-fieldset-desc' },
       'Scans your exported environment and shell start-up files (e.g. ~/.zshrc, ~/.bashrc) ' +
         'for keys like ANTHROPIC_API_KEY or OPENAI_API_KEY. Nothing is read until you click ' +
         'Scan, and existing keys are never overwritten.',

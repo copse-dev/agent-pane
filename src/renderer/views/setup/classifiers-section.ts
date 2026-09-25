@@ -7,6 +7,7 @@ import type {
 } from '@copse/llm/classifiers/types.ts'
 import { CLASSIFIER_PRESETS, classifierCredentialId } from '@copse/llm/classifiers/presets.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
 import { showConfirmDialog } from '../confirm-dialog.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -31,6 +32,32 @@ function classifierErrorMessage(error: unknown): string {
   }
   return message || 'Classifier request failed.'
 }
+
+/** A select choice: the stored enum value and the words shown for it. */
+interface SelectChoice {
+  value: string
+  label: string
+}
+
+// The stored values are wire enums; the labels are what a person reads.
+const PROTOCOL_CHOICES: readonly SelectChoice[] = [
+  { value: 'systemone', label: 'SystemOne' },
+  { value: 'featherless', label: 'Featherless classifier' },
+]
+const AUTH_CHOICES: readonly SelectChoice[] = [
+  { value: 'none', label: 'None' },
+  { value: 'bearer', label: 'Bearer token (API key)' },
+]
+const BACKEND_CHOICES: readonly SelectChoice[] = [
+  { value: 'torch', label: 'PyTorch' },
+  { value: 'mlx', label: 'MLX' },
+  { value: 'llamacpp', label: 'llama.cpp (GGUF)' },
+]
+const MODE_CHOICES: readonly SelectChoice[] = [
+  { value: 'direct', label: 'Direct' },
+  { value: 'serial', label: 'Serial' },
+  { value: 'shared', label: 'Shared' },
+]
 
 function describeResult(result: ClassifierResult): string {
   const answers = Object.entries(result.answers).map(([id, answer]) => {
@@ -164,9 +191,15 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       controls.set(name, control)
       return control
     }
-    function select(name: string, value: string, options: readonly string[]): HTMLSelectElement {
+    function select(
+      name: string,
+      value: string,
+      choices: readonly SelectChoice[],
+    ): HTMLSelectElement {
       const control = el('select', { name: `classifier${name}` })
-      for (const option of options) control.append(el('option', { value: option }, option))
+      for (const choice of choices) {
+        control.append(el('option', { value: choice.value }, choice.label))
+      }
       control.value = values.get(name) ?? value
       controls.set(name, control)
       return control
@@ -192,15 +225,15 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     const advanced = el(
       'details',
       { class: 'provider-advanced' },
-      el('summary', {}, 'Connection options'),
+      disclosureSummary('Connection options'),
     )
     let key: HTMLInputElement | undefined
     let removeKey: HTMLInputElement | undefined
     if (profile.connection.type === 'http') {
       const connection = profile.connection
-      const protocol = select('Protocol', connection.protocol, ['systemone', 'featherless'])
+      const protocol = select('Protocol', connection.protocol, PROTOCOL_CHOICES)
       const url = input('Url', connection.baseUrl, 'url')
-      const auth = select('Auth', connection.auth, ['none', 'bearer'])
+      const auth = select('Auth', connection.auth, AUTH_CHOICES)
       const env = input('KeyEnv', connection.apiKeyEnv ?? '')
       key = input('Key', '', 'password')
       const destinationNote = el('span', {
@@ -290,7 +323,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       )
     } else {
       const connection = profile.connection
-      const backend = select('Backend', connection.backend, ['torch', 'mlx', 'llamacpp'])
+      const backend = select('Backend', connection.backend, BACKEND_CHOICES)
       const gguf = el('label', {}, 'GGUF model path', input('Gguf', connection.gguf ?? ''))
       const updateBackend = (): void => {
         gguf.hidden = backend.value !== 'llamacpp'
@@ -301,12 +334,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       advanced.append(
         el('label', {}, 'Backend', backend),
         el('label', {}, 'Model revision', input('Revision', connection.revision)),
-        el(
-          'label',
-          {},
-          'Scoring mode',
-          select('Mode', connection.mode, ['direct', 'serial', 'shared']),
-        ),
+        el('label', {}, 'Scoring mode', select('Mode', connection.mode, MODE_CHOICES)),
         gguf,
         el(
           'span',

@@ -121,6 +121,37 @@ describe('createSshWorkspaceSection', () => {
     })
   })
 
+  it('marks only the rejected field invalid and clears the mark once it is edited', async () => {
+    const { api, sets } = mockApi({ hosts: [] })
+    const section = createSshWorkspaceSection(api)
+    document.body.append(section.root)
+    await section.refresh()
+
+    const input = (name: string): HTMLInputElement => {
+      const node = section.root.querySelector<HTMLInputElement>(`input[name="${name}"]`)
+      assert.ok(node, name)
+      return node
+    }
+    for (const name of ['sshHostId', 'sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']) {
+      assert.equal(input(name).getAttribute('type'), 'text', `${name} names its type`)
+    }
+    const type = (name: string, value: string): void => {
+      input(name).value = value
+      input(name).dispatchEvent(new Event('input'))
+    }
+    type('sshHostLabel', 'Studio Mac')
+    type('sshHostHost', 'studio.local')
+    type('sshHostPort', '22garbage')
+    section.root.querySelector<HTMLButtonElement>('.ssh-host-save')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(sets.length, 0)
+    assert.equal(input('sshHostPort').getAttribute('aria-invalid'), 'true')
+    assert.equal(input('sshHostHost').hasAttribute('aria-invalid'), false)
+    type('sshHostPort', '2222')
+    assert.equal(input('sshHostPort').hasAttribute('aria-invalid'), false)
+  })
+
   it('shows and deletes OS-keychain authentication without removing the host', async () => {
     const host = { id: 'dev', label: 'Dev Server', host: 'dev.example' }
     const { api, forgotten, sets } = mockApi({ hosts: [host], credentialHostIds: ['dev'] })

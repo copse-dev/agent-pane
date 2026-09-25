@@ -86,7 +86,23 @@ describe('ssh workspace settings helpers', () => {
       assert.deepEqual(invalid, {
         ok: false,
         error: 'Port must be a whole number from 1 to 65535.',
+        fields: ['port'],
       })
     }
+  })
+
+  it('names the fields a rejected draft is about', () => {
+    const noHost = parseSshHostDraft({ ...emptySshHostDraft(), label: 'Prod' })
+    assert.ok(!noHost.ok)
+    assert.deepEqual(noHost.fields, ['host'])
+
+    const badId = parseSshHostDraft({
+      ...emptySshHostDraft(),
+      id: 'Not A Slug',
+      label: 'Prod',
+      host: 'prod.example',
+    })
+    assert.ok(!badId.ok)
+    assert.deepEqual(badId.fields, ['id'])
   })
 })

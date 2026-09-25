@@ -242,7 +242,7 @@ function renderPlanSection(
   host.append(heading)
 
   const intro = document.createElement('p')
-  intro.className = 'field-hint'
+  intro.className = 'settings-fieldset-desc'
   intro.textContent =
     'Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app’s usage.'
   host.append(intro)
@@ -309,7 +309,7 @@ export function renderPlanWorthItSection(
   host.append(heading)
 
   const intro = document.createElement('p')
-  intro.className = 'field-hint'
+  intro.className = 'settings-fieldset-desc'
   intro.textContent =
     'Compares your Claude subscription’s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse’s local ledger is not used here.'
   host.append(intro)

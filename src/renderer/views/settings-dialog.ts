@@ -2179,7 +2179,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!header) return
     const testBtn = document.createElement('button')
     testBtn.type = 'button'
-    testBtn.className = 'sources-hook-test-btn'
+    // A kit button, so it reads as a control beside the row's status badges
+    // (USER, PROJECT) rather than as one more tracked-caps chip.
+    testBtn.className = 'ui-btn ui-btn-secondary sources-hook-test-btn'
     testBtn.textContent = 'Test'
     testBtn.title = 'Dry-run this hook against a synthetic payload for its event'
     header.append(testBtn)

@@ -17,7 +17,12 @@ dialog.settings-overlay {
   padding: 0;
   border: none;
   color: inherit;
-  overflow: hidden;
+  /* `clip`, not `hidden`: an `overflow: hidden` box is still a scroll container,
+     so `scrollIntoView()` on a group deep in the section (the sidebar's jump
+     links, search, focus) scrolled the dialog itself once the content pane ran
+     out of travel — and pushed the Settings header off the top. A clipped box
+     cannot be scrolled at all, so only `.settings-content` moves. */
+  overflow: clip;
 }
 dialog.settings-overlay::backdrop {
   background: var(--bg-base);
@@ -82,7 +87,9 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  /* Same as the dialog: clip rather than become a second scroll container
+     that `scrollIntoView()` can move. */
+  overflow: clip;
 }
 .settings-nav {
   width: calc(240px * var(--ui-scale));
@@ -129,8 +136,13 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-xs) 0;
 }
 .settings-nav-subheading {
-  display: flex;
-  align-items: center;
+  /* Arrow | label on one grid row. A long group name wraps, and baseline
+     alignment keeps the arrow on its first line instead of floating between
+     the two; `align-content` still centres a one-line row in its min-height. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  align-content: center;
   gap: var(--spacing-sm);
   text-align: left;
   min-height: calc(30px * var(--ui-scale));
@@ -138,7 +150,10 @@ dialog.settings-overlay::backdrop {
     calc(var(--spacing-xl) + var(--spacing-xs));
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  /* Same weight as the section rows above: the indent and the arrow already say
+     "belongs to the row above", so a heavier weight only made the children
+     shout over their parent. */
+  font-weight: 400;
 }
 /* The turned arrow marks these as belonging to the row above rather than being
    sections in their own right. Decorative: the label carries the meaning. */
@@ -264,13 +279,10 @@ dialog.settings-overlay::backdrop {
   margin-bottom: calc(var(--spacing-xl) + var(--spacing-sm));
 }
 /* A blurb under a group heading introduces the whole group, so it stays tight to
-   the heading (which now carries that gap itself — hence no negative pull here
-   any more) and keeps a clear gap to the first control. Some groups write theirs
-   as a .field-hint, so give that the same rhythm rather than leaving it jammed
-   against the control below. */
-.settings-content legend + .field-hint {
-  margin-bottom: var(--spacing-lg);
-}
+   the heading (which carries that gap itself) and keeps a clear gap to the first
+   control. Group introductions are always `.settings-fieldset-desc` (14px,
+   secondary); `.field-hint` (12px, muted) is for the hint under one field, so
+   two adjacent groups never introduce themselves in different voices. */
 .settings-field-label {
   display: block;
   margin: calc(var(--spacing-lg) + var(--spacing-xs)) 0 var(--spacing-md);
@@ -436,13 +448,21 @@ dialog.settings-overlay::backdrop {
    margin, which collapses with the final panel's bottom margin to the same gap. */
 .settings-section > fieldset,
 .settings-section > .settings-mount > fieldset,
-.settings-search-results > fieldset {
+.settings-search-results > fieldset,
+.usage-section-root > fieldset {
   /* Flat, not a card: the group's own heading and the gap to the next group are
      what separate it, so its controls share the section's left edge instead of
      sitting inset in a frame. Gap matches .usage-section-root's. */
   background: none;
   padding: 0;
   margin-bottom: calc(var(--spacing-xl) * 2);
+}
+/* The Usage panel mounts its own groups one wrapper deeper (the value map sits
+   in `.usage-section-root` beside the plan and ledger blocks), so it is listed
+   above to be a flat group like every other; the root's flex gap already spaces
+   it, so it takes no extra margin of its own. */
+.usage-section-root > fieldset {
+  margin-bottom: 0;
 }
 /* The group's title is a heading, one step below the section's <h3> and on the
    same left edge — not a faint caption stamped into a border. Matches the
@@ -453,12 +473,11 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-md);
   font-weight: 600;
 }
-/* Only a flat group needs this: a card's own top padding already sits between
-   its title and its first control (a legend is laid out above the padding box),
-   and adding a margin there too would leave the title floating. */
+/* A flat group's title: the section's second tier. */
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
-.settings-search-results > fieldset > legend {
+.settings-search-results > fieldset > legend,
+.usage-section-root > fieldset > legend {
   /* A top-level group is the section's second tier, so it takes the display
      face too — one clear step down from the <h3>. Nested card titles (provider
      auth, hook cards) stay in the interface family via the base rule above. */
@@ -467,6 +486,38 @@ dialog.settings-overlay::backdrop {
   font-weight: 400;
   line-height: var(--line-height-base);
   margin-bottom: var(--spacing-md);
+}
+/* A card's title belongs inside the card. A rendered <legend> is laid out in
+   the fieldset's top border area, above the padding box — with no border and a
+   background, that left "Server connection" straddling the card's top edge,
+   half on the card and half off it. Floating it makes it an ordinary block in
+   the content box, so the card's padding surrounds it like any other child;
+   everything after it clears. Flat groups (listed above) keep the rendered
+   legend: they have no padding or fill for it to misplace. */
+.settings-content
+  fieldset:not(
+    .settings-section > fieldset,
+    .settings-section > .settings-mount > fieldset,
+    .settings-search-results > fieldset,
+    .usage-section-root > fieldset
+  )
+  > legend {
+  float: left;
+  width: 100%;
+  /* No inline padding: that only existed to notch a legend into a border. */
+  padding: 0;
+  margin-bottom: var(--spacing-md);
+}
+.settings-content
+  fieldset:not(
+    .settings-section > fieldset,
+    .settings-section > .settings-mount > fieldset,
+    .settings-search-results > fieldset,
+    .usage-section-root > fieldset
+  )
+  > legend
+  ~ * {
+  clear: both;
 }
 /* A field and its own controls stay tight; the gap belongs *between* fields. */
 .settings-content fieldset label {
@@ -616,10 +667,17 @@ dialog.settings-overlay::backdrop {
 .app-icon-label {
   font-size: 12px;
 }
+/* Every text-entry type, not just text/password/number: a Base URL field
+   (`type="url"`) that missed this list stretched the full column and sat a few
+   px off its siblings. An `<input>` in Settings always names its type, so the
+   attribute selectors below are the whole field family. */
 .settings-content label select,
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],
-.settings-content label input[type='number'] {
+.settings-content label input[type='number'],
+.settings-content label input[type='url'],
+.settings-content label input[type='email'],
+.settings-content label input[type='search'] {
   width: 100%;
   max-width: 480px;
   /* Fields are the section's other main target. `forms.css` sizes them from
@@ -630,7 +688,10 @@ dialog.settings-overlay::backdrop {
 }
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],
-.settings-content label input[type='number'] {
+.settings-content label input[type='number'],
+.settings-content label input[type='url'],
+.settings-content label input[type='email'],
+.settings-content label input[type='search'] {
   padding-inline: var(--spacing-md);
 }
 /* select only gets the roomier left inset: a `padding-inline` shorthand here
@@ -973,12 +1034,9 @@ dialog.settings-overlay::backdrop {
 .provider-add-model {
   align-self: flex-start;
 }
-.provider-advanced summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.provider-advanced[open] summary {
+/* The summary itself takes the shared disclosure recipe
+   (`.settings-disclosure-summary`, next to `.plugin-settings-summary`). */
+.provider-advanced[open] > summary {
   margin-bottom: var(--spacing-sm);
 }
 
@@ -987,12 +1045,7 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: var(--spacing-sm);
 }
-.routing-advanced summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.routing-advanced[open] summary {
+.routing-advanced[open] > summary {
   margin-bottom: var(--spacing-sm);
 }
 
@@ -1008,6 +1061,12 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+/* These blocks space their children with the flex gap; the group blurb's own
+   bottom margin would stack on top of it. */
+.usage-plan-section > .settings-fieldset-desc,
+.usage-worth-section > .settings-fieldset-desc {
+  margin-bottom: 0;
 }
 .usage-plan-heading,
 .usage-worth-heading,
@@ -1791,25 +1850,14 @@ dialog.settings-overlay::backdrop {
 }
 
 /* G2 dry-run hook tester: a per-hook "Test" button in the row header and the
-   result panel it toggles (summary chips + labeled stdin/stdout/stderr). */
+   result panel it toggles (summary chips + labeled stdin/stdout/stderr). The
+   button is a kit `ui-btn ui-btn-secondary` — it used to share the badge's
+   11px caps-and-hairline look and read as one more status chip. The kit has no
+   size variant, so it only trims the vertical padding to sit in the header row
+   without making it taller than the title line needs. */
 .sources-hook-test-btn {
   flex: none;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-sm);
-  cursor: pointer;
-}
-.sources-hook-test-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.sources-hook-test-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+  padding-block: var(--spacing-xs);
 }
 .hook-test {
   margin-top: var(--spacing-sm);
@@ -2130,7 +2178,8 @@ dialog.settings-overlay::backdrop {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--spacing-sm);
 }
-.plugin-settings-summary {
+.plugin-settings-summary,
+.settings-disclosure-summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -2147,20 +2196,30 @@ dialog.settings-overlay::backdrop {
      every other disclosure in the app. */
   list-style: none;
 }
-.plugin-settings-summary::-webkit-details-marker {
+.plugin-settings-summary::-webkit-details-marker,
+.settings-disclosure-summary::-webkit-details-marker {
   display: none;
 }
-.plugin-settings-summary:hover {
+.plugin-settings-summary:hover,
+.settings-disclosure-summary:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.plugin-settings-chevron {
+.plugin-settings-chevron,
+.settings-disclosure-chevron {
   width: 16px;
   height: 16px;
+  flex: none;
   transition: transform 0.15s ease;
 }
-.plugin-settings-fold[open] .plugin-settings-chevron {
+.plugin-settings-fold[open] .plugin-settings-chevron,
+details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   transform: rotate(180deg);
+}
+/* An in-form fold ("Connection options") sits among fields rather than across
+   a card's width, so its row hugs the label instead of spanning the column. */
+.settings-disclosure-summary {
+  width: fit-content;
 }
 .plugin-settings {
   display: flex;
