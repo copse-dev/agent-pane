@@ -1038,7 +1038,7 @@ export async function openAcpSession(
     // starting a bridge for one; this keeps a caller-supplied bridge local too).
     const remote = acpSshTarget(config.cwd) !== null
     if (config.nativeBridge && remote) {
-      console.info('[acp-bridge] native tools are not offered to an agent running on an SSH host')
+      console.warn('[acp-bridge] native tools are not offered to an agent running on an SSH host')
     } else if (config.nativeBridge && mcpCapabilities?.http === true) {
       mcpServers.push({
         type: 'http',
