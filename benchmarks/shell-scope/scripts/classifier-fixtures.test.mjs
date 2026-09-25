@@ -4,6 +4,7 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { fixtureFiles, toClassifierFixtures } from './classifier-fixtures.mjs'
 import { scoreRecords, verdictOf } from './score-classifier-eval.mjs'
+import { STRATEGIES, deterministicProbability, fit, metrics } from './combine-classifier-eval.mjs'
 
 const input = {
   id: 'case-1__explicit',
@@ -136,4 +137,25 @@ test('recorded decider outputs match the frozen fixtures and published scores', 
     )
   }
   assert.equal(configHashes.size, 1)
+})
+
+test('combinations: an equal-weight sum with a binary deterministic verdict is the deterministic verdict', () => {
+  const rows = [
+    { deterministic: 'sandbox', label: 'sandbox', p: 0.99 },
+    { deterministic: 'external', label: 'external', p: 0.01 },
+    { deterministic: 'ambiguous', label: 'external', p: 0.5 },
+    { deterministic: 'sandbox', label: 'external', p: 0.9 },
+  ]
+  const alone = metrics(rows, STRATEGIES['deterministic alone']())
+  assert.deepEqual(metrics(rows, STRATEGIES['sum: equal weights, external at ≥ 0.5']()), alone)
+  assert.equal(alone.correct, 3)
+  // Filtering first lets the model add a warning to a deterministic sandbox, never remove one.
+  const warned = metrics(
+    rows,
+    STRATEGIES['filter: deterministic external final, model can add external (P ≥ 0.5)'](),
+  )
+  assert.deepEqual([warned.correct, warned.wrongSandbox, warned.wrongExternal], [3, 0, 1])
+  assert.equal(deterministicProbability('ambiguous'), 0.5)
+  // Fitting reads only the rows it is given.
+  assert.equal(typeof fit(rows).upgrade, 'number')
 })
