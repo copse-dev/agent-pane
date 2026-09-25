@@ -4,9 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { waitForAgentIdle } from './helpers.ts'
 
 // Real-app visual + numeric evidence for issue #2488: the roadmap Save button
 // and the titlebar Changes-count badge painting `--text-on-accent` (a dark
@@ -84,7 +83,7 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
       'The proposed contrast proof is ready.',
     )
     await $('.submit-btn').click()
-    await waitForAgentIdle(60_000)
+    await expectAssistantReply('The proposed contrast proof is ready.')
     await scenario.assertComplete()
 
     const changesBadge = $('.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge')
