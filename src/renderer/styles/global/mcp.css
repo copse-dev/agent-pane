@@ -38,14 +38,16 @@
   color: var(--text-muted);
   word-break: break-word;
 }
-.mcp-server-row.mcp-state-error .mcp-server-summary {
+/* The inline status after the name carries the state; the name and transport
+   stay neutral so the row reads as "server: connected", not as a green title. */
+.mcp-server-row.mcp-state-error .mcp-server-summary > .ui-inline-status {
   color: var(--error);
 }
-.mcp-server-row.mcp-state-connected .mcp-server-summary {
+.mcp-server-row.mcp-state-connected .mcp-server-summary > .ui-inline-status {
   color: var(--success);
 }
-.mcp-server-row.mcp-state-untrusted .mcp-server-summary {
-  color: var(--warning, #d29922);
+.mcp-server-row.mcp-state-untrusted .mcp-server-summary > .ui-inline-status {
+  color: var(--warning);
 }
 
 /* Origin chip: who asked for this server. Sits at the end of the header so the

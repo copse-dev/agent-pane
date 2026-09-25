@@ -94,6 +94,20 @@
      distinction — see docs/ui-taste.md -> "Callout severities". */
   --info: #6fb3d9;
   --important: #9d7cf4;
+  /* Change status: git status letters, +/- line stats, and the diff editor's
+     washes. Named for what they mark so every "added" in the app is one green,
+     and bound to the status hues rather than a palette of their own. Deleted
+     takes --error, not --danger: the letters are 10px bold, and dark --danger
+     clears only 4.2:1 on --bg-elevated. Light darkens the letter tier
+     (themes.css), because its status hues sit near 4:1 on the tinted panes. */
+  --change-added: var(--success);
+  --change-modified: var(--warning);
+  --change-deleted: var(--error);
+  --change-renamed: var(--info);
+  /* --success is a bright teal in dark, so its wash runs lighter than red's to
+     leave code on a changed character (line + char wash) above 4.5:1. */
+  --diff-insert: color-mix(in srgb, var(--success) 20%, transparent);
+  --diff-delete: color-mix(in srgb, var(--danger) 26%, transparent);
   /* Shared elevation scale. sm lifts content off the chat gradient (user
      replies, chips); md floats popovers/menus/toasts; lg floats dialogs and
      the centered composer; composer casts the docked input bar's soft glow up

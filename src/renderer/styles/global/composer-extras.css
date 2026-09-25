@@ -268,11 +268,11 @@
   border-color: var(--accent);
 }
 .follow-up-stat-add {
-  color: #3dd68c;
+  color: var(--change-added);
   font-weight: 500;
 }
 .follow-up-stat-del {
-  color: #f07178;
+  color: var(--change-deleted);
   font-weight: 500;
 }
 .diff-conflict-banner {

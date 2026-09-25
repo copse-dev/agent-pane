@@ -79,6 +79,22 @@ choice load-bearing rather than stylistic:
 `src/renderer/styles/light-contrast.test.ts` pins the first rule mechanically, and holds the light
 syntax-highlighting palette to WCAG AA on the real (tinted) code surface.
 
+#### Change marks and status dots
+
+Git status letters, `+N −M` line stats and the diff editor's washes take the change tokens in
+`tokens.css` — `--change-added` / `-modified` / `-deleted` / `-renamed`, `--diff-insert` /
+`--diff-delete` — never a hex of their own (there were five different "added" greens). They are
+bound to the status hues, not a separate palette; light darkens the letter tier because its status
+hues sit near 4:1 on the tinted panes and these marks are small text. Deleted binds to `--error`,
+not `--danger`, which is too dark to read as 10px text in dark. CI dots are non-text marks and use
+`--success` / `--error` / `--warning` directly. `light-contrast.test.ts` measures all of them in
+both themes on the pane surfaces (4.5:1 for marks you read, 3:1 for dots).
+
+Where a row already carries an inline status, the hue belongs to that status element only; the
+name beside it stays neutral (MCP server rows). A setting shown as a badge — auto-merge — is not a
+status and takes the neutral `.pr-badge` treatment, and summary text such as a schedule is
+`--text-secondary`, not the accent.
+
 ### Decorative motifs
 
 Line fields, large colour tiles, oversized serif type, and broad areas of forest, pink, or neon

@@ -1170,20 +1170,24 @@
   font-size: 10px;
   font-weight: 600;
   text-align: center;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
+/* Change-status tokens (tokens.css), shared with the +/- stats and the diff
+   washes, so every "added" in the app is the same green. */
 .git-change-status-modified {
-  color: #e2b340;
+  color: var(--change-modified);
 }
 .git-change-status-added,
 .git-change-status-untracked {
-  color: #73c991;
+  color: var(--change-added);
 }
-.git-change-status-deleted {
-  color: #f14c4c;
+/* The PR pane's file list passes GitHub's `removed` straight through. */
+.git-change-status-deleted,
+.git-change-status-removed {
+  color: var(--change-deleted);
 }
 .git-change-status-renamed {
-  color: #75beff;
+  color: var(--change-renamed);
 }
 .git-change-path {
   overflow: hidden;
@@ -1279,7 +1283,7 @@
   width: 36px;
   font-size: 10px;
   font-weight: 600;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: var(--text-muted);
 }
 .pr-list-title {
@@ -1295,13 +1299,13 @@
   background: transparent;
 }
 .pr-list-ci-success {
-  background: #73c991;
+  background: var(--success);
 }
 .pr-list-ci-failure {
-  background: #f14c4c;
+  background: var(--error);
 }
 .pr-list-ci-pending {
-  background: #e2b340;
+  background: var(--warning);
 }
 .pr-list-ci-loading {
   background: transparent;
@@ -1513,10 +1517,6 @@
   color: var(--success);
   border-color: var(--success);
 }
-.pr-badge-automerge {
-  color: var(--accent);
-  border-color: var(--accent);
-}
 .pr-viewer-description {
   flex-shrink: 0;
   max-height: 28%;
@@ -1582,21 +1582,17 @@
   min-height: 0;
 }
 .git-diff-editor-wrap .line-insert,
-.git-diff-editor-wrap .char-insert {
-  background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;
+.git-diff-editor-wrap .char-insert,
+.git-diff-editor-wrap .gutter-insert,
+.git-diff-editor-wrap .inline-added-margin-view-zone {
+  background-color: var(--diff-insert) !important;
 }
 .git-diff-editor-wrap .line-delete,
 .git-diff-editor-wrap .char-delete,
-.git-diff-editor-wrap .inline-deleted-text {
-  background-color: color-mix(in srgb, #f85149 26%, transparent) !important;
-}
-.git-diff-editor-wrap .gutter-insert,
-.git-diff-editor-wrap .inline-added-margin-view-zone {
-  background-color: color-mix(in srgb, #2ea043 22%, transparent) !important;
-}
+.git-diff-editor-wrap .inline-deleted-text,
 .git-diff-editor-wrap .gutter-delete,
 .git-diff-editor-wrap .inline-deleted-margin-view-zone {
-  background-color: color-mix(in srgb, #f85149 22%, transparent) !important;
+  background-color: var(--diff-delete) !important;
 }
 .git-image-diff-wrap {
   flex: 1;
