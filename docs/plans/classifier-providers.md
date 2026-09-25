@@ -200,6 +200,11 @@ document an import/CLI example that consumes the same fixtures instead of invent
 benchmark. A deterministic smoke fixture proves invocation; choosing winners or switching Copse's
 active classifiers remains separate work.
 
+Follow-up (2026-09-25): Settings → Classifiers → Safety screening can now route shell-command and
+terminal-read screening to a saved connection. The safety model remains the default, and the
+existing verdict thresholds and fail-closed fallbacks are unchanged. See
+[usage](../classifier-providers.md#safety-screening).
+
 ## Implementation work packets for simpler agents
 
 Freeze the contract and file ownership before parallel work. Each packet should land with its

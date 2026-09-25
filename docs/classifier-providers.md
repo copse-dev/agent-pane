@@ -3,8 +3,28 @@
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
 to add a TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
-answer and duration. These profiles are available for explicit calls and evals; they do not select
-models for Copse's permission policy, model routing, or agent loop.
+answer and duration. These profiles are available for safety screening, explicit calls and evals;
+they never appear as chat models or change model routing or the agent loop.
+
+## Safety screening
+
+**Settings → Classifiers → Safety screening** chooses what screens shell commands and terminal reads:
+the Instruct / safety model (the default, set under Models) or one saved connection. Choosing makes
+no inference call. The choice is stored with the profiles, so removing the chosen connection hands
+screening back to the safety model. **Settings → Permissions → Check commands for danger** still
+turns screening on or off for both.
+
+The classifier answers one two-way choice question — `sandbox` / `external` for a command, `safe` /
+`risky` for a terminal snapshot — with the same rules the safety model's prompt states. The
+probability of the chosen option becomes the verdict's confidence, so the existing thresholds apply
+unchanged: a `safe` terminal read needs at least 0.5, and strict mode's
+`safetyExternalDenyThreshold` compares against the `external` probability. Each call has the safety
+model's 8-second budget. A timeout, connection failure, missing key, removed connection, or
+malformed answer yields no verdict, which asks the user; the lasting faults are recorded once per
+thread in the decision log. A hosted classifier receives the command or terminal text, with known
+saved keys redacted. A SemIf profile starts its scorer for every call and will usually miss the
+budget; prefer a running server. See [`shell-permissions.md`](shell-permissions.md) for where
+screening can and cannot affect a decision.
 
 Remote HTTP profiles use an HTTPS endpoint and, when configured, a bearer key. Loopback HTTP is
 supported for local servers. Copse requests approval for new remote hosts. Keys use Copse's existing
@@ -15,8 +35,8 @@ Changing an existing profile's HTTP destination, protocol, or authentication mod
 key before applying the change. Save a replacement key or select a named environment variable for
 the new destination. Classifier credential IDs are reserved from custom chat-provider IDs.
 
-Saved Copse profiles can use `TYPESAFE_API_KEY` only with the official TypeSafe endpoint and
-`FEATHERLESS_API_KEY` only with the official Featherless endpoint. Custom saved profiles use a
+Saved Copse profiles can use a hosted preset's variable (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`)
+only with that preset's own endpoint; the rule is derived from `CLASSIFIER_PRESETS`. Custom saved profiles use a
 dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
 environment variable supplied by the caller.

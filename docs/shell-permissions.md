@@ -7,8 +7,8 @@ remain in `docs/plans/`; this is the durable cross-platform contract.
 Shell command auto-run is gated by the pure `decideShellPermission` function in
 `src/main/services/security/permission-policy.ts`, called from `permission-gate.ts`. The OS sandbox
 runs on macOS (ASRT seatbelt) and Linux (bubblewrap). Windows, and any platform whose sandbox failed
-to start, has no containment: every command prompts. The optional LM Studio classifier is never an
-authorization boundary. The deterministic auto-approval classifier may skip a prompt only while the
+to start, has no containment: every command prompts. The optional model classifier (the safety
+model, or a classifier connection chosen for safety screening) is never an authorization boundary. The deterministic auto-approval classifier may skip a prompt only while the
 project sandbox is active.
 
 ## Per-tool permission settings
@@ -365,7 +365,11 @@ writable. Linux and Windows are unchanged.
   remain sandbox-scoped.
 - `read-outside-grant.ts`: the thread-scoped read grant; the approval-prompt copy for it stays in
   `read-outside-project.ts` beside the other prompt formatters.
-- `safety-classifier.ts`: optional LM Studio classifier used only when the OS sandbox is unavailable.
+- `safety-classifier.ts`: optional model classifier used only when the OS sandbox is unavailable.
+  It asks the Instruct / safety model, or the classifier connection chosen under Settings →
+  Classifiers → Safety screening (`safety-classifier-profile.ts`). Both produce the same
+  `ClassificationResult`; a connection's chosen-option probability is its confidence, and any
+  failure yields no verdict. Terminal-read screening (`terminal-read-guard.ts`) uses the same choice.
 - `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
   are additionally capped at `read` if a caller reaches the level helper without a sandbox.
