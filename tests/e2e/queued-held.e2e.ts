@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedHeldQueueFixture } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
+import { switchTheme } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const ROW_SELECTOR = '.conversation-queued .msg-held .message-queued-actions'
@@ -102,5 +104,38 @@ describe('held hook message in the queue', function () {
       await expect(chip.edge).toBeGreaterThan(1.6)
     }
     await saveElementScreenshot(ROW_SELECTOR, 'queued-held-actions-row.png')
+  })
+
+  it('keeps the HELD badge and Release labels readable in both themes, hovered too', async function () {
+    resetUserData()
+    seedHeldQueueFixture(process.cwd())
+    await browser.reloadSession()
+    await $('.conversation-queued .msg-queued.msg-held').waitForExist({ timeout: 30_000 })
+
+    // Both painted white on a fill that is light in dark: the badge on --warning
+    // measured 2.31:1 and Release on --accent 2.03:1. The badge takes
+    // --text-on-warning now, and Release the Send-now recipe (--accent-fill +
+    // --text-on-accent), whose hover lifts the fill instead of flipping the label.
+    for (const theme of ['dark', 'light'] as const) {
+      const current = await browser.execute(() => document.documentElement.dataset['theme'])
+      if (current !== theme) await switchTheme(theme)
+      await $('.conversation-queued .msg-held .queued-release').waitForDisplayed()
+
+      const badge = await fillContrast('.conversation-queued .msg-held .message-queued-badge')
+      const release = await fillContrast('.conversation-queued .msg-held .queued-release')
+      if (!badge || !release) throw new Error('held badge or Release chip not found')
+      await expect(badge.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      await expect(release.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      await saveElementScreenshot(
+        '.conversation-queued .msg-queued.msg-held',
+        `queued-held-contrast-${theme}.png`,
+      )
+
+      await $('.conversation-queued .msg-held .queued-release').moveTo()
+      await browser.pause(200)
+      const hovered = await fillContrast('.conversation-queued .msg-held .queued-release')
+      if (!hovered) throw new Error('Release chip not found')
+      await expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+    }
   })
 })

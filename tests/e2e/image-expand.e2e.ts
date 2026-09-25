@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedMessageImageFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
 const THREAD_SHOT = 'image-expand-thread.png'
@@ -38,6 +42,51 @@ async function pasteFilesIntoForm(
     }
     form.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true }))
   }, files)
+}
+
+/** A chip's corner against the kit's `--radius`, both as the page resolves them. */
+async function chipRadius(selector: string): Promise<{ chip: string; token: string } | null> {
+  return browser.execute((target: string) => {
+    const chip = document.querySelector(target)
+    if (!(chip instanceof HTMLElement)) return null
+    return {
+      chip: getComputedStyle(chip).borderTopLeftRadius,
+      token: getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(),
+    }
+  }, selector)
+}
+
+/**
+ * The viewer's header uses the close control every other dialog header does
+ * (`ui-btn ui-btn-ghost` + closeIcon()), not a literal "×" in a bordered box,
+ * and its title is the dialog's h2, like Process Manager's or Automations'.
+ */
+async function assertDialogChrome(): Promise<void> {
+  const chrome = await browser.execute(() => {
+    const close = document.querySelector(
+      'dialog.attachment-preview-dialog[open] .attachment-preview-close',
+    )
+    const title = document.querySelector(
+      'dialog.attachment-preview-dialog[open] .attachment-preview-title',
+    )
+    if (!(close instanceof HTMLElement) || !(title instanceof HTMLElement)) return null
+    return {
+      closeClasses: [...close.classList].sort(),
+      closeIcon: close.querySelector('svg')?.getAttribute('data-icon') ?? null,
+      closeText: close.textContent?.trim() ?? '',
+      titleTag: title.tagName,
+      titleFont: getComputedStyle(title).fontSize,
+      headingFont: getComputedStyle(document.documentElement)
+        .getPropertyValue('--font-size-lg')
+        .trim(),
+    }
+  })
+  assert.ok(chrome, 'expected the open viewer to have a title and a close button')
+  assert.deepEqual(chrome.closeClasses, ['attachment-preview-close', 'ui-btn', 'ui-btn-ghost'])
+  assert.equal(chrome.closeIcon, 'close')
+  assert.equal(chrome.closeText, '', 'the close control is an icon, not a text glyph')
+  assert.equal(chrome.titleTag, 'H2')
+  assert.equal(chrome.titleFont, '16px')
 }
 
 describe('Screenshot click-to-expand', () => {
@@ -141,6 +190,11 @@ describe('Screenshot click-to-expand', () => {
   it('previews a sent text file in the same modal shell', async () => {
     const chip = $('.transcript-attachment-file.text-expandable')
     await chip.waitForDisplayed({ timeout: 10_000 })
+    // Attachment chips take the kit radius, like the roadmap and thread-proposal
+    // chips beside them, instead of a one-off 10px pill.
+    const transcriptRadius = await chipRadius('.transcript-attachment-file')
+    assert.ok(transcriptRadius, 'expected the sent file chip')
+    assert.equal(transcriptRadius.chip, transcriptRadius.token)
     assert.equal(await chip.getAttribute('role'), 'button')
     assert.equal(await chip.getAttribute('aria-label'), 'Preview running-tests.diff')
 
@@ -152,7 +206,9 @@ describe('Screenshot click-to-expand', () => {
     await expect($('.attachment-preview-text')).toHaveText(
       expect.stringContaining('+ expect(status).toBe("running")'),
     )
+    await assertDialogChrome()
     await saveAppScreenshot(TEXT_SHOT)
+    await saveElementScreenshot('.attachment-preview-header', 'attachment-preview-header.png')
 
     // A selection elsewhere in the app must not be mistaken for preview text.
     // Right-click still offers "Copy" and copies the whole file (#2463).
@@ -207,6 +263,10 @@ describe('Screenshot click-to-expand', () => {
     await thumb.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await thumb.getAttribute('role'), 'button')
     assert.equal(await thumb.getAttribute('aria-label'), 'Expand Attached image')
+    const composerRadius = await chipRadius('.attachment-chips .image-chip')
+    assert.ok(composerRadius, 'expected the composer image chip')
+    assert.equal(composerRadius.chip, composerRadius.token)
+    await saveElementScreenshot('.attachment-chips', 'composer-attachment-chip.png')
 
     await thumb.click()
     const dialog = $('dialog.attachment-preview-dialog[open]')
@@ -217,6 +277,7 @@ describe('Screenshot click-to-expand', () => {
       typeof expandedSrc === 'string' && expandedSrc.startsWith('data:image/png;base64,'),
       'composer modal shows the attached image data URL',
     )
+    await assertDialogChrome()
     await saveAppScreenshot(COMPOSER_SHOT)
     await $('.attachment-preview-close').click()
     await browser.waitUntil(

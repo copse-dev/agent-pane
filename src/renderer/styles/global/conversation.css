@@ -145,20 +145,21 @@
   justify-content: center;
   border-radius: 50%;
   border: none;
-  background: color-mix(in srgb, var(--accent) 80%, transparent);
-  color: #fff;
+  /* A filled control carrying --text-on-accent, so it takes the fill tier
+     (docs/ui-taste.md -> "--accent tints, --accent-fill fills"). Solid and
+     fully opaque: white on an 80% --accent measured 2.91:1 in dark, and even
+     the right pair loses AA once the page shows through a translucent fill. */
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
   z-index: 4;
-  opacity: 0.92;
-  transition:
-    opacity 0.15s,
-    background 0.15s;
+  transition: background 0.15s;
 }
 .scroll-to-bottom:hover {
   opacity: 1;
-  background: var(--accent);
+  background: var(--accent-fill-hover);
 }
 .scroll-to-bottom:focus-visible {
   outline: 2px solid var(--accent);
@@ -1264,7 +1265,7 @@ span.acp-resource-title {
   padding: 1px 7px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: var(--font-size-sm);
   vertical-align: baseline;
 }
@@ -1285,10 +1286,10 @@ span.acp-resource-title {
 }
 /* The icon is the chip's first flex item, and with align-items: center nothing
    participates in baseline alignment — so the flex container exports the icon's
-   bottom edge as its baseline and the whole pill floats ~3px above the sentence
+   bottom edge as its baseline and the whole chip floats ~3px above the sentence
    it sits in. Opting the label into baseline alignment makes the label text the
    chip's baseline, so it reads inline with the surrounding prompt text. (The
-   label is the tallest item, so its own position inside the pill is unchanged.) */
+   label is the tallest item, so its own position inside the chip is unchanged.) */
 .transcript-attachment-label {
   align-self: baseline;
   min-width: 0;

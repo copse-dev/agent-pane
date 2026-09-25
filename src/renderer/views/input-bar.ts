@@ -218,37 +218,42 @@ export function mountInputBar(
   const branchWarningText = el('span', { class: 'composer-branch-warning-text' })
   const checkoutBranchBtn = el(
     'button',
-    { type: 'button', class: 'composer-branch-checkout-btn' },
+    { type: 'button', class: 'composer-branch-checkout-btn composer-banner-action' },
     'Check out',
   )
   // The guard is advisory: alongside checking the bound branch back out, the
   // user can rebind the thread to whatever is checked out now and keep going.
   const continueBranchBtn = el(
     'button',
-    { type: 'button', class: 'composer-branch-continue-btn' },
+    { type: 'button', class: 'composer-branch-continue-btn composer-banner-action' },
     'Continue here',
   )
   const branchWarning = el(
     'div',
-    { class: 'composer-branch-warning', role: 'status', 'aria-live': 'polite', hidden: '' },
-    el('span', { class: 'composer-branch-warning-icon', 'aria-hidden': 'true' }, '!'),
+    {
+      class: 'composer-branch-warning composer-banner',
+      role: 'status',
+      'aria-live': 'polite',
+      hidden: '',
+    },
+    el('span', { class: 'composer-banner-icon', 'aria-hidden': 'true' }, '!'),
     branchWarningText,
     checkoutBranchBtn,
     continueBranchBtn,
   )
   const dirtyWarningText = el(
     'span',
-    { class: 'composer-dirty-warning-text' },
+    { class: 'composer-dirty-warning-text composer-banner-text' },
     'This checkout has uncommitted changes. Work will run on top of them.',
   )
   const useWorktreeBtn = el(
     'button',
-    { type: 'button', class: 'composer-dirty-worktree-btn' },
+    { type: 'button', class: 'composer-dirty-worktree-btn composer-banner-action' },
     'Use an isolated worktree',
   )
   const sendDirtyAnywayBtn = el(
     'button',
-    { type: 'button', class: 'composer-dirty-send-btn' },
+    { type: 'button', class: 'composer-dirty-send-btn composer-banner-action' },
     'Send anyway',
   )
   // Shown once, before the first message of a thread that is about to commit
@@ -258,21 +263,28 @@ export function mountInputBar(
   // clean from the same commit instead.
   const dirtyWarning = el(
     'div',
-    { class: 'composer-dirty-warning', role: 'status', 'aria-live': 'polite', hidden: '' },
-    el('span', { class: 'composer-dirty-warning-icon', 'aria-hidden': 'true' }, '!'),
+    {
+      class: 'composer-dirty-warning composer-banner',
+      role: 'status',
+      'aria-live': 'polite',
+      hidden: '',
+    },
+    el('span', { class: 'composer-banner-icon', 'aria-hidden': 'true' }, '!'),
     dirtyWarningText,
     useWorktreeBtn,
     sendDirtyAnywayBtn,
   )
-  const imageCompatibilityText = el('span', { class: 'composer-image-warning-text' })
+  const imageCompatibilityText = el('span', {
+    class: 'composer-image-warning-text composer-banner-text',
+  })
   const useImageModelBtn = el(
     'button',
-    { type: 'button', class: 'composer-image-model-btn', hidden: '' },
+    { type: 'button', class: 'composer-image-model-btn composer-banner-action', hidden: '' },
     'Use image model',
   )
   const describeImagesBtn = el(
     'button',
-    { type: 'button', class: 'composer-image-describe-btn', hidden: '' },
+    { type: 'button', class: 'composer-image-describe-btn composer-banner-action', hidden: '' },
     'Describe image',
   )
   const descriptionPickerHost = el('span', { class: 'composer-image-description-picker' })
@@ -284,18 +296,18 @@ export function mountInputBar(
   )
   const sendWithoutImagesBtn = el(
     'button',
-    { type: 'button', class: 'composer-image-without-btn' },
+    { type: 'button', class: 'composer-image-without-btn composer-banner-action' },
     'Send without image',
   )
   const imageCompatibilityWarning = el(
     'div',
     {
-      class: 'composer-image-warning',
+      class: 'composer-image-warning composer-banner',
       role: 'status',
       'aria-live': 'polite',
       hidden: '',
     },
-    el('span', { class: 'composer-image-warning-icon', 'aria-hidden': 'true' }, '!'),
+    el('span', { class: 'composer-banner-icon', 'aria-hidden': 'true' }, '!'),
     imageCompatibilityText,
     useImageModelBtn,
     descriptionActions,
@@ -304,21 +316,23 @@ export function mountInputBar(
   // Sits beside the model picker it talks about: the thread no longer fits (or
   // barely fits) the model selected for it. Recomputed from the same pre-send
   // estimate that drives the context wheel, so picking a model updates it at once.
-  const contextFitText = el('span', { class: 'composer-context-warning-text' })
+  const contextFitText = el('span', {
+    class: 'composer-context-warning-text composer-banner-text',
+  })
   const contextFitModelBtn = el(
     'button',
-    { type: 'button', class: 'composer-context-model-btn' },
+    { type: 'button', class: 'composer-context-model-btn composer-banner-action' },
     'Choose another model',
   )
   const contextFitWarning = el(
     'div',
     {
-      class: 'composer-context-warning',
+      class: 'composer-context-warning composer-banner',
       role: 'status',
       'aria-live': 'polite',
       hidden: '',
     },
-    el('span', { class: 'composer-context-warning-icon', 'aria-hidden': 'true' }, '!'),
+    el('span', { class: 'composer-banner-icon', 'aria-hidden': 'true' }, '!'),
     contextFitText,
     contextFitModelBtn,
   )
@@ -650,15 +664,21 @@ export function mountInputBar(
   usageBtn.addEventListener('focus', usagePopover.show)
   usageBtn.addEventListener('blur', usagePopover.hide)
 
-  const checkoutErrorText = el('span', { class: 'composer-checkout-error-text' })
+  const checkoutErrorText = el('span', {
+    class: 'composer-checkout-error-text composer-banner-text',
+  })
   const checkoutRetryBtn = el(
     'button',
-    { type: 'button', class: 'composer-checkout-retry-btn' },
+    { type: 'button', class: 'composer-checkout-retry-btn composer-banner-action' },
     'Retry',
   )
   const checkoutError = el(
     'div',
-    { class: 'composer-checkout-error', role: 'alert', hidden: '' },
+    {
+      class: 'composer-checkout-error composer-banner composer-banner-danger',
+      role: 'alert',
+      hidden: '',
+    },
     checkoutErrorText,
     checkoutRetryBtn,
   )

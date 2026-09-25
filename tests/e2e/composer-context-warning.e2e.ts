@@ -7,6 +7,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { composerBannerMetrics } from './helpers/composer-banner.ts'
 
 // Composing ~140K tokens of draft against the 128K window of the smallest model
 // in the catalog. Under `COPSE_PANEL_MOCK_LLM=1` every non-catalog model resolves
@@ -48,6 +49,24 @@ describe('composer context-window warning', () => {
     await expect(text).toHaveText(/This thread no longer fits “GPT-4o mini”/)
     await expect(text).toHaveText(/context window holds 128K/)
     await expect(text).toHaveText(/Pick a model with a larger context window/)
+
+    // One banner-action recipe across every composer strip: token padding and
+    // type, the kit radius, and a border from the strip's tone — danger here,
+    // because the draft is over the window rather than merely close to it.
+    await expect(warning).toHaveElementClass('is-over')
+    const metrics = await composerBannerMetrics('.composer-context-warning')
+    if (!metrics) throw new Error('context warning not found')
+    await expect(metrics.padding).toBe('8px 12px')
+    await expect(metrics.fontSize).toBe('12px')
+    await expect(metrics.actions).toEqual([
+      {
+        label: 'Choose another model',
+        padding: '4px 8px',
+        fontSize: '12px',
+        radius: '6px',
+        edge: metrics.edges.danger,
+      },
+    ])
 
     await saveElementScreenshot('.composer-context-warning', 'composer-context-warning-over.png')
     // Placement is the point of the change: the advice sits with the composer and

@@ -126,16 +126,17 @@
    the line underneath, a strip separates itself from whatever follows — the
    next strip, the suggestions, the attachments or the draft — and the first one
    runs cleanly into the card border. */
-.composer-branch-warning {
+.composer-banner {
+  /* One tone drives the strip's wash, its icon, and its action borders. */
+  --composer-banner-tone: var(--warning);
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   border-bottom: 1px solid var(--border);
-  padding: 8px var(--spacing-md);
-  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, var(--composer-banner-tone) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
-  overflow: hidden;
+  font-size: var(--font-size-sm);
 }
 .guarded-yolo-banner {
   display: flex;
@@ -179,66 +180,76 @@
 .guarded-yolo-disable:hover {
   border-color: var(--danger);
 }
-.composer-branch-warning[hidden] {
+.composer-banner[hidden] {
   display: none;
 }
-.composer-image-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  border-bottom: 1px solid var(--border);
-  padding: 8px var(--spacing-md);
-  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
-  color: var(--text-primary);
-  font-size: 12px;
+/* Escalates warning to danger: the checkout failed, or the prompt cannot be
+   sent to the picked model without trimming. */
+.composer-banner-danger,
+.composer-context-warning.is-over {
+  --composer-banner-tone: var(--danger);
 }
-.composer-image-warning[hidden] {
-  display: none;
-}
-.composer-image-warning-icon {
+.composer-banner-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--warning);
+  background: var(--composer-banner-tone);
   color: var(--bg-base);
   font-weight: 700;
   flex: 0 0 auto;
 }
-.composer-image-warning-text {
+.composer-banner-text {
   min-width: 0;
   flex: 1;
   line-height: var(--line-height-base);
 }
-.composer-image-model-btn,
-.composer-image-describe-btn,
-.composer-image-without-btn {
+/* Every strip's buttons share this one recipe; the strip's tone colours the
+   border, so a warning and a danger action differ only where they should. */
+.composer-banner-action {
   flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--composer-banner-tone) 60%, var(--border));
   border-radius: var(--radius);
-  padding: 4px 10px;
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--bg-elevated);
   color: var(--text-primary);
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
 }
-.composer-image-model-btn:hover,
-.composer-image-describe-btn:hover,
-.composer-image-without-btn:hover {
-  border-color: var(--warning);
+.composer-banner-action:hover:not(:disabled) {
+  border-color: var(--composer-banner-tone);
 }
-.composer-image-model-btn[hidden],
-.composer-image-describe-btn[hidden] {
-  display: none;
-}
-.composer-image-model-btn:disabled,
-.composer-image-describe-btn:disabled,
-.composer-image-without-btn:disabled {
+.composer-banner-action:disabled {
   opacity: 0.65;
   cursor: progress;
+}
+.composer-banner-action[hidden] {
+  display: none;
+}
+/* The branch guard keeps its message on one line and lets it truncate, so the
+   two actions never wrap under it. */
+.composer-branch-warning {
+  overflow: hidden;
+}
+.composer-branch-warning-text {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Fixed width so "Check out" and its busy label do not shift the row. */
+.composer-branch-checkout-btn {
+  flex: 0 0 84px;
+  width: 84px;
+  text-align: center;
+}
+/* The advisory alternative, drawn neutral until hovered. */
+.composer-branch-continue-btn {
+  border-color: var(--border);
 }
 /* A split action keeps the chosen describer visible while the arrow opens
    the same searchable picker used elsewhere in the app. */
@@ -263,15 +274,15 @@
   height: 100%;
 }
 .composer-image-description-picker .model-picker-trigger {
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid color-mix(in srgb, var(--composer-banner-tone) 60%, var(--border));
   border-left: 0;
   border-radius: 0 var(--radius) var(--radius) 0;
   background: var(--bg-elevated);
   color: var(--text-primary);
 }
 .composer-image-description-picker .model-picker-trigger:hover {
-  border-color: var(--warning);
+  border-color: var(--composer-banner-tone);
 }
 .composer-image-description-picker .model-picker-label {
   display: none;
@@ -284,197 +295,8 @@
   opacity: 0.65;
   cursor: progress;
 }
-/* The thread no longer fits the model picked for it. Shares the image warning's
-   shape (icon · message · action) so composer warnings read as one family; the
-   `is-over` variant escalates from warning to danger once the prompt cannot be
-   sent without trimming. */
-.composer-context-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  border-bottom: 1px solid var(--border);
-  padding: 8px var(--spacing-md);
-  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
-  color: var(--text-primary);
-  font-size: 12px;
-}
-.composer-context-warning.is-over {
-  background: color-mix(in srgb, var(--danger) 12%, var(--bg-base));
-}
-.composer-context-warning[hidden] {
-  display: none;
-}
-.composer-context-warning-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--warning);
-  color: var(--bg-base);
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-.composer-context-warning.is-over .composer-context-warning-icon {
-  background: var(--danger);
-}
-.composer-context-warning-text {
-  min-width: 0;
-  flex: 1;
-  line-height: var(--line-height-base);
-}
-.composer-context-model-btn {
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font: inherit;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.composer-context-model-btn:hover {
-  border-color: var(--warning);
-}
-.composer-context-warning.is-over .composer-context-model-btn {
-  border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
-}
-.composer-context-warning.is-over .composer-context-model-btn:hover {
-  border-color: var(--danger);
-}
-.composer-checkout-error {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  border-bottom: 1px solid var(--border);
-  padding: 8px var(--spacing-md);
-  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
-  color: var(--text-primary);
-  font-size: 12px;
-}
-.composer-checkout-error[hidden] {
-  display: none;
-}
 .composer-checkout-error-text {
-  min-width: 0;
-  flex: 1;
   overflow-wrap: anywhere;
-}
-.composer-checkout-retry-btn {
-  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font: inherit;
-  cursor: pointer;
-}
-.composer-branch-warning-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--warning);
-  color: var(--bg-base);
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-.composer-branch-warning-text {
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-branch-checkout-btn {
-  flex: 0 0 84px;
-  width: 84px;
-  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-}
-.composer-branch-checkout-btn:hover:not(:disabled) {
-  border-color: var(--warning);
-}
-.composer-branch-checkout-btn:disabled {
-  opacity: 0.65;
-  cursor: progress;
-}
-.composer-branch-continue-btn {
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-}
-.composer-branch-continue-btn:hover:not(:disabled) {
-  border-color: var(--warning);
-}
-.composer-branch-continue-btn:disabled {
-  opacity: 0.65;
-  cursor: progress;
-}
-/* Same shape as the other composer advisories (icon · message · actions):
-   warned before the first message commits a blank thread to a dirty shared
-   checkout (#2503). */
-.composer-dirty-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  border-bottom: 1px solid var(--border);
-  padding: 8px var(--spacing-md);
-  background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
-  color: var(--text-primary);
-  font-size: 12px;
-}
-.composer-dirty-warning[hidden] {
-  display: none;
-}
-.composer-dirty-warning-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--warning);
-  color: var(--bg-base);
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-.composer-dirty-warning-text {
-  min-width: 0;
-  flex: 1;
-  line-height: var(--line-height-base);
-}
-.composer-dirty-worktree-btn,
-.composer-dirty-send-btn {
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--warning) 60%, var(--border));
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font: inherit;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.composer-dirty-worktree-btn:hover,
-.composer-dirty-send-btn:hover {
-  border-color: var(--warning);
 }
 .prompt-input {
   /* leave room for the absolutely-positioned Send button (right) and the
@@ -581,27 +403,18 @@
   color: var(--text-muted);
   background: var(--bg-hover);
 }
-.msg-queued .message-body {
+/* Dim the queued content, not the controls under it: at 0.85 on the whole body
+   the filled Release/Send now chip faded to 3.97:1 in dark, and the HELD badge
+   with it. The badge and the action row stay at full strength. */
+.msg-queued:not(.msg-editing) .message-body > :not(.message-queued-badge, .message-queued-ui) {
   opacity: 0.85;
-}
-.msg-queued.msg-editing .message-body {
-  opacity: 1;
 }
 /* Held (decisions 5 & 16): a queued message that will not auto-submit — it waits
    for an explicit human release. Warm-toned badge so it reads as "needs you",
    distinct from the neutral "Queued" state. */
 .msg-queued.msg-held .message-queued-badge {
-  color: white;
-  background: var(--warning, #d18616);
-}
-.queued-action.queued-release {
-  color: white;
-  background: var(--accent);
-  border-color: transparent;
-}
-.queued-action.queued-release:hover {
-  color: white;
-  filter: brightness(1.08);
+  color: var(--text-on-warning);
+  background: var(--warning);
 }
 .message-queued-ui {
   margin-top: var(--spacing-sm);
@@ -629,19 +442,29 @@
   padding: 2px 10px;
   cursor: pointer;
 }
+/* `opacity: 1` undoes forms.css's `button:hover { opacity: 0.8 }`, which faded
+   the filled chip's label to 3.98:1 under the pointer (as `.ui-btn` does). */
 .queued-action:hover {
+  opacity: 1;
   color: var(--text-primary);
   border-color: var(--text-muted);
 }
+/* The filled chips: Send now, and Release on a held message. Both are the
+   accent with a label on it, so the fill tier and its label tier
+   (docs/ui-taste.md -> "--accent tints, --accent-fill fills"). Hover keeps the
+   label and lifts the fill with a filter rather than --accent-fill-hover: light
+   darkens that token, which leaves the default label at 3.49:1. */
 .queued-action.queued-send,
-.queued-action.queued-send-now {
+.queued-action.queued-send-now,
+.queued-action.queued-release {
   color: var(--text-on-accent);
   background: var(--accent-fill);
   border-color: transparent;
 }
 .queued-action.queued-send:hover,
-.queued-action.queued-send-now:hover {
-  color: white;
+.queued-action.queued-send-now:hover,
+.queued-action.queued-release:hover {
+  color: var(--text-on-accent);
   filter: brightness(1.08);
 }
 .queued-action.queued-delete:hover {

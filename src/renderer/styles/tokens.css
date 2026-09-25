@@ -86,6 +86,10 @@
   --danger: #f14c4c;
   --success: #4ec9b0;
   --warning: #cca700;
+  /* Label on a --warning fill (the held-message badge). No single colour clears
+     AA on both themes' warning, so light restates it: dark text on dark's
+     yellow, white on light's brown. */
+  --text-on-warning: #1a1a1a;
   /* Callout severities. --info backs GitHub-alert Note; --important backs the
      fifth alert kind, which GitHub renders in purple. --important is pushed
      bluer than a true violet on purpose: a magenta-leaning purple reads as

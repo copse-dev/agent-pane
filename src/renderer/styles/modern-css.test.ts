@@ -192,7 +192,7 @@ describe('modern CSS adoptions', () => {
     )
   })
 
-  it('clips attachment-chip labels inside the pill', () => {
+  it('clips attachment-chip labels inside the chip', () => {
     const css = read('composer-extras.css')
     assert.ok(
       declares(css, '.attachment-chip', /max-width:/),
@@ -201,7 +201,7 @@ describe('modern CSS adoptions', () => {
     assert.ok(
       declares(css, '.attachment-chip-label', /overflow:\s*hidden/) &&
         declares(css, '.attachment-chip-label', /text-overflow:\s*ellipsis/),
-      '.attachment-chip-label must ellipsize instead of overflowing the pill border',
+      '.attachment-chip-label must ellipsize instead of overflowing the chip border',
     )
     assert.ok(
       declares(css, '.attachment-chip-label', /min-width:\s*0/),
@@ -308,10 +308,15 @@ describe('modern CSS adoptions', () => {
       '.queued-action must use --border-strong; --border leaves the chip edgeless against the card',
     )
     // The filled variants stay borderless on purpose: their fill already marks
-    // the edge, and giving them a rim too would double-draw it.
+    // the edge, and giving them a rim too would double-draw it. They share one
+    // rule, so look each selector up inside its selector list.
     for (const selector of ['.queued-action.queued-send-now', '.queued-action.queued-release']) {
-      assert.ok(
-        declares(css, selector, /border-color:\s*transparent/),
+      const body = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((rule) =>
+        (rule[1] ?? '').split(',').some((member) => member.trim() === selector),
+      )?.[2]
+      assert.match(
+        body ?? '',
+        /border-color:\s*transparent/,
         `${selector} must keep a transparent border so its fill is the only edge`,
       )
     }
