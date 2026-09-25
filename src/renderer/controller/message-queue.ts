@@ -442,16 +442,11 @@ export function queuedPayloadText(payload: AgentRunPayload): string {
 
 function withPayloadText(content: UserContent, text: string): UserContent {
   if (typeof content === 'string') return text
-  let replaced = false
-  const next = content.map((block) => {
-    if (block.type !== 'text' || replaced) return block
-    replaced = true
-    return { ...block, text }
-  })
-  // `replaced` is mutated inside the .map callback above, which ESLint's
-  // control-flow analysis cannot track, so it wrongly flags this as falsy.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  return replaced ? next : [...next, { type: 'text' as const, text }]
+  const firstText = content.findIndex((block) => block.type === 'text')
+  if (firstText === -1) return [...content, { type: 'text' as const, text }]
+  return content.map((block, index) =>
+    index === firstText && block.type === 'text' ? { ...block, text } : block,
+  )
 }
 
 /**

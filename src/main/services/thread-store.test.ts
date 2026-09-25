@@ -1,10 +1,9 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-// A raw `require` (rather than `import * as`) so this is the exact module and
-// promises object thread-store.ts's own `require("node:fs")` resolves to.
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-const fsModule: typeof import('node:fs') = require('node:fs')
+// The same `promises` binding the thread store imports, so the spies below
+// patch the exact object it calls.
+import { promises as fsPromises } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
@@ -706,8 +705,8 @@ describe('thread-store', () => {
         parseOk: true,
         decision: { permission: 'allow' },
       }
-      const readSpy = mock.method(fsModule.promises, 'readFile')
-      const writeSpy = mock.method(fsModule.promises, 'writeFile')
+      const readSpy = mock.method(fsPromises, 'readFile')
+      const writeSpy = mock.method(fsPromises, 'writeFile')
       await appendHookRun('proj-1', 't1', line)
       mock.restoreAll()
 
@@ -732,8 +731,8 @@ describe('thread-store', () => {
       const existing = Array.from({ length: 500 }, (_, i) => JSON.stringify({ i })).join('\n')
       mkdirSync(join(root, 'proj-1'), { recursive: true })
       writeFileSync(statsPath, existing)
-      const readSpy = mock.method(fsModule.promises, 'readFile')
-      const writeSpy = mock.method(fsModule.promises, 'writeFile')
+      const readSpy = mock.method(fsPromises, 'readFile')
+      const writeSpy = mock.method(fsPromises, 'writeFile')
       await appendStreamStat('proj-1', { i: 500 })
       mock.restoreAll()
 
@@ -895,8 +894,8 @@ describe('thread-store', () => {
       }
 
       const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
-      const appendSpy = mock.method(fsModule.promises, 'appendFile')
-      const writeSpy = mock.method(fsModule.promises, 'writeFile')
+      const appendSpy = mock.method(fsPromises, 'appendFile')
+      const writeSpy = mock.method(fsPromises, 'writeFile')
       await appendMessage('proj-1', 't1', userMsg('u200', 'the 201st message'))
       mock.restoreAll()
 
@@ -922,15 +921,15 @@ describe('thread-store', () => {
     it('does not cache a message id when its asynchronous spine append fails', async () => {
       await createThread('proj-1', thread('t1'))
       const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
-      const originalAppend = fsModule.promises.appendFile.bind(fsModule.promises)
+      const originalAppend = fsPromises.appendFile.bind(fsPromises)
       let rejectNext = true
       mock.method(
-        fsModule.promises,
+        fsPromises,
         'appendFile',
         async (
-          path: Parameters<typeof fsModule.promises.appendFile>[0],
-          data: Parameters<typeof fsModule.promises.appendFile>[1],
-          options?: Parameters<typeof fsModule.promises.appendFile>[2],
+          path: Parameters<typeof fsPromises.appendFile>[0],
+          data: Parameters<typeof fsPromises.appendFile>[1],
+          options?: Parameters<typeof fsPromises.appendFile>[2],
         ) => {
           if (path === eventsPath && rejectNext) {
             rejectNext = false
@@ -946,7 +945,7 @@ describe('thread-store', () => {
       )
       mock.restoreAll()
 
-      const retryAppendSpy = mock.method(fsModule.promises, 'appendFile')
+      const retryAppendSpy = mock.method(fsPromises, 'appendFile')
       await appendMessage('proj-1', 't1', userMsg('u1', 'retry me'))
       mock.restoreAll()
 
@@ -965,7 +964,7 @@ describe('thread-store', () => {
     it('keeps authoritative reads behind an in-flight asynchronous append', async () => {
       await createThread('proj-1', thread('t1'))
       const eventsPath = join(root, 'proj-1', 't1', 'events.jsonl')
-      const originalAppend = fsModule.promises.appendFile.bind(fsModule.promises)
+      const originalAppend = fsPromises.appendFile.bind(fsPromises)
       let releaseAppend!: () => void
       const appendGate = new Promise<void>((resolve) => {
         releaseAppend = resolve
@@ -975,12 +974,12 @@ describe('thread-store', () => {
         appendStarted = resolve
       })
       mock.method(
-        fsModule.promises,
+        fsPromises,
         'appendFile',
         async (
-          path: Parameters<typeof fsModule.promises.appendFile>[0],
-          data: Parameters<typeof fsModule.promises.appendFile>[1],
-          options?: Parameters<typeof fsModule.promises.appendFile>[2],
+          path: Parameters<typeof fsPromises.appendFile>[0],
+          data: Parameters<typeof fsPromises.appendFile>[1],
+          options?: Parameters<typeof fsPromises.appendFile>[2],
         ) => {
           if (path === eventsPath) {
             appendStarted()

@@ -958,8 +958,7 @@ function syncSubagentTimeline(
       desired.push(node)
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const innerToolCalls = msg.toolCalls ?? []
+    const innerToolCalls = msg.toolCalls
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`
       const sig = renderSignature(innerToolCalls)
@@ -3522,8 +3521,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const anchor = thread?.messages.find((m) => m.id === run.anchorId)
     const anchorEl = list.querySelector<HTMLElement>(`[data-message-id="${run.anchorId}"]`)
     if (!anchor || !anchorEl) return
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(anchorEl, anchor.toolCalls ?? [], {
+    renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
       run,
       liveStepId: liveStepMessageId(thread),
@@ -3542,8 +3540,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (!memberEl?.querySelector(':scope > .tool-card-rollup')) continue
       const msg = thread?.messages.find((m) => m.id === id)
       if (!msg) continue
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      renderToolCards(memberEl, msg.toolCalls ?? [], {
+      renderToolCards(memberEl, msg.toolCalls, {
         ...messageToolCardOpts(msg),
         run,
         liveStepId: liveStepMessageId(thread),
@@ -3646,9 +3643,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // inside that run's rollup, so it never paints a body-level trail of its own
     // — not even when it contributed reasoning but no tools.
     const nestReasoning =
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      shouldNestReasoningInTools(msg.toolCalls ?? []) ||
-      multiStepRunFor(thread, msgId) !== undefined
+      shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== undefined
     appendMessageContent(body, msg, api, acpWorkspaceRoot(store), {
       ...(nestReasoning ? { nestReasoningInTools: true } : {}),
     })
@@ -3677,8 +3672,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     hydrateRemoteArtifactImages(list, api)
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
@@ -4312,8 +4306,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const wasPinned = pinnedToBottom
     const readingAnchor = wasPinned ? null : captureReadingAnchor()
     const run = multiStepRunFor(thread, msgId)
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
