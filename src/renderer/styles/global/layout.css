@@ -42,6 +42,7 @@
 .pane-projects {
   --projects-action-size: 24px;
   --projects-action-inset: var(--spacing-xs);
+  --projects-disclosure-size: 12px;
 
   width: var(--projects-width, 240px);
   flex-shrink: 0;
@@ -170,7 +171,7 @@
 .project-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   width: 100%;
   text-align: left;
   padding: var(--list-row-padding-block) var(--spacing-sm);
@@ -270,7 +271,7 @@
 .project-group-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   width: 100%;
   padding: 5px var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -308,11 +309,11 @@
    hint sits at the same indent so a fresh group looks like a drop target. */
 .project-group-children .project-row,
 .project-group-children .sidebar-empty {
-  padding-left: calc(12px + var(--spacing-md));
+  padding-left: calc(var(--projects-disclosure-size) + var(--spacing-md));
 }
 .project-twisty {
-  width: 12px;
-  height: 12px;
+  width: var(--projects-disclosure-size);
+  height: var(--projects-disclosure-size);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -331,7 +332,6 @@
 .automation-threads-group {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
 }
 /* An automation heading is a disclosure plus a link out to its setup, so the
    hover wash belongs to the row rather than to the twisty half of it. */
@@ -350,7 +350,7 @@
   gap: var(--spacing-xs);
   flex: 1;
   min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   text-align: left;
@@ -380,8 +380,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--font-size-sm);
-  height: var(--font-size-sm);
+  width: var(--projects-disclosure-size);
+  height: var(--projects-disclosure-size);
   transition: transform 0.1s ease;
 }
 .automation-threads-twisty.expanded {
@@ -1224,6 +1224,15 @@
 .git-change-path:not(.pr-list-title) {
   direction: rtl;
   text-align: left;
+}
+/* Under that RTL paragraph a neutral character at either end (`.` in `.bashrc`,
+   `/` in `docs/`) takes the paragraph direction and jumps to the far end, so
+   dotfiles read `bashrc.` (#3065). Zero-width left-to-right marks at both ends
+   give those characters a strong neighbour and keep them in place; the box
+   still elides from the left. */
+.git-change-path:not(.pr-list-title)::before,
+.git-change-path:not(.pr-list-title)::after {
+  content: '\200E';
 }
 .git-changes-empty {
   padding: var(--spacing-md) var(--spacing-sm);

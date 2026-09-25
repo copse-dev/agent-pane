@@ -1006,6 +1006,8 @@ export function registerAllHandlers(
     addKnowledgeNote,
     getKnowledgeNote,
     updateKnowledgeNote,
+    deleteKnowledgeNote,
+    loadKnowledgeNotes,
     saveKnowledgeAttachments,
     deleteAllKnowledgeAttachments,
     deleteKnowledgeAttachmentFiles,
@@ -1144,20 +1146,15 @@ export function registerAllHandlers(
     return matchOpenIssuesToRoadmapItems(issues)
   })
 
-  // Track the chat thread started from an item ("Start thread" in the pane) in
-  // a `thread` frontmatter field, so the pane can offer reopening it later.
-  // Restamping is deliberate: starting a fresh thread from the same item points
-  // the field at the newest one. An empty threadId clears the tracking.
+  // Thread tracking for "Start thread" and its reverse lookup for the
+  // thread-side back-link chip (#2501); see roadmap-write-handlers.ts.
   ipcMain.handle('roadmap:set-thread', (event, rawId: unknown, rawThreadId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zRoadmapId, [rawId])
-    const threadId = parseIpcArgs(z.string().max(128).optional(), [rawThreadId])?.trim() ?? ''
-    const existing = getKnowledgeNote(id)
-    if (!existing || existing.type !== ROADMAP_TYPE) return null
-    const { thread: _thread, ...rest } = existing.fields
-    return updateKnowledgeNote(id, {
-      fields: { ...rest, ...(threadId ? { thread: threadId } : {}) },
-    })
+    return roadmapWrites.setThread(rawId, rawThreadId)
+  })
+  ipcMain.handle('roadmap:find-by-thread', (event, rawThreadId: unknown) => {
+    assertMainFrameSender(event, win)
+    return roadmapWrites.findByThread(rawThreadId)
   })
 
   // Advisory fit check of an item's prompt against its pinned issue,
@@ -1218,12 +1215,7 @@ export function registerAllHandlers(
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {
     assertMainFrameSender(event, win)
-    const id = parseIpcArgs(zRoadmapId, [rawId])
-    const existing = getKnowledgeNote(id)
-    if (!existing || existing.type !== ROADMAP_TYPE) return false
-    const deleted = deleteKnowledgeNote(id)
-    if (deleted) deleteAllKnowledgeAttachments(id)
-    return deleted
+    return roadmapWrites.remove(rawId)
   })
 
   // Deterministic export of the active project's roadmap (RoadmapExporter,

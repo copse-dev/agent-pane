@@ -69,15 +69,54 @@ function where(finding: Finding): string {
     : `${finding.anchor.path}:${String(finding.anchor.startLine)}`
 }
 
+/**
+ * Model- or report-derived prose as inert markdown. Hostile diff content can
+ * steer what a model writes, and the review posts under the App's identity:
+ * outside code spans, `<` and `>` are escaped (no raw HTML, so an unterminated `<!--`
+ * cannot hide the rest of the review) and an `@` that would mention a user or
+ * team gets a zero-width space. Code spans are kept as written — neither
+ * renders inside one.
+ */
+function inertMarkdown(text: string): string {
+  const inert = (prose: string): string =>
+    prose
+      .replaceAll('\\', '\\\\')
+      .replaceAll('`', '\\`')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replace(/@(?=[A-Za-z0-9])/g, '@\u200b')
+  // Preserve only self-contained, single-line code spans. Blank paragraphs
+  // and block syntax end CommonMark inline parsing; a regex spanning them can
+  // mistake raw HTML for code. Escape every other backtick/backslash so an
+  // unmatched delimiter cannot form a new span or fence with surrounding text.
+  const span = /(?<![\\`])(`+)(?!`)[^\r\n]*?(?<!`)\1(?!`)/g
+  let out = ''
+  let last = 0
+  for (const match of text.matchAll(span)) {
+    out += inert(text.slice(last, match.index)) + match[0]
+    last = match.index + match[0].length
+  }
+  return out + inert(text.slice(last))
+}
+
+/** `text` as one inline code span, whatever backticks or newlines it holds. */
+function codeSpan(text: string): string {
+  const flat = text.replace(/\s*\n\s*/g, ' ')
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length))
+  const fence = '`'.repeat(longest + 1)
+  const pad = flat.startsWith('`') || flat.endsWith('`') ? ' ' : ''
+  return `${fence}${pad}${flat}${pad}${fence}`
+}
+
 function evidenceLines(finding: Finding): string[] {
   return finding.evidence.map((evidence) => {
     switch (evidence.kind) {
       case 'command':
-        return `- \`${evidence.command}\` on ${evidence.target}: exit ${evidence.exitCode === null ? 'killed' : String(evidence.exitCode)}`
+        return `- ${codeSpan(evidence.command)} on ${evidence.target}: exit ${evidence.exitCode === null ? 'killed' : String(evidence.exitCode)}`
       case 'reproducer':
-        return `- reproducer \`${evidence.testPath}\`: ${evidence.failsOnHead ? 'fails' : 'passes'} on head, ${evidence.passesOnBase ? 'passes' : 'fails'} on base`
+        return `- reproducer ${codeSpan(evidence.testPath)}: ${evidence.failsOnHead ? 'fails' : 'passes'} on head, ${evidence.passesOnBase ? 'passes' : 'fails'} on base`
       case 'citation':
-        return `- \`${evidence.path}:${String(evidence.startLine)}–${String(evidence.endLine)}\``
+        return `- ${codeSpan(`${evidence.path}:${String(evidence.startLine)}–${String(evidence.endLine)}`)}`
     }
   })
 }
@@ -119,14 +158,14 @@ export function renderFindingComment(finding: Finding): string {
         ? 'Dismissed after further checking.'
         : 'Possible issue — not confirmed by a test.'
   return [
-    `**${finding.claim}**`,
+    `**${inertMarkdown(finding.claim)}**`,
     '',
     `${finding.severity.charAt(0).toUpperCase()}${finding.severity.slice(1)} priority. ${status}`,
     '',
     details(
       'Why this was flagged',
       [
-        finding.verdict.reason,
+        inertMarkdown(finding.verdict.reason),
         '',
         ...evidenceLines(finding),
         '',
@@ -161,7 +200,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     )
   }
   for (const note of stage0.coverage.notChecked) {
-    lines.push(`Not checked: ${note.kind === 'all' ? '' : `${note.kind} — `}${note.reason}.`)
+    lines.push(
+      `Not checked: ${note.kind === 'all' ? '' : `${note.kind} — `}${inertMarkdown(note.reason)}.`,
+    )
   }
   if (report.verification !== null) {
     const { counts } = report.verification
@@ -179,7 +220,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     for (const review of incomplete) {
       const reason =
         review.error?.replace(/\s+/g, ' ') ?? `${review.outcome} (${review.stopReason})`
-      lines.push(`Incomplete reviewer: ${review.model} (${review.lens}) — ${reason}.`)
+      lines.push(
+        `Incomplete reviewer: ${review.model} (${review.lens}) — ${inertMarkdown(reason)}.`,
+      )
     }
   }
   const limitations = reviewerLimitations(report.reviews)
@@ -188,7 +231,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
       `Review limits: ${String(limitations.length)} completed reviewer run(s) left material uncertainty.`,
     )
     for (const limitation of limitations) {
-      lines.push(`Could not verify (${limitation.model}, ${limitation.lens}): ${limitation.detail}`)
+      lines.push(
+        `Could not verify (${limitation.model}, ${limitation.lens}): ${inertMarkdown(limitation.detail)}`,
+      )
     }
   }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
@@ -277,7 +322,7 @@ export function buildForgeReview(
         '',
         `#### Issue ${String(number)}`,
         '',
-        `\`${where(finding)}\``,
+        codeSpan(where(finding)),
         '',
         renderFindingComment(finding),
       )

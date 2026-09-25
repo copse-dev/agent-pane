@@ -101,29 +101,36 @@ merges under the light CI tier; the daily promotion PR runs the full tier once
 for the whole batch and is what the ruleset gates on. `release` is therefore the
 only branch that is always in a state a release can be cut from.
 
-The version in `package.json` is the trigger. Bumping it is the only manual step:
+The version in `package.json` is the trigger, and
+[`Bump release version`](../.github/workflows/release-bump.yml) bumps it every
+Monday. Publishing is the only routine manual step:
 
-1. Complete [the release checklist](release-checklist.md), including security
-   review and GA-blocker handling.
-2. In one PR into `main`, set `package.json` to the next supported version —
-   such as `0.1.0-beta.2` or `0.1.0` — and write that release's notes into
-   `CHANGELOG.md`'s `Unreleased` section. Leave them there through promotion;
-   the release jobs read the notes from that exact commit.
-3. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
+1. `Bump release version` opens a PR into `main` that sets `package.json` to the
+   next beta (`0.1.0-beta.9` → `0.1.0-beta.10`; after a stable `X.Y.Z`, the
+   next is `X.Y.(Z+1)-beta.1`) and runs
+   [`scripts/release-bump.mts`](../scripts/release-bump.mts) to rename
+   `CHANGELOG.md`'s `Unreleased` section to `## <version>`, open a fresh empty
+   `Unreleased` above it, and drop the previous version's section. The PR
+   auto-merges when `CI Passed` is green. The week is skipped, with a notice on
+   the run, when the current version has not been published yet or `Unreleased`
+   is empty. To hold a release, disable auto-merge on the PR; to change its
+   notes, edit the `## <version>` section on the PR branch.
+2. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
    `main` to `release`, or dispatch it early. Merging requires the full
    `CI Passed` tier.
-4. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
+3. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
    version on `release`, creates `v<version>` at that exact commit, and starts
    `Release (macOS)`. A promotion whose version is already tagged is a no-op, so
    ordinary promotions cut nothing.
-5. `Release (macOS)` re-checks the tag, the version match, reachability from
+4. `Release (macOS)` re-checks the tag, the version match, reachability from
    `release`, and the tagged commit's exact `CI Passed` check — it will not
    accept a branch-tip, merge-ref, or unrelated successful run. It then builds,
    signs, notarizes, staples, verifies, and smoke-tests the package, then uploads
    two immutable architecture-specific Actions artifacts plus a small metadata
    artifact containing the combined feeds, checksums, and notes generated from
-   `CHANGELOG.md`. It does not create a GitHub Release.
-6. Review and install-test the artifact for each architecture. When accepted,
+   the `## <version>` section of `CHANGELOG.md`. It does not create a GitHub
+   Release.
+5. Review and install-test the artifact for each architecture. When accepted,
    manually dispatch `Publish release artifacts` with the tag and successful
    `Release (macOS)` run ID. The publisher verifies the source workflow,
    successful conclusion, exact tagged SHA, checksums, and public target state,
@@ -131,18 +138,37 @@ The version in `package.json` is the trigger. Bumping it is the only manual step
    `copse-dev/copse-releases`. It never rebuilds. GitHub artifact attestation is
    added automatically once the source repository is public; until then the
    signed build, immutable Actions artifact, and published SHA256 manifest are
-   the integrity chain available on this GitHub Team plan.
-7. Review the published GitHub Release notes and add known issues before
+   the integrity chain available on this GitHub Team plan. Publishing is what
+   lets the next Monday's bump proceed.
+6. Review the published GitHub Release notes and add known issues before
    announcing the release.
-8. Reset `CHANGELOG.md`'s `Unreleased` section in a follow-up PR. Its unchanged,
-   already-tagged package version makes the next promotion a release-cut no-op.
+
+From bump to signed artifacts takes about a day: the bump merges on Monday,
+that day's promotion runs the full tier, and the signed build waits for the
+tagged commit's `CI Passed` before its roughly hour-long packaging run.
+
+### Cutting a release by hand
+
+Stable releases are never cut on schedule. To cut one — or any version other
+than the next beta, such as a minor jump — dispatch `Bump release version` with
+the version, or run `node scripts/release-bump.mts <version>` and open the PR
+yourself. Complete [the release checklist](release-checklist.md) first,
+including security review and GA-blocker handling. Do not edit `package.json`
+alone: the release jobs fail closed when the version has no `## <version>`
+section in `CHANGELOG.md`.
+
+### Failed releases
 
 A version is cut exactly once. If its release run fails, fix forward and bump to
 the next version rather than re-cutting the same one: the publisher refuses to
-replace an existing release, and downgrade is not a supported rollback.
+replace an existing release, and downgrade is not a supported rollback. The
+weekly bump waits for the failed version to be published, so abandoning one is a
+manual bump: move the abandoned `## <version>` section's entries back into
+`Unreleased` (the bump drops earlier version sections), then run
+`node scripts/release-bump.mts`.
 
-A manual workflow dispatch accepts only an existing matching tag reachable
-from `release`; it does not provide a bypass around those gates.
+A manual dispatch of `Release (macOS)` accepts only an existing matching tag
+reachable from `release`; it does not provide a bypass around those gates.
 
 Private-repository artifact attestation requires GitHub Enterprise Cloud and
 this organization is on Team. While the source remains private, both workflows

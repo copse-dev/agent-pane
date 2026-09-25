@@ -44,6 +44,9 @@ export default ts.config(
       '.portable/',
       '.pr-validation/',
       '.tmp/',
+      // Generated benchmark outputs, private research scripts and downloaded model caches.
+      // The maintained benchmark harnesses under benchmarks/ are linted separately below.
+      'bench-results/',
       '.claude/**',
       'eslint.config.mjs',
       'eslint.hook.config.mjs',
@@ -408,6 +411,39 @@ export default ts.config(
     },
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
+  {
+    files: ['benchmarks/shell-scope/scripts/lib/**/*.mts'],
+    languageOptions: {
+      parserOptions: { project: ['./benchmarks/shell-scope/tsconfig.json'] },
+    },
+  },
+  {
+    // Reproducible research runners are native Node ESM, not TypeScript app code.
+    // Keep ordinary JS linting; typed adapter libraries use the scoped project above.
+    files: ['benchmarks/shell-scope/scripts/**/*.mjs'],
+    extends: [ts.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        performance: 'readonly',
+        TextDecoder: 'readonly',
+        ReadableStream: 'readonly',
+        WritableStream: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        structuredClone: 'readonly',
+      },
+    },
+    // TypeScript-only annotation requirements cannot be expressed in these .mjs files.
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   {

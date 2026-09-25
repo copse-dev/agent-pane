@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import { main, reviewPermissionProfile } from './cli.ts'
+import { main, resolveForgeTarget, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -753,6 +753,27 @@ describe('copse-review CLI', () => {
     ])
     assert.equal(container.code, HEADLESS_EXIT.APPROVAL_REQUIRED)
     assert.match(container.err, /no container backend for copse-review-test:never-built/)
+  })
+
+  it('treats a blank forge token as unset and rejects a pull request number with junk', () => {
+    const flags = { 'post-review': 'github', repo: 'a/b', pr: '7' }
+    // CI expands a missing secret to "", which must not shadow GITHUB_TOKEN.
+    const target = resolveForgeTarget(flags, {
+      COPSE_REVIEW_FORGE_TOKEN: '',
+      GITHUB_TOKEN: 'ghs_fallback',
+    })
+    assert.equal(target?.number, 7)
+    assert.throws(
+      () => resolveForgeTarget(flags, { COPSE_REVIEW_FORGE_TOKEN: '  ', GITHUB_TOKEN: '' }),
+      /needs a token/,
+    )
+    for (const pr of ['3x', '1.5', '0', '-1', '07']) {
+      assert.throws(
+        () => resolveForgeTarget({ ...flags, pr }, { GITHUB_TOKEN: 't' }),
+        /--pr must be a positive integer/,
+        pr,
+      )
+    }
   })
 
   it('cancels Stage 0 without running the next check', { timeout: 15000 }, async () => {
