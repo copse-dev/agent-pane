@@ -114,6 +114,7 @@ import {
   startReview,
 } from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
+import { mcpErrorMessage } from './tool-error-format.ts'
 import {
   createThreadProposalToolCard,
   isThreadProposalCall,
@@ -229,6 +230,7 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
 
 function createToolResultSection(
   result: string | null,
+  status: ToolCall['status'],
   format?: 'markdown',
   showEmptyState = false,
 ): HTMLElement {
@@ -236,6 +238,14 @@ function createToolResultSection(
     return showEmptyState
       ? el('div', { class: 'tool-result tool-result-empty' }, 'No tool details were provided.')
       : el('div', { class: 'tool-result' })
+  }
+  const errorMessage = status === 'error' ? mcpErrorMessage(result) : null
+  if (errorMessage) {
+    return el(
+      'div',
+      { class: 'tool-result tool-result-error-message' },
+      ...errorMessage.split(/\n+/).map((line) => el('p', {}, line)),
+    )
   }
   // ACP tool output is agent-authored Markdown — render it through the same
   // pipeline as assistant messages so fenced code, lists and prose display
@@ -382,6 +392,7 @@ function appendStandardToolSections(
         : []),
       createToolResultSection(
         tc.result,
+        tc.status,
         tc.resultFormat,
         argsSection === null && tc.status !== 'running',
       ),
