@@ -169,7 +169,7 @@ test('running-thread and background-task actions keep their thread scope', async
   const activityItem = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
   assert.ok(activityItem)
   assert.match(activityItem.textContent, /Working.*thread-a/)
-  assert.equal(activityItem.getAttribute('aria-label'), 'Open thread thread-a')
+  assert.equal(activityItem.getAttribute('aria-label'), 'Working thread-a: open thread')
   activityItem.dispatchEvent(
     new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
   )
@@ -191,5 +191,53 @@ test('running-thread and background-task actions keep their thread scope', async
   document.querySelector<HTMLButtonElement>('#confirm-dialog .confirm-dialog-confirm')?.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(stopped, [['task-a', 'project-a', 'thread-a']])
+  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
+})
+
+test('activity refresh preserves keyboard focus and hands it back when a run finishes', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  const store = createStore({
+    projects: [{ id: 'project-a', path: '/a', name: 'A' }],
+    activeProjectId: 'project-a',
+    threads: [thread('thread-a')],
+  })
+  let activeRunThreadIds = ['thread-a']
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
+    processManager: {
+      ...base.processManager,
+      snapshot: async () => ({ sampledAt: Date.now(), activeRunThreadIds, processes: [] }),
+    },
+  }
+  mountProcessManagerDialog(api, store)()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const item = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
+  assert.ok(item)
+  item.focus()
+  t.mock.timers.tick(1_000)
+  await Promise.resolve()
+  const refreshed = document.querySelector<HTMLButtonElement>('.process-manager-activity-item')
+  assert.ok(refreshed)
+  assert.ok(document.activeElement === refreshed, 'the refreshed activity button keeps focus')
+  refreshed.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }),
+  )
+  assert.ok(menuItem('Jump to thread'))
+  assert.ok(menuItem('Stop agent run'))
+  menuItem('Jump to thread').focus()
+  const focusedMenuItem = document.activeElement
+  t.mock.timers.tick(1_000)
+  await Promise.resolve()
+  assert.ok(document.activeElement === focusedMenuItem, 'refresh must not steal menu focus')
+  dismissContextMenu()
+  document.querySelector<HTMLButtonElement>('.process-manager-activity-item')?.focus()
+  activeRunThreadIds = []
+  t.mock.timers.tick(1_000)
+  await Promise.resolve()
+  assert.ok(
+    document.activeElement === document.querySelector('[aria-label="Close process manager"]'),
+    'finishing a run returns focus to the close button',
+  )
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })

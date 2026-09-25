@@ -53,6 +53,25 @@ describe('Process manager agent activity', function () {
     await saveAppScreenshot('process-manager-agent-working.png')
 
     await dialog.$('[aria-label="Close process manager"]').click()
+    await $('.prompt-input').click()
+    await browser.keys([process.platform === 'darwin' ? 'Meta' : 'Control', 'Shift', 'p'])
+    await dialog.waitForDisplayed({ timeout: 10_000 })
+    await activity.waitForDisplayed({ timeout: 10_000 })
+    await browser.keys('Tab')
+    await expect(activity).toBeFocused()
+    const focusedSample = Number(await dialog.getAttribute('data-sampled-at'))
+    await browser.waitUntil(
+      async () => Number(await dialog.getAttribute('data-sampled-at')) > focusedSample,
+      { timeout: 8_000 },
+    )
+    await expect(activity).toBeFocused()
+    await browser.keys(['Shift', 'F10'])
+    await expect($('.context-menu-item=Jump to thread')).toBeDisplayed()
+    await expect($('.context-menu-item=Stop agent run')).toBeDisplayed()
+    await saveAppScreenshot('process-manager-agent-keyboard.png')
+    await browser.keys('Escape')
+
+    await dialog.$('[aria-label="Close process manager"]').click()
     await $('.project-new-thread-btn').click()
     await browser.waitUntil(
       async () => (await $('.chat-row.selected').getAttribute('data-thread-id')) !== threadId,
