@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -468,9 +468,26 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\*\\\.png\$/)
     assert.match(workflow, /89504e470d0a1a0a/)
     assert.match(workflow, /"\$size" -gt 16777216/)
-    assert.match(workflow, /"\$count" -gt 512/)
-    assert.match(workflow, /"\$total" -gt 268435456/)
+    assert.match(workflow, /"\$count" -gt 2048/)
+    assert.match(workflow, /"\$total" -gt 536870912/)
     assert.match(workflow, /Unexpected file in screenshot candidate artifact/)
+  })
+
+  it('budgets for a full refresh of every committed reference with headroom', () => {
+    // `update-screenshots` renders every reference into the candidate artifact,
+    // so a budget below the reference set fails every labelled refresh.
+    const count = Number(/"\$count" -gt (\d+)/.exec(workflow)?.[1])
+    const total = Number(/"\$total" -gt (\d+)/.exec(workflow)?.[1])
+    const references = readdirSync('tests/e2e/screenshots').filter((name) => name.endsWith('.png'))
+    const bytes = references.reduce(
+      (sum, name) => sum + statSync(resolve('tests/e2e/screenshots', name)).size,
+      0,
+    )
+    assert.ok(
+      count >= 2 * references.length,
+      `count budget ${String(count)} < 2 × ${String(references.length)}`,
+    )
+    assert.ok(total >= 2 * bytes, `size budget ${String(total)} < 2 × ${String(bytes)} bytes`)
   })
 
   it('opens a bot-owned child PR into the source branch and links it from the parent', () => {
