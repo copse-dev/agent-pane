@@ -94,10 +94,11 @@ export function buildChangesSuggestion(stats: { additions: number; deletions: nu
   }
 }
 
-// When the experimental CI investigator is enabled the suggestion points the
-// agent at the `investigate_ci` subagent tool; otherwise it falls back to the
-// original generic "Debug CI Failure" prompt so the bubble never references a
-// tool that isn't registered.
+// When the turn is offered the `investigate_ci` subagent tool (main-side
+// `isInvestigateCiOffered`: plugin on, gh usable, subagents on) the suggestion
+// points the agent at it; otherwise it falls back to the original generic
+// "Debug CI Failure" prompt so the bubble never references a tool the model
+// cannot call.
 export function buildDebugCiSuggestion(useInvestigator = false): {
   id: string
   label: string

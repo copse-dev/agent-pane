@@ -1,4 +1,4 @@
-import { describe, it, mock } from 'node:test'
+import { describe, it, mock, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   branchStatusLookupKey,
@@ -19,7 +19,15 @@ import {
 import { buildContinuePlanSuggestion } from '@shared/follow-ups/presets.ts'
 import { PluginRegistry } from '@copse/agent/plugins/plugin-registry.ts'
 import { definePlugin, type RegisteredPlugin } from '@copse/agent/plugins/plugin-manifest.ts'
-import { runWithDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import {
+  runWithDefaultPluginRegistry,
+  setDefaultPluginRegistry,
+} from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
+import { setGhAvailableForTest } from './tool-availability.ts'
+import { setSetting } from './storage/settings.test-shim.ts'
+import { SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 
 describe('branchStatusLookupKey', () => {
   it('does not coalesce identical paths and branches across projects', () => {
@@ -450,4 +458,59 @@ describe('buildContinuePlanSuggestion', () => {
     assert.equal(suggestion.label.includes('\n'), false)
     assert.match(suggestion.prompt, /Review the first failure\nand then/)
   })
+})
+
+describe('debug-ci deterministic bubble', () => {
+  const failingPr = {
+    branch: 'feature/x',
+    hasOpenPr: true,
+    hasMergeConflicts: false,
+    hasCiFailures: true,
+    changeStats: null,
+    canOpenPr: false,
+  }
+  const turn = { userMessage: 'fix ci', assistantMessage: 'Done.', toolNames: [] }
+
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+    setGhAvailableForTest(null)
+    setSetting(SUBAGENTS_ENABLED_SETTING, false)
+  })
+
+  function ciBubble(
+    plugin: boolean,
+    gh: boolean,
+    subagents: boolean,
+  ): { label: string; prompt: string } {
+    const plugins = createFirstPartyPluginRegistry()
+    if (plugin) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(gh)
+    setSetting(SUBAGENTS_ENABLED_SETTING, subagents)
+    const ci = buildDeterministicFollowUps(failingPr, turn).find((s) => s.id === 'debug-ci')
+    assert.ok(ci, 'a failing PR should offer the CI bubble')
+    return { label: ci.label, prompt: ci.prompt ?? '' }
+  }
+
+  // The bubble names investigate_ci only when the turn is offered the tool:
+  // plugin on AND gh usable AND subagents on (parentTools hides the entry tool
+  // otherwise). Every other combination falls back to the generic prompt.
+  for (const plugin of [false, true]) {
+    for (const gh of [false, true]) {
+      for (const subagents of [false, true]) {
+        const offered = plugin && gh && subagents
+        it(`plugin=${String(plugin)} gh=${String(gh)} subagents=${String(subagents)} ${offered ? 'names' : 'omits'} investigate_ci`, () => {
+          const ci = ciBubble(plugin, gh, subagents)
+          if (offered) {
+            assert.equal(ci.label, 'Investigate CI failure')
+            assert.match(ci.prompt, /investigate_ci/)
+          } else {
+            assert.equal(ci.label, 'Debug CI Failure')
+            assert.doesNotMatch(ci.prompt, /investigate_ci/)
+          }
+        })
+      }
+    }
+  }
 })
