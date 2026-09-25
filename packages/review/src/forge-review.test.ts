@@ -188,6 +188,30 @@ describe('forge review', () => {
     assert.equal(text.match(/<\/details>/g)?.length, 1)
   })
 
+  it('posts model text as inert markdown: no mentions, no raw HTML, intact code spans', () => {
+    const text = renderFindingComment({
+      ...anchored,
+      claim: 'Ping @copse-dev/maintainers: `Array<string>` breaks <!-- the rest',
+      verdict: { status: 'unverified', reason: 'See ``<!--` and @octocat.' },
+      evidence: [
+        {
+          kind: 'command',
+          command: 'node -e "console.log(`x`)"\nrm -rf x',
+          target: 'head',
+          exitCode: 1,
+          excerpt: '',
+        },
+      ],
+    })
+    assert.doesNotMatch(text, /@copse-dev|@octocat/, 'no live mentions')
+    assert.match(text, /@\u200bcopse-dev\/maintainers/)
+    assert.doesNotMatch(text, /<!--/, 'an unterminated comment cannot hide the rest')
+    assert.match(text, /&lt;!-- the rest/)
+    assert.match(text, /`Array<string>`/, 'code spans stay as written')
+    assert.match(text, /``&lt;!--` and/, 'an unclosed backtick run is not a code span')
+    assert.match(text, /- ``node -e "console\.log\(`x`\)" rm -rf x`` on head: exit 1/)
+  })
+
   it('keeps incomplete status outside the collapsed details', () => {
     const source = report()
     const review = buildForgeReview(
