@@ -2,7 +2,7 @@ import type { ProcessManagerSnapshot, ProcessManagerRow } from '@shared/types/pr
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { clear, el } from '../dom/helpers.ts'
-import { closeIcon, moreHorizontalIcon } from '../dom/icons.ts'
+import { chevronRightIcon, closeIcon, moreHorizontalIcon } from '../dom/icons.ts'
 import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { switchProjectThread } from '../controller/projects.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
@@ -25,6 +25,56 @@ function sortedRows(
     if (b === null) return -1
     return (a - b) * direction || left.pid - right.pid
   })
+}
+
+interface ProcessGroup {
+  threadId: string | null
+  rows: ProcessManagerRow[]
+  cpuPercent: number | null
+  memoryMiB: number | null
+}
+
+function total(values: readonly (number | null)[]): number | null {
+  const known = values.filter((value) => value !== null)
+  return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0)
+}
+
+/** Thread-owned processes grouped per thread, ordered like their rows; shared processes last. */
+function groupedRows(
+  rows: readonly ProcessManagerRow[],
+  column: SortColumn,
+  ascending: boolean,
+): ProcessGroup[] {
+  const byThread = new Map<string | null, ProcessManagerRow[]>()
+  for (const row of sortedRows(rows, column, ascending)) {
+    const group = byThread.get(row.threadId)
+    if (group) group.push(row)
+    else byThread.set(row.threadId, [row])
+  }
+  const groups = [...byThread].map(([threadId, groupRows]) => ({
+    threadId,
+    rows: groupRows,
+    cpuPercent: total(groupRows.map((row) => row.cpuPercent)),
+    memoryMiB: total(groupRows.map((row) => row.memoryMiB)),
+  }))
+  const direction = ascending ? 1 : -1
+  return groups.sort((left, right) => {
+    if (left.threadId === null) return right.threadId === null ? 0 : 1
+    if (right.threadId === null) return -1
+    const a = column === 'cpu' ? left.cpuPercent : left.memoryMiB
+    const b = column === 'cpu' ? right.cpuPercent : right.memoryMiB
+    if (a === null) return b === null ? left.threadId.localeCompare(right.threadId) : 1
+    if (b === null) return -1
+    return (a - b) * direction || left.threadId.localeCompare(right.threadId)
+  })
+}
+
+function formatCpu(value: number | null): string {
+  return value === null ? '—' : `${value.toFixed(1)}%`
+}
+
+function formatMemory(value: number | null): string {
+  return value === null ? '—' : `${value.toFixed(1)} MiB`
 }
 
 export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () => void {
@@ -121,6 +171,8 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   let timer: ReturnType<typeof setInterval> | null = null
   let generation = 0
   let refreshing = false
+  /** Thread groups the user collapsed (`''` is Shared); every group starts expanded. */
+  const collapsedGroups = new Set<string>()
 
   function projectForThread(threadId: string, projectId?: string | null): string | null {
     const state = store.getState()
@@ -202,6 +254,42 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     return entries
   }
 
+  function threadLabel(threadId: string | null): string {
+    if (threadId === null) return 'Shared'
+    const title = getThreadById(store, threadId)?.title.trim()
+    return title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`
+  }
+
+  function threadEntries(threadId: string | null): ContextMenuEntry[] {
+    return threadId
+      ? threadMenuEntries(
+          threadId,
+          projectForThread(threadId),
+          getThreadById(store, threadId)?.status === 'running',
+        )
+      : []
+  }
+
+  function actionsCellFor(label: string, entries: () => ContextMenuEntry[]): HTMLElement {
+    const cell = el('td', { class: 'process-manager-actions' })
+    if (entries().length === 0) return cell
+    const button = el(
+      'button',
+      {
+        type: 'button',
+        class: 'ui-btn ui-btn-ghost process-manager-actions-button',
+        'aria-label': `Actions for ${label}`,
+      },
+      moreHorizontalIcon('ui-icon ui-icon-sm'),
+    )
+    button.addEventListener('click', () => {
+      const rect = button.getBoundingClientRect()
+      showContextMenu(rect.right, rect.bottom, entries(), dialog)
+    })
+    cell.append(button)
+    return cell
+  }
+
   function menuEntries(row: ProcessManagerRow): ContextMenuEntry[] {
     const entries = row.threadId
       ? threadMenuEntries(
@@ -225,6 +313,12 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     const focusedActivityThread =
       document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement)
         ? document.activeElement.dataset['threadId']
+        : undefined
+    const focusedGroup =
+      document.activeElement instanceof HTMLElement &&
+      body.contains(document.activeElement) &&
+      document.activeElement.classList.contains('process-manager-group-toggle')
+        ? document.activeElement.dataset['groupKey']
         : undefined
     cpuHeading.setAttribute(
       'aria-sort',
@@ -291,65 +385,82 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
       closeButton.focus({ preventScroll: true })
     }
     const state = store.getState()
-    for (const row of sortedRows(snapshot.processes, column, ascending)) {
-      const thread = getThreadById(store, row.threadId)
-      const title = thread?.title.trim()
-      const threadLabel = row.threadId
-        ? title && title.length > 0
-          ? title
-          : `Thread ${row.threadId.slice(0, 8)}`
-        : 'Shared'
-      const entries = menuEntries(row)
-      const actionsCell = el('td', { class: 'process-manager-actions' })
-      if (entries.length > 0) {
-        const actionsButton = el(
-          'button',
-          {
-            type: 'button',
-            class: 'ui-btn ui-btn-ghost process-manager-actions-button',
-            'aria-label': `Actions for ${row.label} (${String(row.pid)})`,
-          },
-          moreHorizontalIcon('ui-icon ui-icon-sm'),
-        )
-        actionsButton.addEventListener('click', () => {
-          const rect = actionsButton.getBoundingClientRect()
-          showContextMenu(rect.right, rect.bottom, menuEntries(row), dialog)
-        })
-        actionsCell.append(actionsButton)
-      }
-      const tableRow = el(
+    for (const group of groupedRows(snapshot.processes, column, ascending)) {
+      const groupKey = group.threadId ?? ''
+      const expanded = !collapsedGroups.has(groupKey)
+      const label = threadLabel(group.threadId)
+      const count = `${String(group.rows.length)} ${group.rows.length === 1 ? 'process' : 'processes'}`
+      const toggle = el(
+        'button',
+        {
+          type: 'button',
+          class: 'process-manager-group-toggle',
+          'data-group-key': groupKey,
+          'aria-expanded': String(expanded),
+        },
+        chevronRightIcon('ui-icon ui-icon-sm process-manager-group-chevron'),
+        el('span', { class: 'process-manager-group-title', title: label }, label),
+        el('span', { class: 'process-manager-group-count' }, count),
+      )
+      toggle.addEventListener('click', () => {
+        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey)
+        else collapsedGroups.add(groupKey)
+        if (current) render(current)
+      })
+      const groupEntries = (): ContextMenuEntry[] => threadEntries(group.threadId)
+      const header = el(
         'tr',
         {
-          'data-pid': String(row.pid),
-          'data-kind': row.type,
-          'data-thread-id': row.threadId ?? '',
+          class: 'process-manager-group',
+          'data-group-key': groupKey,
           'data-active-thread': String(
-            row.threadId !== null && row.threadId === state.activeThreadId,
+            group.threadId !== null && group.threadId === state.activeThreadId,
           ),
         },
-        el('td', { class: 'process-manager-name', title: row.label }, row.label),
-        el('td', { class: 'process-manager-type' }, row.type),
-        el('td', { class: 'process-manager-thread', title: threadLabel }, threadLabel),
-        el(
-          'td',
-          { class: 'process-manager-number' },
-          row.cpuPercent === null ? '—' : `${row.cpuPercent.toFixed(1)}%`,
-        ),
-        el(
-          'td',
-          { class: 'process-manager-number' },
-          row.memoryMiB === null ? '—' : `${row.memoryMiB.toFixed(1)} MiB`,
-        ),
-        el('td', { class: 'process-manager-number process-manager-pid' }, String(row.pid)),
-        actionsCell,
+        el('th', { scope: 'rowgroup', colspan: '3' }, toggle),
+        el('td', { class: 'process-manager-number' }, formatCpu(group.cpuPercent)),
+        el('td', { class: 'process-manager-number' }, formatMemory(group.memoryMiB)),
+        el('td'),
+        actionsCellFor(label, groupEntries),
       )
-      if (entries.length > 0) {
-        tableRow.addEventListener('contextmenu', (event) => {
+      if (groupEntries().length > 0) {
+        header.addEventListener('contextmenu', (event) => {
           event.preventDefault()
-          showContextMenu(event.clientX, event.clientY, menuEntries(row), dialog)
+          showContextMenu(event.clientX, event.clientY, groupEntries(), dialog)
         })
       }
-      body.append(tableRow)
+      body.append(header)
+      if (groupKey === focusedGroup) toggle.focus({ preventScroll: true })
+      for (const row of group.rows) {
+        const entries = menuEntries(row)
+        const tableRow = el(
+          'tr',
+          {
+            class: 'process-manager-process',
+            'data-pid': String(row.pid),
+            'data-kind': row.type,
+            'data-thread-id': row.threadId ?? '',
+            'data-active-thread': String(
+              row.threadId !== null && row.threadId === state.activeThreadId,
+            ),
+          },
+          el('td', { class: 'process-manager-name', title: row.label }, row.label),
+          el('td', { class: 'process-manager-type' }, row.type),
+          el('td', { class: 'process-manager-thread', title: label }, label),
+          el('td', { class: 'process-manager-number' }, formatCpu(row.cpuPercent)),
+          el('td', { class: 'process-manager-number' }, formatMemory(row.memoryMiB)),
+          el('td', { class: 'process-manager-number process-manager-pid' }, String(row.pid)),
+          actionsCellFor(`${row.label} (${String(row.pid)})`, () => menuEntries(row)),
+        )
+        tableRow.hidden = !expanded
+        if (entries.length > 0) {
+          tableRow.addEventListener('contextmenu', (event) => {
+            event.preventDefault()
+            showContextMenu(event.clientX, event.clientY, menuEntries(row), dialog)
+          })
+        }
+        body.append(tableRow)
+      }
     }
     updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`
     dialog.dataset['sampledAt'] = String(snapshot.sampledAt)
