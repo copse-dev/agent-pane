@@ -124,20 +124,23 @@ test('portable entry drops inherited work authentication and routing without exp
       OPENAI_BASE_URL: 'https://work.invalid',
       AWS_PROFILE: 'work',
       AWS_ACCESS_KEY_ID: 'work-secret',
-      GOOGLE_APPLICATION_CREDENTIALS: '/work/credentials.json',
+      GOOGLE_APPLICATION_CREDENTIALS: '/work-credentials/credentials.json',
       AZURE_OPENAI_API_KEY: 'work-secret',
       HTTPS_PROXY: 'https://work.invalid',
-      NODE_OPTIONS: '--require=/work/preload.js',
+      NODE_OPTIONS: '--require=/work-credentials/preload.js',
       UNKNOWN_FUTURE_PROVIDER_TOKEN: 'work-secret',
-      CLAUDE_CONFIG_DIR: '/work/claude',
-      CODEX_HOME: '/work/codex',
-      COPSE_DIR: '/work/copse',
+      CLAUDE_CONFIG_DIR: '/work-credentials/claude',
+      CODEX_HOME: '/work-credentials/codex',
+      COPSE_DIR: '/work-credentials/copse',
       TERM: 'xterm-256color',
       LANG: 'en_GB.UTF-8',
     }
     const result = f.run(f.root, ['exec', '/usr/bin/env'], workEnvironment)
     assert.equal(result.status, 0, result.stderr)
-    assert.doesNotMatch(result.stdout + result.stderr, /work-secret|work\.invalid|\/work\//)
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /work-secret|work\.invalid|\/work-credentials\//,
+    )
     assert.doesNotMatch(
       result.stdout,
       /ANTHROPIC_|OPENAI_|AWS_|GOOGLE_|AZURE_|HTTPS_PROXY=|NODE_OPTIONS=|UNKNOWN_FUTURE_PROVIDER_TOKEN=|CODEX_HOME=/,
@@ -146,6 +149,13 @@ test('portable entry drops inherited work authentication and routing without exp
     assert.match(result.stdout, /LANG=en_GB.UTF-8/)
     assert.ok(result.stdout.includes(`CLAUDE_CONFIG_DIR=${f.root}/data/claude\n`))
     assert.ok(result.stdout.includes(`COPSE_DIR=${f.root}/data/copse\n`))
+    assert.ok(
+      result.stdout.includes(`COPSE_PANEL_USER_DATA=${f.root}/data/copse/user-data\n`),
+      'an explicit profile keeps Copse from migrating the host legacy profile onto the drive',
+    )
+    // CI checkouts live under paths such as /home/runner/work; the caller's
+    // directory must not survive the boundary as OLDPWD.
+    assert.doesNotMatch(result.stdout, /^OLDPWD=/m)
     const originalHome = process.env['HOME']
     if (originalHome !== undefined) assert.ok(result.stdout.includes(`HOME=${originalHome}\n`))
   } finally {

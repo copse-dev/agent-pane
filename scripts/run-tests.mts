@@ -333,6 +333,7 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
   // to real user state when running from the portable development shell.
   const testEnv = { ...process.env }
   delete testEnv['COPSE_DIR']
+  delete testEnv['COPSE_PANEL_USER_DATA']
   delete testEnv['CLAUDE_CONFIG_DIR']
   // Unfiltered: hand node the glob so it picks up every emitted test entry.
   // Filtered: hand it the exact entries selected above.

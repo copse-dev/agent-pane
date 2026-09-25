@@ -7,6 +7,12 @@ if [ "${1:-}" = --offline ]; then
   shift
   exec bash "$portable_source/offline.sh" bash "$portable_source/setup.sh" "$@"
 fi
+# Like portable-dev, start from a clean environment: host NODE_OPTIONS, npm_config_*,
+# credentials and proxies must not reach npm, Corepack or the build.
+if [ "${COPSE_PORTABLE_CLEAN_ENVIRONMENT:-}" != 1 ]; then
+  exec /bin/bash "$portable_source/clean-environment.sh" \
+    /usr/bin/env COPSE_PORTABLE_CLEAN_ENVIRONMENT=1 /bin/bash "$portable_source/setup.sh" "$@"
+fi
 if [ "$#" -gt 1 ]; then
   echo 'Usage: bash scripts/portable/setup.sh [--offline] [ROOT] (default: checkout/.portable)' >&2
   exit 1

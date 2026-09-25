@@ -5,14 +5,14 @@ recipe. Installed software and local state live in an ignored `.portable/`
 directory inside the checkout:
 
 ```text
-/Volumes/RemoteWork/debugging/agent-panel/
+/Volumes/Drive/agent-panel/
   .git/                      # independent clone, not a linked worktree
   src/
   scripts/portable/          # tracked installer, version pins and package lock
   .portable/
     apps/darwin-arm64/        # Node, Corepack, Claude, Codex, ripgrep, ACP adapters
     projects/                # other independent clones, or another Copse checkout
-    models/                  # reserved; setup does not download model weights
+    models/                  # optional model weights; the default setup downloads none
     cache/                   # pnpm, npm, Corepack, Electron, native headers, gortex
     data/                    # fresh Copse and agent profiles
     tmp/
@@ -46,7 +46,8 @@ and is not suitable for the primary clone. For a separate environment root,
 place Copse under `ROOT/projects/agent-panel` and pass `PORTABLE_ROOT=ROOT` to the
 Make targets. The default needs no absolute path configuration.
 
-Setup uses macOS's Bash, curl, tar and SHA-256 tools to bootstrap Node. Node and
+Setup starts from the same clean environment as `portable-dev` (see Boundaries)
+and uses macOS's Bash, curl, tar and SHA-256 tools to bootstrap Node. Node and
 Claude downloads have reviewed checksums in `scripts/portable/versions.sh`.
 Node must match `.nvmrc`; pnpm must match `packageManager`. A separate npm lock
 pins the adapters and all transitive dependencies. Corepack installs the pinned
@@ -74,7 +75,9 @@ shell rc files. It retains the real user home. `exec` runs a command in the same
 environment. Other projects can be opened from this shell normally. Do not point
 global npm/pnpm configuration at a removable disk.
 
-The scratch directory is a Git discovery ceiling, so a temporary non-repository
+The Copse profile is set explicitly (`COPSE_PANEL_USER_DATA`), so Copse never
+migrates a host's legacy `~/Library/Application Support/copse-panel` profile onto the
+drive. The scratch directory is a Git discovery ceiling, so a temporary non-repository
 does not inherit the enclosing Copse checkout. Explicitly initialized scratch
 repositories still work. The unit runner clears inherited Copse/Claude profile
 overrides before starting test processes, preserving their fixture isolation.
@@ -93,11 +96,6 @@ concurrently on two machines.
 `git clean -fdx -e .portable/` rather than deleting every ignored file. Back up
 profiles separately from the reproducible tool installation.
 
-Copse's launcher PATH support in PR #2657 is required for launching with the
-selected tools; the launcher reports its absence. PR #2656 makes the shared
-Electron/gortex cache symlinks relative; include it before testing relocation.
-These changes are independent of the encryption plan in #2652.
-
 ## Offline setup and verification
 
 Populate the drive once while connected, then verify the exact committed recipe:
@@ -112,7 +110,10 @@ current commit under `.portable/validation/offline.XXXXXX/checkout`, copies only
 `cache/` using APFS copy-on-write, and runs setup without any preinstalled tools,
 `node_modules`, build outputs or copied account profiles. macOS sandbox-exec
 blocks network access and common host development caches, including
-`~/.electron-gyp`, `~/.npm`, `~/.copse/cache` and `~/Library/Caches`. The build log
+`~/.electron-gyp`, `~/.npm`, `~/.copse/cache` and `~/Library/Caches`. It also denies
+reading the original checkout's `node_modules/` and `dist/` and this environment's
+installed `apps/`, `cache/` and `data/`, so dependency lookups that climb out of the
+nested clone fail instead of silently succeeding. The build log
 and result stay in that validation directory. The disposable directory can be
 removed after review; it contains no copied personal profile.
 
@@ -157,7 +158,7 @@ continues to install only the coding toolchain.
 | --------------------------------- | ------------ | -------- | ----------------------------------------------------------------------------- |
 | Qwen3-4B-Instruct-2507            | Q4_K_M       | 2.50 GB  | Small local experiments and quick tests                                       |
 | Qwen3.6-35B-A3B                   | Q4_K_M       | 21.17 GB | Larger coding/reasoning workloads; start with a modest context on a 32 GB Mac |
-| Qwen3-Coder-Next (80B, 3B active) | Q4_K_M       | 48.49 GB | Coding model for the 64 GB Mac; start at 8K context                           |
+| Qwen3-Coder-Next (80B, 3B active) | Q4_K_M       | 48.49 GB | Coding model for a 64 GB Mac; start at 8K context                             |
 
 `make portable-model` prints the largest downloaded tier appropriate for the
 current Mac's physical memory: small from 16 GiB, medium from 32 GiB, large from
@@ -211,10 +212,10 @@ not LM Studio inference.
 Model weights are not extra RAM: the larger model still needs memory for its
 context and runtime. Use one model at a time and a modest context. The small
 model is provided for lighter machines. Qwen3-Coder-Next should only be loaded
-on the 64 GB Mac, with enough free memory for the OS, Copse and its context cache;
-the 32 GB laptop should use Qwen3.6 or the small model. These are starting
+on a 64 GB Mac, with enough free memory for the OS, Copse and its context cache;
+a 32 GB Mac should use Qwen3.6 or the small model. These are starting
 configurations, not a guarantee of peak memory use. Load-test the large model
-on the 64 GB machine before relying on that configuration. Model downloads use LM Studio's
+on a 64 GB Mac before relying on that configuration. Model downloads use LM Studio's
 published [Qwen3-4B](https://huggingface.co/lmstudio-community/Qwen3-4B-Instruct-2507-GGUF),
 [Qwen3.6](https://huggingface.co/lmstudio-community/Qwen3.6-35B-A3B-GGUF),
 and [Qwen3-Coder-Next](https://huggingface.co/lmstudio-community/Qwen3-Coder-Next-GGUF) repositories.
@@ -307,8 +308,8 @@ separately on each Mac. Setup never imports host secrets. Profile relocation doe
 not implement portable secret encryption. Copse ACP sandbox access to relocated
 agent state still needs end-to-end validation.
 
-The Copse and CLI portable entry points (`portable-dev`, their Make targets and
-generated Finder launchers) start a clean child environment. Only OS identity,
+The Copse and CLI portable entry points (`portable-dev`, `portable-setup`, their Make
+targets and generated Finder launchers) start a clean child environment. Only OS identity,
 terminal/locale variables and the requested offline mode are retained; the drive
 paths and profiles are then applied. Inherited API keys, OAuth tokens, provider
 selection, custom endpoints, cloud credentials, proxies and runtime injection
@@ -327,7 +328,10 @@ need explicit configuration in the portable shell. This cleans process
 inheritance; it does not isolate macOS Keychain, machine-managed policy, project
 configuration or host credential files. Those remain separate concerns from
 environment-variable leakage. GUI apps launched by macOS Launch Services also
-remain outside this child-process environment contract.
+remain outside this child-process environment contract. The download-only
+LM Studio, model-library and runtime installers keep the invoking environment, so
+a proxy or `HF_TOKEN` still reaches curl; they run no package-manager lifecycle
+code.
 
 Cloud inference requires a connection. The optional local AI recipe downloads
 model weights and LM Studio; the runtime target also installs the engine software.
@@ -347,27 +351,36 @@ After installing the models and runtimes, run `make portable-local-ai-enable` on
 Then `make portable-run` or `.portable/Launch Copse.command` starts llama.cpp and
 MLX directly from the drive, verifies a real completion from each, and opens
 Copse. No LM Studio application or `/Applications` installation is needed.
-Quitting Copse stops the engines created by that launch. A second launch refuses
-to overwrite settings or take over another session. Occupied ports are errors;
-the launcher never adopts or stops another application's server.
+Quitting Copse, pressing Ctrl-C or closing the launch's Terminal window stops the
+engines created by that launch; a watchdog stops them even if the launcher itself is
+killed. A second launch refuses to overwrite settings or take over another session.
+A profile lock left by a crash or an ejected drive on this Mac is recognized as stale;
+a lock from another Mac is reported with the file to remove once that Mac has quit
+Copse. Occupied ports are errors; the launcher never adopts or stops another
+application's server.
 
 The initial pair is Qwen3 4B GGUF and Gemma 4 E4B MLX, using modest weight sizes
-so both can coexist on a 32 GB Mac. This MLX integration serves text; it does not
-expose the vision/audio features of the downloaded multimodal models. Both appear
-as local providers in Copse. Existing model selections and unrelated settings are
-preserved; a fresh profile defaults to the GGUF model. Onboarding still runs for a
-fresh profile. Changed settings are backed up beside `settings.json`.
+so both can coexist on a 32 GB Mac. Qwen3 4B comes with `portable-local-ai-setup`
+and Gemma with `portable-local-ai-library`; enabling with only one installed
+configures that engine alone and says how to add the other. This MLX integration
+serves text; it does not expose the vision/audio features of the downloaded
+multimodal models. The engines appear as local providers in Copse. A profile
+without a chat model routes chat, small tasks, subagents, the advisor and the
+post-turn review to the first engine; once a chat model has been chosen, the
+launcher never changes model routing. Onboarding still runs for a fresh profile.
+Changed settings are backed up beside `settings.json`.
 
 Configuration lives in `.portable/data/local-engines.json`, initialized from
 `scripts/portable/local-engines.json`. Quit portable Copse before editing it.
 Each engine has a model path relative to `.portable/models`, a port, and a context
 size. For MLX, `id` must equal its relative model directory; for GGUF, `id` is the
 server alias. Only one model per engine is loaded at a time. Select larger models
-explicitly on the 64 GB Mac, budgeting memory for both engines, context, Copse and
+explicitly on a 64 GB Mac, budgeting memory for both engines, context, Copse and
 other applications; the launcher does not automatically fill available RAM.
 After editing, choose the new model in Copse if an existing selection names the
-old model. After moving the drive mount path, rebuild runtimes with
-`make portable-local-ai-runtimes-offline` before launching.
+old model. The runtimes record the path they were prepared at; after the drive
+mounts elsewhere the launcher refuses to start them until
+`make portable-local-ai-runtimes-offline` repairs them.
 
 Engines bind only to `127.0.0.1` (initial ports 18341/18342). Hugging Face offline
 mode prevents model downloads and uses the drive cache. Normal local inference
@@ -375,6 +388,7 @@ requires loopback networking: the strict `--offline` setup sandbox denies even
 loopback and intentionally cannot launch these servers. This is not a network
 sandbox for the whole Copse application. Logs stay in
 `.portable/data/local-engine-logs/`. `make portable-local-ai-serve` runs the same
-engines without opening Copse; Ctrl-C stops them. Remove or rename
-`.portable/data/local-engines.json` while stopped to return to plain portable
-launches.
+engines without opening Copse; Ctrl-C stops them. `make portable-local-ai-disable`
+returns to plain portable launches: it removes the drive providers and every model
+selection that names them, and keeps the engine configuration as
+`local-engines.disabled.json` for a later `portable-local-ai-enable`.

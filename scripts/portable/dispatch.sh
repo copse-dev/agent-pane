@@ -7,8 +7,10 @@ shift 2
 source "$portable_repo/scripts/portable/environment.sh"
 source "$portable_repo/scripts/portable/versions.sh"
 cd "$portable_repo"
+# `cd` makes bash export OLDPWD: the caller's directory must not cross the clean boundary.
+unset OLDPWD
 case "${1:-doctor}" in
-  local-ai-enable|local-ai-serve)
+  local-ai-enable|local-ai-disable|local-ai-serve)
     action="${1#local-ai-}"
     exec /usr/bin/python3 "$portable_repo/scripts/portable/local-engines.py" "$portable_root" "$action"
     ;;
@@ -38,6 +40,11 @@ case "${1:-doctor}" in
     echo "Copse profile: $COPSE_DIR"
     echo 'Host dependencies: macOS, Xcode/Command Line Tools (Git, make, Python, SDK), Keychain.'
     echo "Electron headers: $COPSE_ELECTRON_HEADERS_CACHE"
+    # macOS limits Unix socket paths to 104 bytes, and Electron's single-instance socket
+    # and other tools' sockets live below TMPDIR. A deep checkout path can exhaust it.
+    if [ "${#TMPDIR}" -gt 60 ]; then
+      echo "Warning: TMPDIR is ${#TMPDIR} bytes ($TMPDIR). Sockets below it can exceed macOS's 104-byte limit; prefer a shorter checkout path." >&2
+    fi
     echo 'Offline repair: make portable-setup-offline (requires previously populated caches).'
     ;;
   prepare)
@@ -57,10 +64,6 @@ case "${1:-doctor}" in
       echo 'Checkout moved or setup is incomplete. Run portable-dev prepare (or prepare --offline with populated caches).' >&2
       exit 1
     fi
-    if ! /usr/bin/grep -q COPSE_PRESERVE_PATH src/main/app-init.ts && [ ! -f src/main/launch-path.ts ]; then
-      echo 'Launching with the drive PATH requires Copse PR #2657 (portable-launch-path).' >&2
-      exit 1
-    fi
     if [ -f "$portable_root/data/local-engines.json" ]; then
       exec /usr/bin/python3 "$portable_repo/scripts/portable/local-engines.py" "$portable_root" run
     fi
@@ -76,5 +79,5 @@ case "${1:-doctor}" in
     test "$#" -gt 0
     exec "$@"
     ;;
-  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|local-ai-enable|local-ai-serve|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
+  *) echo 'Usage: portable-dev {doctor|prepare|verify-offline|run|shell|local-ai-enable|local-ai-disable|local-ai-serve|lm-studio|claude|codex|exec COMMAND...}; add --offline after the action to block networking.' >&2; exit 1 ;;
 esac

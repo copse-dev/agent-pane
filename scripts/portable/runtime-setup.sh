@@ -56,6 +56,8 @@ python="$runtime_root/vendor/_amphibian/cpython3.11-mac-arm64@10/bin/python3.11"
 for layer in "$runtime_root"/vendor/_amphibian/*; do
   "$python" -I -S "$layer/postinstall.py"
 done
+# The standalone engine launcher refuses runtimes prepared at another mount path.
+printf '%s\n' "$runtime_root" > "$runtime_root/.installed-path"
 complete=1
 if [ -e "$backup" ] || [ -L "$backup" ]; then rm -rf "$backup"; fi
 echo "Installed pinned runtimes: $runtime_root"

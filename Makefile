@@ -97,6 +97,7 @@ help:
 	@echo "  make portable-local-ai-library  Install the optional expanded model collection (197 GB)"
 	@echo "  make portable-local-ai-runtimes Install pinned GGUF/MLX inference runtimes"
 	@echo "  make portable-local-ai-enable Start drive engines automatically with portable-run"
+	@echo "  make portable-local-ai-disable Stop starting drive engines; remove their Copse settings"
 	@echo "  make portable-lm-studio        Install cached LM Studio into /Applications and launch"
 	@echo "  make portable-claude / portable-codex  Launch the drive's coding CLIs"
 	@echo "  make portable-shell    Develop using the installed portable tools"
@@ -232,7 +233,7 @@ runners-ps:
 # 2) App dev loop: deps -> build -> run
 # ============================================================================
 
-# --- node preflight ---------------------------------------------------------
+# --- portable development environment (docs/portable-development.md) -------
 PORTABLE_ROOT ?= .portable
 MODEL_TIER ?= auto
 MODEL_MANIFEST ?= scripts/portable/collections/extended.tsv
@@ -269,9 +270,12 @@ portable-local-ai-runtimes:
 portable-local-ai-runtimes-offline:
 	@bash scripts/portable/runtime-setup.sh --offline "$(PORTABLE_ROOT)"
 
-.PHONY: portable-local-ai-enable portable-local-ai-serve
+.PHONY: portable-local-ai-enable portable-local-ai-disable portable-local-ai-serve
 portable-local-ai-enable:
 	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-enable
+
+portable-local-ai-disable:
+	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-disable
 
 portable-local-ai-serve:
 	@bash "$(PORTABLE_ROOT)/portable-dev" local-ai-serve
@@ -295,6 +299,7 @@ portable-shell:
 portable-run:
 	@bash "$(PORTABLE_ROOT)/portable-dev" run
 
+# --- node preflight ---------------------------------------------------------
 .PHONY: check-node
 check-node:
 	@$(USE_NVM); \
