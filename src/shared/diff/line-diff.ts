@@ -1,10 +1,10 @@
-import { splitIntoLines } from './line-stats.ts'
-
 export type LineDiffKind = 'context' | 'add' | 'del'
 
 export interface LineDiffLine {
   kind: LineDiffKind
   text: string
+  /** Git-style marker for the final line when it has no terminating newline. */
+  noNewlineAtEnd?: true
 }
 
 /** A run of unchanged lines folded out of a hunked diff. */
@@ -22,6 +22,27 @@ export interface LineDiffGap {
 const MAX_TABLE_CELLS = 1_000_000
 
 /**
+ * Keep each line terminator in its comparison token so adding or removing the
+ * final newline remains a visible edit. CRLF is normalised first: the card is a
+ * line diff, so a line-ending-only conversion must not render every line as a
+ * visually identical deletion and addition.
+ */
+function splitDiffLines(text: string): string[] {
+  const normalized = text.replace(/\r\n/g, '\n')
+  if (normalized === '') return []
+  return normalized.match(/[^\n]*\n|[^\n]+$/g) ?? []
+}
+
+function outputLine(kind: LineDiffKind, token: string): LineDiffLine {
+  const terminated = token.endsWith('\n')
+  return {
+    kind,
+    text: terminated ? token.slice(0, -1) : token,
+    ...(!terminated ? { noNewlineAtEnd: true } : {}),
+  }
+}
+
+/**
  * A line-level edit script from `before` to `after`, in display order: each
  * run of deletions precedes the additions that replace it.
  *
@@ -29,8 +50,8 @@ const MAX_TABLE_CELLS = 1_000_000
  * edit inside a larger snippet — only runs the LCS over the changed middle.
  */
 export function computeLineDiff(before: string, after: string): LineDiffLine[] {
-  const a = splitIntoLines(before)
-  const b = splitIntoLines(after)
+  const a = splitDiffLines(before)
+  const b = splitDiffLines(after)
 
   let start = 0
   while (start < a.length && start < b.length && a[start] === b[start]) start += 1
@@ -41,9 +62,9 @@ export function computeLineDiff(before: string, after: string): LineDiffLine[] {
     bEnd -= 1
   }
 
-  const context = (text: string): LineDiffLine => ({ kind: 'context', text })
-  const del = (text: string): LineDiffLine => ({ kind: 'del', text })
-  const add = (text: string): LineDiffLine => ({ kind: 'add', text })
+  const context = (text: string): LineDiffLine => outputLine('context', text)
+  const del = (text: string): LineDiffLine => outputLine('del', text)
+  const add = (text: string): LineDiffLine => outputLine('add', text)
   const head = a.slice(0, start).map(context)
   const tail = a.slice(aEnd).map(context)
   const oldMiddle = a.slice(start, aEnd)

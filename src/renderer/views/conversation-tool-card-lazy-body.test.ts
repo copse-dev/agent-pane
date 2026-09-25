@@ -263,15 +263,20 @@ describe('collapsed tool card bodies render lazily', () => {
           newText: [...context, "it('queues quote-replies', async () => {", ...context].join('\n'),
         },
         { type: 'diff', path: '/elsewhere/new.ts', newText: 'one\ntwo\n' },
+        { type: 'diff', path: '/repo/same.ts', oldText: 'same\r\n', newText: 'same\n' },
+        { type: 'diff', path: '/repo/eof.ts', oldText: 'a\nb', newText: 'a\nb\n' },
       ],
     })
     const host = document.createElement('div')
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    const [edit, created] = host.querySelectorAll<HTMLElement>('.acp-tool-diff')
+    const [edit, created, unchanged, finalNewline] =
+      host.querySelectorAll<HTMLElement>('.acp-tool-diff')
     assert.ok(edit)
     assert.ok(created)
+    assert.ok(unchanged)
+    assert.ok(finalNewline)
     const editPath = edit.querySelector<HTMLElement>('.acp-tool-diff-path')
     assert.ok(editPath)
     assert.equal(editPath.textContent, 'src/renderer/views/input-bar.test.ts')
@@ -279,6 +284,9 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.equal(edit.querySelector('.tool-stat-add')?.textContent, '+1')
     assert.equal(edit.querySelector('.tool-stat-del')?.textContent, '-1')
     assert.equal(edit.querySelector('.acp-content-label'), null)
+    assert.equal(edit.querySelectorAll('.acp-diff-line').length, 0, 'collapsed diff is lazy')
+    edit.setAttribute('open', '')
+    edit.dispatchEvent(new Event('toggle'))
     assert.deepEqual(
       Array.from(edit.querySelectorAll('.acp-diff-line'), (line) => [
         line.classList.item(1),
@@ -297,11 +305,58 @@ describe('collapsed tool card bodies render lazily', () => {
         ['acp-diff-gap', '⋯ 3 unchanged lines'],
       ],
     )
+    assert.match(
+      edit.querySelector('.acp-diff-add')?.getAttribute('aria-label') ?? '',
+      /^Added line:/,
+    )
+    assert.match(
+      edit.querySelector('.acp-diff-del')?.getAttribute('aria-label') ?? '',
+      /^Deleted line:/,
+    )
 
     assert.match(created.querySelector('summary')?.textContent ?? '', /^New file/)
     assert.equal(created.querySelector('.acp-tool-diff-path')?.textContent, '/elsewhere/new.ts')
     assert.equal(created.querySelector<HTMLElement>('.acp-tool-diff-path')?.title, '')
+    assert.equal(created.querySelectorAll('.acp-diff-add').length, 0)
+    created.setAttribute('open', '')
+    created.dispatchEvent(new Event('toggle'))
     assert.equal(created.querySelectorAll('.acp-diff-add').length, 2)
+    assert.equal(unchanged.querySelector('.acp-content-label')?.textContent, 'No changes')
+    assert.equal(unchanged.querySelectorAll('.acp-diff-line').length, 0)
+
+    finalNewline.setAttribute('open', '')
+    finalNewline.dispatchEvent(new Event('toggle'))
+    assert.equal(finalNewline.querySelector('.tool-stat-add')?.textContent, '+1')
+    assert.equal(finalNewline.querySelector('.tool-stat-del')?.textContent, '-1')
+    assert.equal(
+      finalNewline.querySelector('.acp-diff-eof')?.textContent,
+      '\\ No newline at end of file',
+    )
+  })
+
+  it('does not build eager DOM for a large collapsed ACP diff', () => {
+    const store = createStore({ workspaceRoot: '/repo' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      result: null,
+      content: [
+        {
+          type: 'diff',
+          path: '/repo/generated.txt',
+          newText: Array.from({ length: 20_000 }, (_, index) => `line ${String(index)}`).join('\n'),
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const diff = host.querySelector<HTMLElement>('.acp-tool-diff')
+    assert.ok(diff)
+    assert.equal(diff.querySelector('.tool-stat-add')?.textContent, '+20000')
+    assert.equal(diff.querySelectorAll('.acp-diff-line').length, 0)
   })
 
   it('shows ACP resource paths relative to the active thread checkout with absolute hover paths', () => {

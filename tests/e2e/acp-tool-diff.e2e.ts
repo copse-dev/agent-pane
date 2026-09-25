@@ -100,9 +100,11 @@ describe('ACP tool diff', () => {
     await expect(path).toHaveAttribute('title', join(process.cwd(), RELATIVE_PATH))
     await expect(diff.$('.tool-stat-add')).toHaveText('+1')
     await expect(diff.$('.tool-stat-del')).toHaveText('-3')
+    await expect(diff.$$('.acp-diff-line')).toBeElementsArrayOfSize(0)
 
     await diff.$('summary').click()
     await expect(diff).toHaveAttribute('open')
+    await diff.$('.acp-diff-line').waitForExist()
     const rows = await browser.execute((messageId) => {
       const lines = document.querySelectorAll<HTMLElement>(
         `[data-message-id="${messageId}"] .acp-diff-line`,
@@ -134,6 +136,14 @@ describe('ACP tool diff', () => {
     assert.notEqual(background('acp-diff-add'), background('acp-diff-del'))
     assert.notEqual(background('acp-diff-add'), background('acp-diff-context'))
     assert.ok(rows.every((row) => row.whiteSpace === 'pre'))
+    await expect(diff.$('.acp-diff-add')).toHaveAttribute(
+      'aria-label',
+      expect.stringMatching(/^Added line:/),
+    )
+    await expect(diff.$('.acp-diff-del')).toHaveAttribute(
+      'aria-label',
+      expect.stringMatching(/^Deleted line:/),
+    )
 
     await diff.scrollIntoView()
     await saveAppScreenshot('acp-tool-diff.png')

@@ -1535,25 +1535,11 @@ function createAcpToolDiff(
   const lines = computeLineDiff(item.oldText ?? '', item.newText)
   const additions = lines.filter((line) => line.kind === 'add').length
   const deletions = lines.filter((line) => line.kind === 'del').length
-  const rows = foldLineDiff(lines).map((line) =>
-    line.kind === 'gap'
-      ? el(
-          'div',
-          { class: 'acp-diff-line acp-diff-gap' },
-          `⋯ ${String(line.count)} unchanged ${line.count === 1 ? 'line' : 'lines'}`,
-        )
-      : el(
-          'div',
-          { class: `acp-diff-line acp-diff-${line.kind}` },
-          el(
-            'span',
-            { class: 'acp-diff-sign', 'aria-hidden': 'true' },
-            acpDiffLineSigns[line.kind],
-          ),
-          el('span', { class: 'acp-diff-text' }, line.text),
-        ),
-  )
-  return el(
+  const hasChanges = additions > 0 || deletions > 0
+  const body = hasChanges
+    ? el('div', { class: 'acp-tool-diff-lines' })
+    : el('div', { class: 'acp-content-label' }, 'No changes')
+  const details = el(
     'details',
     { class: 'acp-tool-diff' },
     el(
@@ -1576,10 +1562,42 @@ function createAcpToolDiff(
       el('span', { class: 'tool-stat tool-stat-add' }, `+${String(additions)}`),
       el('span', { class: 'tool-stat tool-stat-del' }, `-${String(deletions)}`),
     ),
-    rows.length > 0
-      ? el('div', { class: 'acp-tool-diff-lines' }, ...rows)
-      : el('div', { class: 'acp-content-label' }, 'No changes'),
+    body,
   )
+  if (!hasChanges) return details
+
+  const buildRows = (): void => {
+    if (!details.open || body.childElementCount > 0) return
+    const rows = foldLineDiff(lines).flatMap((line) => {
+      if (line.kind === 'gap') {
+        return [
+          el(
+            'div',
+            { class: 'acp-diff-line acp-diff-gap' },
+            `⋯ ${String(line.count)} unchanged ${line.count === 1 ? 'line' : 'lines'}`,
+          ),
+        ]
+      }
+      const accessibility =
+        line.kind === 'add'
+          ? { 'aria-label': `Added line: ${line.text}` }
+          : line.kind === 'del'
+            ? { 'aria-label': `Deleted line: ${line.text}` }
+            : {}
+      const row = el(
+        'div',
+        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        el('span', { class: 'acp-diff-sign', 'aria-hidden': 'true' }, acpDiffLineSigns[line.kind]),
+        el('span', { class: 'acp-diff-text' }, line.text),
+      )
+      return line.noNewlineAtEnd
+        ? [row, el('div', { class: 'acp-diff-line acp-diff-eof' }, '\\ No newline at end of file')]
+        : [row]
+    })
+    body.append(...rows)
+  }
+  details.addEventListener('toggle', buildRows)
+  return details
 }
 
 function createToolResultContent(

@@ -1147,6 +1147,11 @@ span.acp-resource-title {
   font-family: var(--font-family);
   font-size: var(--font-size-xs);
 }
+.acp-diff-eof {
+  padding-left: 2ch;
+  color: var(--text-muted);
+  font-style: italic;
+}
 .message-text .remote-artifact-image {
   display: block;
   max-width: 100%;

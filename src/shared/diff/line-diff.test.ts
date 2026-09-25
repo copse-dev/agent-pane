@@ -33,6 +33,22 @@ describe('computeLineDiff', () => {
     ])
   })
 
+  it('shows a final-newline-only edit and identifies the unterminated side', () => {
+    const added = computeLineDiff('a\nb', 'a\nb\n')
+    assert.deepEqual(render(added), [' a', '-b', '+b'])
+    assert.equal(added[1]?.noNewlineAtEnd, true)
+    assert.equal(added[2]?.noNewlineAtEnd, undefined)
+
+    const removed = computeLineDiff('a\nb\n', 'a\nb')
+    assert.deepEqual(render(removed), [' a', '-b', '+b'])
+    assert.equal(removed[1]?.noNewlineAtEnd, undefined)
+    assert.equal(removed[2]?.noNewlineAtEnd, true)
+  })
+
+  it('does not show a CRLF-to-LF conversion as identical-looking changes', () => {
+    assert.deepEqual(render(computeLineDiff('a\r\nb\r\n', 'a\nb\n')), [' a', ' b'])
+  })
+
   it('reconstructs both sides and matches the minimal line counts', () => {
     const text = fc
       .array(fc.constantFrom('a', 'b', 'c', 'd', ''), { maxLength: 12 })
@@ -43,7 +59,7 @@ describe('computeLineDiff', () => {
         const side = (skip: LineDiffLine['kind']): string =>
           lines
             .filter((line) => line.kind !== skip)
-            .map((line) => `${line.text}\n`)
+            .map((line) => `${line.text}${line.noNewlineAtEnd ? '' : '\n'}`)
             .join('')
         assert.equal(side('add'), before)
         assert.equal(side('del'), after)
