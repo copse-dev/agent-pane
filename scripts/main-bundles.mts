@@ -23,6 +23,18 @@ export interface StandaloneMainBundle {
   /** Repo-relative output, next to `dist/main/index.js` where the runtime looks. */
   outfile: string
   /**
+   * Emitted next to `outfile` so Node's CJS `getNearestParentPackageJSON` walk
+   * terminates inside the sandbox allow-list. The sandbox-fs worker runs under
+   * seatbelt with read access to only its own directory and the workspace root:
+   * with no `package.json` beside the bundle, Node walks up the ancestor chain
+   * probing for one, an ancestor probe hits EPERM, and Node treats that as a
+   * fatal `ERR_INVALID_PACKAGE_CONFIG` before the worker's code ever runs. The
+   * persistent server then falls back to a one-shot spawn, which dies the same
+   * way — a file-tree walk launches dozens of doomed processes and stalls the
+   * main loop.
+   */
+  manifest?: Record<string, unknown>
+  /**
    * Replaces the main bundle's `external` list. A bundle that runs somewhere
    * without the app's node_modules must carry everything the main bundle
    * leaves behind, except what it deliberately stages beside itself.
@@ -41,9 +53,12 @@ export interface StandaloneMainBundle {
 export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
   // Seatbelt/bubblewrap-wrapped filesystem worker behind every sandboxed `fs:*`
   // IPC — both the long-lived server and the one-shot fallback exec this path.
+  // The manifest pins Node's package.json resolution to this directory: under
+  // seatbelt the ancestor walk otherwise dies on EPERM (see `manifest` above).
   {
     entry: 'src/main/project-sandbox/sandbox-fs-worker.ts',
     outfile: 'dist/main/sandbox-fs-worker.js',
+    manifest: { type: 'commonjs' },
   },
   {
     entry: 'src/main/services/plugins/plugin-tool-worker.ts',

@@ -216,6 +216,17 @@ const standaloneCtxs = await Promise.all(
   ),
 )
 buildContexts.push(...standaloneCtxs)
+// Static side files are not rebuilt by esbuild, so write them once here rather
+// than in a watch hook: `rebuild()` never removes a manifest emitted earlier.
+for (const { outfile, manifest } of STANDALONE_MAIN_BUNDLES) {
+  if (!manifest) continue
+  const { writeFileSync } = await import('node:fs')
+  const { dirname } = await import('node:path')
+  writeFileSync(
+    new URL(`./${dirname(outfile)}/package.json`, import.meta.url).pathname,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  )
+}
 const preloadCtx = await esbuild.context({
   ...nodeOpts,
   entryPoints: ['src/preload/index.ts'],
