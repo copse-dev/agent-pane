@@ -138,6 +138,7 @@ import {
 } from './services/thread-store.ts'
 import { getContainerRunService } from './services/container-runtime/container-run-service.ts'
 import { recordContainerRunTurn } from './services/container-runtime/container-run-history.ts'
+import { recordUserReview } from './services/review/review-history.ts'
 import { AgentDispatcher } from './services/agent-dispatcher.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -893,6 +894,8 @@ app
     // Copse Reviewer over the thread's changes: the Changes view's "Review"
     // and the "Review changes" bubble. Runs under the thread's execution
     // context like a turn, so the reviewer sees the thread's own checkout.
+    // The run never passes through the dispatcher, so its report is written
+    // into the thread's model history for the next turn to see (#2519).
     ipcMain.handle(
       'review:run',
       async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
@@ -904,7 +907,16 @@ app
         if (!executionContext) return
         await runWithThreadExecutionContext(executionContext, () =>
           runWithActiveRunIdentity(threadId, () =>
-            runReviewForThread(threadId, agentHost, parseRetryPayload(payload)),
+            runReviewForThread(threadId, agentHost, parseRetryPayload(payload), (result) =>
+              recordUserReview(projectId, threadId, result, {
+                loadHistory: loadAgentHistory,
+                saveHistory: saveAgentHistory,
+                loadThread: getProjectThread,
+                forgetHistory: (pid, tid) => {
+                  agentDispatcher.forgetHistory(pid, tid)
+                },
+              }),
+            ),
           ),
         )
       },
