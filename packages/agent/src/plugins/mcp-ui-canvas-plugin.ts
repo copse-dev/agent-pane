@@ -21,12 +21,14 @@
 // reason `copse.site-building` uses one: the guidance is worth its tokens on a
 // prototype turn and pure noise on every other.
 //
-// **Default DISABLED.** Canvas was opt-in (off by default via
-// `mcpUiArtefactsEnabled`); this plugin must not silently enable it for existing
-// users. Default-off is expressed the same way as every other experimental plugin:
-// the plugin-service enablement migration seeds the persisted `pluginDisabled` set
-// (an absent/false old setting → disabled) before the shared registry is built.
-// A user who had previously turned the setting on keeps canvas enabled.
+// **Default DISABLED on fresh profiles.** Canvas was opt-in (off by default via
+// `mcpUiArtefactsEnabled`). Default-off is expressed the same way as every other
+// experimental plugin: `experimental` stability puts the id in the
+// `pluginDisabled` set seeded on a profile that has none. No migration ever read
+// the retired setting, and no upgrade seed was added with this plugin, so a
+// profile that already owned a disable list when it arrived (#1197) got canvas
+// enabled whatever the old setting said. That is deliberately left alone now —
+// see `DEFAULT_DISABLED_PLUGIN_IDS` in `plugin-service.ts`.
 //
 // **No-double-registration.** The `mcpUiArtefactsEnabled` standalone setting is
 // gone (removed from the zod schema and the settings dialog) — the plugin
