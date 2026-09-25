@@ -84,9 +84,9 @@
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
+  letter-spacing: var(--group-header-letter-spacing);
   text-align: left;
   text-transform: uppercase;
   cursor: pointer;

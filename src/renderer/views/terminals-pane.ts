@@ -102,8 +102,8 @@ export function mountTerminalsPane(
   })
   const listHeader = el(
     'div',
-    { class: 'terminals-list-header terminal-rail-section-header' },
-    'Shells',
+    { class: 'pane-header terminals-list-header terminal-rail-section-header' },
+    el('span', { class: 'pane-header-title' }, 'Shells'),
   )
   const newBtn = el(
     'button',

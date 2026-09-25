@@ -103,9 +103,9 @@ export function mountPrPane(
   api: ApiClient,
   monaco: GitDiffMonaco,
 ): () => void {
-  const listHeader = el('div', { class: 'git-changes-header' })
+  const listHeader = el('div', { class: 'pane-header' })
   listHeader.append(
-    el('span', { class: 'git-changes-title' }, 'Pull requests'),
+    el('span', { class: 'pane-header-title' }, 'Pull requests'),
     panePopoutButton(store, api, 'prs', 'pull requests'),
     paneMaximizeButton(store, 'pull requests'),
     el(

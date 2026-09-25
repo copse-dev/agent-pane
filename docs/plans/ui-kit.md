@@ -73,6 +73,9 @@ Near-duplicates today:
 
 Both: header label, `+` button, tab button rail (hover-close), active class on row + panel, empty
 fallback. Differences are **inside** the panel (webview toolbar vs xterm), not the shell.
+The header row is already shared: both (and every other right-panel list pane) carry
+`.pane-header` + `.pane-header-title` on `--pane-header-band-height` — see
+[ui-taste “Pane headers share one band”](../ui-taste.md#pane-headers-share-one-band).
 
 Proposed kit surface (factories / light-DOM, not Shadow DOM):
 

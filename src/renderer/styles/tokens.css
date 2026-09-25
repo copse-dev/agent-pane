@@ -158,7 +158,18 @@
      16px icon + sm padding + top border (Settings' historical band). */
   --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: calc(16px * var(--ui-scale));
-  /* Browser Tabs header + URL toolbar share one band so their bottom borders
-     meet across the tree resizer (28px nav buttons + xs pad + bottom border). */
-  --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
+  /* Every right-panel list pane header (Explorer, Terminal, Changes, PRs,
+     Memories, Roadmap, Desktop, Browser) sits on one band, so switching panel
+     modes never moves the header's bottom edge (28px controls + xs pad + bottom
+     border). See docs/ui-taste.md "Pane headers share one band". */
+  --pane-header-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
+  /* Browser Tabs header + URL toolbar share that band so their bottom borders
+     meet across the tree resizer. */
+  --browser-chrome-band-height: var(--pane-header-band-height);
+  /* In-pane group headers (tracked caps over a list section or card): one size,
+     tracking and weight so "CHANGES", "AGENT TASKS" and a roadmap category read
+     as the same element. */
+  --group-header-font-size: var(--font-size-xs);
+  --group-header-letter-spacing: 0.04em;
+  --group-header-font-weight: 600;
 }

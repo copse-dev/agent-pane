@@ -578,7 +578,7 @@ describe('VNC viewer', function () {
     assert.equal(await controlButton.isDisplayed(), true)
     assert.equal(await controlButton.getText(), 'Control desktop')
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
-    assert.equal(await $('.vnc-controls-host .git-changes-title').isDisplayed(), true)
+    assert.equal(await $('.vnc-controls-host .pane-header-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
 
     if (secureCredentialStorage) {

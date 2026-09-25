@@ -52,7 +52,7 @@ describe('Changes view "Review" gesture', function () {
       const children = [...(header?.children ?? [])].map((node) => node.className)
       return {
         afterTitle:
-          children.indexOf('git-changes-review-btn') > children.indexOf('git-changes-title'),
+          children.indexOf('git-changes-review-btn') > children.indexOf('pane-header-title'),
         beforePopout:
           children.indexOf('git-changes-review-btn') <
           children.findIndex((name) => name.includes('pane-popout')),

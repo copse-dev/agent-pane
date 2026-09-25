@@ -446,7 +446,11 @@ export function mountBrowserPane(
   store: AppStore,
   api?: ApiClient,
 ): () => void {
-  const listHeader = el('div', { class: 'browser-tabs-list-header' }, 'Tabs')
+  const listHeader = el(
+    'div',
+    { class: 'pane-header browser-tabs-list-header' },
+    el('span', { class: 'pane-header-title' }, 'Tabs'),
+  )
   const newBtn = el(
     'button',
     {

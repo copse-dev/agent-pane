@@ -1744,8 +1744,8 @@ export function mountVncPane(
   )
   const header = el(
     'div',
-    { class: 'git-changes-header' },
-    el('span', { class: 'git-changes-title' }, 'Desktop'),
+    { class: 'pane-header' },
+    el('span', { class: 'pane-header-title' }, 'Desktop'),
     el(
       'div',
       { class: 'vnc-header-actions' },

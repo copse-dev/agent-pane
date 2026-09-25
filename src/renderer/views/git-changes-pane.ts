@@ -142,8 +142,8 @@ export function mountGitChangesPane(
   api: ApiClient,
   monaco: GitDiffMonaco | null,
 ): () => void {
-  const listHeader = el('div', { class: 'git-changes-header' })
-  const headerTitle = el('span', { class: 'git-changes-title' }, 'Changes')
+  const listHeader = el('div', { class: 'pane-header git-changes-header' })
+  const headerTitle = el('span', { class: 'pane-header-title' }, 'Changes')
   const bulkActions = el('div', { class: 'git-changes-bulk-actions' })
   const acceptAllBtn = el('button', { type: 'button', class: 'git-changes-bulk-btn' }, 'Accept all')
   const rejectAllBtn = el('button', { type: 'button', class: 'git-changes-bulk-btn' }, 'Reject all')

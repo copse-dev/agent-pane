@@ -317,6 +317,89 @@ describe('modern CSS adoptions', () => {
     }
   })
 
+  it('keeps right-panel pane chrome on shared tokens (#3065)', () => {
+    // A selector at the start of a line, so a descendant rule such as
+    // `.git-changes-section-proposed .git-changes-section-title` does not stand
+    // in for the base rule.
+    const ownRule = (css: string, selector: string, prop: RegExp): boolean =>
+      declares(css, `\n${selector}`, prop)
+    const tokens = readFileSync(resolve(process.cwd(), 'src/renderer/styles/tokens.css'), 'utf8')
+    const layout = read('layout.css')
+
+    // One header band for every pane; the Browser Tabs header keeps meeting
+    // the URL toolbar because that band is the same token.
+    assert.match(tokens, /--browser-chrome-band-height:\s*var\(--pane-header-band-height\)/)
+    assert.ok(ownRule(layout, '.pane-header', /min-height:\s*var\(--pane-header-band-height\)/))
+    assert.ok(ownRule(layout, '.pane-header-title', /font-size:\s*var\(--font-size-sm\)/))
+    for (const retired of ['.git-changes-title', '.terminals-list-header', '.sidebar-header']) {
+      assert.ok(
+        !ownRule(layout, retired, /\{/),
+        `${retired} must not reintroduce its own header recipe; use .pane-header`,
+      )
+    }
+
+    // In-pane group headers share one size / tracking / weight.
+    for (const [file, selector] of [
+      ['layout.css', '.pane-projects-header'],
+      ['layout.css', '.git-changes-section-title'],
+      ['layout.css', '.pr-files-header'],
+      ['layout.css', '.agent-tasks-section-header'],
+      ['roadmap.css', '.roadmap-category-header'],
+      ['todo.css', '.plugin-panel-header'],
+      ['todo.css', '.review-panel-header'],
+      ['todo.css', '.review-report-header'],
+      ['todo.css', '.comparison-panel-header'],
+    ] as const) {
+      const css = read(file)
+      for (const [prop, token] of [
+        ['font-size', '--group-header-font-size'],
+        ['letter-spacing', '--group-header-letter-spacing'],
+        ['font-weight', '--group-header-font-weight'],
+      ] as const) {
+        assert.ok(
+          ownRule(css, selector, new RegExp(`${prop}:\\s*var\\(${token}\\)`)),
+          `${selector} must take ${prop} from ${token}`,
+        )
+      }
+    }
+
+    // Rail and sidebar rows sit on the shared list rhythm.
+    for (const [file, selector] of [
+      ['layout.css', '.project-group-row'],
+      ['layout.css', '.terminals-tab'],
+      ['layout.css', '.agent-task-tab'],
+      ['layout.css', '.supervised-task-row'],
+      ['layout.css', '.browser-tabs-tab'],
+      ['ports.css', '.ports-row'],
+      ['vnc.css', '.vnc-tab'],
+    ] as const) {
+      assert.ok(
+        ownRule(read(file), selector, /padding:\s*var\(--list-row-padding-block\)/),
+        `${selector} must pad its block with --list-row-padding-block`,
+      )
+    }
+
+    // The active Source/Changes side is filled like a selected row, not the
+    // viewer's own --bg-base, and keeps its weight.
+    assert.ok(
+      ownRule(
+        layout,
+        '.file-viewer-toolbar button.is-active',
+        /background:\s*var\(--bg-selected\)/,
+      ),
+    )
+    assert.ok(!ownRule(layout, '.file-viewer-toolbar button.is-active', /font-weight/))
+
+    // Shell text is inset on the xterm element, where FitAddon accounts for it.
+    assert.ok(
+      ownRule(layout, '.terminal-container .xterm', /padding-inline:\s*var\(--spacing-sm\)/),
+    )
+    assert.ok(
+      ownRule(layout, '.pr-viewer-meta:empty,\n.pr-viewer-files:empty', /display:\s*none/),
+      'cleared PR viewer chrome must not paint an empty ruled strip',
+    )
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with

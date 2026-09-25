@@ -20,10 +20,10 @@
   align-items: center;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-secondary);
 }
 .plugin-panel-title {
@@ -211,10 +211,10 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
 /* Clean reviews render as a collapsed <details>; the header is the <summary>. */
@@ -271,10 +271,10 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
 .review-report-meta,
@@ -498,10 +498,10 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
 .comparison-panel-cost {

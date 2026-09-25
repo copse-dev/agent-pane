@@ -10,13 +10,15 @@ import {
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 /**
- * Visual eval for the shared list rhythm: sidebar thread rows, sidebar project
- * rows, and the `.git-change-row` primitive behind the PR and Roadmap lists all
- * take their block padding from `--list-row-padding-block`, so the panels read
- * as one list at one density instead of 24px / 26px / 40px rows.
+ * Visual eval for the shared list rhythm: sidebar thread, project and project
+ * group rows, the `.git-change-row` primitive behind the PR and Roadmap lists,
+ * and the Terminal / Browser rail tabs all take their block padding from
+ * `--list-row-padding-block`, so the panels read as one list at one density
+ * instead of 24px / 26px / 40px rows.
  * See docs/ui-taste.md "One vertical rhythm for list rows".
  */
 const PROJECT_ID = 'e2e-list-row-rhythm'
+const PROJECT_GROUP = { id: 'e2e-list-row-rhythm-group', name: 'Rhythm group' }
 const THREAD_COUNT = 4
 
 /** Computed block padding of the first match, or null when absent. */
@@ -93,7 +95,12 @@ describe('list row rhythm', () => {
     // Both visual checks share one project and one app session. Reseeding a
     // second project while the first app is shutting down lets that live
     // session persist its old workspace over the new fixture.
-    seedEmptyProject(process.cwd(), PROJECT_ID, { roadmapPlansEnabled: true })
+    // The project sits inside a group so the group header row and the project
+    // row are interleaved in one list, where a different padding shows most.
+    seedEmptyProject(process.cwd(), PROJECT_ID, {
+      roadmapPlansEnabled: true,
+      projectGroup: PROJECT_GROUP,
+    })
     await browser.reloadSession()
   })
 
@@ -102,7 +109,7 @@ describe('list row rhythm', () => {
     rmSync(knowledgeDir, { recursive: true, force: true })
   })
 
-  it('gives thread rows and project rows the same block padding', async () => {
+  it('gives thread, project and project group rows the same block padding', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length > 0, {
       timeout: 20_000,
@@ -112,10 +119,13 @@ describe('list row rhythm', () => {
     const rhythm = await rowRhythm()
     assert.ok(rhythm > 0, 'expected --list-row-padding-block to resolve')
 
+    await $('.project-group-row').waitForExist({ timeout: 10_000 })
     const chatRow = await blockPadding('.chats-list .chat-row')
     const projectRow = await blockPadding('.project-row')
+    const groupRow = await blockPadding('.project-group-row')
     assert.deepEqual(chatRow, { top: rhythm, bottom: rhythm })
     assert.deepEqual(projectRow, { top: rhythm, bottom: rhythm })
+    assert.deepEqual(groupRow, { top: rhythm, bottom: rhythm })
 
     await saveElementScreenshot('.pane-projects', 'list-row-rhythm-sidebar.png')
   })
@@ -160,5 +170,37 @@ describe('list row rhythm', () => {
     assert.deepEqual(roadmapRow, { top: rhythm, bottom: rhythm })
 
     await saveElementScreenshot('.roadmap-list', 'list-row-rhythm-roadmap.png')
+  })
+
+  it('gives Terminal shell tabs and Browser tabs the shared rhythm', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const rhythm = await rowRhythm()
+
+    await $('.titlebar-btn[aria-label="Open terminal"]').click()
+    // Without an OS sandbox the first shell asks before it spawns unsandboxed
+    // (see terminal-display.e2e.ts); the tab row exists either way once allowed.
+    const approval = $('#approval-dialog')
+    const unsandboxed = await approval
+      .waitForDisplayed({ timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (unsandboxed) {
+      await approval.$('.approval-approve').click()
+      await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    }
+    await $('#terminals-list-host .terminals-tab').waitForDisplayed({ timeout: 20_000 })
+    assert.deepEqual(await blockPadding('#terminals-list-host .terminals-tab'), {
+      top: rhythm,
+      bottom: rhythm,
+    })
+    await saveElementScreenshot('#terminals-list-host', 'list-row-rhythm-terminal.png')
+
+    await $('.titlebar-btn[aria-label="Open browser"]').click()
+    await $('#browser-tabs-host .browser-tabs-tab').waitForDisplayed({ timeout: 20_000 })
+    assert.deepEqual(await blockPadding('#browser-tabs-host .browser-tabs-tab'), {
+      top: rhythm,
+      bottom: rhythm,
+    })
+    await saveElementScreenshot('#browser-tabs-host', 'list-row-rhythm-browser.png')
   })
 })

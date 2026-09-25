@@ -76,9 +76,10 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
-  font-size: 11px;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -273,7 +274,7 @@
   align-items: center;
   gap: var(--spacing-xs);
   width: 100%;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   text-align: left;
@@ -908,18 +909,6 @@
   background: var(--accent);
   outline: none;
 }
-.terminals-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-sm);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
 .terminals-list {
   flex: 1;
   display: flex;
@@ -935,7 +924,7 @@
   gap: 4px;
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
@@ -1012,15 +1001,28 @@
   overflow: hidden;
   min-height: 0;
 }
-.git-changes-header {
+/* One header band for every right-panel list pane (Explorer, Terminal, Changes,
+   PRs, Memories, Roadmap, Desktop, Browser) and one sentence-case title, so
+   switching panel modes never moves the header edge or restyles its label.
+   `min-height` rather than `height`: headers that carry a toolbar (Roadmap's
+   search + actions, Changes' bulk actions) may wrap onto more rows.
+   See docs/ui-taste.md "Pane headers share one band". */
+.pane-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-xs);
-  padding: var(--spacing-sm);
+  box-sizing: border-box;
+  min-height: var(--pane-header-band-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+.pane-header-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 .git-changes-bulk-actions {
   display: flex;
@@ -1046,11 +1048,6 @@
 }
 .git-change-row-proposed.is-selected {
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-selected));
-}
-.git-changes-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
 }
 .git-changes-refresh-btn {
   display: inline-flex;
@@ -1142,9 +1139,10 @@
 }
 .git-changes-section-title {
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 10px;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
 }
 .git-change-row {
@@ -1426,6 +1424,13 @@
   padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--border);
 }
+/* Cleared while the PR list loads or gh is unavailable: an empty meta or files
+   block would still paint its padding and rule as a blank strip under the
+   header (same idea as .pr-detail-sections:empty). */
+.pr-viewer-meta:empty,
+.pr-viewer-files:empty {
+  display: none;
+}
 .pr-viewer-title-row {
   display: flex;
   align-items: flex-start;
@@ -1544,9 +1549,10 @@
   gap: 4px;
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 10px;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   background: none;
   border: none;
@@ -1657,6 +1663,10 @@
 }
 .terminal-container .xterm {
   height: 100%;
+  /* Same inline inset as .agent-task-output-panel so shell text does not sit on
+     the pane divider. On the xterm element, not the container: FitAddon
+     subtracts the terminal element's padding from the container's size. */
+  padding-inline: var(--spacing-sm);
 }
 .terminal-container .xterm .xterm-viewport {
   /* xterm 6 paints the theme background on the inner `.xterm-scrollable-element`,
@@ -1681,9 +1691,10 @@
 }
 .agent-tasks-section-header {
   padding: var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -1700,7 +1711,7 @@
   gap: var(--spacing-sm);
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   background: none;
@@ -1762,7 +1773,7 @@
   align-items: flex-start;
   gap: var(--spacing-sm);
   min-width: 0;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
 }
 .supervised-task-row:hover {
   background: var(--bg-hover);
@@ -1893,21 +1904,12 @@
   overflow: hidden;
   min-height: 0;
 }
+/* Held to exactly the band (not just the .pane-header minimum) so its bottom
+   border stays continuous with .browser-toolbar across the tree resizer. */
 .browser-tabs-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
   height: var(--browser-chrome-band-height);
-  min-height: var(--browser-chrome-band-height);
   max-height: var(--browser-chrome-band-height);
-  padding: 0 var(--spacing-sm);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 .browser-tabs-list {
   flex: 1;
@@ -1924,7 +1926,7 @@
   gap: 4px;
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
@@ -2172,8 +2174,11 @@
   border-radius: var(--radius);
   color: var(--text-secondary);
 }
+/* Same selected fill as the active rows beside it (.terminals-tab.is-active,
+   .browser-tabs-tab.is-active). --bg-base matched the viewer surface, so the
+   active side was only an ink shift. Weight stays constant (docs/ui-taste.md). */
 .file-viewer-toolbar button.is-active {
-  background: var(--bg-base);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .markdown-file-preview {
@@ -2189,18 +2194,6 @@
   overflow: hidden;
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
-}
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
 }
 .sidebar-header-compact {
   justify-content: flex-end;

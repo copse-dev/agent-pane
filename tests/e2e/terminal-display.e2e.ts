@@ -71,6 +71,32 @@ describe('integrated terminal', () => {
       containerPaddingLeft: '0px',
     })
 
+    // Shell text is inset from the pane divider like the agent-task output
+    // panel, and the inset lives on the xterm element so FitAddon still sizes
+    // the grid to the space left inside it (no clipped last column).
+    const inset = await browser.execute(() => {
+      const container = document.querySelector<HTMLElement>('.terminal-container')
+      const screen = container?.querySelector<HTMLElement>('.xterm-screen')
+      if (!container || !screen) return null
+      const probe = document.createElement('div')
+      probe.style.width = 'var(--spacing-sm)'
+      probe.style.position = 'absolute'
+      container.append(probe)
+      const spacingSm = probe.getBoundingClientRect().width
+      probe.remove()
+      const containerRect = container.getBoundingClientRect()
+      const screenRect = screen.getBoundingClientRect()
+      return {
+        spacingSm,
+        left: screenRect.left - containerRect.left,
+        right: containerRect.right - screenRect.right,
+      }
+    })
+    expect(inset).not.toBeNull()
+    expect(inset?.left).toBeGreaterThan(0)
+    expect(inset?.left).toBe(inset?.spacingSm)
+    expect(inset?.right).toBeGreaterThanOrEqual(inset?.spacingSm ?? Infinity)
+
     const viewportPaint = await browser.execute(() => {
       const container = document.querySelector<HTMLElement>('.terminal-container')
       const viewport = container?.querySelector<HTMLElement>('.xterm-viewport')

@@ -604,6 +604,8 @@ export function seedEmptyProject(
      * project to the shared checkout; `default` preserves the product default.
      */
     worktreeMode?: 'always' | 'never' | 'default'
+    /** File the seeded project under a sidebar project group (`projectGroups`). */
+    projectGroup?: { id: string; name: string }
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -612,6 +614,7 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
+  if (options?.projectGroup) project.groupId = options.projectGroup.id
   if (options?.worktreeMode && options.worktreeMode !== 'default') {
     project.worktreeMode = options.worktreeMode
   }
@@ -621,6 +624,7 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
+  if (options?.projectGroup) seedConfig.projectGroups = [options.projectGroup]
   // Plugin enablement lives in `config.json` under `pluginDisabled` (what the
   // plugin service reads via `storageGet`). Write it explicitly: an explicit
   // `pluginDisabled` wins, otherwise the host defaults with the opted-in

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 // The file viewer's "Changes" view (#file-viewer): opening a file with
 // uncommitted changes surfaces a Changes toggle in the viewer toolbar that
@@ -152,6 +152,44 @@ describe('file viewer Changes view', () => {
     await $('#file-viewer .monaco-container .monaco-editor').waitForDisplayed({ timeout: 15_000 })
     const diffWrap = await $('#file-viewer .file-viewer-diff')
     await expect(diffWrap).not.toBeDisplayed()
+
+    // The active side must read as selected, not only as a slightly brighter
+    // label: its fill differs from the surface the toolbar sits on, and the
+    // label weight matches the inactive side so the pair never reflows.
+    const toggle = await browser.execute(() => {
+      const toolbar = document.querySelector<HTMLElement>('#file-viewer .file-viewer-toolbar')
+      const active = toolbar?.querySelector<HTMLElement>('button.is-active')
+      const inactive = toolbar?.querySelector<HTMLElement>('button:not(.is-active)')
+      if (!toolbar || !active || !inactive) return null
+      // The toolbar itself is transparent; the surface is its first painted ancestor.
+      let surface: HTMLElement | null = toolbar
+      let surfaceBackground = 'rgba(0, 0, 0, 0)'
+      while (surface) {
+        const background = getComputedStyle(surface).backgroundColor
+        if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') {
+          surfaceBackground = background
+          break
+        }
+        surface = surface.parentElement
+      }
+      const activeStyle = getComputedStyle(active)
+      const inactiveStyle = getComputedStyle(inactive)
+      return {
+        activeBackground: activeStyle.backgroundColor,
+        inactiveBackground: inactiveStyle.backgroundColor,
+        surfaceBackground,
+        activeWeight: activeStyle.fontWeight,
+        inactiveWeight: inactiveStyle.fontWeight,
+      }
+    })
+    expect(toggle).not.toBeNull()
+    expect(toggle?.activeBackground).not.toBe(toggle?.surfaceBackground)
+    expect(toggle?.activeBackground).not.toBe(toggle?.inactiveBackground)
+    expect(toggle?.activeWeight).toBe(toggle?.inactiveWeight)
+    await saveElementScreenshot(
+      '#file-viewer .file-viewer-toolbar',
+      'file-viewer-toolbar-toggle.png',
+    )
 
     await saveAppScreenshot('file-viewer-changes-source.png')
   })
