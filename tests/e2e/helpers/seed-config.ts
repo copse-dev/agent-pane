@@ -28,6 +28,7 @@ import {
 } from '../../../src/shared/threads/spine-schema.ts'
 import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../../packages/agent/src/plugins/first-party-plugins.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -39,25 +40,13 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 const E2E_UNREACHABLE_LM_STUDIO_URL = 'http://127.0.0.1:1/v1'
 
 /**
- * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
- * `DEFAULT_DISABLED_PLUGIN_IDS` in `src/main/services/plugins/plugin-service.ts`.
- * Seeding the list explicitly means a fixture never depends on that default.
+ * Plugins the host turns off on a profile with no `pluginDisabled` list — the
+ * same experimental-manifest set `plugin-service.ts` seeds, imported rather than
+ * copied so a new experiment can never be left on in e2e while a fresh install
+ * has it off. Seeding the list explicitly means a fixture never depends on the
+ * host's own seed having run.
  */
-const DEFAULT_DISABLED_PLUGIN_IDS = [
-  'copse.apple-development',
-  'copse.advisor-strategy',
-  'copse.artifact-checkpoint',
-  'copse.automations',
-  'copse.ci-investigator',
-  'copse.devtools-shortcut',
-  'copse.dark-factory',
-  'copse.long-horizon-tasks',
-  'copse.mcp-ui-canvas',
-  'copse.okf-memories',
-  'copse.pii-redaction',
-  'copse.review',
-  'copse.roadmap-plans',
-] as const
+const DEFAULT_DISABLED_PLUGIN_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS
 
 export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
   const validated = supervisedTaskMetaSchema.parse(task)
