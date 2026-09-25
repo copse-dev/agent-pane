@@ -12,21 +12,31 @@ import { createDemoApi } from '../demo/demo-api.ts'
 import { enqueueUserMessage } from '../controller/message-queue.ts'
 import { selectDemoScenario } from '../demo/scenarios.ts'
 import { mountConversation } from './conversation.ts'
-import { chatAgentIdentity, namedAgentTitles } from './chat-agent-identity.ts'
+import { agentRouteModel, chatAgentIdentity, namedAgentTitles } from './chat-agent-identity.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 
 afterEach(() => {
   document.body.replaceChildren()
 })
 
+function agentConfig(id: string, title: string): AcpAgentConfig {
+  return { id, title, command: 'maple-acp', enabled: true }
+}
+
 describe('sparse chat identities', () => {
   it('reserves the two styles for remote and custom named agents', () => {
     const names = namedAgentTitles([
-      { id: 'maple', title: 'Maple' },
-      { id: 'codex', title: 'Codex' },
-      { id: 'codex-acp', title: 'Codex' },
+      agentConfig('maple', 'Maple'),
+      agentConfig('codex', 'Codex'),
+      agentConfig('codex-acp', 'Codex'),
+      agentConfig('blank', '   '),
       null,
       { title: 12 },
+      // Not a registration the settings decoder accepts: no command.
+      { id: 'partial', title: 'Partial', enabled: true },
     ])
+    assert.equal(names.has('blank'), false)
+    assert.equal(names.has('partial'), false)
     assert.equal(chatAgentIdentity('a', { model: 'claude-sonnet-4-6' }, names), null)
     assert.equal(chatAgentIdentity('a', { model: 'acp:codex' }, names), null)
     assert.equal(chatAgentIdentity('a', { model: 'acp:codex-acp' }, names), null)
@@ -53,7 +63,7 @@ describe('sparse chat identities', () => {
     const store = createStore()
     const tid = createThread(store)
     const api = createDemoApi(selectDemoScenario(''))
-    await api.settings.set('registeredAcpAgents', [{ id: 'maple', title: 'Maple' }])
+    await api.settings.set('registeredAcpAgents', [agentConfig('maple', 'Maple')])
     const models = [
       'claude-sonnet-4-6',
       'remote-agent:cursor',
@@ -82,7 +92,7 @@ describe('sparse chat identities', () => {
     assert.equal(named[1]?.src, source)
     assert.equal(host.querySelector('.message-model')?.textContent, 'Claude Sonnet 4.6')
     const title = '<img src=x onerror=alert(1)>'
-    await api.settings.set('registeredAcpAgents', [{ id: 'maple', title }])
+    await api.settings.set('registeredAcpAgents', [agentConfig('maple', title)])
     store.emit('settings_changed')
     await Promise.resolve()
     assert.equal(host.querySelectorAll('.message-agent-name img').length, 0)
@@ -98,7 +108,7 @@ describe('sparse chat identities', () => {
     const store = createStore()
     const tid = createThread(store)
     const api = createDemoApi(selectDemoScenario(''))
-    await api.settings.set('registeredAcpAgents', [{ id: 'maple', title: 'Maple' }])
+    await api.settings.set('registeredAcpAgents', [agentConfig('maple', 'Maple')])
     addMessage(store, tid, 'assistant', 'Remote reply', undefined, undefined, {
       model: 'remote-agent:cursor',
     })
@@ -165,5 +175,64 @@ describe('sparse chat identities', () => {
     assert.equal(remote.hasAttribute('data-avatar-active'), false)
     assert.equal(active(), null)
     unmount()
+  })
+  it('reads the concrete model from an agent route', () => {
+    assert.equal(agentRouteModel('acp:maple#model-a'), 'model-a')
+    assert.equal(agentRouteModel('acp:maple'), undefined)
+    assert.equal(agentRouteModel('claude-sonnet-4-6'), undefined)
+  })
+
+  it('starts a new marker after a user turn and animates the one beside the latest reply', async () => {
+    const store = createStore()
+    const tid = createThread(store)
+    const api = createDemoApi(selectDemoScenario(''))
+    await api.settings.set('registeredAcpAgents', [agentConfig('maple', 'Maple')])
+    addMessage(store, tid, 'assistant', 'First review', undefined, undefined, {
+      model: 'acp:maple',
+    })
+    addMessage(store, tid, 'user', 'Review the next section')
+    const latest = addMessage(store, tid, 'assistant', 'Next review', undefined, undefined, {
+      model: 'acp:maple',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const unmount = mountConversation(host, store, api)
+    await Promise.resolve()
+    const markers = [...host.querySelectorAll('.msg-assistant')].map(
+      (msg) => msg.querySelector('.message-agent-name')?.textContent ?? null,
+    )
+    assert.deepEqual(markers, ['Maple', 'Maple'])
+    setThreadStatus(store, tid, 'running')
+    const active = host.querySelector('[data-avatar-active]')
+    assert.ok(active)
+    assert.equal(active.closest('[data-message-id]')?.getAttribute('data-message-id'), latest)
+    unmount()
+  })
+
+  it('asks for named identities again after the settings read fails', async () => {
+    const store = createStore()
+    const tid = createThread(store)
+    const demo = createDemoApi(selectDemoScenario(''))
+    await demo.settings.set('registeredAcpAgents', [agentConfig('maple', 'Maple')])
+    let failures = 1
+    const get: typeof demo.settings.get = (key) =>
+      failures-- > 0 ? Promise.reject(new Error('settings unavailable')) : demo.settings.get(key)
+    const api = { ...demo, settings: { ...demo.settings, get } }
+    const warn = console.warn
+    console.warn = (): void => {}
+    try {
+      addMessage(store, tid, 'assistant', 'Review', undefined, undefined, { model: 'acp:maple' })
+      const host = document.createElement('div')
+      document.body.append(host)
+      const unmount = mountConversation(host, store, api)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(host.querySelector('.message-agent-name'), null)
+      addMessage(store, tid, 'assistant', 'More', undefined, undefined, { model: 'acp:maple' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(host.querySelector('.message-agent-name')?.textContent, 'Maple')
+      unmount()
+    } finally {
+      console.warn = warn
+    }
   })
 })

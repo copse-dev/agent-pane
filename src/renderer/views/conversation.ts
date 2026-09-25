@@ -1,6 +1,11 @@
 import { el, clear } from '../dom/helpers.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
-import { chatAgentIdentity, customAgentId, namedAgentTitles } from './chat-agent-identity.ts'
+import {
+  agentRouteModel,
+  chatAgentIdentity,
+  customAgentId,
+  namedAgentTitles,
+} from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
@@ -3810,6 +3815,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
         .catch((error: unknown) => {
           console.warn('[conversation] Could not load named agent identities', error)
+          // Let the next sync ask again rather than leaving named headers off
+          // until some unrelated settings change resets the flag.
+          if (revision === agentNamesRevision) agentNamesRequested = false
         })
     }
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
@@ -3829,6 +3837,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     let prevLabel: string | undefined
     let prevAgentKey: string | undefined
     for (const msg of thread.messages) {
+      // A user turn ends an agent's stretch: its next reply gets its own marker,
+      // so the one that animates sits beside the latest reply rather than at the
+      // agent's first reply far up the transcript (and offscreen, hence static).
+      if (msg.role === 'user') prevAgentKey = undefined
       if (msg.role !== 'assistant') continue
       const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
@@ -3857,10 +3869,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
       // The identity marker already names bare agent selections. Keep model and
       // parameter boundaries for native replies and explicit agent model choices.
-      if (show && model && text && text !== prevLabel && (!identity || model.includes('#'))) {
+      const routeModel = identity && model ? agentRouteModel(model) : undefined
+      if (show && model && text && text !== prevLabel && (!identity || routeModel)) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = identity
-          ? formatPrimaryChatModelLabel(model.slice(model.indexOf('#') + 1), msg.parameters)
+        label.textContent = routeModel
+          ? formatPrimaryChatModelLabel(routeModel, msg.parameters)
           : text
         if (header) {
           if (label.parentElement !== header) header.append(label)

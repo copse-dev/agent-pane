@@ -1,6 +1,10 @@
-import { parseAcpModel } from '@shared/acp.ts'
+import { parseAcpAgentConfigs, parseAcpModel, parseAcpModelSelection } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
-import { parseRemoteAgentModel, remoteAgentGroupLabel } from '@shared/remote-agent.ts'
+import {
+  parseRemoteAgentModel,
+  parseRemoteAgentModelSelection,
+  remoteAgentGroupLabel,
+} from '@shared/remote-agent.ts'
 import type { Message } from '@shared/types'
 
 interface ChatAgentIdentity {
@@ -15,23 +19,19 @@ export function customAgentId(model: string): string | null {
   return id && !findAcpCatalogEntry(id) ? id : null
 }
 
-/** Read only the identity fields needed from the settings IPC boundary. */
+/** Named agents' display titles, decoded from the settings IPC boundary. */
 export function namedAgentTitles(value: unknown): ReadonlyMap<string, string> {
   const titles = new Map<string, string>()
-  const entries: readonly unknown[] = Array.isArray(value) ? value : []
-  for (const entry of entries) {
-    if (
-      typeof entry === 'object' &&
-      entry !== null &&
-      'id' in entry &&
-      typeof entry.id === 'string' &&
-      'title' in entry &&
-      typeof entry.title === 'string' &&
-      entry.title.trim()
-    )
-      titles.set(entry.id, entry.title.trim())
+  for (const agent of parseAcpAgentConfigs(value)) {
+    const title = agent.title.trim()
+    if (title) titles.set(agent.id, title)
   }
   return titles
+}
+
+/** The concrete model an agent route names (`acp:maple#model-a` → `model-a`), if any. */
+export function agentRouteModel(model: string): string | undefined {
+  return parseAcpModelSelection(model)?.model ?? parseRemoteAgentModelSelection(model)?.model
 }
 
 export function chatAgentIdentity(

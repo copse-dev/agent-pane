@@ -851,7 +851,8 @@ manual VNC glance.
 Use these sparingly: duotone identifies remote cloud agents; pastel riso identifies user-created
 named agents (custom ACP registrations, excluding catalog presets). Ordinary Copse replies,
 user messages, and generic subagent tool cards have no avatar. Show one identity marker at the
-start of each agent's contiguous stretch of replies, not on every message. Use message provenance
+start of each agent's contiguous stretch of replies, not on every message; a user message ends the
+stretch, so the marker that animates sits beside the reply being written. Use message provenance
 so changing the picker never reattributes old replies. Named agents keep their art across threads
 and renames; remote agents use the thread and provider as their stable seed. Styles keep their own
 paper/ink palettes in light and dark themes; never recolor them to indicate status. The 28px size
