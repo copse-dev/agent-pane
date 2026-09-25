@@ -10,7 +10,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
+  readSync,
   realpathSync,
   writeFileSync,
 } from 'node:fs'
@@ -40,6 +40,14 @@ export function jailPath(root: string, path: string): string {
  * is refused before it is buffered rather than after.
  */
 const MAX_CHECKOUT_FILE_BYTES = 8 * 1024 * 1024
+const READ_CHUNK_BYTES = 64 * 1024
+
+function oversizedFileError(path: string, size?: number): Error {
+  const detail = size === undefined ? `more than ${String(MAX_CHECKOUT_FILE_BYTES)}` : String(size)
+  return new Error(
+    `File is too large to read (${detail} bytes, limit ${String(MAX_CHECKOUT_FILE_BYTES)}): ${path}`,
+  )
+}
 
 export function readCheckoutFile(root: string, path: string): string {
   const file = jailPath(root, path)
@@ -47,12 +55,23 @@ export function readCheckoutFile(root: string, path: string): string {
   try {
     const info = fstatSync(fd)
     if (!info.isFile()) throw new Error(`Not a regular file: ${path}`)
-    if (info.size > MAX_CHECKOUT_FILE_BYTES) {
-      throw new Error(
-        `File is too large to read (${String(info.size)} bytes, limit ${String(MAX_CHECKOUT_FILE_BYTES)}): ${path}`,
+    if (info.size > MAX_CHECKOUT_FILE_BYTES) throw oversizedFileError(path, info.size)
+
+    // The checkout may still have an escaped process writing to it. Bound the
+    // read itself rather than trusting the preceding stat not to become stale.
+    const chunks: Buffer[] = []
+    let total = 0
+    while (total <= MAX_CHECKOUT_FILE_BYTES) {
+      const chunk = Buffer.allocUnsafe(
+        Math.min(READ_CHUNK_BYTES, MAX_CHECKOUT_FILE_BYTES + 1 - total),
       )
+      const bytesRead = readSync(fd, chunk, 0, chunk.length, null)
+      if (bytesRead === 0) break
+      chunks.push(chunk.subarray(0, bytesRead))
+      total += bytesRead
     }
-    return readFileSync(fd, 'utf8')
+    if (total > MAX_CHECKOUT_FILE_BYTES) throw oversizedFileError(path)
+    return Buffer.concat(chunks, total).toString('utf8')
   } finally {
     closeSync(fd)
   }
