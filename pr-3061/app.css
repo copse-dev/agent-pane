@@ -5402,6 +5402,16 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-result-markdown > :last-child {
   margin-bottom: 0;
 }
+.tool-result-error-message {
+  font-family: inherit;
+  max-height: 320px;
+}
+.tool-result-error-message p {
+  margin: 0;
+}
+.tool-result-error-message p + p {
+  margin-top: var(--spacing-sm);
+}
 .tool-locations {
   display: flex;
   flex-wrap: wrap;
