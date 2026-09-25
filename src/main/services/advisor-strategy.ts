@@ -270,6 +270,12 @@ export function assessCloudAdvisorPair(
  * returns `true` (keep offering) rather than hide a possibly-useful tool. This
  * is a superset-safe gate: hiding is stricter than the `warn` the settings hint
  * shows, so we only hide when certain.
+ *
+ * Both arguments must be *concrete* model ids. A dynamic selector such as the
+ * default `auto:best-intellect` names a rule, not a model, so it carries no
+ * annotation and would always read as "keep offering" — even when it resolves
+ * to the executor's own model. Expand it first (`resolveAdvisorModelForGating`
+ * in advisor-runner.ts does).
  */
 export function advisorAddsLift(executorModel: string, advisorModel: string): boolean {
   if (executorModel === advisorModel) return false
@@ -441,15 +447,33 @@ function userContentToText(content: UserContent): string {
 }
 
 /**
+ * Character budget for the executor transcript forwarded to the advisor
+ * (~30k tokens at ~4 chars/token). The transcript grows with every tool result,
+ * so without a cap a long run hands the advisor — usually the most expensive
+ * model in the pairing — the whole history on every consult, and eventually
+ * more than its context window holds. The advisor needs the task and where the
+ * executor is now far more than the middle of a long run, so truncation drops
+ * the *oldest* sections first (see {@link capAdvisorTranscript}).
+ */
+export const MAX_ADVISOR_TRANSCRIPT_CHARS = 120_000
+
+/**
  * Format the executor's transcript as the quoted context the advisor reads —
  * the client-side equivalent of what the native server assembles automatically.
  * Pure and deterministic so it is easy to unit-test. Includes the system prompt,
- * prior turns, tool calls, and tool results, matching the native advisor's view.
+ * prior turns, tool calls, and tool results, matching the native advisor's view,
+ * capped at `maxChars` (see {@link capAdvisorTranscript}).
  */
-export function buildAdvisorTranscript(messages: LLMMessage[]): string {
+export function buildAdvisorTranscript(
+  messages: LLMMessage[],
+  maxChars: number = MAX_ADVISOR_TRANSCRIPT_CHARS,
+): string {
   const sections: string[] = []
+  let taskIndex = -1
   const push = (label: string, text: string): void => {
-    if (text.trim()) sections.push(`## ${label}\n${text.trim()}`)
+    if (!text.trim()) return
+    if (label === ROLE_LABEL.user && taskIndex === -1) taskIndex = sections.length
+    sections.push(`## ${label}\n${text.trim()}`)
   }
   for (const message of messages) {
     if (message.role === 'tool') {
@@ -466,7 +490,76 @@ export function buildAdvisorTranscript(messages: LLMMessage[]): string {
       push(ROLE_LABEL.assistant, message.content)
     }
   }
-  return sections.join('\n\n')
+  return capAdvisorTranscript(sections, maxChars, taskIndex)
+}
+
+const SECTION_SEPARATOR = '\n\n'
+
+/** Room reserved for the truncation notice so the capped result stays within budget. */
+const TRUNCATION_NOTICE_RESERVE = 320
+
+/** The share of the budget the original task may take and still be pinned. */
+const TASK_BUDGET_SHARE = 4
+
+/**
+ * Fit formatted transcript sections into `maxChars`, keeping the most recent
+ * context. Sections are kept whole from the newest backwards until the next one
+ * would not fit; the rest are dropped and a leading notice says how much, so the
+ * advisor knows it is reading a tail rather than the whole run. The first user
+ * message — the task itself — stays pinned at the top when it is small enough
+ * (a quarter of the budget), because advice without the task is guesswork.
+ * When even the newest section alone exceeds the budget, its tail is kept.
+ */
+export function capAdvisorTranscript(
+  sections: readonly string[],
+  maxChars: number,
+  taskIndex = -1,
+): string {
+  const full = sections.join(SECTION_SEPARATOR)
+  if (full.length <= maxChars) return full
+
+  const budget = Math.max(0, maxChars - TRUNCATION_NOTICE_RESERVE)
+  const task = taskIndex >= 0 ? sections[taskIndex] : undefined
+  const pinTask = task !== undefined && task.length <= budget / TASK_BUDGET_SHARE
+  let remaining = pinTask ? budget - task.length - SECTION_SEPARATOR.length : budget
+
+  const recent: string[] = []
+  for (let i = sections.length - 1; i >= 0; i--) {
+    if (pinTask && i === taskIndex) break
+    const section = sections[i] ?? ''
+    const cost = section.length + (recent.length > 0 ? SECTION_SEPARATOR.length : 0)
+    if (cost > remaining) break
+    recent.unshift(section)
+    remaining -= cost
+  }
+
+  // Nothing recent fitted whole: keep the tail of the newest section — unless the
+  // newest section *is* the pinned task, in which case it is already kept.
+  const newestIsPinnedTask = pinTask && taskIndex === sections.length - 1
+  let keptTail = ''
+  if (recent.length === 0 && !newestIsPinnedTask) {
+    const newest = sections[sections.length - 1] ?? ''
+    keptTail = `…${newest.slice(newest.length - Math.max(0, remaining - 1))}`
+  }
+  const keptCount = recent.length + (pinTask ? 1 : 0)
+  const omittedSections = sections.length - keptCount - (keptTail ? 1 : 0)
+  const keptChars =
+    [...(pinTask ? [task] : []), ...recent].join(SECTION_SEPARATOR).length + keptTail.length
+  const omittedDetail =
+    omittedSections > 0
+      ? `${String(omittedSections)} earlier section${omittedSections === 1 ? '' : 's'}`
+      : 'the start of the most recent section'
+  const notice =
+    `[Transcript truncated to fit the advisor’s ${String(maxChars)}-character budget: ` +
+    `${omittedDetail} omitted (${String(full.length - keptChars)} of ${String(full.length)} characters). ` +
+    `${pinTask ? 'The original task is kept first; the ' : 'The '}most recent context follows.]`
+  return [
+    notice,
+    ...(pinTask ? [task] : []),
+    ...(pinTask && omittedSections > 0 ? ['[…]'] : []),
+    ...recent,
+    ...(keptTail ? [keptTail] : []),
+  ].join(SECTION_SEPARATOR)
 }
 
 function safeJson(value: unknown): string {

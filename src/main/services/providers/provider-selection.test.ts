@@ -253,6 +253,26 @@ describe('per-model parameters reach the built provider', () => {
     assert.equal(request['reasoning_effort'], undefined)
   })
 
+  it('applies a per-call output ceiling to an untuned model', async () => {
+    const request = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-untuned', undefined, { maxOutputTokens: 2048 }),
+    )
+    assert.equal(request['max_tokens'], 2048)
+  })
+
+  it('lets a per-call ceiling lower, never raise, the saved output cap', async () => {
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 1024 } })
+    const lower = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { maxOutputTokens: 2048 }),
+    )
+    assert.equal(lower['max_tokens'], 1024)
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 8192 } })
+    const capped = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { maxOutputTokens: 2048 }),
+    )
+    assert.equal(capped['max_tokens'], 2048)
+  })
+
   it('sends nothing when the stored map fails its schema', async () => {
     // Two layers guard the read: the settings schema rejects a map that is not
     // shaped like parameters at all (only reachable by hand-editing the file),

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AnthropicProvider, markTrailingCacheBreakpoint } from './anthropic-provider.ts'
+import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import type { LLMMessage, ProviderStreamChunk } from './wire-types.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 
@@ -346,5 +347,38 @@ describe('AnthropicProvider tuned parameters', () => {
     assert.equal(capture.params['output_config'], undefined)
     assert.equal(capture.params['temperature'], undefined)
     assert.equal(capture.params['top_p'], undefined)
+  })
+})
+
+describe('AnthropicProvider output ceiling', () => {
+  it('sends the catalog output cap when no ceiling is given', async () => {
+    const provider = new AnthropicProvider('claude-sonnet-4-6', { apiKey: 'test' })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.equal(capture.params['max_tokens'], anthropicMaxOutputTokens('claude-sonnet-4-6'))
+  })
+
+  it('lowers max_tokens to a caller-supplied ceiling', async () => {
+    const provider = new AnthropicProvider('claude-sonnet-4-6', {
+      apiKey: 'test',
+      params: { maxOutputTokens: 2048 },
+    })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.equal(capture.params['max_tokens'], 2048)
+  })
+
+  it('never raises max_tokens above the catalog cap', async () => {
+    const catalogMax = anthropicMaxOutputTokens('claude-sonnet-4-6')
+    const provider = new AnthropicProvider('claude-sonnet-4-6', {
+      apiKey: 'test',
+      params: { maxOutputTokens: catalogMax * 10 },
+    })
+    const capture = withFakeStream(provider, [])
+    await collect(provider)
+    assert.ok(capture.params)
+    assert.equal(capture.params['max_tokens'], catalogMax)
   })
 })
