@@ -357,9 +357,26 @@
   color: var(--link);
   overflow-wrap: anywhere;
 }
-.tool-args details summary {
+/* `details.tool-args` is the disclosure itself (conversation.ts), so its summary
+   is a direct child. Same handle as the hook card's nested inspect disclosure
+   (`.hook-card-raw-summary`): no UA triangle, a text chevron that flips open. */
+.tool-args > summary {
   cursor: pointer;
+  list-style: none;
   color: var(--text-muted);
+  width: fit-content;
+}
+.tool-args > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-args > summary::before {
+  content: '▸ ';
+}
+.tool-args[open] > summary::before {
+  content: '▾ ';
+}
+.tool-args > summary:hover {
+  color: var(--text-primary);
 }
 .tool-args pre {
   font-family: var(--font-mono);

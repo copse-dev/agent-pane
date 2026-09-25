@@ -625,7 +625,7 @@ export async function fetchModelOptions(
         disabled: true,
       })
     } else {
-      options.push({ value: current, label: `${current} (no key)` })
+      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` })
     }
   }
 

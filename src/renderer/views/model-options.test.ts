@@ -586,6 +586,19 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /no valid key/)
   })
 
+  it('names a selected cloud model whose provider has no key, not its raw id', async () => {
+    const id = 'claude-opus-4-8'
+    const options = await fetchModelOptions(mockApi(), id)
+    const current = options.find((o) => o.value === id)
+    assert.ok(current)
+    assert.notEqual(
+      modelDisplayLabel(id),
+      id,
+      'fixture must have a display name distinct from its id',
+    )
+    assert.equal(current.label, `${modelDisplayLabel(id)} (no key)`)
+  })
+
   it('adds an intellect hint to a remote-agent model that resolves to a measurement', async () => {
     const options = await fetchModelOptions(
       mockApi({
