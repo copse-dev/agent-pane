@@ -613,7 +613,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
                     { gitDir: checkouts.headGitDir, workTree: checkouts.head },
                     mergeBase,
                     path,
-                    headCommit,
+                    { headCommit },
                   )
                 : '',
           },
