@@ -71523,7 +71523,15 @@ function threadAgentId(container) {
   return null;
 }
 function hydrateRemoteArtifactImages(container, api2) {
-  const agentIdFromThread = threadAgentId(container);
+  let agentIdFromThread = null;
+  let threadScanned = false;
+  const fallbackAgentId = () => {
+    if (!threadScanned) {
+      agentIdFromThread = threadAgentId(container);
+      threadScanned = true;
+    }
+    return agentIdFromThread;
+  };
   for (const img of container.querySelectorAll(
     "img[data-remote-artifact-path]"
   )) {
@@ -71531,7 +71539,7 @@ function hydrateRemoteArtifactImages(container, api2) {
       continue;
     }
     const path = img.dataset["remoteArtifactPath"];
-    const agentId = img.dataset["remoteArtifactAgentId"] ?? agentIdFromThread;
+    const agentId = img.dataset["remoteArtifactAgentId"] ?? fallbackAgentId();
     if (!path || !agentId) {
       img.dataset["remoteArtifactState"] = "missing-agent";
       continue;
