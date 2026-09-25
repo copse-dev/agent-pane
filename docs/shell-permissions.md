@@ -107,6 +107,35 @@ An ACP agent that does not advertise MCP-over-HTTP support cannot mount that bri
 configured MCP tools. This is deliberately fail-closed: ACP provides no per-call host enforcement
 point for a stdio or HTTP MCP server the external agent mounts itself.
 
+## SSH workspaces
+
+On an SSH workspace (`docs/plans/ssh-remote-repo.md`) commands, git, search and files run on the
+remote host, outside any local OS sandbox; Copse applies no sandbox on the remote host. The local
+main process keeps every decision: the permission gate, approval dialogs, the diff queue and write
+approvals run on the desktop whatever host the bytes land on. User-authored `ssh`/`scp`/`rsync`
+stay hard-external; the SSH transport is injected below command routing, so classification still
+reads the original command.
+
+- **Integrated terminals** on an SSH workspace always ask first (“Open remote terminal?”) and the
+  approval cannot be remembered.
+- **Remote ACP agents** (`acpOverSshEnabled`, off by default; [plan](plans/acp-over-ssh.md)) are
+  treated as **unsandboxed** whenever the agent's working directory resolves to an SSH target,
+  even when the local project sandbox is active. The Windows / sandbox-init-failure row of the
+  platform matrix applies to them: read/search requests, Codex code-mode cells, ambiguous commands
+  and opaque interpreter scripts prompt, deterministic auto-approval does not fire, and Claude
+  presets keep their own prompting mode rather than `acceptEdits`. Such an agent is not offered
+  Copse's loopback native-tool bridge or its token, so bridged-title auto-approval does not apply
+  either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
+  missing curated adapter is installed only after an approval that names the host and the pinned
+  `package@version`.
+- **Native `run_shell` and `run_background`** on an SSH workspace currently take the gate's
+  sandbox state from the local machine, although the command itself runs on the remote host
+  unsandboxed. That is a known gap against this contract (ambiguity without containment must
+  prompt), not intended behavior; it needs its own fix in `permission-gate.ts`.
+
+> **Review:** this section records a security contract. A change to it needs sign-off from a
+> named human security reviewer before merge.
+
 ## Shared Run app workflow
 
 The titlebar/project-menu **Run app…** flow is available for detected local Apple and Android

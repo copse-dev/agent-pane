@@ -1,5 +1,6 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
+import { acpSshTarget } from './acp-ssh-transport.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
 import {
@@ -220,12 +221,17 @@ export async function acquireAcpSession(
   // loopback at spawn time when the bridge will be offered (#602). The abort
   // controller cancels in-flight bridge tool executions at dispose.
   const bridgeAbort = new AbortController()
-  const shareNetworkScope = willSandboxAcpAgent(opts.config.sandbox)
+  // A remote (ACP-over-SSH) agent gets no bridge until real remote bridging
+  // exists (#771): the bridge listens on THIS machine's loopback, which the
+  // remote host cannot reach, and handing its URL + bearer token to the remote
+  // process would expose the token to whatever listens on that port there.
+  const remote = acpSshTarget(opts.config.cwd) !== null
+  const shareNetworkScope = !remote && willSandboxAcpAgent(opts.config.sandbox)
   // A bridge that fails to start used to resolve to null silently, which is
   // indistinguishable from an agent that simply was not offered one — the
   // failure mode behind #1430's "the agent ignored the attached archive".
   // Startup still must not abort the turn, so the error is logged, not thrown.
-  const registry = opts.registry
+  const registry = remote ? undefined : opts.registry
   const bridge = registry
     ? await perfSpan('ttft:acp-bridge-start', () =>
         startAcpNativeBridge(registry, bridgeAbort.signal, {
@@ -241,7 +247,11 @@ export async function acquireAcpSession(
         }),
       )
     : null
-  if (!opts.registry) {
+  if (remote) {
+    console.info(
+      `[acp-bridge] thread ${opts.threadId}'s agent runs on an SSH host; native tools are not offered to remote agents`,
+    )
+  } else if (!opts.registry) {
     console.warn(
       `[acp-bridge] no tool registry supplied for thread ${opts.threadId}; native tools will be unavailable this session`,
     )
