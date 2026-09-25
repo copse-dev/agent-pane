@@ -91,6 +91,9 @@ revisiting this document, not silently diverging in an implementation PR.
    step/LLM-call caps and deadline, as today. **The budget is enforced at dispatch
    time**: plain queued messages auto-drain once the thread idles (`drainMessageQueue`),
    so a hook-originated message consumes budget when it _drains_, not when it enqueues.
+   A drain that the main process turns away because another turn still owns the thread
+   (`AgentTurnBusyError`) never started a model turn, so the item returns to the front of
+   the queue and its unit is refunded (#1881).
    Exhaustion (and any hook message arriving over-budget) flips the item to a **held**
    state — `autoDispatch: false` on the queued message — which the drain loop skips
    entirely; only an explicit human action (send-now / release) submits it, and that
