@@ -46,7 +46,11 @@ import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from 
 import { attachDiffState } from './diff-state.ts'
 import { maybeNameThread, maybeRenameThreadBranch } from './thread-naming.ts'
 import { takeQuietRun } from './quiet-runs.ts'
-import { clearReviewReportTarget, getReviewReportTarget } from './review-report-target.ts'
+import {
+  clearReviewReportTarget,
+  failRunningReviewReport,
+  getReviewReportTarget,
+} from './review-report-target.ts'
 import { backgroundProjectOf, dropBackgroundThread } from './background-threads.ts'
 import type { UsageDelta } from '@shared/types'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
@@ -626,7 +630,19 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         state.delete(threadId)
         // The turn is over; the next one resolves its own parameters (or none).
         pendingTurn.delete(threadId)
-        clearReviewReportTarget(store, threadId)
+        // A standalone review that ends without its final report — main could
+        // not resolve the thread's checkout, say, and streamed only an error
+        // text before `done` — must not leave its card spinning.
+        const reviewTarget = getReviewReportTarget(store, threadId)
+        if (reviewTarget !== undefined) {
+          failRunningReviewReport(
+            store,
+            threadId,
+            reviewTarget,
+            'The review ended before it produced a report.',
+          )
+          clearReviewReportTarget(store, threadId)
+        }
         setThreadStatus(store, threadId, 'idle')
         maybeRenameThreadBranch(store, api, threadId)
         // Not emitActivity: the state entry is gone, and recording the label on

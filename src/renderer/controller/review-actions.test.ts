@@ -285,3 +285,14 @@ test('a failed message finding dismissal is reverted on that message', async () 
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(threadState(store).messages[0]?.reviewReport?.findings[0]?.dismissed, false)
 })
+
+test('a new review supersedes the legacy thread-level card', () => {
+  const { store, api } = setup('project-1', {
+    reviewReport: report({ status: 'error', error: 'Model resolution failed' }),
+    messages: [{ id: 'm1', role: 'assistant', content: 'Turn', toolCalls: [], createdAt: 1 }],
+  })
+  startReview(store, api, 't1')
+  assert.equal(threadState(store).reviewReport, undefined)
+  assert.equal(threadState(store).messages[0]?.reviewReport?.status, 'running')
+  takeQuietRun('t1')
+})

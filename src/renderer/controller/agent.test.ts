@@ -1072,3 +1072,46 @@ test('a standalone review uses its registered message instead of a stale running
   assert.equal(current.messages[1]?.reviewReport?.startedAt, 2)
   assert.equal(getReviewReportTarget(store, 't1'), undefined)
 })
+
+test('a standalone review that ends without a report settles its card as an error', () => {
+  const running: ThreadReviewReport = {
+    status: 'running',
+    startedAt: 1,
+    models: { reviewer: 'gpt-5', challenger: null },
+    lenses: [],
+    baseRef: '',
+    headCommit: null,
+    dirtyWorkingTree: false,
+    execution: { backend: '', strength: 'none', executed: false, reason: '' },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 0,
+  }
+  const { send, store } = setup([
+    thread('t1', [
+      {
+        id: 'target',
+        role: 'assistant',
+        content: 'Review this turn',
+        toolCalls: [],
+        createdAt: 1,
+        reviewReport: running,
+      },
+    ]),
+  ])
+  setReviewReportTarget(store, 't1', 'target')
+  // Main could not resolve the thread's checkout: it streams the error text
+  // and `done`, never a final `review_report`.
+  send({ type: 'text', text: 'Worktree is missing' })
+  send({ type: 'done' })
+
+  const settled = requireThread(store, 't1').messages.find((m) => m.id === 'target')
+  assert.equal(settled?.reviewReport?.status, 'error')
+  assert.equal(settled.reviewReport.error, 'The review ended before it produced a report.')
+  assert.equal(getReviewReportTarget(store, 't1'), undefined)
+})

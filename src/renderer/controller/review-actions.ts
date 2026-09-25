@@ -11,7 +11,11 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import { markQuietRun, takeQuietRun } from './quiet-runs.ts'
-import { clearReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
+import {
+  clearReviewReportTarget,
+  failRunningReviewReport,
+  setReviewReportTarget,
+} from './review-report-target.ts'
 import { showErrorToast } from '../views/toast.ts'
 import { errorMessage } from '@copse/std/errors.ts'
 
@@ -78,6 +82,10 @@ export function startReview(
     messageId ??
     [...(thread?.messages ?? [])].reverse().find((message) => message.role === 'assistant')?.id
   setReviewReportTarget(store, threadId, anchorId ?? null)
+  // A report written before per-turn anchoring sits in the trailing thread-level
+  // slot. The new run reviews the same working tree and lands on its turn, so
+  // the old trailing card (typically a failed one being retried) is superseded.
+  if (anchorId && thread?.reviewReport) setThreadReviewReport(store, threadId, null)
   const runningReport: ThreadReviewReport = {
     status: 'running',
     startedAt: Date.now(),
@@ -103,19 +111,7 @@ export function startReview(
   markQuietRun(threadId)
   void api.review.run(projectId, threadId, reviewPayload(store, threadId)).catch((err: unknown) => {
     clearReviewReportTarget(store, threadId)
-    const currentThread = store.getState().threads.find((t) => t.id === threadId)
-    const report = anchorId
-      ? currentThread?.messages.find((message) => message.id === anchorId)?.reviewReport
-      : currentThread?.reviewReport
-    if (report?.status === 'running') {
-      const failedReport: ThreadReviewReport = {
-        ...report,
-        status: 'error',
-        error: errorMessage(err),
-        durationMs: Date.now() - report.startedAt,
-      }
-      if (anchorId) setMessageReviewReport(store, threadId, anchorId, failedReport)
-      else setThreadReviewReport(store, threadId, failedReport)
+    if (failRunningReviewReport(store, threadId, anchorId ?? null, errorMessage(err))) {
       setThreadStatus(store, threadId, 'idle')
       syncAgentActivity(store, threadId, false)
       takeQuietRun(threadId)

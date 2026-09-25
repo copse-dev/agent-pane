@@ -195,7 +195,9 @@ model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
 
 `reviewReport` is kept inline with the message that concluded the reviewed
-turn, so multiple reports preserve their transcript position. Older
+turn, so multiple reports preserve their transcript position. The renderer
+re-writes that message's line when its report settles, is dismissed, or has a
+finding dismissed or restored; the transient `running` card is not written. Older
 thread-level reports remain in `meta.json` and still fold/render as a trailing
 card; writers do not migrate or discard them.
 
