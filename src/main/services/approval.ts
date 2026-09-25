@@ -820,7 +820,7 @@ export function initApproval(
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
         // settles for any reason.
-        const stopAlert = alertUser('interaction', req.title)
+        const stopAlert = alertUser('interaction', req.title, threadId)
         // No wall-clock timeout: the prompt stays until the user answers, the
         // window closes, or the caller's abort signal fires (Stop / cancel).
         // Auto-deny after 5 minutes previously let the agent keep turning under

@@ -25,6 +25,7 @@ import {
   type ApprovalResponse,
 } from './approval.ts'
 import { readDecisionLog } from './security/decision-log-store.ts'
+import { NeedsInputBadge } from './needs-input-badge.ts'
 import {
   registerRunDeadline,
   clearRunDeadline,
@@ -91,6 +92,38 @@ describe('requestApproval pluggable transport', () => {
     assert.equal((await requestUnderThread(req)).approved, true)
     setApprovalHandler(null)
     assert.equal((await requestUnderThread(req)).approved, false)
+  })
+
+  it('releases the needs-input badge when a waiting thread is deleted', async () => {
+    // initApproval holds the Dock badge while its prompt is open and releases
+    // it when the prompt's signal aborts, so thread deletion has to reach that
+    // signal for a live (not parked) waiter.
+    const shown: number[] = []
+    const badge = new NeedsInputBadge(
+      (count) => shown.push(count),
+      () => true,
+    )
+    setApprovalHandler(
+      (_req, signal) =>
+        new Promise<ApprovalResponse>((resolve) => {
+          const release = badge.hold(THREAD)
+          signal?.addEventListener(
+            'abort',
+            () => {
+              release()
+              resolve({ approved: false, remember: false })
+            },
+            { once: true },
+          )
+        }),
+    )
+    const pending = requestUnderThread(req)
+    await Promise.resolve()
+    assert.deepEqual(shown, [1])
+
+    assert.equal(discardApprovalsForThread(THREAD), 1)
+    assert.equal((await pending).approved, false)
+    assert.deepEqual(shown, [1, 0])
   })
 
   it('returns denied immediately when the signal is already aborted', async () => {

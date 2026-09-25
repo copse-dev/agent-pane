@@ -59,6 +59,17 @@ export function getThreadById(store: AppStore, id: string | null | undefined): T
 }
 
 /**
+ * The project that owns a thread this renderer knows about: the active
+ * project for one of its `threads`, or the recorded owner of a carried
+ * background thread. Null for an id in neither list.
+ */
+export function getThreadProjectId(store: AppStore, threadId: string): string | null {
+  const { threads, backgroundThreads, activeProjectId } = store.getState()
+  if (threads.some((t) => t.id === threadId)) return activeProjectId
+  return backgroundThreads.find((b) => b.thread.id === threadId)?.projectId ?? null
+}
+
+/**
  * Apply a pure update to one thread wherever it lives — the active project's
  * `threads` or the carried `backgroundThreads` (#1841). The streaming mutators
  * below route through this so an agent chunk keeps landing after its project

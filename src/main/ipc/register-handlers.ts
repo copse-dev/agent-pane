@@ -95,7 +95,10 @@ import {
   setApiKey,
   isApiKeyEncrypted,
 } from '../services/storage/settings.ts'
-import { createElectronUserAlertSender } from '../services/user-alerts-electron.ts'
+import {
+  createElectronUserAlertSender,
+  refreshNeedsInputBadge,
+} from '../services/user-alerts-electron.ts'
 import { scanEnvForKeys, maskSecret } from '../services/providers/env-key-detection.ts'
 import {
   assertEnvKeyDetectionConsent,
@@ -130,6 +133,7 @@ import { resolveDynamicModelId } from '../services/providers/dynamic-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   getMainWindowBrowserSession,
+  getMainWindowForWebContents,
   getMainWindowNavigation,
   setMainWindowBrowserSession,
   setMainWindowNavigation,
@@ -522,7 +526,7 @@ export function registerAllHandlers(
   setGitHubListWatchBroadcast(() => {
     broadcastToAppWindows('gh:lists-tick')
   })
-  const alertUser = createElectronUserAlertSender(win, app.dock)
+  const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
   const pluginService = getPluginService()
   setPluginBrowserService(createPluginBrowserPanelService(win))
   setPluginToolRuntimeController(new ToolingPluginToolRuntimeController(registry))
@@ -1281,11 +1285,19 @@ export function registerAllHandlers(
   })
   ipcMain.handle('alerts:thread-finished', (event, rawThreadId: unknown, rawTitle: unknown) => {
     assertMainFrameSender(event, win)
-    const [, title] = parseIpcArgs(z.tuple([zThreadId, z.string().trim().min(1).max(512)]), [
-      rawThreadId,
-      rawTitle,
-    ])
-    alertUser('thread-finished', `${title} is ready.`)
+    const [threadId, title] = parseIpcArgs(
+      z.tuple([zThreadId, z.string().trim().min(1).max(512)]),
+      [rawThreadId, rawTitle],
+    )
+    // The window that reported the finish owns the alert, so clicking its
+    // notification opens the thread there. A pop-out is not a main window and
+    // falls back to the one this handler was registered with.
+    const owner = getMainWindowForWebContents(event.sender)
+    const alert =
+      owner && owner !== win
+        ? createElectronUserAlertSender(owner, app.dock, getFocusedMainWindow)
+        : alertUser
+    alert('thread-finished', `${title} is ready.`, threadId)
   })
   ipcMain.handle('settings:set', async (event, key: unknown, value: unknown) => {
     assertMainFrameSender(event, win)
@@ -1294,6 +1306,7 @@ export function registerAllHandlers(
       throw new IpcValidationError(`Setting key not writable from renderer: ${k}`)
     }
     await setSetting(k, parseRendererWritableSetting(k, value))
+    if (k === 'alertOnInteraction') refreshNeedsInputBadge()
     if (SKILLS_RELOAD_KEYS.has(k)) {
       await initSkillsRegistry()
       registerSkillTools(registry)

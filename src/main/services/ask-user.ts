@@ -142,7 +142,7 @@ export function initAskUser(
         // surfaces as a sidebar attention indicator instead of interrupting
         // whichever thread the user is currently focused on.
         const threadId = getActiveRunThread() ?? undefined
-        const stopAlert = alertUser('interaction', 'An agent has a question.')
+        const stopAlert = alertUser('interaction', 'An agent has a question.', threadId)
         const cancel = (): void => {
           win.webContents.send('agent:ask-user-cancelled', { id })
           settle(id, blank())

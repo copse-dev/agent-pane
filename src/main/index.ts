@@ -545,7 +545,7 @@ app
       if (!win.isDestroyed()) win.webContents.send('agent:hook-queue-message', payload)
     })
 
-    const alertUser = createElectronUserAlertSender(win, app.dock)
+    const alertUser = createElectronUserAlertSender(win, app.dock, getFocusedMainWindow)
     initApproval(win, ipcMain, alertUser)
     initAskUser(win, ipcMain, alertUser)
     // Lets main-process code hand the user a running command in the Shells pane

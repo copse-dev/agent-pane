@@ -521,6 +521,18 @@ const api: ApiClient = {
   alerts: {
     threadFinished: (threadId: string, title: string) =>
       ipcRenderer.invoke('alerts:thread-finished', threadId, title),
+    onOpenThread: (handler: (target: { threadId: string; projectId: string | null }) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        target: { threadId: string; projectId: string | null },
+      ): void => {
+        handler(target)
+      }
+      ipcRenderer.on('alerts:open-thread', listener)
+      return (): void => {
+        ipcRenderer.off('alerts:open-thread', listener)
+      }
+    },
   },
   sshPrompt: {
     respond: (id: string, value: string, remember = false) =>

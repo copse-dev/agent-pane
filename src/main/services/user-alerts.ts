@@ -16,7 +16,12 @@ export interface UserAlertEffects {
   bounce(kind: UserAlertKind): () => void
 }
 
-export type UserAlertSender = (kind: UserAlertKind, body: string) => () => void
+/**
+ * Raise one alert. `threadId` names the thread the alert is about, when there
+ * is one: clicking the system notification opens it, and a needs-input alert
+ * counts it on the Dock/taskbar badge until the returned stop runs.
+ */
+export type UserAlertSender = (kind: UserAlertKind, body: string, threadId?: string) => () => void
 
 const noop = (): void => {}
 

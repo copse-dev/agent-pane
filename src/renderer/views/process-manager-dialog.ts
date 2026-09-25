@@ -5,7 +5,7 @@ import { clear, el } from '../dom/helpers.ts'
 import { closeIcon, moreHorizontalIcon } from '../dom/icons.ts'
 import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { switchProjectThread } from '../controller/projects.ts'
-import { getThreadById } from '@shared/store/thread-helpers.ts'
+import { getThreadById, getThreadProjectId } from '@shared/store/thread-helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showErrorToast } from './toast.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
@@ -123,12 +123,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   let refreshing = false
 
   function projectForThread(threadId: string, projectId?: string | null): string | null {
-    const state = store.getState()
-    return (
-      projectId ??
-      state.backgroundThreads.find((item) => item.thread.id === threadId)?.projectId ??
-      (state.threads.some((thread) => thread.id === threadId) ? state.activeProjectId : null)
-    )
+    return projectId ?? getThreadProjectId(store, threadId)
   }
 
   function jumpToThread(projectId: string, threadId: string): void {
