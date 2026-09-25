@@ -238,7 +238,10 @@ async function ensureApproved(
   options: ReviewRunOptions,
   services: ReviewHostServices,
 ): Promise<boolean> {
-  if (options.signal.aborted) return false
+  // Read afresh across the await below: AbortSignal.aborted is mutable, but
+  // TypeScript keeps the narrowing from the first check through the await.
+  const aborted = (): boolean => options.signal.aborted
+  if (aborted()) return false
   if (options.initiator === 'user') return true
   if (!services.isBillable(models.reviewer) && !services.isBillable(models.challenger)) return true
   if (approvedThreads.has(options.threadId)) return true
@@ -249,8 +252,7 @@ async function ensureApproved(
     },
     options.signal,
   )
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
-  if (options.signal.aborted) return false
+  if (aborted()) return false
   if (approved && remember) approvedThreads.add(options.threadId)
   return approved
 }

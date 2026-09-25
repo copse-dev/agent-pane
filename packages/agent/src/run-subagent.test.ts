@@ -5,6 +5,13 @@ import { runSubagent, CI_INVESTIGATOR_SYSTEM_PROMPT } from './run-subagent.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import type { AgentStreamChunk } from './wire-types.ts'
 
+/** A provider stream that fails on its first read, before yielding anything. */
+function failingStream(error: () => Error): AsyncIterable<ProviderStreamChunk> {
+  return {
+    [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error()) }),
+  }
+}
+
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
   return {
@@ -300,11 +307,11 @@ describe('runSubagent', () => {
   it('subagentStart deny prevents the spawn — the loop never runs', async () => {
     let streamCalled = false
     const provider: LLMProvider = {
-      // eslint-disable-next-line require-yield
-      async *stream(): AsyncGenerator<ProviderStreamChunk> {
-        streamCalled = true
-        throw new Error('provider must not be called when the spawn is denied')
-      },
+      stream: () =>
+        failingStream(() => {
+          streamCalled = true
+          return new Error('provider must not be called when the spawn is denied')
+        }),
     }
     const chunks: AgentStreamChunk[] = []
     const { summary, session } = await runSubagent({
@@ -361,10 +368,7 @@ describe('runSubagent', () => {
   it('fires subagentStop with status "error" when the run errors', async () => {
     const stops: Array<{ type: string; status: string }> = []
     const provider: LLMProvider = {
-      // eslint-disable-next-line require-yield
-      async *stream(): AsyncGenerator<ProviderStreamChunk> {
-        throw new Error('boom')
-      },
+      stream: () => failingStream(() => new Error('boom')),
     }
     const { session } = await runSubagent({
       provider,

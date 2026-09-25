@@ -310,7 +310,10 @@ async function ensureReviewApproved(
   signal: AbortSignal,
 ): Promise<boolean> {
   if (approvedReviewThreads.has(threadId)) return true
-  if (signal.aborted) return false
+  // Read afresh across the await below: AbortSignal.aborted is mutable, but
+  // TypeScript keeps the narrowing from the first check through the await.
+  const aborted = (): boolean => signal.aborted
+  if (aborted()) return false
   const { approved, remember } = await requestApproval(
     {
       type: 'review-spend',
@@ -322,8 +325,7 @@ async function ensureReviewApproved(
     },
     signal,
   )
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
-  if (signal.aborted) return false
+  if (aborted()) return false
   if (approved && remember) approvedReviewThreads.add(threadId)
   return approved
 }

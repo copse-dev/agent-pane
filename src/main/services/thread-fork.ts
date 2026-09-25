@@ -35,8 +35,7 @@ import { getProjectThread, loadAgentHistory, saveAgentHistory } from './thread-s
 
 /** Tool results the loop pushes as one `tool` message per step. */
 function toolResultsOf(message: Message): ToolResult[] {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-  return (message.toolCalls ?? []).map((toolCall) => ({
+  return message.toolCalls.map((toolCall) => ({
     toolCallId: toolCall.id,
     result: toolCall.result ?? '',
   }))
@@ -78,8 +77,7 @@ export function rebuildAgentHistory(messages: readonly Message[]): LLMMessage[] 
     }
     const text = message.content.trim()
     if (text) history.push({ role: 'assistant', content: message.content })
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const toolCalls = message.toolCalls ?? []
+    const toolCalls = message.toolCalls
     if (toolCalls.length === 0) continue
     history.push({
       role: 'assistant',

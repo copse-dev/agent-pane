@@ -678,7 +678,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -709,9 +710,8 @@ describe('browser pane requested URLs', () => {
       elsewhere.remove()
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -728,7 +728,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -782,9 +783,8 @@ describe('browser pane requested URLs', () => {
       if (getUrlDescriptor) Object.defineProperty(HTMLElement.prototype, 'getURL', getUrlDescriptor)
       else Reflect.deleteProperty(HTMLElement.prototype, 'getURL')
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -795,7 +795,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -864,9 +865,8 @@ describe('browser pane requested URLs', () => {
       assert.ok(labels().includes('Pricing Page'))
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -877,7 +877,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -945,9 +946,8 @@ describe('browser pane requested URLs', () => {
       )
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -958,7 +958,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -1026,9 +1027,8 @@ describe('browser pane requested URLs', () => {
       assert.equal(store.getState().rightPanelMode, 'browser')
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })
@@ -1039,7 +1039,8 @@ describe('browser pane requested URLs', () => {
       cb(0)
       return 0
     }
-    const ResizeObserverCtor: typeof ResizeObserver | undefined = globalThis.ResizeObserver
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
     class NoopResizeObserver {
       observe(): void {}
       unobserve(): void {}
@@ -1184,9 +1185,8 @@ describe('browser pane requested URLs', () => {
       assert.equal(devToolsOpens, 1, 'inspector item opens the guest devtools')
     } finally {
       globalThis.requestAnimationFrame = raf
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the global may be undefined in the test DOM, so restore only when it existed
-      if (ResizeObserverCtor) globalThis.ResizeObserver = ResizeObserverCtor
-      else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unregisterAttachments()
       unmount()
     }

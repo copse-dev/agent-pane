@@ -457,6 +457,9 @@ export async function runAcpAgentFromSettings(
   // duplicate streamed text and re-execute tool calls.
   let assistantText = ''
   let sawChunk = false
+  // Read afresh: sawChunk is set inside the onChunk callback, which TypeScript's
+  // narrowing cannot see, so a direct read after the await looks always-false.
+  const hasProgress = (): boolean => sawChunk
   // Text streamed while an approval modal is open for this thread — hold it so
   // the agent cannot appear to "reason underneath" the prompt. Flush when the
   // last pending approval settles (or the turn ends).
@@ -598,15 +601,14 @@ export async function runAcpAgentFromSettings(
   try {
     ;({ stopReason, usage } = await runWithAcpRetry(attempt, {
       signal: options.signal,
-      hasProgress: () => sawChunk,
+      hasProgress,
     }))
   } catch (err) {
     flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the onChunk callback above; TS narrows to the `false` initializer
-    const turn = sawChunk ? acpTurnUsage(null, lastPrompt, assistantText) : null
+    const turn = hasProgress() ? acpTurnUsage(null, lastPrompt, assistantText) : null
     if (turn) {
       options.onChunk({
         type: 'usage',

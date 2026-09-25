@@ -77,7 +77,8 @@ revisiting this document, not silently diverging in an implementation PR.
    descending from one human-originated submission). The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
-   ACP unfinished-turn recovery, post-turn remediation cycles,
+   long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
+   originating turn tree), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
