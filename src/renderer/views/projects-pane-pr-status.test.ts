@@ -187,4 +187,55 @@ describe('projects pane thread PR status (component)', () => {
     const icon = await waitForIcon('Multi-PR thread', 'open')
     assert.match(icon.getAttribute('aria-label') ?? '', /2 pull requests are open/i)
   })
+
+  it('keeps a cached icon mounted while its expired lifecycle refreshes', async (t) => {
+    let requestCount = 0
+    let resolveRefresh: ((value: GhPrDetails | null) => void) | undefined
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [
+        thread('refreshing', 'Refreshing PR', {
+          messages: [assistant('m1', `Opened ${OPEN_URL}`)],
+        }),
+      ],
+      activeThreadId: 'refreshing',
+    })
+    mount(
+      store,
+      apiWithPrDetails((_owner, _repo, number) => {
+        requestCount += 1
+        if (requestCount === 1) return Promise.resolve(details(number, 'OPEN'))
+        return new Promise((resolve) => {
+          resolveRefresh = resolve
+        })
+      }),
+    )
+
+    await waitForIcon('Refreshing PR', 'open')
+    const expiredAt = Date.now() + 60_001
+    t.mock.method(Date, 'now', () => expiredAt)
+
+    const searchInput = document.querySelector<HTMLInputElement>('.projects-search-input')
+    assert.ok(searchInput)
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+    assert.equal(requestCount, 2)
+    const refreshingIcon =
+      rowByTitle('Refreshing PR')?.querySelector<HTMLElement>('.chat-pr-status.is-open')
+    assert.ok(refreshingIcon)
+    assert.ok(refreshingIcon.querySelector('svg[data-icon="git-pull-request"]'))
+    assert.match(refreshingIcon.getAttribute('aria-label') ?? '', /#42.*open/i)
+
+    t.mock.restoreAll()
+    assert.ok(resolveRefresh)
+    resolveRefresh(details(OPEN_NUMBER, 'OPEN'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(
+      rowByTitle('Refreshing PR')?.querySelector('.chat-pr-status.is-open'),
+      refreshingIcon,
+    )
+  })
 })

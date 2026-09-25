@@ -182,6 +182,8 @@ export type ProviderStreamChunk =
       outputTokens: number
       cacheReadTokens?: number
       cacheCreationTokens?: number
+      /** Actual hosting provider reported by a router on this response; never inferred. */
+      hostingProvider?: string
       /** Tier requested by Copse for a first-party OpenAI call. */
       requestedServiceTier?: ServiceTier
       /** Tier OpenAI reports it actually used; this overrides the request for pricing. */

@@ -110,6 +110,26 @@ export function mountComposerEditor(): ComposerEditor {
   root.setAttribute('aria-multiline', 'true')
   root.setAttribute('aria-label', 'Message')
 
+  // #2489: keep the tail pinned to the box's own bottom edge across a resize
+  // of the box itself — the outer card shrinking (a window resize, an
+  // advisory banner appearing above it) after a long draft is already
+  // showing, which is a plain size change CSS has no hook for ("re-scroll
+  // this box when its own height changes"). Only re-pins when the box was
+  // already at (or within a few px of) its own bottom, so a caret mid-typing
+  // (already kept in view natively) or a user who scrolled up to reread an
+  // earlier line is never yanked back — same "pinned unless the reader
+  // moved away" rule `conversation.ts` uses for the transcript's own
+  // auto-scroll (`isNearBottom` / `SCROLL_PIN_THRESHOLD_PX`).
+  const SCROLL_PIN_THRESHOLD_PX = 4
+  let pinnedToBottom = true
+  root.addEventListener('scroll', () => {
+    pinnedToBottom =
+      root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX
+  })
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight
+  }).observe(root)
+
   const blocks = new Map<string, InlinePasteBlock>()
   const threadChips = new Map<string, { thread: InlineThreadChip; onRemove: () => void }>()
 
@@ -334,6 +354,17 @@ export function mountComposerEditor(): ComposerEditor {
       root.replaceChildren(frag)
       pruneChips()
       if (editor.isFocused()) caretToEnd()
+      // #2489: a real keystroke gets Chromium's native "keep the caret in
+      // view" scroll inside the overflow: auto box for free — no CSS or JS
+      // needed there. Replacing the content wholesale (a restored draft, a
+      // follow-up suggestion, a queued message loaded back for editing)
+      // bypasses that: there is no keystroke to trigger it, and no CSS
+      // selector can express "scroll this box to its own bottom when its
+      // content changes". So this is the one line of JS the CSS-first
+      // approach cannot avoid — it makes a fresh long value behave like a
+      // typed one, showing the tail with earlier lines scrolled out of view
+      // above rather than the top of a draft nobody asked to see first.
+      root.scrollTop = root.scrollHeight
     },
 
     get selectionStart(): number {

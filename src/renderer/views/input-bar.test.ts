@@ -2,13 +2,19 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, getThreadById, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  getThreadById,
+  setThreadDraftPrompt,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import type { Thread, ThreadCatalogHit } from '@shared/types'
 import type { ContainerRunProgress } from '@shared/types/container-run.ts'
 import { containerRunToolCall } from '@shared/store/container-run-card.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
+import { carryRunningThreads, adoptBackgroundThreads } from '../controller/background-threads.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
@@ -64,7 +70,7 @@ function createApi(options: {
   onBranchStatus?: () => void
   branches?: Awaited<ReturnType<ApiClient['git']['listBranches']>>
   onAbort?: () => Promise<void>
-  onRun?: () => Promise<void>
+  onRun?: ApiClient['agent']['run']
   onCheckoutBranch?: (branch: string) => Promise<void>
   onPrepareCheckout?: ApiClient['agent']['prepareCheckout']
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
@@ -311,6 +317,324 @@ describe('input bar running attribution', () => {
 })
 
 describe('input bar first-message checkout', () => {
+  for (const prompt of ['', 'Use the attached context']) {
+    it(`snapshots attachments before async lookups and preserves the next composer (${prompt || 'attachments only'})`, async () => {
+      const skills = deferred<SkillSummary[]>()
+      let waitForSkills = false
+      const payloads: string[] = []
+      const store = createStore({
+        workspaceRoot: '/repo',
+        projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+        activeProjectId: 'project-1',
+        activeThreadId: 'thread-1',
+        threads: [thread(), { ...thread(), id: 'thread-2', draftPrompt: 'Other draft' }],
+      })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountInputBar(
+        host,
+        store,
+        createApi({
+          currentBranch: 'main',
+          listSkills: () => (waitForSkills ? skills.promise : Promise.resolve([])),
+          onRun: async (_projectId, _threadId, payload) => {
+            payloads.push(payload)
+          },
+        }),
+      )
+      await flush()
+      const composer = host.querySelector<HTMLElement>('.prompt-input')
+      const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+      const handlers = getPromptAttachmentHandlers()
+      assert.ok(composer)
+      assert.ok(submit)
+      assert.ok(handlers)
+      composer.textContent = prompt
+      handlers.attachFile({ path: 'original.ts', content: 'original attachment' })
+      if (prompt) handlers.attachTextBlock('Inline original context', 'Original paste')
+      waitForSkills = true
+      submit.click()
+      switchThread(store, 'thread-2')
+      handlers.attachFile({ path: 'other.ts', content: 'other attachment' })
+      skills.resolve([])
+      await flush()
+      assert.equal(payloads.length, 1)
+      assert.match(payloads[0] ?? '', /original attachment/)
+      assert.doesNotMatch(payloads[0] ?? '', /other attachment|Other draft/)
+      const sentAttachments = getThreadById(store, 'thread-1')?.messages[0]?.attachments
+      assert.ok(sentAttachments)
+      assert.equal(
+        sentAttachments.find((attachment) => attachment.kind === 'file')?.label,
+        'original.ts',
+      )
+      if (prompt) {
+        assert.match(payloads[0] ?? '', /Inline original context/)
+        const paste = sentAttachments[0]
+        assert.ok(paste)
+        assert.equal(paste.kind, 'paste')
+        assert.equal(paste.content, 'Inline original context')
+      }
+      assert.equal(composer.textContent, 'Other draft')
+      assert.match(host.querySelector('.attachment-chip')?.textContent ?? '', /other.ts/)
+      switchThread(store, 'thread-1')
+      assert.equal(composer.textContent, '')
+      assert.equal(host.querySelectorAll('.attachment-chip').length, 0)
+    })
+  }
+
+  it('keeps a newer edit to the original draft when its earlier send completes', async () => {
+    const checkout = deferred<PreparedThreadCheckout>()
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: () => checkout.promise,
+      }),
+    )
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Original request'
+    submit.click()
+    await flush()
+    composer.textContent = 'A newer draft'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    checkout.resolve({ checkoutMode: 'shared', choice: 'shared', branch: 'main' })
+    await flush()
+    assert.equal(getThreadById(store, 'thread-1')?.messages[0]?.content, 'Original request')
+    assert.equal(composer.textContent, 'A newer draft')
+  })
+
+  it('keeps checkout errors and retry with the owning thread', async () => {
+    const gate = deferred<boolean>()
+    let fail = true
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(), { ...thread(), id: 'thread-2', draftPrompt: 'Other draft' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: async () => {
+          await gate.promise
+          if (fail) throw new Error('checkout unavailable')
+          return { checkoutMode: 'shared', choice: 'shared', branch: 'main' }
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    const error = host.querySelector<HTMLElement>('.composer-checkout-error')
+    assert.ok(composer)
+    assert.ok(submit)
+    assert.ok(error)
+    composer.textContent = 'Retry the original prompt'
+    submit.click()
+    await flush()
+    switchThread(store, 'thread-2')
+    gate.resolve(true)
+    await flush()
+    assert.equal(error.hidden, true)
+    assert.equal(composer.textContent, 'Other draft')
+    switchThread(store, 'thread-1')
+    assert.equal(error.hidden, false)
+    assert.match(error.textContent, /checkout unavailable/)
+    assert.equal(composer.textContent, 'Retry the original prompt')
+    assert.equal(runs, 0)
+    fail = false
+    host.querySelector<HTMLButtonElement>('.composer-checkout-retry-btn')?.click()
+    await flush()
+    assert.equal(runs, 1)
+    assert.equal(error.hidden, true)
+    assert.equal(composer.textContent, '')
+  })
+
+  it('dispatches a checkout that finishes after a project switch to its owning project', async () => {
+    const checkout = deferred<PreparedThreadCheckout>()
+    const runs: string[][] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [
+        { id: 'project-1', name: 'Project', path: '/repo' },
+        { id: 'project-2', name: 'Other project', path: '/other' },
+      ],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [{ ...thread(), model: 'test-model', reasoning: 'high' }],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: () => checkout.promise,
+        onRun: async (projectId, threadId, payload) => {
+          runs.push([projectId, threadId, payload])
+        },
+      }),
+    )
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Original project request'
+    submit.click()
+    await flush()
+    store.emit('composer_draft_flush')
+    carryRunningThreads(store, 'project-1', store.getState().threads)
+    store.setState({
+      activeProjectId: 'project-2',
+      workspaceRoot: '/other',
+      activeThreadId: 'thread-2',
+      threads: [{ ...thread(), id: 'thread-2', draftPrompt: 'Other project draft' }],
+    })
+    store.emit('threads_changed')
+    store.emit('workspace_changed')
+    checkout.resolve({
+      checkoutMode: 'worktree',
+      choice: 'worktree',
+      branch: 'copse/original',
+      worktree: {
+        path: '/worktrees/thread-1',
+        branch: 'copse/original',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: 2,
+        seededFromDirtyProject: false,
+      },
+      promptState: { startingCommit: 'a'.repeat(40), dirty: false },
+    })
+    await flush()
+    assert.equal(runs.length, 1)
+    const run = runs[0]
+    assert.ok(run)
+    assert.deepEqual(run.slice(0, 2), ['project-1', 'thread-1'])
+    assert.match(run[2] ?? '', /test-model/)
+    assert.match(run[2] ?? '', /"reasoning":"high"/)
+    assert.match(run[2] ?? '', /"turnTreeId":/)
+    const original = getThreadById(store, 'thread-1')
+    assert.ok(original)
+    assert.equal(original.status, 'running')
+    assert.equal(original.worktree?.path, '/worktrees/thread-1')
+    assert.equal(original.messages.length, 1)
+    assert.equal(original.draftPrompt, undefined)
+    assert.equal(composer.textContent, 'Other project draft')
+    const restored = adoptBackgroundThreads(store, 'project-1', [])
+    store.setState({ activeProjectId: 'project-1', threads: restored, activeThreadId: 'thread-1' })
+    store.emit('threads_changed')
+    assert.equal(composer.textContent, '')
+  })
+
+  it('sends to the original thread after switching away during checkout without blocking other threads', async () => {
+    const checkout = deferred<PreparedThreadCheckout>()
+    const runs: string[] = []
+    let prepares = 0
+    const other: Thread = {
+      ...thread('main'),
+      id: 'thread-2',
+      worktreeChoice: 'shared',
+      draftPrompt: 'Send from the other thread',
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread(), other],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: () => {
+          prepares += 1
+          return checkout.promise
+        },
+        onRun: async (_projectId, threadId) => {
+          runs.push(threadId)
+        },
+      }),
+    )
+    await flush()
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Start in the original worktree'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    submit.click()
+    await flush()
+    assert.equal(prepares, 1)
+
+    switchThread(store, 'thread-2')
+    submit.click()
+    await flush()
+    assert.deepEqual(runs, ['thread-2'], 'another thread can send while checkout is pending')
+    composer.textContent = 'Keep the new draft'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+
+    switchThread(store, 'thread-1')
+    submit.click()
+    await flush()
+    assert.equal(prepares, 1, 'returning and pressing Send must not duplicate the pending send')
+    switchThread(store, 'thread-2')
+    checkout.resolve({
+      checkoutMode: 'worktree',
+      choice: 'worktree',
+      branch: 'copse/original',
+      worktree: {
+        path: '/worktrees/thread-1',
+        branch: 'copse/original',
+        baseBranch: 'main',
+        baseCommit: 'a'.repeat(40),
+        createdAt: 2,
+        seededFromDirtyProject: false,
+      },
+      promptState: { startingCommit: 'a'.repeat(40), dirty: false },
+    })
+    await flush()
+    const original = getThreadById(store, 'thread-1')
+    assert.ok(original)
+    assert.equal(original.worktree?.path, '/worktrees/thread-1')
+    assert.equal(original.messages.length, 1)
+    assert.equal(original.messages[0]?.content, 'Start in the original worktree')
+    assert.equal(original.status, 'running')
+    assert.deepEqual(runs, ['thread-2', 'thread-1'])
+    assert.equal(composer.textContent, 'Keep the new draft')
+
+    switchThread(store, 'thread-1')
+    assert.equal(composer.textContent, '')
+    assert.equal(getThreadById(store, 'thread-2')?.draftPrompt, 'Keep the new draft')
+    assert.equal(prepares, 1)
+  })
+
   it('shows the shared default and lets the user opt into an isolated worktree', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
@@ -1999,6 +2323,51 @@ describe('input bar attachments across a thread switch', () => {
     assert.equal(host.querySelectorAll('.attachment-chips .video-chip').length, 1)
   })
 
+  it('returns a completed background command attachment to its originating thread', async () => {
+    const first = thread()
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    store.emit('code_block_run_finished', {
+      id: 'run-1',
+      threadId: first.id,
+      exitCode: 0,
+      shell: {
+        tabId: 'terminal-1',
+        label: 'Run · pnpm test · exit 0',
+        content: 'Command:\npnpm test\n\nExit code: 0\n\nTerminal output:\nPASS',
+      },
+    })
+    await settle()
+
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .shell-chip').length,
+      0,
+      'the result does not leak into the newly active thread',
+    )
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+
+    const label = host.querySelector<HTMLElement>('.shell-chip .attachment-chip-label')
+    assert.ok(label, 'the command result returns with its originating composer')
+    assert.equal(label.textContent, 'Run · pnpm test · exit 0')
+  })
+
   it('binds a stored archive to the thread that was active when it was attached', async () => {
     // The other half of the same bug: the path the composer holds names the
     // attaching thread's directory, which is why carrying it across a switch
@@ -2971,6 +3340,79 @@ describe('input bar footer usage counter', () => {
     assert.equal(counter.textContent, '13.1M tokens')
     const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
     assert.equal(popover?.hidden, true)
+  })
+
+  it('shows the subagent-excluded total and explains delegated + free usage on hover (#2464)', async () => {
+    // #2464: the counter used to fold subagent tokens into the headline, with
+    // no explanation for why a local subagent's usage reads as free next to a
+    // paid parent model.
+    const seeded = usageThread()
+    const withSubagent: Thread = {
+      ...seeded,
+      usage: {
+        inputTokens: 12_900_000,
+        outputTokens: 211_000,
+        byModel: {
+          'claude-sonnet-4-6': { inputTokens: 12_100_000, outputTokens: 196_000 },
+          'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
+        },
+      },
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '',
+          createdAt: 1,
+          toolCalls: [
+            {
+              id: 't1',
+              name: 'explore',
+              args: {},
+              status: 'done',
+              result: 'done',
+              subagent: {
+                id: 'sub-1',
+                kind: 'explore',
+                status: 'done',
+                prompt: 'q',
+                summary: null,
+                messages: [],
+                model: 'lmstudio:qwen',
+                usage: { inputTokens: 800_000, outputTokens: 15_000 },
+              },
+            },
+          ],
+        },
+      ],
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [withSubagent],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const counter = host.querySelector<HTMLElement>('.footer-usage')
+    assert.ok(counter)
+    // Excluding subagents: 12.1M in + 196.0k out, not the raw 13.1M thread total.
+    assert.equal(counter.textContent, '12.3M tokens')
+
+    const popover = host.querySelector<HTMLElement>('.footer-usage-popover')
+    assert.ok(popover)
+    counter.dispatchEvent(new Event('mouseenter'))
+    assert.equal(popover.hidden, false)
+    assert.match(popover.textContent, /Usage · 12\.3M tokens/)
+    assert.match(popover.textContent, /Excluding subagents/)
+    assert.match(popover.textContent, /Whole thread/)
+    assert.match(popover.textContent, /Input\s*12\.1M/)
+    assert.match(popover.textContent, /Output\s*196\.0k/)
+    assert.match(popover.textContent, /Subagents\s*1 run · 800\.0k in \/ 15\.0k out/)
+    assert.match(popover.textContent, /Free: local model/)
   })
 })
 

@@ -899,6 +899,24 @@ Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.
 Complexity / fit / review chips stay when present (they are rare); tuck those
 further only if the list gets noisy again.
 
+### A panel's own controls dock as a footer, never float over its list
+
+The roadmap filter panel (`.roadmap-filter-menu`) used to be a `position: absolute`
+dropdown anchored under the "Filter" toggle in the list header. At any list length it
+painted directly over the rows below it — on the seeded fixture even a handful of
+rows sat entirely underneath it — leaving nothing clickable until the dropdown was
+dismissed (issue #2467). It is now a sticky footer: `roadmap-pane.ts` appends
+`filterMenu` after `.roadmap-list` (a plain sibling in the same flex column, not a
+child of the header's `.roadmap-filter` group any more), and it is styled with
+`flex-shrink: 0` plus its own `overflow-y: auto`, never `position: absolute`. That
+keeps it out of the list's own scrollport, the same bottom-anchored relationship
+`#input-bar` (titlebar.css) has to the transcript scrolling above it. Moving a
+toggled panel out of a click-outside-to-close container needs care: the outside-click
+guard must also exclude the panel itself, or clicking one of its own controls (a
+facet checkbox here) reads as "outside" and closes it immediately.
+
+Spec: [`tests/e2e/roadmap-filter-sticky-footer.e2e.ts`](../tests/e2e/roadmap-filter-sticky-footer.e2e.ts).
+
 ## Rails mark nesting and standing asks
 
 A rail — a slim bar on one inline edge of a block, drawn as `border-left` or as an inset shadow
@@ -914,21 +932,27 @@ ask and drops it when the proposal is settled (see [Proposed threads](proposed-t
 `accent-rails.test.ts` holds this list closed. A new rail needs an explicit design reason in
 `STRUCTURAL_RAILS`; ordinary content and selections use the replacements below.
 
-**Containment is a plate.** Two materials on one shape, split by what the block _is_ rather than by
-what it looks like. Components set `--sev` and mix their background locally using the tuning
-tokens in `styles/global/base.css`: `--callout-plate-fill`, `--callout-hatch-line`,
-`--callout-hatch-fill`, and `--callout-hatch-pitch`. There are no finished `--callout-plate` or
-`--callout-hatch` properties: a root-level mix would resolve the root's severity before inheritance.
+**Containment is a plate.** Materials share one restrained shape, split by what the block _is_
+rather than by what it looks like. Flat and hatched plates set `--sev` and mix their background
+locally using the tuning tokens in `styles/global/base.css`: `--callout-plate-fill`,
+`--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch`. There are no finished
+`--callout-plate` or `--callout-hatch` properties: a root-level mix would resolve the root's
+severity before inheritance. Expanded reasoning builds its etched surface from theme tokens and
+applies a fainter accent hatch.
 
 - **Flat plate** — prose the agent wrote. GitHub alerts and blockquotes. It is part of the answer,
   so it gets a plain surface, and the severity hue moves to the title and its glyph.
-- **Hatched plate** — Copse annotating its own turn: thinking, review, comparison. Not part of the
-  answer, and a texture is what says so without spending a fourth hue or a fourth shape. Under
-  `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate:
-  commentary keeps a surface and loses only the distinction.
+- **Hatched plate** — Short status annotations such as review and comparison. The texture sets
+  them apart from assistant prose without spending another hue or shape. Under
+  `prefers-reduced-transparency` or `prefers-contrast: more` it degrades to the flat plate.
+- **Etched plate** — Expanded reasoning keeps a finer, lighter hatch over a softly tinted solid
+  surface. The hatch fades toward the center of the box so longer passages sit on calmer glass.
+  A faint edge and inset highlight preserve the etched feel, while `--text-secondary` keeps the
+  words legible. Under reduced transparency or increased contrast, use a plain elevated surface
+  and a stronger edge.
 
-Expanded reasoning uses the hatch both while live and after completion, including inside a tool
-rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not
+Expanded reasoning uses the etched plate both while live and after completion, including inside a
+tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal padding; nesting must not
 remove the surface's inset or pull its summary into the padding. Only the closed, untextured
 disclosure label aligns flush with neighboring tool rows.
 

@@ -65,6 +65,8 @@ export interface ReproducerRun {
 }
 
 export interface VerifierToolHost extends ReviewerToolHost {
+  /** Trusted per-finding root-level filename prefix for concurrent verification. */
+  readonly reproducerPrefix?: string | undefined
   readonly requireReproducerAssessment?: boolean
   readonly baseCheckout: string
   prepareBase(signal: AbortSignal): Promise<void>
@@ -162,6 +164,13 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
     const normalised = request.path.replace(/\\/g, '/').replace(/^\.\//, '')
     if (!normalised.startsWith(`${REPRODUCER_DIR}/`) || normalised.includes('..')) {
       return `Error: the reproducer must live under ${REPRODUCER_DIR}/`
+    }
+    if (
+      host.reproducerPrefix !== undefined &&
+      (!normalised.startsWith(host.reproducerPrefix) ||
+        normalised.slice(REPRODUCER_DIR.length + 1).includes('/'))
+    ) {
+      return `Error: this finding's test filename must start with ${host.reproducerPrefix} and remain directly in ${REPRODUCER_DIR}/`
     }
     const [file, ...rest] = request.argv
     if (file === undefined) return 'Error: argv is empty'

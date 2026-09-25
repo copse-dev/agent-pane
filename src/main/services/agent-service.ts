@@ -2491,12 +2491,12 @@ export interface RetryOptions {
   model?: string
 }
 
-/** Register a fresh abort controller for a standalone review run or retry,
- *  mirroring the turn path so the Stop button (agent:abort) can cancel it. */
+/** Keep a standalone review from stealing Stop from an active turn. */
 function beginRetryRun(threadId: string): {
   controller: AbortController
   runAbort: ReturnType<typeof createAgentRunAbortScheduler>
-} {
+} | null {
+  if (abortMap.has(threadId)) return null
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
@@ -2504,6 +2504,9 @@ function beginRetryRun(threadId: string): {
   runAbort.schedule()
   return { controller, runAbort }
 }
+
+const RUN_ALREADY_ACTIVE_MESSAGE =
+  'Skipped: this thread already has a run in progress. Wait for it to finish, or stop it, then retry.'
 
 /**
  * Re-run the post-turn review for a thread on demand — the retry action on a
@@ -2524,7 +2527,12 @@ export async function retryPostTurnReview(
   const requestedModel = options?.model ?? getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
   const model = (await resolveAgentChatModel(requestedModel)).model
   const sendChunk = createAgentChunkSink(threadId, host)
-  const { controller, runAbort } = beginRetryRun(threadId)
+  const begun = beginRetryRun(threadId)
+  if (!begun) {
+    sendChunk({ type: 'post_turn_review', status: 'error', summary: RUN_ALREADY_ACTIVE_MESSAGE })
+    return
+  }
+  const { controller, runAbort } = begun
 
   sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
   try {
@@ -2586,7 +2594,9 @@ export async function runReviewForThread(
   const sendChunk = createAgentChunkSink(threadId, host)
   const executionRoot = getThreadExecutionContext()?.root
   if (executionRoot === undefined) throw new Error('No thread execution context is active')
-  const { controller, runAbort } = beginRetryRun(threadId)
+  const begun = beginRetryRun(threadId)
+  if (!begun) throw new Error(RUN_ALREADY_ACTIVE_MESSAGE)
+  const { controller, runAbort } = begun
   try {
     await runThreadReview({
       threadId,

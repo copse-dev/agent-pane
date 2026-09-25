@@ -29,6 +29,13 @@ export interface ToolDefinition<TArgs = unknown> {
   execute: (args: TArgs, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
   requiresApproval?: boolean
   /**
+   * Opt in to clamping otherwise-valid numeric arguments to schema bounds.
+   * Use only for idempotent query/display limits whose intent survives a
+   * smaller bound. Validation remains fail-closed for every other tool,
+   * including third-party tools.
+   */
+  clampNumericRangeArgs?: boolean
+  /**
    * Pre-built JSON Schema for the tool's parameters. When set, the registry
    * forwards it to providers verbatim instead of deriving one from `parameters`.
    * Used by MCP tools whose schemas are JSON Schema, not Zod.

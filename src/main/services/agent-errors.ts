@@ -275,6 +275,11 @@ export function classifyAcpAuthFailure(
   const { status, type, message } = parseProviderError(err)
   const text = authSignalText(rpc, message ?? errorMessage(err))
 
+  // Codex 0.156.x gates every turn on ChatGPT workspace-routing discovery; a
+  // 401 there is a stale credential — `codex login status` still reports
+  // signed-in and only a fresh login fixes it (openai/codex#47456).
+  if (/workspace routing discovery unauthorized/i.test(text)) return 'expired'
+
   // Expiry wins over the generic signals: an expired token also reports
   // "Failed to authenticate", and only the expiry reading names the right fix.
   if (EXPIRED_AUTH_RE.test(text)) return 'expired'
@@ -533,6 +538,14 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
 
   if (detail.includes('No user query found in messages') || detail.includes('jinja template'))
     return 'The local model prompt template failed after history was trimmed. Reload the model in LM Studio with enough context for the chat template, or use a model with a fixed chat template (e.g. under lmstudio-community).'
+
+  // Codex 0.156.x fails the whole turn when ChatGPT workspace-routing discovery
+  // cannot resolve the subscription's workspace — an edge/CDN block, VPN or
+  // stale DNS, or an outage. No token ran yet, so a retry is the first remedy;
+  // the unauthorized variant is classified as a stale sign-in instead.
+  if (/workspace routing discovery (?:failed|timed out)/i.test(detail)) {
+    return 'Codex could not reach OpenAI’s workspace routing (usually a VPN, firewall or CDN block, or a brief outage). Wait a moment and retry; if it persists, check your VPN/firewall or the OpenAI status page.'
+  }
 
   // The nested-sandbox boundary outranks the generic ACP fallback: a helper
   // that cannot nest a second seatbelt dies before any provider call, so no

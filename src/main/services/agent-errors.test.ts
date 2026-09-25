@@ -96,6 +96,32 @@ describe('classifyAgentError', () => {
     assert.doesNotMatch(out, /^An error occurred:/)
   })
 
+  it('turns a stale-credential workspace-routing 401 into sign-in guidance', () => {
+    // Codex 0.156.x gates every turn on ChatGPT workspace-routing discovery; a
+    // 401 there is a lapsed auth.json even though `codex login status` says
+    // otherwise (openai/codex#47456).
+    const err = new RequestError(
+      -32603,
+      'Internal error: account/read failed: workspace routing discovery unauthorized (401)',
+    )
+    const out = classifyAgentError(err, { acpAgentId: 'codex-acp' })
+    assert.match(out, /Codex sign-in expired/)
+    assert.match(out, /codex login/)
+    assert.match(out, /Technical details[\s\S]*workspace routing discovery unauthorized/)
+    assert.doesNotMatch(out, /^An error occurred:/)
+  })
+
+  it('maps a workspace-routing network failure to retry guidance', () => {
+    const out = classifyAgentError(
+      new Error('Internal error: workspace routing discovery failed'),
+      { acpAgentId: 'codex-acp' },
+    )
+    assert.match(out, /workspace routing/)
+    assert.match(out, /retry/i)
+    assert.match(out, /VPN/)
+    assert.doesNotMatch(out, /sign-in/)
+  })
+
   it('keeps first-run guidance for an agent that was never signed in', () => {
     const out = classifyAgentError(RequestError.authRequired(), { acpAgentId: 'claude-agent-acp' })
     assert.match(out, /needs authentication/)

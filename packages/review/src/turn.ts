@@ -110,6 +110,7 @@ export interface TurnResult {
   readonly usage: TurnUsage
   readonly toolCalls: number
   readonly timing: TurnTiming
+  readonly hostingProviders: readonly string[]
   readonly error?: string
 }
 
@@ -143,6 +144,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   let summary = ''
   let toolCalls = 0
   let usageChunks = 0
+  const hostingProviders = new Set<string>()
   let inputTokens = 0
   let outputTokens = 0
   let doneStopReason: string | undefined
@@ -192,6 +194,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
           summary = ''
         }
         if (chunk.type === 'usage') {
+          if (chunk.hostingProvider !== undefined) hostingProviders.add(chunk.hostingProvider)
           usageChunks += 1
           inputTokens += chunk.inputTokens
           outputTokens += chunk.outputTokens
@@ -320,6 +323,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     stopReason,
     summary: summary.trim(),
     usage,
+    hostingProviders: [...hostingProviders].sort(),
     toolCalls,
     timing: {
       durationMs,

@@ -83,12 +83,15 @@ export const STANDALONE_MAIN_BUNDLES: StandaloneMainBundle[] = [
   {
     entry: 'src/main/services/container-runtime/worker-entry.ts',
     outfile: 'dist/main/thread-container-worker.cjs',
-    external: ['@anthropic-ai/sandbox-runtime'],
+    // jsdom's own `require.resolve('./xhr-sync-worker.js')` is marked external
+    // (rather than bundled or its warning downgraded) alongside the sandbox
+    // runtime: jsdom (behind the fetch_url tool) is external to the main
+    // bundle and bundled here, and it resolves its synchronous-XHR helper by
+    // path at run time. The worker never issues a synchronous XHR, so the
+    // helper stays unresolved at build time exactly as it is today — marking
+    // it external only stops esbuild from warning about that, it does not
+    // add the file to the bundle or change what the worker can do at runtime.
+    external: ['@anthropic-ai/sandbox-runtime', './xhr-sync-worker.js'],
     alias: { 'node-pty': 'src/main/services/container-runtime/node-pty-stub.cjs' },
-    // jsdom (behind the fetch_url tool) is external to the main bundle and
-    // bundled here, and it resolves its synchronous-XHR helper by path at
-    // run time. The worker never issues a synchronous XHR, so the helper's
-    // absence is accepted rather than made a build error.
-    logOverride: { 'require-resolve-not-external': 'warning' },
   },
 ]

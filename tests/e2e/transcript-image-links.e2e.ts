@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -60,6 +61,47 @@ describe('transcript workspace image links', () => {
   after(() => {
     resetUserData()
     if (parent) rmSync(parent, { recursive: true, force: true })
+  })
+
+  it('copies an image opened from a chat file link', async function () {
+    this.timeout(60_000)
+    const chart = $('.message-text a[href="/chart.png"]')
+    await chart.waitForDisplayed({ timeout: 30_000 })
+    await chart.click()
+    const dialog = $('dialog.attachment-preview-dialog[open]')
+    await dialog.waitForDisplayed({ timeout: 15_000 })
+
+    try {
+      const image = dialog.$('.image-expand-image')
+      await image.waitForDisplayed({ timeout: 15_000 })
+      await browser.waitUntil(
+        async () =>
+          browser.execute(() => {
+            const preview = document.querySelector<HTMLImageElement>(
+              'dialog.attachment-preview-dialog[open] .image-expand-image',
+            )
+            return preview?.complete === true && preview.naturalWidth > 0
+          }),
+        { timeout: 15_000 },
+      )
+      await image.click({ button: 'right' })
+      const copy = dialog.$('.context-menu-item')
+      await expect(copy).toHaveText('Copy image')
+      await saveAppScreenshot('transcript-image-copy-menu.png')
+      await copy.click()
+
+      const clipboardImage = await browser.execute(async () => {
+        const first = (await navigator.clipboard.read())[0]
+        if (!first || !first.types.includes('image/png')) return null
+        const blob = await first.getType('image/png')
+        return { type: blob.type, size: blob.size }
+      })
+      assert.equal(clipboardImage?.type, 'image/png')
+      assert.ok((clipboardImage?.size ?? 0) > 0)
+      await assertNoErrorToasts('chat file image copy')
+    } finally {
+      await dialog.$('.attachment-preview-close').click()
+    }
   })
 
   it('decodes PNG and SVG previews through IPC and retains normal text navigation', async () => {

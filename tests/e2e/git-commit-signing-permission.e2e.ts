@@ -35,6 +35,8 @@ describe('native git commit signing permission', function () {
     expect(copy).toContain('Git hooks')
     expect(copy).toContain('no ssh-agent access')
     expect(copy).toContain('until Copse restarts')
+    expect(copy).toContain('separate approval for each commit')
+    expect(copy).toContain('never sent to the agent')
 
     await saveElementScreenshot(FIELDSET, 'git-commit-signing-permission.png')
   })
