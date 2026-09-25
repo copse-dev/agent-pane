@@ -1033,7 +1033,13 @@ export async function openAcpSession(
     // Copse's own tools ride the same channel as forwarded servers: an http
     // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
     // agents without the capability simply don't get the bridge this session.
-    if (config.nativeBridge && mcpCapabilities?.http === true) {
+    // Never to a remote (ACP-over-SSH) agent: the URL names this machine's
+    // loopback, and the bearer token must not leave it (the pool already skips
+    // starting a bridge for one; this keeps a caller-supplied bridge local too).
+    const remote = acpSshTarget(config.cwd) !== null
+    if (config.nativeBridge && remote) {
+      console.info('[acp-bridge] native tools are not offered to an agent running on an SSH host')
+    } else if (config.nativeBridge && mcpCapabilities?.http === true) {
       mcpServers.push({
         type: 'http',
         name: BRIDGE_MCP_SERVER_NAME,
