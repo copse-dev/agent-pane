@@ -134,7 +134,7 @@ import { applyVideoToolAvailability, getThreadVideos } from './video/thread-vide
 import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
-import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
+import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
@@ -2009,22 +2009,22 @@ export async function runAgent(
             )
           }
           if (name === 'investigate_ci' && subagentsEnabled) {
-            setCiInvestigatorContext({
-              parentToolCallId: toolCallId,
-              parentGoal,
-              provider: subagentRoute?.provider ?? provider,
-              registry,
-              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-              onChunk: sendChunk,
-              usageModel: subagentUsageModel,
-              localFallback: subagentLocalFallback,
-            })
-            try {
-              return await registry.execute(name, args, signal)
-            } finally {
-              setCiInvestigatorContext(null)
-            }
+            // ALS-scoped (not a global slot): concurrent threads can each be
+            // inside an investigate_ci call at once.
+            return runWithCiInvestigatorContext(
+              {
+                parentToolCallId: toolCallId,
+                parentGoal,
+                provider: subagentRoute?.provider ?? provider,
+                registry,
+                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+                onChunk: sendChunk,
+                usageModel: subagentUsageModel,
+                localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
           }
           if (name === 'advisor') {
             // Client-side advisor: hand the tool the live transcript so it can

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ModelUsage, StreamChunk } from '@shared/types'
 import { runCiInvestigatorSubagent } from './github/ci-investigator-service.ts'
 import type { LLMProvider } from '@shared/types'
@@ -23,17 +24,31 @@ export type CiInvestigatorRunner = (opts: {
   signal: AbortSignal
 }) => Promise<{ summary: string; usage: ModelUsage }>
 
-let activeContext: CiInvestigatorRunnerContext | null = null
+/**
+ * Context travels via AsyncLocalStorage, not a module-global slot: the tool
+ * reads it only after awaiting inside the registry (permission checks), so a
+ * second thread's concurrent `investigate_ci` call could replace a global slot
+ * in the meantime — the first thread's subagent then ran with the second's
+ * provider/registry and streamed into its conversation, and the second saw
+ * the slot cleared. Each `runWithCiInvestigatorContext` scope sees only its own
+ * context.
+ */
+const contextStorage = new AsyncLocalStorage<CiInvestigatorRunnerContext>()
 
-export function setCiInvestigatorContext(ctx: CiInvestigatorRunnerContext | null): void {
-  activeContext = ctx
+export function runWithCiInvestigatorContext<T>(
+  ctx: CiInvestigatorRunnerContext,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return contextStorage.run(ctx, fn)
 }
 
-export function getCiInvestigatorRunner(): CiInvestigatorRunner | null {
-  if (!activeContext) return null
-  const ctx = activeContext
+export function getCiInvestigatorRunner(
+  investigate: typeof runCiInvestigatorSubagent = runCiInvestigatorSubagent,
+): CiInvestigatorRunner | null {
+  const ctx = contextStorage.getStore()
+  if (!ctx) return null
   return async ({ focus, prNumber, signal }) => {
-    const result = await runCiInvestigatorSubagent({
+    const result = await investigate({
       parentToolCallId: ctx.parentToolCallId,
       ...(focus !== undefined ? { focus } : {}),
       ...(prNumber !== undefined ? { prNumber } : {}),
