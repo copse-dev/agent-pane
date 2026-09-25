@@ -552,6 +552,7 @@ body {
   line-height: var(--line-height-base);
   color: var(--text-primary);
   background: var(--bg-base);
+  accent-color: var(--accent);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -1912,6 +1913,10 @@ copse-ui-field input[type=password],
 .git-change-path:not(.pr-list-title) {
   direction: rtl;
   text-align: left;
+}
+.git-change-path:not(.pr-list-title)::before,
+.git-change-path:not(.pr-list-title)::after {
+  content: "\200e";
 }
 .git-changes-empty {
   padding: var(--spacing-md) var(--spacing-sm);
@@ -3576,6 +3581,36 @@ label {
 }
 
 /* src/renderer/styles/global/conversation.css */
+.thread-roadmap-origin {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.thread-roadmap-origin:hover {
+  color: var(--accent);
+}
+.thread-roadmap-origin-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.thread-roadmap-origin-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .messages-list {
   flex: 1;
   overflow-y: auto;
@@ -4097,10 +4132,36 @@ label {
 .msg-assistant {
   background: transparent;
 }
+.agent-avatar {
+  display: block;
+  width: calc(var(--spacing-xl) + var(--spacing-xs));
+  height: calc(var(--spacing-xl) + var(--spacing-xs));
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.message-agent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.message-agent-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
+}
+.message-agent .message-model {
+  margin-bottom: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
@@ -5283,6 +5344,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
+}
+.tool-subagent-marker {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
+  color: var(--text-secondary);
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
@@ -8224,7 +8294,6 @@ dialog.settings-overlay::backdrop {
 .usage-period-btn.active {
   border-color: var(--accent);
   color: var(--text-primary);
-  font-weight: 600;
 }
 .usage-period-label {
   font-size: var(--font-size-sm);
@@ -8495,6 +8564,10 @@ dialog.settings-overlay::backdrop {
   direction: rtl;
   text-align: left;
   pointer-events: none;
+}
+.sources-row-hover-detail::before,
+.sources-row-hover-detail::after {
+  content: "\200e";
 }
 .sources-row:hover .sources-row-hover-detail,
 .sources-row:focus-within .sources-row-hover-detail {
@@ -9261,7 +9334,6 @@ dialog.settings-overlay::backdrop {
   flex-shrink: 0;
   width: auto;
   margin: 0;
-  accent-color: var(--accent);
 }
 #sources-worktrees-selected-count {
   color: var(--text-secondary);
@@ -11441,9 +11513,6 @@ dialog.process-manager-overlay {
   color: var(--text-primary);
   font-weight: 600;
 }
-.process-manager-table tr[data-active-thread=true] .process-manager-name {
-  box-shadow: inset 3px 0 var(--accent);
-}
 .process-manager-number {
   text-align: right !important;
 }
@@ -12820,7 +12889,7 @@ dialog.process-manager-overlay {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
 }
 .remote-folder-toolbar {
   display: flex;
@@ -12900,7 +12969,7 @@ dialog.process-manager-overlay {
 .remote-folder-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin-top: var(--spacing-md);
 }
 .ssh-host-list {
@@ -13821,7 +13890,6 @@ dialog.process-manager-overlay {
   height: auto;
   margin: 0;
   padding: 0;
-  accent-color: var(--accent);
 }
 .roadmap-category-group {
   display: flex;
@@ -14254,7 +14322,6 @@ dialog.process-manager-overlay {
   margin: 0;
   flex: none;
   align-self: center;
-  accent-color: var(--accent);
   background: transparent;
   border: none;
   border-radius: 0;
