@@ -90,7 +90,9 @@ describe('desktop profile owner', () => {
         }),
       )
       assert.throws(
-        () => prepareOwnedProfile(path),
+        () => {
+          prepareOwnedProfile(path)
+        },
         (error: unknown) => error instanceof VaultError && error.reason === 'corrupt',
       )
     })
