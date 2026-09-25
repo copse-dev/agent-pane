@@ -2,7 +2,8 @@
 
 Status: **Active (P1 + P2 landed)**. Discovery, Settings visibility, and explicit
 `/name` invocation are implemented. Automatic delegation (P4) and the remaining phases
-are still design only. Owns
+are still design only. A gap review against Claude Code (2026-09-25) is recorded in
+[Gaps against Claude Code](#gaps-against-claude-code-2026-09-25). Owns
 [#1819](https://github.com/copse-dev/agent-pane/issues/1819) ("I want to use agents that
 are in my `~/.claude/agents` when using copse").
 
@@ -320,6 +321,14 @@ Local subagent routing (`buildSubagentRoute`, `localSubagentsEnabled`) applies o
 `defaultMaxLlmCallsForSteps` ceiling so a definition cannot buy unbounded spend. Usage
 folds into `addSubagentUsage` like every other subagent.
 
+As shipped, the aliases in `CUSTOM_AGENT_MODEL_ALIASES` (`custom-agent-strategy.ts`) point at
+older models: `opus` → `claude-opus-4-8`, `sonnet` → `claude-sonnet-4-6`, `fable` →
+`claude-fable-5`. The provider catalog already includes `claude-opus-5` and `claude-sonnet-5`.
+Claude Code resolves the same alias to its current model, so one definition runs on two
+different models depending on which product runs it. The aliases should resolve through
+the provider catalog's current mapping, not a literal table that needs hand edits
+(gap G-11).
+
 ### 8. Untrusted at project scope
 
 An agent definition is a system prompt plus a tool list; a cloned repo shipping
@@ -381,9 +390,18 @@ subagent type as the matcher, so a user's hooks can gate a custom agent by name 
 one.
 
 Shipped as: `src/shared/invocation/parse-invocation.ts` (the merged `/` namespace),
-`src/main/services/agents/custom-agent-{strategy,runner}.ts`, `src/main/tools/task-tool.ts`,
-`invokedAgent` through the run payload, `kind: 'custom'` + `agentName` on `SubagentSession`
-(both optional, so older threads decode unchanged), and a dynamic `task` card label.
+`src/main/services/agents/custom-agent-{strategy,runner}.ts`, `invokedAgent` through the
+run payload, `kind: 'custom'` + `agentName` on `SubagentSession` (both optional, so older
+threads decode unchanged), and a dynamic `task` card label.
+
+There is **no model-callable `task` tool**. Because of the eval result under decision 2,
+what shipped is the deterministic fallback: `agent-service.ts` runs the invoked agent
+before the parent's first LLM call and synthesizes a `task` tool call and result, so the
+card renders like any other subagent. `task` exists only as a card name, a read-only
+allow-list entry (`readonly-tools.ts`), and a forbidden-tool entry
+(`CUSTOM_AGENT_FORBIDDEN_TOOLS`). The registry, `parentTools` withholding, and
+ALS-validation design in decision 2 option (1) is therefore unbuilt and moves to P4,
+along with the `task`-registry traps below.
 Read-only mode **allows** `task`: the read-only scope is ALS-based and covers everything
 the run awaits, so a subagent's own calls are gated by the same allow-list — withholding
 the entry point would only block a read-only reviewer agent for no safety gain, unlike
@@ -402,13 +420,66 @@ setting to turn it off. This is the part that gets an eval pass before it defaul
 [agent-plugins-migration.md](agent-plugins-migration.md).
 
 **P6 — Deferred fields.** `skills` preloading (Copse has `buildInvokedSkillsBlock`, so
-this is cheap), per-agent `mcpServers`, `memory`, `isolation: worktree` once thread
-worktrees land, and injecting definitions into non-Claude ACP agents the way invoked
-skills are injected today.
+this is cheap), per-agent `mcpServers`, `memory`, `isolation: worktree` (per-thread worktrees
+now exist — [thread-worktrees.md](thread-worktrees.md) — so this is no longer blocked on
+them), and
+injecting definitions into non-Claude ACP agents the way invoked skills are injected today.
+
+**P7 — Background and follow-up runs (proposed, not yet a decision).** Let an agent run
+without blocking the parent turn and report back when it finishes, and let the user or the
+parent send a follow-up to a finished agent that keeps its transcript. Both need a durable
+subagent identity beyond the per-turn `parentToolCallId`, so this should build on the
+background supervisor ([background-supervisor.md](background-supervisor.md)) rather than
+add a second task lifecycle. See G-02 and G-03.
+
+**P8 — Authoring (proposed, not yet a decision).** Create and edit definitions from Settings,
+optionally drafted by the model. This must write through IPC with the user confirming,
+never through `write_file`, because every `agents/` container is a protected config
+directory (decision 8). See G-08.
+
+## Gaps against Claude Code (2026-09-25)
+
+A review of Copse's **native** agent against Claude Code's subagent behaviour, checked
+against the code at `4dd186c`. None of this applies to Claude Code running under Copse over
+ACP. That process loads its own `~/.claude/agents` and `.claude/agents`, and its
+background subagents deliver between turns. The ACP session pool still reaps a session
+after about 10 idle minutes, so long background work there can be lost
+(`ACP_TURN_PROMPT_NOTE` in `src/main/services/acp/acp-agent-service.ts`).
+
+Already at parity: discovery from six roots with project-first precedence; `name`,
+`description`, `tools`, `disallowedTools`, `model`, `maxTurns`, `color`; `permissionMode:
+plan` / `readonly` → read-only; Claude tool-name translation including `mcp__srv__*`;
+`subagentStart` / `subagentStop` hooks matched by agent name; the untrusted framing for
+project agents; the Settings → Sources list; named cards; usage accounting; delegation
+depth 1; and concurrent `explore` calls in one step.
+
+Ranked by user impact:
+
+| ID   | Claude Code                                                                                                                     | Copse native agent today                                                                                                                                                                                                                                                           | Owner                                                |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| G-01 | The model picks an agent from its `description` and can launch several at once.                                                 | Explicit `/name` only, one agent per message, run before the parent's first LLM call. The model has no `task` tool.                                                                                                                                                                | P4                                                   |
+| G-02 | Agents can run in the background. The parent keeps working and is notified when one completes.                                  | Always runs inline and blocks the turn. `background` / `is_background` are ignored with a note.                                                                                                                                                                                    | P7                                                   |
+| G-03 | A finished agent can be continued with its context intact (send it another message by id).                                      | Every run is one-shot and returns only a summary. Nothing addresses a finished run again.                                                                                                                                                                                          | P7                                                   |
+| G-04 | `isolation: worktree` gives the agent a throwaway checkout.                                                                     | Ignored with a note. The agent edits the thread's working tree, even though per-thread worktrees now exist.                                                                                                                                                                        | P6                                                   |
+| G-05 | No small step cap. Agents run until done, bounded by context and compaction.                                                    | `CUSTOM_AGENT_DEFAULT_MAX_STEPS = 12`, `CUSTOM_AGENT_MAX_STEPS_CEILING = 30`. Too few for review or refactor agents on a real diff. Raise the cap, or make the ceiling a setting instead of a constant, while keeping the rule that a definition file cannot raise its own budget. | New decision needed                                  |
+| G-06 | `skills`, `mcpServers`, `hooks` (agent-scoped), `memory`, `effort` are honoured.                                                | All parsed, then ignored with a Settings note. `skills` is the cheapest: reuse `buildInvokedSkillsBlock`.                                                                                                                                                                          | P6                                                   |
+| G-07 | Built-in general-purpose and Plan agents, plus a fork agent that inherits the conversation.                                     | Copse has fixed built-ins (`explore`, `investigate_ci`, `delegate_step`, advisor, review). A custom agent sees only `parentGoal`, never the conversation, and there is no fork mode.                                                                                               | Unowned                                              |
+| G-08 | `/agents` creates, edits, and model-drafts definitions.                                                                         | Settings → Sources → Agents is read-only.                                                                                                                                                                                                                                          | P8                                                   |
+| G-09 | `@agent-name` mention; `claude --agent <name>` runs a whole session as an agent; `--agents <json>` defines session-only agents. | `/name` only (a deliberate decision 2 choice). No way to run a whole thread as an agent, which is why `initialPrompt` is ignored.                                                                                                                                                  | #1573 (named agent profile)                          |
+| G-10 | Plugin-supplied `agents/`; Codex reads `.codex/agents/*.toml`.                                                                  | Neither.                                                                                                                                                                                                                                                                           | P5, P3                                               |
+| G-11 | `opus` / `sonnet` / `fable` resolve to the current model.                                                                       | They resolve to older model ids (see decision 7).                                                                                                                                                                                                                                  | Fix in place                                         |
+| G-12 | Agent teams with a shared task list, and scripted multi-agent workflows.                                                        | Only `delegate_step` orchestration. Fan-out/fan-in is planned as a campaign primitive, not built.                                                                                                                                                                                  | [background-supervisor.md](background-supervisor.md) |
+
+Suggested order: G-11 (a mechanical fix) → G-01 (P4 is what makes definitions behave like
+they do in Claude Code; run the eval the plan already requires, because the P2 eval showed
+a small local model declining to delegate) → G-04 and G-05 (cheap: per-thread worktrees
+exist, and the cap is two constants) → G-06 `skills` → G-02/G-03 on the supervisor → the rest.
 
 ## Known implementation traps
 
-Two of these were found by implementing P1; the rest are still predictions.
+Two of these were found by implementing P1; the rest are still predictions. The traps
+about the `task` registry entry (one registry, `SUBAGENT_ENTRY_TOOLS`, registry refresh)
+describe the model-callable tool that P2 did not ship. They now apply to P4.
 
 - **(Found in P1) A README in an agents folder is documentation, not an error.** The first
   cut reported every file without valid frontmatter as "skipped", which put a red row
