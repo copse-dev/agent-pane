@@ -19,6 +19,8 @@ import {
   type TrustedPreparation,
 } from './stage0.ts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
+import { buildReviewContext } from './context.ts'
+import { createReviewerToolExecutor } from './reviewer-tools.ts'
 
 /**
  * A project whose checks are plain `node` scripts, declared through
@@ -90,6 +92,112 @@ function run(
 }
 
 describe('runStage0', () => {
+  it('keeps original source, author edits and anchors after checks rewrite the execution head', async () => {
+    const original = 'export const add = (a, b) => a + b\n'
+    const regression = 'export const add = (a, b) => a - b\n'
+    const repo = await createTestRepo({
+      'package.json': JSON.stringify({ name: 'fixture' }),
+      'src/math.js': original,
+      'AGENTS.md': 'Original instructions.\n',
+      'src/math.test.js': '// original test\n',
+      [REVIEW_CONFIG_FILENAME]: JSON.stringify({
+        commands: {
+          prepare: null,
+          build: null,
+          lint: null,
+          typecheck: null,
+          test: [
+            process.execPath,
+            '-e',
+            `const fs = require('node:fs'); fs.writeFileSync('src/math.js', ${JSON.stringify(original)}); fs.writeFileSync('AGENTS.md', 'replacement instructions'); fs.rmSync('src/math.test.js'); fs.writeFileSync('generated.js', 'generated');`,
+          ],
+        },
+      }),
+    })
+    repos.push(repo)
+    repo.git('checkout', '-q', '-b', 'feature')
+    await repo.write({ 'src/math.js': regression })
+    repo.commit('regression')
+    await repo.write({
+      'src/author.js': '// untracked author change\n',
+      'src/math.test.js': '// author test edit\n',
+    })
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+    })
+    assert.ok(ground.checkouts)
+    assert.ok(ground.cell)
+    const checkouts = ground.checkouts
+    try {
+      for (const writable of [ground.cell.spec.scratchDir, checkouts.base, checkouts.head]) {
+        assert.ok(!checkouts.reviewHead.startsWith(`${writable}/`))
+        assert.notEqual(checkouts.reviewHead, writable)
+      }
+      const report = await runStage0Checks(ground)
+      assert.equal(report.checks[0]?.verdict, 'clean')
+      assert.equal(await readFile(join(checkouts.head, 'src/math.js'), 'utf8'), original)
+      const context = await buildReviewContext({ checkouts })
+      assert.equal(context.headCommit, checkouts.headCommit)
+      assert.equal(context.dirtyWorkingTree, true)
+      assert.match(context.files.find((file) => file.path === 'src/math.js')?.text ?? '', /a - b/)
+      assert.ok(context.files.some((file) => file.path === 'src/author.js'))
+      assert.equal(context.instructions[0]?.text, 'Original instructions.\n')
+      assert.ok(
+        context.testMap.some((entry) =>
+          entry.tests.some((test) => test.path === 'src/math.test.js'),
+        ),
+      )
+      const executor = createReviewerToolExecutor({
+        context,
+        headCheckout: checkouts.head,
+        cell: ground.cell,
+        shellDecision: 'allow',
+        scrub: (text) => text,
+      })
+      const signal = new AbortController().signal
+      assert.match(
+        await executor.execute('read_file', { path: 'src/math.js' }, signal, 'read'),
+        /a - b/,
+      )
+      assert.match(
+        await executor.execute('read_file', { path: 'src/math.test.js' }, signal, 'test'),
+        /author test edit/,
+      )
+      assert.match(
+        await executor.execute('search_code', { pattern: 'a - b' }, signal, 'search'),
+        /src\/math.js/,
+      )
+      assert.doesNotMatch(await executor.execute('list_dir', {}, signal, 'list'), /generated.js/)
+      assert.match(
+        await executor.execute('git_diff', { path: 'src/math.js' }, signal, 'diff'),
+        /a - b/,
+      )
+      const result = await executor.execute(
+        'report_finding',
+        {
+          path: 'src/math.js',
+          startLine: 1,
+          class: 'contract',
+          severity: 'high',
+          confidence: 'high',
+          claim: 'Addition incorrectly subtracts the second operand.',
+          reason: 'The implementation returns a - b instead of a + b.',
+        },
+        signal,
+        'finding',
+      )
+      assert.doesNotMatch(result, /^Error/)
+      assert.equal(executor.reported()[0]?.anchoredText, regression.trimEnd())
+    } finally {
+      await ground.close()
+    }
+    await assert.rejects(access(checkouts.reviewHead))
+  })
+
   it('is one clean line when every check passes on head, and never runs base', async () => {
     const repo = await scenario({}, {})
     const report = await run(repo)
