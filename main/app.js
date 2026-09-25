@@ -74761,6 +74761,13 @@ function subagentCardStatus(tc2, session) {
   if (session.status === "error" || tc2.status === "error") return "error";
   return "done";
 }
+function subagentHeaderMarker() {
+  return el(
+    "span",
+    { class: "tool-subagent-marker", "aria-label": "Subagent", "data-tooltip": "Subagent" },
+    gitBranchIcon("ui-icon ui-icon-sm")
+  );
+}
 function subagentModelBadge(session) {
   if (!session.model) return null;
   const badge = el("div", { class: "subagent-model" });
@@ -74867,7 +74874,9 @@ function populateSubagentCard(card, tc2, label, api2) {
   for (const node2 of Array.from(card.children)) {
     if (node2 !== timeline) node2.remove();
   }
-  card.append(createToolHeader(label, status, "tool-card-header"));
+  const header = createToolHeader(label, status, "tool-card-header");
+  header.querySelector(".tool-name")?.before(subagentHeaderMarker());
+  card.append(header);
   const badge = subagentModelBadge(session);
   if (badge) card.append(badge);
   const preview = session.summary ?? tc2.result ?? "";

@@ -5257,6 +5257,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   max-height: 240px;
   overflow: auto;
 }
+.tool-subagent-marker {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
+  color: var(--text-secondary);
+}
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
