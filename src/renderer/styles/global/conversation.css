@@ -1041,8 +1041,7 @@ span.acp-resource-title {
   color: var(--text-primary);
   font-weight: 600;
 }
-.acp-resource-text,
-.acp-tool-diff-text {
+.acp-resource-text {
   margin: var(--spacing-xs) 0 0;
   max-height: 240px;
   overflow: auto;
@@ -1054,6 +1053,99 @@ span.acp-resource-title {
 .acp-tool-diff > .acp-content-label {
   display: block;
   margin-top: var(--spacing-sm);
+}
+/* The summary is one line: label, left-elided path (leaf stays visible, full
+   path on hover), then the +/- counts pinned to the end. */
+.acp-tool-diff > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  list-style: none;
+}
+.acp-tool-diff > summary::-webkit-details-marker {
+  display: none;
+}
+.acp-tool-diff > summary::before {
+  content: '›';
+  flex: none;
+  display: inline-block;
+  width: 0.6em;
+  transition: transform 120ms ease;
+}
+.acp-tool-diff[open] > summary::before {
+  transform: rotate(90deg);
+}
+.acp-tool-diff-label {
+  flex: none;
+}
+.acp-tool-diff-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.acp-tool-diff > summary .tool-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.acp-tool-diff > summary .tool-stat-add {
+  margin-left: auto;
+}
+/* Lines never wrap: rows grow to the longest line so their tint spans the
+   scrolled width, and the list scrolls in both directions. */
+.acp-tool-diff-lines {
+  display: grid;
+  grid-auto-rows: min-content;
+  margin-top: var(--spacing-sm);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.acp-diff-line {
+  display: flex;
+  min-width: max-content;
+  padding-right: var(--spacing-md);
+  white-space: pre;
+  color: var(--text-secondary);
+}
+.acp-diff-sign {
+  flex: none;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+}
+.acp-diff-add {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-add > .acp-diff-sign {
+  color: var(--success);
+}
+.acp-diff-del {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-del > .acp-diff-sign {
+  color: var(--danger);
+}
+.acp-diff-gap {
+  padding-left: 2ch;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
 }
 .message-text .remote-artifact-image {
   display: block;

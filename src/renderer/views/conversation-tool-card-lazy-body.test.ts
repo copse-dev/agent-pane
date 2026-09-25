@@ -246,6 +246,64 @@ describe('collapsed tool card bodies render lazily', () => {
     )
   })
 
+  it('renders an ACP diff as a unified line diff under its workspace-relative path', () => {
+    const path = '/repo/src/renderer/views/input-bar.test.ts'
+    const context = ['a', 'b', 'c', 'd', 'e', 'f']
+    const store = createStore({ workspaceRoot: '/repo' })
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      result: null,
+      content: [
+        {
+          type: 'diff',
+          path,
+          oldText: [...context, "it('restores chips', async () => {", ...context].join('\n'),
+          newText: [...context, "it('queues quote-replies', async () => {", ...context].join('\n'),
+        },
+        { type: 'diff', path: '/elsewhere/new.ts', newText: 'one\ntwo\n' },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const [edit, created] = host.querySelectorAll<HTMLElement>('.acp-tool-diff')
+    assert.ok(edit)
+    assert.ok(created)
+    const editPath = edit.querySelector<HTMLElement>('.acp-tool-diff-path')
+    assert.ok(editPath)
+    assert.equal(editPath.textContent, 'src/renderer/views/input-bar.test.ts')
+    assert.equal(editPath.title, path)
+    assert.equal(edit.querySelector('.tool-stat-add')?.textContent, '+1')
+    assert.equal(edit.querySelector('.tool-stat-del')?.textContent, '-1')
+    assert.equal(edit.querySelector('.acp-content-label'), null)
+    assert.deepEqual(
+      Array.from(edit.querySelectorAll('.acp-diff-line'), (line) => [
+        line.classList.item(1),
+        line.textContent,
+      ]),
+      [
+        ['acp-diff-gap', '⋯ 3 unchanged lines'],
+        ['acp-diff-context', ' d'],
+        ['acp-diff-context', ' e'],
+        ['acp-diff-context', ' f'],
+        ['acp-diff-del', "-it('restores chips', async () => {"],
+        ['acp-diff-add', "+it('queues quote-replies', async () => {"],
+        ['acp-diff-context', ' a'],
+        ['acp-diff-context', ' b'],
+        ['acp-diff-context', ' c'],
+        ['acp-diff-gap', '⋯ 3 unchanged lines'],
+      ],
+    )
+
+    assert.match(created.querySelector('summary')?.textContent ?? '', /^New file/)
+    assert.equal(created.querySelector('.acp-tool-diff-path')?.textContent, '/elsewhere/new.ts')
+    assert.equal(created.querySelector<HTMLElement>('.acp-tool-diff-path')?.title, '')
+    assert.equal(created.querySelectorAll('.acp-diff-add').length, 2)
+  })
+
   it('shows ACP resource paths relative to the active thread checkout with absolute hover paths', () => {
     const checkout = '/worktrees/thread-1'
     const screenshot = `${checkout}/tests/e2e/screenshots/archive-attachment-chip.png`
