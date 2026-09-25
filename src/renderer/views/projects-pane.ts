@@ -157,16 +157,22 @@ function settingsIcon(className = 'titlebar-btn-icon'): SVGSVGElement {
 }
 
 /**
- * Trailing link on an automation heading through to that automation's setup in
- * Settings — the sidebar owns run history, the schedule editor owns the
- * configuration, and this is the seam between them. Quiet until its heading is
- * hovered or the button takes focus, like the row actions beside it.
+ * Trailing link on an automation heading through to that automation's setup —
+ * the in-place `automation-dialog`, never the packs/settings page. Quiet until
+ * its heading is hovered or the button takes focus, like the row actions
+ * beside it. Defaults to the settings gear (open this automation's editor);
+ * the workspace heading's "New automation…" action reuses the same quiet
+ * chrome with a plus glyph instead.
  */
-function automationSetupBtn(label: string, open: () => void): HTMLElement {
+function automationSetupBtn(
+  label: string,
+  open: () => void,
+  icon: (className?: string) => SVGSVGElement = settingsIcon,
+): HTMLElement {
   const btn = el(
     'button',
     { type: 'button', class: 'automation-setup-btn', 'aria-label': label, title: label },
-    settingsIcon('ui-icon ui-icon-sm'),
+    icon('ui-icon ui-icon-sm'),
   )
   btn.addEventListener('click', (e) => {
     e.stopPropagation()
@@ -316,10 +322,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
-  // Automation history is intentionally tucked away from ordinary conversation
-  // rows. Expansion is session-only: a fresh app launch returns to the quiet
-  // default, while selecting an automation thread always reveals its owner.
-  const expandedAutomationProjects = new Set<string>()
+  // Automation history is collated in one workspace-level section (#2511)
+  // rather than tucked inside each project, so it reads as one place to check
+  // every schedule regardless of which project it belongs to. Expansion is
+  // session-only, same as a project group's twisty before it gained persisted
+  // state: a fresh app launch returns to the quiet default, while selecting an
+  // automation thread always reveals its owner (the section, and its schedule,
+  // open on their own when the active thread is one of theirs).
+  let automationsSectionExpanded = false
   const expandedAutomationSchedules = new Set<string>()
   let orphans: OrphanProjectStore[] = []
 
@@ -339,8 +349,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   let activeDrag: SidebarDragPayload | null = null
 
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
-  // `owner/repo#number`. Fetches are coalesced; a successful (or failed) fetch
-  // re-renders once so chips appear without blocking the first paint.
+  // `owner/repo#number`. Fetches are coalesced; stale state stays visible while
+  // revalidation runs, and lifecycle changes re-render without blocking first paint.
   const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
@@ -392,34 +402,45 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
+    return prLifecycleCache.get(key)?.state
+  }
+
+  function hasFreshPrLifecycle(key: string): boolean {
     const entry = prLifecycleCache.get(key)
-    if (!entry) return undefined
-    if (Date.now() - entry.fetchedAt > PR_STATUS_CACHE_TTL_MS) return undefined
-    return entry.state
+    return entry !== undefined && Date.now() - entry.fetchedAt <= PR_STATUS_CACHE_TTL_MS
   }
 
   function ensurePrLifecycles(refs: GithubPrRef[]): void {
-    const missing = refs.filter((ref) => {
+    const stale = refs.filter((ref) => {
       const key = githubPrKey(ref)
-      return cachedPrLifecycle(key) === undefined && !prFetchInFlight.has(key)
+      return !hasFreshPrLifecycle(key) && !prFetchInFlight.has(key)
     })
-    if (missing.length === 0) return
+    if (stale.length === 0) return
     const generation = prStatusGeneration
-    for (const ref of missing) {
+    for (const ref of stale) {
       const key = githubPrKey(ref)
+      let lifecycleChanged = false
       prFetchInFlight.add(key)
       void api.gh
         .prDetails(ref.owner, ref.repo, ref.number)
         .then((details) => {
+          if (generation !== prStatusGeneration) return
           const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
+          lifecycleChanged = prLifecycleCache.get(key)?.state !== state
           prLifecycleCache.set(key, { state, fetchedAt: Date.now() })
         })
         .catch(() => {
-          prLifecycleCache.set(key, { state: 'unknown', fetchedAt: Date.now() })
+          if (generation !== prStatusGeneration) return
+          const cached = prLifecycleCache.get(key)
+          prLifecycleCache.set(key, {
+            state: cached?.state ?? 'unknown',
+            fetchedAt: Date.now(),
+          })
         })
         .finally(() => {
+          if (generation !== prStatusGeneration) return
           prFetchInFlight.delete(key)
-          if (generation === prStatusGeneration) render()
+          if (lifecycleChanged) render()
         })
     }
   }
@@ -794,6 +815,364 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     /**
+     * One sidebar thread row, owned by `project` (not necessarily the active
+     * one — the workspace-level Automations section below renders rows for
+     * background projects too). `activeId` mirrors the pre-#2511 per-project
+     * local: null unless `project` is the active project, so a background
+     * project's own rows never read as "unread while selected".
+     */
+    function renderThreadRow(
+      project: Project,
+      thread: SidebarThread,
+      options: { displayTitle?: string; allowRename?: boolean } = {},
+    ): HTMLElement {
+      const activeId = project.id === activeProjectId ? activeThreadId : null
+      const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
+      const canMutate = project.id === activeProjectId
+      const allowRename = (options.allowRename ?? true) && canMutate
+      const scheduleId = thread.automation?.scheduleId
+      const renameState =
+        allowRename && renaming !== null && renaming.threadId === thread.id ? renaming : null
+      let title: HTMLElement
+      if (renameState) {
+        const input = el('input', {
+          type: 'text',
+          class: 'chat-title-rename',
+          'aria-label': 'Rename thread',
+        })
+        input.value = renameState.draft
+        input.addEventListener('input', () => {
+          if (renaming?.threadId === thread.id) renaming.draft = input.value
+        })
+        input.addEventListener('keydown', (e) => {
+          e.stopPropagation()
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            finishThreadRename(true)
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            finishThreadRename(false)
+          }
+        })
+        bindRenameBlur(input, () => {
+          if (renaming?.threadId !== thread.id) return
+          finishThreadRename(true)
+        })
+        for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
+          input.addEventListener(evt, (e) => {
+            e.stopPropagation()
+          })
+        }
+        title = input
+      } else {
+        title = el('span', { class: 'chat-title' }, displayTitle)
+        if (allowRename) {
+          title.addEventListener('dblclick', (e) => {
+            e.stopPropagation()
+            beginThreadRename(thread.id, displayTitle)
+          })
+        }
+      }
+      const chatRow = el(
+        'div',
+        {
+          class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
+          'data-thread-id': thread.id,
+        },
+        title,
+      )
+      chatRow.addEventListener('click', () => {
+        if (renaming?.threadId === thread.id) return
+        switchProjectThread(store, api, project.id, thread.id)
+      })
+      chatRow.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        showContextMenu(e.clientX, e.clientY, [
+          ...(canMutate
+            ? [
+                ...(allowRename
+                  ? [
+                      {
+                        label: 'Rename',
+                        onSelect: (): void => {
+                          beginThreadRename(thread.id, displayTitle)
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  label: 'Fork',
+                  onSelect: (): void => {
+                    forkProjectThread(project.id, thread.id)
+                  },
+                },
+                {
+                  label: 'Archive',
+                  onSelect: (): void => {
+                    archiveProjectThread(project.id, thread.id)
+                  },
+                },
+              ]
+            : []),
+          // A schedule with a single run has no heading of its own, and a
+          // historical run is several rows below the one that does, so every
+          // automation row carries the way out to its setup. Opens directly
+          // against this run's own project — same as the project menu's
+          // "Automations" entry — rather than switching the active project
+          // just to reach the editor.
+          ...(scheduleId
+            ? [
+                {
+                  label: 'Automation setup…',
+                  onSelect: (): void => {
+                    openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+                  },
+                },
+              ]
+            : []),
+        ])
+      })
+
+      if (thread.status === 'running') {
+        chatRow.classList.add('is-running')
+        chatRow.insertBefore(runningStatus('Agent is working'), title)
+      } else if (thread.unreadAt !== undefined && thread.id !== activeId) {
+        chatRow.classList.add('is-unread')
+        chatRow.insertBefore(
+          el('span', {
+            class: 'chat-unread-dot',
+            role: 'img',
+            'aria-label': 'Unread agent completion',
+          }),
+          title,
+        )
+      }
+
+      if (isThreadAwaitingAttention(thread.id)) {
+        chatRow.classList.add('needs-attention')
+        chatRow.append(attentionBell('This thread needs your attention'))
+      }
+
+      const prRollup = rollupForThread(thread)
+      if (prRollup) {
+        chatRow.classList.add('has-pr-status')
+        chatRow.append(chatPrStatus(prRollup))
+      }
+
+      if (canMutate) {
+        const del = el(
+          'button',
+          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
+          closeIcon('ui-icon ui-icon-sm'),
+        )
+        del.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (getSidebarThreads(store, project.id).length > 1) {
+            void api.agent.clearHistory(project.id, thread.id)
+            deleteThread(store, thread.id)
+          }
+        })
+        chatRow.append(del)
+      }
+      return chatRow
+    }
+
+    /**
+     * The workspace-level Automations section (#2511): every automation run
+     * across every project visited this session, collated directly under the
+     * workspace rather than tucked inside each project's own thread list.
+     * Grouped by schedule exactly as the old per-project heading grouped its
+     * own runs — a schedule with one run is a single row, more than one gets
+     * its own collapsible sub-heading — with the owning project named as a
+     * muted suffix so same-named schedules in different projects stay
+     * distinguishable.
+     *
+     * Automation data is strictly project-owned (`AutomationSchedule.projectId`,
+     * `SidebarThread.automation`); there is no workspace-level store to read
+     * instead. `getSidebarThreads` only has data for the active project plus
+     * any project switched to earlier this session (see its docs in
+     * controller/projects.ts), so a project never opened this session
+     * contributes nothing here yet — the same limit the per-project heading
+     * already had for a collapsed, unvisited project.
+     */
+    function renderAutomationsSection(): HTMLElement | null {
+      const scheduleOwners = new Map<
+        string,
+        { project: Project; scheduleId: string; runs: SidebarThread[] }
+      >()
+      for (const project of projects) {
+        for (const thread of getSidebarThreads(store, project.id)) {
+          const scheduleId = thread.automation?.scheduleId
+          if (!scheduleId) continue
+          const scheduleKey = `${project.id}\0${scheduleId}`
+          const owner = scheduleOwners.get(scheduleKey)
+          if (owner) owner.runs.push(thread)
+          else scheduleOwners.set(scheduleKey, { project, scheduleId, runs: [thread] })
+        }
+      }
+      if (scheduleOwners.size === 0) return null
+
+      const allRuns = Array.from(scheduleOwners.values()).flatMap((owner) => owner.runs)
+      const hasActiveAutomation = allRuns.some((thread) => thread.id === activeThreadId)
+      const attentionRuns = allRuns.filter((thread) => isThreadAwaitingAttention(thread.id))
+      const sectionExpanded =
+        automationsSectionExpanded || hasActiveAutomation || attentionRuns.length > 0
+
+      const section = el('div', { class: 'automation-threads-group' })
+      const toggle = el(
+        'button',
+        {
+          type: 'button',
+          class: 'automation-threads-toggle',
+          'aria-expanded': sectionExpanded ? 'true' : 'false',
+        },
+        el(
+          'span',
+          { class: `automation-threads-twisty${sectionExpanded ? ' expanded' : ''}` },
+          chevronRightIcon('ui-icon ui-icon-sm'),
+        ),
+        el('span', { class: 'automation-threads-title' }, 'Automations'),
+        el('span', { class: 'automation-threads-count' }, String(scheduleOwners.size)),
+      )
+      if (allRuns.some((thread) => thread.status === 'running')) {
+        const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
+        status.setAttribute('role', 'img')
+        status.setAttribute('aria-label', 'An automation is running')
+        status.removeAttribute('aria-hidden')
+        toggle.append(status)
+      }
+      toggle.addEventListener('click', () => {
+        automationsSectionExpanded = !automationsSectionExpanded
+        render()
+      })
+      section.append(
+        el(
+          'div',
+          { class: 'automation-threads-header' },
+          toggle,
+          // Creates against the active project, same default the plugin editor
+          // itself falls back to when no project is named — there is no single
+          // project this workspace-level heading could otherwise imply.
+          automationSetupBtn(
+            'New automation…',
+            () => {
+              openAutomationDialog(store, api, { createNew: true })
+            },
+            plusIcon,
+          ),
+        ),
+      )
+
+      if (sectionExpanded) {
+        const rows = el('div', { class: 'automation-thread-rows' })
+        for (const { project, scheduleId, runs } of scheduleOwners.values()) {
+          const firstRun = runs[0]
+          if (!firstRun) continue
+          const projectSuffix = el(
+            'span',
+            { class: 'chat-thread-owner' },
+            `· ${projectDisplayName(project)}`,
+          )
+          if (runs.length === 1) {
+            const row = renderThreadRow(project, firstRun)
+            row.querySelector('.chat-title')?.after(projectSuffix)
+            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
+            const setupBtn = automationSetupBtn(`${scheduleName} setup`, () => {
+              openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+            })
+            // A lone run has no schedule heading of its own to carry the setup
+            // button, so the row carries it directly (kept quiet like the
+            // delete button beside it — see the `.chat-row:hover` reveal rule).
+            const del = row.querySelector('.chat-delete')
+            if (del) del.before(setupBtn)
+            else row.append(setupBtn)
+            rows.append(row)
+            continue
+          }
+
+          const scheduleKey = `${project.id}\0${scheduleId}`
+          const hasActiveRun = runs.some((thread) => thread.id === activeThreadId)
+          const attentionScheduleRuns = runs.filter((thread) =>
+            isThreadAwaitingAttention(thread.id),
+          )
+          const showingAllRuns = expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
+          const scheduleRevealed = showingAllRuns || attentionScheduleRuns.length > 0
+          const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
+          const scheduleGroup = el('div', {
+            class: 'automation-schedule-group',
+            'data-schedule-id': scheduleId,
+          })
+          const scheduleToggle = el(
+            'button',
+            {
+              type: 'button',
+              class: 'automation-schedule-toggle',
+              'aria-expanded': showingAllRuns ? 'true' : 'false',
+            },
+            el(
+              'span',
+              { class: `automation-threads-twisty${showingAllRuns ? ' expanded' : ''}` },
+              chevronRightIcon('ui-icon ui-icon-sm'),
+            ),
+            el('span', { class: 'automation-schedule-title' }, scheduleName),
+            projectSuffix,
+            el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
+          )
+          if (runs.some((thread) => thread.status === 'running')) {
+            const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
+            status.setAttribute('role', 'img')
+            status.setAttribute('aria-label', 'This automation is running')
+            status.removeAttribute('aria-hidden')
+            scheduleToggle.append(status)
+          }
+          scheduleToggle.addEventListener('click', () => {
+            if (expandedAutomationSchedules.has(scheduleKey)) {
+              expandedAutomationSchedules.delete(scheduleKey)
+            } else {
+              expandedAutomationSchedules.add(scheduleKey)
+            }
+            render()
+          })
+          scheduleGroup.append(
+            el(
+              'div',
+              { class: 'automation-schedule-header' },
+              scheduleToggle,
+              automationSetupBtn(`${scheduleName} setup`, () => {
+                openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+              }),
+            ),
+          )
+          if (scheduleRevealed) {
+            const runRows = el('div', { class: 'automation-schedule-runs' })
+            const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns
+            for (const thread of visibleRuns) {
+              const index = runs.indexOf(thread)
+              const timestamp = thread.automation?.triggeredAt
+              const when = timestamp
+                ? new Date(timestamp).toLocaleString([], {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })
+                : 'Unknown time'
+              runRows.append(
+                renderThreadRow(project, thread, {
+                  displayTitle: index === 0 ? `Latest · ${when}` : when,
+                  allowRename: false,
+                }),
+              )
+            }
+            scheduleGroup.append(runRows)
+          }
+          rows.append(scheduleGroup)
+        }
+        section.append(rows)
+      }
+      return section
+    }
+
+    /**
      * One project's whole block — header row, quarantine notice, thread list —
      * as a single element. Wrapping it means a drop indicator can be drawn
      * against the block rather than squeezed between a project and its own
@@ -980,7 +1359,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
             (t.title || 'New Thread').toLowerCase().includes(threadFilter),
           )
         : sidebarThreads
-      const automationThreads = matchingThreads.filter((thread) => thread.automation !== undefined)
+      // Automation runs are collated in the workspace-level Automations section
+      // (#2511) instead of rendering inside their project by default.
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === undefined,
       )
@@ -1024,167 +1404,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
 
-      /**
-       * Open a schedule's setup (or, with no id, this project's schedule list).
-       * Schedules are project-scoped, so a heading under a project that isn't
-       * open lands on the project first — the same one-click-to-switch the New
-       * thread button uses rather than editing another project's automations.
-       */
-      function openAutomationSetup(scheduleId?: string): void {
-        if (project.id !== store.getState().activeProjectId) {
-          switchProject(store, api, project.id)
-          return
-        }
-        openAutomationDialog(store, api, scheduleId ? { scheduleId } : {})
-      }
-
-      function renderThreadRow(
-        thread: SidebarThread,
-        options: { displayTitle?: string; allowRename?: boolean } = {},
-      ): HTMLElement {
-        const displayTitle = (options.displayTitle ?? thread.title) || 'New Thread'
-        const allowRename = options.allowRename ?? true
-        const scheduleId = thread.automation?.scheduleId
-        const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null
-        let title: HTMLElement
-        if (renameState) {
-          const input = el('input', {
-            type: 'text',
-            class: 'chat-title-rename',
-            'aria-label': 'Rename thread',
-          })
-          input.value = renameState.draft
-          input.addEventListener('input', () => {
-            if (renaming?.threadId === thread.id) renaming.draft = input.value
-          })
-          input.addEventListener('keydown', (e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              finishThreadRename(true)
-            } else if (e.key === 'Escape') {
-              e.preventDefault()
-              finishThreadRename(false)
-            }
-          })
-          bindRenameBlur(input, () => {
-            if (renaming?.threadId !== thread.id) return
-            finishThreadRename(true)
-          })
-          for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
-            input.addEventListener(evt, (e) => {
-              e.stopPropagation()
-            })
-          }
-          title = input
-        } else {
-          title = el('span', { class: 'chat-title' }, displayTitle)
-          if (allowRename) {
-            title.addEventListener('dblclick', (e) => {
-              e.stopPropagation()
-              beginThreadRename(thread.id, displayTitle)
-            })
-          }
-        }
-        const chatRow = el(
-          'div',
-          {
-            class: `chat-row${thread.automation ? ' is-automation' : ''}${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
-            'data-thread-id': thread.id,
-          },
-          title,
-        )
-        chatRow.addEventListener('click', () => {
-          if (renaming?.threadId === thread.id) return
-          switchProjectThread(store, api, project.id, thread.id)
-        })
-        chatRow.addEventListener('contextmenu', (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          showContextMenu(e.clientX, e.clientY, [
-            ...(allowRename
-              ? [
-                  {
-                    label: 'Rename',
-                    onSelect: (): void => {
-                      beginThreadRename(thread.id, displayTitle)
-                    },
-                  },
-                ]
-              : []),
-            {
-              label: 'Fork',
-              onSelect: (): void => {
-                forkProjectThread(project.id, thread.id)
-              },
-            },
-            {
-              label: 'Archive',
-              onSelect: (): void => {
-                archiveProjectThread(project.id, thread.id)
-              },
-            },
-            // A schedule with a single run has no heading of its own, and a
-            // historical run is several rows below the one that does, so every
-            // automation row carries the way out to its setup.
-            ...(scheduleId
-              ? [
-                  {
-                    label: 'Automation setup…',
-                    onSelect: (): void => {
-                      openAutomationSetup(scheduleId)
-                    },
-                  },
-                ]
-              : []),
-          ])
-        })
-
-        if (thread.status === 'running') {
-          chatRow.classList.add('is-running')
-          chatRow.insertBefore(runningStatus('Agent is working'), title)
-        } else if (thread.unreadAt !== undefined && thread.id !== activeId) {
-          chatRow.classList.add('is-unread')
-          chatRow.insertBefore(
-            el('span', {
-              class: 'chat-unread-dot',
-              role: 'img',
-              'aria-label': 'Unread agent completion',
-            }),
-            title,
-          )
-        }
-
-        if (isThreadAwaitingAttention(thread.id)) {
-          chatRow.classList.add('needs-attention')
-          chatRow.append(attentionBell('This thread needs your attention'))
-        }
-
-        const prRollup = rollupForThread(thread)
-        if (prRollup) {
-          chatRow.classList.add('has-pr-status')
-          chatRow.append(chatPrStatus(prRollup))
-        }
-
-        const del = el(
-          'button',
-          { class: 'chat-delete', 'aria-label': 'Delete thread', 'data-tooltip': 'Delete thread' },
-          closeIcon('ui-icon ui-icon-sm'),
-        )
-        del.addEventListener('click', (e) => {
-          e.stopPropagation()
-          if (project.id !== activeProjectId) return
-          if (sidebarThreads.length > 1) {
-            void api.agent.clearHistory(project.id, thread.id)
-            deleteThread(store, thread.id)
-          }
-        })
-        chatRow.append(del)
-        return chatRow
-      }
-
       for (const thread of visibleThreads) {
-        chats.append(renderThreadRow(thread))
+        chats.append(renderThreadRow(project, thread))
       }
 
       if (hasMore) {
@@ -1194,156 +1415,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           render()
         })
         chats.append(showMoreBtn)
-      }
-
-      if (automationThreads.length > 0) {
-        const scheduleGroups = new Map<string, SidebarThread[]>()
-        for (const thread of automationThreads) {
-          const scheduleId = thread.automation?.scheduleId
-          if (!scheduleId) continue
-          const runs = scheduleGroups.get(scheduleId)
-          if (runs) runs.push(thread)
-          else scheduleGroups.set(scheduleId, [thread])
-        }
-        const hasActiveAutomation = automationThreads.some((thread) => thread.id === activeId)
-        const attentionAutomationThreads = automationThreads.filter((thread) =>
-          isThreadAwaitingAttention(thread.id),
-        )
-        const automationExpanded =
-          isFiltering ||
-          expandedAutomationProjects.has(project.id) ||
-          hasActiveAutomation ||
-          attentionAutomationThreads.length > 0
-        const group = el('div', { class: 'automation-threads-group' })
-        const toggle = el(
-          'button',
-          {
-            type: 'button',
-            class: 'automation-threads-toggle',
-            'aria-expanded': automationExpanded ? 'true' : 'false',
-          },
-          el(
-            'span',
-            { class: `automation-threads-twisty${automationExpanded ? ' expanded' : ''}` },
-            chevronRightIcon('ui-icon ui-icon-sm'),
-          ),
-          el('span', { class: 'automation-threads-title' }, 'Automations'),
-          el('span', { class: 'automation-threads-count' }, String(scheduleGroups.size)),
-        )
-        if (automationThreads.some((thread) => thread.status === 'running')) {
-          const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
-          status.setAttribute('role', 'img')
-          status.setAttribute('aria-label', 'An automation is running')
-          status.removeAttribute('aria-hidden')
-          toggle.append(status)
-        }
-        toggle.addEventListener('click', () => {
-          if (expandedAutomationProjects.has(project.id)) {
-            expandedAutomationProjects.delete(project.id)
-          } else {
-            expandedAutomationProjects.add(project.id)
-          }
-          render()
-        })
-        group.append(
-          el(
-            'div',
-            { class: 'automation-threads-header' },
-            toggle,
-            automationSetupBtn('Automation settings', () => {
-              openAutomationSetup()
-            }),
-          ),
-        )
-        if (automationExpanded) {
-          const automationRows = el('div', { class: 'automation-thread-rows' })
-          for (const [scheduleId, runs] of scheduleGroups) {
-            const firstRun = runs[0]
-            if (!firstRun) continue
-            if (runs.length === 1) {
-              automationRows.append(renderThreadRow(firstRun))
-              continue
-            }
-
-            const scheduleKey = `${project.id}\0${scheduleId}`
-            const hasActiveRun = runs.some((thread) => thread.id === activeId)
-            const attentionRuns = runs.filter((thread) => isThreadAwaitingAttention(thread.id))
-            const showingAllRuns =
-              isFiltering || expandedAutomationSchedules.has(scheduleKey) || hasActiveRun
-            const scheduleRevealed = showingAllRuns || attentionRuns.length > 0
-            const scheduleName = firstRun.automation?.scheduleName ?? firstRun.title
-            const scheduleGroup = el('div', {
-              class: 'automation-schedule-group',
-              'data-schedule-id': scheduleId,
-            })
-            const scheduleToggle = el(
-              'button',
-              {
-                type: 'button',
-                class: 'automation-schedule-toggle',
-                'aria-expanded': showingAllRuns ? 'true' : 'false',
-              },
-              el(
-                'span',
-                {
-                  class: `automation-threads-twisty${showingAllRuns ? ' expanded' : ''}`,
-                },
-                chevronRightIcon('ui-icon ui-icon-sm'),
-              ),
-              el('span', { class: 'automation-schedule-title' }, scheduleName),
-              el('span', { class: 'automation-schedule-count' }, `${String(runs.length)} runs`),
-            )
-            if (runs.some((thread) => thread.status === 'running')) {
-              const status = runningStatusIcon('ui-icon ui-icon-sm automation-threads-running')
-              status.setAttribute('role', 'img')
-              status.setAttribute('aria-label', 'This automation is running')
-              status.removeAttribute('aria-hidden')
-              scheduleToggle.append(status)
-            }
-            scheduleToggle.addEventListener('click', () => {
-              if (expandedAutomationSchedules.has(scheduleKey)) {
-                expandedAutomationSchedules.delete(scheduleKey)
-              } else {
-                expandedAutomationSchedules.add(scheduleKey)
-              }
-              render()
-            })
-            scheduleGroup.append(
-              el(
-                'div',
-                { class: 'automation-schedule-header' },
-                scheduleToggle,
-                automationSetupBtn(`${scheduleName} setup`, () => {
-                  openAutomationSetup(scheduleId)
-                }),
-              ),
-            )
-            if (scheduleRevealed) {
-              const runRows = el('div', { class: 'automation-schedule-runs' })
-              const visibleRuns = showingAllRuns ? runs : attentionRuns
-              for (const thread of visibleRuns) {
-                const index = runs.indexOf(thread)
-                const timestamp = thread.automation?.triggeredAt
-                const when = timestamp
-                  ? new Date(timestamp).toLocaleString([], {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })
-                  : 'Unknown time'
-                runRows.append(
-                  renderThreadRow(thread, {
-                    displayTitle: index === 0 ? `Latest · ${when}` : when,
-                    allowRename: false,
-                  }),
-                )
-              }
-              scheduleGroup.append(runRows)
-            }
-            automationRows.append(scheduleGroup)
-          }
-          group.append(automationRows)
-        }
-        chats.append(group)
       }
 
       entry.append(chats)
@@ -1367,6 +1438,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       block.append(children)
       return block
     }
+
+    // Directly under the workspace, above every project — see
+    // `renderAutomationsSection` for why this collates across projects rather
+    // than living inside each one (#2511).
+    const automationsSection = renderAutomationsSection()
+    if (automationsSection) list.append(automationsSection)
 
     for (const node of buildProjectTree(projects, projectGroups)) {
       if (node.kind === 'group') list.append(renderGroupEntry(node.group, node.projects))

@@ -435,6 +435,19 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Owning-project label on a workspace-level automation row/heading (#2511):
+   same quiet treatment as the PR status chip's neighbours, shrinking before
+   the title does so a long project name never crowds out the schedule name. */
+.chat-thread-owner {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.automation-schedule-toggle .chat-thread-owner {
+  margin-left: 0;
+}
 .automation-schedule-runs .chat-row {
   padding-left: calc(42px + var(--spacing-md));
   color: var(--text-muted);
@@ -499,6 +512,12 @@
   padding: 0;
 }
 .chat-row:hover .chat-delete {
+  opacity: 1;
+}
+/* A single-run automation row (#2511) has no schedule heading of its own to
+   carry `.automation-setup-btn`, so it sits directly on the row — same quiet
+   reveal as the delete button beside it. */
+.chat-row:hover .automation-setup-btn {
   opacity: 1;
 }
 /* Animated "…" in the thread-row indent gutter (not an extra flex column), so
@@ -727,6 +746,11 @@
   box-shadow:
     0 0 0 1px var(--border),
     var(--shadow-lg);
+  /* Centered on both axes rather than pinned to the bottom, so the even margin
+     this variant wants is --spacing-xl top and bottom, not the docked card's
+     --spacing-md (titlebar.css). Same reasoning as #2489 there: cap the whole
+     card so a long draft can't push past the pane's edges. */
+  max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.composer-centered .prompt-input {
   border-top: none;
@@ -2092,6 +2116,26 @@
 }
 .browser-url-input.has-error {
   border-color: var(--danger, #f14c4c);
+}
+/* A network-policy denial is the policy working as intended, not a fault —
+   the warning token (not --danger) keeps that distinction visible at a glance. */
+.browser-url-input.has-blocked {
+  border-color: var(--warning);
+}
+/* Explains a red/amber URL bar in place, so the reason survives a screenshot
+   and does not depend on hovering the tooltip. Hidden (via the `hidden`
+   attribute) whenever the tab has no load issue. */
+.browser-status {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-status-danger {
+  color: var(--danger, #f14c4c);
+}
+.browser-status-warning {
+  color: var(--warning);
 }
 .file-viewer {
   flex: 1;

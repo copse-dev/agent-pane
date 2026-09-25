@@ -1,7 +1,15 @@
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -9,6 +17,7 @@ import { threadToJsonl } from '../../src/renderer/export-thread.ts'
 import { getCopseUserDataDir, waitForAgentIdle } from './helpers.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { submitComposer } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-git-commit-approval'
 
@@ -116,5 +125,50 @@ describe('git commit approval', () => {
     const artifactDir = join(process.cwd(), 'tests/e2e/artifacts')
     mkdirSync(artifactDir, { recursive: true })
     writeFileSync(join(artifactDir, 'git-commit-approval.jsonl'), threadToJsonl(thread))
+  })
+
+  it('advises on the disabled signing permission after a sandboxed SSH agent failure', async function () {
+    if (process.platform !== 'darwin') this.skip()
+    const keyDir = realpathSync(mkdtempSync(join(tmpdir(), 'copse-e2e-signing-key-')))
+    try {
+      const key = join(keyDir, 'id_ed25519')
+      execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key])
+      git('config', 'commit.gpgSign', 'true')
+      git('config', 'gpg.format', 'ssh')
+      git('config', 'user.signingkey', `key::${readFileSync(`${key}.pub`, 'utf8').trim()}`)
+
+      await prepareMockToolTurn(
+        'Commit the pending change with my configured SSH signing key.',
+        { name: 'git_commit', args: { message: 'Commit with SSH signing', stage_all: true } },
+        'The signed commit failed and Copse supplied recovery advice.',
+      )
+      await submitComposer()
+      const dialog = $('#approval-dialog')
+      await dialog.waitForDisplayed({ timeout: 30_000 })
+      await dialog.$('.approval-approve').click()
+      await waitForAgentIdle(30_000)
+
+      const rollup = $('.tool-card-rollup[data-status="error"]')
+      await rollup.waitForDisplayed({ timeout: 10_000 })
+      if (!(await rollup.getProperty('open'))) {
+        await rollup.$('summary.tool-card-header').click()
+      }
+      const failedTool = $('.tool-card[data-tool-id][data-status="error"]')
+      await failedTool.waitForDisplayed({ timeout: 10_000 })
+      if (!(await failedTool.getProperty('open'))) {
+        await failedTool.$('summary.tool-card-header').click()
+      }
+      assert.match(await failedTool.getText(), /Couldn't (?:get agent socket|find key in agent)/)
+      await expect(failedTool).toHaveText('Settings → Permissions → Commit signing', {
+        containing: true,
+      })
+      await saveElementScreenshot(
+        '.tool-card[data-tool-id][data-status="error"]',
+        'git-commit-signing-advice.png',
+      )
+      assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
+    } finally {
+      rmSync(keyDir, { recursive: true, force: true })
+    }
   })
 })

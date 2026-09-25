@@ -43,10 +43,12 @@ const terminalMetaSchema = z.tuple([
 
 function normalizeMeta(meta: {
   label?: string | undefined
+  projectId?: string | undefined
   threadId?: string | null | undefined
 }): TerminalSessionMeta {
   const out: TerminalSessionMeta = {}
   if (meta.label !== undefined) out.label = meta.label
+  if (meta.projectId !== undefined) out.projectId = meta.projectId
   if (meta.threadId !== undefined) out.threadId = meta.threadId
   return out
 }
@@ -102,7 +104,7 @@ export function initTerminal(win: BrowserWindow): () => void {
         event.sender,
         cols,
         rows,
-        normalizeMeta(meta),
+        { ...normalizeMeta(meta), projectId: meta.projectId },
         execution.root,
       )
       return { sessionId, checkoutMode: execution.checkoutMode }

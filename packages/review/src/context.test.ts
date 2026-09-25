@@ -1,6 +1,7 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
@@ -8,6 +9,7 @@ import {
   budgetFileDiffs,
   buildReviewContext,
   lowSignalReason,
+  readFileDiff,
   renderReviewContext,
   splitDiff,
 } from './context.ts'
@@ -182,5 +184,69 @@ describe('buildReviewContext', () => {
     assert.match(rendered, /Repository instructions from AGENTS\.md/)
     assert.match(rendered, /\+export const fresh = true/)
     assert.doesNotMatch(rendered, /lockfileVersion: 10/)
+  })
+
+  it('pins forge diffs to committed head and keeps literal paths outside the prompt budget', async () => {
+    const diff = (path: string): Promise<string> =>
+      readFileDiff(
+        { gitDir: checkouts.headGitDir, workTree: checkouts.head },
+        checkouts.mergeBase,
+        path,
+        checkouts.headCommit,
+      )
+    assert.match(await diff('src/math.ts'), /\+export const add.*a - b/)
+    assert.match(await diff('pnpm-lock.yaml'), /\+lockfileVersion: 10/)
+    assert.equal(await diff('src/math.test.ts'), '', 'uncommitted edits are excluded')
+    assert.equal(await diff('src/new.ts'), '', 'untracked files are excluded')
+    assert.equal(await diff('src/*.ts'), '', 'pathspec characters are literal')
+  })
+})
+
+describe('host-side git over a checkout the cell has written', () => {
+  it('ignores a rewritten .git that points at a hostile git directory', async () => {
+    const repo = await createTestRepo({ 'src/a.ts': 'export const a = 1\n' })
+    const scratch = await mkdtemp(join(tmpdir(), 'review-context-hijack-'))
+    try {
+      repo.git('checkout', '-q', '-b', 'feature')
+      await repo.write({ 'src/a.ts': 'export const a = 2\n' })
+      repo.commit('change a')
+      const checkouts = await materialiseCheckouts({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        scratchDir: scratch,
+        includeWorkingTree: false,
+      })
+      try {
+        // What code executing in the cell can do: the checkout is writable.
+        const marker = join(scratch, 'fsmonitor-ran')
+        const hostile = join(checkouts.head, 'hostile-git')
+        await mkdir(join(hostile, 'objects', 'info'), { recursive: true })
+        await mkdir(join(hostile, 'refs'), { recursive: true })
+        await writeFile(
+          join(hostile, 'objects', 'info', 'alternates'),
+          `${join(checkouts.gitCommonDir, 'objects')}\n`,
+        )
+        await writeFile(join(hostile, 'HEAD'), `${checkouts.mergeBase}\n`)
+        await writeFile(
+          join(hostile, 'config'),
+          `[core]\n\trepositoryformatversion = 0\n\tfsmonitor = "touch '${marker}'; false"\n`,
+        )
+        await writeFile(join(checkouts.head, '.git'), `gitdir: ${hostile}\n`)
+
+        const context = await buildReviewContext({ checkouts })
+        assert.deepEqual(
+          context.files.map((file) => file.path),
+          ['src/a.ts'],
+        )
+        const diff = await readFileDiff(context.head, context.mergeBase, 'src/a.ts')
+        assert.match(diff, /\+export const a = 2/)
+        assert.equal(existsSync(marker), false, 'the hostile fsmonitor must not run on the host')
+      } finally {
+        await checkouts.cleanup()
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+      await repo.remove()
+    }
   })
 })

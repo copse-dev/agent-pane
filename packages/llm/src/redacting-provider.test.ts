@@ -77,3 +77,24 @@ describe('withSecretRedaction', () => {
     assert.deepEqual(seen.options, { toolChoice: { name: 'finish_review' } })
   })
 })
+
+it('redacts known secrets from response hosting metadata', async () => {
+  const secret = 'configured-private-key'
+  const provider: LLMProvider = {
+    async *stream(): AsyncGenerator<ProviderStreamChunk> {
+      yield {
+        type: 'usage',
+        model: 'fixture',
+        inputTokens: 1,
+        outputTokens: 1,
+        hostingProvider: secret,
+      }
+    },
+  }
+  const wrapped = withSecretRedaction(provider, [secret])
+  for await (const chunk of wrapped.stream([], [])) {
+    assert.equal(chunk.type, 'usage')
+    assert.equal(chunk.hostingProvider, '[REDACTED_SECRET]')
+    assert.ok(!JSON.stringify(chunk).includes(secret))
+  }
+})

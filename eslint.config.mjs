@@ -17,6 +17,19 @@ const NO_ELECTRON = {
     'eslint.config.mjs — deliberately, and visibly in review.',
 }
 
+// Hoisted for the same reason as NO_ELECTRON above: ESLint replaces a rule's array
+// options wholesale rather than merging them, so the renderer-specific
+// `no-restricted-syntax` block below must repeat this selector or it would silently
+// reopen the `in`-with-a-dynamic-key hole for the whole renderer.
+const NO_DYNAMIC_IN = {
+  selector: "BinaryExpression[operator='in'][left.type!='Literal']",
+  message:
+    'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
+    '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
+    "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
+    'fine and is not restricted.',
+}
+
 export default ts.config(
   {
     ignores: [
@@ -130,17 +143,7 @@ export default ts.config(
       // and there are 248 of those; a blanket ban on `in` would bury the ten
       // that mattered. Tests are exempt below, because several of them use `in`
       // deliberately to assert the prototype behaviour this rule exists to stop.
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "BinaryExpression[operator='in'][left.type!='Literal']",
-          message:
-            'A dynamic key with `in` also matches inherited members (toString, constructor, ' +
-            '__proto__, and five more). Use Object.hasOwn(record, key) — or keyOf(record) from ' +
-            "@copse/std when you want a type predicate. A literal key (`'kind' in value`) is " +
-            'fine and is not restricted.',
-        },
-      ],
+      'no-restricted-syntax': ['error', NO_DYNAMIC_IN],
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-control-regex': 'off',
     },
@@ -260,6 +263,37 @@ export default ts.config(
                 'or move the logic to src/shared if it is pure.',
             },
           ],
+        },
+      ],
+      // #2497 — native `confirm()`/`alert()` render as a blocking OS-native dialog in
+      // Electron, not the in-app UI the rest of the renderer uses (PR #1030). Route
+      // through `showConfirmDialog` (src/renderer/views/confirm-dialog.ts) instead.
+      // Repeating NO_DYNAMIC_IN is required, not redundant — see its definition above.
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'confirm',
+          message:
+            'Native confirm() renders as a blocking OS dialog, not the in-app one. Use ' +
+            'showConfirmDialog from ./confirm-dialog.ts (or the relative path to it) instead.',
+        },
+        {
+          name: 'alert',
+          message:
+            'Native alert() renders as a blocking OS dialog, not the in-app UI. Show the ' +
+            'message in the view instead (an error line, a status line, or showConfirmDialog ' +
+            'from ./confirm-dialog.ts).',
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        NO_DYNAMIC_IN,
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(window|globalThis)$/][callee.property.name=/^(confirm|alert)$/]",
+          message:
+            'Native window.confirm()/window.alert() render as a blocking OS dialog, not the ' +
+            'in-app UI. Use showConfirmDialog from ./confirm-dialog.ts instead.',
         },
       ],
     },

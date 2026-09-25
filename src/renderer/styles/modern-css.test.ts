@@ -295,6 +295,75 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('caps the whole composer card, not just the draft, so it never escapes the pane (#2489)', () => {
+    const titlebar = read('titlebar.css')
+    const inputBar = read('input-bar.css')
+    const layout = read('layout.css')
+    // #input-bar floats bottom-anchored and grows upward with its content; a
+    // cap on `.prompt-input` alone still lets banners/footer push the card's
+    // top edge above the pane, where `.pane-chat`'s overflow: hidden clips it.
+    // Percentage height resolves against `.pane-chat` (position: relative),
+    // so this cap tracks the pane's real size, not the viewport.
+    assert.ok(
+      declares(titlebar, '#input-bar', /max-height:\s*calc\(100%/),
+      '#input-bar must cap the whole card relative to its pane',
+    )
+    assert.ok(
+      declares(titlebar, '#input-bar', /display:\s*flex/) &&
+        declares(titlebar, '#input-bar', /flex-direction:\s*column/),
+      '#input-bar must be a column flexbox so one child can shrink toward the cap',
+    )
+    // Every strip defaults to its natural size; only `.input-row` (the draft)
+    // gives up height first — flex items shrink by default, so without this
+    // default the footer/banners would get squeezed too.
+    assert.ok(
+      declares(titlebar, '#input-bar > *', /flex-shrink:\s*0/),
+      '#input-bar children must default to flex-shrink: 0',
+    )
+    // Scoped as `#input-bar > .input-row`, not plain `.input-row`: an
+    // id-qualified selector always outranks a class-only one, so the override
+    // has to match `#input-bar > *`'s specificity or it silently loses to that
+    // default regardless of which rule comes later in the file.
+    assert.ok(
+      declares(inputBar, '#input-bar > .input-row', /flex:\s*1 1 auto/) &&
+        declares(inputBar, '#input-bar > .input-row', /min-height:\s*0/),
+      '.input-row must be the one child allowed to shrink, down to 0, at a specificity that beats the flex-shrink: 0 default',
+    )
+    assert.ok(
+      declares(inputBar, '.prompt-input', /flex:\s*1 1 auto/),
+      '.prompt-input must carry the shrink from .input-row down to the scrollable element',
+    )
+    // Portrait mode and the centered (empty-thread) composer both change the
+    // card's margin from the docked --spacing-md, so each needs its own cap.
+    assert.ok(
+      declares(
+        inputBar,
+        '#app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar',
+        /max-height:\s*calc\(100%/,
+      ),
+      'the portrait composer must re-derive its cap for the taller bottom offset',
+    )
+    assert.ok(
+      declares(layout, '.pane-chat.composer-centered #input-bar', /max-height:\s*calc\(100%/),
+      'the centered (empty-thread) composer must cap itself too',
+    )
+  })
+
+  it('hides the composer scrollbar without disabling scroll (#2489)', () => {
+    const css = read('input-bar.css')
+    // The reporter's ask was "sticky but off screen", not a visible bar —
+    // `overflow-y: auto` (asserted above) stays, so wheel/keyboard scrolling
+    // still reaches earlier lines; only the thumb/track paint is suppressed.
+    assert.ok(
+      declares(css, '.prompt-input', /scrollbar-width:\s*none/),
+      '.prompt-input must hide the standard scrollbar without removing overflow-y: auto',
+    )
+    assert.ok(
+      declares(css, '.prompt-input::-webkit-scrollbar', /width:\s*0/),
+      '.prompt-input must also hide the WebKit/Chromium scrollbar (scrollbar-width has no effect there today)',
+    )
+  })
+
   it('anchors settings model menus so they cannot run off the surface', () => {
     const css = read('model-picker.css')
     // happy-dom has no layout, so the clamp itself is covered by

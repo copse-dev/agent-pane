@@ -5,12 +5,14 @@ import { createStore } from '@shared/store/store.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { openWorkspaceFile } from './files.ts'
+import { dismissContextMenu } from '../dom/context-menu.ts'
 
 const IMAGE = 'data:image/png;base64,iVBORw0KGgo='
 
 describe('workspace image links', () => {
   before(patchPreviewDialog)
   afterEach(() => {
+    dismissContextMenu()
     document.querySelector<HTMLDialogElement>('dialog[open]')?.close()
     document.body.replaceChildren()
   })
@@ -43,6 +45,15 @@ describe('workspace image links', () => {
     assert.equal(
       document.querySelector('dialog[open]')?.getAttribute('aria-label'),
       'Image preview: images/chart.PNG',
+    )
+    const image = document.querySelector<HTMLImageElement>('.image-expand-image')
+    assert.ok(image)
+    const contextEvent = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    image.dispatchEvent(contextEvent)
+    assert.equal(contextEvent.defaultPrevented, true)
+    assert.equal(
+      document.querySelector('dialog[open] .context-menu-item')?.textContent,
+      'Copy image',
     )
   })
 

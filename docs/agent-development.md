@@ -167,6 +167,7 @@ Everything Copse persists lives under one root, `~/.copse/` (`COPSE_DIR` moves t
 | `user-data/settings.json`                                                            | settings, including encrypted API keys                                     |
 | `user-data/` (rest)                                                                  | `mcp.json`, `tools/`, browser profiles, `gortex/` semantic index           |
 | `workspace/<projectId>/<threadId>/`                                                  | threads, tasks, decision log, deferred approvals                           |
+| `workspace/<projectId>/terminal-history`                                             | shared HISTFILE for the project's interactive Shells-tab PTYs (#2433)      |
 | `worktrees/`                                                                         | Copse-managed Git worktrees                                                |
 | `knowledge/`, `long-tasks/`, `roadmap-review/`, `pack-tool-snapshots/`, `hooks.json` | per-feature stores                                                         |
 
@@ -198,7 +199,7 @@ thread references. See [`thread-store-format.md`](thread-store-format.md).
 The post-edit hook runs `scripts/hook-file-check.mts` through the Copse, Cursor, and Claude hook
 configs. It auto-applies oxfmt and reports type-unaware ESLint findings. A reported rewrite makes
 the agent's prior view stale, so re-read that file. Type-aware rules and `tsc` remain part of
-`npm run check`.
+`npm run check:local` and the full `npm run check`.
 
 While iterating, use a path/base-name/glob filter or the test oracle:
 
@@ -210,8 +211,10 @@ npm run oracle -- --run e2e
 ```
 
 A filter matching zero tests is an error. Trust an oracle subset only at `HIGH` confidence; `LOW`
-lists blind spots and `broad` calls for the full tier. Always run `npm run check` before committing.
-See [`testing-strategy.md`](testing-strategy.md) for the complete tier and CI policy.
+lists blind spots and `broad` calls for the full tier. Every commit runs at least
+`npm run check:local` plus any relevant focused tests; the risk-based fast path and mandatory
+full-check surfaces are defined in
+[`testing-strategy.md`](testing-strategy.md#choose-the-local-gate-by-risk).
 
 ### Remote validation
 

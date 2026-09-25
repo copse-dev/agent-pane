@@ -92,23 +92,27 @@ Before submitting a change, run:
 pnpm run check
 ```
 
+For a localized low-risk PR backed by required CI, [AGENTS.md](AGENTS.md#before-committing) defines
+a narrower `pnpm run check:local` plus focused-test path. The full check remains the default.
+
 Changes to the Electron UI should also be built and covered by a focused end-to-end visual test. See [AGENTS.md](AGENTS.md) and the [testing strategy](docs/testing-strategy.md) for the full contributor workflow.
 
 <details>
 <summary><strong>Common development commands</strong></summary>
 
-| Command             | Purpose                                                      |
-| ------------------- | ------------------------------------------------------------ |
-| `make run`          | Sync deps, rebuild if source changed, then launch the app    |
-| `make build`        | Rebuild `dist/` if source changed (deps first)               |
-| `make deps`         | Sync dependencies to their content fingerprint               |
-| `make clean`        | Remove `dist/` and the dev-sync fingerprints                 |
-| `pnpm run dev`      | Build in watch mode and launch Electron                      |
-| `pnpm run build`    | Create the application bundle in `dist/`                     |
-| `pnpm start`        | Launch an existing build                                     |
-| `pnpm test`         | Run unit and component tests                                 |
-| `pnpm run test:e2e` | Run Electron end-to-end tests headlessly                     |
-| `pnpm run check`    | Run typecheck, lint, formatting, dead-code checks, and tests |
+| Command                | Purpose                                                      |
+| ---------------------- | ------------------------------------------------------------ |
+| `make run`             | Sync deps, rebuild if source changed, then launch the app    |
+| `make build`           | Rebuild `dist/` if source changed (deps first)               |
+| `make deps`            | Sync dependencies to their content fingerprint               |
+| `make clean`           | Remove `dist/` and the dev-sync fingerprints                 |
+| `pnpm run dev`         | Build in watch mode and launch Electron                      |
+| `pnpm run build`       | Create the application bundle in `dist/`                     |
+| `pnpm start`           | Launch an existing build                                     |
+| `pnpm test`            | Run unit and component tests                                 |
+| `pnpm run test:e2e`    | Run Electron end-to-end tests headlessly                     |
+| `pnpm run check:local` | Run local static gates without the complete unit suite       |
+| `pnpm run check`       | Run typecheck, lint, formatting, dead-code checks, and tests |
 
 </details>
 

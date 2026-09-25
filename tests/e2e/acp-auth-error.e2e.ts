@@ -18,6 +18,9 @@ describe('ACP authentication error presentation', () => {
     await $('[data-message-id="msg-assistant-cursor-auth"] .message-text').waitForExist({
       timeout: 30_000,
     })
+    await $('[data-message-id="msg-assistant-codex-auth"] .message-text').waitForExist({
+      timeout: 30_000,
+    })
   })
 
   after(() => {
@@ -77,6 +80,24 @@ describe('ACP authentication error presentation', () => {
     await savePreparedElementScreenshot(
       '[data-message-id="msg-assistant-cursor-auth"]',
       'cursor-acp-auth-error.png',
+    )
+  })
+
+  it('shows workspace-routing 401 recovery as an expired Codex sign-in', async () => {
+    const message = await $('[data-message-id="msg-assistant-codex-auth"] .message-text')
+    const warning = await message.$('.markdown-alert-warning')
+    await expect(warning.$('strong')).toHaveText('Codex sign-in expired')
+    await expect(message.$('ol code')).toHaveText('codex login')
+    const paragraphCodeText = await message.$$('p code').map((code) => code.getText())
+    expect(paragraphCodeText).toContain('CODEX_API_KEY')
+    expect(paragraphCodeText).toContain('OPENAI_API_KEY')
+    await expect(message.$('pre code')).toHaveText(
+      expect.stringContaining('workspace routing discovery unauthorized (401)'),
+    )
+
+    await savePreparedElementScreenshot(
+      '[data-message-id="msg-assistant-codex-auth"]',
+      'codex-workspace-routing-auth-error.png',
     )
   })
 })

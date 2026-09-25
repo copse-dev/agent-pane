@@ -122,6 +122,32 @@ function submitForm(): void {
   form.requestSubmit()
 }
 
+/** Dispatch a keydown on the given element (defaults to the form) with the given modifiers. */
+function pressEnter(
+  opts: {
+    metaKey?: boolean
+    ctrlKey?: boolean
+    shiftKey?: boolean
+    isComposing?: boolean
+    repeat?: boolean
+  },
+  target?: HTMLElement,
+): void {
+  const form = document.querySelector<HTMLFormElement>('#ask-user-form')
+  if (!form) throw new Error('ask-user form not mounted')
+  const event = new window.KeyboardEvent('keydown', {
+    key: 'Enter',
+    bubbles: true,
+    cancelable: true,
+    metaKey: opts.metaKey ?? false,
+    ctrlKey: opts.ctrlKey ?? false,
+    shiftKey: opts.shiftKey ?? false,
+    isComposing: opts.isComposing ?? false,
+    repeat: opts.repeat ?? false,
+  })
+  ;(target ?? form).dispatchEvent(event)
+}
+
 describe('ask_user dialog (component)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -207,6 +233,99 @@ describe('ask_user dialog (component)', () => {
     assert.deepEqual(harness.responses, [{ id: 'q3', answers: ['Postgres', 'Yes'] }])
   })
 
+  it('focuses the first answer textarea when the dialog opens', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-focus',
+      questions: [{ question: 'Which DB?' }, { question: 'Async?' }],
+    })
+
+    assert.equal(document.activeElement, at(inputs(), 0))
+  })
+
+  it('submits the typed answer on Cmd+Enter from the answer textarea', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-cmd-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'Postgres'
+    pressEnter({ metaKey: true }, input)
+
+    assert.deepEqual(harness.responses, [{ id: 'q-cmd-enter', answers: ['Postgres'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('submits the typed answer on Ctrl+Enter from the answer textarea', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-ctrl-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'SQLite'
+    pressEnter({ ctrlKey: true }, input)
+
+    assert.deepEqual(harness.responses, [{ id: 'q-ctrl-enter', answers: ['SQLite'] }])
+    assert.equal(dialog().open, false)
+  })
+
+  it('does not submit on plain Enter, leaving it to insert a newline', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-plain-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'Postgres'
+    pressEnter({}, input)
+
+    assert.deepEqual(harness.responses, [])
+    assert.equal(dialog().open, true)
+  })
+
+  it('does not submit on Shift+Enter', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-shift-enter', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    input.value = 'Postgres'
+    pressEnter({ shiftKey: true }, input)
+
+    assert.deepEqual(harness.responses, [])
+    assert.equal(dialog().open, true)
+  })
+
+  it('ignores composing and repeated submit chords without bubbling them', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-first-enter', questions: [{ question: 'Which DB?' }] })
+    harness.emit({ id: 'q-second-enter', questions: [{ question: 'Which cache?' }] })
+
+    let documentKeydowns = 0
+    const onDocumentKeydown = (): void => {
+      documentKeydowns += 1
+    }
+    document.addEventListener('keydown', onDocumentKeydown)
+    try {
+      const firstInput = at(inputs(), 0)
+      firstInput.value = 'Postgres'
+      pressEnter({ ctrlKey: true }, firstInput)
+
+      const secondInput = at(inputs(), 0)
+      secondInput.value = 'Redis'
+      pressEnter({ ctrlKey: true, isComposing: true }, secondInput)
+      pressEnter({ ctrlKey: true, repeat: true }, secondInput)
+    } finally {
+      document.removeEventListener('keydown', onDocumentKeydown)
+    }
+
+    assert.deepEqual(harness.responses, [{ id: 'q-first-enter', answers: ['Postgres'] }])
+    assert.equal(documentKeydowns, 0)
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Which cache?')
+  })
+
   it('returns blank answers when the user cancels', () => {
     const { api, harness } = stubApi()
     mount(api)
@@ -221,6 +340,55 @@ describe('ask_user dialog (component)', () => {
 
     assert.deepEqual(harness.responses, [{ id: 'q-cancel', answers: ['', ''] }])
     assert.equal(dialog().open, false)
+  })
+
+  it('responds with blank answers and advances the queue on Escape', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({
+      id: 'q-escape',
+      questions: [{ question: 'Which DB?' }, { question: 'Async?' }],
+    })
+    harness.emit({ id: 'q-next', questions: [{ question: 'Next?' }] })
+
+    // happy-dom does not synthesize the native `cancel` event from an Escape
+    // keydown (it has no top-layer/dialog implementation at all — see the
+    // file header), so dispatch the event <dialog> fires itself directly,
+    // the same way the real Escape path reaches the app's listener.
+    dialog().dispatchEvent(new Event('cancel', { cancelable: true }))
+
+    assert.deepEqual(harness.responses, [{ id: 'q-escape', answers: ['', ''] }])
+    // The agent is not left hanging, and the next queued question surfaces.
+    assert.equal(dialog().open, true)
+    assert.equal(document.querySelector('.ask-user-question')?.textContent, 'Next?')
+  })
+
+  it('keeps Escape away from the app stop shortcut', () => {
+    const { api, harness } = stubApi()
+    mount(api)
+    harness.emit({ id: 'q-escape-keydown', questions: [{ question: 'Which DB?' }] })
+
+    const input = at(inputs(), 0)
+    let documentKeydowns = 0
+    const onDocumentKeydown = (): void => {
+      documentKeydowns += 1
+    }
+    document.addEventListener('keydown', onDocumentKeydown)
+    try {
+      input.dispatchEvent(
+        new window.KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    } finally {
+      document.removeEventListener('keydown', onDocumentKeydown)
+    }
+
+    assert.equal(documentKeydowns, 0)
+    assert.deepEqual(harness.responses, [])
+    assert.equal(dialog().open, true)
   })
 
   it('queues a second request and shows it after the first is answered', () => {
