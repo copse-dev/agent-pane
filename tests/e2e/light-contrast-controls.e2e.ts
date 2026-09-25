@@ -54,6 +54,27 @@ function controlContrast(selector: string): number | null {
   return contrast(style.color, style.backgroundColor)
 }
 
+/** Change theme through the same persisted settings surface a user uses. */
+async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
+  await $('[aria-label="Settings"]').click()
+  await $('.settings-nav-btn[data-section="appearance"]').click()
+  await $('select[name="theme"]').waitForDisplayed({ timeout: 30_000 })
+  await browser.execute((next) => {
+    const select = document.querySelector<HTMLSelectElement>('select[name="theme"]')
+    if (!select) return
+    select.value = next
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  }, theme)
+  await $('.settings-buttons button[type="submit"]').click()
+  await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
+  await browser.waitUntil(
+    async () =>
+      browser.execute((next) => document.documentElement.dataset['theme'] === next, theme),
+    { timeout: 10_000, timeoutMsg: `expected the ${theme} theme to apply` },
+  )
+  await $('.roadmap-save-btn').waitForDisplayed({ timeout: 10_000 })
+}
+
 describe('light-contrast controls: roadmap Save button + Changes badge (issue #2488)', () => {
   let workspaceRoot: string
 
@@ -112,17 +133,17 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
     )
 
     async function measureAndCapture(theme: 'light' | 'dark') {
-      await browser.execute((mode) => {
-        document.documentElement.dataset['theme'] = mode
-      }, theme)
-      await browser.pause(100)
+      const currentTheme = await browser.execute(
+        () => document.documentElement.dataset['theme'] ?? null,
+      )
+      if (currentTheme !== theme) await switchTheme(theme)
       await saveElementScreenshot(
         '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
         `light-contrast-changes-badge-${theme}.png`,
       )
-      // Keep the Save evidence inside the full app frame. Chromium's element
-      // screenshot path has intermittently dropped individual painted glyphs
-      // after a live theme swap, even when the containing action row is used.
+      // Keep the Save evidence inside the full app frame. Switching through
+      // persisted settings gives Chromium a stable render before capture;
+      // directly mutating data-theme has intermittently dropped painted glyphs.
       await saveAppScreenshot(`light-contrast-save-button-${theme}.png`)
       const badge = await browser.execute(
         controlContrast,
@@ -136,11 +157,6 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
 
     const light = await measureAndCapture('light')
     const dark = await measureAndCapture('dark')
-
-    // Hand the page back in the theme the project was seeded with.
-    await browser.execute(() => {
-      document.documentElement.dataset['theme'] = 'light'
-    })
 
     for (const [theme, measured] of [
       ['light', light],
