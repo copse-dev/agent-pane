@@ -418,8 +418,8 @@ async function preparePnpmStoreAliases(
 /**
  * Everything the stages after Stage 0 share: the two checkouts, the cell (when
  * execution was allowed), the detected commands, and the scrubber. Opened once
- * per review and closed once, so Stage 2's reviewer reads the same head
- * checkout Stage 0 built and runs its commands in the same cell.
+ * per review and closed once. Stage 2 reads the frozen source and runs
+ * commands in the writable checkout Stage 0 built, inside the same cell.
  */
 export interface ReviewGround {
   readonly options: Stage0Options
@@ -642,7 +642,7 @@ export async function runStage0Checks(
       checks.push(outcome)
       findings.push(
         ...findingsFor({
-          headCheckout: checkouts.head,
+          headCheckout: checkouts.reviewHead,
           outcome,
           headRun: head,
           baseRun: base,

@@ -352,7 +352,7 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
 }
 
 function pinnedHead(checkouts: MaterialisedCheckouts): PinnedWorktree {
-  return { gitDir: checkouts.headGitDir, workTree: checkouts.head }
+  return { gitDir: checkouts.headGitDir, workTree: checkouts.reviewHead }
 }
 
 export async function buildReviewContext(options: BuildContextOptions): Promise<ReviewContext> {
@@ -365,8 +365,8 @@ export async function buildReviewContext(options: BuildContextOptions): Promise<
     head: pinnedHead(options.checkouts),
     dirtyWorkingTree: options.checkouts.dirty,
     files,
-    instructions: readInstructions(options.checkouts.head),
-    testMap: await buildTestMap(options.checkouts.head, files),
+    instructions: readInstructions(options.checkouts.reviewHead),
+    testMap: await buildTestMap(options.checkouts.reviewHead, files),
     budgetChars,
     usedChars: files.reduce((sum, file) => sum + file.text.length, 0),
   }

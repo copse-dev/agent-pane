@@ -61,6 +61,7 @@ describe('materialiseCheckouts', () => {
     }
     assert.equal(await exists(checkouts.base), false)
     assert.equal(await exists(checkouts.head), false)
+    assert.equal(await exists(checkouts.reviewHead), false)
     assert.equal(worktreeCount(repo), 1)
   })
 

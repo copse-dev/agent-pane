@@ -1348,3 +1348,19 @@ model calls/waiting, including 135.4s of scheduled waits after ten streamed 429s
 which is an overlap opportunity, not a promised saving under increased load.
 Compare the subsequent protected live run's elapsed time, per-turn overlap,
 provider metadata, retry count and proof quality before claiming a speedup.
+
+### Freeze review source before execution (September 2026)
+
+Materialisation now copies the head, including intentional tracked and untracked author
+changes, to a separate input directory before any preparation or checks run. The directory
+is a sibling of the execution scratch directory and is never mounted writable into the
+cell. Context, instructions, test discovery, model source/search/diff reads and finding
+anchors use that snapshot; commands and reproducers retain the writable execution copies.
+Cleanup removes the snapshot with the review. This prevents a formatter, test or hostile
+check from rewriting what the later reviewer sees. It does not turn the explicitly
+unisolated host backend into a security boundary.
+
+Posted model prose preserves only complete code spans on one line and escapes other
+backticks, backslashes, HTML and mentions. Multiline or unmatched delimiters cannot expose
+an HTML comment or start a fence that consumes the rest of a finding. This deliberately
+normalizes malformed/multiline code formatting while retaining ordinary inline code.
