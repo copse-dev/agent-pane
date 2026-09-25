@@ -41,14 +41,37 @@ it(
         assert.match(result.output, /^(?:cargo|rustc) \d+\./m)
       }
 
-      // Everything else under CARGO_HOME stays denied: tokens and downloaded sources.
-      for (const path of ['credentials.toml', 'config.toml', 'registry']) {
-        if (!existsSync(join(homedir(), '.cargo', path))) continue
-        const result = await run(`ls "$HOME/.cargo/${path}"`)
+      // Everything else under CARGO_HOME, and the rest of home, stays unreadable.
+      // Read files rather than list directories: Linux bubblewrap hides a denied
+      // home behind an empty mount, so `ls "$HOME"` succeeds there and shows only
+      // the allowed paths, while macOS seatbelt refuses the listing itself.
+      let checked = 0
+      for (const path of [
+        '.cargo/env',
+        '.cargo/credentials.toml',
+        '.cargo/config.toml',
+        '.profile',
+        '.bashrc',
+        '.zshrc',
+      ]) {
+        if (!existsSync(join(homedir(), path))) continue
+        checked++
+        const result = await run(`cat "$HOME/${path}"`)
         assert.notEqual(result.status, 0, `${path} should not be readable\n${result.output}`)
       }
-      const home = await run('ls "$HOME"')
-      assert.notEqual(home.status, 0, `the home directory stays denied\n${home.output}`)
+      assert.ok(
+        checked > 0,
+        'expected at least one home file to probe (rustup writes ~/.cargo/env)',
+      )
+      const registry = join(homedir(), '.cargo', 'registry')
+      if (existsSync(registry)) {
+        const result = await run('ls "$HOME/.cargo/registry"/*')
+        assert.notEqual(
+          result.status,
+          0,
+          `the registry cache should not be readable\n${result.output}`,
+        )
+      }
     } finally {
       await SandboxManager.reset()
       rmSync(workspace, { recursive: true, force: true })
