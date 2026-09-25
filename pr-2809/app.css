@@ -5200,6 +5200,13 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-group-item[data-status=error] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
+.tool-interruption-note {
+  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.tool-rollup-body > .tool-interruption-note {
+  margin: var(--spacing-xs) 0;
+}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -11305,6 +11312,19 @@ dialog.process-manager-overlay {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.process-manager-activity-item:hover {
+  border-color: var(--border-focus);
+}
+.process-manager-activity-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.process-manager-activity-item[aria-disabled=true] {
+  cursor: default;
 }
 .process-manager-activity-dot {
   width: 7px;
@@ -11328,9 +11348,33 @@ dialog.process-manager-overlay {
 }
 .process-manager-table {
   width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
+}
+.process-manager-table th:nth-child(1) {
+  width: 24%;
+}
+.process-manager-table th:nth-child(2) {
+  width: 14%;
+}
+.process-manager-table th:nth-child(3) {
+  width: 18%;
+}
+.process-manager-table th:nth-child(4) {
+  width: 10%;
+}
+.process-manager-table th:nth-child(5) {
+  width: 15%;
+}
+.process-manager-table th:nth-child(6) {
+  width: 11%;
+  text-align: right;
+}
+.process-manager-table th:nth-child(7) {
+  width: 8%;
 }
 .process-manager-table th,
 .process-manager-table td {
@@ -11389,6 +11433,10 @@ dialog.process-manager-overlay {
   padding: 4px;
 }
 .process-manager-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
   border: 0;
   padding: 0;
   background: none;
@@ -11399,11 +11447,22 @@ dialog.process-manager-overlay {
 .process-manager-sort:hover {
   color: var(--text-primary);
 }
+.process-manager-sort::after {
+  content: "";
+  width: 8px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-inline-start: 5px;
+  background: currentColor;
+  visibility: hidden;
+}
 .process-manager-table th[aria-sort=descending] .process-manager-sort::after {
-  content: " \2193";
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  visibility: visible;
 }
 .process-manager-table th[aria-sort=ascending] .process-manager-sort::after {
-  content: " \2191";
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  visibility: visible;
 }
 .process-manager-sort:focus-visible {
   outline: 2px solid var(--border-focus);
