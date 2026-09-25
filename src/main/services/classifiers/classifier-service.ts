@@ -1,7 +1,12 @@
 import { runValidatedClassifierBatch } from '@copse/llm/classifiers/validated.ts'
 import { parseClassifierRequests } from '@copse/llm/classifiers/validation.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
-import { classifierCredentialId, CLASSIFIER_TEST_REQUEST } from '@copse/llm/classifiers/presets.ts'
+import {
+  classifierCredentialId,
+  classifierEndpointKey,
+  CLASSIFIER_TEST_REQUEST,
+  hostedClassifierPresets,
+} from '@copse/llm/classifiers/presets.ts'
 import type {
   ClassifierCallOptions,
   ClassifierProfile,
@@ -66,15 +71,13 @@ function environmentKeyAllowed(profile: ClassifierProfile): boolean {
   const connection = profile.connection
   if (connection.type !== 'http' || connection.auth === 'none' || !connection.apiKeyEnv) return true
   if (/^COPSE_CLASSIFIER_[A-Z0-9_]+$/.test(connection.apiKeyEnv)) return true
-  const url = new URL(connection.baseUrl)
-  if (url.pathname.replace(/\/+$/, '') !== '/v1') return false
-  return (
-    (connection.apiKeyEnv === 'TYPESAFE_API_KEY' &&
-      connection.protocol === 'systemone' &&
-      url.origin === 'https://api.typesafe.ai') ||
-    (connection.apiKeyEnv === 'FEATHERLESS_API_KEY' &&
-      connection.protocol === 'featherless' &&
-      url.origin === 'https://api.featherless.ai')
+  // A preset's provider variable may only travel to that preset's official endpoint.
+  const endpoint = classifierEndpointKey(connection.baseUrl)
+  return hostedClassifierPresets().some(
+    (preset) =>
+      preset.apiKeyEnv === connection.apiKeyEnv &&
+      preset.protocol === connection.protocol &&
+      classifierEndpointKey(preset.baseUrl) === endpoint,
   )
 }
 
@@ -155,11 +158,7 @@ function credentialScope(profile: ClassifierProfile): string {
   const connection = profile.connection
   return connection.type === 'semif'
     ? 'semif'
-    : JSON.stringify([
-        connection.protocol,
-        connection.auth,
-        new URL(connection.baseUrl).href.replace(/\/+$/, ''),
-      ])
+    : JSON.stringify([connection.protocol, connection.auth, classifierEndpointKey(connection.baseUrl)])
 }
 
 function knownSecrets(): string[] {

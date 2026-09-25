@@ -1,4 +1,8 @@
-import type { ClassifierProfile, ClassifierRequest } from './types.ts'
+import type {
+  ClassifierProfile,
+  ClassifierRequest,
+  HttpClassifierConnection,
+} from './types.ts'
 
 /** Defaults are editable; aliases are recorded alongside returned model versions in results. */
 export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
@@ -56,9 +60,24 @@ export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
   },
 ]
 
+/** Classifier keys share the provider-key store; chat-provider slugs may not use this prefix. */
+export const CLASSIFIER_CREDENTIAL_PREFIX = 'classifier-'
+
 export function classifierCredentialId(id: string): string {
   if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error('Invalid classifier profile ID')
-  return `classifier-${id}`
+  return `${CLASSIFIER_CREDENTIAL_PREFIX}${id}`
+}
+
+/** Hosted preset endpoints: first-party provider hosts, and the only homes for preset key variables. */
+export function hostedClassifierPresets(): HttpClassifierConnection[] {
+  return CLASSIFIER_PRESETS.flatMap(({ connection }) =>
+    connection.type === 'http' && connection.auth === 'bearer' ? [connection] : [],
+  )
+}
+
+/** Compare classifier endpoints by URL, ignoring trailing slashes. Profiles carry no query or hash. */
+export function classifierEndpointKey(baseUrl: string): string {
+  return new URL(baseUrl).href.replace(/\/+$/, '')
 }
 
 export const CLASSIFIER_TEST_REQUEST: ClassifierRequest = {

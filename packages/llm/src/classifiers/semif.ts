@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { z } from 'zod'
+import { signalProcessTree } from '@copse/std/process-tree.ts'
 import { ClassifierError } from './error.ts'
+import { classifierDeadline, interruption } from './deadline.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { parseClassifierBatch } from './validation.ts'
 import type {
@@ -120,17 +122,8 @@ function runtimeEnvironment(): NodeJS.ProcessEnv {
   }
 }
 
-function interruptionError(signal: AbortSignal): ClassifierError {
-  return new ClassifierError(
-    signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError'
-      ? 'timeout'
-      : 'cancelled',
-    'SemIf call was cancelled or exceeded its deadline.',
-  )
-}
-
 function checkInterrupted(signal: AbortSignal): void {
-  if (signal.aborted) throw interruptionError(signal)
+  if (signal.aborted) throw interruption(signal)
 }
 
 function runScorer(
@@ -172,13 +165,7 @@ function runScorer(
     let failure: Error | undefined
     let escalation: NodeJS.Timeout | undefined
     const kill = (hard: boolean): void => {
-      if (!child.pid) return
-      try {
-        if (process.platform === 'win32') child.kill(hard ? 'SIGKILL' : 'SIGTERM')
-        else process.kill(-child.pid, hard ? 'SIGKILL' : 'SIGTERM')
-      } catch {
-        /* The process may already have exited. */
-      }
+      signalProcessTree(child, hard ? 'SIGKILL' : 'SIGTERM')
     }
     const onParentExit = (): void => {
       // Detached groups survive their parent unless explicitly terminated.
@@ -200,7 +187,7 @@ function runScorer(
       }, 500)
     }
     const abort = (): void => {
-      stop(interruptionError(signal))
+      stop(interruption(signal))
     }
     const checkSize = (): void => {
       void stat(output).then(
@@ -318,14 +305,13 @@ export async function classifySemIfBatchValidated(
       'invalid-request',
       `SemIf timeout must be between 1 and ${String(MAX_TIMER_MS)} milliseconds.`,
     )
-  const signal = AbortSignal.any([
-    AbortSignal.timeout(timeoutMs),
-    ...(options.signal ? [options.signal] : []),
-  ])
-  checkInterrupted(signal)
-  const directory = await mkdtemp(join(tmpdir(), 'copse-semif-'))
-  const started = performance.now()
+  if (options.signal?.aborted) throw new ClassifierError('cancelled', 'Classifier call cancelled.')
+  const deadline = classifierDeadline(timeoutMs, options.signal)
+  const signal = deadline.signal
+  let directory: string | undefined
   try {
+    directory = await mkdtemp(join(tmpdir(), 'copse-semif-'))
+    const started = performance.now()
     const inputPath = join(directory, 'input.jsonl')
     const outputPath = join(directory, 'output.jsonl')
     await writeFile(inputPath, input, { mode: 0o600 })
@@ -385,6 +371,7 @@ export async function classifySemIfBatchValidated(
       }
     })
   } finally {
-    await rm(directory, { recursive: true, force: true })
+    deadline.dispose()
+    if (directory) await rm(directory, { recursive: true, force: true })
   }
 }

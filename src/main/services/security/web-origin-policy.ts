@@ -1,5 +1,6 @@
 import { isIP } from 'node:net'
 import { DEFAULT_WEB_ALLOWED_ORIGINS } from '@shared/web-origins.ts'
+import { readResponseTextWithin } from '@copse/std/bounded-response.ts'
 import {
   isLoopbackHostname,
   isPrivateOrLinkLocalHost,
@@ -203,20 +204,9 @@ export async function fetchWithWebOriginPolicy(
 }
 
 export async function readWebResponseText(res: Response): Promise<string> {
-  const reader = res.body?.getReader()
-  if (!reader) return res.text()
-
-  const chunks: Uint8Array[] = []
-  let received = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    received += value.byteLength
-    if (received > MAX_WEB_FETCH_BYTES) {
-      await reader.cancel()
-      throw new Error(`Fetch response exceeded ${String(MAX_WEB_FETCH_BYTES)} bytes`)
-    }
-    chunks.push(value)
+  const text = await readResponseTextWithin(res, MAX_WEB_FETCH_BYTES)
+  if (text === null) {
+    throw new Error(`Fetch response exceeded ${String(MAX_WEB_FETCH_BYTES)} bytes`)
   }
-  return new TextDecoder().decode(Buffer.concat(chunks))
+  return text
 }

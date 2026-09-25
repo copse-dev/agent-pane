@@ -1,32 +1,10 @@
 import type { ChildProcess } from 'node:child_process'
+import { signalProcessTree } from '@copse/std/process-tree.ts'
 import { getRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
 import { killRemoteProcessGroup } from './remote-process-kill.ts'
 
 /** Grace period between SIGTERM and the SIGKILL fallback when terminating a subprocess. */
 export const SUBPROCESS_KILL_GRACE_MS = 2_000
-
-/**
- * Terminate a child and, where the platform supports it, its whole process group
- * (children spawned via `detached: true` lead a new group whose id is the child pid).
- * Killing the group reaps orphaned grandchildren (e.g. `npm` -> `node`, `bash -c ...`).
- */
-function signalProcessTree(proc: ChildProcess, signal: NodeJS.Signals): void {
-  const pid = proc.pid
-  // On POSIX a detached child leads its own group; negate the pid to target the group.
-  if (pid !== undefined && process.platform !== 'win32') {
-    try {
-      process.kill(-pid, signal)
-      return
-    } catch {
-      // Group gone or never detached — fall through to a direct kill.
-    }
-  }
-  try {
-    proc.kill(signal)
-  } catch {
-    // Already exited.
-  }
-}
 
 /**
  * The same group-then-process escalation as {@link signalProcessTree}, for a pid

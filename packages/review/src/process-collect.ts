@@ -2,6 +2,7 @@
 // backend: the host-process backend spawns directly, the app's OS-sandbox
 // backend spawns through the seatbelt wrapper, and both hand the child here.
 import type { ChildProcess } from 'node:child_process'
+import { signalProcessTree } from '@copse/std/process-tree.ts'
 import type { CellCommand, CellCommandResult } from './isolation.ts'
 
 /** Append `chunk` to `current`, keeping at most `maxBytes` of the TAIL. */
@@ -23,16 +24,7 @@ export function appendTailCapped(
 
 /** Kill the child's whole process group when it was spawned detached, else the child. */
 export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid === undefined) return
-  try {
-    process.kill(-child.pid, signal)
-  } catch {
-    try {
-      child.kill(signal)
-    } catch {
-      // Already gone.
-    }
-  }
+  signalProcessTree(child, signal)
 }
 
 export interface CollectOptions {
