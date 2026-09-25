@@ -7,7 +7,10 @@ import {
   updateKnowledgeNote,
   type KnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
-import { turnIngestedExternalContent } from '../services/security/turn-taint.ts'
+import {
+  markTurnExternalIngestion,
+  turnIngestedExternalContent,
+} from '../services/security/turn-taint.ts'
 
 /**
  * Experimental OKF memories feature. `remember`/`recall` persist durable project
@@ -59,14 +62,14 @@ export const rememberTool = defineTool({
     const cleanTitle = title.trim()
     const existing = loadKnowledgeNotes(MEMORY_TYPE).find((note) => note.title === cleanTitle)
     // Recording only — a tainted turn still saves; the provenance rides along.
-    // A clean-turn rewrite clears the flag: the latest body is what recall
-    // replays, and it was authored without external content in context.
     const tainted = turnIngestedExternalContent()
     let note: KnowledgeNote
     if (existing) {
-      const fields = Object.fromEntries(
-        Object.entries(existing.fields).filter(([key]) => key !== EXTERNAL_CONTEXT_FIELD),
-      )
+      // The marker is sticky across agent rewrites. A "clean" turn can still
+      // carry the old text forward — it may have recalled the memory, or read
+      // its file directly — so only a user edit in the Memories pane, which is
+      // a review, clears it (`memories:update`).
+      const fields = { ...existing.fields }
       if (tainted) fields[EXTERNAL_CONTEXT_FIELD] = 'true'
       note =
         updateKnowledgeNote(existing.id, { body: content, tags: tags ?? existing.tags, fields }) ??
@@ -84,15 +87,37 @@ export const rememberTool = defineTool({
   },
 })
 
+/**
+ * Most memories an unfiltered `recall` returns, and the most characters of
+ * memory text it spends. A long-lived project accumulates memories, and listing
+ * all of them on every recall would crowd the context window; a query narrows
+ * to what matters, so past the cap the model is told to use one.
+ */
+export const RECALL_ALL_MAX_MEMORIES = 50
+export const RECALL_ALL_MAX_CHARS = 20_000
+
+/** Take memories in order until either cap would be exceeded (always at least one). */
+function capUnfiltered(formatted: string[]): string[] {
+  const shown: string[] = []
+  let chars = 0
+  for (const text of formatted) {
+    if (shown.length >= RECALL_ALL_MAX_MEMORIES) break
+    if (shown.length > 0 && chars + text.length > RECALL_ALL_MAX_CHARS) break
+    shown.push(text)
+    chars += text.length
+  }
+  return shown
+}
+
 export const recallTool = defineTool({
   name: 'recall',
   description:
-    'Recall previously stored project memories (OKF notes). Optionally filter with a query matched against titles, tags, and bodies; omit it to list every memory. Returns the matching memories as markdown.',
+    'Recall previously stored project memories (OKF notes). Optionally filter with a query matched against titles, tags, and bodies; omit it to list memories (a long list is truncated — use a query to find the rest). Returns the matching memories as markdown.',
   parameters: z.object({
     query: z
       .string()
       .optional()
-      .describe('Optional search terms — all must match. Omit to list every memory.'),
+      .describe('Optional search terms — all must match. Omit to list memories.'),
   }),
   execute({ query }) {
     const trimmed = query?.trim() ?? ''
@@ -104,7 +129,20 @@ export const recallTool = defineTool({
         ? `No memories match "${trimmed}".`
         : 'No memories stored yet for this project. Use the remember tool to add one.'
     }
+    const formatted = memories.map(formatMemory)
+    const shown = trimmed ? formatted : capUnfiltered(formatted)
+    // Replaying a memory saved with external content in context puts that
+    // content back in this turn's context, so the turn is tainted exactly as
+    // if it had fetched it: anything it remembers next carries the marker.
+    if (memories.slice(0, shown.length).some(savedFromExternalTurn)) markTurnExternalIngestion()
     const header = `Found ${String(memories.length)} ${memories.length === 1 ? 'memory' : 'memories'}:`
-    return [header, ...memories.map(formatMemory)].join('\n\n')
+    const omitted = memories.length - shown.length
+    const truncation =
+      omitted > 0
+        ? [
+            `(Output truncated: showing ${String(shown.length)} of ${String(memories.length)} memories; ${String(omitted)} not shown. Call recall with a query to find a specific memory.)`,
+          ]
+        : []
+    return [header, ...shown, ...truncation].join('\n\n')
   },
 })

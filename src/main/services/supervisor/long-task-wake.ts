@@ -7,7 +7,8 @@ import { abortAgent } from '../agent-service.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { getSetting } from '../storage/settings.ts'
 import { resolveSshExecutionTargetForCwd } from '../ssh-workspace/execution-target.ts'
-import { loadLongTasksForRoot, taskProgress, type LongTask } from '../storage/long-task-tracker.ts'
+import { loadLongTasksForScope, taskProgress, type LongTask } from '../storage/long-task-tracker.ts'
+import { threadProjectStoreScope, type ProjectStoreScope } from '../storage/project-namespace.ts'
 import type { ThreadExecutionContext } from '../thread-execution-context.ts'
 import { resolveThreadExecutionContext } from '../thread-execution-context.ts'
 import type { TaskSupervisor } from './task-supervisor.ts'
@@ -45,7 +46,7 @@ export interface LongTaskWakeDependencies {
     kind: 'local' | 'ssh'
     id?: string
   }
-  loadTasks: (root: string) => LongTask[]
+  loadTasks: (scope: ProjectStoreScope) => LongTask[]
   now: () => number
   abortThread: (threadId: string) => void
 }
@@ -59,7 +60,7 @@ const defaultDependencies: LongTaskWakeDependencies = {
     const target = resolveSshExecutionTargetForCwd(executionRoot)
     return target?.kind === 'ssh' ? { kind: 'ssh', id: target.hostId } : { kind: 'local' }
   },
-  loadTasks: loadLongTasksForRoot,
+  loadTasks: loadLongTasksForScope,
   now: Date.now,
   abortThread: abortAgent,
 }
@@ -76,12 +77,12 @@ export function scheduleLongTaskWake(
 }
 
 function continuationPrompt(
-  root: string,
+  scope: ProjectStoreScope,
   longTaskId: string,
   dependencies: LongTaskWakeDependencies,
 ): string | null {
   const pending = dependencies
-    .loadTasks(root)
+    .loadTasks(scope)
     .filter((task) => task.id === longTaskId)
     .map((task) => ({ task, progress: taskProgress(task) }))
     .filter(({ progress }) => !progress.complete)
@@ -147,7 +148,13 @@ export function installLongTaskWakeConsumer(
         return { blockedReason: 'Long-task wake requires explicit approval before dispatch' }
       }
       if (!task.parentTaskId) return { blockedReason: 'Long-task wake has no checklist owner' }
-      const prompt = continuationPrompt(context.projectRoot, task.parentTaskId, dependencies)
+      // The woken thread's own project store — the wake may fire while the user
+      // has another project active.
+      const prompt = continuationPrompt(
+        threadProjectStoreScope(context),
+        task.parentTaskId,
+        dependencies,
+      )
       if (!prompt) return { resultRef: { kind: 'handler', ref: 'no-incomplete-long-tasks' } }
       signal.throwIfAborted()
       const abort = (): void => {
