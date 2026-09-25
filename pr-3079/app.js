@@ -23006,7 +23006,7 @@ function reviewReportsAwaitingModel(thread) {
   const awaiting = [];
   const legacy = userRunDone(thread.reviewReport);
   if (legacy && !thread.messages.some(
-    (message2) => message2.role === "assistant" && message2.createdAt > legacy.startedAt
+    (message2) => message2.role === "assistant" && message2.createdAt >= legacy.startedAt
   )) {
     awaiting.push(legacy);
   }
