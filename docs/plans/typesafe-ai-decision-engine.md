@@ -4,8 +4,8 @@ Status: **Proposed** — evaluation and integration plan only. No TypeSafe depen
 credential, network request, feature pack, or product behavior is implemented by this
 document.
 
-Reviewed against `origin/main` at `dfc15e48a` and TypeSafe's public documentation on
-2026-09-19.
+Reviewed against `origin/main` at `5644864fa` (2026-09-25) and TypeSafe's public
+documentation on 2026-09-19.
 
 ## Recommendation
 
@@ -17,7 +17,8 @@ the returned probability distributions to accept confident answers and fall back
 when the service is uncertain or unavailable.
 
 Ship any integration as a disabled-by-default experimental first-party pack,
-`copse.typesafe-decisions`. A user must enable the pack, save a TypeSafe API key, and
+`copse.typesafe-decisions`. A user must enable the pack, provide a TypeSafe API key (saved
+in Copse's encrypted settings, or the `TYPESAFE_API_KEY` environment fallback), and
 acknowledge that the selected text leaves the device before Copse sends a request. The
 existing behavior remains byte-for-byte unchanged when the pack is disabled, has no key,
 or cannot obtain a usable answer.
@@ -40,8 +41,10 @@ Copse seams:
   category choices. That gives the first experiment a bounded blast radius.
 - [`model-classifier.ts`](../../src/main/services/providers/model-classifier.ts) is an
   advisory heuristic scaffold that explicitly anticipates a learned or model-judged
-  follow-up. A typed task-demand judgment could become one input to that router after the
-  Roadmap pilot proves calibration.
+  follow-up. Today it is reachable only through the agent-visible `suggest_model` tool;
+  TypeSafe must not be plugged in there, because that would make cloud calls
+  agent-triggered. A typed task-demand judgment could become one input to a separate,
+  host-side routing path after the Roadmap pilot proves calibration (see Phase 4).
 - [`post-turn-orchestration.ts`](../../src/main/services/post-turn-orchestration.ts) runs
   a comparatively expensive generative review cycle. A later typed triage step could
   decide when that reviewer is clearly unnecessary, but cannot replace the reviewer or
@@ -108,7 +111,10 @@ is the runtime contract even when SDK TypeScript types compile.
     user's category.
 11. **No hidden telemetry.** Evaluation artifacts and shadow decisions remain local.
     Do not upload prompts, corrections, labels, or success signals to Copse or TypeSafe
-    beyond the explicit inference request.
+    beyond the explicit inference request. Phase 2's exit gate is therefore measured only
+    on team devices: each participant labels their own shadow decisions locally and hands
+    over a reviewed, redacted export they choose to share. Nothing is collected
+    automatically.
 12. **No security authority.** A TypeSafe result cannot allow a shell command, widen a
     sandbox, expose a credential, suppress an approval, mark a review clean, or assert
     task completion. This is a permanent constraint, not a phase-one limitation.
@@ -131,8 +137,12 @@ type Decision<T> =
   | { kind: 'abstained'; reason: 'low-confidence' | 'invalid' | 'unavailable' }
 ```
 
-The wire request contains only `{ prompt: redactSecrets(prompt).slice(0, 2_000) }` and
-two independent questions:
+The wire request contains only
+`{ prompt: redactSecrets(prompt, knownLiteralSecrets()).slice(0, 2_000) }` and two
+independent questions. Passing the stored keys matters: pattern matching alone misses a
+saved key with no recognizable shape, so a key pasted into a Roadmap note would otherwise
+reach TypeSafe. Reuse the same literal-secret set `provider-selection.ts` builds for remote
+LLM providers (every stored or environment provider key, plus the TypeSafe key itself):
 
 | Question     | Initial primitive                   | Criteria                                                 | Stored result                                                                                                                  |
 | ------------ | ----------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -152,7 +162,9 @@ authoritative and TypeSafe output is recorded only as local evaluation metadata.
 Do not persist confidence or vendor provenance in Roadmap frontmatter in the first slice.
 Those fields are user-facing durable product data, while thresholds and model versions
 will change during calibration. Keep bounded evaluation records in an explicitly local,
-rotating diagnostic store containing a prompt digest, question-set/model versions,
+rotating diagnostic store containing a prompt digest (an HMAC keyed by a random
+per-profile secret, never an unsalted hash that could be reversed by guessing likely short
+prompts), question-set/model versions,
 answer distributions, latency, fallback reason, and baseline verdict — never the raw
 prompt. Enforce a bounded retention window and provide an explicit clear action;
 disabling the pack stops collection without silently rewriting its namespaced storage.
@@ -245,7 +257,12 @@ The Settings detail follows the direct Parallel Search precedent:
 - clear text that Roadmap prompts leave the device, requests may be billable, ordinary
   retention is not a published fixed window, service hosting is in the US, and ZDR is an
   enterprise account/contract property;
-- an outbound-origin approval before the first call to `api.typesafe.ai`; and
+- an outbound-origin approval before the first call to `api.typesafe.ai`. Roadmap
+  classification runs detached, with no thread or chat surface to prompt in, so this
+  approval is collected here in the pack detail when a Roadmap mode is first set to
+  `shadow` or `active`. A detached classification never prompts: without a recorded
+  approval it falls back to the existing classifier. Thread read-only mode does not apply
+  (there is no thread); the pack's own `off` mode is the equivalent control; and
 - a local “Clear decision diagnostics” action if shadow records exist.
 
 Any Settings or Roadmap UI change needs the focused browser/Electron spec and screenshot
@@ -259,7 +276,8 @@ Introduce a small TypeSafe adapter owned by the main process. Responsibilities:
 - resolve the encrypted key or `TYPESAFE_API_KEY` without sending either to the renderer;
 - pin the evaluated model and send a versioned, minimal question set;
 - reuse [`redact-secrets.ts`](../../packages/llm/src/redact-secrets.ts) at the outbound
-  boundary;
+  boundary, always with the known literal secrets (stored and environment keys) as well
+  as its patterns;
 - apply a bounded timeout, AbortSignal, and at most one retry for retryable `429`/`529`
   responses within the overall deadline;
 - strictly decode the response and normalize it into app-owned decision types;
@@ -287,14 +305,14 @@ rewrite historical usage.
 
 ## Delivery phases and PR boundaries
 
-| Phase                         | Scope                                                                                                                             | Exit condition                                                                                                                                      |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0. Offline evaluation         | Versioned fixtures, reproducible runner, current baseline, Choice-versus-Score experiment, calibration report                     | Roadmap graduation gate passes and the report commits the selected primitive, thresholds, pinned model, and question-set version; otherwise stop    |
-| 1. Client and pack foundation | Experimental pack, encrypted key UI, privacy disclosure, model probe, strict adapter, usage source, fake-fetch tests              | No calls while disabled/missing key; malformed/error/cancel paths fall back; focused Settings visual evidence passes                                |
-| 2. Roadmap shadow             | Combined classifier runs beside existing classifiers for explicitly opted-in users; local bounded diagnostics only                | Minimum 500 opted-in dogfood decisions, no private corpus export, measured accuracy/latency/fallback still meets the gate                           |
-| 3. Roadmap active             | High-confidence per-field answers become authoritative; low confidence uses existing fallback; manual/stale protections unchanged | Rollback test proves disabling the pack restores the prior path; Roadmap unit/import tests and required visual evidence pass                        |
-| 4. Advisory model routing     | TypeSafe estimates bounded demand signals; Copse maps them to configured, reachable models and keeps the user override            | Separate A/B shows equal-or-better completion quality with lower cost/latency; no automatic routing before this gate                                |
-| 5. Review triage              | Typed signals decide whether to run the existing reviewer, with uncertainty/risk always reviewing                                 | Seeded high-severity recall is 100%, overall recall at least 98%, and reviewer calls fall materially; TypeSafe never emits a “clean” verdict itself |
+| Phase                         | Scope                                                                                                                                                                                         | Exit condition                                                                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0. Offline evaluation         | Versioned fixtures, reproducible runner, current baseline, Choice-versus-Score experiment, calibration report                                                                                 | Roadmap graduation gate passes and the report commits the selected primitive, thresholds, pinned model, and question-set version; otherwise stop                |
+| 1. Client and pack foundation | Experimental pack, encrypted key UI, privacy disclosure, model probe, strict adapter, usage source, fake-fetch tests                                                                          | No calls while disabled/missing key; malformed/error/cancel paths fall back; focused Settings visual evidence passes                                            |
+| 2. Roadmap shadow             | Combined classifier runs beside existing classifiers for explicitly opted-in users; local bounded diagnostics only                                                                            | Minimum 500 shadow decisions on team devices, measured locally from each device's diagnostics (or a user-reviewed, redacted local export); still meets the gate |
+| 3. Roadmap active             | High-confidence per-field answers become authoritative; low confidence uses existing fallback; manual/stale protections unchanged                                                             | Rollback test proves disabling the pack restores the prior path; Roadmap unit/import tests and required visual evidence pass                                    |
+| 4. Advisory model routing     | Host-side routing only (never the agent-visible `suggest_model` tool): TypeSafe estimates bounded demand signals; Copse maps them to configured, reachable models and keeps the user override | Separate A/B shows equal-or-better completion quality with lower cost/latency; no automatic routing before this gate                                            |
+| 5. Review triage              | Typed signals decide whether to run the existing reviewer, with uncertainty/risk always reviewing                                                                                             | Seeded high-severity recall is 100%, overall recall at least 98%, and reviewer calls fall materially; TypeSafe never emits a “clean” verdict itself             |
 
 Phases 4 and 5 are optional consumers, not commitments. Each needs its own question set,
 corpus, calibration, setting, and rollback evidence. Roadmap thresholds cannot be reused
@@ -302,7 +320,10 @@ for a different primitive or domain.
 
 ## Later candidate: model routing
 
-TypeSafe may eventually replace only the judgment portion of the heuristic classifier.
+TypeSafe may eventually replace only the judgment portion of the heuristic classifier,
+and only where the host decides routing. It attaches to host-side routing, never to the
+agent-visible `suggest_model` tool: the coding model must not be able to trigger a cloud
+TypeSafe call.
 Ask atomic questions such as whether the task is mechanical, cross-cutting, ambiguous,
 security-sensitive, or likely to need tools. Copse code then combines those probabilities
 with deterministic facts: context-window need, configured providers, model availability,
