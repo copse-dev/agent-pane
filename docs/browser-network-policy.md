@@ -34,7 +34,10 @@ cookies and continue to require an origin grant for every network request.
 
 HTML artefacts prepend their restrictive CSP before untrusted markup. Data URL documents
 have no network access even if their HTML omits the CSP, including access to
-allowlisted hosts and localhost. Direct browser navigation supports HTTP(S) only. Workspace file previews use
+allowlisted hosts and localhost. A request is attributed to a data: frame only when
+its initiator origin is opaque or absent: a frame's committed URL can still name the
+previous data: preview when the next document's first subresources arrive, and a
+data: document never has a real origin. Direct browser navigation supports HTTP(S) only. Workspace file previews use
 the existing static preview server, so relative files load from its loopback
 origin under the same policy. This does not enable arbitrary file URL browsing;
 file documents, if encountered, cannot make network requests.

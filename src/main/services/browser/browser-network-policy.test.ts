@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  browserRequestDocumentUrl,
   isBrowserPageNavigationAllowed,
   isBrowserRequestAllowed,
   type BrowserOriginAccess,
@@ -94,6 +95,57 @@ describe('browser request network boundary', () => {
         )
       }
     }
+  })
+
+  it('attributes requests to a data: frame only when the initiator is opaque or absent', () => {
+    const preview = 'data:text/html,<title>Data preview</title>'
+    const page = 'https://example.com/'
+    const publicWebOriginAccess: BrowserOriginAccess = 'public-web'
+    const stylesheetFrom = (documentUrl: string): boolean =>
+      isBrowserRequestAllowed({
+        url: 'https://cdn.example.com/user-style.css',
+        documentUrl,
+        resourceType: 'stylesheet',
+        allowedOrigins: [],
+        originAccess: publicWebOriginAccess,
+      })
+
+    // After the host navigates a data: preview to a web page, that page's first
+    // subresources can arrive while the frame still reports the preview's URL.
+    const nextPageRequest = browserRequestDocumentUrl({
+      frameUrl: preview,
+      navigationUrl: page,
+      initiatorOrigin: 'https://example.com',
+    })
+    assert.equal(nextPageRequest, page)
+    assert.equal(stylesheetFrom(nextPageRequest), true)
+
+    // The preview itself (still live during that navigation, or a data: subframe)
+    // has an opaque origin and keeps its no-network limit.
+    for (const initiatorOrigin of ['null', undefined]) {
+      const previewRequest = browserRequestDocumentUrl({
+        frameUrl: preview,
+        navigationUrl: page,
+        initiatorOrigin,
+      })
+      assert.equal(previewRequest, preview)
+      assert.equal(stylesheetFrom(previewRequest), false)
+    }
+
+    // Other frames follow the webContents' latest navigation, including a data:
+    // navigation whose own frame has not committed yet.
+    assert.equal(
+      browserRequestDocumentUrl({
+        frameUrl: page,
+        navigationUrl: preview,
+        initiatorOrigin: 'null',
+      }),
+      preview,
+    )
+    assert.equal(
+      browserRequestDocumentUrl({ frameUrl: '', navigationUrl: page, initiatorOrigin: undefined }),
+      page,
+    )
   })
 
   it('allows app-internal DevTools documents that share the guest session', () => {

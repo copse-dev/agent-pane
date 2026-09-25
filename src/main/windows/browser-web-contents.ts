@@ -13,6 +13,7 @@ import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origi
 
 import { browserAllowedOrigins } from '../services/browser/browser-network-grants.ts'
 import {
+  browserRequestDocumentUrl,
   isBrowserRequestAllowed,
   isBrowserPageNavigationAllowed,
   type BrowserOriginAccess,
@@ -48,12 +49,15 @@ function configureBrowserSession(
   originAccess: BrowserOriginAccess,
 ): void {
   sess.webRequest.onBeforeRequest((details, callback) => {
-    const documentUrl =
+    const navigationUrl =
       details.webContentsId === undefined ? '' : (documents.get(details.webContentsId) ?? '')
-    const frameUrl = details.frame?.url ?? ''
     const allowed = isBrowserRequestAllowed({
       url: details.url,
-      documentUrl: frameUrl.startsWith('data:') ? frameUrl : documentUrl,
+      documentUrl: browserRequestDocumentUrl({
+        frameUrl: details.frame?.url ?? '',
+        navigationUrl,
+        initiatorOrigin: details.initiatorOrigin,
+      }),
       resourceType: details.resourceType,
       allowedOrigins: browserAllowedOrigins(scope),
       originAccess,
