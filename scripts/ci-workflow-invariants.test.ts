@@ -888,6 +888,12 @@ describe('Copse Reviewer workflow invariants', () => {
     )
     assert.match(dispatcher, /if \[ "\$skipped" = "true" \]/)
     assert.match(dispatcher, /if \[ "\$draft" = "true" \] && \[ "\$labelled" != "true" \]/)
+    // The findings job re-resolves the pull request and must apply the same rule;
+    // a label-only recheck here failed every default-on review closed.
+    const findingsJob = workflowJobBlock(findingsWorkflow, 'findings')
+    assert.match(findingsJob, /test "\$skipped" = false/)
+    assert.match(findingsJob, /test "\$draft" = false \|\| test "\$labelled" = true/)
+    assert.doesNotMatch(findingsJob, /^\s*test "\$labelled" = true$/m)
     const authorize = workflowJobBlock(findingsWorkflow, 'authorize')
     assert.match(authorize, /labels\.includes\('copse-review-skip'\)/)
     assert.match(authorize, /pull\.draft && !labels\.includes\('copse-review'\)/)
