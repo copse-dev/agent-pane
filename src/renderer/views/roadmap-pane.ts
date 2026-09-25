@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { paneLoadingRow } from '../dom/pane-loading.ts'
@@ -153,13 +154,6 @@ function attachmentName(file: File): string {
 /** Id of the thread last started from this item ("Start thread"), if tracked. */
 function itemThreadId(item: RoadmapItem): string {
   return item.fields['thread'] ?? ''
-}
-
-// Electron prefixes errors thrown by ipcMain.handle with
-// "Error invoking remote method 'x:y': Error: " — noise for the user.
-function ipcErrorMessage(err: unknown, fallback: string): string {
-  if (!(err instanceof Error)) return fallback
-  return err.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, '')
 }
 
 function toRoadmapStatus(value: string | null | undefined): RoadmapStatus {

@@ -136,6 +136,11 @@ import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
+import { trimSelectionText } from '../dom/markdown-quote.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 type ToolCardStatus = ToolCall['status'] | 'interrupted'
 type InterruptionCause = 'message' | 'user'
@@ -2349,6 +2354,74 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     navigateToChange(store, path)
   })
 
+  // Right-click in the transcript: a non-empty text selection offers quoting
+  // it into the reply, filing it on the roadmap, or searching the thread for
+  // it; with no selection, right-clicking a message still offers to copy its
+  // text. Anywhere else in the transcript (blank space, before any message, or
+  // a message with no text to copy) falls through to the platform's own menu.
+  list.addEventListener('contextmenu', (e) => {
+    // An inner element (an image, a link, a code block) that already handled
+    // this right-click keeps its own menu.
+    if (e.defaultPrevented) return
+    const targetEl = e.target instanceof Element ? e.target : null
+    const msgEl = targetEl?.closest<HTMLElement>('.msg[data-message-id]') ?? null
+    const selection = document.getSelection()
+    const selectionIsInsideTranscript =
+      selection !== null &&
+      !selection.isCollapsed &&
+      list.contains(selection.anchorNode) &&
+      list.contains(selection.focusNode)
+    const selectedText = selectionIsInsideTranscript ? trimSelectionText(selection.toString()) : ''
+
+    if (selectedText) {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Quote in reply',
+          onSelect: (): void => {
+            quoteTranscriptSelection(selectedText)
+          },
+        },
+        {
+          label: 'Add to roadmap',
+          onSelect: (): void => {
+            void addTranscriptSelectionToRoadmap(api, selectedText)
+          },
+        },
+        {
+          label: 'Search',
+          onSelect: (): void => {
+            // The find bar is one line: a multi-line selection is searched
+            // with its whitespace collapsed, as the matcher compares text.
+            openConversationSearch(normalizeSearchText(selectedText))
+          },
+        },
+        {
+          label: 'Copy',
+          onSelect: (): void => {
+            void navigator.clipboard.writeText(selectedText)
+          },
+        },
+      ])
+      return
+    }
+
+    const msgId = msgEl?.dataset['messageId']
+    const messageText = msgId ? messageContentById(store, msgId) : undefined
+    if (!messageText) return
+    e.preventDefault()
+    e.stopPropagation()
+    showContextMenu(e.clientX, e.clientY, [
+      {
+        label: 'Copy message',
+        onSelect: (): void => {
+          void navigator.clipboard.writeText(messageText)
+        },
+      },
+    ])
+  })
+
   // Inline-edit state for a queued message. Preserved across re-renders so a
   // store-driven rebuild (e.g. pause toggle) keeps the editor and its draft.
   let editingMessageId: string | null = null
@@ -4240,6 +4313,39 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()
+    })
+  }
+}
+
+/** A message's raw text by id, searched across all threads (mirrors {@link attachCopyButton}). */
+function messageContentById(store: AppStore, msgId: string): string | undefined {
+  return store
+    .getState()
+    .threads.flatMap((t) => t.messages)
+    .find((m) => m.id === msgId)?.content
+}
+
+/** "Quote in reply": insert the transcript selection into the composer as a blockquote. */
+function quoteTranscriptSelection(text: string): void {
+  const handlers = getPromptAttachmentHandlers()
+  if (!handlers) return
+  handlers.quoteText(text)
+  handlers.focusComposer?.()
+}
+
+/**
+ * "Add to roadmap": file the transcript selection as a new roadmap item. The
+ * item's `thread` field is deliberately left alone — it means "the thread
+ * started from this item" (the origin back-link and Reopen), which a thread
+ * the item was merely quoted from is not.
+ */
+async function addTranscriptSelectionToRoadmap(api: ApiClient, text: string): Promise<void> {
+  try {
+    await api.roadmap.create(text)
+    showToast('Added to roadmap')
+  } catch (err) {
+    showToast(`Could not add to roadmap: ${ipcErrorMessage(err, 'unknown error')}`, {
+      variant: 'error',
     })
   }
 }
