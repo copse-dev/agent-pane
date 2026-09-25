@@ -53,6 +53,32 @@ async function accentSnapshot(): Promise<AccentSnapshot | null> {
   })
 }
 
+/**
+ * The accent Chromium resolved for the native controls in Settings → Appearance.
+ * They carry no accent rule of their own: each inherits the one `html, body`
+ * `accent-color` in base.css, so a colour here proves the global rule reached
+ * checkbox, radio and range alike rather than Chromium's default blue.
+ */
+async function nativeControlAccent(): Promise<{
+  checkbox: string
+  checkboxChecked: boolean
+  radio: string
+  range: string
+} | null> {
+  return browser.execute(() => {
+    const checkbox = document.querySelector<HTMLInputElement>('input[name="alertOnInteraction"]')
+    const radio = document.querySelector<HTMLInputElement>('input[name="appIconVariant"]')
+    const range = document.querySelector<HTMLInputElement>('input[name="uiTintStrength"]')
+    if (!checkbox || !radio || !range) return null
+    return {
+      checkbox: getComputedStyle(checkbox).accentColor,
+      checkboxChecked: checkbox.checked,
+      radio: getComputedStyle(radio).accentColor,
+      range: getComputedStyle(range).accentColor,
+    }
+  })
+}
+
 async function setTintStrength(strength: 'off' | 'subtle' | 'medium' | 'strong'): Promise<void> {
   await browser.execute((nextStrength) => {
     const input = document.querySelector<HTMLInputElement>('input[name="uiTintStrength"]')
@@ -189,6 +215,17 @@ describe('custom interface colours', () => {
     )
     expect(iconLabels).toHaveLength(19)
     expect(iconLabels.slice(0, 4)).toEqual(['Rose', 'Pink Lady', 'Mint Leaf', 'Cucumber'])
+    // Native controls follow the custom accent, not Chromium's default blue.
+    expect(await nativeControlAccent()).toEqual({
+      checkbox: 'rgb(124, 58, 237)',
+      checkboxChecked: true,
+      radio: 'rgb(124, 58, 237)',
+      range: 'rgb(124, 58, 237)',
+    })
+    await saveElementScreenshot(
+      '[data-testid="settings-alerts"]',
+      'accent-native-controls-custom.png',
+    )
     await saveElementScreenshot('#settings-dialog', 'accent-settings.png')
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
@@ -249,6 +286,19 @@ describe('custom interface colours', () => {
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="appearance"]').click()
     await setTintStrength('medium')
+    // Light darkens --accent to a 30%-of-black derivation for text; a checked
+    // box is a fill, so it keeps the raw accent (--accent-fill) the way the
+    // primary button does, rather than turning into a near-black square.
+    expect(await nativeControlAccent()).toEqual({
+      checkbox: 'rgb(255, 147, 208)',
+      checkboxChecked: true,
+      radio: 'rgb(255, 147, 208)',
+      range: 'rgb(255, 147, 208)',
+    })
+    await saveElementScreenshot(
+      '[data-testid="settings-alerts"]',
+      'accent-native-controls-light.png',
+    )
     await $('.settings-buttons button[type="submit"]').click()
     await $('#settings-dialog').waitForDisplayed({ reverse: true, timeout: 30_000 })
     await browser.waitUntil(

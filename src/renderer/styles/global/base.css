@@ -33,8 +33,11 @@ body {
   /* Native checkboxes, radios and range inputs take the configured accent
      instead of Chromium's default blue. accent-color inherits, so this one
      declaration reaches every form in every dialog and both themes; do not
-     restate it per control (#3065). */
-  accent-color: var(--accent);
+     restate it per control (#3065). It is the fill tier: a checked box or a
+     slider's filled track is the accent with a mark on it, and Chromium picks
+     the mark's colour from that fill. Light's --accent is the 30%-of-black
+     derivation for text and borders, which turns a checked box near-black. */
+  accent-color: var(--accent-fill);
   /* Desktop-app chrome (tabs, sidebars, footers) should not highlight on drag. */
   user-select: none;
   -webkit-user-select: none;

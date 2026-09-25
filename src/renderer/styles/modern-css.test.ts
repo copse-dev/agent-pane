@@ -34,10 +34,12 @@ describe('modern CSS adoptions', () => {
   it('paints native form controls with the accent (#3065)', () => {
     // accent-color inherits, so one declaration on the root surface reaches every
     // checkbox, radio and range input. Per-control copies are what let the rest
-    // of Settings fall back to Chromium's default blue.
+    // of Settings fall back to Chromium's default blue. A checked box is a fill
+    // with a mark on it, so it takes the fill tier, not light's darkened
+    // --accent (docs/ui-taste.md → "`--accent` tints, `--accent-fill` fills").
     assert.ok(
-      declares(read('base.css'), 'html,\nbody', /accent-color:\s*var\(--accent\)/),
-      'html/body must set accent-color from the accent token',
+      declares(read('base.css'), 'html,\nbody', /accent-color:\s*var\(--accent-fill\)/),
+      'html/body must set accent-color from the accent fill token',
     )
     for (const file of readdirSync(STYLES).filter((name) => name.endsWith('.css'))) {
       if (file === 'base.css') continue

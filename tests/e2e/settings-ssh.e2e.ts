@@ -6,6 +6,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 
 function settingsSection(section: 'ssh') {
@@ -85,6 +86,14 @@ describe('SSH settings section', () => {
     await browser.execute(() => {
       document.querySelector('.ssh-host-form')?.scrollIntoView({ block: 'center' })
     })
+    // "Forward SSH agent" is a checkbox line like every other `.checkbox-label`:
+    // the host form's own label rule must not stack the box above its wording.
+    const forwardAgentLabel = '.settings-section[data-section="ssh"] .ssh-host-form .checkbox-label'
+    await assertCheckboxBesideLabel(forwardAgentLabel)
+    await saveElementScreenshot(
+      '.settings-section[data-section="ssh"] .ssh-host-form',
+      'settings-ssh-host-form.png',
+    )
     // The fixed settings footer currently intercepts low controls on main
     // (#2067); invoke the product handler directly so this validation eval stays
     // scoped to the port parser while that independent layout fix is pending.

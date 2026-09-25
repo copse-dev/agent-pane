@@ -430,7 +430,11 @@
 
 .vnc-remember-password {
   display: flex;
-  align-items: center;
+  /* forms.css stacks every <label> in a column; this one is a checkbox line.
+     The wording wraps in the narrow auth panel, so sit the box on the first
+     line's baseline rather than centring it between two lines. */
+  flex-direction: row;
+  align-items: baseline;
   gap: var(--spacing-xs);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);

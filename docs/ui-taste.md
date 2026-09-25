@@ -67,6 +67,9 @@ choice load-bearing rather than stylistic:
   the eye reads as "the accent, with text on it" — takes `--accent-fill` (and `--accent-fill-hover`).
   `.ui-btn-primary` in `global/ui.css` is the reference recipe. Painting `--text-on-accent` onto
   `--accent` gives 1.24:1 in light with the shipped accent: dark text on a dark fill (#2488).
+- **Native checkboxes, radios, and range sliders** are fills too: a checked box is the accent with a
+  mark on it, and Chromium picks the mark's colour from the fill. Their `accent-color` is
+  `--accent-fill` (see "Accent colour versus interface tint").
 - **Everything the accent only tints** — text, links, borders, rails, focus outlines, washes — takes
   `--accent`, which is the tier derived to stay readable.
 - **A state a user has to see** — a selected row, an active tab — should not rest on the accent's
@@ -903,8 +906,9 @@ wash through otherwise neutral surfaces. Derive hover and link shades from the a
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
 
-Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent)` on
-`html, body`, and every checkbox, radio and range input inherits it. Do not restate it per
+Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent-fill)` on
+`html, body`, and every checkbox, radio and range input inherits it. It is the fill tier because a
+checked box is a fill: light's darkened `--accent` would paint it a near-black plum. Do not restate it per
 control: three local copies were all that kept the accent on, and every other checkbox in
 Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
 declaration to `base.css`.
