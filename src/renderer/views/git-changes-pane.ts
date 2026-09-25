@@ -18,6 +18,7 @@ import type {
 } from '@shared/types/git.ts'
 import { showToast, showErrorToast } from './toast.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { uiActions } from '../ui/actions.ts'
 import { startReview } from '../controller/review-actions.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
@@ -224,15 +225,24 @@ export function mountGitChangesPane(
   const conflictBanner = el('div', { class: 'diff-conflict-banner' })
   conflictBanner.hidden = true
   const diffWrap = el('div', { class: 'git-diff-editor-wrap' })
-  const acceptBtn = el('button', { type: 'button', class: 'diff-accept-btn' }, 'Accept')
-  const rejectBtn = el('button', { type: 'button', class: 'diff-reject-btn' }, 'Reject')
+  // Kit classes carry the look (Accept = primary, Reject = secondary, per the
+  // approval rules in docs/ui-taste.md); the diff-* classes stay as hooks.
+  const acceptBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-primary diff-accept-btn' },
+    'Accept',
+  )
+  const rejectBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary diff-reject-btn' },
+    'Reject',
+  )
   acceptBtn.hidden = true
   rejectBtn.hidden = true
   // A bar below the editor, not an overlay: floating buttons sat on top of the
   // last visible lines (and the editor's right-edge chrome) in narrow panes (#1702).
-  const approvalBar = el('div', { class: 'diff-approval-bar' })
+  const approvalBar = uiActions(rejectBtn, acceptBtn, { className: 'diff-approval-bar' })
   approvalBar.hidden = true
-  approvalBar.append(rejectBtn, acceptBtn)
   const imageWrap = el('div', { class: 'git-image-diff-wrap' })
   // File listing shown when the selected change is an untracked directory
   // (`git status` collapses those to one record, so there is no diff to show).

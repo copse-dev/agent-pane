@@ -47,15 +47,20 @@
   color: var(--text-on-accent);
 }
 
+/* The label tier is --text-on-danger, not white: dark's --danger is a light red
+   that white only reaches 3.57:1 on (light-contrast.test.ts pins both themes). */
 .ui-btn-danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--text-on-danger);
 }
 
+/* Restate the fill: `.ui-btn:hover` has equal specificity and would otherwise
+   swap the danger fill for --bg-hover under the pointer. */
 .ui-btn-danger:hover:not(:disabled) {
+  background: var(--danger);
   filter: brightness(1.08);
-  color: #fff;
+  color: var(--text-on-danger);
 }
 
 .ui-btn-ghost {

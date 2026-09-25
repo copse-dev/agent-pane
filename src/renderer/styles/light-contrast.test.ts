@@ -21,6 +21,9 @@
 //     Dark+ `.hljs-*` palette and expects the host to override it; nothing did, so
 //     Dark+ token colours were painted on a near-white code surface. The override
 //     now lives in `global/markdown.css`, and this test holds it to AA.
+//
+// It also pins the danger button (issue #3065) in both themes, since dark is
+// where that one failed: white on dark's light-red `--danger` is 3.57:1.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -314,6 +317,97 @@ describe('light theme: syntax highlighting is readable (issue #2486)', () => {
         contrastRatio(parseHex(colour), background) < 3,
         `${colour} was expected to be unreadable on the light code surface`,
       )
+    }
+  })
+})
+
+/** `--name: #hex` declared inside `block`, or a failed assertion naming where. */
+function hexToken(block: string, name: string, where: string): Rgb {
+  const found = new RegExp(`^\\s*${name}:\\s*(#[0-9a-fA-F]{3,8})\\s*;`, 'm').exec(block)?.[1]
+  assert.ok(found, `${where} does not declare ${name} as a hex colour`)
+  return parseHex(found)
+}
+
+/** The body of the first `selector { … }` block in `css` (theme blocks are flat). */
+function block(css: string, selector: string): string {
+  const start = css.indexOf(`${selector} {`)
+  assert.ok(start >= 0, `could not find ${selector}`)
+  const end = css.indexOf('\n}', start)
+  return css.slice(start, end)
+}
+
+/** `filter: brightness(n)` scales each gamma-encoded sRGB channel, clamped. */
+function brighten(rgb: Rgb, amount: number): Rgb {
+  const at = (index: 0 | 1 | 2): number => Math.min(255, Math.round(rgb[index] * amount))
+  return [at(0), at(1), at(2)]
+}
+
+describe('danger buttons keep a readable label in both themes (issue #3065)', () => {
+  const css = (name: string): string =>
+    readFileSync(resolve(STYLES, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const ui = rules('ui.css', css('global/ui.css'))
+  const rest = ui.find((rule) => rule.selector === '.ui-btn-danger')
+  const hover = ui.find((rule) => rule.selector === '.ui-btn-danger:hover:not(:disabled)')
+
+  it('paints the label and fill from tokens, including on hover', () => {
+    assert.ok(rest && hover, 'missing the .ui-btn-danger rules in global/ui.css')
+    for (const rule of [rest, hover]) {
+      assert.match(rule.body, /(?:^|;)\s*color:\s*var\(--text-on-danger\)/, rule.selector)
+      // `.ui-btn:hover` has the same specificity and sets --bg-hover, so the hover
+      // rule must restate the fill or the danger button turns grey under the pointer.
+      assert.match(rule.body, /background:\s*var\(--danger\)/, rule.selector)
+    }
+  })
+
+  it('clears AA for the label on the danger fill, at rest and hovered', () => {
+    const tokens = css('tokens.css')
+    const themes = css('themes.css')
+    const brightness = Number.parseFloat(
+      /filter:\s*brightness\(([\d.]+)\)/.exec(hover?.body ?? '')?.[1] ?? '1',
+    )
+    const themesToCheck = [
+      { name: ':root', css: block(tokens, ':root') },
+      { name: "[data-theme='dark']", css: block(themes, "[data-theme='dark']") },
+      { name: "[data-theme='light']", css: block(themes, "[data-theme='light']") },
+    ]
+    for (const theme of themesToCheck) {
+      const fill = hexToken(theme.css, '--danger', theme.name)
+      const label = hexToken(theme.css, '--text-on-danger', theme.name)
+      for (const [state, factor] of [
+        ['rest', 1],
+        ['hover', brightness],
+      ] satisfies [string, number][]) {
+        const ratio = contrastRatio(brighten(label, factor), brighten(fill, factor))
+        assert.ok(
+          ratio >= AA_BODY_TEXT,
+          `${theme.name} ${state}: --text-on-danger on --danger is ${ratio.toFixed(2)}:1`,
+        )
+      }
+    }
+  })
+
+  it('never gives a danger confirm the accent fill', () => {
+    // `showConfirmDialog({ danger: true })` renders `.ui-btn-danger.confirm-dialog-confirm`,
+    // and brand.css (loaded last) paints `.confirm-dialog-confirm` with the accent.
+    // The exclusion once keyed off a `confirm-dialog-danger` class nothing set, so
+    // every destructive confirm rendered pink.
+    const brand = rules('brand.css', css('global/brand.css'))
+    const accentFills = brand.filter(
+      (rule) =>
+        /background:\s*var\(--accent-fill(?:-hover)?\)/.test(rule.body) &&
+        rule.selector.includes('.confirm-dialog-confirm'),
+    )
+    assert.ok(accentFills.length >= 2, 'expected the rest and hover accent-fill rules')
+    for (const rule of accentFills) {
+      const mentions = rule.selector.match(/\.confirm-dialog-confirm(?::not\([^)]*\))?/g) ?? []
+      assert.ok(mentions.length > 0, rule.selector)
+      for (const mention of mentions) {
+        assert.equal(
+          mention,
+          '.confirm-dialog-confirm:not(.ui-btn-danger)',
+          `${rule.file}:${String(rule.line)} must exclude danger confirms from the accent fill`,
+        )
+      }
     }
   })
 })

@@ -15,6 +15,7 @@
   --link-hover: color-mix(in srgb, var(--accent) 50%, white);
   --error: #f48771;
   --danger: #f14c4c;
+  --text-on-danger: #1a1a1a;
   --success: #4ec9b0;
   --warning: #cca700;
   --info: #6fb3d9;
@@ -94,6 +95,7 @@
   --link-hover: color-mix(in srgb, var(--accent) 82%, black);
   --error: #cf222e;
   --danger: #cf222e;
+  --text-on-danger: #ffffff;
   --success: #1a7f37;
   --warning: #9a6700;
   /* Derived for contrast on cream rather than reused from dark, per the

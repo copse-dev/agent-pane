@@ -84,6 +84,9 @@
   --text-on-accent: #444444;
   --error: #f48771;
   --danger: #f14c4c;
+  /* Label on a --danger fill (.ui-btn-danger). Dark text in dark, where the
+     fill is a light red; light restates it as white on its deep red. */
+  --text-on-danger: #1a1a1a;
   --success: #4ec9b0;
   --warning: #cca700;
   /* Callout severities. --info backs GitHub-alert Note; --important backs the

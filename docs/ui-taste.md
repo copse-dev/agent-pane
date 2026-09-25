@@ -54,6 +54,11 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
     flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
     owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
+  - A destructive action (`showConfirmDialog({ danger: true })`, `.ui-btn-danger`) is the one
+    button that fills with `--danger`; it keeps the danger fill, never the accent, and takes the
+    same pill geometry as its Cancel. Its label is `--text-on-danger` (dark text on dark's light
+    red, white on light's deep red), not hard-coded white — both are pinned at AA in
+    `src/renderer/styles/light-contrast.test.ts`. Visual eval: `tests/e2e/ui-kit-confirm.e2e.ts`.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
 
@@ -199,7 +204,11 @@ install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action:
 - Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
   one-line PR target does not look like a `<pre>` of JSON.
 
-Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
+The same rule covers the staged-diff Accept / Reject bar in the Changes pane (Accept = primary,
+Reject = secondary, `uiActions` gap).
+
+Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`,
+`tests/e2e/staged-diff-ui.e2e.ts`.
 
 ### Offers are not approvals
 
