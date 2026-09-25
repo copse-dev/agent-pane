@@ -4794,7 +4794,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'approvedProviderHosts',
         PROVIDER_ALLOW_USER_APPROVAL_SETTING,
         'trustedShellCommands',
-        TRUSTED_SSH_HOSTS_SETTING,
         AUTO_APPROVAL_LEVEL_SETTING,
       ]
       if (securityFieldNames.some((name) => dirtyFieldNames.has(name))) {
@@ -4816,11 +4815,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             trustedShellCommands: parseTrustedCommands(
               formDataString(data, 'trustedShellCommands'),
             ),
-            trustedSshHosts: parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING)),
             shellAutoApprovalLevel: sanitizeAutoApprovalLevel(
               data.get(AUTO_APPROVAL_LEVEL_SETTING),
             ),
           }),
+        )
+      }
+
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING)),
+          ),
         )
       }
 

@@ -408,6 +408,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
       }),
     )
     .max(64),
+  // Hosts Guarded YOLO may ssh/scp/rsync to without a confirmation (Settings →
+  // Permissions). Written on its own through `settings:set`, not the security
+  // bundle, so the IPC protocol does not change shape.
+  trustedSshHosts: trustedSshHostsSchema,
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
@@ -474,9 +478,6 @@ export const securitySettingsSchema = z.object({
   // Allow-list of command basenames trusted to run unsandboxed with no prompt.
   // Optional so bundles that never send it don't clobber a saved list.
   trustedShellCommands: trustedShellCommandsSchema.optional(),
-  // Hosts Guarded YOLO may ssh/scp/rsync to without asking. Optional so bundles
-  // that never send it don't clobber a saved list.
-  trustedSshHosts: trustedSshHostsSchema.optional(),
   // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
   // older renderer bundles that never send it don't reset the user's choice.
   shellAutoApprovalLevel: autoApprovalLevelSchema.optional(),
