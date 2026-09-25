@@ -22392,10 +22392,42 @@ function setThreadReviewReport(store2, threadId, report) {
     else delete next.reviewReport;
     return next;
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, null);
 }
-function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
+function setMessageReviewReport(store2, threadId, messageId, report) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message2) => {
+      if (message2.id !== messageId) return message2;
+      const next = { ...message2 };
+      if (report) next.reviewReport = report;
+      else delete next.reviewReport;
+      return next;
+    })
+  }));
+  store2.emit("review_report_changed", threadId, messageId);
+}
+function setReviewFindingDismissed(store2, threadId, findingId, dismissed, messageId = null) {
   patchThreadAnywhere(store2, threadId, (t2) => {
+    if (messageId !== null) {
+      return {
+        ...t2,
+        updatedAt: Date.now(),
+        messages: t2.messages.map((message2) => {
+          if (message2.id !== messageId || !message2.reviewReport) return message2;
+          return {
+            ...message2,
+            reviewReport: {
+              ...message2.reviewReport,
+              findings: message2.reviewReport.findings.map(
+                (finding) => finding.id === findingId ? { ...finding, dismissed } : finding
+              )
+            }
+          };
+        })
+      };
+    }
     if (!t2.reviewReport) return t2;
     return {
       ...t2,
@@ -22408,7 +22440,7 @@ function setReviewFindingDismissed(store2, threadId, findingId, dismissed) {
       }
     };
   });
-  store2.emit("review_report_changed", threadId);
+  store2.emit("review_report_changed", threadId, messageId);
 }
 function setQueuePaused(store2, threadId, paused) {
   const { threads } = store2.getState();
@@ -22836,9 +22868,28 @@ function attachAutosave(store2, api2) {
       schedule();
     }),
     // Same for the review report: a dismissed finding or a cleared card is a
-    // metadata-only change on an idle thread.
-    store2.on("review_report_changed", () => {
-      schedule();
+    // metadata-only change on an idle thread. A report anchored to a message
+    // lives on that message's spine line instead, so re-finalize the message:
+    // a standalone review (Changes view "Review") ends with a `done` that has
+    // no streaming message, so no `message_done` would ever carry it to disk.
+    store2.on("review_report_changed", (threadId, messageId) => {
+      if (messageId === null) {
+        schedule();
+        return;
+      }
+      const message2 = getThreadById(store2, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId
+      );
+      if (!message2) return;
+      if (message2.reviewReport?.status === "running") return;
+      if (message2.toolCalls.some((toolCall) => toolCall.status === "running")) return;
+      const backgroundProjectId = backgroundProjectOf(store2, threadId);
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId);
+        return;
+      }
+      const { activeProjectId } = store2.getState();
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId);
     }),
     store2.on("projects_changed", () => {
       projectsDirty = true;
@@ -65300,6 +65351,7 @@ function copyMessage(message2) {
     id: _id,
     hookCards: _hookCards,
     review: _review,
+    reviewReport: _reviewReport,
     toolCalls,
     images,
     canvasArtefacts,
@@ -73424,6 +73476,47 @@ var init_quiet_runs = __esm({
   }
 });
 
+// src/renderer/controller/review-report-target.ts
+function setReviewReportTarget(store2, threadId, messageId) {
+  const targets = targetsByStore.get(store2) ?? /* @__PURE__ */ new Map();
+  targets.set(threadId, messageId);
+  targetsByStore.set(store2, targets);
+}
+function getReviewReportTarget(store2, threadId) {
+  return targetsByStore.get(store2)?.get(threadId);
+}
+function clearReviewReportTarget(store2, threadId) {
+  const targets = targetsByStore.get(store2);
+  if (!targets) return;
+  targets.delete(threadId);
+  if (targets.size === 0) targetsByStore.delete(store2);
+}
+function reviewReportAt(store2, threadId, messageId) {
+  const thread = getThreadById(store2, threadId);
+  if (messageId === null) return thread?.reviewReport;
+  return thread?.messages.find((message2) => message2.id === messageId)?.reviewReport;
+}
+function failRunningReviewReport(store2, threadId, messageId, error62) {
+  const report = reviewReportAt(store2, threadId, messageId);
+  if (report?.status !== "running") return false;
+  const failed = {
+    ...report,
+    status: "error",
+    error: error62,
+    durationMs: Date.now() - report.startedAt
+  };
+  if (messageId === null) setThreadReviewReport(store2, threadId, failed);
+  else setMessageReviewReport(store2, threadId, messageId, failed);
+  return true;
+}
+var targetsByStore;
+var init_review_report_target = __esm({
+  "src/renderer/controller/review-report-target.ts"() {
+    init_thread_helpers();
+    targetsByStore = /* @__PURE__ */ new WeakMap();
+  }
+});
+
 // src/renderer/controller/review-actions.ts
 function reviewPayload(store2, threadId) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -73443,12 +73536,15 @@ function retryReview(store2, api2, threadId, messageId) {
 function dismissComparison(store2, threadId) {
   setThreadComparison(store2, threadId, null);
 }
-function startReview(store2, api2, threadId) {
+function startReview(store2, api2, threadId, messageId) {
   const projectId = store2.getState().activeProjectId;
   if (!projectId) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (thread?.status === "running") return;
-  setThreadReviewReport(store2, threadId, {
+  const anchorId = messageId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id;
+  setReviewReportTarget(store2, threadId, anchorId ?? null);
+  if (anchorId && thread?.reviewReport) setThreadReviewReport(store2, threadId, null);
+  const runningReport = {
     status: "running",
     startedAt: Date.now(),
     models: { reviewer: thread?.model ?? "", challenger: null },
@@ -73465,19 +73561,15 @@ function startReview(store2, api2, threadId) {
     reviewers: [],
     verification: null,
     durationMs: 0
-  });
+  };
+  if (anchorId) setMessageReviewReport(store2, threadId, anchorId, runningReport);
+  else setThreadReviewReport(store2, threadId, runningReport);
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   markQuietRun(threadId);
   void api2.review.run(projectId, threadId, reviewPayload(store2, threadId)).catch((err2) => {
-    const report = store2.getState().threads.find((t2) => t2.id === threadId)?.reviewReport;
-    if (report?.status === "running") {
-      setThreadReviewReport(store2, threadId, {
-        ...report,
-        status: "error",
-        error: errorMessage(err2),
-        durationMs: Date.now() - report.startedAt
-      });
+    clearReviewReportTarget(store2, threadId);
+    if (failRunningReviewReport(store2, threadId, anchorId ?? null, errorMessage(err2))) {
       setThreadStatus(store2, threadId, "idle");
       syncAgentActivity(store2, threadId, false);
       takeQuietRun(threadId);
@@ -73485,25 +73577,26 @@ function startReview(store2, api2, threadId) {
     showErrorToast("Review could not start", err2);
   });
 }
-function dismissReviewReport(store2, threadId) {
-  setThreadReviewReport(store2, threadId, null);
+function dismissReviewReport(store2, threadId, messageId) {
+  if (messageId) setMessageReviewReport(store2, threadId, messageId, null);
+  else setThreadReviewReport(store2, threadId, null);
 }
-function dismissReviewFinding(store2, api2, threadId, finding) {
-  setReviewFindingDismissed(store2, threadId, finding.id, true);
+function dismissReviewFinding(store2, api2, threadId, finding, messageId) {
+  setReviewFindingDismissed(store2, threadId, finding.id, true, messageId);
   void api2.review.dismissFinding({
     findingId: finding.id,
     path: finding.path,
     claim: finding.claim,
     class: finding.class
   }).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, finding.id, false);
+    setReviewFindingDismissed(store2, threadId, finding.id, false, messageId);
     showErrorToast("Could not save the dismissal", err2);
   });
 }
-function restoreReviewFinding(store2, api2, threadId, findingId) {
-  setReviewFindingDismissed(store2, threadId, findingId, false);
+function restoreReviewFinding(store2, api2, threadId, findingId, messageId) {
+  setReviewFindingDismissed(store2, threadId, findingId, false, messageId);
   void api2.review.restoreFinding(findingId).catch((err2) => {
-    setReviewFindingDismissed(store2, threadId, findingId, true);
+    setReviewFindingDismissed(store2, threadId, findingId, true, messageId);
     showErrorToast("Could not restore the finding", err2);
   });
 }
@@ -73512,6 +73605,7 @@ var init_review_actions = __esm({
     init_thread_helpers();
     init_agent_activity();
     init_quiet_runs();
+    init_review_report_target();
     init_toast();
     init_errors3();
   }
@@ -76351,6 +76445,7 @@ function mountConversation(root, store2, api2) {
     syncMessageVisualEvidence(msgEl, msg);
     if (run2) syncRunLayout(thread, run2, msgId);
     if (msg.review) renderMessageReview(threadId, msgId);
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId);
     renderMessageHookCards(threadId, msgId);
     renderMessageTurnRecovery(threadId, msgId);
   }
@@ -76522,6 +76617,31 @@ function mountConversation(root, store2, api2) {
     card.setAttribute("data-review-for", messageId);
     msgEl.after(card);
   }
+  function renderMessageReviewReport(threadId, messageId) {
+    if (threadId !== store2.getState().activeThreadId) return;
+    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove();
+    const msg = getActiveThread(store2)?.messages.find((message2) => message2.id === messageId);
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    if (!msg?.reviewReport || !msgEl) return;
+    const card = createReviewFindingsCardEl(msg.reviewReport, {
+      onRetry: () => {
+        startReview(store2, api2, threadId, messageId);
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store2, threadId, messageId);
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store2, api2, threadId, finding, messageId);
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store2, api2, threadId, finding.id, messageId);
+      }
+    });
+    card.setAttribute("data-review-report-card", "");
+    card.setAttribute("data-review-report-for", messageId);
+    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`);
+    (postTurnCard ?? msgEl).after(card);
+  }
   function renderMessageTurnRecovery(threadId, messageId) {
     if (threadId !== store2.getState().activeThreadId) return;
     list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove();
@@ -76543,7 +76663,9 @@ function mountConversation(root, store2, api2) {
     msgEl.after(card);
   }
   function firstTrailingCard() {
-    return list.querySelector("[data-review-report-card], [data-comparison-card]");
+    return list.querySelector(
+      "[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]"
+    );
   }
   function syncComparisonPanel() {
     list.querySelector("[data-comparison-card]")?.remove();
@@ -76558,7 +76680,7 @@ function mountConversation(root, store2, api2) {
     }
   }
   function syncReviewReportCard() {
-    list.querySelector("[data-review-report-card]")?.remove();
+    list.querySelector("[data-review-report-card]:not([data-review-report-for])")?.remove();
     const thread = getActiveThread(store2);
     if (!thread?.reviewReport) return;
     const threadId = thread.id;
@@ -76833,8 +76955,9 @@ function mountConversation(root, store2, api2) {
       syncComparisonPanel();
       scrollToBottom();
     }),
-    store2.on("review_report_changed", () => {
-      syncReviewReportCard();
+    store2.on("review_report_changed", (tid, mid) => {
+      if (mid) renderMessageReviewReport(tid, mid);
+      else syncReviewReportCard();
       scrollToBottom();
     }),
     store2.on("settings_changed", () => {
@@ -89597,6 +89720,7 @@ function threadToJsonl(thread) {
         ...msg.parameters !== void 0 ? { parameters: msg.parameters } : {},
         ...msg.turnOutcome !== void 0 ? { turnOutcome: msg.turnOutcome } : {},
         ...msg.review !== void 0 ? { review: msg.review } : {},
+        ...msg.reviewReport !== void 0 ? { reviewReport: msg.reviewReport } : {},
         ...msg.origin !== void 0 ? { origin: msg.origin } : {},
         ...msg.editedByUser !== void 0 ? { editedByUser: msg.editedByUser } : {},
         toolCalls: msg.toolCalls
@@ -131226,7 +131350,14 @@ function startAgentController(store2, api2) {
         break;
       }
       case "review_report": {
-        setThreadReviewReport(store2, threadId, chunk.report);
+        const thread = getThreadById(store2, threadId);
+        const requestedAnchor = getReviewReportTarget(store2, threadId);
+        const anchorId = requestedAnchor !== void 0 ? requestedAnchor : st2.msgId ?? [...thread?.messages ?? []].reverse().find((message2) => message2.role === "assistant")?.id ?? null;
+        if (anchorId === null) setThreadReviewReport(store2, threadId, chunk.report);
+        else setMessageReviewReport(store2, threadId, anchorId, chunk.report);
+        if (requestedAnchor !== void 0 && chunk.report.status !== "running") {
+          clearReviewReportTarget(store2, threadId);
+        }
         if (chunk.report.status === "running") {
           emitActivity(threadId, "Reviewing changes\u2026");
         }
@@ -131251,6 +131382,16 @@ function startAgentController(store2, api2) {
         if (st2.msgId) store2.emit("message_done", st2.msgId);
         state.delete(threadId);
         pendingTurn.delete(threadId);
+        const reviewTarget = getReviewReportTarget(store2, threadId);
+        if (reviewTarget !== void 0) {
+          failRunningReviewReport(
+            store2,
+            threadId,
+            reviewTarget,
+            "The review ended before it produced a report."
+          );
+          clearReviewReportTarget(store2, threadId);
+        }
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -131385,6 +131526,7 @@ var init_agent = __esm({
     init_diff_state();
     init_thread_naming();
     init_quiet_runs();
+    init_review_report_target();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
