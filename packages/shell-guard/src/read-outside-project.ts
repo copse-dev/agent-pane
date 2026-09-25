@@ -354,13 +354,3 @@ export function readOutsideProjectGrantTargets(
   if (!externalOnlyForOutsidePath(command, workspaceRoot)) return null
   return analysis.resolvedTargets
 }
-
-/** At most this many paths are listed before the copy falls back to a count. */
-const MAX_LISTED_TARGETS = 3
-
-/** The out-of-project paths, phrased for the approval prompt. */
-export function describeReadOutsideTargets(targets: readonly string[]): string {
-  if (targets.length <= MAX_LISTED_TARGETS) return targets.join(', ')
-  const shown = targets.slice(0, MAX_LISTED_TARGETS).join(', ')
-  return `${shown} and ${String(targets.length - MAX_LISTED_TARGETS)} more`
-}

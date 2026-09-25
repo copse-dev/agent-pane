@@ -2134,8 +2134,13 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     }
   }
 
-  async function withRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
+  async function withRoot<T>(fn: (root: string, readDir: string) => Promise<T>): Promise<T> {
     const root = mkdtempSync(join(tmpdir(), 'copse-read-outside-'))
+    const readDir = mkdtempSync(join(tmpdir(), 'copse-read-target-'))
+    writeFileSync(join(readDir, 'note.txt'), 'ordinary note')
+    writeFileSync(join(readDir, 'other.txt'), 'another note')
+    mkdirSync(join(readDir, 'nested'))
+    writeFileSync(join(readDir, 'nested', 'deep.txt'), 'nested note')
     const restore = setWorkspaceRootForTest(root)
     // Every gate decision here appends to the durable log; point the store at a
     // throwaway dir so the suite never writes into the developer's own.
@@ -2147,7 +2152,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     // classifier only adds a per-command connection timeout here.
     await setSetting('safetyClassifierEnabled', false)
     try {
-      return await fn(root)
+      return await fn(root, readDir)
     } finally {
       // Decision recording is deliberately fire-and-forget. Drain it while the
       // throwaway store is still selected so an async physical append cannot
@@ -2160,6 +2165,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       else process.env['COPSE_WORKSPACE_DIR'] = previousStore
       rmSync(store, { recursive: true, force: true })
       rmSync(root, { recursive: true, force: true })
+      rmSync(readDir, { recursive: true, force: true })
     }
   }
 
@@ -2179,24 +2185,77 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       assert.ok(prompt)
       assert.equal(prompt.title, 'Allow read access outside of the project?')
       assert.equal(prompt.body, 'ls -la ~/.copse')
-      assert.match(prompt.bodyAdvice, /read from sensitive locations on your computer/)
+      assert.match(prompt.bodyAdvice, /A listed directory can contain sensitive files/)
+      assert.match(prompt.bodyAdvice, /• ~\/\.copse/)
+      assert.match(prompt.bodyFooter, /Other paths ask again/)
       assert.equal(prompt.collapseDetails, true)
       assert.equal(prompt.approveOnceLabel, 'Approve this command')
     })
   })
 
-  it('grants the thread read access when the primary button is used', async () => {
-    await withRoot(async (root) => {
+  it('grants later reads under the approved directory, but asks for unrelated paths', async () => {
+    await withRoot(async (root, readDir) => {
       const granted = await runWithActiveRunIdentity('thread-read-grant', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
       assert.equal(granted.permitted, true)
 
-      const later = await runWithActiveRunIdentity('thread-read-grant', () =>
+      const nested = await runWithActiveRunIdentity('thread-read-grant', () =>
+        runGate(
+          `cat ${join(readDir, 'nested', 'deep.txt')}`,
+          { approved: false, remember: false },
+          root,
+        ),
+      )
+      assert.equal(nested.permitted, true)
+      assert.equal(nested.prompt, null, 'a read below the granted directory should not ask again')
+
+      const unrelated = await runWithActiveRunIdentity('thread-read-grant', () =>
         runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
       )
-      assert.equal(later.permitted, true)
-      assert.equal(later.prompt, null, 'a granted thread must not be asked again')
+      assert.equal(unrelated.permitted, false)
+      assert.equal(unrelated.prompt?.title, 'Allow read access outside of the project?')
+
+      const prefixSibling = mkdtempSync(`${readDir}-sibling-`)
+      try {
+        const siblingFile = join(prefixSibling, 'note.txt')
+        writeFileSync(siblingFile, 'outside the granted directory')
+        const sibling = await runWithActiveRunIdentity('thread-read-grant', () =>
+          runGate(`cat ${siblingFile}`, { approved: false, remember: false }, root),
+        )
+        assert.equal(sibling.permitted, false)
+        assert.ok(sibling.prompt, 'a path with the same string prefix must still ask')
+      } finally {
+        rmSync(prefixSibling, { recursive: true, force: true })
+      }
+    })
+  })
+
+  it('limits a file grant to that file and requires every target in a command to be covered', async () => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
+      const other = join(readDir, 'other.txt')
+      await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${note}`, { approved: true, remember: true }, root),
+      )
+
+      const sameFile = await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${note}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(sameFile.permitted, true)
+      assert.equal(sameFile.prompt, null)
+
+      const sibling = await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${other}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(sibling.permitted, false)
+      assert.ok(sibling.prompt)
+
+      const mixed = await runWithActiveRunIdentity('thread-file-grant', () =>
+        runGate(`cat ${note} ${other}`, { approved: false, remember: false }, root),
+      )
+      assert.equal(mixed.permitted, false)
+      assert.ok(mixed.prompt)
     })
   })
 
@@ -2245,14 +2304,14 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   })
 
   it('records the grant, and everything it later covers, in the decision log', async () => {
-    await withRoot(async (root) => {
+    await withRoot(async (root, readDir) => {
       const granted = await runWithActiveRunIdentity('thread-audit', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
-      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse'])
+      assert.deepEqual(granted.prompt?.reasons, [`reads outside the project: ${readDir}`])
 
       await runWithActiveRunIdentity('thread-audit', () =>
-        runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
+        runGate(`cat ${join(readDir, 'note.txt')}`, { approved: false, remember: false }, root),
       )
 
       const events = await recordedDecisions()
@@ -2272,7 +2331,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             actor: 'user',
             verdict: 'approved',
             remembered: true,
-            reasons: ['reads outside the project: ~/.copse'],
+            reasons: [`reads outside the project: ${readDir}`],
             threadId: 'thread-audit',
             source: undefined,
           },
@@ -2281,7 +2340,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             actor: 'user',
             verdict: 'allowed',
             remembered: undefined,
-            reasons: ['reads outside the project: ~/.gitconfig'],
+            reasons: [`reads outside the project: ${join(readDir, 'note.txt')}`],
             threadId: 'thread-audit',
             source: 'read-outside-grant',
           },
@@ -2341,16 +2400,17 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   }
 
   it('spends the read grant on containment, not also on a full sandbox escape', async () => {
-    await withRoot(async (root) => {
+    await withRoot(async (root, readDir) => {
+      const note = join(readDir, 'note.txt')
       await runWithActiveRunIdentity('thread-spent', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
       )
 
       // A command the grant covers that has NOT yet been given the relaxation is
       // still answered by the grant — that is how the read question stays a
       // once-per-thread question.
       const covered = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation('cat ~/.gitconfig', false),
+        captureEscalation(`cat ${note}`, false),
       )
       assert.equal(covered.approved, true)
       assert.equal(covered.title, null, 'the standing grant answers it without asking')
@@ -2359,7 +2419,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
       // grant named and the command STILL hit the sandbox, the grant is spent: it
       // must not silently approve the full escape it never covered.
       const spent = await runWithActiveRunIdentity('thread-spent', () =>
-        captureEscalation('cat ~/.gitconfig', true),
+        captureEscalation(`cat ${note}`, true),
       )
       assert.equal(spent.approved, false)
       assert.equal(spent.title, 'Run outside sandbox?')
