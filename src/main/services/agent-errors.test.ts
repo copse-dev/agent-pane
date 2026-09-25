@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
 import OpenAI from 'openai'
 import {
+  acpTurnInterruptionFor,
   acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
@@ -162,34 +163,6 @@ describe('classifyAgentError', () => {
     const acp = new Error('Internal error: API Error: Overloaded')
     assert.match(classifyAgentError(acp), /temporarily overloaded/)
     assert.doesNotMatch(classifyAgentError(acp), /Internal error/)
-  })
-
-  // The Codex CUA nesting failure (2026-09-23): a sandbox-owning helper spawned
-  // inside Copse's agent seatbelt dies with a sandbox-exec diagnostic buried in
-  // the agent's opaque turn text. Without a reading, the failure presented as a
-  // generic internal error and the next turn retried — which can never succeed
-  // while the seatbelt stands, so the marker must say re-running won't help.
-  it('reads a nested-sandbox denial out of the agent turn text and points at the boundary', () => {
-    const err = new AcpTurnFailure(
-      new RequestError(-32603, 'Internal error: ACP agent turn failed', {
-        details:
-          'node_repl kernel exited unexpectedly\nnode_repl diagnostics: ' +
-          '{"kernel_pid":91184,"kernel_status":"exited(code=71)","kernel_stderr_tail":' +
-          '"sandbox-exec: sandbox_apply: Operation not permitted","reason":"stdout_eof"}',
-      }),
-      { assistantText: '', usage: { inputTokens: 0, outputTokens: 0 } },
-    )
-    const out = classifyAgentError(err, { acpAgentId: 'codex-acp' })
-    assert.match(out, /second OS sandbox inside the one Copse already runs/)
-    assert.match(out, /host process outside the agent’s seatbelt/)
-    assert.match(out, /sandbox-network-scope-isolation/)
-    assert.doesNotMatch(out, /^An error occurred:/)
-  })
-
-  it('keeps the interruption marker for a nested-sandbox failure generic but non-retrying', () => {
-    // The failure is not credentials, so no login offer may appear — but the
-    // marker must still tell the next turn not to retry the identical spawn.
-    assert.equal(classifyAcpAuthFailure(new Error('sandbox_apply: Operation not permitted')), null)
   })
 
   it('turns terminal OpenRouter policy failures into privacy-setting guidance', () => {
@@ -393,6 +366,92 @@ describe('classifyAcpAuthFailure', () => {
       classifyAcpAuthFailure(new Error('Your revoked access token cannot be used'), claude),
       'expired',
     )
+  })
+})
+
+// The Codex CUA nesting failure (2026-09-23): a sandbox-owning helper spawned
+// inside Copse's agent seatbelt dies with a sandbox-exec diagnostic buried in
+// the agent's opaque turn text. Without a reading, the failure presented as a
+// generic internal error and the next turn retried — which can never succeed
+// while the seatbelt stands.
+describe('nested-sandbox ACP failures', () => {
+  const codex = 'codex-acp'
+  const nestedDetails =
+    'node_repl kernel exited unexpectedly\nnode_repl diagnostics: ' +
+    '{"kernel_pid":91184,"kernel_status":"exited(code=71)","kernel_stderr_tail":' +
+    '"sandbox-exec: sandbox_apply: Operation not permitted","reason":"stdout_eof"}'
+  const nested = (message = 'Internal error: ACP agent turn failed'): AcpTurnFailure =>
+    new AcpTurnFailure(new RequestError(-32603, message, { details: nestedDetails }), {
+      assistantText: '',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    })
+  const interruption = (err: unknown): string =>
+    acpTurnInterruptionFor(err, {
+      aborted: false,
+      authFailure: classifyAcpAuthFailure(err, { acpAgentId: codex }),
+      acpAgentId: codex,
+    })
+
+  it('reads the denial out of the agent turn text and says a retry will not help', () => {
+    const out = classifyAgentError(nested(), { acpAgentId: codex })
+    assert.match(out, /^> \[!WARNING\]\n> \*\*Codex hit Copse’s sandbox boundary\*\*/)
+    assert.match(out, /second OS sandbox inside the one Copse already runs/)
+    assert.match(out, /Retrying won’t help/)
+    assert.doesNotMatch(out, /Retry the turn/)
+    assert.match(out, /sandbox_apply: Operation not permitted/, 'technical details are kept')
+    assert.equal(interruption(nested()), 'nested_sandbox')
+  })
+
+  it('tells the next turn not to retry and to tell the user, not to seek another spawn', () => {
+    const marker = acpTurnInterruptionMarker('nested_sandbox', codex)
+    assert.match(marker, /Do not retry it/)
+    assert.match(marker, /Tell the user what failed/)
+    assert.doesNotMatch(marker, /host process|spawn/i)
+    assert.doesNotMatch(marker, /transient/i)
+  })
+
+  // The persisted marker and the live diagnosis are two readings of one
+  // verdict: they must agree even when the same text also carries a signal an
+  // earlier provider branch would otherwise claim.
+  it('keeps the live diagnosis and the persisted marker in agreement', () => {
+    for (const message of ['Internal error: rate_limit', 'Internal error: Unauthorized']) {
+      const err = nested(message)
+      const kind = interruption(err)
+      const out = classifyAgentError(err, { acpAgentId: codex })
+      if (kind === 'nested_sandbox') assert.match(out, /sandbox boundary/, message)
+      else assert.doesNotMatch(out, /sandbox boundary/, message)
+    }
+    assert.equal(interruption(nested('Internal error: rate_limit')), 'nested_sandbox')
+    assert.match(
+      classifyAgentError(nested('Internal error: rate_limit'), { acpAgentId: codex }),
+      /sandbox boundary/,
+    )
+  })
+
+  it('reads nothing into the same text outside an ACP JSON-RPC failure', () => {
+    const plain = new Error('sandbox-exec: sandbox_apply: Operation not permitted')
+    assert.equal(interruption(plain), 'error')
+    assert.doesNotMatch(classifyAgentError(plain, { acpAgentId: codex }), /sandbox boundary/)
+    assert.equal(acpTurnInterruptionFor(nested(), { aborted: false, authFailure: null }), 'error')
+    assert.doesNotMatch(classifyAgentError(nested()), /sandbox boundary/)
+    assert.equal(classifyAcpAuthFailure(plain, { acpAgentId: codex }), null)
+  })
+
+  it('lets an abort or a credentials failure outrank the nested-sandbox reading', () => {
+    assert.equal(
+      acpTurnInterruptionFor(nested(), { aborted: true, authFailure: null, acpAgentId: codex }),
+      'aborted',
+    )
+    assert.equal(
+      acpTurnInterruptionFor(nested(), {
+        aborted: false,
+        authFailure: 'expired',
+        acpAgentId: codex,
+      }),
+      'expired',
+    )
+    const generic = new RequestError(-32603, 'Internal error: something else')
+    assert.equal(interruption(generic), 'error')
   })
 })
 

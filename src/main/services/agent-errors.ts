@@ -217,21 +217,14 @@ const AUTH_FAILURE_RE =
  * inside the current confinement can succeed — the fix is structural (spawn the
  * helper from the host process), not something the turn can do.
  */
-const NESTED_SANDBOX_APPLY_RE = /sandbox-exec.*sandbox_apply:\s*(?:Operation not permitted|EPERM)/i
-
-/** Every string an agent might have hidden the auth signal in, joined for matching. */
-function authSignalText(rpc: JsonRpcError | null, detail: string): string {
-  const data = rpc ? formatErrorData(rpc.data) : null
-  return [rpc?.message ?? '', detail, data ?? ''].join('\n')
-}
+const NESTED_SANDBOX_APPLY_RE =
+  /sandbox-exec:\s*sandbox_apply:\s*(?:Operation not permitted|EPERM)/i
 
 /**
- * Every string an agent turn failure carries, joined for matching against
- * signatures that are about *how the agent ran* rather than what it said —
- * a sandbox-exec diagnostic can surface in the JSON-RPC message, the structured
- * `data`, or the turn's own text, and each spelling must read the same.
+ * Every string an ACP turn failure might carry a signal in — the JSON-RPC
+ * message, the turn's own text, and the structured `data` — joined for matching.
  */
-function turnSignalText(rpc: JsonRpcError | null, detail: string): string {
+function acpSignalText(rpc: JsonRpcError | null, detail: string): string {
   const data = rpc ? formatErrorData(rpc.data) : null
   return [rpc?.message ?? '', detail, data ?? ''].join('\n')
 }
@@ -239,22 +232,19 @@ function turnSignalText(rpc: JsonRpcError | null, detail: string): string {
 /**
  * Whether an ACP turn died on the nested-sandbox boundary (a helper that owns
  * its own seatbelt profile spawned inside Copse's agent confinement — see
- * {@link NESTED_SANDBOX_APPLY_RE}).
+ * {@link NESTED_SANDBOX_APPLY_RE}). Credentials failures are read first
+ * everywhere this is consulted, so it never has to exclude them itself.
+ *
+ * {@link acpTurnInterruptionFor} and {@link classifyAgentError} both read this
+ * one predicate, in the same place in their order: the persisted marker and the
+ * live diagnosis are two readings of one verdict, not two that can disagree.
  */
-function isNestedSandboxApplyFailure(rpc: JsonRpcError | null, detail: string): boolean {
-  return NESTED_SANDBOX_APPLY_RE.test(turnSignalText(rpc, detail))
-}
-
-/**
- * Exported because the failure path in `agent-service.ts` must pick the
- * `'nested_sandbox'` interruption marker off the same signal the user-facing
- * diagnosis reads — two readings of one verdict, not two that can disagree.
- */
-export function isAcpNestedSandboxFailure(err: unknown, ctx?: ClassifyAgentErrorContext): boolean {
-  if (!ctx?.acpAgentId) return false
+function isAcpNestedSandboxFailure(err: unknown, acpAgentId: string | undefined): boolean {
+  if (!acpAgentId) return false
   const rpc = findJsonRpcError(err)
+  if (!rpc) return false
   const { message } = parseProviderError(err)
-  return isNestedSandboxApplyFailure(rpc, message ?? errorMessage(err))
+  return NESTED_SANDBOX_APPLY_RE.test(acpSignalText(rpc, message ?? errorMessage(err)))
 }
 
 /**
@@ -273,7 +263,7 @@ export function classifyAcpAuthFailure(
   if (!ctx?.acpAgentId) return rpc?.code === -32000 ? 'required' : null
 
   const { status, type, message } = parseProviderError(err)
-  const text = authSignalText(rpc, message ?? errorMessage(err))
+  const text = acpSignalText(rpc, message ?? errorMessage(err))
 
   // Codex 0.156.x gates every turn on ChatGPT workspace-routing discovery; a
   // 401 there is a stale credential — `codex login status` still reports
@@ -294,11 +284,6 @@ export function classifyAcpAuthFailure(
 function acpAgentDisplayName(agentId?: string): string {
   const known = agentId ? findAcpCatalogEntry(agentId) : undefined
   return known?.title ?? agentId ?? 'The external agent'
-}
-
-/** The agent's display name from a {@link ClassifyAgentErrorContext}, or a generic noun. */
-function agentDisplayName(ctx: ClassifyAgentErrorContext | undefined): string {
-  return acpAgentDisplayName(ctx?.acpAgentId)
 }
 
 /**
@@ -330,10 +315,47 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
     case 'required':
       return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
     case 'nested_sandbox':
-      return `[This turn failed: one of ${agentName}’s helpers tried to apply a second OS sandbox inside Copse’s agent seatbelt, which macOS forbids. Re-running the same turn inside the same confinement will fail the same way; the helper needs to be spawned from Copse’s host process (docs/plans/sandbox-network-scope-isolation.md).]`
+      return `[This turn failed: one of ${agentName}’s helpers tried to apply a second OS sandbox inside the one Copse runs it under, which macOS does not allow. Do not retry it — the same turn will fail the same way. Tell the user what failed.]`
     case 'error':
       return '[This turn was interrupted by a provider error before it completed.]'
   }
+}
+
+/**
+ * How a failed ACP turn is recorded. Reads the same signals in the same order
+ * as {@link classifyAgentError} — an abort first, then credentials, then the
+ * nested-sandbox boundary — so the persisted marker never contradicts the
+ * diagnosis the user saw. `authFailure` is the caller's own
+ * {@link classifyAcpAuthFailure} reading, passed in so it is taken once.
+ */
+export function acpTurnInterruptionFor(
+  err: unknown,
+  outcome: {
+    readonly aborted: boolean
+    readonly authFailure: AcpAuthFailureKind | null
+    readonly acpAgentId?: string
+  },
+): AcpTurnInterruption {
+  if (outcome.aborted) return 'aborted'
+  if (outcome.authFailure) return outcome.authFailure
+  if (isAcpNestedSandboxFailure(err, outcome.acpAgentId)) return 'nested_sandbox'
+  return 'error'
+}
+
+function formatNestedSandboxError(rpc: JsonRpcError | null, agentId?: string): string {
+  const agentName = acpAgentDisplayName(agentId)
+  const explanation =
+    `This turn couldn’t run because one of ${agentName}’s helpers tried to apply a second ` +
+    'OS sandbox inside the one Copse already runs it under, which macOS does not allow.'
+  return [
+    `> [!WARNING]\n> **${agentName} hit Copse’s sandbox boundary**\n>\n> ${explanation}`,
+    'Retrying won’t help: the helper fails the same way every time it starts inside Copse’s ' +
+      'sandbox. Ask for the task without that helper (for example, Codex’s CUA `node_repl`), ' +
+      'or report the failure so it can be fixed in Copse.',
+    acpTechnicalDetails(rpc),
+  ]
+    .filter(isNonEmptyString)
+    .join('\n\n')
 }
 
 /**
@@ -490,6 +512,12 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   const authFailure = classifyAcpAuthFailure(err, ctx)
   if (authFailure) return formatAcpAuthError(rpc, authFailure, ctx?.acpAgentId)
 
+  // Straight after credentials, in the same order as `acpTurnInterruptionFor`:
+  // a helper that cannot nest a second seatbelt dies before any provider call,
+  // so no provider reading below (401, credit, rate limit…) may claim it.
+  if (isAcpNestedSandboxFailure(err, ctx?.acpAgentId))
+    return formatNestedSandboxError(rpc, ctx?.acpAgentId)
+
   // ACP turns never reach here: `classifyAcpAuthFailure` already claimed every
   // credentials failure that carries an agent id, and points at that agent's own
   // login rather than Copse's key settings.
@@ -545,28 +573,6 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
   // the unauthorized variant is classified as a stale sign-in instead.
   if (/workspace routing discovery (?:failed|timed out)/i.test(detail)) {
     return 'Codex could not reach OpenAI’s workspace routing (usually a VPN, firewall or CDN block, or a brief outage). Wait a moment and retry; if it persists, check your VPN/firewall or the OpenAI status page.'
-  }
-
-  // The nested-sandbox boundary outranks the generic ACP fallback: a helper
-  // that cannot nest a second seatbelt dies before any provider call, so no
-  // auth or provider reading applies, and the guidance names the structural fix.
-  if (rpc && ctx?.acpAgentId && isNestedSandboxApplyFailure(rpc, detail)) {
-    return [
-      '> [!WARNING]',
-      `> **${agentDisplayName(ctx)} hit Copse’s sandbox boundary**`,
-      '>',
-      `> This turn couldn’t run because one of ${agentDisplayName(ctx)}’s helpers tried ` +
-        'to apply a second OS sandbox inside the one Copse already runs it under, which macOS forbids.',
-      '',
-      'Retry the turn once — a *shell* helper that legitimately applies its own profile may have ' +
-        'been a one-off — but if it recurs, the helper that owns its own sandbox (e.g. Codex’s CUA ' +
-        'node_repl) must be spawned from Copse’s host process outside the agent’s seatbelt instead ' +
-        '(docs/plans/sandbox-network-scope-isolation.md).',
-      '',
-      acpTechnicalDetails(rpc),
-    ]
-      .filter(isNonEmptyString)
-      .join('\n\n')
   }
 
   if (rpc && ctx?.acpAgentId) {
