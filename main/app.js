@@ -74223,6 +74223,23 @@ var init_tool_args_format = __esm({
   }
 });
 
+// src/renderer/views/tool-error-format.ts
+function mcpErrorMessage(result) {
+  if (!result.trimStart().startsWith("{")) return null;
+  return safeJsonParse(result, decodeWithSchema(mcpErrorEnvelopeSchema))?.error.message ?? null;
+}
+var mcpErrorEnvelopeSchema;
+var init_tool_error_format = __esm({
+  "src/renderer/views/tool-error-format.ts"() {
+    init_zod();
+    init_safe_json2();
+    mcpErrorEnvelopeSchema = external_exports.object({
+      result: external_exports.null(),
+      error: external_exports.object({ message: external_exports.string().min(1) }).strict()
+    }).strict();
+  }
+});
+
 // src/renderer/controller/thread-proposals.ts
 async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
   const projectId = store2.getState().activeProjectId;
@@ -74826,9 +74843,18 @@ function createToolArgsSection(args) {
     el("pre", {}, rendered)
   );
 }
-function createToolResultSection(result, format, showEmptyState = false) {
+function createToolResultSection(result, status, format, showEmptyState = false) {
   if (!result) {
     return showEmptyState ? el("div", { class: "tool-result tool-result-empty" }, "No tool details were provided.") : el("div", { class: "tool-result" });
+  }
+  const errorMessage2 = status === "error" ? mcpErrorMessage(result) : null;
+  if (errorMessage2) {
+    const paragraphs = errorMessage2.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
+    return el(
+      "div",
+      { class: "tool-result tool-result-error-message" },
+      ...paragraphs.map((line) => el("p", {}, line))
+    );
   }
   if (format === "markdown") {
     const wrap = el("div", { class: "tool-result tool-result-markdown message-text" });
@@ -74923,6 +74949,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
       ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
+        tc2.status,
         tc2.resultFormat,
         argsSection === null && tc2.status !== "running"
       ),
@@ -77695,6 +77722,7 @@ var init_conversation = __esm({
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
+    init_tool_error_format();
     init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
