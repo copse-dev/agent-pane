@@ -89609,55 +89609,6 @@ var init_debug_trace_prompt2 = __esm({
 });
 
 // src/shared/usage/footer-usage-summary.ts
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    return { inputTokens, outputTokens, estimated: false };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const cost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
-// src/shared/usage/footer-usage-tooltip.ts
 function collectSubagentUsage(toolCalls, totals) {
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent;
@@ -89679,12 +89630,84 @@ function sumSubagentUsage(messages) {
   }
   return totals;
 }
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls ?? []) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    return {
+      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
+      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+  }
+});
+
+// src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
   if (isLocalModel(model)) return `${tokens} \xB7 free`;
   const cost = costForModelUsage(model, usage, pricing);
   if (!hasModelPricing(model, pricing)) return `${tokens} \xB7 unpriced`;
   return `${tokens} \xB7 ${cost > 0 ? formatUsd(cost) : "free"}`;
+}
+function freeReason(model, pricing) {
+  if (isLocalModel(model)) return "local model";
+  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  return null;
+}
+function buildFreeNote(models, pricing) {
+  const reasons = [];
+  for (const model of models) {
+    const reason = freeReason(model, pricing);
+    if (reason && !reasons.includes(reason)) reasons.push(reason);
+  }
+  return reasons.length > 0 ? `Free: ${reasons.join("; ")}` : null;
 }
 function buildFooterUsageTooltip(display, opts) {
   const { inputTokens, outputTokens, estimated } = display;
@@ -89693,13 +89716,18 @@ function buildFooterUsageTooltip(display, opts) {
     { label: "Input", value: `${approx}${formatTokenCount(inputTokens)}` },
     { label: "Output", value: `${approx}${formatTokenCount(outputTokens)}` }
   ];
+  const threadRows = [];
   const usage = opts.measuredUsage;
   const cacheRead = estimated ? 0 : usage.cacheReadTokens ?? 0;
   const cacheCreation = estimated ? 0 : usage.cacheCreationTokens ?? 0;
-  if (cacheRead > 0) rows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
-  if (cacheCreation > 0) rows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  if (cacheRead > 0) {
+    threadRows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
+  }
+  if (cacheCreation > 0) {
+    threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  }
   const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
-  if (cost) rows.push({ label: "Cost", value: cost });
+  if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
     label: "Subagents",
@@ -89707,6 +89735,8 @@ function buildFooterUsageTooltip(display, opts) {
       subagents.inputTokens
     )} in / ${formatTokenCount(subagents.outputTokens)} out`
   } : null;
+  const conversationLabel = subagentRow ? "Excluding subagents" : null;
+  const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
   const byModel = Object.entries(usage.byModel ?? {}).filter(
     ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
@@ -89721,18 +89751,25 @@ function buildFooterUsageTooltip(display, opts) {
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
   const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
+    conversationLabel,
     rows,
+    threadLabel: threadLabel2,
+    threadRows,
     subagentRow,
     modelRows,
-    note
+    note,
+    freeNote
   };
 }
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
+    init_footer_usage_summary();
     init_format_usage_summary();
+    init_footer_usage_summary();
   }
 });
 
@@ -89758,9 +89795,19 @@ function createFooterUsagePopover() {
         return;
       }
       root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+      if (model.conversationLabel) {
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+      }
       for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.subagentRow || model.modelRows.length > 0) {
+      if (model.threadLabel) {
         root.append(el("div", { class: "footer-usage-popover-divider" }));
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+      } else {
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+        if (model.subagentRow || model.modelRows.length > 0) {
+          root.append(el("div", { class: "footer-usage-popover-divider" }));
+        }
       }
       if (model.subagentRow) {
         root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
@@ -89769,6 +89816,9 @@ function createFooterUsagePopover() {
         root.append(row(entry, "footer-usage-popover-row is-model"));
       }
       if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+      if (model.freeNote) {
+        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+      }
     },
     show() {
       if (hasContent) root.hidden = false;
