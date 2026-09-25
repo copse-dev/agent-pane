@@ -5,7 +5,11 @@ import { join } from 'node:path'
 import { $, browser } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 // Real-app visual + numeric evidence for issue #2488: the roadmap Save button
 // and the titlebar Changes-count badge painting `--text-on-accent` (a dark
@@ -116,13 +120,10 @@ describe('light-contrast controls: roadmap Save button + Changes badge (issue #2
         '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
         `light-contrast-changes-badge-${theme}.png`,
       )
-      // Capture the containing action row: Chromium's bare-element crop can
-      // omit glyphs after a live theme swap, while the row keeps the real
-      // button and enough surrounding context to review its rendered label.
-      await saveElementScreenshot(
-        '.roadmap-form .memories-actions',
-        `light-contrast-save-button-${theme}.png`,
-      )
+      // Keep the Save evidence inside the full app frame. Chromium's element
+      // screenshot path has intermittently dropped individual painted glyphs
+      // after a live theme swap, even when the containing action row is used.
+      await saveAppScreenshot(`light-contrast-save-button-${theme}.png`)
       const badge = await browser.execute(
         controlContrast,
         '.titlebar-btn[aria-label="Open changes"] .titlebar-btn-badge',
