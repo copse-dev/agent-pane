@@ -16,10 +16,9 @@ export interface FooterUsageDisplay {
   /** True when provider-reported usage is unavailable and counts are approximated. */
   estimated: boolean
   /**
-   * Tokens spent by subagents, already folded into the thread's raw measured
-   * usage upstream (`subagent-usage.ts`) and folded back out of the fields
-   * above. Present only when a subagent reported usage on a measured (not
-   * estimated) display — the footer's "Subagents" row draws on this.
+   * Tokens subagent sessions reported (see `sumSubagentUsage`). Present only
+   * when a subagent reported usage on a measured (not estimated) display — the
+   * footer's "Subagents" row draws on this.
    */
   subagentInputTokens?: number
   subagentOutputTokens?: number
@@ -54,9 +53,11 @@ function collectSubagentUsage(toolCalls: ToolCall[], totals: SubagentUsageTotals
 /**
  * Total tokens spent by subagents in a thread, at every nesting depth.
  *
- * These tokens are already inside the parent thread's totals — the main process
- * folds them in after the run (`subagent-usage.ts`) — so this is a "how much of
- * the total was delegated work" view, not an addition to it.
+ * A session records its usage as soon as it finishes, but the main process
+ * only folds it into the thread total once the parent loop completes
+ * (`subagent-usage.ts`), and not at all when that loop fails. So this is how
+ * much work was delegated, not how much of the thread total it accounts for;
+ * `ThreadUsage.subagentInputTokens` records that.
  */
 export function sumSubagentUsage(messages: Message[]): SubagentUsageTotals {
   const totals: SubagentUsageTotals = { runs: 0, inputTokens: 0, outputTokens: 0 }
@@ -92,19 +93,39 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
 }
 
 /**
+ * The subagent share of `measured` — only what was actually folded into it.
+ * Usage recorded before the share was tracked falls back to the finished
+ * sessions, which is what a completed run folded in.
+ */
+function foldedSubagentShare(
+  measured: ThreadUsage,
+  sessions: SubagentUsageTotals,
+): { inputTokens: number; outputTokens: number } {
+  if (measured.subagentInputTokens !== undefined || measured.subagentOutputTokens !== undefined) {
+    return {
+      inputTokens: measured.subagentInputTokens ?? 0,
+      outputTokens: measured.subagentOutputTokens ?? 0,
+    }
+  }
+  return sessions
+}
+
+/**
  * Prefer measured provider usage; fall back to context/output estimates when
- * zero. Recorded subagent usage is already folded into `input.measured`
- * upstream, so it is subtracted back out here (see `sumSubagentUsage`) rather
- * than left inflating the headline. Other background work without a persisted
- * subagent session remains in the total.
+ * zero. The subagent share folded into `input.measured` is subtracted back out
+ * here rather than left inflating the headline; a subagent whose usage was
+ * never folded in (a failed loop, or a run still in progress) is not
+ * subtracted. Other background work without a persisted subagent session
+ * remains in the total.
  */
 export function resolveFooterUsage(input: FooterUsageInput): FooterUsageDisplay | null {
   const { inputTokens, outputTokens } = input.measured
   if (inputTokens || outputTokens) {
     const subagents = sumSubagentUsage(input.messages)
+    const folded = foldedSubagentShare(input.measured, subagents)
     return {
-      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
-      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
+      inputTokens: Math.max(0, inputTokens - folded.inputTokens),
+      outputTokens: Math.max(0, outputTokens - folded.outputTokens),
       estimated: false,
       ...(subagents.runs > 0
         ? {

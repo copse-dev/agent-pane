@@ -2,6 +2,7 @@ import {
   costForModelUsage,
   formatThreadUsageCost,
   hasModelPricing,
+  hasZeroModelPricing,
   isLocalModel,
 } from '@copse/llm/estimate-cost.ts'
 import type { ModelPricingMap } from '@copse/llm/model-pricing.ts'
@@ -42,9 +43,10 @@ export interface FooterUsageTooltipModel {
   /** Why numbers are approximate or a cost is missing; null when neither applies. */
   note: string | null
   /**
-   * Why some of the usage above reads as free — a local model, or a route with
-   * no listed price — using the same predicates the cost/model rows do. Null
-   * when nothing in the thread is free.
+   * Why some of the usage above reads as free — a local model, or a route
+   * listed at a zero rate — using the same predicates the cost/model rows do.
+   * A model with no listed price is not free; `note` covers it. Null when
+   * nothing in the thread is free.
    */
   freeNote: string | null
 }
@@ -67,15 +69,14 @@ function modelRowValue(model: string, usage: ModelUsage, pricing?: ModelPricingM
 }
 
 /**
- * Why `model`'s usage would read as free rather than a dollar figure — the
- * same two predicates `modelRowValue` and the cost line use: local models cost
- * nothing to run, and a model outside the catalog/pricing map has no rate to
- * bill against. A model with a real (even zero) published rate is not
- * ambiguous, so it gets no explanation here.
+ * Why `model`'s usage reads as free — the same predicates `modelRowValue` and
+ * the cost line use: local models cost nothing to run, and a route can be
+ * listed at a zero rate. A model outside the catalog/pricing map is *not*
+ * free: it has no listed price, and `note` says so.
  */
 function freeReason(model: string, pricing?: ModelPricingMap): string | null {
   if (isLocalModel(model)) return 'local model'
-  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`
+  if (hasZeroModelPricing(model, pricing)) return `${model} is listed at a zero rate`
   return null
 }
 
@@ -113,13 +114,25 @@ export function buildFooterUsageTooltip(
     threadRows.push({ label: 'Cache write', value: formatTokenCount(cacheCreation) })
   }
 
-  const cost = estimated ? '' : formatThreadUsageCost(usage, opts.model, opts.pricing)
+  const byModel = Object.entries(usage.byModel ?? {}).filter(
+    ([, u]) => u.inputTokens > 0 || u.outputTokens > 0,
+  )
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model]
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing)
+
+  // "Free: local model" below already explains local usage; the cost line
+  // does not repeat it as "(+ local free)".
+  const cost = estimated
+    ? ''
+    : formatThreadUsageCost(usage, opts.model, opts.pricing, {
+        localFreeExplained: pricedModels.some(isLocalModel),
+      })
   if (cost) threadRows.push({ label: 'Cost', value: cost })
 
-  // Subagent tokens are already counted in the parent's raw totals upstream
-  // (see `resolveFooterUsage`), which folds them back out of `display` before
-  // this row says how much of them was delegated. Suppressed on an estimate,
-  // which has no provider-reported subagent usage to draw on.
+  // How much work was delegated, from the sessions' own records. Only the
+  // share actually folded into the thread total is taken out of `display`
+  // (see `resolveFooterUsage`). Suppressed on an estimate, which has no
+  // provider-reported subagent usage to draw on.
   const subagents = estimated
     ? { runs: 0, inputTokens: 0, outputTokens: 0 }
     : sumSubagentUsage(opts.messages)
@@ -136,16 +149,12 @@ export function buildFooterUsageTooltip(
   const threadLabel = subagentRow ? 'Whole thread' : null
 
   const modelRows: FooterUsageTooltipRow[] = []
-  const byModel = Object.entries(usage.byModel ?? {}).filter(
-    ([, u]) => u.inputTokens > 0 || u.outputTokens > 0,
-  )
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
       modelRows.push({ label: model, value: modelRowValue(model, modelUsage, opts.pricing) })
     }
   }
 
-  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model]
   const hasUnpricedUsage = pricedModels.some(
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing),
   )
@@ -153,10 +162,9 @@ export function buildFooterUsageTooltip(
     ? 'Estimated — provider usage not reported yet'
     : hasUnpricedUsage
       ? cost
-        ? 'Cost excludes models without pricing'
-        : 'No pricing for this model'
+        ? 'Cost excludes models with no listed price'
+        : 'No listed price for this model'
       : null
-  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing)
 
   return {
     header: `Usage · ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,

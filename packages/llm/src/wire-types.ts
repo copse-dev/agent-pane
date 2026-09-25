@@ -117,6 +117,15 @@ export interface ThreadUsage {
   cacheCreationTokens?: number
   /** Token totals keyed by model id (e.g. claude-sonnet-4-6, lmstudio:qwen). */
   byModel?: Record<string, ModelUsage>
+  /**
+   * The part of `inputTokens`/`outputTokens` folded in from subagent runs (the
+   * `subagentUsage` chunk). Subagent sessions record their own usage as soon as
+   * they finish, but the fold only lands once the parent loop completes, and
+   * not at all when the loop fails, so the thread-only figure subtracts this
+   * rather than the session totals. Absent on usage recorded before it existed.
+   */
+  subagentInputTokens?: number
+  subagentOutputTokens?: number
 }
 
 // ── The provider output stream ───────────────────────────────────────────────
@@ -197,6 +206,12 @@ export type ProviderStreamChunk =
        * Used for the dedicated advisor cost line (issue #566).
        */
       usageSource?: 'advisor'
+      /**
+       * These tokens fold in subagent runs whose sessions already carry their
+       * own usage (`ToolCall.subagent.usage`), so the thread records them as a
+       * subagent share of its total.
+       */
+      subagentUsage?: true
     }
   /**
    * Progress while a local model processes the prompt before its first output

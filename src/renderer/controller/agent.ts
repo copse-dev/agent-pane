@@ -435,6 +435,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
+          ...(chunk.subagentUsage ? { subagentUsage: true } : {}),
           ...(chunk.cacheReadTokens !== undefined
             ? { cacheReadTokens: chunk.cacheReadTokens }
             : {}),

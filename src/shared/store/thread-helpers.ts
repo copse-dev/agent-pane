@@ -38,6 +38,7 @@ import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
 
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { sumSubagentUsage } from '@shared/usage/footer-usage-summary.ts'
 export {
   isHumanUserPrompt,
   lastHumanPromptAt,
@@ -752,6 +753,7 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
           usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier),
         )
   byModel[delta.model] = mergeModelUsage(prev, usage)
+  const subagentShare = foldedSubagentUsage(thread)
   updateUsage(
     store,
     threadId,
@@ -760,12 +762,37 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
         inputTokens: thread.usage.inputTokens + delta.inputTokens,
         outputTokens: thread.usage.outputTokens + delta.outputTokens,
         byModel,
+        subagentInputTokens:
+          subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
+        subagentOutputTokens:
+          subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0),
       },
       thread.usage.cacheReadTokens,
       thread.usage.cacheCreationTokens,
       delta,
     ),
   )
+}
+
+/**
+ * The subagent share already folded into `thread.usage`. Usage recorded before
+ * the share was tracked starts from its finished subagent sessions, which is
+ * what the fold added for every run that completed.
+ */
+function foldedSubagentUsage(thread: Thread): { inputTokens: number; outputTokens: number } {
+  const { usage } = thread
+  if (usage.subagentInputTokens !== undefined || usage.subagentOutputTokens !== undefined) {
+    return {
+      inputTokens: usage.subagentInputTokens ?? 0,
+      outputTokens: usage.subagentOutputTokens ?? 0,
+    }
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 }
+  const recorded = sumSubagentUsage(thread.messages)
+  return {
+    inputTokens: Math.min(recorded.inputTokens, usage.inputTokens),
+    outputTokens: Math.min(recorded.outputTokens, usage.outputTokens),
+  }
 }
 
 export function updateContextSnapshot(
