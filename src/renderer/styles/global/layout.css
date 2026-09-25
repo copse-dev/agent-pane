@@ -495,7 +495,7 @@
   min-width: 0;
   font: inherit;
   color: var(--text-primary);
-  background: var(--bg-input, var(--bg-primary));
+  background: var(--bg-input);
   border: 1px solid var(--border-focus, var(--accent));
   border-radius: 3px;
   padding: 0 2px;
@@ -960,7 +960,7 @@
   min-width: 0;
   font: inherit;
   color: var(--text-primary);
-  background: var(--bg-input, var(--bg-primary));
+  background: var(--bg-input);
   border: 1px solid var(--border-focus, var(--accent));
   border-radius: 3px;
   padding: 0 2px;

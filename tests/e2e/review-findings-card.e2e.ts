@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -88,6 +89,21 @@ describe('review findings card inline in transcript', () => {
     expect(shape.footer).toContain('1 refuted by the challenger')
     expect(shape.footer).toContain('1 dismissed')
     expect(shape.dismissedHidden).toBe(true)
+
+    // Finding rows and ground chips sit on a translucent base-surface backing
+    // that quiets the hatch behind them. Both used to mix an undefined token
+    // (`--bg-primary`), which drops the whole color-mix() to transparent (#3065).
+    const backing = await browser.execute(() => {
+      const fill = (selector: string): string | null => {
+        const node = document.querySelector(`[data-review-report-card] ${selector}`)
+        return node ? getComputedStyle(node).backgroundColor : null
+      }
+      return { finding: fill('.review-finding'), check: fill('.review-report-check') }
+    })
+    for (const [part, color] of Object.entries(backing)) {
+      assert.ok(color, `${part} should render`)
+      assert.notEqual(color, 'rgba(0, 0, 0, 0)', `${part} should not be transparent`)
+    }
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'review-findings-card.png'))
   })

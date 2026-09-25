@@ -75,7 +75,7 @@ dialog.process-manager-overlay {
   max-width: 100%;
   padding: 4px var(--spacing-sm);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: var(--bg-elevated);
   color: var(--text-primary);
   font: inherit;

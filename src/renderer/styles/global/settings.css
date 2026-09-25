@@ -1535,7 +1535,7 @@ dialog.settings-overlay::backdrop {
   flex: 1;
   user-select: all;
   font-size: 12px;
-  background: var(--bg-subtle, var(--bg));
+  background: var(--bg-subtle);
   padding: 2px 6px;
   border-radius: var(--radius);
   overflow-x: auto;
