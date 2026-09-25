@@ -77,7 +77,7 @@ export interface StoreEvents {
   comparison_changed: [threadId: string]
   // The thread's Copse Reviewer report was set, replaced, cleared, or one of
   // its findings was dismissed or restored.
-  review_report_changed: [threadId: string]
+  review_report_changed: [threadId: string, messageId: string | null]
   git_branch_changed: []
   // A blank thread committed its checkout decision. Shells created before an
   // isolated worktree existed use this to stop presenting the shared checkout

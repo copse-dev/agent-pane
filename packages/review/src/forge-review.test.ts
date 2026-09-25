@@ -208,8 +208,29 @@ describe('forge review', () => {
     assert.doesNotMatch(text, /<!--/, 'an unterminated comment cannot hide the rest')
     assert.match(text, /&lt;!-- the rest/)
     assert.match(text, /`Array<string>`/, 'code spans stay as written')
-    assert.match(text, /``&lt;!--` and/, 'an unclosed backtick run is not a code span')
+    assert.ok(text.includes('\\`\\`&lt;!--\\` and'), 'unclosed backticks are inert')
     assert.match(text, /- ``node -e "console\.log\(`x`\)" rm -rf x`` on head: exit 1/)
+  })
+
+  it('escapes paragraph-crossing and unmatched code delimiters before posting', () => {
+    for (const claim of [
+      'A `fragment\n\n<!-- harmless rendering probe\n\n` ends',
+      'A `fragment\r\n \r\n<!-- comment\r\n` ends',
+      'A \\`fragment <!-- comment ` ends',
+      '```\n<!-- comment\n```',
+      '```unclosed fence',
+    ]) {
+      const text = renderFindingComment({
+        ...anchored,
+        claim,
+        verdict: { status: 'unverified', reason: claim },
+      })
+      assert.doesNotMatch(text, /<!--/)
+      assert.doesNotMatch(text, /^`/m, 'no model-created fence can consume following details')
+      assert.match(text, /priority\./)
+      assert.match(text, /<summary>Why this was flagged<\/summary>/)
+      assert.equal(text.match(/<\/details>/g)?.length, 1)
+    }
   })
 
   it('keeps incomplete status outside the collapsed details', () => {

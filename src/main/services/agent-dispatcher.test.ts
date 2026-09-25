@@ -378,7 +378,10 @@ describe('AgentDispatcher', () => {
     )
 
     const first = dispatcher.dispatch(request())
-    await assert.rejects(dispatcher.dispatch(request()), /already running for thread "thread-1"/)
+    await assert.rejects(dispatcher.dispatch(request()), {
+      name: 'AgentTurnBusyError',
+      message: /already running for thread "thread-1"/,
+    })
     release()
     await first
     assert.equal(dispatcher.isActive('project-1', 'thread-1'), false)

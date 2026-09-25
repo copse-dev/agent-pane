@@ -390,6 +390,8 @@ function makeApi(
           if (!item) return null
           const { thread: _thread, ...rest } = item.fields
           item.fields = { ...rest, ...(threadId ? { thread: threadId } : {}) }
+          // Main broadcasts roadmap:changed once the stamp lands.
+          changedHandler?.()
           return { ...item }
         },
         importIssues: async (
@@ -1848,6 +1850,7 @@ describe('roadmap pane', () => {
     const unregister = registerPromptAttachments({
       attachFile: (f) => attachedFiles.push(f),
       attachTextBlock: () => {},
+      quoteText: () => {},
       attachImage: (dataUrl, mimeType) => attachedImages.push({ dataUrl, mimeType }),
       attachVideo: () => Promise.resolve(),
       attachArchive: () => Promise.resolve(),

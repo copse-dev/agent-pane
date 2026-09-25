@@ -112,7 +112,7 @@ describe('provider selection', () => {
     )
   })
 
-  it('carries the host preference through redaction to every review role', async (t) => {
+  it('carries Luna’s output budget and private host routing to every review role', async (t) => {
     const requests: unknown[] = []
     t.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
       assert.equal(typeof init?.body, 'string')
@@ -138,6 +138,8 @@ describe('provider selection', () => {
     assert.equal(requests.length, 3)
     for (const request of requests) {
       assert.ok(request !== null && typeof request === 'object')
+      assert.equal(Reflect.get(request, 'max_tokens'), 8_192)
+      assert.equal(Reflect.get(request, 'reasoning'), undefined)
       assert.deepEqual(Reflect.get(request, 'provider'), {
         require_parameters: true,
         order: ['openai'],
@@ -146,5 +148,16 @@ describe('provider selection', () => {
         data_collection: 'deny',
       })
     }
+    // The review-specific Luna budget must not change other models' settings.
+    const other = selectProvider(
+      { kind: 'openrouter', model: 'fixture/other-model' },
+      { OPENROUTER_API_KEY: 'fixture-key' },
+    )
+    for await (const _ of other.provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Capture the same real transport for a model with no preset ceiling.
+    }
+    const otherRequest = requests[3]
+    assert.ok(otherRequest !== null && typeof otherRequest === 'object')
+    assert.equal(Reflect.get(otherRequest, 'max_tokens'), undefined)
   })
 })

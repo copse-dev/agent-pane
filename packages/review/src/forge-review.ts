@@ -80,12 +80,16 @@ function where(finding: Finding): string {
 function inertMarkdown(text: string): string {
   const inert = (prose: string): string =>
     prose
+      .replaceAll('\\', '\\\\')
+      .replaceAll('`', '\\`')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;')
       .replace(/@(?=[A-Za-z0-9])/g, '@\u200b')
-  // A code span opens on a backtick run and closes on the next run of exactly
-  // the same length (CommonMark); an unclosed run is literal text.
-  const span = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g
+  // Preserve only self-contained, single-line code spans. Blank paragraphs
+  // and block syntax end CommonMark inline parsing; a regex spanning them can
+  // mistake raw HTML for code. Escape every other backtick/backslash so an
+  // unmatched delimiter cannot form a new span or fence with surrounding text.
+  const span = /(?<![\\`])(`+)(?!`)[^\r\n]*?(?<!`)\1(?!`)/g
   let out = ''
   let last = 0
   for (const match of text.matchAll(span)) {
