@@ -88,6 +88,26 @@
 .subagent-timeline .tool-activity-icon-slot:empty {
   display: none;
 }
+/* A trailing row shows exactly one icon at a time. Left alone, a running row
+   renders both the live spiral *and* the static running-status glyph — a
+   second icon-slot-plus-gap that `.tool-name` does not have to give up once
+   the row settles to just the glyph. That extra width came out of the label,
+   so a long command ellipsized more while running than it needed to once
+   done — the row's right edge read as more cut off mid-run. Hide the glyph
+   behind the live spiral so a trailing row always reserves the same one
+   icon's worth of trailing width. */
+.tool-rollup-body .tool-card[data-status='running'] > .tool-card-header > .tool-status-icon,
+.tool-rollup-body
+  .tool-group-item[data-status='running']
+  > .tool-group-item-header
+  > .tool-status-icon,
+.subagent-timeline .tool-card[data-status='running'] > .tool-card-header > .tool-status-icon,
+.subagent-timeline
+  .tool-group-item[data-status='running']
+  > .tool-group-item-header
+  > .tool-status-icon {
+  display: none;
+}
 .tool-card[open] .tool-card-header {
   margin-bottom: var(--spacing-xs);
 }
@@ -281,6 +301,13 @@
 .tool-group-item[data-status='error'] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
+.tool-interruption-note {
+  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.tool-rollup-body > .tool-interruption-note {
+  margin: var(--spacing-xs) 0;
+}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -309,6 +336,16 @@
 .tool-result-markdown > :last-child {
   margin-bottom: 0;
 }
+.tool-result-error-message {
+  font-family: inherit;
+  max-height: 320px;
+}
+.tool-result-error-message p {
+  margin: 0;
+}
+.tool-result-error-message p + p {
+  margin-top: var(--spacing-sm);
+}
 .tool-locations {
   display: flex;
   flex-wrap: wrap;
@@ -334,6 +371,20 @@
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
+}
+/* A subagent's row otherwise reads exactly like a parent tool row ("Explored
+   files", "Ran security-reviewer") — this leading glyph is the only thing that
+   marks it as delegated work once it settles collapsed, which is the state
+   most subagent rows are ever seen in (#2452). Lives in the `<summary>` itself,
+   never a separate element, so it survives collapse. */
+.tool-subagent-marker {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
+  color: var(--text-secondary);
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);

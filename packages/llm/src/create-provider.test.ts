@@ -92,7 +92,13 @@ interface CapturedRequestBody {
   prompt_cache_key?: string
   service_tier?: string
   store?: boolean
-  provider?: { require_parameters?: boolean; zdr?: boolean; data_collection?: string }
+  provider?: {
+    require_parameters?: boolean
+    zdr?: boolean
+    data_collection?: string
+    order?: string[]
+    allow_fallbacks?: boolean
+  }
   stream_options?: { include_usage?: boolean }
   reasoning?: { effort?: string; enabled?: boolean }
   reasoning_effort?: string
@@ -341,6 +347,24 @@ describe('provider data-retention request defaults', () => {
     )
     const request = await captureRequest(provider)
     assert.deepEqual(request.provider, { require_parameters: true, data_collection: 'deny' })
+  })
+
+  it('prefers a host without dropping privacy filters, reasoning, or fallback', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('openai/gpt-6-luna', 'sk-or-test', undefined, {
+        preferredProvider: 'openai',
+        params: { reasoning: 'medium' },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.provider, {
+      require_parameters: true,
+      order: ['openai'],
+      allow_fallbacks: true,
+      zdr: true,
+      data_collection: 'deny',
+    })
+    assert.deepEqual(request.reasoning, { effort: 'medium' })
   })
 
   it('drops data_collection only with the explicit allowTraining opt-in', async () => {

@@ -7,6 +7,7 @@ import { hydrateRemoteArtifactImages } from './remote-artifact-images.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { installArtifactImagePolicy } from './artifact-image-policy.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { dismissContextMenu } from '../dom/context-menu.ts'
 
 // renderMarkdown only produces artifact <img> placeholders once the host policy
 // is injected (as main.ts does at startup).
@@ -83,6 +84,24 @@ describe('markdown browser links', () => {
     const root = document.createElement('div')
     root.innerHTML =
       '<a href="/docs/foo.md" class="workspace-markdown-link" data-workspace-link="true">guide</a>'
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    let requested = false
+    store.on('browser_url_requested', () => (requested = true))
+    const unbind = bindBrowserLinkClicks(root, store)
+
+    const event = new window.MouseEvent('click', { bubbles: true, cancelable: true })
+    qsRequired(root, 'a').dispatchEvent(event)
+
+    unbind()
+    assert.equal(event.defaultPrevented, false)
+    assert.equal(requested, false)
+  })
+
+  it('leaves cited ACP resource links to the workspace link handler', () => {
+    const root = document.createElement('div')
+    // On the http-hosted web demo a relative resource href resolves to http.
+    root.innerHTML =
+      '<a href="https://copse.dev/demo/images/out.png" data-workspace-resource-path="images/out.png">output</a>'
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
     let requested = false
     store.on('browser_url_requested', () => (requested = true))
@@ -271,6 +290,12 @@ describe('markdown browser links', () => {
     const img = qsRequired<HTMLImageElement>(root, 'img')
     assert.equal(img.dataset['remoteArtifactState'], 'loaded')
     assert.equal(img.src, 'data:image/png;base64,abc123')
+    img.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    assert.equal(
+      qsRequired<HTMLButtonElement>(document, '.context-menu-item').textContent,
+      'Copy image',
+    )
+    dismissContextMenu()
   })
 
   it('retries artifact image hydration after restored messages attach to the thread', async () => {

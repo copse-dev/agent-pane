@@ -580,7 +580,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
       startedAt,
       now,
     })
-    const headCheckout = ground.checkouts.head
+    const headCheckout = ground.checkouts.reviewHead
     const report = projectReviewReport({
       report: assembled,
       models,

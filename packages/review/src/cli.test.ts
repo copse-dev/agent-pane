@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import { main, reviewPermissionProfile } from './cli.ts'
+import { main, resolveForgeTarget, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -518,6 +518,19 @@ describe('copse-review CLI', () => {
       script,
       JSON.stringify([
         { type: 'tool_call', name: 'run_command', args: { argv: ['node', '-e', '1'] } },
+        {
+          type: 'tool_call',
+          name: 'report_finding',
+          args: {
+            path: 'src/math.ts',
+            startLine: 1,
+            class: 'contract',
+            severity: 'high',
+            confidence: 'high',
+            claim: 'add subtracts its second argument.',
+            reason: 'The body is a - b.',
+          },
+        },
         finishReviewStep(
           'The imported Stage 0 report and changed source.',
           'Focused commands were unavailable in the default read-only import.',
@@ -570,13 +583,21 @@ describe('copse-review CLI', () => {
     assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
     assert.match(out, /Copse Reviewer · Stage 0 · ephemeral-runner \(container\)/)
     assert.match(out, /test ✗ regressed/)
-    assert.match(out, /1 finding\(s\):\n1\. \[test/)
+    assert.match(out, /2 finding\(s\):\n1\. \[test/)
     assert.match(err, /posted the review on copse-dev\/fixture#7/)
     const [post] = posts
     assert.ok(post)
     assert.equal(post.url, 'https://api.github.com/repos/copse-dev/fixture/pulls/7/reviews')
     assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
     assert.match(post.body, /pnpm run test|check\.cjs/)
+    assert.equal(posts.length, 1)
+    assert.match(err, /1 inline comment\(s\), 1 folded into the body/)
+    const payload: unknown = JSON.parse(post.body)
+    assert.ok(typeof payload === 'object' && payload !== null)
+    const comments: unknown = Reflect.get(payload, 'comments')
+    assert.ok(Array.isArray(comments))
+    assert.equal(comments.length, 1)
+    assert.partialDeepStrictEqual(comments[0], { path: 'src/math.ts', line: 1, side: 'RIGHT' })
     assert.match(await readFile(importedEvents, 'utf8'), /run_command is denied/)
 
     const unsafe = await run(repo, [
@@ -732,6 +753,27 @@ describe('copse-review CLI', () => {
     ])
     assert.equal(container.code, HEADLESS_EXIT.APPROVAL_REQUIRED)
     assert.match(container.err, /no container backend for copse-review-test:never-built/)
+  })
+
+  it('treats a blank forge token as unset and rejects a pull request number with junk', () => {
+    const flags = { 'post-review': 'github', repo: 'a/b', pr: '7' }
+    // CI expands a missing secret to "", which must not shadow GITHUB_TOKEN.
+    const target = resolveForgeTarget(flags, {
+      COPSE_REVIEW_FORGE_TOKEN: '',
+      GITHUB_TOKEN: 'ghs_fallback',
+    })
+    assert.equal(target?.number, 7)
+    assert.throws(
+      () => resolveForgeTarget(flags, { COPSE_REVIEW_FORGE_TOKEN: '  ', GITHUB_TOKEN: '' }),
+      /needs a token/,
+    )
+    for (const pr of ['3x', '1.5', '0', '-1', '07']) {
+      assert.throws(
+        () => resolveForgeTarget({ ...flags, pr }, { GITHUB_TOKEN: 't' }),
+        /--pr must be a positive integer/,
+        pr,
+      )
+    }
   })
 
   it('cancels Stage 0 without running the next check', { timeout: 15000 }, async () => {

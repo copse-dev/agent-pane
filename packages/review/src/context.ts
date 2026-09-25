@@ -8,7 +8,13 @@
 import { readdir, lstat } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix } from 'node:path'
 import { readCheckoutFile } from './checkout-fs.ts'
-import { runGit, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
+import {
+  gitInWorktree,
+  runGit,
+  type GitRunner,
+  type MaterialisedCheckouts,
+  type PinnedWorktree,
+} from './checkouts.ts'
 
 export type FileDiffStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'binary'
 
@@ -41,6 +47,8 @@ export interface TestMapEntry {
 export interface ReviewContext {
   readonly mergeBase: string
   readonly headCommit: string
+  /** The head checkout, pinned to its git directory for host-side `git_diff`. */
+  readonly head: PinnedWorktree
   readonly dirtyWorkingTree: boolean
   readonly files: readonly FileDiff[]
   readonly instructions: readonly RepositoryInstructions[]
@@ -294,6 +302,24 @@ function readInstructions(headCheckout: string): RepositoryInstructions[] {
   return out
 }
 
+/**
+ * A diff over the head checkout, which the cell may have written. No external
+ * diff or textconv driver, and no recursion into submodules: for each gitlink
+ * a worktree diff would otherwise run `git status` inside `head/<submodule>/`,
+ * where the cell-writable `.git` can name filter drivers that then run on the
+ * host. The flag, unlike `diff.ignoreSubmodules`, also outranks an `ignore`
+ * setting in the checkout's `.gitmodules`. Submodule pointer changes are not
+ * shown as a result.
+ */
+const WORKTREE_DIFF_ARGS = [
+  'diff',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--ignore-submodules=all',
+  '--find-renames',
+] as const
+
 export interface BuildContextOptions {
   readonly checkouts: MaterialisedCheckouts
   readonly budgetChars?: number
@@ -306,8 +332,9 @@ export interface BuildContextOptions {
  * intent-to-add in the throwaway worktree so they appear as additions.
  */
 export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner): Promise<string> {
+  const head = pinnedHead(checkouts)
   if (checkouts.untrackedPaths.length > 0) {
-    const added = await git(checkouts.head, [
+    const added = await gitInWorktree(git, head, [
       'add',
       '--intent-to-add',
       '--',
@@ -317,19 +344,15 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
       throw new Error(`Cannot stage untracked context: ${added.stderr.trim()}`)
     }
   }
-  const result = await git(checkouts.head, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--find-renames',
-    checkouts.mergeBase,
-    '--',
-  ])
+  const result = await gitInWorktree(git, head, [...WORKTREE_DIFF_ARGS, checkouts.mergeBase, '--'])
   if (result.code !== 0) {
     throw new Error(`Cannot diff head against the merge-base: ${result.stderr.trim()}`)
   }
   return result.stdout
+}
+
+function pinnedHead(checkouts: MaterialisedCheckouts): PinnedWorktree {
+  return { gitDir: checkouts.headGitDir, workTree: checkouts.reviewHead }
 }
 
 export async function buildReviewContext(options: BuildContextOptions): Promise<ReviewContext> {
@@ -339,10 +362,11 @@ export async function buildReviewContext(options: BuildContextOptions): Promise<
   return {
     mergeBase: options.checkouts.mergeBase,
     headCommit: options.checkouts.headCommit,
+    head: pinnedHead(options.checkouts),
     dirtyWorkingTree: options.checkouts.dirty,
     files,
-    instructions: readInstructions(options.checkouts.head),
-    testMap: await buildTestMap(options.checkouts.head, files),
+    instructions: readInstructions(options.checkouts.reviewHead),
+    testMap: await buildTestMap(options.checkouts.reviewHead, files),
     budgetChars,
     usedChars: files.reduce((sum, file) => sum + file.text.length, 0),
   }
@@ -395,19 +419,17 @@ export function renderReviewContext(context: ReviewContext): string {
   return lines.join('\n')
 }
 
-/** Retrieve the original diff independently of the prompt budget. */
+/** Retrieve the full diff; pin `headCommit` when placing comments on a forge. */
 export async function readFileDiff(
-  headCheckout: string,
+  head: PinnedWorktree,
   mergeBase: string,
   path: string,
+  headCommit?: string,
 ): Promise<string> {
-  const result = await runGit(headCheckout, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--find-renames',
+  const result = await gitInWorktree(runGit, head, [
+    ...WORKTREE_DIFF_ARGS,
     mergeBase,
+    ...(headCommit === undefined ? [] : [headCommit]),
     '--',
     `:(literal)${path}`,
   ])

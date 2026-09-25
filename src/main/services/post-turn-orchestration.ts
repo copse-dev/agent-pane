@@ -379,19 +379,58 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
       // skipped / errored review never emits the event.
       opts.onReviewVerdict?.(review)
 
+      if (!review.verdict.requestFollowUp) break
+
+      // The verdict asked for follow-up but this cycle stops anyway for a
+      // reason that has nothing to do with the verdict itself (cancelled, out
+      // of passes, out of budget, or a remediation turn that changed nothing).
+      // Re-emit the same `done` verdict with a note explaining why no further
+      // action followed — without this, a review that said the work was not
+      // done reads as silently ignored (#2506).
+      const stopFollowUp = (reason: string): void => {
+        opts.emitChunk({
+          type: 'post_turn_review',
+          status: 'done',
+          summary: review.summary,
+          issuesFound: review.verdict.issuesFound,
+          followUpNote: reason,
+        })
+      }
+
       const lastCycle = cycle >= maxCycles - 1
-      if (!review.verdict.requestFollowUp || lastCycle || opts.signal.aborted) break
+      if (opts.signal.aborted) {
+        stopFollowUp('Follow-up turn not started: the run was cancelled.')
+        break
+      }
+      if (lastCycle) {
+        stopFollowUp(
+          `Follow-up turn not started: this turn already used its ${String(maxCycles)} review pass${
+            maxCycles === 1 ? '' : 'es'
+          }. Raise "Review passes per turn" in Settings → Plugins, or send another message to continue.`,
+        )
+        break
+      }
 
       // A remediation cycle is a machine-initiated new turn (decision 5): consume
       // one grant from the shared budget before running it. The local cap
       // (`maxCycles`, from the plugin's `maxReviewCycles` setting) tightens inside
       // the shared cap — once the budget is exhausted, no further remediation runs.
-      if (!opts.continuationBudget.tryGrant('post-review-remediation')) break
+      if (!opts.continuationBudget.tryGrant('post-review-remediation')) {
+        stopFollowUp(
+          'Follow-up turn not started: this turn has used its auto-continuation budget. Send another message to continue.',
+        )
+        break
+      }
 
       const { madeEdits } = await opts.runRemediationTurn(
         buildReviewRemediationNudge(review.verdict),
       )
-      if (!madeEdits) break
+      if (!madeEdits) {
+        stopFollowUp(
+          'The follow-up turn made no edits, so the diff was not re-reviewed. Send another message if more work is needed.',
+        )
+        break
+      }
     } catch (err) {
       const detail = opts.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
       opts.emitChunk({ type: 'post_turn_review', status: 'error', summary: detail })

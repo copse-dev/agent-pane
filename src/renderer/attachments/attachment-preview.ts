@@ -19,12 +19,15 @@ export interface AttachmentPreviewOptions {
   status?: string
   /** Release resources such as media object URLs when replaced or closed. */
   onClose?: () => void
+  /** Resolve the control that should regain focus after this modal closes. */
+  returnFocus?: () => HTMLElement | null
 }
 
 let dialog: HTMLDialogElement | null = null
 let titleEl: HTMLElement | null = null
 let bodyEl: HTMLElement | null = null
 let currentCleanup: (() => void) | null = null
+let returnFocus: (() => HTMLElement | null) | null = null
 let activeToken = 0
 
 function releaseCurrent(): void {
@@ -63,11 +66,28 @@ function ensureDialog(): HTMLDialogElement {
   dialog.addEventListener('click', (event) => {
     if (event.target === dialog) dialog?.close()
   })
+  dialog.addEventListener('keydown', (event) => {
+    // Keep the app-level agent-stop shortcut from cancelling native dialog
+    // dismissal. Do not preventDefault: the browser must still emit `cancel`
+    // and close the modal for Escape.
+    if (event.key === 'Escape') event.stopPropagation()
+  })
   // Escape, the close button, backdrop clicks, and programmatic replacement all
   // converge here so a future media preview cannot leak resources.
   dialog.addEventListener('close', () => {
+    const resolveFocusTarget = returnFocus
+    returnFocus = null
     activeToken += 1
+    const closedToken = activeToken
     releaseCurrent()
+    // Native dialog focus restoration finishes after the close event on some
+    // Chromium versions. Run after that step so it cannot overwrite the
+    // adapter's replacement-aware target (Changes can refresh while open).
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return
+      const focusTarget = resolveFocusTarget?.()
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true })
+    })
   })
 
   return dialog
@@ -103,7 +123,13 @@ export function openAttachmentPreview(options: AttachmentPreviewOptions): Attach
   previewTitle.textContent = options.title
   if (options.content) previewBody.replaceChildren(options.content)
   else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}…`))
-  if (!previewDialog.open) previewDialog.showModal()
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement
+    const defaultReturnFocus = (): HTMLElement | null =>
+      activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null
+    returnFocus = options.returnFocus ?? defaultReturnFocus
+    previewDialog.showModal()
+  }
 
   const isActive = (): boolean => token === activeToken && previewDialog.open
   return {

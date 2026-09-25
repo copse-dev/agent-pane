@@ -1,3 +1,42 @@
+/* Back-link to the roadmap item a thread was started from (#2501). Quiet
+   chrome above the transcript, mirroring `.roadmap-thread-chip`'s muted
+   icon-first treatment in the reverse direction (roadmap.css). Hidden by
+   default via [hidden]; thread-roadmap-origin.ts only reveals it for a
+   thread with a tracked roadmap origin. */
+.thread-roadmap-origin {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  /* Line the chip up with the centred transcript column (`.msg` caps at
+     --chat-content-max inside the list's --spacing-xl gutter) and its text
+     inset, so on a wide pane it sits above the text rather than at the
+     pane edge. */
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.thread-roadmap-origin:hover {
+  color: var(--accent);
+}
+.thread-roadmap-origin-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.thread-roadmap-origin-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .messages-list {
   flex: 1;
   overflow-y: auto;
@@ -269,12 +308,11 @@
      appear "collapsed". Keep every message at its content height. */
   flex-shrink: 0;
 }
-/* Reasoning ("thinking") disclosure, shown above the answer. Copse commenting
-   on its own turn rather than answering, so it takes the hatched plate rather
-   than the flat one the agent's own prose gets — see base.css. The surface is
-   scoped to [open]: a <details> cannot be laid out as a grid without Chromium's
-   ::details-content box reflowing the body, and a closed disclosure is one
-   summary line that wants no plate at all. */
+/* Reasoning ("thinking") disclosure, shown above the answer. Keep the hatch
+   that marks commentary, but fade it toward the center over a solid etched
+   surface so longer text remains easy to read. The surface is scoped to [open]: a <details>
+   cannot be laid out as a grid without Chromium's ::details-content box
+   reflowing the body, and a closed disclosure is one summary line with no plate. */
 .message-reasoning {
   --sev: var(--accent);
   margin-bottom: var(--spacing-sm);
@@ -282,14 +320,30 @@
   border-radius: var(--radius);
 }
 .message-reasoning[open] {
+  --reasoning-glass-fill: color-mix(in srgb, var(--bg-elevated) 96%, var(--accent) 4%);
   padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 18%, transparent);
   background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--text-primary) 5%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(ellipse 75% 95% at center, var(--reasoning-glass-fill) 18%, transparent 100%),
     repeating-linear-gradient(
       135deg,
-      color-mix(in srgb, var(--sev) var(--callout-hatch-line), transparent) 0 1px,
-      transparent 1px var(--callout-hatch-pitch)
+      color-mix(in srgb, var(--sev) 6%, transparent) 0 1px,
+      transparent 1px 12px
     ),
-    color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
+    var(--reasoning-glass-fill);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .message-reasoning[open] {
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+    box-shadow: none;
+  }
 }
 .message-reasoning:not([open]) {
   margin-bottom: var(--spacing-xs);
@@ -349,7 +403,7 @@
   white-space: normal;
   word-break: break-word;
   font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   line-height: var(--line-height-base);
 }
 .message-reasoning-text p {
@@ -593,12 +647,38 @@
 .msg-assistant {
   background: transparent;
 }
+.agent-avatar {
+  display: block;
+  width: calc(var(--spacing-xl) + var(--spacing-xs));
+  height: calc(var(--spacing-xl) + var(--spacing-xs));
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.message-agent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.message-agent-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 /* Primary-chat model chrome — only present when the thread used more than one
    picker model. Mirrors the subagent card's muted model line. */
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
+}
+.message-agent .message-model {
+  margin-bottom: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 /* A text-only response is the readable outcome of a run. Give it more breathing
    room than the execution trace without inventing a new completion state. */
@@ -709,6 +789,29 @@
   margin-top: var(--spacing-xs);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+.acp-resource-link[hidden],
+.acp-resource-image[hidden] {
+  display: none;
+}
+.acp-referenced-image {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+.acp-referenced-image .tool-result-preview-caption,
+.acp-resource-image .acp-resource-description,
+.acp-resource-image .acp-resource-meta {
+  display: block;
+}
+.acp-resource-image-link {
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
+.acp-referenced-image-path {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* Assistant-owned proof is intentionally distinct from transient tool output:
@@ -885,6 +988,11 @@
 .tool-result-content {
   margin-bottom: var(--spacing-sm);
 }
+/* Every resource here is cited by a later reply, which shows it instead. */
+.acp-content-blocks:not(:has(> :not([hidden]))),
+.tool-result-content:not(:has(> :not([hidden]))) {
+  display: none;
+}
 .acp-content-image {
   justify-self: start;
 }
@@ -933,8 +1041,7 @@ span.acp-resource-title {
   color: var(--text-primary);
   font-weight: 600;
 }
-.acp-resource-text,
-.acp-tool-diff-text {
+.acp-resource-text {
   margin: var(--spacing-xs) 0 0;
   max-height: 240px;
   overflow: auto;
@@ -946,6 +1053,104 @@ span.acp-resource-title {
 .acp-tool-diff > .acp-content-label {
   display: block;
   margin-top: var(--spacing-sm);
+}
+/* The summary is one line: label, left-elided path (leaf stays visible, full
+   path on hover), then the +/- counts pinned to the end. */
+.acp-tool-diff > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  list-style: none;
+}
+.acp-tool-diff > summary::-webkit-details-marker {
+  display: none;
+}
+.acp-tool-diff > summary::before {
+  content: '›';
+  flex: none;
+  display: inline-block;
+  width: 0.6em;
+  transition: transform 120ms ease;
+}
+.acp-tool-diff[open] > summary::before {
+  transform: rotate(90deg);
+}
+.acp-tool-diff-label {
+  flex: none;
+}
+.acp-tool-diff-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.acp-tool-diff > summary .tool-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.acp-tool-diff > summary .tool-stat-add {
+  margin-left: auto;
+}
+/* Lines never wrap: rows grow to the longest line so their tint spans the
+   scrolled width, and the list scrolls in both directions. */
+.acp-tool-diff-lines {
+  display: grid;
+  grid-auto-rows: min-content;
+  margin-top: var(--spacing-sm);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.acp-diff-line {
+  display: flex;
+  min-width: max-content;
+  padding-right: var(--spacing-md);
+  white-space: pre;
+  color: var(--text-secondary);
+}
+.acp-diff-sign {
+  flex: none;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+}
+.acp-diff-add {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-add > .acp-diff-sign {
+  color: var(--success);
+}
+.acp-diff-del {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-del > .acp-diff-sign {
+  color: var(--danger);
+}
+.acp-diff-gap {
+  padding-left: 2ch;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+}
+.acp-diff-eof {
+  padding-left: 2ch;
+  color: var(--text-muted);
+  font-style: italic;
 }
 .message-text .remote-artifact-image {
   display: block;

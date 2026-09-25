@@ -42,5 +42,6 @@
 // and replaces the `model_comparison` chunk with `review_report` (copse.review).
 // v14 versions ACP rich-content blocks on streamed agent chunks.
 // v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
-// v16 versions container-run consent fields and terminal state.
-export const API_PROTOCOL_VERSION = 16 as const
+// v16 conservatively versions the optional post-turn review follow-up note on agent chunks.
+// v17 versions container-run consent fields and terminal state.
+export const API_PROTOCOL_VERSION = 17 as const

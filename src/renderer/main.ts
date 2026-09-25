@@ -89,6 +89,7 @@ import {
   closeKeyboardShortcutsDialog,
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
+import { mountProcessManagerDialog } from './views/process-manager-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
@@ -231,6 +232,7 @@ window.addEventListener('unhandledrejection', (event) => {
 let layoutMounted = false
 let unmountPopoutTitlebar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
+let openProcessManager: (() => void) | null = null
 
 async function boot(): Promise<void> {
   // DEBUG BRANCH: the outermost span a user would call "opening the app" —
@@ -259,6 +261,7 @@ async function boot(): Promise<void> {
   mountFileSearchDialog(store, api)
   mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
+  openProcessManager = mountProcessManagerDialog(api, store)
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -317,6 +320,7 @@ async function boot(): Promise<void> {
     themePreference,
     fontSize,
     uiScale,
+    animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
@@ -364,6 +368,9 @@ async function boot(): Promise<void> {
   if (!popoutMode) attachImportedCursorAgentRefresh(store, api)
 
   mountTitlebar(requireElement('titlebar'), store, api)
+
+  // View ▸ Process Manager opens a live, read-only process table.
+  api.menu.onProcessManager(() => openProcessManager?.())
 
   // File ▸ Settings… (Cmd+,) from the native menu opens the settings dialog.
   api.menu.onSettings(() => {
@@ -657,8 +664,14 @@ function registerKeyboardShortcuts(): void {
       e.preventDefault()
       openNewThread(store)
     }
+    // Also handle the shortcut in the renderer when a native menu accelerator
+    // is unavailable (for example, a headless Electron window).
+    if (meta && e.shiftKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault()
+      openProcessManager?.()
+    }
     // Cmd/Ctrl+P opens the file quick-open palette (needs a workspace to search).
-    if (meta && e.key === 'p') {
+    if (meta && !e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault()
       if (store.getState().workspaceRoot) openFileSearchDialog()
     }

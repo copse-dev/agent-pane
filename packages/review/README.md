@@ -212,7 +212,10 @@ out and executes nothing; it resolves current PR metadata and dispatches the sep
 workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head with the runner as
 the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
 default branch, so an older PR need not contain `@copse/review`; pull-request code is fetched only
-after checkout credentials have been removed. Before entering the cell, the secret-free job copies
+after checkout credentials have been removed. Pull-request code runs as a dedicated user with no
+sudo and no access to the runner's home (`ci/ground-as-cell-user.sh`), so it cannot rewrite the
+actions and command files that later steps execute with the job's Actions runtime token, a token
+`permissions: {}` does not remove. Before entering the cell, the secret-free job copies
 only the exact head's `pnpm-lock.yaml` and patch data into runner scratch and runs `pnpm fetch`;
 that primes Stage 0's read-only offline store without loading a contributor manifest or lifecycle
 script on the host.
@@ -223,6 +226,13 @@ run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the su
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
 than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
 newer head.
+Repeated PR reviews first look for clean grounding from the previous 24 hours. Reuse
+requires the same PR head and merge-base, all four checks completed successfully, and
+unchanged trusted runner code and dependencies. Producer identity comes from GitHub's
+API, and the report remains untrusted data subject to validation. The lookup runs in a
+separate read-only job that never executes PR code. Any miss runs the usual secret-free
+grounding job; dispatch with `fresh=true` to force that path. Normal PR CI's merge-commit
+checks are not substituted for checks of the reviewed head.
 Job B, on the base ref with the model key, imports that report (`--stage0-json` is read-only
 by default and refuses a report for another commit). Before any model or App credential is
 put in a step, the workflow builds `Dockerfile.cell`, fetches the exact head's dependency
@@ -244,8 +254,19 @@ App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; 
 Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 
-This repository dogfoods the GitHub path with `qwen3.8-27b` through Scaleway's
-OpenAI-compatible endpoint. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
+The PR and nightly workflows default to Luna through OpenRouter, using only the
+protected environment's `COPSE_REVIEW_OPENROUTER_API_KEY`. They prefer standard
+OpenAI hosting while retaining zero-data-retention, no-training and supported-parameter
+filters, with fallback to other eligible providers. Set the repository variable
+`COPSE_REVIEW_OPENROUTER_PROVIDER=auto` to restore automatic routing, or to a base
+provider slug such as `azure` to change the preference. The CLI reads the same name
+from its environment; an unset value keeps automatic routing. This applies to discovery,
+reproduction and challenge, including an explicitly selected challenger. Service-tier
+slugs such as `openai/fast` are rejected. A preference does not guarantee which provider
+answers; the review's usage details record the actual host.
+
+Set `COPSE_REVIEW_PR_PROFILE=configured` to restore the retained `qwen3.8-27b` route
+through Scaleway. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
 `COPSE_REVIEW_API_KEY`; `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`,
 `COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES`, `COPSE_REVIEW_MAX_STEPS` and
 `COPSE_REVIEW_MAX_VERIFY` repository variables override the pinned profile. The default is

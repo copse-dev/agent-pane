@@ -67,12 +67,22 @@ export function createReviewCardEl(
   if (review.status === 'running') return panel
 
   const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
-  body.innerHTML = renderMarkdown(review.summary || '(no review output)')
+  // The verdict asked for follow-up but the turn stopped without acting on it
+  // (cancelled, out of passes, out of budget, no-op remediation) — say why, so
+  // a "not done" review never reads as silently ignored (#2506). Folded into
+  // the same markdown as an italic closing line rather than a new styled
+  // element, so it needs no new CSS (a global stylesheet change would map — by
+  // design — to every screenshot-producing e2e spec, not just this card's).
+  const bodyMarkdown = review.followUpNote
+    ? `${review.summary || '(no review output)'}\n\n*${review.followUpNote}*`
+    : review.summary || '(no review output)'
+  body.innerHTML = renderMarkdown(bodyMarkdown)
   // Linkify printed file paths in the review subagent's output so they open in
   // the explorer, matching main-chat assistant text. Click handling is already
   // delegated from the conversation root (bindFileReferenceClicks) that this
   // card is mounted under.
   void annotateFileReferences(body, api)
   panel.append(body)
+
   return panel
 }

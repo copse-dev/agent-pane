@@ -179,6 +179,10 @@ export interface ApiClient {
     onShowTab?: (handler: (url: string, partition?: string) => void) => () => void
     /** A preview server served a file that just changed on disk. */
     onPreviewStale?: (handler: (origin: string) => void) => () => void
+    /** A main-frame navigation was denied by the browser network policy — a
+     * cancelled `webRequest` never reaches the guest as `did-fail-load`, so the
+     * main process reports it explicitly instead. */
+    onNavigationBlocked?: (handler: (webContentsId: number, url: string) => void) => () => void
     sharePageText: (webContentsId: number) => Promise<void>
     shareScreenshot: (webContentsId: number) => Promise<void>
     /**
@@ -727,7 +731,12 @@ export interface ApiClient {
      */
     autoSetup: () => Promise<AcpAutoSetupResult>
   }
+  processManager: {
+    snapshot: () => Promise<import('@shared/types/process-manager.ts').ProcessManagerSnapshot>
+    stopBackground: (id: string, projectId: string, threadId: string) => Promise<boolean>
+  }
   menu: {
+    onProcessManager: (handler: () => void) => () => void
     onSettings: (handler: () => void) => () => void
     onNewThread: (handler: () => void) => () => void
     onTogglePanel: (handler: () => void) => () => void
@@ -987,6 +996,9 @@ export interface ApiClient {
       id: string,
       threadId: string,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    /** The roadmap item currently tracking `threadId` as its `thread` field, if any —
+     * the reverse of `setThread`, used by the thread's back-link chip (#2501). */
+    findByThread: (threadId: string) => Promise<{ id: string; title: string } | null>
   }
   supervisor: {
     list(projectId: string): Promise<{ tasks: SupervisedTaskSummary[] }>
@@ -1219,7 +1231,7 @@ export interface ApiClient {
     agentPrLinks: () => Promise<RemoteAgentPrIndexEntry[]>
     /**
      * Open a pull request for a thread's checkout, through the same path the
-     * `gh_pr_create` agent tool uses: attribution trailer, target resolution
+     * `gh_pr_create` agent tool uses: attribution preference, target resolution
      * and thread linking (the sidebar PR chip) included.
      */
     createPrForThread: (

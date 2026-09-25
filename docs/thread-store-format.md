@@ -37,6 +37,8 @@ installs the profile and tracing environment first.
     audit.jsonl                      # append-only lifecycle transitions
   task-history/<taskId>.json         # compact terminal-task support summary; no permissions
   event-inbox/<sha256>.json          # internal event admission/recovery receipts (not startup-wired)
+  terminal-history                   # shared bash/zsh HISTFILE for this project's interactive
+                                     #   Shells-tab PTYs (#2433); fish remains shell-managed
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook/audit + plan lines
@@ -116,7 +118,10 @@ installs the profile and tracing environment first.
   queuePaused, draftPrompt, model, timestamps, contextTrims, contextSnapshot,
   `threadProposals` / `proposedBy` (answers to model-proposed threads and the
   offer a thread was started from — see
-  [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`). When `archivedAt` is set the thread is soft-hidden
+  [`proposed-threads.md`](proposed-threads.md)), optional `archivedAt`, and the
+  legacy thread-level `reviewReport` used by reports written before per-turn
+  anchoring. New Copse Reviewer reports live on their owning message spine line.
+  When `archivedAt` is set the thread is soft-hidden
   from the sidebar and dropped from `catalog.jsonl`, but the directory remains.
 - **`agent-history.json`** is a versioned snapshot of the provider-format
   `LLMMessage[]` used to resume the agent loop after a restart (issue #993).
@@ -165,6 +170,8 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
     }]
   }],
   "commandSummary": "…", // optional
+  "reviewReport": { "status": "done", "startedAt": 1712345678901, "…": "…" },
+  // optional: Copse Reviewer result anchored to the assistant turn it reviewed
   "startingCommit": "a1b2c3…", // optional: HEAD SHA the prompt started from (user messages)
   "dirty": true, // optional: working tree had uncommitted changes at send time
   "toolCalls": [
@@ -186,6 +193,13 @@ append is the commit point). See [`spine-schema.ts`](../packages/thread-store/sr
 message. The transcript surfaces it only when more than one distinct primary
 model appears in the thread; explore/CI subagent models stay on the nested
 `subagent.model` field (already shown on their cards).
+
+`reviewReport` is kept inline with the message that concluded the reviewed
+turn, so multiple reports preserve their transcript position. The renderer
+re-writes that message's line when its report settles, is dismissed, or has a
+finding dismissed or restored; the transient `running` card is not written. Older
+thread-level reports remain in `meta.json` and still fold/render as a trailing
+card; writers do not migrate or discard them.
 
 `createdAt` is stamped once, when the `Message` object is first created in the
 renderer (`addMessage` in [`thread-helpers.ts`](../src/shared/store/thread-helpers.ts))

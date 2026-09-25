@@ -1,7 +1,11 @@
 import { errorMessage } from '@shared/errors.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
+import {
+  appendCommitAttribution,
+  DEFAULT_GIT_ATTRIBUTION_ENABLED,
+  GIT_ATTRIBUTION_SETTING,
+} from '@shared/git/commit-attribution.ts'
 import {
   getGitDiffText,
   getGitLogText,
@@ -21,6 +25,8 @@ import {
 } from '../services/ssh-workspace/execution-target.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { leaseGitSigningBroker } from '../services/security/git-signing-broker.ts'
+import { getSetting } from '../services/storage/settings.ts'
+import { scopedSshCommitSigningAdvice } from './git-commit-signing-advice.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
 async function validateGitPath(
@@ -69,7 +75,7 @@ export const gitDiffTool = defineTool({
 export const gitCommitTool = defineTool({
   name: 'git_commit',
   description:
-    'Create a git commit. Copse automatically appends a "Co-Authored-By: Copse" trailer and a "Copse-Models" line naming the model(s) used in this thread — prefer this over `run_shell git commit` so attribution is added reliably. Local only; it never pushes.',
+    'Create a git commit. When Git attribution is enabled in Settings (the default), Copse appends a "Co-Authored-By: Copse" trailer and a "Copse-Models" line naming the model(s) used in this thread. Local only; it never pushes.',
   parameters: z.object({
     message: z
       .string()
@@ -92,7 +98,12 @@ export const gitCommitTool = defineTool({
 
     const threadId = getActiveRunThread()
     const models = threadId ? getThreadModels(threadId) : []
-    const fullMessage = appendCommitAttribution(message, models)
+    const fullMessage = getSetting<boolean>(
+      GIT_ATTRIBUTION_SETTING,
+      DEFAULT_GIT_ATTRIBUTION_ENABLED,
+    )
+      ? appendCommitAttribution(message, models)
+      : message
     const commit = `git commit -m ${posixQuote(fullMessage)}`
     const command = stage_all ? `git add -A && ${commit}` : commit
 
@@ -122,11 +133,19 @@ export const gitCommitTool = defineTool({
           ...(signing ? { gitSigning: signing.signing, sandboxConfig: signing.sandboxConfig } : {}),
         })
         if (result.code !== 0) {
-          throw new Error(
+          const failure =
             result.stderr.trim() ||
-              result.stdout.trim() ||
-              `Git exited with code ${String(result.code)}`,
-          )
+            result.stdout.trim() ||
+            `Git exited with code ${String(result.code)}`
+          const advice =
+            args[0] === 'commit'
+              ? scopedSshCommitSigningAdvice(failure, {
+                  macOS: process.platform === 'darwin',
+                  sandboxed: sandboxEnabled,
+                  permissionEnabled: getSetting<boolean>('gitCommitSshAgentSocketAccess', false),
+                })
+              : null
+          throw new Error(advice ? `${failure}\n\n${advice}` : failure)
         }
         output = result.stdout.trim()
       }

@@ -1043,3 +1043,104 @@ test('run→drain fold-back with a foreign key is dropped when no epoch was mint
 
   assert.equal(getThread(store, threadId).continuationUsed, 0)
 })
+
+/** A run API whose first `run` is turned away as busy, the way main rejects across IPC. */
+function busyOnceApi(): {
+  agent: { run: (projectId: string, threadId: string, payload: string) => Promise<void> }
+  runs: string[]
+} {
+  const runs: string[] = []
+  return {
+    runs,
+    agent: {
+      run: (_projectId, _threadId, payload): Promise<void> => {
+        runs.push(payload)
+        if (runs.length > 1) return Promise.resolve()
+        return Promise.reject(
+          new Error(
+            `Error invoking remote method 'agent:run': AgentTurnBusyError: An agent turn is already running for thread "t"`,
+          ),
+        )
+      },
+    },
+  }
+}
+
+async function settle(): Promise<void> {
+  await new Promise<void>((resolve): void => {
+    setImmediate(resolve)
+  })
+}
+
+test('a busy rejection puts the submitted message back at the front of the queue (#1881)', async () => {
+  const store = createProjectStore()
+  const api = busyOnceApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'later',
+    payload: { content: 'b' },
+    createdAt: 2,
+  })
+  const item = { messageId: 'first', payload: { content: 'a' }, createdAt: 1 }
+
+  dispatchAgentRun(store, api, threadId, item.payload, item)
+  await settle()
+
+  const thread = getThread(store, threadId)
+  assert.deepEqual(
+    thread.pendingMessages?.map((entry) => entry.messageId),
+    ['first', 'later'],
+  )
+  // The turn main is running still owns the thread; its `done` drains the queue.
+  assert.equal(thread.status, 'running')
+  assert.equal(api.runs.length, 1)
+})
+
+test('a busy rejection that lands after the blocking turn ended sends the message again', async () => {
+  const store = createProjectStore()
+  const api = busyOnceApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'later',
+    payload: { content: 'b' },
+    createdAt: 2,
+  })
+  const item = { messageId: 'first', payload: { content: 'a' }, createdAt: 1 }
+
+  dispatchAgentRun(store, api, threadId, item.payload, item)
+  // The blocking turn's `done` reached the renderer before the rejection did.
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  await settle()
+
+  assert.equal(api.runs.length, 2)
+  assert.equal(expectRecord(parseJsonUnknown(api.runs[1] ?? ''))['content'], 'a')
+  assert.deepEqual(
+    getThread(store, threadId).pendingMessages?.map((entry) => entry.messageId),
+    ['later'],
+  )
+  assert.equal(getThread(store, threadId).status, 'running')
+})
+
+test('a busy rejection refunds the continuation unit its drain charged', async () => {
+  const store = createProjectStore()
+  const api = busyOnceApi()
+  const threadId = createThread(store)
+  enqueueUserMessage(store, threadId, {
+    messageId: 'hook-1',
+    payload: { content: 'continue' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+  })
+
+  drainMessageQueue(store, api, threadId)
+  assert.equal(getThread(store, threadId).continuationUsed, 1)
+  await settle()
+
+  const thread = getThread(store, threadId)
+  assert.equal(thread.continuationUsed, 0)
+  assert.deepEqual(
+    thread.pendingMessages?.map((entry) => entry.messageId),
+    ['hook-1'],
+  )
+})

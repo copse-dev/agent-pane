@@ -32,6 +32,7 @@ const demoSkill: SkillMetadata = {
   disableModelInvocation: false,
   paths: [],
   externalLinks: [],
+  missingReferences: [],
 }
 
 describe('skillMarkdownBody', () => {

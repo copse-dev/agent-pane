@@ -132,6 +132,14 @@ export interface ThreadReview {
    * collapses the review card by default.
    */
   issuesFound?: boolean
+  /**
+   * Set when the verdict asked for follow-up work but the turn stopped without
+   * acting on it (cancelled, out of review passes, out of auto-continuation
+   * budget, or a remediation turn that made no edits) — see `#2506`. Rendered
+   * alongside the verdict so a "not done" review never reads as silently
+   * ignored.
+   */
+  followUpNote?: string
 }
 
 /**
@@ -315,7 +323,7 @@ export interface Thread {
    * Never written any more; kept so old threads still render their card.
    */
   comparison?: ModelComparison
-  /** Latest Copse Reviewer report for this thread's changes (replaces `comparison`). */
+  /** Legacy trailing report; new reviews are anchored to their assistant message. */
   reviewReport?: ThreadReviewReport
   /** Persisted parent/explore goal; set on the first user message in the thread. */
   workingBrief?: string
@@ -589,6 +597,8 @@ export interface Message {
    * (in position, one per reviewed turn) rather than as a single trailing card.
    */
   review?: ThreadReview
+  /** Copse Reviewer findings for the turn this message concluded. */
+  reviewReport?: ThreadReviewReport
   /**
    * Provenance when this turn was started without a human submit. The
    * message role stays `user` for the LLM; `origin` lives purely in the data

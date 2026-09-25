@@ -11,6 +11,7 @@ import type {
   SubagentSession,
   Thread,
   ThreadReview,
+  ThreadReviewReport,
   ToolCall,
   TranscriptAttachment,
   VisualEvidenceAsset,
@@ -72,6 +73,7 @@ interface MessageLike {
   parameters?: ModelParameters
   turnOutcome?: TurnOutcome
   review?: ThreadReview
+  reviewReport?: ThreadReviewReport
   origin?: MessageOrigin
   editedByUser?: boolean
   startingCommit?: string
@@ -387,6 +389,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.parameters !== undefined) line.parameters = msg.parameters
   if (msg.turnOutcome !== undefined) line.turnOutcome = msg.turnOutcome
   if (msg.review !== undefined) line.review = msg.review
+  if (msg.reviewReport !== undefined) line.reviewReport = msg.reviewReport
   if (msg.origin !== undefined) line.origin = msg.origin
   if (msg.editedByUser !== undefined) line.editedByUser = msg.editedByUser
   if (msg.startingCommit !== undefined) line.startingCommit = msg.startingCommit
@@ -679,6 +682,7 @@ function foldOne(
   if (line.parameters !== undefined) msg.parameters = line.parameters
   if (line.turnOutcome !== undefined) msg.turnOutcome = line.turnOutcome
   if (line.review !== undefined) msg.review = line.review
+  if (line.reviewReport !== undefined) msg.reviewReport = line.reviewReport
   if (line.origin !== undefined) msg.origin = line.origin
   if (line.editedByUser !== undefined) msg.editedByUser = line.editedByUser
   if (line.startingCommit !== undefined) msg.startingCommit = line.startingCommit
@@ -714,6 +718,7 @@ export function foldMessage(
     ...(m.parameters !== undefined ? { parameters: m.parameters } : {}),
     ...(m.turnOutcome !== undefined ? { turnOutcome: m.turnOutcome } : {}),
     ...(m.review !== undefined ? { review: m.review } : {}),
+    ...(m.reviewReport !== undefined ? { reviewReport: m.reviewReport } : {}),
     ...(m.origin !== undefined ? { origin: m.origin } : {}),
     ...(m.editedByUser !== undefined ? { editedByUser: m.editedByUser } : {}),
     ...(m.startingCommit !== undefined ? { startingCommit: m.startingCommit } : {}),
