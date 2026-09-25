@@ -184,7 +184,9 @@ own.
 - Password inputs retain native `type="password"` semantics and use Chromium’s filled-disc mask
   (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
   glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
-  text-field overlay.
+  text-field overlay. The system font is for the mask alone: reset the field's `::placeholder` to
+  `--font-family` so the text it shows matches the fields beside it (the VNC auth fields do this;
+  a username or account field is interface text, not `--font-mono`).
 
 ### Permission / approval prompts
 
@@ -989,10 +991,13 @@ tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal paddi
 remove the surface's inset or pull its summary into the padding. Only the closed, untextured
 disclosure label aligns flush with neighboring tool rows.
 
-The VNC pane takes a **gutter**: a 24px icon column in the authentication panel and a compact 6px
-status-dot column in status rows. It is a separate pane with its own chrome, and its status hue
-has to survive on a single line where a plate would just box three of them. These columns do not
-currently align across states; the shared gutter in the prototype remains a polish option.
+The VNC pane takes a **gutter**: one 6px severity-dot column shared by the authentication panel and
+the status rows, with the dot and the title painted in the state's hue. It is a separate pane with
+its own chrome, and its status hue has to survive on a single line where a plate would just box
+three of them. One recipe for every state: "Authentication required" is a blocking ask, so it takes
+`--warning`; "Authentication failed" and other failures take `--error`. Do not reach for the accent
+(or a second marker shape such as a lock icon) for either — the panel's wash stays neutral and the
+dot and title carry the severity.
 
 **Selection is the fill alone.** See "Sidebar selections" below.
 

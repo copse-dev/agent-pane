@@ -1,27 +1,25 @@
+/* Surface, border, radius and padding come from the shared `dialog` chrome in
+   forms.css (--bg-elevated, --radius-lg, --spacing-xl); only the size is
+   this dialog's own. */
 #app-run-dialog {
-  width: min(520px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
-  padding: 20px;
+  width: min(520px, calc(100vw - 2 * var(--spacing-lg)));
+  max-height: calc(100vh - 2 * var(--spacing-xl));
   overflow-y: auto;
-  background: var(--bg-base);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
 }
 .app-run-heading,
 .app-run-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-md);
   flex-wrap: wrap;
 }
 .app-run-heading {
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-lg);
 }
 .app-run-heading h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-size-lg);
 }
 .app-run-spacer {
   flex: 1;
@@ -29,7 +27,7 @@
 .app-run-fields,
 .app-run-setup {
   display: grid;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 .app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-fields,
 .app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-actions {
@@ -42,7 +40,7 @@
 }
 .app-run-panel label {
   display: grid;
-  gap: 5px;
+  gap: var(--spacing-xs);
 }
 .app-run-panel select,
 .app-run-panel input:not([type='checkbox']) {
@@ -52,11 +50,11 @@
 .app-run-panel .app-run-check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 .app-run-panel .app-run-actions {
-  margin-top: 14px;
+  margin-top: var(--spacing-md);
 }
 .app-run-more summary,
 .app-run-logs summary {
@@ -64,7 +62,7 @@
   cursor: pointer;
 }
 .app-run-more > label {
-  margin-top: 12px;
+  margin-top: var(--spacing-md);
 }
 .app-run-notice,
 .app-run-elapsed {
@@ -80,8 +78,8 @@
 .app-run-operation,
 .app-run-setup {
   border-top: 1px solid var(--border);
-  margin-top: 16px;
-  padding-top: 12px;
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
 }
 .app-run-operation[data-stage='running'] .app-run-stage {
   color: var(--success);
@@ -91,10 +89,12 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 12px/1.5 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
 }
 .app-run-logs {
-  margin-top: 10px;
+  margin-top: var(--spacing-sm);
 }
 .app-run-issue p {
   white-space: pre-wrap;

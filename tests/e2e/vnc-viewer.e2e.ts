@@ -220,6 +220,41 @@ async function listenOnVncPort(server: Server): Promise<number> {
   throw new Error('No conventional VNC port was available for the fake server')
 }
 
+/** The VNC severity recipe as rendered: gutter dot, title hue, and the tokens. */
+async function readVncSeverity(containerSelector: string, titleSelector: string) {
+  return browser.execute(
+    (container, title) => {
+      const host = document.querySelector<HTMLElement>(container)
+      const heading = host?.querySelector<HTMLElement>(title)
+      const dot = host?.querySelector<HTMLElement>(':scope > .vnc-status-dot')
+      if (!host || !heading || !dot) return null
+      const resolve = (token: string): string => {
+        const probe = document.createElement('span')
+        probe.style.color = `var(${token})`
+        host.append(probe)
+        const color = getComputedStyle(probe).color
+        probe.remove()
+        return color
+      }
+      const style = getComputedStyle(host)
+      return {
+        titleColor: getComputedStyle(heading).color,
+        dotColor: getComputedStyle(dot).backgroundColor,
+        gutter: style.gridTemplateColumns.split(' ')[0] ?? '',
+        columnGap: style.columnGap,
+        icons: host.querySelectorAll(':scope > svg').length,
+        tokens: {
+          warning: resolve('--warning'),
+          error: resolve('--error'),
+          accent: resolve('--accent'),
+        },
+      }
+    },
+    containerSelector,
+    titleSelector,
+  )
+}
+
 describe('VNC viewer', function () {
   this.timeout(120_000)
   const sockets = new Set<Socket>()
@@ -484,8 +519,50 @@ describe('VNC viewer', function () {
     }
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Cancel')
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-required.png')
+    // One severity recipe (#3065): "Authentication required" is a blocking ask,
+    // marked like every VNC status line — a 6px gutter dot with the title in
+    // the same hue — and that hue is --warning, never the pink accent.
+    const authMarker = await readVncSeverity(
+      '.vnc-controls-panel:not([hidden]) .vnc-auth-panel',
+      '.vnc-auth-title',
+    )
+    assert.ok(authMarker, 'the auth panel must render its severity dot and title')
+    assert.equal(authMarker.icons, 0, 'the auth panel no longer carries a lock-icon gutter')
+    assert.equal(authMarker.titleColor, authMarker.tokens.warning)
+    assert.notEqual(authMarker.titleColor, authMarker.tokens.accent)
+    assert.equal(authMarker.dotColor, authMarker.titleColor)
+    assert.equal(authMarker.gutter, '6px')
+    // Every auth field's text is in the interface font: no monospace username
+    // beside a system-ui "Password". Only the password mask itself is drawn in
+    // the system font, because Pliant's bullet reads as a row of periods.
+    const fieldFonts = await browser.execute(() => {
+      const family = (selector: string): string => {
+        const element = document.querySelector(selector)
+        return element ? getComputedStyle(element).fontFamily : ''
+      }
+      return {
+        interface: getComputedStyle(document.documentElement)
+          .getPropertyValue('--font-family')
+          .trim(),
+        username: family('.vnc-username-input'),
+        usernameLabel: family('.vnc-username-field'),
+        setupUsername: family('.vnc-setup-username-input'),
+        passwordMask: family('.vnc-password-input'),
+      }
+    })
+    const normalizeFamily = (value: string): string =>
+      value.replace(/["']/g, '').replace(/\s*,\s*/g, ',')
+    assert.equal(normalizeFamily(fieldFonts.username), normalizeFamily(fieldFonts.interface))
+    for (const text of [fieldFonts.usernameLabel, fieldFonts.setupUsername]) {
+      assert.equal(normalizeFamily(text), normalizeFamily(fieldFonts.username))
+    }
+    // Chromium does not resolve `::placeholder` through getComputedStyle, so
+    // the password placeholder's interface font is pinned in
+    // dialog-tokens.test.ts and visible in vnc-viewer-auth-failed.png.
+    assert.match(fieldFonts.passwordMask, /system-ui/)
 
     await $('.vnc-password-input').setValue('incorrect-password')
+    await saveElementScreenshot('.vnc-auth-panel', 'vnc-viewer-auth-fields.png')
     await $('.vnc-authenticate-btn').click()
     assert.equal(await $('.vnc-password-input').getValue(), '')
     await browser.waitUntil(
@@ -500,6 +577,16 @@ describe('VNC viewer', function () {
     assert.match(await $('.vnc-status-detail').getText(), /check the Screen Sharing password/i)
     assert.match(await $('.vnc-status-detail').getText(), /password was rejected/i)
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-failed.png')
+    const failedMarker = await readVncSeverity(
+      '.vnc-controls-panel:not([hidden]) .vnc-status',
+      '.vnc-status-title',
+    )
+    assert.ok(failedMarker, 'the failed status must render its severity dot and title')
+    assert.equal(failedMarker.titleColor, failedMarker.tokens.error)
+    assert.equal(failedMarker.dotColor, failedMarker.titleColor)
+    // Same gutter as the auth panel it replaced.
+    assert.equal(failedMarker.gutter, authMarker.gutter)
+    assert.equal(failedMarker.columnGap, authMarker.columnGap)
 
     if (secureCredentialStorage) {
       const target = { kind: 'loopback', port: authenticationPort } as const

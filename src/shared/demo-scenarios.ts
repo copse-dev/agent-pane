@@ -68,6 +68,12 @@ export interface DemoScenario {
    */
   vncDiscoveredPorts?: readonly number[]
   /**
+   * A login the browser demo's credential store already holds for every
+   * desktop target. The demo has no OS keychain, so this is what reaches the
+   * selected device's "Signed in as …" details and its forget action.
+   */
+  vncSavedLogin?: { readonly username: string }
+  /**
    * A container run already attached to the first thread, so the composer
    * banner and the run dialog's status face render without Docker.
    */
@@ -993,6 +999,30 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     vncDiscoveredPorts: [5900, 5901, 5902],
+  },
+  {
+    id: 'vnc-saved-login',
+    label: 'Remote desktop device with a saved login in a narrow rail',
+    project: project('demo-vnc-saved-login-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      vncEnabled: true,
+    },
+    threads: [
+      {
+        id: 'demo-vnc-saved-login-thread',
+        title: 'Remote desktop',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    vncDiscoveredPorts: [5900],
+    vncSavedLogin: { username: 'saved-user' },
   },
   {
     id: 'inline-thread-reference',

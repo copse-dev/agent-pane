@@ -1,8 +1,6 @@
 /* Onboarding + shared setup sections */
 .onboarding-overlay {
   z-index: 250;
-  display: flex;
-  justify-content: center;
   /* First-run only, so this sits on top of `#welcome` — one full-bleed
      `-webkit-app-region: drag` region (welcome.css). `app-region` is not
      inherited; it composes geometrically, each box unioning or subtracting in
@@ -14,6 +12,14 @@
      the shared `dialog` rule (forms.css) if this ever becomes a real
      <dialog>. */
   -webkit-app-region: no-drag;
+}
+/* Flex only while open: this is a native <dialog>, and an unscoped author
+   `display` outranks the UA `dialog:not([open]) { display: none }`, leaving a
+   closed dialog painted in the page (docs/ui-taste.md → "Native <dialog> and
+   display"). */
+.onboarding-overlay[open] {
+  display: flex;
+  justify-content: center;
 }
 .onboarding-shell {
   width: min(720px, 100%);

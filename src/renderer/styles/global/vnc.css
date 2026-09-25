@@ -236,11 +236,27 @@
   white-space: nowrap;
 }
 
+.vnc-device {
+  /* The details indent below is sized off this card, not the viewport: the
+     rail is resizable and the window width says nothing about it. */
+  container: vnc-device / inline-size;
+}
+
+/* Start the details under the device name, so the card reads as one column. */
 .vnc-device-details {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
   padding: 0 var(--spacing-sm) var(--spacing-sm) calc(34px + var(--spacing-md));
+}
+
+/* A narrow rail cannot spare the icon column: at ~160px the indent left
+   "Signed in as saved-user" about 100px and broke it one word per line. Start
+   the details at the header's own inset instead. */
+@container vnc-device (max-width: 260px) {
+  .vnc-device-details {
+    padding-left: var(--spacing-sm);
+  }
 }
 
 .vnc-setup-credentials {
@@ -261,33 +277,31 @@
   line-height: var(--line-height-base);
 }
 
+/* Stacked, not a row: beside the copy, the forget action took its full width
+   out of the line and squeezed "Signed in as …" into a sliver. */
 .vnc-saved-login {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
 }
 
 .vnc-saved-login-copy {
-  min-width: 0;
+  max-width: 100%;
+  /* Break inside a word only when that word cannot fit a line on its own (a
+     long account name), never at every opportunity. */
+  overflow-wrap: break-word;
+}
+
+/* The account name moves to the next line whole ("saved-user", not
+   "saved- / user"); it only breaks inside when it is wider than the card. */
+.vnc-saved-login-copy strong {
+  display: inline-block;
+  max-width: 100%;
   overflow-wrap: anywhere;
-}
-
-.vnc-setup-forget-login {
-  flex-shrink: 0;
-  padding: 0;
-  color: var(--text-muted);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  background: transparent;
-  border: 0;
-}
-
-.vnc-setup-forget-login:hover {
-  color: var(--text-primary);
 }
 
 .vnc-field-label {
@@ -308,10 +322,16 @@
   padding: var(--spacing-sm);
   color: var(--text-primary);
   font: inherit;
-  font-family: var(--font-mono);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* A port or host:port is a technical value; account names and passwords are
+   not, so the auth fields stay in the interface font. */
+.vnc-port-input,
+.vnc-address-input {
+  font-family: var(--font-mono);
 }
 
 .vnc-port-input:focus,
@@ -380,26 +400,34 @@
 /* The VNC pane is the one place the marker becomes a gutter rather than a
    plate (see `prototypes/side-highlight` — "M, the mix"): it is a separate pane
    with its own chrome, and its status hue has to survive on a single line where
-   a plate would just box three of them. The icon column also means the title
-   and the body start at the same inset. */
-.vnc-auth-panel {
-  --sev: var(--accent);
+   a plate would just box three of them.
+
+   One severity recipe for the whole pane: the authentication panel and the
+   status line (`.vnc-status`, below) both put a 6px dot in a 6px gutter and
+   paint the dot and the title in `--sev`. "Authentication required" is an
+   ask that blocks the connection, so it takes `--warning`; "Authentication
+   failed" is a status line with `--error`. The accent is interaction emphasis,
+   not a status colour (docs/ui-taste.md). The panel's own wash stays neutral —
+   it contains the form; the dot and title carry the severity. */
+.vnc-auth-panel,
+.vnc-status {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 6px minmax(0, 1fr);
   align-items: start;
-  column-gap: var(--spacing-xs);
+  column-gap: var(--spacing-sm);
+}
+
+.vnc-auth-panel {
+  --sev: var(--warning);
   row-gap: var(--spacing-sm);
   padding: var(--spacing-md);
-  background: color-mix(in srgb, var(--sev) 6%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
-.vnc-auth-icon {
-  grid-column: 1;
-  justify-self: center;
-  margin-top: 3px;
-  color: var(--sev);
-}
-/* Everything else shares the body column, whatever fields the panel is showing. */
-.vnc-auth-panel > :not(.vnc-auth-icon) {
+
+/* Everything but the dot shares the body column, whatever fields the panel or
+   the status line is showing. */
+.vnc-auth-panel > :not(.vnc-status-dot),
+.vnc-status > :not(.vnc-status-dot) {
   grid-column: 2;
 }
 
@@ -410,6 +438,8 @@
 .vnc-auth-title {
   color: var(--sev);
   font-weight: 600;
+  /* The gutter dot centres on one line-height-base line. */
+  line-height: var(--line-height-base);
 }
 
 .vnc-auth-description {
@@ -422,10 +452,19 @@
   -webkit-text-security: none;
 }
 
+/* The disc mask is the one thing drawn in the system font: Pliant's bullet
+   rasterises as a row of tiny periods (docs/ui-taste.md, "Agent-authored
+   dialog copy and secrets"). Any text the field shows — its placeholder —
+   stays in the interface font like the other auth fields. */
 .vnc-password-input,
 .vnc-setup-password-input {
   font-family: system-ui, sans-serif;
   -webkit-text-security: disc;
+}
+
+.vnc-password-input::placeholder,
+.vnc-setup-password-input::placeholder {
+  font-family: var(--font-family);
 }
 
 .vnc-remember-password {
@@ -441,10 +480,25 @@
   display: none;
 }
 
-.vnc-forget-login {
+/* One forget action, one look: the saved-device details and the connected
+   controls both offer the same kit ghost button with the same label. */
+.vnc-forget-login,
+.vnc-setup-forget-login {
   align-self: flex-start;
+  /* A compact ghost whose label lines up with the text above it: the kit's
+     roomy inline padding would indent it and, in a narrow rail, wrap it. */
+  min-height: var(--spacing-xl);
+  margin-inline-start: calc(-1 * var(--spacing-sm));
+  padding: 0 var(--spacing-sm);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
+}
+
+/* While the device list is showing, the selected device's details carry the
+   forget action; the session controls' copy is for a live session, when those
+   details are hidden. Showing both offered the same action twice. */
+.vnc-connect-form:has(> .vnc-setup-fields:not([hidden])) ~ .vnc-forget-login {
+  display: none;
 }
 
 .vnc-authenticate-btn {
@@ -531,10 +585,6 @@
    dot is for. */
 .vnc-status {
   --sev: var(--border-strong);
-  display: grid;
-  grid-template-columns: 6px 1fr;
-  align-items: start;
-  column-gap: var(--spacing-sm);
   row-gap: var(--spacing-xs);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -551,10 +601,6 @@
   background: var(--sev);
   /* Centred on the title's first line, not on the block. */
   margin-top: calc((var(--line-height-base) - 6px) / 2);
-}
-
-.vnc-status > :not(.vnc-status-dot) {
-  grid-column: 2;
 }
 
 .vnc-status[data-kind='working'] {
