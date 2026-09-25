@@ -222,11 +222,14 @@ import { setPluginBrowserService } from '../services/plugins/plugin-browser-serv
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
+  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
+  syncModelClassifierTools,
+  syncOrchestrationStrategyTools,
   syncReviewTools,
   syncImageGenerationTools,
   syncBackgroundTasksTools,
@@ -261,6 +264,8 @@ import {
 
 import { createSupervisedTaskClient } from '../services/supervisor/task-client.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
+import { MODEL_CLASSIFIER_ENABLED_SETTING } from '../services/providers/model-classifier.ts'
+import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from '../services/orchestration-strategy.ts'
 import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE } from '@shared/roadmap/note.ts'
 import { createRoadmapWriteHandlers } from './roadmap-write-handlers.ts'
@@ -1301,6 +1306,13 @@ export function registerAllHandlers(
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
+    // Experimental tool toggles: apply live instead of waiting for a restart.
+    if (k === MODEL_CLASSIFIER_ENABLED_SETTING) {
+      syncModelClassifierTools(registry)
+    }
+    if (k === ORCHESTRATION_STRATEGY_ENABLED_SETTING) {
+      syncOrchestrationStrategyTools(registry)
+    }
     // Keep the native diagnostics menu in sync with Developer mode. The
     // Ctrl+Shift+I shortcut is owned independently by its first-party plugin.
     if (k === DEVELOPER_MODE_SETTING) {
@@ -2116,6 +2128,8 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    const refusal = pluginEnableRefusal(id, enabled)
+    if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
     if (pluginService.hasUserPlugin(id)) {
