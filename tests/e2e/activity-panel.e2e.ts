@@ -177,11 +177,41 @@ describe('Activity panel', function () {
     await expect(needsRow.$('.activity-row-open')).toBeFocused()
     const label = await needsRow.$('.activity-row-open').getAttribute('aria-label')
     assert.match(label ?? '', /^Needs approval: Run shell command\? — printf/)
+
+    // A collapsed row only scans: it offers Review and Reject, never Approve.
+    await expect(needsRow.$('.activity-approve')).not.toBeExisting()
+    await expect(needsRow.$('.activity-reject')).toBeDisplayed()
+    const toggle = needsRow.$('.activity-review-toggle')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // Expanded: the request exactly as the prompt shows it, then Approve once.
+    const review = needsRow.$('.activity-review')
+    await review.waitForDisplayed({ timeout: 5_000 })
+    await expect(review.$('.activity-review-title')).toHaveText('Run shell command?')
+    const fullBody = await browser.execute(
+      (selector: string) => document.querySelector(selector)?.textContent ?? null,
+      `${rowSelector('needs-you', AUTH_THREAD)} .activity-review .approval-body`,
+    )
+    assert.equal(fullBody, AUTH_COMMAND, 'the review shows the full command verbatim')
+    const approve = review.$('.activity-approve')
+    await approve.waitForEnabled({ timeout: 5_000 })
+    // The review fits the panel: nothing is clipped or scrolled off sideways.
+    const fits = await browser.execute(() => {
+      const body = document.querySelector<HTMLElement>('#activity-panel .activity-panel-body')
+      const view = document.querySelector<HTMLElement>('#activity-panel .activity-review')
+      if (!body || !view) return null
+      const bodyRect = body.getBoundingClientRect()
+      const viewRect = view.getBoundingClientRect()
+      return {
+        noSideScroll: body.scrollWidth <= body.clientWidth,
+        inside: viewRect.right <= bodyRect.right + 0.5,
+      }
+    })
+    assert.deepEqual(fits, { noSideScroll: true, inside: true })
     await saveAppScreenshot('activity-panel-needs-you.png')
 
     // Approve from the panel. The user stays on thread B the whole time.
-    const approve = needsRow.$('.activity-approve')
-    await approve.waitForEnabled({ timeout: 5_000 })
     await approve.click()
     await browser.waitUntil(
       async () => !(await $(rowSelector('needs-you', AUTH_THREAD)).isExisting()),

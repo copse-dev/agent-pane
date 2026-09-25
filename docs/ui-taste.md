@@ -1106,8 +1106,11 @@ Process Manager overlay, not a new surface kind.
   channel. The running dots are held still here; the sidebar already animates them.
 - **One column grid down the whole list.** Every row reserves the action column, even rows
   with no buttons, so thread, project and age line up.
-- **Approve once is the only in-place grant.** Buttons follow the approval prompt's recipe
-  (`ui-btn-primary` Approve once, outlined Reject with `--border-strong`). Broader answers
+- **Approve once is the only in-place grant, and only after Review.** A collapsed row is
+  truncated for scanning, so it offers Review and Reject; Approve once appears only in the
+  expanded review, which renders the request with the prompt's own advice / body / footer
+  classes and never truncates. Buttons follow the approval prompt's recipe
+  (`ui-btn-primary` Approve once, outlined chips with `--border-strong`). Broader answers
   stay on the prompt in the thread.
 - **Rows do not move under a click.** Re-renders are throttled, focus is restored to the same
   row, and Approve pauses after the waiting list changes.
