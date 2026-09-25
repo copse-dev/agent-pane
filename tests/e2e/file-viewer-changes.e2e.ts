@@ -5,6 +5,12 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  COPSE_TINT_COLOR,
+  applyAppearanceViaSettings,
+  channelDistance,
+  editorSurfacePaint,
+} from './helpers/appearance.ts'
 
 // The file viewer's "Changes" view (#file-viewer): opening a file with
 // uncommitted changes surfaces a Changes toggle in the viewer toolbar that
@@ -179,4 +185,62 @@ describe('file viewer Changes view', () => {
 
     await saveAppScreenshot('file-viewer-changes-clean-file.png')
   })
+
+  // Monaco paints from a JS theme, not the cascade: stock vs/vs-dark left a
+  // grey editor inside a teal pane under Strong + Copse (#3065).
+  for (const theme of ['dark', 'light'] as const) {
+    it(`paints the editor and diff from --bg-base under Strong + Copse (${theme})`, async function () {
+      this.timeout(90_000)
+      await applyAppearanceViaSettings({
+        theme,
+        tintColor: COPSE_TINT_COLOR,
+        tintStrength: 'strong',
+      })
+      // The first pass opens the changed file; the second re-themes the editors
+      // it left mounted, which is the live path a Settings change takes.
+      const sourceBtn = await $('#file-viewer .file-viewer-source-btn')
+      if (!(await sourceBtn.isDisplayed())) await openFileFromTree(CHANGED_FILE)
+      await sourceBtn.waitForDisplayed({ timeout: 30_000 })
+      await sourceBtn.click()
+      await $('#file-viewer .monaco-container .monaco-editor').waitForDisplayed({
+        timeout: 15_000,
+      })
+
+      const matchesToken = async (selectors: string[]): Promise<boolean> => {
+        const paint = await editorSurfacePaint(selectors)
+        return selectors.every(
+          (selector) => channelDistance(paint.surfaces[selector] ?? null, paint.token) <= 1,
+        )
+      }
+      const source = [
+        '#file-viewer .monaco-container .monaco-editor-background',
+        '#file-viewer .monaco-container .monaco-editor .margin',
+      ]
+      await browser.waitUntil(async () => matchesToken(source), {
+        timeout: 10_000,
+        timeoutMsg: `expected the ${theme} source editor to match --bg-base`,
+      })
+
+      const changesBtn = await $('#file-viewer .file-viewer-changes-btn')
+      await changesBtn.waitForDisplayed({ timeout: 30_000 })
+      await changesBtn.click()
+      await $('#file-viewer .file-viewer-diff .monaco-diff-editor').waitForDisplayed({
+        timeout: 30_000,
+      })
+      const diff = [
+        '#file-viewer .file-viewer-diff .editor.original .monaco-editor-background',
+        '#file-viewer .file-viewer-diff .editor.modified .monaco-editor-background',
+        '#file-viewer .file-viewer-diff .editor.modified .margin',
+      ]
+      await browser.waitUntil(async () => matchesToken(diff), {
+        timeout: 10_000,
+        timeoutMsg: `expected the ${theme} diff editor to match --bg-base`,
+      })
+      const { token } = await editorSurfacePaint([])
+      if (theme === 'dark') expect(token).toEqual([0, 46, 43])
+      else expect(token).not.toEqual([255, 255, 255])
+
+      await saveAppScreenshot(`file-viewer-copse-strong-${theme}.png`)
+    })
+  }
 })

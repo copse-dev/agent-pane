@@ -82,7 +82,6 @@ function makeMonacoStub(): ContextPanelMonaco {
       create: () => makeCodeEditorStub(),
       createDiffEditor: makeDiffEditorStub,
       createModel: makeModel,
-      setTheme(): void {},
     },
     KeyMod: { CtrlCmd: 2048 },
     KeyCode: { KeyS: 49, KeyL: 42 },

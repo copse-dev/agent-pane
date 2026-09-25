@@ -1,4 +1,4 @@
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
@@ -21,27 +21,11 @@ import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { createTerminalAfterPersist } from '../terminal/create-after-persist.ts'
 import { terminalStartFailureMessage } from '../terminal/start-failure-message.ts'
 import { resolveTerminalTabScope } from '../terminal/tab-scope.ts'
-
-/* selectionInactiveBackground is set per theme rather than left to xterm: its
-   default (#3A3D41) is a dark grey, so in the light theme a selection made and
-   then unfocused paints near-black text onto a near-black block. Each theme
-   keeps its own hue, one step quieter than the focused fill. */
-const XTERM_THEME = {
-  dark: {
-    background: '#1e1e1e',
-    foreground: '#d4d4d4',
-    cursor: '#d4d4d4',
-    selectionBackground: '#264f78',
-    selectionInactiveBackground: '#1e3a57',
-  },
-  light: {
-    background: '#ffffff',
-    foreground: '#1e1e1e',
-    cursor: '#1e1e1e',
-    selectionBackground: '#add6ff',
-    selectionInactiveBackground: '#d3e6fb',
-  },
-} as const
+import {
+  readEditorThemeTokens,
+  watchEditorTheme,
+  xtermThemeFromTokens,
+} from '../dom/editor-theme.ts'
 
 /* xterm only renders whole rows, so the fit addon leaves a few pixels of
    remainder at the bottom of the pane. xterm 6 paints the theme background on
@@ -49,8 +33,8 @@ const XTERM_THEME = {
    it on xterm.css's hardcoded #000 — which read as a black stripe under the
    last line. Publish the palette background so the viewport can match it (see
    `.terminal-container .xterm .xterm-viewport` in layout.css). */
-function applyXtermBg(container: HTMLElement, theme: 'light' | 'dark'): void {
-  container.style.setProperty('--xterm-bg', XTERM_THEME[theme].background)
+function applyXtermBg(container: HTMLElement, theme: ITheme): void {
+  container.style.setProperty('--xterm-bg', theme.background ?? '')
 }
 
 interface TerminalTab {
@@ -172,7 +156,7 @@ export function mountTerminalsPane(
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: XTERM_THEME[store.getState().theme],
+      theme: xtermThemeFromTokens(readEditorThemeTokens()),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -497,7 +481,7 @@ export function mountTerminalsPane(
 
     const panel = el('div', { class: 'terminals-tab-panel', 'data-tab-id': id })
     const container = el('div', { class: 'terminal-container' })
-    applyXtermBg(container, store.getState().theme)
+    applyXtermBg(container, xtermThemeFromTokens(readEditorThemeTokens()))
     panel.append(container)
 
     const { term, fitAddon } = createXterm()
@@ -665,12 +649,15 @@ export function mountTerminalsPane(
     }
   }
 
-  function onThemeChange(theme: 'light' | 'dark'): void {
+  // Theme, tint and accent all land on <html>; follow them there rather than on
+  // `theme_changed`, which tint and accent changes never emit.
+  const unwatchTheme = watchEditorTheme((tokens) => {
+    const theme = xtermThemeFromTokens(tokens)
     for (const tab of tabs.values()) {
-      tab.term.options.theme = XTERM_THEME[theme]
+      tab.term.options.theme = theme
       applyXtermBg(tab.container, theme)
     }
-  }
+  })
 
   function onFontSizeChange(): void {
     const { fontSize, uiScale } = store.getState()
@@ -775,13 +762,13 @@ export function mountTerminalsPane(
     store.on('right_panel_mode_changed', onTerminalModeChange),
     store.on('files_pane_changed', onTerminalModeChange),
     store.on('agent_task_selected', onAgentTaskSelected),
-    store.on('theme_changed', onThemeChange),
     store.on('settings_changed', onFontSizeChange),
     store.on('threads_changed', onThreadMaybeChanged),
     store.on('thread_checkout_changed', onThreadCheckoutChanged),
     store.on('workspace_changed', onThreadMaybeChanged),
     store.on('request_terminal_command', runCommandInNewShell),
     store.on('code_block_run_requested', runCodeBlockInBackground),
+    unwatchTheme,
   ]
 
   const unregisterCatalog = registerShellCatalog(

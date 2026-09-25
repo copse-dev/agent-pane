@@ -132,7 +132,6 @@ function createFakeDiff(): FakeDiff {
     editor: {
       createDiffEditor: (): GitDiffEditor => editor,
       createModel: (value: string): GitDiffModel => model(value),
-      setTheme: (): void => {},
     },
     Uri: { parse: (value: string): { toString: () => string } => ({ toString: () => value }) },
   }
@@ -594,7 +593,7 @@ describe('createGitChangesDiffEditor keeps a single gutter in the inline view', 
       },
     }
 
-    createGitChangesDiffEditor(container, monaco, 12, 'vs')
+    createGitChangesDiffEditor(container, monaco, 12)
     assert.deepEqual(lineNumberModes, ['on'], 'side-by-side keeps original line numbers')
 
     const root = container.querySelector('.monaco-diff-editor')
@@ -614,7 +613,7 @@ describe('createGitChangesDiffEditor keeps a single gutter in the inline view', 
     const fake = createFakeDiff()
     // Test doubles (and Monaco failures) leave the container empty; creation
     // must still return the editor without touching sub-editor options.
-    const created = createGitChangesDiffEditor(container, fake.monaco, 12, 'vs')
+    const created = createGitChangesDiffEditor(container, fake.monaco, 12)
     assert.equal(created, fake.editor)
   })
 })

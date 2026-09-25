@@ -260,15 +260,11 @@ export function mountPrPane(
   }
 
   function ensureDiffEditor(): GitDiffEditor {
-    if (!diffEditor) {
-      const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
-      diffEditor = createGitChangesDiffEditor(
-        diffWrap,
-        monaco,
-        scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
-        theme,
-      )
-    }
+    diffEditor ??= createGitChangesDiffEditor(
+      diffWrap,
+      monaco,
+      scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
+    )
     return diffEditor
   }
 
@@ -1227,9 +1223,6 @@ export function mountPrPane(
     store.on('pr_open_requested', (owner, repo, number) => {
       pendingOpen = { owner, repo, number }
       if (prsModeActive(store)) void refresh()
-    }),
-    store.on('theme_changed', (theme) => {
-      monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
     api.gh.onListsTick(() => {
       if (prsModeActive(store)) void refresh({ reason: 'poll' })

@@ -395,12 +395,10 @@ export function mountGitChangesPane(
   function ensureDiffEditor(): GitDiffEditor {
     const monacoApi = requireMonaco()
     if (!diffEditor) {
-      const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
       diffEditor = createGitChangesDiffEditor(
         diffWrap,
         monacoApi,
         scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
-        theme,
       )
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monacoApi, () => {
         if (selection?.kind === 'proposed') {
@@ -1191,9 +1189,6 @@ export function mountGitChangesPane(
       // Inactive worktrees are not continuously watched. Revalidate on return
       // while showing their last known rows, rather than flashing Loading.
       if (changesModeActive(store)) void refresh()
-    }),
-    store.on('theme_changed', (theme) => {
-      monaco?.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
     store.on('staged_diffs_changed', () => {
       const queue = store.getState().stagedDiffs

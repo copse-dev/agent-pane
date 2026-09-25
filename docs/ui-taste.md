@@ -909,6 +909,16 @@ control: three local copies were all that kept the accent on, and every other ch
 Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
 declaration to `base.css`.
 
+Canvas-painted surfaces follow the same rule. xterm and Monaco take their colours from a JS theme,
+not from the cascade, so hard-coded VS Code greys left a grey slab in a teal pane under Strong + the
+Copse tint (#3065). Both now build their theme from the resolved tokens (`--bg-base`, `--bg-elevated`,
+`--text-primary`, the borders, `--selection-bg` / `--selection-text`) in
+[`dom/editor-theme.ts`](../src/renderer/dom/editor-theme.ts), which re-resolves them whenever the
+theme, tint or accent changes on `<html>`. Monaco keeps its base theme's syntax and selection colours. Do not
+pass `vs` / `vs-dark` or a literal xterm palette to a new editor or terminal. Create editors with
+`COPSE_MONACO_THEME` and terminals with `xtermThemeFromTokens`. Specs: `terminal-display.e2e.ts`,
+`file-viewer-changes.e2e.ts`.
+
 ## Roadmap list rows
 
 Roadmap backlog rows (`.roadmap-row` in
