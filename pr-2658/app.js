@@ -23594,7 +23594,7 @@ function isPinned(thread, activeThreadId) {
   return (thread.pendingMessages?.length ?? 0) > 0;
 }
 function attachThreadHydration(store2, api2) {
-  const inFlight3 = /* @__PURE__ */ new Map();
+  const inFlight4 = /* @__PURE__ */ new Map();
   let recency = [];
   const touch = (threadId) => {
     recency = [...recency.filter((id) => id !== threadId), threadId];
@@ -23618,7 +23618,7 @@ function attachThreadHydration(store2, api2) {
   };
   const fetchInto = (projectId, threadId) => {
     const key = `${projectId}:${threadId}`;
-    const existing = inFlight3.get(key);
+    const existing = inFlight4.get(key);
     if (existing) return existing;
     failedThreadIds.delete(threadId);
     const endHydrate = begin("thread:hydrate");
@@ -23652,9 +23652,9 @@ function attachThreadHydration(store2, api2) {
       failedThreadIds.add(threadId);
       store2.emit("threads_changed");
     }).finally(() => {
-      inFlight3.delete(key);
+      inFlight4.delete(key);
     });
-    inFlight3.set(key, request);
+    inFlight4.set(key, request);
     return request;
   };
   activeHydrator = {
@@ -23706,7 +23706,7 @@ function attachThreadHydration(store2, api2) {
     offPrRefs();
     activeHydrator = null;
     recency = [];
-    inFlight3.clear();
+    inFlight4.clear();
     failedThreadIds.clear();
   };
 }
@@ -26052,9 +26052,20 @@ function ensureDialog3() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog?.close();
   });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") event.stopPropagation();
+  });
   dialog.addEventListener("close", () => {
+    const resolveFocusTarget = returnFocus;
+    returnFocus = null;
     activeToken += 1;
+    const closedToken = activeToken;
     releaseCurrent();
+    queueMicrotask(() => {
+      if (activeToken !== closedToken || dialog?.open) return;
+      const focusTarget = resolveFocusTarget?.();
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    });
   });
   return dialog;
 }
@@ -26078,7 +26089,12 @@ function openAttachmentPreview(options) {
   previewTitle.textContent = options.title;
   if (options.content) previewBody.replaceChildren(options.content);
   else previewBody.replaceChildren(statusNode(options.status ?? `Loading ${options.title}\u2026`));
-  if (!previewDialog.open) previewDialog.showModal();
+  if (!previewDialog.open) {
+    const activeElement = document.activeElement;
+    const defaultReturnFocus = () => activeElement instanceof HTMLElement && activeElement.isConnected ? activeElement : null;
+    returnFocus = options.returnFocus ?? defaultReturnFocus;
+    previewDialog.showModal();
+  }
   const isActive = () => token === activeToken && previewDialog.open;
   return {
     isActive,
@@ -26097,7 +26113,7 @@ function openAttachmentPreview(options) {
     }
   };
 }
-var dialog, titleEl, bodyEl, currentCleanup, activeToken;
+var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
 var init_attachment_preview = __esm({
   "src/renderer/attachments/attachment-preview.ts"() {
     init_helpers();
@@ -26105,6 +26121,7 @@ var init_attachment_preview = __esm({
     titleEl = null;
     bodyEl = null;
     currentCleanup = null;
+    returnFocus = null;
     activeToken = 0;
   }
 });
@@ -26245,7 +26262,7 @@ function attachImageCopyMenu(image) {
     );
   });
 }
-function openImageExpand(src, alt = "Expanded attachment") {
+function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
   if (!src) return;
   const imageEl = el("img", { class: "image-expand-image", alt });
   imageEl.src = src;
@@ -26255,6 +26272,7 @@ function openImageExpand(src, alt = "Expanded attachment") {
     title: alt,
     ariaLabel: `Image preview: ${alt}`,
     content: imageEl,
+    ...returnFocus2 ? { returnFocus: returnFocus2 } : {},
     onClose: () => {
       imageEl.removeAttribute("src");
       imageEl.alt = "Expanded attachment";
@@ -26271,7 +26289,16 @@ function attachImageExpand(img, alt) {
   img.setAttribute("aria-label", alt ? `Expand ${alt}` : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    openImageExpand(img.currentSrc || img.src, label);
+    const src = img.currentSrc || img.src;
+    openImageExpand(src, label, () => {
+      if (img.isConnected) return img;
+      for (const candidate of document.querySelectorAll("img.image-expandable")) {
+        if (candidate.getAttribute("aria-label") === `Expand ${label}` && (candidate.currentSrc || candidate.src) === src) {
+          return candidate;
+        }
+      }
+      return null;
+    });
   };
   img.addEventListener("click", (event) => {
     event.preventDefault();
@@ -27947,7 +27974,8 @@ var init_demo_scenarios = __esm({
           available: true,
           recovery: "not-backed-up",
           automatic: true,
-          migrationFailed: true
+          migrationFailed: true,
+          migrationBlocker: "saved API key \u201Copenai\u201D"
         }
       },
       {
@@ -28803,7 +28831,12 @@ function createDemoApi(scenario, options = {}) {
         failed: []
       })
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false)
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -31849,7 +31882,7 @@ function createProfileVaultSection(api2) {
     notice.textContent = action.action === "retry-migration" || action.action === "unlock" ? "Opening saved-secret encryption\u2026" : "Complete the native authentication window to continue.";
     try {
       const result = await api2.run(action);
-      notice.textContent = result.ok ? action.action === "retry-migration" || action.action === "recover" ? "Restarting Copse\u2026" : action.action === "set-auth" ? "Updated. The startup authentication setting takes effect next time you launch Copse." : "Done." : result.reason === "cancelled" ? "Cancelled. Your saved credentials are unchanged." : result.reason === "locked" ? "Unlock saved secrets to continue." : result.reason === "recovery-required" ? "This Mac does not have the device key. Restore access with your recovery key." : result.reason === "corrupt" ? "Verification failed. Check the recovery key and restore a complete profile backup if needed." : result.reason === "unavailable" ? "The native encryption helper or macOS authentication is unavailable." : result.reason;
+      notice.textContent = result.ok ? action.action === "retry-migration" || action.action === "recover" ? "Restarting Copse\u2026" : action.action === "set-auth" ? "Updated. The startup authentication setting takes effect next time you launch Copse." : "Done." : action.action === "retry-migration" && result.reason === "corrupt" ? "Migration did not finish. Your saved credentials are unchanged." : result.reason === "cancelled" ? "Cancelled. Your saved credentials are unchanged." : result.reason === "locked" ? "Unlock saved secrets to continue." : result.reason === "recovery-required" ? "This Mac does not have the device key. Restore access with your recovery key." : result.reason === "corrupt" ? "Verification failed. Check the recovery key and restore a complete profile backup if needed." : result.reason === "unavailable" ? "The native encryption helper or macOS authentication is unavailable." : result.reason;
     } catch {
       notice.textContent = "Could not reach the encryption service.";
     } finally {
@@ -31876,7 +31909,7 @@ function createProfileVaultSection(api2) {
       return;
     }
     if (!current.enabled) {
-      status.textContent = current.migrationFailed ? "Automatic migration could not finish. Your credentials still use the existing OS secure storage. Close other Copse processes and retry." : current.automatic ? "This profile will migrate automatically when Copse starts." : "Uses existing OS secure storage. Automatic device encryption requires a supported signed Copse release.";
+      status.textContent = current.migrationFailed ? current.migrationBlocker ? `Automatic migration could not finish: the ${current.migrationBlocker} could not be read. Your credentials still use the existing OS secure storage. Re-enter or remove it, then retry.` : "Automatic migration could not finish. Your credentials still use the existing OS secure storage. Close other Copse processes and retry." : current.automatic ? "This profile will migrate automatically when Copse starts." : "Uses existing OS secure storage. Automatic device encryption requires a supported signed Copse release.";
       if (current.automatic)
         controls.append(button("Retry migration", { action: "retry-migration" }));
       return;
@@ -61420,6 +61453,15 @@ var init_developer_mode = __esm({
   }
 });
 
+// src/shared/terminal/terminal-history.ts
+var SHARE_TERMINAL_HISTORY_ENABLED_SETTING, SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT;
+var init_terminal_history = __esm({
+  "src/shared/terminal/terminal-history.ts"() {
+    SHARE_TERMINAL_HISTORY_ENABLED_SETTING = "shareTerminalHistoryEnabled";
+    SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT = true;
+  }
+});
+
 // src/shared/appearance.ts
 function sameHex(value, expected) {
   return typeof value === "string" && value.toLowerCase() === expected.toLowerCase();
@@ -61451,6 +61493,15 @@ var init_appearance = __esm({
       uiTintStrength: "subtle"
     };
     isUiTintStrength = (value) => value === "off" || value === "subtle" || value === "medium" || value === "strong";
+  }
+});
+
+// src/shared/git/commit-attribution.ts
+var GIT_ATTRIBUTION_SETTING, DEFAULT_GIT_ATTRIBUTION_ENABLED;
+var init_commit_attribution = __esm({
+  "src/shared/git/commit-attribution.ts"() {
+    GIT_ATTRIBUTION_SETTING = "gitAttributionEnabled";
+    DEFAULT_GIT_ATTRIBUTION_ENABLED = true;
   }
 });
 
@@ -61877,6 +61928,18 @@ function mountSettingsDialog(store2, api2) {
               </p>
             </fieldset>
 
+            <fieldset data-testid="git-attribution-settings">
+              <legend>Git attribution</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="${GIT_ATTRIBUTION_SETTING}" />
+                Credit Copse on commits and pull requests
+              </label>
+              <p class="field-hint">
+                Adds Copse as a co-author and lists the models used when Copse creates a commit or
+                pull request. On by default. Turn off to keep your message and description as written.
+              </p>
+            </fieldset>
+
             <div id="settings-gh-cli-host" class="settings-mount"></div>
           </section>
 
@@ -62017,6 +62080,15 @@ function mountSettingsDialog(store2, api2) {
                 When on (the default), the agent can read a Shells tab open in this chat, and you
                 can add one to a message with <code>@shell</code>. Turn off to keep your terminals
                 private.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="shareTerminalHistoryEnabled" />
+                Share command history across the project
+              </label>
+              <p class="field-hint">
+                When on (the default), Bash and Zsh terminals in this project use the same history
+                file, so a command from one thread can be recalled in another. Fish keeps its normal
+                shell-managed history. Turn off to keep each terminal's history separate.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="webAllowUserApproval" />
@@ -65072,8 +65144,10 @@ var init_settings_dialog = __esm({
     init_command_routing();
     init_unknown_value3();
     init_developer_mode();
+    init_terminal_history();
     init_appearance();
     init_projects();
+    init_commit_attribution();
     init_appearance();
     init_nullish2();
     isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
@@ -65099,6 +65173,12 @@ var init_settings_dialog = __esm({
       { name: "remoteAgentAutoCreatePR", kind: "checkbox", default: true, save: true },
       { name: "remoteAgentWorkOnCurrentBranch", kind: "checkbox", default: false, save: true },
       { name: "preferAcpOverCloudAgent", kind: "checkbox", default: true, save: true },
+      {
+        name: GIT_ATTRIBUTION_SETTING,
+        kind: "checkbox",
+        default: DEFAULT_GIT_ATTRIBUTION_ENABLED,
+        save: true
+      },
       { name: "gitCommitSshAgentSocketAccess", kind: "checkbox", default: false, save: true },
       { name: "localSubagentsEnabled", kind: "checkbox", default: true, save: true },
       {
@@ -65120,6 +65200,14 @@ var init_settings_dialog = __esm({
       { name: "vncEnabled", kind: "checkbox", default: false, save: true },
       // On by default: agent may read open Shells tabs via read_terminal / @shell.
       { name: "readTerminalEnabled", kind: "checkbox", default: true, save: true },
+      // On by default: every terminal opened for a project shares one HISTFILE, so
+      // up-arrow history from one thread's Shells tab is recallable in another's.
+      {
+        name: SHARE_TERMINAL_HISTORY_ENABLED_SETTING,
+        kind: "checkbox",
+        default: SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
+        save: true
+      },
       // On by default: clicked links open in the in-app browser pane. Off routes
       // external links to the system browser and marks them with an external icon.
       { name: "openLinksInBuiltInBrowser", kind: "checkbox", default: true, save: true },
@@ -71023,6 +71111,230 @@ var init_file_links = __esm({
   }
 });
 
+// src/renderer/markdown/pr-title-cache.ts
+function cachedPrTitle(ref) {
+  return titles.get(githubPrKey(ref));
+}
+function rememberPrTitle(ref, title, isDraft) {
+  const trimmed2 = title.trim();
+  if (!trimmed2 || trimmed2 === `PR #${String(ref.number)}`) return;
+  const key = githubPrKey(ref);
+  const previous = titles.get(key);
+  titles.delete(key);
+  titles.set(key, {
+    title: trimmed2,
+    ...isDraft !== void 0 ? { isDraft } : previous?.isDraft !== void 0 ? { isDraft: previous.isDraft } : {}
+  });
+  if (titles.size > MAX_TITLES) {
+    const oldest = titles.keys().next().value;
+    if (oldest !== void 0) titles.delete(oldest);
+  }
+}
+function loadPrTitle(ref, gh) {
+  const cached2 = cachedPrTitle(ref);
+  if (cached2) return Promise.resolve(cached2);
+  const key = githubPrKey(ref);
+  const pending = inFlight3.get(key);
+  if (pending) return pending;
+  const request = gh.prDetails(ref.owner, ref.repo, ref.number).then((details) => {
+    if (!details) return null;
+    rememberPrTitle(ref, details.title, details.isDraft);
+    return cachedPrTitle(ref) ?? null;
+  }).finally(() => {
+    inFlight3.delete(key);
+  });
+  inFlight3.set(key, request);
+  return request;
+}
+var MAX_TITLES, titles, inFlight3;
+var init_pr_title_cache = __esm({
+  "src/renderer/markdown/pr-title-cache.ts"() {
+    init_github_pr_url2();
+    MAX_TITLES = 128;
+    titles = /* @__PURE__ */ new Map();
+    inFlight3 = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/renderer/markdown/pr-link-preview.ts
+function linkedPr(root, target) {
+  if (!(target instanceof Element)) return null;
+  const link = target.closest("a[href]");
+  if (!link || !root.contains(link)) return null;
+  if (link.dataset["workspaceLink"] || link.dataset["fileReferencePath"]) return null;
+  const ref = parseGithubPrUrl(link.href);
+  return ref ? { link, ref } : null;
+}
+function bindPrLinkPreviews(root, gh) {
+  if (!gh) return () => {
+  };
+  const github = gh;
+  let activeLink = null;
+  let suppressedLink = null;
+  let preview = null;
+  let hoverTimer = null;
+  let requestGen = 0;
+  let disposed = false;
+  const previewId = `pr-link-preview-${String(++nextPreviewId)}`;
+  function ensurePreview() {
+    if (preview) return preview;
+    const node2 = document.createElement("div");
+    node2.id = previewId;
+    node2.className = "pr-link-preview";
+    node2.setAttribute("role", "tooltip");
+    node2.hidden = true;
+    document.body.append(node2);
+    preview = node2;
+    return node2;
+  }
+  function position2() {
+    if (!activeLink || !preview || preview.hidden) return;
+    const anchor2 = activeLink.getBoundingClientRect();
+    const tip = preview.getBoundingClientRect();
+    const placed = computeTooltipPosition({
+      anchor: { left: anchor2.left, top: anchor2.top, width: anchor2.width, height: anchor2.height },
+      tip: { width: tip.width, height: tip.height },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      preferred: "bottom",
+      gap: 9,
+      pad: 12
+    });
+    preview.style.left = `${String(Math.round(placed.left))}px`;
+    preview.style.top = `${String(Math.round(placed.top))}px`;
+  }
+  function describedBy(link, add2) {
+    const values = (link.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+    const next = values.filter((value) => value !== previewId);
+    if (add2) next.push(previewId);
+    if (next.length) link.setAttribute("aria-describedby", next.join(" "));
+    else link.removeAttribute("aria-describedby");
+  }
+  function hide3() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    requestGen++;
+    if (activeLink) describedBy(activeLink, false);
+    activeLink = null;
+    if (preview) preview.hidden = true;
+  }
+  function show2(ref, data) {
+    if (!activeLink) return;
+    const node2 = ensurePreview();
+    node2.replaceChildren();
+    const meta3 = document.createElement("div");
+    meta3.className = "pr-link-preview-meta";
+    meta3.textContent = `Pull request #${String(ref.number)}`;
+    if (data?.isDraft) {
+      const badge = document.createElement("span");
+      badge.className = "pr-link-preview-draft";
+      badge.textContent = "Draft";
+      meta3.append(badge);
+    }
+    const title = document.createElement("div");
+    title.className = "pr-link-preview-title";
+    title.textContent = data?.title ?? "Loading title\u2026";
+    if (!data) title.classList.add("is-loading");
+    const repo = document.createElement("div");
+    repo.className = "pr-link-preview-repo";
+    repo.textContent = `${ref.owner} / ${ref.repo}`;
+    node2.append(meta3, title, repo);
+    node2.hidden = false;
+    describedBy(activeLink, true);
+    position2();
+  }
+  function activate2(link, ref, immediate) {
+    if (activeLink === link) return;
+    hide3();
+    activeLink = link;
+    const cached2 = cachedPrTitle(ref);
+    if (cached2) {
+      show2(ref, cached2);
+      return;
+    }
+    const gen = requestGen;
+    const load = () => {
+      hoverTimer = null;
+      if (disposed || activeLink !== link || gen !== requestGen) return;
+      show2(ref, null);
+      void loadPrTitle(ref, github).then((title) => {
+        if (disposed || activeLink !== link || gen !== requestGen) return;
+        if (title) show2(ref, title);
+        else hide3();
+      }).catch(() => {
+        if (activeLink === link && gen === requestGen) hide3();
+      });
+    };
+    if (immediate) load();
+    else hoverTimer = setTimeout(load, HOVER_DELAY_MS);
+  }
+  const onPointerOver = (event) => {
+    if (event.pointerType === "touch") return;
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, false);
+  };
+  const onPointerOut = (event) => {
+    const target = event.target;
+    const next = event.relatedTarget;
+    if (!(target instanceof Node) || !activeLink || !activeLink.contains(target)) return;
+    if (next instanceof Node && activeLink.contains(next)) return;
+    hide3();
+  };
+  const onPointerMove = (event) => {
+    if (suppressedLink && !(event.target instanceof Node && suppressedLink.contains(event.target))) {
+      suppressedLink = null;
+    }
+  };
+  const onFocusIn = (event) => {
+    const found = linkedPr(root, event.target);
+    if (found && found.link !== suppressedLink) activate2(found.link, found.ref, true);
+  };
+  const onFocusOut = (event) => {
+    if (activeLink === event.target) hide3();
+  };
+  const onPointerDown = (event) => {
+    suppressedLink = linkedPr(root, event.target)?.link ?? null;
+    hide3();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") hide3();
+  };
+  root.addEventListener("pointerover", onPointerOver);
+  root.addEventListener("pointerout", onPointerOut);
+  root.addEventListener("focusin", onFocusIn);
+  root.addEventListener("focusout", onFocusOut);
+  document.addEventListener("pointerdown", onPointerDown, true);
+  document.addEventListener("pointermove", onPointerMove, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("scroll", hide3, true);
+  window.addEventListener("resize", position2);
+  return () => {
+    disposed = true;
+    hide3();
+    root.removeEventListener("pointerover", onPointerOver);
+    root.removeEventListener("pointerout", onPointerOut);
+    root.removeEventListener("focusin", onFocusIn);
+    root.removeEventListener("focusout", onFocusOut);
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("pointermove", onPointerMove, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("scroll", hide3, true);
+    window.removeEventListener("resize", position2);
+    preview?.remove();
+  };
+}
+var HOVER_DELAY_MS, nextPreviewId;
+var init_pr_link_preview = __esm({
+  "src/renderer/markdown/pr-link-preview.ts"() {
+    init_github_pr_url2();
+    init_tooltip();
+    init_pr_title_cache();
+    HOVER_DELAY_MS = 220;
+    nextPreviewId = 0;
+  }
+});
+
 // src/renderer/markdown/browser-links.ts
 function linkHttpHref(link) {
   const href = link.href;
@@ -71083,15 +71395,21 @@ function bindBrowserLinkClicks(root, store2, api2) {
     }
     openPlainLink(href);
   };
+  const unbindPreviews = bindPrLinkPreviews(
+    root,
+    api2?.gh?.prDetails ? { prDetails: api2.gh.prDetails } : void 0
+  );
   root.addEventListener("click", onClick);
   return () => {
     root.removeEventListener("click", onClick);
+    unbindPreviews();
   };
 }
 var init_browser_links = __esm({
   "src/renderer/markdown/browser-links.ts"() {
     init_panels();
     init_github_pr_url2();
+    init_pr_link_preview();
   }
 });
 
@@ -71798,6 +72116,14 @@ function mountComposerEditor() {
   root.setAttribute("role", "textbox");
   root.setAttribute("aria-multiline", "true");
   root.setAttribute("aria-label", "Message");
+  const SCROLL_PIN_THRESHOLD_PX2 = 4;
+  let pinnedToBottom = true;
+  root.addEventListener("scroll", () => {
+    pinnedToBottom = root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX2;
+  });
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight;
+  }).observe(root);
   const blocks = /* @__PURE__ */ new Map();
   const threadChips = /* @__PURE__ */ new Map();
   function emitInput() {
@@ -71986,6 +72312,7 @@ function mountComposerEditor() {
       root.replaceChildren(frag);
       pruneChips();
       if (editor.isFocused()) caretToEnd2();
+      root.scrollTop = root.scrollHeight;
     },
     get selectionStart() {
       const sel = selectionInRoot();
@@ -72541,7 +72868,10 @@ function createReviewCardEl(review, api2, onRetry) {
   appendReviewHeader(panel, review, onRetry);
   if (review.status === "running") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
-  body.innerHTML = renderMarkdown(review.summary || "(no review output)");
+  const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
+
+*${review.followUpNote}*` : review.summary || "(no review output)";
+  body.innerHTML = renderMarkdown(bodyMarkdown);
   void annotateFileReferences(body, api2);
   panel.append(body);
   return panel;
@@ -75752,6 +76082,20 @@ function mountConversation(root, store2, api2) {
     }
     updateScrollButton();
   }
+  function scrollUserPromptIntoView(msgEl) {
+    const listRect = list.getBoundingClientRect();
+    const msgRect = msgEl.getBoundingClientRect();
+    let delta = 0;
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top;
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta = msgRect.height > listRect.height ? msgRect.top - listRect.top : msgRect.bottom - listRect.bottom;
+    }
+    if (delta === 0) return;
+    setScrollTopProgrammatically(list.scrollTop + delta);
+    pinnedToBottom = false;
+    updateScrollButton();
+  }
   function applyRollupSummaries(item, opts) {
     const { commandSummary, toolSummary } = opts;
     if (item.type === "rollup") {
@@ -76045,6 +76389,7 @@ function mountConversation(root, store2, api2) {
     syncModelLabels();
     syncUserActions();
     scrollToBottom(msg.role === "user");
+    if (msg.role === "user") scrollUserPromptIntoView(msgEl);
   }
   function prependMessageEl(threadId, msgId, before) {
     const msgEl = buildMessageEl(threadId, msgId);
@@ -88394,6 +88739,7 @@ function isTrunkBranch(branch, defaultBranch) {
   return defaultBranch != null && branch != null && branch === defaultBranch;
 }
 function mountFooterBranchStatus(host, store2, api2) {
+  const listId = `branch-picker-list-${String(++nextPickerId)}`;
   const wrap = el("div", { class: "branch-picker", hidden: "" });
   const trigger = el("button", {
     type: "button",
@@ -88407,7 +88753,25 @@ function mountFooterBranchStatus(host, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm")
   );
   trigger.append(label, chevron);
-  const menu = el("div", { class: "branch-picker-menu", role: "listbox", hidden: "" });
+  const menu = el("div", { class: "branch-picker-menu", hidden: "" });
+  const filterInput = el("input", {
+    type: "search",
+    class: "branch-picker-filter",
+    placeholder: "Filter branches...",
+    "aria-label": "Filter branches",
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-controls": listId,
+    "aria-expanded": "false",
+    autocomplete: "off"
+  });
+  const list = el("div", {
+    id: listId,
+    class: "branch-picker-list",
+    role: "listbox",
+    "aria-label": "Branches"
+  });
+  menu.append(filterInput, list);
   wrap.append(trigger, menu);
   host.append(wrap);
   let status = null;
@@ -88417,6 +88781,7 @@ function mountFooterBranchStatus(host, store2, api2) {
   let defaultBranch = null;
   let open2 = false;
   let refreshToken = 0;
+  let activeIndex = 0;
   const baseBranchByThread = /* @__PURE__ */ new Map();
   function getActiveThread2() {
     return getThreadById(store2, store2.getState().activeThreadId);
@@ -88446,8 +88811,15 @@ function mountFooterBranchStatus(host, store2, api2) {
   function setOpen(next) {
     open2 = next;
     trigger.setAttribute("aria-expanded", String(next));
-    if (next) menu.removeAttribute("hidden");
-    else menu.setAttribute("hidden", "");
+    filterInput.setAttribute("aria-expanded", String(next));
+    if (next) {
+      menu.removeAttribute("hidden");
+    } else {
+      menu.setAttribute("hidden", "");
+      filterInput.value = "";
+      activeIndex = 0;
+      filterInput.removeAttribute("aria-activedescendant");
+    }
   }
   function renderTrigger() {
     const threadBranch = getActiveThreadBranch();
@@ -88508,33 +88880,102 @@ function mountFooterBranchStatus(host, store2, api2) {
       }
     }
   }
+  function filteredRows() {
+    const pr2 = getVisiblePr();
+    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
+    const query = filterInput.value.trim().toLocaleLowerCase();
+    const matches2 = query ? ordered.filter((branch) => branch.name.toLocaleLowerCase().includes(query)) : ordered;
+    return { pr: pr2, matches: matches2 };
+  }
+  function rowCount() {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    return (pr2 ? 1 : 0) + matches2.length;
+  }
+  function clampActiveIndex() {
+    const count = rowCount();
+    activeIndex = count === 0 ? 0 : Math.max(0, Math.min(count - 1, activeIndex));
+  }
+  function scrollActiveRowIntoView() {
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (!active2) return;
+    const activeBounds = active2.getBoundingClientRect();
+    const listBounds = list.getBoundingClientRect();
+    if (activeBounds.top < listBounds.top) {
+      list.scrollTop += activeBounds.top - listBounds.top;
+    } else if (activeBounds.bottom > listBounds.bottom) {
+      list.scrollTop += activeBounds.bottom - listBounds.bottom;
+    }
+  }
+  function selectBranch(name) {
+    setOpen(false);
+    trigger.focus();
+    const thread = getActiveThread2();
+    if (!thread) return;
+    baseBranchByThread.set(thread.id, name);
+    renderTrigger();
+    renderMenu();
+  }
+  function activateRow(index) {
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    if (pr2 && index === 0) {
+      setOpen(false);
+      trigger.focus();
+      openBrowserUrl(store2, pr2.url);
+      return;
+    }
+    const branch = matches2[pr2 ? index - 1 : index];
+    if (branch) selectBranch(branch.name);
+  }
+  function moveActive(direction) {
+    const count = rowCount();
+    if (count === 0) return;
+    activeIndex = Math.max(0, Math.min(count - 1, activeIndex + direction));
+    renderMenu();
+  }
   function renderMenu() {
-    clear(menu);
+    clear(list);
+    filterInput.removeAttribute("aria-activedescendant");
     if (!isPickerMode()) return;
     const selected = activeBaseBranch() ?? status?.currentBranch ?? null;
-    const pr2 = getVisiblePr();
+    const { pr: pr2, matches: matches2 } = filteredRows();
+    clampActiveIndex();
+    let rowIndex = 0;
     if (pr2) {
       const prItem = el(
         "button",
-        { type: "button", class: "branch-picker-option branch-picker-action" },
+        {
+          type: "button",
+          class: "branch-picker-option branch-picker-action",
+          id: `${listId}-option-${String(rowIndex)}`,
+          role: "option",
+          tabindex: "-1",
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
+        },
         `Open PR #${String(pr2.number)}`
       );
+      if (rowIndex === activeIndex) prItem.classList.add("is-active");
       prItem.addEventListener("click", () => {
         setOpen(false);
+        trigger.focus();
         openBrowserUrl(store2, pr2.url);
       });
-      menu.append(prItem);
+      list.append(prItem);
+      rowIndex++;
     }
-    const ordered = orderBranchesWithDefaultFirst(branches, defaultBranch);
-    for (const branch of ordered) {
+    for (const branch of matches2) {
       const nameEl = el("span", { class: "branch-picker-option-label" }, branch.name);
       const item = el(
         "button",
         {
           type: "button",
           class: "branch-picker-option",
+          id: `${listId}-option-${String(rowIndex)}`,
+          tabindex: "-1",
           role: "option",
-          "aria-selected": branch.name === selected ? "true" : "false"
+          // The listbox selection follows the keyboard highlight. Keep the
+          // committed branch separately marked with `is-selected` below so a
+          // pending choice remains visible while the user explores options.
+          "aria-selected": rowIndex === activeIndex ? "true" : "false"
         },
         nameEl
       );
@@ -88542,19 +88983,24 @@ function mountFooterBranchStatus(host, store2, api2) {
         item.append(el("span", { class: "branch-picker-default-badge" }, "default"));
       }
       if (branch.name === selected) item.classList.add("is-selected");
+      if (rowIndex === activeIndex) item.classList.add("is-active");
       item.addEventListener("click", () => {
-        setOpen(false);
-        const thread = getActiveThread2();
-        if (!thread) return;
-        baseBranchByThread.set(thread.id, branch.name);
-        renderTrigger();
-        renderMenu();
+        selectBranch(branch.name);
       });
-      menu.append(item);
+      list.append(item);
+      rowIndex++;
     }
-    if (ordered.length === 0 && !pr2) {
-      menu.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+    if (matches2.length === 0) {
+      const query = filterInput.value.trim();
+      if (query) {
+        list.append(el("div", { class: "branch-picker-empty" }, `No branches match "${query}".`));
+      } else if (!pr2) {
+        list.append(el("div", { class: "branch-picker-empty" }, "No branches found."));
+      }
     }
+    const active2 = list.querySelector(".branch-picker-option.is-active");
+    if (open2 && active2) filterInput.setAttribute("aria-activedescendant", active2.id);
+    scrollActiveRowIntoView();
   }
   async function loadBranches(token) {
     const owner = getActiveThreadOwner(store2);
@@ -88662,6 +89108,8 @@ function mountFooterBranchStatus(host, store2, api2) {
     const next = !open2;
     setOpen(next);
     if (next) {
+      renderMenu();
+      filterInput.focus();
       void (async () => {
         const token = refreshToken;
         try {
@@ -88672,6 +89120,28 @@ function mountFooterBranchStatus(host, store2, api2) {
         if (token !== refreshToken) return;
         renderMenu();
       })();
+    }
+  });
+  filterInput.addEventListener("input", () => {
+    activeIndex = 0;
+    renderMenu();
+  });
+  menu.addEventListener("keydown", (e3) => {
+    if (e3.isComposing) return;
+    if (e3.key === "ArrowDown") {
+      e3.preventDefault();
+      moveActive(1);
+    } else if (e3.key === "ArrowUp") {
+      e3.preventDefault();
+      moveActive(-1);
+    } else if (e3.key === "Enter" && e3.target === filterInput) {
+      e3.preventDefault();
+      activateRow(activeIndex);
+    } else if (e3.key === "Escape") {
+      e3.preventDefault();
+      e3.stopPropagation();
+      setOpen(false);
+      trigger.focus();
     }
   });
   const unsubs = [
@@ -88720,7 +89190,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     }
   };
 }
-var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS;
+var COPIED_BRANCH_TOAST, COPY_FEEDBACK_MS, nextPickerId;
 var init_footer_branch_status = __esm({
   "src/renderer/views/footer-branch-status.ts"() {
     init_helpers();
@@ -88732,6 +89202,7 @@ var init_footer_branch_status = __esm({
     init_active_thread_owner();
     COPIED_BRANCH_TOAST = "Copied branch name";
     COPY_FEEDBACK_MS = 1600;
+    nextPickerId = 0;
   }
 });
 
@@ -89313,55 +89784,6 @@ var init_debug_trace_prompt2 = __esm({
 });
 
 // src/shared/usage/footer-usage-summary.ts
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    return { inputTokens, outputTokens, estimated: false };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const cost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
-// src/shared/usage/footer-usage-tooltip.ts
 function collectSubagentUsage(toolCalls, totals) {
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent;
@@ -89383,12 +89805,84 @@ function sumSubagentUsage(messages) {
   }
   return totals;
 }
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls ?? []) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    return {
+      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
+      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+  }
+});
+
+// src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
   if (isLocalModel(model)) return `${tokens} \xB7 free`;
   const cost = costForModelUsage(model, usage, pricing);
   if (!hasModelPricing(model, pricing)) return `${tokens} \xB7 unpriced`;
   return `${tokens} \xB7 ${cost > 0 ? formatUsd(cost) : "free"}`;
+}
+function freeReason(model, pricing) {
+  if (isLocalModel(model)) return "local model";
+  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  return null;
+}
+function buildFreeNote(models, pricing) {
+  const reasons = [];
+  for (const model of models) {
+    const reason = freeReason(model, pricing);
+    if (reason && !reasons.includes(reason)) reasons.push(reason);
+  }
+  return reasons.length > 0 ? `Free: ${reasons.join("; ")}` : null;
 }
 function buildFooterUsageTooltip(display, opts) {
   const { inputTokens, outputTokens, estimated } = display;
@@ -89397,13 +89891,18 @@ function buildFooterUsageTooltip(display, opts) {
     { label: "Input", value: `${approx}${formatTokenCount(inputTokens)}` },
     { label: "Output", value: `${approx}${formatTokenCount(outputTokens)}` }
   ];
+  const threadRows = [];
   const usage = opts.measuredUsage;
   const cacheRead = estimated ? 0 : usage.cacheReadTokens ?? 0;
   const cacheCreation = estimated ? 0 : usage.cacheCreationTokens ?? 0;
-  if (cacheRead > 0) rows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
-  if (cacheCreation > 0) rows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  if (cacheRead > 0) {
+    threadRows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
+  }
+  if (cacheCreation > 0) {
+    threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  }
   const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
-  if (cost) rows.push({ label: "Cost", value: cost });
+  if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
     label: "Subagents",
@@ -89411,6 +89910,8 @@ function buildFooterUsageTooltip(display, opts) {
       subagents.inputTokens
     )} in / ${formatTokenCount(subagents.outputTokens)} out`
   } : null;
+  const conversationLabel = subagentRow ? "Excluding subagents" : null;
+  const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
   const byModel = Object.entries(usage.byModel ?? {}).filter(
     ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
@@ -89425,18 +89926,25 @@ function buildFooterUsageTooltip(display, opts) {
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
   const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
+    conversationLabel,
     rows,
+    threadLabel: threadLabel2,
+    threadRows,
     subagentRow,
     modelRows,
-    note
+    note,
+    freeNote
   };
 }
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
+    init_footer_usage_summary();
     init_format_usage_summary();
+    init_footer_usage_summary();
   }
 });
 
@@ -89462,9 +89970,19 @@ function createFooterUsagePopover() {
         return;
       }
       root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+      if (model.conversationLabel) {
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+      }
       for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.subagentRow || model.modelRows.length > 0) {
+      if (model.threadLabel) {
         root.append(el("div", { class: "footer-usage-popover-divider" }));
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+      } else {
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+        if (model.subagentRow || model.modelRows.length > 0) {
+          root.append(el("div", { class: "footer-usage-popover-divider" }));
+        }
       }
       if (model.subagentRow) {
         root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
@@ -89473,6 +89991,9 @@ function createFooterUsagePopover() {
         root.append(row(entry, "footer-usage-popover-row is-model"));
       }
       if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+      if (model.freeNote) {
+        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+      }
     },
     show() {
       if (hasContent) root.hidden = false;
@@ -90374,8 +90895,8 @@ function startBlocker(state) {
   return null;
 }
 function agentModelsNote() {
-  const titles = containerAcpAgentTitles();
-  const named = titles.length > 1 ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1] ?? ""}` : titles[0] ?? "";
+  const titles2 = containerAcpAgentTitles();
+  const named = titles2.length > 1 ? `${titles2.slice(0, -1).join(", ")} and ${titles2[titles2.length - 1] ?? ""}` : titles2[0] ?? "";
   return `Agent models run as their own process. ${named} can run unattended with an API key from Settings, scoped to the run. Codex and Gemini CLI can also run on your desktop sign-in if you opt in per run; an agent that only signs in through a browser cannot.`;
 }
 function mountContainerRunControl(api2, context, onStateChanged) {
@@ -103297,10 +103818,13 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
     tab.sessionId = null;
-    tab.term.writeln(`\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`, () => {
-      finishCodeBlockRun(tab, code);
-    });
+    tab.term.writeln(
+      code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
+      () => {
+        finishCodeBlockRun(tab, code);
+      }
+    );
   });
   function createXterm() {
     const term = new Dl({
@@ -104452,29 +104976,29 @@ function renderImageDiff(container, diff) {
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
   if (diff.beforeImage) {
+    const alt = `${diff.path} (before)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.beforeImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "Before"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.beforeImage,
-        alt: `${diff.path} (before)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
     grid.append(pane);
   }
   if (diff.afterImage) {
+    const alt = `${diff.path} (after)`;
+    const img = el("img", {
+      class: "git-image-diff-img",
+      src: diff.afterImage,
+      alt,
+      loading: "lazy"
+    });
+    attachImageExpand(img, alt);
     const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(
-      el("div", { class: "git-image-diff-label" }, "After"),
-      el("img", {
-        class: "git-image-diff-img",
-        src: diff.afterImage,
-        alt: `${diff.path} (after)`,
-        loading: "lazy"
-      })
-    );
+    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
     grid.append(pane);
   }
   if (!diff.beforeImage && !diff.afterImage) {
@@ -104484,6 +105008,7 @@ function renderImageDiff(container, diff) {
 }
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
+    init_image_expand();
     init_helpers();
   }
 });
@@ -105804,7 +106329,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let otherLoading = false;
   const checksCache = /* @__PURE__ */ new Map();
   const checksInFlight = /* @__PURE__ */ new Set();
-  const titlesCache = /* @__PURE__ */ new Map();
   const titleInFlight = /* @__PURE__ */ new Set();
   const titleAttempted = /* @__PURE__ */ new Set();
   let ciEls = /* @__PURE__ */ new Map();
@@ -105931,27 +106455,22 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     if (!ghStatus?.authenticated) return;
     for (const pr2 of prs) {
       const key = githubPrKey(pr2);
-      const cached2 = titlesCache.get(key);
+      const cached2 = cachedPrTitle(pr2);
       if (cached2) {
-        if (pr2.title !== cached2) pr2.title = cached2;
+        if (pr2.title !== cached2.title) pr2.title = cached2.title;
         continue;
       }
       if (!isPlaceholderPr(pr2)) {
-        if (pr2.title && pr2.title !== placeholderPrTitle(pr2.number)) {
-          titlesCache.set(key, pr2.title);
-        }
+        rememberPrTitle(pr2, pr2.title);
         continue;
       }
       if (titleAttempted.has(key) || titleInFlight.has(key)) continue;
       titleAttempted.add(key);
       titleInFlight.add(key);
       const gen = titleGen;
-      void api2.gh.prDetails(pr2.owner, pr2.repo, pr2.number).then((details) => {
-        if (disposed || gen !== titleGen) return;
-        const title = details?.title.trim();
-        if (!title || title === placeholderPrTitle(pr2.number)) return;
-        titlesCache.set(key, title);
-        pr2.title = title;
+      void loadPrTitle(pr2, api2.gh).then((title) => {
+        if (disposed || gen !== titleGen || !title) return;
+        pr2.title = title.title;
         scheduleTitleRepaint();
       }).catch(() => {
       }).finally(() => {
@@ -106484,7 +107003,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       prDetails = details;
       if (details?.title && details.title !== placeholderPrTitle(details.number)) {
         const key = githubPrKey(details);
-        titlesCache.set(key, details.title);
+        rememberPrTitle(details, details.title, details.isDraft);
         const row2 = prList.find((pr2) => githubPrKey(pr2) === key);
         if (row2 && row2.title !== details.title) {
           row2.title = details.title;
@@ -106746,6 +107265,7 @@ var init_pr_pane = __esm({
     init_prompt_attachments();
     init_dist();
     init_browser_links();
+    init_pr_title_cache();
     init_workspace_links();
     init_git_diff_viewer();
     init_ui_scale();
@@ -107680,11 +108200,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   let importing = false;
   let reviewing = false;
   let reviewPeekId = null;
+  let reviewPanelHidden = false;
   let reviewResults = [];
   const reviewApplied = /* @__PURE__ */ new Map();
   let bulkReviewFinished = false;
   let reviewInFlight = false;
   let bulkRunId = null;
+  let reviewTotal = 0;
   let reviewRunToken = 0;
   let cachedCheckpoint;
   let openIssues = [];
@@ -107738,7 +108260,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "aria-label": "Roadmap filters",
     hidden: true
   });
-  filter.append(searchInput, filterToggle, filterMenu);
+  filter.append(searchInput, filterToggle);
   const actionButtons = el("div", { class: "roadmap-action-buttons" });
   const newBtn = el(
     "button",
@@ -107760,6 +108282,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     },
     downloadIcon("ui-icon ui-icon-sm")
   );
+  const reviewLiveBadge = el("span", { class: "roadmap-review-live-badge", hidden: true });
   const reviewBtn = el(
     "button",
     {
@@ -107768,7 +108291,8 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       "aria-label": "Review roadmap resolution",
       "data-tooltip": "Review whether roadmap items have been resolved"
     },
-    searchIcon("ui-icon ui-icon-sm")
+    searchIcon("ui-icon ui-icon-sm"),
+    reviewLiveBadge
   );
   const refreshBtn = el(
     "button",
@@ -107812,7 +108336,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     actionButtons
   );
   const listBody = el("div", { class: "git-changes-list roadmap-list" });
-  listRoot.append(listHeader, listBody);
+  listRoot.append(listHeader, listBody, filterMenu);
   function appendFilterSection(title, values, enabled, label, defaultChecked) {
     filterMenu.append(el("div", { class: "roadmap-filter-heading" }, title));
     for (const value of values) {
@@ -107859,7 +108383,9 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     filterToggle.setAttribute("aria-expanded", opening ? "true" : "false");
   });
   const closeFilterOnOutsideClick = (event) => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu();
+    if (event.target instanceof Node && !filter.contains(event.target) && !filterMenu.contains(event.target)) {
+      closeFilterMenu();
+    }
   };
   document.addEventListener("click", closeFilterOnOutsideClick);
   searchInput.addEventListener("input", () => {
@@ -108283,7 +108809,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   }
   function syncViewerMode() {
     importView.hidden = !importing;
-    const reviewPanelActive = reviewing && !reviewPeekId;
+    const reviewPanelActive = reviewing && !reviewPeekId && !reviewPanelHidden;
     reviewView.hidden = !reviewPanelActive;
     if (importing || reviewPanelActive) {
       form.hidden = true;
@@ -108293,7 +108819,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   function renderEditor(opts) {
     errorLine.hidden = true;
     syncViewerMode();
-    if (importing || reviewing && !reviewPeekId) {
+    if (importing || reviewing && !reviewPeekId && !reviewPanelHidden) {
       return;
     }
     const item = selectedId ? items.find((m2) => m2.id === selectedId) : null;
@@ -108411,6 +108937,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     return enabledCategories.has(itemCategory(item)) && enabledComplexities.has(itemComplexity(item)) && enabledStatuses.has(status) && matchesSearch(item);
   }
   function renderList() {
+    const previousScrollTop = listBody.scrollTop;
     clear(listBody);
     const visible = items.filter(isListVisible);
     if (visible.length === 0) {
@@ -108614,7 +109141,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
         );
         row2.append(main);
         row2.addEventListener("click", () => {
-          if (reviewing || importing) return;
+          if (reviewing && !reviewPanelHidden || importing) return;
           if (item.id === selectedId) return;
           leaveCurrentEditor();
           cancelResolutionCheckUi();
@@ -108629,6 +109156,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
       group.append(groupItems);
       listBody.append(group);
     }
+    listBody.scrollTop = previousScrollTop;
     const selectedRow = listBody.querySelector(".is-selected");
     if (selectedRow) {
       const rowRect = selectedRow.getBoundingClientRect();
@@ -108654,12 +109182,13 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     if (token !== loadToken) return;
     loading = false;
     items = next;
-    if (!reviewing && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
+    if (!(reviewing && !reviewPanelHidden) && !importing && selectedId && !items.some((m2) => m2.id === selectedId) && !creating) {
       selectedId = null;
     }
     renderList();
     if (reviewing) renderReviewResults();
     renderEditor(opts);
+    void rediscoverPendingReview();
   }
   function startNew() {
     leaveCurrentEditor();
@@ -108996,8 +109525,11 @@ Notes: ${notes}` : prompt;
   }
   function startImport() {
     cancelResolutionCheckUi();
+    if (reviewing) {
+      reviewPanelHidden = true;
+      reviewPeekId = null;
+    }
     importing = true;
-    reviewing = false;
     creating = false;
     selectedId = null;
     openIssues = [];
@@ -109012,6 +109544,7 @@ Notes: ${notes}` : prompt;
     importStatus.textContent = "Loading open issues\u2026";
     renderList();
     renderEditor();
+    syncReviewButtonAffordance();
     void loadMoreOpenIssues(matchToken);
   }
   async function confirmImport() {
@@ -109086,6 +109619,73 @@ Notes: ${notes}` : prompt;
       reviewMarkResolvedBtn.hidden = true;
       reviewArchiveResolvedBtn.hidden = true;
     }
+  }
+  function syncReviewButtonAffordance() {
+    const hiddenAway = reviewing && reviewPanelHidden;
+    reviewBtn.classList.toggle("roadmap-review-btn-live", hiddenAway);
+    reviewBtn.disabled = reviewInFlight && !hiddenAway;
+    if (hiddenAway) {
+      const label = reviewInFlight ? `Review running \u2014 ${String(reviewResults.length)} of ${String(reviewTotal)} judged` : `Review finished \u2014 ${String(reviewResults.length)} item(s) judged`;
+      const full = `${label}. Click to view.`;
+      reviewBtn.setAttribute("aria-label", full);
+      reviewBtn.setAttribute("data-tooltip", full);
+      reviewLiveBadge.hidden = false;
+      reviewLiveBadge.textContent = reviewInFlight ? `${String(reviewResults.length)}/${String(reviewTotal)}` : String(reviewResults.length);
+    } else {
+      reviewBtn.setAttribute("aria-label", "Review roadmap resolution");
+      reviewBtn.setAttribute("data-tooltip", "Review whether roadmap items have been resolved");
+      reviewLiveBadge.hidden = true;
+      reviewLiveBadge.textContent = "";
+    }
+  }
+  function resumeReviewPanel() {
+    importing = false;
+    reviewPanelHidden = false;
+    reviewPeekId = null;
+    selectedId = null;
+    creating = false;
+    renderList();
+    renderEditor();
+    renderReviewResults();
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
+  }
+  function reconstructReviewResults(runId) {
+    const results = [];
+    for (const item of items) {
+      if (item.fields["reviewBulkRun"] !== runId) continue;
+      const verdict = item.fields["reviewVerdict"];
+      if (!isRoadmapReviewVerdict(verdict)) continue;
+      results.push({
+        id: item.id,
+        verdict,
+        detail: item.fields["reviewDetail"] ?? "",
+        depth: "bulk",
+        pinnedIssue: null,
+        linkedIssues: []
+      });
+    }
+    return results;
+  }
+  async function rediscoverPendingReview() {
+    if (reviewing || reviewInFlight || bulkRunId !== null) return;
+    const tokenBefore = reviewRunToken;
+    const checkpoint = await ensureCheckpoint();
+    const runId = checkpoint.pendingBulkRun;
+    if (!runId) return;
+    const results = reconstructReviewResults(runId);
+    if (results.length === 0) return;
+    if (reviewRunToken !== tokenBefore) return;
+    bulkRunId = runId;
+    reviewResults = results;
+    reviewApplied.clear();
+    bulkReviewFinished = false;
+    reviewInFlight = false;
+    reviewTotal = results.length;
+    reviewing = true;
+    reviewPanelHidden = true;
+    reviewStatus.textContent = `Recovered ${String(results.length)} item(s) judged in an unfinished review. View the results or close to discard.`;
+    syncReviewButtonAffordance();
   }
   function renderReviewResults() {
     clear(reviewList);
@@ -109190,6 +109790,7 @@ Notes: ${notes}` : prompt;
     renderList();
     renderEditor();
     if (reviewing) renderReviewResults();
+    syncReviewButtonAffordance();
   }
   async function applyReviewBulkStatus(status) {
     const label = status === "done" ? "mark done" : "archive";
@@ -109200,11 +109801,12 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = `Nothing left to ${label}.`;
       return;
     }
-    if (!confirm(
-      `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`
-    )) {
-      return;
-    }
+    const confirmed = await showConfirmDialog({
+      message: `${status === "done" ? "Mark" : "Archive"} ${String(targets.length)} item(s) judged resolved or likely?`,
+      detail: status === "done" ? "Marks each one done; you can reopen any of them later." : "Archives each one; you can restore any of them later.",
+      confirmLabel: status === "done" ? "Mark done" : "Archive"
+    });
+    if (!confirmed) return;
     reviewMarkResolvedBtn.disabled = true;
     reviewArchiveResolvedBtn.disabled = true;
     let applied = 0;
@@ -109221,9 +109823,11 @@ Notes: ${notes}` : prompt;
     const runToken = ++reviewRunToken;
     reviewing = true;
     reviewPeekId = null;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     importing = false;
     creating = false;
     selectedId = null;
@@ -109231,9 +109835,9 @@ Notes: ${notes}` : prompt;
     reviewApplied.clear();
     clear(reviewList);
     reviewStatus.textContent = "Preparing review\u2026";
-    reviewBtn.disabled = true;
     reviewInFlight = true;
     syncReviewActionVisibility();
+    syncReviewButtonAffordance();
     renderList();
     renderEditor();
     try {
@@ -109243,6 +109847,7 @@ Notes: ${notes}` : prompt;
         return;
       }
       bulkRunId = prepared.runId;
+      reviewTotal = prepared.items.length;
       if (prepared.items.length === 0) {
         reviewStatus.textContent = "No active roadmap items to review.";
         return;
@@ -109255,6 +109860,7 @@ Notes: ${notes}` : prompt;
         if (runToken !== reviewRunToken) return;
         reviewResults.push(result);
         renderReviewResults();
+        syncReviewButtonAffordance();
         await refresh({ preserveDirty: true });
       }
       bulkReviewFinished = true;
@@ -109266,8 +109872,9 @@ Notes: ${notes}` : prompt;
       reviewStatus.textContent = ipcErrorMessage(err2, "Roadmap review failed.");
     } finally {
       reviewInFlight = false;
-      reviewBtn.disabled = false;
       syncReviewActionVisibility();
+      renderReviewResults();
+      syncReviewButtonAffordance();
     }
   }
   function closeReview() {
@@ -109283,13 +109890,43 @@ Notes: ${notes}` : prompt;
       });
     }
     reviewing = false;
+    reviewPanelHidden = false;
     bulkReviewFinished = false;
     reviewInFlight = false;
     bulkRunId = null;
+    reviewTotal = 0;
     renderEditor();
+    syncReviewButtonAffordance();
+  }
+  function abandonReviewSession() {
+    if (!reviewing && !reviewInFlight && bulkRunId === null) return;
+    reviewRunToken++;
+    const runId = bulkRunId;
+    bulkRunId = null;
+    if (runId) {
+      void api2.roadmap.abortReview(runId).then(() => {
+        cachedCheckpoint = void 0;
+      });
+    }
+    reviewing = false;
+    reviewPanelHidden = false;
+    reviewInFlight = false;
+    bulkReviewFinished = false;
+    reviewPeekId = null;
+    reviewResults = [];
+    reviewApplied.clear();
+    reviewTotal = 0;
+    syncReviewActionVisibility();
+    syncReviewButtonAffordance();
   }
   importBtn.addEventListener("click", startImport);
-  reviewBtn.addEventListener("click", () => void startReview2());
+  reviewBtn.addEventListener("click", () => {
+    if (reviewing && reviewPanelHidden) {
+      resumeReviewPanel();
+      return;
+    }
+    void startReview2();
+  });
   reviewBackBtn.addEventListener("click", () => {
     returnToReview();
   });
@@ -109385,15 +110022,16 @@ Notes: ${notes}` : prompt;
       loadToken++;
       loading = false;
       cancelResolutionCheckUi();
+      abandonReviewSession();
       selectedId = null;
       creating = false;
       importing = false;
-      reviewing = false;
       items = [];
       editorDrafts.clear();
       autoSaveToken.clear();
       resetAttachmentEdits();
       attachmentDataCache.clear();
+      cachedCheckpoint = void 0;
       renderList();
       renderEditor();
       if (roadmapModeActive(store2)) void refresh();
@@ -109589,6 +110227,24 @@ function webviewUrl(tab) {
   } catch {
     return "";
   }
+}
+function clearUrlLoadStatus(tab) {
+  tab.loadError = null;
+  tab.urlInput.classList.remove("has-error", "has-blocked");
+  setTooltip(tab.urlInput, null);
+  tab.statusLine.textContent = "";
+  tab.statusLine.classList.remove("browser-status-danger", "browser-status-warning");
+  tab.statusLine.hidden = true;
+}
+function setUrlLoadStatus(tab, kind, message2) {
+  tab.loadError = message2;
+  tab.urlInput.classList.toggle("has-error", kind === "error");
+  tab.urlInput.classList.toggle("has-blocked", kind === "blocked");
+  setTooltip(tab.urlInput, message2);
+  tab.statusLine.textContent = message2;
+  tab.statusLine.classList.toggle("browser-status-danger", kind === "error");
+  tab.statusLine.classList.toggle("browser-status-warning", kind === "blocked");
+  tab.statusLine.hidden = false;
 }
 function webviewTitle(tab) {
   if (!tab.webview || !tab.webviewReady || typeof tab.webview.getTitle !== "function")
@@ -109921,8 +110577,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     );
   }
   function navigateWebview(tab, url2) {
-    tab.loadError = null;
-    tab.urlInput.classList.remove("has-error");
+    clearUrlLoadStatus(tab);
     if (!tab.webviewReady && tab.pendingUrl === url2) return;
     whenWebviewReady(tab, (webview) => {
       const current = webview.getURL();
@@ -109941,12 +110596,16 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       if (activeTabId === tab.id) syncAddressBar(tab);
       scheduleSessionSave();
     };
-    webview.addEventListener("did-navigate", onNavigate);
+    const onNavigateSuccess = () => {
+      clearUrlLoadStatus(tab);
+      onNavigate();
+    };
+    webview.addEventListener("did-navigate", onNavigateSuccess);
     webview.addEventListener("did-navigate", () => {
       tab.annotation?.deactivate();
       tab.annotation?.clear();
     });
-    webview.addEventListener("did-navigate-in-page", onNavigate);
+    webview.addEventListener("did-navigate-in-page", onNavigateSuccess);
     webview.addEventListener("page-title-updated", onNavigate);
     webview.addEventListener("focus", closeAllMenus);
     webview.addEventListener("dom-ready", () => {
@@ -109961,11 +110620,31 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     });
     webview.addEventListener("did-fail-load", (event) => {
       const detail = event;
-      tab.loadError = detail.errorDescription ?? "Failed to load page";
-      tab.urlInput.classList.add("has-error");
-      tab.urlInput.title = tab.loadError;
+      if (detail.isMainFrame === false) return;
+      if (detail.errorCode === NET_ERROR_ABORTED) return;
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+        return;
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, "Failed to load page");
+      setUrlLoadStatus(tab, "error", `Couldn't load this page: ${description}`);
     });
     return webview;
+  }
+  function handleNavigationBlocked(webContentsId, url2) {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue;
+      let id;
+      try {
+        id = tab.webview.getWebContentsId();
+      } catch {
+        continue;
+      }
+      if (id !== webContentsId) continue;
+      if (tab.urlInput.value !== url2) continue;
+      setUrlLoadStatus(tab, "blocked", "Blocked by the browser network policy");
+      return;
+    }
   }
   function navigateTab(tab, rawUrl) {
     const url2 = normalizeBrowserUrl(rawUrl);
@@ -110298,8 +110977,15 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       annotateBtn,
       menuWrap
     );
+    const statusLine = el("div", { class: "browser-status", role: "status", hidden: "" });
     const webviewHost = el("div", { class: "browser-webview-host" });
-    const panel = el("div", { class: "browser-tab-panel", "data-tab-id": id }, toolbar, webviewHost);
+    const panel = el(
+      "div",
+      { class: "browser-tab-panel", "data-tab-id": id },
+      toolbar,
+      statusLine,
+      webviewHost
+    );
     const tab = {
       id,
       partition: options?.partition ?? browserSessionPartition(
@@ -110317,6 +111003,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -110716,6 +111403,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     api2?.browser.onOpenTab((url2, partition) => addTab({ url: url2, partition, activate: false })),
     api2?.browser.onShowTab?.(showTabForUrl),
     api2?.browser.onPreviewStale?.(refreshStalePreviews),
+    api2?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api2?.browser.onShareText(attachSharedText),
     api2?.browser.onShareImage(attachSharedImage),
     api2?.browser.onPluginTabRequest(ensurePluginBrowserTab),
@@ -110744,7 +111432,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var WEBVIEW_PREFS2;
+var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
     init_helpers();
@@ -110762,6 +111450,9 @@ var init_browser_pane = __esm({
     init_annotation_layer();
     init_attach_annotation();
     init_toast();
+    init_tooltip();
+    NET_ERROR_ABORTED = -3;
+    NET_ERROR_BLOCKED_BY_CLIENT = -20;
     WEBVIEW_PREFS2 = "contextIsolation=true";
   }
 });
@@ -128347,7 +129038,15 @@ function mountAskUserDialog(api2, store2) {
         "div",
         { class: "ask-user-buttons" },
         cancelBtn,
-        el("button", { type: "submit", class: "ask-user-submit" }, "Send answer")
+        el(
+          "button",
+          {
+            type: "submit",
+            class: "ask-user-submit",
+            title: "Send answer (\u2318Enter or Ctrl+Enter)"
+          },
+          "Send answer"
+        )
       )
     );
     dialog2.showModal();
@@ -128389,6 +129088,21 @@ function mountAskUserDialog(api2, store2) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     submit();
+  });
+  dialog2.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      return;
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+    event.stopPropagation();
+    if (event.isComposing || event.repeat) return;
+    event.preventDefault();
+    submit();
+  });
+  dialog2.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancel();
   });
   api2.agent.onAskUserRequest((req) => {
     queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
@@ -128606,20 +129320,20 @@ function threadLabel(title) {
 function workingThreadTitles(store2) {
   return store2.getState().threads.filter((thread) => thread.status === "running").map((thread) => threadLabel(thread.title));
 }
-function summariseWorkingThreads(titles) {
-  const listed = titles.slice(0, MAX_LISTED_TITLES);
-  const remaining = titles.length - listed.length;
+function summariseWorkingThreads(titles2) {
+  const listed = titles2.slice(0, MAX_LISTED_TITLES);
+  const remaining = titles2.length - listed.length;
   if (remaining > 0) return `${listed.join(", ")} and ${String(remaining)} more`;
   if (listed.length < 2) return listed.join("");
   return `${listed.slice(0, -1).join(", ")} and ${listed[listed.length - 1] ?? ""}`;
 }
 async function confirmClose(store2) {
-  const titles = workingThreadTitles(store2);
-  if (titles.length === 0) return true;
-  const one = titles.length === 1;
+  const titles2 = workingThreadTitles(store2);
+  if (titles2.length === 0) return true;
+  const one = titles2.length === 1;
   return await showConfirmDialog({
-    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles.length)} threads are still working?`,
-    detail: `${summariseWorkingThreads(titles)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
+    message: one ? "Close Copse while the agent is still working?" : `Close Copse while ${String(titles2.length)} threads are still working?`,
+    detail: `${summariseWorkingThreads(titles2)} ${one ? "is" : "are"} mid-turn. Closing stops the run \u2014 anything the agent has not already written to your files is lost.`,
     confirmLabel: "Close anyway",
     cancelLabel: one ? "Keep working" : "Keep them working",
     danger: true
@@ -129481,6 +130195,330 @@ var init_command_palette = __esm({
   }
 });
 
+// src/renderer/views/process-manager-dialog.ts
+function sortedRows(rows, column, ascending) {
+  const direction = ascending ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const a3 = column === "cpu" ? left.cpuPercent : left.memoryMiB;
+    const b4 = column === "cpu" ? right.cpuPercent : right.memoryMiB;
+    if (a3 === null) return b4 === null ? left.pid - right.pid : 1;
+    if (b4 === null) return -1;
+    return (a3 - b4) * direction || left.pid - right.pid;
+  });
+}
+function mountProcessManagerDialog(api2, store2) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({
+    id: "process-manager-dialog",
+    className: "process-manager-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "process-manager-title");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost process-manager-close",
+      "aria-label": "Close process manager"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const cpuHeading = el("th", { scope: "col", "aria-sort": "descending" });
+  const memoryHeading = el("th", { scope: "col", "aria-sort": "none" });
+  const cpuButton = el("button", { type: "button", class: "process-manager-sort" }, "CPU %");
+  const memoryButton = el("button", { type: "button", class: "process-manager-sort" }, "Memory");
+  cpuHeading.append(cpuButton);
+  memoryHeading.append(memoryButton);
+  const body = el("tbody", { class: "process-manager-rows" });
+  const table = el(
+    "table",
+    { class: "process-manager-table" },
+    el(
+      "thead",
+      {},
+      el(
+        "tr",
+        {},
+        el("th", { scope: "col" }, "Process"),
+        el("th", { scope: "col" }, "Kind"),
+        el("th", { scope: "col" }, "Thread"),
+        cpuHeading,
+        memoryHeading,
+        el("th", { scope: "col" }, "PID"),
+        el("th", { scope: "col", "aria-label": "Actions" })
+      )
+    ),
+    body
+  );
+  const activityCount = el("span", { class: "process-manager-activity-count" });
+  const activityList = el("div", { class: "process-manager-activity-list" });
+  const activity = el(
+    "section",
+    { class: "process-manager-activity", "aria-label": "Agent activity" },
+    el(
+      "div",
+      { class: "process-manager-activity-heading" },
+      el("strong", {}, "Agent activity"),
+      activityCount
+    ),
+    activityList
+  );
+  activity.hidden = true;
+  const status = el("p", { class: "process-manager-status", role: "status" }, "Loading processes\u2026");
+  const updated = el("span", { class: "process-manager-updated", "aria-hidden": "true" });
+  dialog2.append(
+    el(
+      "div",
+      { class: "process-manager-shell" },
+      el(
+        "header",
+        { class: "process-manager-header" },
+        el(
+          "div",
+          {},
+          el("h2", { id: "process-manager-title" }, "Process Manager"),
+          el("p", { class: "process-manager-subtitle" }, "Live Copse and thread processes")
+        ),
+        closeButton
+      ),
+      activity,
+      el("div", { class: "process-manager-scroll" }, table),
+      el(
+        "footer",
+        { class: "process-manager-footer" },
+        el("span", {}, "CPU is approximate; memory is physical RAM in MiB."),
+        updated
+      ),
+      status
+    )
+  );
+  let current = null;
+  let column = "cpu";
+  let ascending = false;
+  let timer = null;
+  let generation = 0;
+  let refreshing = false;
+  function projectFor(row2) {
+    if (!row2.threadId) return null;
+    const state = store2.getState();
+    return row2.projectId ?? state.backgroundThreads.find((item) => item.thread.id === row2.threadId)?.projectId ?? (state.threads.some((thread) => thread.id === row2.threadId) ? state.activeProjectId : null);
+  }
+  async function stopManaged(row2) {
+    const handle = row2.managed;
+    if (!handle) return;
+    const label = handle.kind === "terminal" ? "terminal" : "background task";
+    const confirmed = await showConfirmDialog({
+      message: `Stop this ${label}?`,
+      detail: handle.kind === "terminal" ? "This closes the terminal session and stops its shell." : "This stops the background task and its managed subprocesses.",
+      confirmLabel: "Stop",
+      danger: true
+    });
+    if (!confirmed) return;
+    try {
+      if (handle.kind === "terminal") {
+        await api2.terminal.destroy(handle.id);
+      } else {
+        const stopped = await api2.processManager.stopBackground(
+          handle.id,
+          handle.projectId,
+          handle.threadId
+        );
+        if (!stopped) {
+          showErrorToast("Could not stop that task", "It is no longer running.");
+          return;
+        }
+      }
+      status.textContent = `Stopped ${label}.`;
+      void refresh();
+    } catch (error62) {
+      showErrorToast(`Could not stop the ${label}`, error62);
+    }
+  }
+  function menuEntries(row2) {
+    const entries2 = [];
+    const projectId = projectFor(row2);
+    if (row2.threadId && projectId && store2.getState().projects.some((p2) => p2.id === projectId)) {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Jump to thread",
+        onSelect: () => {
+          close();
+          switchProjectThread(store2, api2, projectId, threadId);
+        }
+      });
+    }
+    if (row2.threadId && getThreadById(store2, row2.threadId)?.status === "running") {
+      const threadId = row2.threadId;
+      entries2.push({
+        label: "Stop agent run",
+        onSelect: () => {
+          void api2.agent.abort(threadId).catch((error62) => {
+            showErrorToast("Could not stop the agent run", error62);
+          });
+        }
+      });
+    }
+    if (row2.managed) {
+      entries2.push({
+        label: row2.managed.kind === "terminal" ? "Stop terminal" : "Stop background task",
+        onSelect: () => {
+          void stopManaged(row2);
+        }
+      });
+    }
+    return entries2;
+  }
+  function render(snapshot) {
+    cpuHeading.setAttribute(
+      "aria-sort",
+      column === "cpu" ? ascending ? "ascending" : "descending" : "none"
+    );
+    memoryHeading.setAttribute(
+      "aria-sort",
+      column === "memory" ? ascending ? "ascending" : "descending" : "none"
+    );
+    clear(body);
+    clear(activityList);
+    activity.hidden = snapshot.activeRunThreadIds.length === 0;
+    activityCount.textContent = `${String(snapshot.activeRunThreadIds.length)} working`;
+    for (const threadId of snapshot.activeRunThreadIds) {
+      const title = getThreadById(store2, threadId)?.title.trim();
+      const label = title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
+      activityList.append(
+        el(
+          "span",
+          { class: "process-manager-activity-item", "data-thread-id": threadId },
+          el("span", { class: "process-manager-activity-dot", "aria-hidden": "true" }),
+          el("span", { class: "process-manager-activity-state" }, "Working"),
+          el("span", { class: "process-manager-activity-thread", title: label }, label)
+        )
+      );
+    }
+    const state = store2.getState();
+    for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
+      const thread = getThreadById(store2, row2.threadId);
+      const title = thread?.title.trim();
+      const threadLabel2 = row2.threadId ? title && title.length > 0 ? title : `Thread ${row2.threadId.slice(0, 8)}` : "Shared";
+      const entries2 = menuEntries(row2);
+      const actionsCell = el("td", { class: "process-manager-actions" });
+      if (entries2.length > 0) {
+        const actionsButton = el(
+          "button",
+          {
+            type: "button",
+            class: "ui-btn ui-btn-ghost process-manager-actions-button",
+            "aria-label": `Actions for ${row2.label} (${String(row2.pid)})`
+          },
+          moreHorizontalIcon("ui-icon ui-icon-sm")
+        );
+        actionsButton.addEventListener("click", () => {
+          const rect = actionsButton.getBoundingClientRect();
+          showContextMenu(rect.right, rect.bottom, menuEntries(row2), dialog2);
+        });
+        actionsCell.append(actionsButton);
+      }
+      const tableRow = el(
+        "tr",
+        {
+          "data-pid": String(row2.pid),
+          "data-kind": row2.type,
+          "data-thread-id": row2.threadId ?? "",
+          "data-active-thread": String(
+            row2.threadId !== null && row2.threadId === state.activeThreadId
+          )
+        },
+        el("td", { class: "process-manager-name", title: row2.label }, row2.label),
+        el("td", { class: "process-manager-type" }, row2.type),
+        el("td", { class: "process-manager-thread", title: threadLabel2 }, threadLabel2),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.cpuPercent === null ? "\u2014" : `${row2.cpuPercent.toFixed(1)}%`
+        ),
+        el(
+          "td",
+          { class: "process-manager-number" },
+          row2.memoryMiB === null ? "\u2014" : `${row2.memoryMiB.toFixed(1)} MiB`
+        ),
+        el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
+        actionsCell
+      );
+      if (entries2.length > 0) {
+        tableRow.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+        });
+      }
+      body.append(tableRow);
+    }
+    updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
+    dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
+    status.textContent = snapshot.processes.length === 0 ? "No processes found." : "";
+  }
+  function isRequestCurrent(requestGeneration) {
+    return dialog2.open && requestGeneration === generation;
+  }
+  async function refresh() {
+    if (!dialog2.open || refreshing || document.visibilityState === "hidden") return;
+    refreshing = true;
+    const requestGeneration = generation;
+    try {
+      const snapshot = await api2.processManager.snapshot();
+      if (isRequestCurrent(requestGeneration)) {
+        current = snapshot;
+        render(snapshot);
+      }
+    } catch {
+      if (isRequestCurrent(requestGeneration))
+        status.textContent = "Process metrics are unavailable.";
+    } finally {
+      refreshing = false;
+    }
+  }
+  function setSort(next) {
+    ascending = column === next ? !ascending : false;
+    column = next;
+    if (current) render(current);
+  }
+  cpuButton.addEventListener("click", () => {
+    setSort("cpu");
+  });
+  memoryButton.addEventListener("click", () => {
+    setSort("memory");
+  });
+  function onVisibilityChange() {
+    if (document.visibilityState === "visible") void refresh();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  dialog2.addEventListener("close", () => {
+    generation++;
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    refreshing = false;
+  });
+  return () => {
+    if (dialog2.open) return;
+    current = null;
+    clear(body);
+    status.textContent = "Loading processes\u2026";
+    updated.textContent = "";
+    open2();
+    void refresh();
+    timer = setInterval(() => void refresh(), 1e3);
+  };
+}
+var init_process_manager_dialog = __esm({
+  "src/renderer/views/process-manager-dialog.ts"() {
+    init_helpers();
+    init_icons();
+    init_context_menu();
+    init_projects();
+    init_thread_helpers();
+    init_confirm_dialog();
+    init_toast();
+    init_dialog_shell();
+  }
+});
+
 // src/renderer/controller/sync-thread-branch-after-shell.ts
 async function syncThreadGitBranchAfterShell(store2, api2, threadId) {
   const projectId = store2.getState().activeProjectId;
@@ -130153,7 +131191,8 @@ function startAgentController(store2, api2) {
           setMessageReview(store2, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
-            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {}
+            ...chunk.issuesFound !== void 0 ? { issuesFound: chunk.issuesFound } : {},
+            ...chunk.followUpNote !== void 0 ? { followUpNote: chunk.followUpNote } : {}
           });
         }
         if (chunk.status === "running") emitActivity(threadId, "Reviewing changes\u2026");
@@ -140313,6 +141352,7 @@ async function boot() {
   mountFileSearchDialog(store, api);
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
+  openProcessManager = mountProcessManagerDialog(api, store);
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -140381,6 +141421,7 @@ async function boot() {
   attachThreadHydration(store, api);
   if (!popoutMode) attachImportedCursorAgentRefresh(store, api);
   mountTitlebar(requireElement("titlebar"), store, api);
+  api.menu.onProcessManager(() => openProcessManager?.());
   api.menu.onSettings(() => {
     if (!isSettingsDialogOpen()) openSettingsDialog();
   });
@@ -140587,7 +141628,11 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       openNewThread(store);
     }
-    if (meta3 && e3.key === "p") {
+    if (meta3 && e3.shiftKey && e3.key.toLowerCase() === "p") {
+      e3.preventDefault();
+      openProcessManager?.();
+    }
+    if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       if (store.getState().workspaceRoot) openFileSearchDialog();
     }
@@ -140683,7 +141728,7 @@ function switchToNextThread() {
   const next = nextThreadId(store);
   if (next) switchThread(store, next);
 }
-var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut;
+var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
     init_tokens();
@@ -140730,6 +141775,7 @@ var init_main = __esm({
     init_command_palette();
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
+    init_process_manager_dialog();
     init_agent();
     init_diff_state();
     init_automations2();
@@ -140795,6 +141841,7 @@ var init_main = __esm({
     layoutMounted = false;
     unmountPopoutTitlebar = null;
     handleStopShortcut = null;
+    openProcessManager = null;
     if (popoutMode) {
       api.panes.onSwitchMode((mode) => {
         if (!isPopoutMode(mode)) return;
