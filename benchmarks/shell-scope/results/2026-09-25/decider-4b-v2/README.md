@@ -35,7 +35,7 @@ path argument: a `../` or sibling path such as `/workspace/other` or
 `/workspace/project-old`, given to `cp`, `mv`, `tar`, `sed`, `rg`, `du`, a `command`
 wrapper or inline Python. The other two have unknown effects: an unseen archive's
 extraction and a path read from a file. The deterministic check misses 3 external
-commands; its balanced accuracy is 0.776 against the deterministic check's 0.878. A
-P(external) cut-off fitted on development data (0.09, development balanced accuracy
-0.792) does not transfer: on the holdout it gives 64 correct, 2 wrong sandbox and 34
-wrong external. No threshold or policy is adopted from this run.
+commands; decider's balanced accuracy is 0.776 against the deterministic check's
+0.878. A P(external) cut-off fitted on development data (0.09, development balanced
+accuracy 0.792) does not transfer: on the holdout it gives 64 correct, 2 wrong
+sandbox and 34 wrong external. No threshold or policy is adopted from this run.

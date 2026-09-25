@@ -1,8 +1,8 @@
 // Score `pnpm run eval:classifier` output for the shell-scope fixtures with the
-// same measures as RESULTS.md. The verdict is read from the returned
-// probabilities, exactly as Copse's safety screening reads it: the likelier
-// scope, with a tie reading as external. A failed or unusable call is never
-// correct and stays in the denominator.
+// same measures as RESULTS.md. The verdict uses the conservative choice rule
+// evaluated for proposed classifier-backed screening: the likelier scope, with
+// a tie reading as external. A failed or unusable call is never correct and
+// stays in the denominator.
 //
 //   node benchmarks/shell-scope/scripts/score-classifier-eval.mjs results.jsonl [more.jsonl …]
 import { readFile } from 'node:fs/promises'

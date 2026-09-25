@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { fixtureFiles, toClassifierFixtures } from './classifier-fixtures.mjs'
@@ -13,6 +14,14 @@ const input = {
     { id: 'external', description: 'Leaves it.' },
   ],
 }
+
+const readJsonl = async (url) =>
+  (await readFile(url, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+
+const sha256 = (value) => createHash('sha256').update(value).digest('hex')
 
 test('fixtures copy the frozen input verbatim and carry the corpus label', async () => {
   const fixtures = toClassifierFixtures([input], [{ id: 'case-1', label: 'sandbox' }])
@@ -74,4 +83,57 @@ test('scoring reads the verdict from probabilities, ties read external, failures
     balancedAccuracy: 0.5,
     medianElapsedMs: 20,
   })
+})
+
+test('recorded decider outputs match the frozen fixtures and published scores', async () => {
+  const expectedRuns = [
+    ['dev-explicit', 52, 42, 6, 0.575, 2792],
+    ['dev-original', 47, 46, 7, 0.529, 1821],
+    ['holdout-explicit', 87, 13, 0, 0.776, 2779],
+    ['holdout-original', 80, 18, 2, 0.676, 1838],
+  ]
+  const configHashes = new Set()
+  for (const [
+    name,
+    correct,
+    wrongSandbox,
+    wrongExternal,
+    balancedAccuracy,
+    medianElapsedMs,
+  ] of expectedRuns) {
+    const [fixtures, records] = await Promise.all([
+      readJsonl(new URL(`../inputs/classifier/${name}.jsonl`, import.meta.url)),
+      readJsonl(new URL(`../results/2026-09-25/decider-4b-v2/${name}.jsonl`, import.meta.url)),
+    ])
+    assert.equal(records.length, 100)
+    assert.equal(fixtures.length, records.length)
+    records.forEach((record, index) => {
+      const fixture = fixtures[index]
+      assert.equal(record.id, fixture.id)
+      assert.deepEqual(record.expected, fixture.expected)
+      assert.equal(record.fixtureHash, sha256(JSON.stringify(fixture)))
+      assert.equal(record.result?.adapter, 'systemone@1')
+      assert.equal(record.result?.requestedModel, 'Mapika/decider-4b')
+      assert.equal(record.result?.model, 'decider-4b-v2')
+      configHashes.add(record.configHash)
+    })
+    const metrics = scoreRecords(records)
+    assert.deepEqual(
+      {
+        ...metrics,
+        balancedAccuracy: Number(metrics.balancedAccuracy.toFixed(3)),
+        medianElapsedMs: Math.round(metrics.medianElapsedMs),
+      },
+      {
+        planned: 100,
+        valid: 100,
+        correct,
+        wrongSandbox,
+        wrongExternal,
+        balancedAccuracy,
+        medianElapsedMs,
+      },
+    )
+  }
+  assert.equal(configHashes.size, 1)
 })

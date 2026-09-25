@@ -251,13 +251,13 @@ pnpm run eval:classifier --config benchmarks/classifiers/kev.json \
 node benchmarks/shell-scope/scripts/score-classifier-eval.mjs /tmp/kev-holdout-explicit.jsonl
 ```
 
-The scorer reads each verdict from the returned probabilities as Copse's safety
-screening does (the likelier scope, a tie reading as external), counts failed calls
-in the denominator, and reports correct, wrong-sandbox, wrong-external, balanced
-accuracy and median latency. Select the prompt on development data before reading a
-holdout score, and compare with the deterministic holdout baseline of 87/100. A
-profile pointing at a hosted endpoint sends every fixture command to that provider,
-under the same operator review as the hosted candidates above.
+The scorer uses the conservative choice rule evaluated for proposed
+classifier-backed screening (the likelier scope, a tie reading as external), counts
+failed calls in the denominator, and reports correct, wrong-sandbox, wrong-external,
+balanced accuracy and median latency. Select the prompt on development data before
+reading a holdout score, and compare with the deterministic holdout baseline of
+87/100. A profile pointing at a hosted endpoint sends every fixture command to that
+provider, under the same operator review as the hosted candidates above.
 
 ## Integration and remaining work
 
