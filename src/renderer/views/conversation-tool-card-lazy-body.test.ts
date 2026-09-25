@@ -342,6 +342,36 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.match(name.textContent, /Image generation/)
   })
 
+  it('renders an MCP denial as readable text without hiding its arguments', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      id: 'tc-mcp-denied',
+      name: 'mcp.copse.advisor',
+      args: { question: 'What should I inspect?' },
+      status: 'error',
+      result: JSON.stringify({
+        result: null,
+        error: { message: 'Request denied.\nReason: <script>stay text</script>' },
+      }),
+      resultFormat: 'markdown',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = host.querySelector('[data-tool-id="tc-mcp-denied"]')
+    assert.ok(card)
+    const paragraphs = card.querySelectorAll('.tool-result-error-message p')
+    assert.deepEqual(
+      Array.from(paragraphs, (paragraph) => paragraph.textContent),
+      ['Request denied.', 'Reason: <script>stay text</script>'],
+    )
+    assert.equal(card.querySelector('script'), null)
+    assert.match(card.querySelector('.tool-args pre')?.textContent ?? '', /What should I inspect/)
+  })
+
   it('keeps a failed card expanded after a reconcile tick', () => {
     const store = createStore()
     const threadId = createThread(store)
