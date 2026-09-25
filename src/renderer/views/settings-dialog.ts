@@ -1630,9 +1630,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
-  // Sits directly under the chat-model picker and follows it: the parameters
-  // belong to the selected model, so switching models re-renders the controls.
-  const modelParametersSection = createModelParametersSection(api.settings)
+  // Sits under the chat-model picker and starts on it, but has its own picker:
+  // the parameters belong to a model, and the chat default is often a rule.
+  const modelParametersSection = createModelParametersSection(api.settings, {
+    mountModelPicker: (select) =>
+      mountModelSelectPicker(select, {
+        loadOptions: (current) => fetchModelOptions(api, current),
+        ariaLabel: 'Model to tune',
+        loadOnMount: false,
+      }),
+  })
   qsRequired(overlay, '#settings-model-parameters-host').append(modelParametersSection.root)
 
   const settingsModelPickers = {

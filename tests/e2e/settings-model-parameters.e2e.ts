@@ -58,7 +58,7 @@ describe('per-model generation parameters', () => {
     await saveElementScreenshot('[data-testid="model-parameters"]', 'settings-model-parameters.png')
   })
 
-  it('offers the experimental GLM-5.3-Flash balanced profile', async function () {
+  it('applies the experimental GLM-5.3-Flash profile by default', async function () {
     this.timeout(60_000)
     // Switching the picker is the cheapest way to reach a second model's state
     // without a second app launch.
@@ -74,16 +74,20 @@ describe('per-model generation parameters', () => {
       select.dispatchEvent(new Event('change', { bubbles: true }))
     }, RECIPE_MODEL)
     const section = await $('[data-testid="model-parameters"]')
-    const offer = await section.$('[data-testid="model-parameter-recommend"]')
-    await offer.waitForDisplayed({ timeout: 10_000 })
-    await offer.click()
+    const recipe = await section.$('[data-testid="model-parameter-recommend"]')
+    await recipe.waitForDisplayed({ timeout: 10_000 })
 
-    await expect(await section.$('[data-testid="model-parameter-reasoning"]')).toHaveValue('medium')
-    await expect(await section.$('[data-testid="model-parameter-max-output-tokens"]')).toHaveValue(
-      '16384',
+    // Applied, not filled in: the fields stay blank and say what blank sends.
+    const reasoning = await section.$('[data-testid="model-parameter-reasoning"]')
+    await expect(reasoning).toHaveValue('')
+    await expect(await reasoning.$('option')).toHaveText('Recommended (Medium)')
+    const maxOutput = await section.$('[data-testid="model-parameter-max-output-tokens"]')
+    await expect(maxOutput).toHaveValue('')
+    await expect(maxOutput).toHaveAttribute('placeholder', '16384')
+    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveAttribute(
+      'placeholder',
+      '0.95',
     )
-    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toHaveValue('1')
-    await expect(await section.$('[data-testid="model-parameter-top-p"]')).toHaveValue('0.95')
     await expect(await section.$('.model-parameter-recommend-note')).toHaveText(
       expect.stringContaining('paired Terminal-Bench record'),
     )
@@ -99,6 +103,50 @@ describe('per-model generation parameters', () => {
     )
 
     // Put the picker back so the next test sees the seeded selection.
+    await browser.execute((model) => {
+      const select = document.querySelector<HTMLSelectElement>(
+        '#settings-models-section select[name="model"]',
+      )
+      if (!select) return
+      select.value = model
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    }, LOCAL_MODEL)
+  })
+
+  it('tunes a model without changing a rule chat model', async function () {
+    this.timeout(60_000)
+    // The reported dead end: with a rule as the chat model the section only said
+    // "pin one to tune it". Now it keeps its own model and lists what is tuned.
+    await browser.execute(() => {
+      const select = document.querySelector<HTMLSelectElement>(
+        '#settings-models-section select[name="model"]',
+      )
+      if (!select) return
+      if (![...select.options].some((option) => option.value === 'auto:balanced')) {
+        select.append(new Option('Balanced', 'auto:balanced'))
+      }
+      select.value = 'auto:balanced'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const section = await $('[data-testid="model-parameters"]')
+    await expect(await section.$('[data-testid="model-parameter-temperature"]')).toBeDisplayed()
+    const chip = await section.$(
+      `[data-testid="model-parameter-customised"] [data-model="${LOCAL_MODEL}"]`,
+    )
+    await expect(chip).toBeDisplayed()
+    await expect(chip).toHaveAttribute('aria-pressed', 'true')
+    await expect(await section.$('[data-testid="model-parameter-reset"]')).toBeDisplayed()
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="model-parameters"]')
+        ?.scrollIntoView({ block: 'start' })
+    })
+    await browser.pause(200)
+    await saveElementScreenshot(
+      '[data-testid="model-parameter-header"]',
+      'settings-model-parameters-rule-chat-model.png',
+    )
+
     await browser.execute((model) => {
       const select = document.querySelector<HTMLSelectElement>(
         '#settings-models-section select[name="model"]',

@@ -8,6 +8,16 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Curated parameter recipes now apply by default. Qwen3.6-35B-A3B, DeepSeek
+  V4 Flash, and the experimental GLM-5.3-Flash profile run on their recipe
+  unless you set a value yourself. Previously they were only offered, so a
+  Qwen thread on LM Studio ran with no `presence_penalty` and its reasoning
+  could loop. In Settings → Models → Model parameters, blank fields show the
+  recipe value they send, and anything you type replaces that one value.
+- Model parameters has its own model picker and a list of the models you have
+  tuned, so you can tune any model without changing your chat model. That
+  matters most when the chat model is a rule such as Balanced, which has no
+  parameters of its own.
 - Tool calls that miss a numeric bound no longer fail. A model that asks
   `find_files` for `max_results: 2000` against a schema capped at 200 — a
   repeated GPT-family failure — gets the call executed at the cap and a

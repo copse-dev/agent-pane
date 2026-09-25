@@ -494,6 +494,26 @@ dialog.settings-overlay::backdrop {
 .model-parameter-note {
   margin-bottom: var(--spacing-lg);
 }
+/* The picker is the section's subject, so it sits first with the same gap the
+   fields below keep between themselves. */
+.model-parameter-header > .ui-field {
+  margin-bottom: var(--spacing-lg);
+}
+/* Already-tuned models, one click from being tuned again. Chips rather than a
+   list because there are usually one or two. */
+.model-parameter-customised-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+.model-parameter-customised {
+  margin-bottom: 0;
+}
+.model-parameter-section > [data-testid='model-parameter-reset'] {
+  margin-top: var(--spacing-lg);
+}
 .model-parameter-fields {
   display: flex;
   flex-direction: column;
@@ -504,8 +524,8 @@ dialog.settings-overlay::backdrop {
 .model-parameter-fields input[type='number'] {
   max-width: 10rem;
 }
-/* The recipe offer introduces the fields it fills, so the action, provenance,
-   and resulting reasoning/output budget remain together near the top. */
+/* The recipe note introduces the fields it fills, so its provenance and the
+   resulting reasoning/output budget remain together near the top. */
 .model-parameter-recommend {
   display: flex;
   flex-direction: column;
