@@ -166,8 +166,16 @@ describe('safety screening through a saved classifier', () => {
     assert.equal(safe.verdict?.risky, false)
     assert.equal(safe.verdict.confidence, 0.97)
     assert.equal(terminalReadNeedsApproval(safe.verdict), false)
-    assert.ok(TERMINAL_READ_SAFE_PROBABILITY <= 0.97)
     assert.equal(sent[0]?.body?.state, '$ ls\nREADME.md\n')
+
+    // Exactly at the threshold is enough to share.
+    mock.restoreAll()
+    answering('safe', {
+      safe: TERMINAL_READ_SAFE_PROBABILITY,
+      risky: 1 - TERMINAL_READ_SAFE_PROBABILITY,
+    })
+    const boundary = await classifyTerminalSnapshot('$ pwd\n/workspace\n')
+    assert.equal(boundary.verdict?.risky, false)
   })
 
   it('routes around a classifier that keeps missing the screening budget', async () => {
