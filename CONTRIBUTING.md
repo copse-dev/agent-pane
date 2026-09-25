@@ -7,8 +7,10 @@ is the full contributor contract.
 
 1. Use Node **24 or newer** and **pnpm** (via Corepack). The repo pins both in
    `.nvmrc` and `packageManager`; `nvm use` and `fnm use` both honor `.nvmrc`.
-2. Run **`pnpm run check`**. It covers typecheck, ESLint, oxfmt, dead-code
-   detection, and unit tests. A green subset is not a substitute.
+2. Run **`pnpm run check`** by default. For a localized, low-risk PR with `HIGH`
+   oracle confidence and required CI, the risk-based fast path permits
+   **`pnpm run check:local`** plus focused tests instead. The eligibility rules
+   and mandatory full-check surfaces are in [AGENTS.md](AGENTS.md#before-committing).
 3. If the change is visible in the Electron app, add or update the smallest
    focused WebdriverIO spec that reaches the state, asserts the DOM, and saves a
    screenshot. A build or a manual glance is not evidence. See
@@ -60,12 +62,13 @@ issues first. [SUPPORT.md](SUPPORT.md) lists the supported release and platform.
 
 ## Development commands
 
-| Command             | Purpose                                                            |
-| ------------------- | ------------------------------------------------------------------ |
-| `pnpm run dev`      | Watch-build and launch Electron against the `~/.copse-dev` profile |
-| `pnpm run build`    | Bundle into `dist/`                                                |
-| `pnpm test`         | Unit and component tests                                           |
-| `pnpm run test:e2e` | Electron end-to-end tests                                          |
-| `pnpm run check`    | The pre-commit gate                                                |
+| Command                | Purpose                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
+| `pnpm run dev`         | Watch-build and launch Electron against the `~/.copse-dev` profile |
+| `pnpm run build`       | Bundle into `dist/`                                                |
+| `pnpm test`            | Unit and component tests                                           |
+| `pnpm run test:e2e`    | Electron end-to-end tests                                          |
+| `pnpm run check:local` | Static/local gate without the complete unit suite                  |
+| `pnpm run check`       | The pre-commit gate                                                |
 
 More detail: [docs/agent-development.md](docs/agent-development.md).

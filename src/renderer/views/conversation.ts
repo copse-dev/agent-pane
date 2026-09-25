@@ -40,7 +40,11 @@ import { artefactTitleFromUri } from '@shared/canvas/artefact.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { CONTAINER_RUN_ADOPT_EVENT } from '@shared/store/container-run-card.ts'
 import { isRecord } from '@shared/unknown-value.ts'
-import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
+import {
+  attachCodeBlockCopyButtons,
+  bindCodeBlockRunRequests,
+  setCodeBlockRunOutcome,
+} from '../markdown/code-block-copy.ts'
 import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
@@ -68,7 +72,7 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
@@ -338,10 +342,16 @@ function createCanvasPreviewCard(threadId: string, title: string): HTMLElement |
   open.addEventListener('click', () => {
     requestArtefactShow(threadId, title)
   })
+  const image = el('img', {
+    class: 'canvas-preview-image',
+    src: preview,
+    alt: `Preview of ${title}`,
+  })
+  attachImageCopyMenu(image)
   return el(
     'div',
     { class: 'canvas-preview-card' },
-    el('img', { class: 'canvas-preview-image', src: preview, alt: `Preview of ${title}` }),
+    image,
     el(
       'div',
       { class: 'canvas-preview-footer' },
@@ -588,7 +598,7 @@ function setAssistantMarkdown(
       streamingRenderers.set(el, renderer)
     }
     renderer.update(display)
-    attachCodeBlockCopyButtons(el)
+    attachCodeBlockCopyButtons(el, { runCommands: true })
     // Demote as soon as the trailing line is complete; keep collapsed while live.
     syncAcpTransportNoiseDisclosure(el, transportNoise)
     return
@@ -597,7 +607,7 @@ function setAssistantMarkdown(
   el.classList.remove('is-streaming')
   streamingRenderers.delete(el)
   el.innerHTML = renderMarkdown(display)
-  attachCodeBlockCopyButtons(el)
+  attachCodeBlockCopyButtons(el, { runCommands: true })
   // Tables only on the committed final render — during streaming they are
   // patched with pending rows, so wrapping them then would fight the DOM sync.
   attachTableCopyButtons(el)
@@ -2198,6 +2208,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   root.append(scrollArea, queuedHost)
 
+  const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
+    const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
+    if (!projectId || !threadId) {
+      setCodeBlockRunOutcome(list, id, null)
+      return
+    }
+    store.emit('code_block_run_requested', { id, command, projectId, threadId })
+  })
+
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
@@ -2712,6 +2731,44 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const threadId = store.getState().activeThreadId
       if (threadId && deferredCompactions.delete(threadId)) scheduleThreadCompaction(threadId)
     }
+    updateScrollButton()
+  }
+
+  /**
+   * scrollToBottom(true) flushes the transcript's bottom edge against the
+   * viewport, which is right for a short prompt but hides the start of one
+   * taller than the visible list: the reader only ever sees its tail (#2457).
+   * Nudge the scroll position, on top of scrollToBottom's, just enough to
+   * bring the whole row into view — or, when it can't fit, to show its top
+   * rather than its bottom, mirroring `scrollIntoView({ block: 'nearest' })`.
+   * Computed from rects (like captureReadingAnchor/restoreReadingAnchor above)
+   * and applied through setScrollTopProgrammatically so the programmatic-echo
+   * bookkeeping stays consistent with every other scroll in this module.
+   *
+   * When a correction was needed, this also un-pins autoscroll: otherwise the
+   * very next unforced scrollToBottom() (e.g. the reply's first token, which a
+   * mock model can emit before this function returns) would hug the tail
+   * again and immediately undo the correction. A pane wide enough to keep the
+   * prompt sticky-to-top never takes this branch, so this only affects the
+   * narrow layout where CSS stops anchoring it (`@container chat-pane
+   * (max-width: 360px)`) — the same layout the fold's own hand-off already
+   * treats as ordinary, unpinned transcript content.
+   */
+  function scrollUserPromptIntoView(msgEl: HTMLElement): void {
+    const listRect = list.getBoundingClientRect()
+    const msgRect = msgEl.getBoundingClientRect()
+    let delta = 0
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta =
+        msgRect.height > listRect.height
+          ? msgRect.top - listRect.top
+          : msgRect.bottom - listRect.bottom
+    }
+    if (delta === 0) return
+    setScrollTopProgrammatically(list.scrollTop + delta)
+    pinnedToBottom = false
     updateScrollButton()
   }
 
@@ -3239,6 +3296,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncModelLabels()
     syncUserActions()
     scrollToBottom(msg.role === 'user')
+    // Correct for a prompt taller than the viewport: scrollToBottom above
+    // hugs the transcript's tail, which can scroll the top of a long prompt
+    // out of view the moment it's submitted (#2457).
+    if (msg.role === 'user') scrollUserPromptIntoView(msgEl)
   }
 
   /**
@@ -3716,6 +3777,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   const unsubs = [
+    store.on('code_block_run_finished', (result) => {
+      setCodeBlockRunOutcome(list, result.id, result.exitCode)
+    }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
     }),
@@ -3926,6 +3990,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
+    unbindCodeBlockRuns()
     unsubs.forEach((u) => {
       u()
     })

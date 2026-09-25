@@ -11,8 +11,8 @@ import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.t
  * transcript, selection in the sidebar, nesting under a tool card — and looked
  * the same doing all of them. Nesting and standing asks keep it (see `docs/ui-taste.md` ->
  * "Rails mark nesting and standing asks"). Containment became a plate, flat
- * for the agent's own prose and hatched for Copse annotating its own turn, and
- * selection became the fill alone.
+ * for the agent's own prose, softly hatched glass for long reasoning, and
+ * stronger hatch for short status annotations. Selection became the fill alone.
  *
  * `accent-rails.test.ts` pins that at the stylesheet level, which is where a
  * reinstated rail would be caught. What it cannot see is the result: whether
@@ -142,14 +142,35 @@ describe('callout surfaces', () => {
     // Two kinds must not resolve to the same wash, or the hue is doing nothing.
     expect(found['note']?.backgroundColor).not.toBe(found['caution']?.backgroundColor)
 
-    // Copse's commentary: the same box in a different material.
-    for (const key of ['reasoning', 'review', 'comparison'] as const) {
+    // Long reasoning fades its hatch under the center of the glass; short
+    // status annotations retain their even texture.
+    const reasoningImage = found['reasoning']?.backgroundImage ?? ''
+    expect({
+      borderLeftWidth: found['reasoning']?.borderLeftWidth,
+      etched: reasoningImage.includes('linear-gradient'),
+      faded:
+        reasoningImage.includes('radial-gradient') &&
+        reasoningImage.indexOf('radial-gradient') <
+          reasoningImage.indexOf('repeating-linear-gradient'),
+      hatched: reasoningImage.includes('repeating-linear-gradient'),
+    }).toEqual({ borderLeftWidth: '1px', etched: true, faded: true, hatched: true })
+    for (const key of ['review', 'comparison'] as const) {
       expect({
         key,
         borderLeftWidth: found[key]?.borderLeftWidth,
         hatched: found[key]?.backgroundImage.includes('repeating-linear-gradient') ?? false,
       }).toEqual({ key, borderLeftWidth: '0px', hatched: true })
     }
+    const reasoningInk = await browser.execute(() => {
+      const text = document.querySelector('.message-reasoning-text')
+      const secondaryLabel = document.querySelector('.review-panel-header')
+      if (!text || !secondaryLabel) throw new Error('Missing reasoning or secondary label')
+      return {
+        actual: getComputedStyle(text).color,
+        expected: getComputedStyle(secondaryLabel).color,
+      }
+    })
+    expect(reasoningInk.actual).toBe(reasoningInk.expected)
     // A failed comparison keeps the material and changes only --sev.
     expect(found['comparison']?.backgroundImage).not.toBe(found['review']?.backgroundImage)
 
@@ -236,7 +257,7 @@ describe('callout surfaces', () => {
     }
   })
 
-  it('replaces the hatch with a flat wash when transparency or contrast preferences request it', async () => {
+  it('uses plain surfaces when transparency or contrast preferences request it', async () => {
     try {
       for (const feature of [
         { name: 'prefers-reduced-transparency', value: 'reduce' },
@@ -244,26 +265,35 @@ describe('callout surfaces', () => {
       ]) {
         await browser.sendCommand('Emulation.setEmulatedMedia', { features: [feature] })
         const materials = await browser.execute(() => {
-          return ['.message-reasoning[open]', '.review-panel', '.comparison-panel'].map(
-            (selector) => {
-              const panel = document.querySelector(selector)
-              if (!panel) throw new Error(`Missing commentary: ${selector}`)
-              const style = getComputedStyle(panel)
-              return {
-                selector,
-                line: style.getPropertyValue('--callout-hatch-line').trim(),
-                fill: style.getPropertyValue('--callout-hatch-fill').trim(),
-                plate: style.getPropertyValue('--callout-plate-fill').trim(),
-                background: style.backgroundColor,
-              }
-            },
-          )
+          return ['.review-panel', '.comparison-panel'].map((selector) => {
+            const panel = document.querySelector(selector)
+            if (!panel) throw new Error(`Missing commentary: ${selector}`)
+            const style = getComputedStyle(panel)
+            return {
+              selector,
+              line: style.getPropertyValue('--callout-hatch-line').trim(),
+              fill: style.getPropertyValue('--callout-hatch-fill').trim(),
+              plate: style.getPropertyValue('--callout-plate-fill').trim(),
+              background: style.backgroundColor,
+            }
+          })
         })
         for (const material of materials) {
           expect(material.line).toBe('0%')
           expect(material.fill).toBe(material.plate)
           expect(material.background).not.toBe('rgba(0, 0, 0, 0)')
         }
+        const reasoning = await browser.execute(() => {
+          const panel = document.querySelector('.message-reasoning[open]')
+          if (!panel) throw new Error('Missing expanded reasoning')
+          const style = getComputedStyle(panel)
+          return {
+            image: style.backgroundImage,
+            border: style.borderLeftWidth,
+            shadow: style.boxShadow,
+          }
+        })
+        expect(reasoning).toEqual({ image: 'none', border: '1px', shadow: 'none' })
       }
       await saveElementScreenshot('.message-reasoning', 'callout-reasoning-increased-contrast.png')
     } finally {

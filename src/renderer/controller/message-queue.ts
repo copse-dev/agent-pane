@@ -85,15 +85,13 @@ export function startAutomationTurnTree(store: AppStore, threadId: string): stri
 
 function startRootTurnTree(store: AppStore, threadId: string): string {
   const epoch = newEpoch()
-  const threads = store
-    .getState()
-    // A fresh turn tree resets the auto-continuation budget (decision 5): a
-    // user-authorized root is the floor, and the machine-turn counter starts
-    // over.
-    .threads.map((t) =>
-      t.id !== threadId ? t : { ...t, currentEpoch: epoch, continuationUsed: 0 },
-    )
-  store.setState({ threads })
+  // Navigation can carry a pending human send into the background before
+  // checkout completes. Reset the owning thread's epoch and budget there too.
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    currentEpoch: epoch,
+    continuationUsed: 0,
+  }))
   return epoch
 }
 
@@ -157,7 +155,7 @@ function refreshPayload(
   threadId: string,
   payload: AgentRunPayload,
 ): AgentRunPayload {
-  const thread = store.getState().threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   return {
     ...payload,
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
@@ -186,8 +184,10 @@ export function dispatchAgentRun(
   threadId: string,
   payload: AgentRunPayload,
 ): void {
-  const projectId = store.getState().activeProjectId
-  if (!projectId) throw new Error('Cannot run thread without an active project')
+  const { activeProjectId, backgroundThreads } = store.getState()
+  const projectId =
+    backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId
+  if (!projectId) throw new Error('Cannot run thread without an owning project')
   clearContextSnapshot(store, threadId)
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
@@ -200,16 +200,11 @@ export function enqueueUserMessage(
   threadId: string,
   item: QueuedUserMessage,
 ): void {
-  const threads = store.getState().threads.map((t) =>
-    t.id !== threadId
-      ? t
-      : {
-          ...t,
-          pendingMessages: [...(t.pendingMessages ?? []), item],
-          updatedAt: Date.now(),
-        },
-  )
-  store.setState({ threads })
+  patchThreadAnywhere(store, threadId, (t) => ({
+    ...t,
+    pendingMessages: [...(t.pendingMessages ?? []), item],
+    updatedAt: Date.now(),
+  }))
   store.emit('message_queued', threadId, item.messageId)
   store.emit('threads_changed')
 }

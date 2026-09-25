@@ -1,7 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedToolDisplayFixture } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 describe('tool call turn rollup', () => {
   before(async () => {
@@ -148,7 +152,7 @@ describe('tool call turn rollup', () => {
       'Reading key files to diagnose the settings flicker and missing button text.',
     )
 
-    // Nesting must preserve the hatched surface's inset, including the left
+    // Nesting must preserve the etched surface's inset, including the left
     // edge that the old flat-row rule stripped to zero.
     const reasoningLayout = await browser.execute(() => {
       const reasoning = document.querySelector<HTMLElement>(
@@ -157,12 +161,20 @@ describe('tool call turn rollup', () => {
       const summary = reasoning?.querySelector('.message-reasoning-summary')
       const text = reasoning?.querySelector('.message-reasoning-text')
       if (!reasoning || !summary || !text) throw new Error('Expected expanded reasoning')
+      const secondarySample = document.createElement('span')
+      secondarySample.style.color = 'var(--text-secondary)'
+      reasoning.append(secondarySample)
+      const secondaryColor = getComputedStyle(secondarySample).color
+      secondarySample.remove()
       const style = getComputedStyle(reasoning)
       const box = reasoning.getBoundingClientRect()
       const summaryBox = summary.getBoundingClientRect()
       const textBox = text.getBoundingClientRect()
       return {
         background: style.backgroundImage,
+        borderWidth: style.borderLeftWidth,
+        textColor: getComputedStyle(text).color,
+        secondaryColor,
         padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
         summaryLeft: summaryBox.left - box.left,
         summaryTop: summaryBox.top - box.top,
@@ -171,13 +183,21 @@ describe('tool call turn rollup', () => {
         textBottom: box.bottom - textBox.bottom,
       }
     })
+    expect(reasoningLayout.background).toContain('linear-gradient')
+    expect(reasoningLayout.background).toContain('radial-gradient')
     expect(reasoningLayout.background).toContain('repeating-linear-gradient')
+    expect(reasoningLayout.borderWidth).toBe('1px')
+    expect(reasoningLayout.textColor).toBe(reasoningLayout.secondaryColor)
     expect(reasoningLayout.padding).toEqual(['12px', '16px', '12px', '16px'])
     expect(reasoningLayout.summaryLeft).toBeGreaterThanOrEqual(16)
     expect(reasoningLayout.summaryTop).toBeGreaterThanOrEqual(12)
     expect(reasoningLayout.textLeft).toBeGreaterThanOrEqual(16)
     expect(reasoningLayout.textRight).toBeGreaterThanOrEqual(16)
     expect(reasoningLayout.textBottom).toBeGreaterThanOrEqual(12)
+    await saveElementScreenshot(
+      '[data-step-message-id="msg-assistant-reads"] .message-reasoning[open]',
+      'reasoning-etched-in-tool-rollup.png',
+    )
     await expect(mixed.$('.tool-card-group .tool-name')).toHaveText('Read files')
     await expect(mixed.$('.tool-card-group .tool-count')).toHaveText('×2')
     await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"] .tool-name')).toHaveText('Read file')

@@ -48,6 +48,10 @@ describe('importIssuesAsRoadmapItems', () => {
 
   const stubClassify = (): Promise<'medium'> => Promise.resolve('medium')
   const stubClassifyCategory = (): Promise<'feature'> => Promise.resolve('feature')
+  // Stands in for the real small-tasks title generator in every test below —
+  // without it, an unconfigured/unreachable model's own retry/backoff would
+  // make each test pay for (and wait on) a real round-trip.
+  const stubTitle = (): Promise<null> => Promise.resolve(null)
 
   /** Let the detached complexity stamps settle. */
   const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
@@ -65,6 +69,8 @@ describe('importIssuesAsRoadmapItems', () => {
       },
       () => new Promise((resolve) => pending.push(resolve)),
       stubClassifyCategory,
+      undefined,
+      stubTitle,
     )
     assert.deepEqual(drafted, [41, 52])
     assert.equal(created.length, 2)
@@ -94,9 +100,11 @@ describe('importIssuesAsRoadmapItems', () => {
       stubClassify,
       stubClassifyCategory,
       () => stamps++,
+      (prompt) => Promise.resolve(`Title for ${prompt}`),
     )
     await settle()
-    assert.equal(stamps, 2)
+    // complexity + category + the AI-generated title (issue #2472).
+    assert.equal(stamps, 3)
   })
 
   it('falls back to the template when the draft fn fails', async () => {
@@ -105,7 +113,40 @@ describe('importIssuesAsRoadmapItems', () => {
       () => Promise.resolve(templateRoadmapPrompt(ISSUE)),
       stubClassify,
       stubClassifyCategory,
+      undefined,
+      stubTitle,
     )
     assert.match(created[0]?.body ?? '', /^Resolve GitHub issue #41/)
+  })
+
+  it('stamps an AI-generated title over the truncation once the small-tasks model answers', async () => {
+    const prompt = 'Do the work for issue 41'
+    const created = await importIssuesAsRoadmapItems(
+      [ISSUE],
+      () => Promise.resolve(prompt),
+      stubClassify,
+      stubClassifyCategory,
+      undefined,
+      () => Promise.resolve('Fix Dark Mode Flash'),
+    )
+    assert.equal(created[0]?.title, prompt.slice(0, 80), 'saved under the truncation first')
+    await settle()
+    const after = loadKnowledgeNotes('Roadmap').find((n) => n.id === created[0]?.id)
+    assert.equal(after?.title, 'Fix Dark Mode Flash')
+  })
+
+  it('keeps the truncation title when the title generator returns nothing', async () => {
+    const prompt = 'Do the work for issue 41'
+    const created = await importIssuesAsRoadmapItems(
+      [ISSUE],
+      () => Promise.resolve(prompt),
+      stubClassify,
+      stubClassifyCategory,
+      undefined,
+      stubTitle,
+    )
+    await settle()
+    const after = loadKnowledgeNotes('Roadmap').find((n) => n.id === created[0]?.id)
+    assert.equal(after?.title, prompt.slice(0, 80))
   })
 })

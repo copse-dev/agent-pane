@@ -540,6 +540,267 @@ describe('footer branch status', () => {
     assert.deepEqual(labels, ['main'])
   })
 
+  it('focuses the filter on open and narrows branches by a case-insensitive substring', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/new', lastCommitDate: '2024-01-02' },
+          { name: 'feature/old', lastCommitDate: '2024-01-03' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    const filter = qsRequired<HTMLInputElement>(host, '.branch-picker-filter')
+    assert.equal(document.activeElement, filter)
+
+    filter.value = 'NEW'
+    filter.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const labels = [...host.querySelectorAll('.branch-picker-option-label')].map(
+      (node) => node.textContent,
+    )
+    assert.deepEqual(labels, ['feature/new'])
+  })
+
+  it('shows a no-match state when the filter excludes every branch', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/new', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    const filter = qsRequired<HTMLInputElement>(host, '.branch-picker-filter')
+    filter.value = 'nonexistent'
+    filter.dispatchEvent(new Event('input', { bubbles: true }))
+
+    assert.equal(host.querySelectorAll('.branch-picker-option').length, 0)
+    assert.equal(
+      host.querySelector('.branch-picker-empty')?.textContent,
+      'No branches match "nonexistent".',
+    )
+  })
+
+  it('moves the highlighted branch with ArrowDown/ArrowUp and selects it on Enter', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    const control = mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/new', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    const filter = qsRequired<HTMLInputElement>(host, '.branch-picker-filter')
+    const options = (): HTMLButtonElement[] => [
+      ...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option'),
+    ]
+
+    // Highlight starts on the first row (the default branch).
+    assert.equal(options()[0]?.classList.contains('is-active'), true)
+
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    assert.equal(options()[1]?.classList.contains('is-active'), true)
+    assert.equal(options()[0]?.classList.contains('is-active'), false)
+
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    assert.equal(options()[0]?.classList.contains('is-active'), true)
+
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    filter.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+
+    assert.equal(host.querySelector('.branch-picker-menu')?.hasAttribute('hidden'), true)
+    assert.equal(control.pendingBaseBranch('thread-1'), 'feature/new')
+    assert.equal(host.querySelector('.footer-branch-label')?.textContent, 'feature/new')
+    assert.ok(
+      document.activeElement === host.querySelector('.branch-picker-trigger'),
+      'selection returns focus to the visible trigger',
+    )
+  })
+
+  it('exposes the keyboard highlight as the combobox active descendant', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/new', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+    const filter = qsRequired<HTMLInputElement>(host, '.branch-picker-filter')
+    const list = qsRequired(host, '.branch-picker-list')
+    assert.equal(filter.getAttribute('role'), 'combobox')
+    assert.equal(filter.getAttribute('aria-controls'), list.id)
+    assert.equal(filter.getAttribute('aria-expanded'), 'true')
+    const first = filter.getAttribute('aria-activedescendant')
+    assert.ok(first)
+    assert.equal(document.getElementById(first)?.classList.contains('is-active'), true)
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    const next = filter.getAttribute('aria-activedescendant')
+    assert.ok(next)
+    assert.notEqual(next, first)
+    assert.equal(document.getElementById(next)?.textContent, 'feature/new')
+    const branchOptions = [...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option')]
+    const [committedOption, activeOption] = branchOptions
+    assert.ok(committedOption)
+    assert.ok(activeOption)
+    assert.equal(committedOption.getAttribute('aria-selected'), 'false')
+    assert.equal(activeOption.getAttribute('aria-selected'), 'true')
+    assert.equal(committedOption.classList.contains('is-selected'), true)
+    filter.value = 'no-such-branch'
+    filter.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.equal(filter.hasAttribute('aria-activedescendant'), false)
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(filter.getAttribute('aria-expanded'), 'false')
+  })
+
+  it('keeps exactly one option selected while moving from an open PR to a branch', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        {
+          currentBranch: 'feature/with-pr',
+          pr: {
+            number: 12,
+            title: 'Add branch footer copy',
+            url: 'https://github.com/example/repo/pull/12',
+          },
+        },
+        [
+          { name: 'main', lastCommitDate: '2024-01-01' },
+          { name: 'feature/with-pr', lastCommitDate: '2024-01-02' },
+        ],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    const filter = qsRequired<HTMLInputElement>(host, '.branch-picker-filter')
+    const options = (): HTMLButtonElement[] => [
+      ...host.querySelectorAll<HTMLButtonElement>('.branch-picker-option'),
+    ]
+    const selected = (): HTMLButtonElement[] =>
+      options().filter((option) => option.getAttribute('aria-selected') === 'true')
+
+    assert.equal(options()[0]?.textContent, 'Open PR #12')
+    assert.equal(options()[0]?.classList.contains('is-active'), true)
+    assert.equal(selected().length, 1)
+    assert.equal(selected()[0]?.classList.contains('branch-picker-action'), true)
+
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    assert.equal(options()[0]?.getAttribute('aria-selected'), 'false')
+    assert.equal(options()[1]?.getAttribute('aria-selected'), 'true')
+    assert.equal(selected().length, 1)
+
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    assert.equal(options()[0]?.getAttribute('aria-selected'), 'true')
+    assert.equal(options()[1]?.getAttribute('aria-selected'), 'false')
+    assert.equal(selected().length, 1)
+  })
+
+  it('closes the menu on Escape and returns focus to the trigger', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+
+    mountFooterBranchStatus(
+      host,
+      store,
+      createApi(
+        { currentBranch: 'main', pr: null },
+        [{ name: 'main', lastCommitDate: '2024-01-01' }],
+        'main',
+      ),
+    )
+    await settle()
+    await openBranchMenu(host)
+
+    const filter = qsRequired<HTMLInputElement>(host, '.branch-picker-filter')
+    filter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    assert.equal(host.querySelector('.branch-picker-menu')?.hasAttribute('hidden'), true)
+    assert.equal(document.activeElement, qsRequired(host, '.branch-picker-trigger'))
+  })
+
   it('refreshes from recursive working-tree events (#1753)', async () => {
     const store = createStore({
       workspaceRoot: '/repo',

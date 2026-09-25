@@ -125,9 +125,13 @@ export interface RemoteAgentContextInput {
  * (and the current branch, when known) into the first prompt so the remote
  * agent can pick up where the local chat left off.
  *
- * Fresh threads (no prior user/assistant turns) return an empty preamble —
- * there is nothing to hand off, and the branch is already supplied via the
- * provider create payload (`startingRef` / managed-agent system prompt).
+ * Fresh threads (no prior user/assistant turns) get a short, honest note
+ * instead: the remote machine truly has nothing to pick up, so telling it
+ * otherwise ("continuing an existing chat") only steers it to go looking for
+ * context that never existed (issue #2445). The branch is still worth naming
+ * here even though it is also passed as `startingRef` / the managed-agent
+ * system prompt — this note is the one place in the prompt body itself, and
+ * cheap to include.
  *
  * Name-only tool-call turns are omitted: without arguments/results they add
  * noise and no actionable detail. System prompts and raw tool results are
@@ -145,13 +149,19 @@ export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput):
     }
   }
 
-  if (lines.length === 0) return ''
+  const branch = input.branch?.trim()
+
+  if (lines.length === 0) {
+    return branch
+      ? `This task was just submitted from Copse, working from branch \`${branch}\`. ` +
+          'There is no prior conversation for this thread.'
+      : 'This task was just submitted from Copse. There is no prior conversation for this thread.'
+  }
 
   const sections: string[] = [
     'You are continuing an existing Copse chat that is now being handed off to you. ' +
       'Use the context below to pick up where it left off.',
   ]
-  const branch = input.branch?.trim()
   if (branch) sections.push(`Current branch: \`${branch}\``)
 
   let transcript = lines.join('\n\n')
