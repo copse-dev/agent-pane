@@ -23819,6 +23819,20 @@ function refreshPayload(store2, threadId, payload) {
     ...thread?.continuationUsed !== void 0 ? { continuationBudgetUsed: thread.continuationUsed } : {}
   };
 }
+function beginPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2) ?? /* @__PURE__ */ new Map();
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1);
+  pendingDispatches.set(store2, byThread);
+}
+function finishPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2);
+  const count = byThread?.get(threadId) ?? 0;
+  if (count <= 1) byThread?.delete(threadId);
+  else byThread?.set(threadId, count - 1);
+}
+function hasPendingDispatch(store2, threadId) {
+  return (pendingDispatches.get(store2)?.get(threadId) ?? 0) > 0;
+}
 function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const { activeProjectId, backgroundThreads } = store2.getState();
   const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
@@ -23827,6 +23841,7 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   mark("ttft:renderer-dispatch");
+  if (queued) beginPendingDispatch(store2, threadId);
   const run2 = api2.agent.run(
     projectId,
     threadId,
@@ -23839,6 +23854,11 @@ function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   void run2.catch((err2) => {
     if (!isAgentTurnBusyError(err2)) throw err2;
     requeueBusyMessage(store2, api2, threadId, queued);
+  }).finally(() => {
+    finishPendingDispatch(store2, threadId);
+    if (getThreadById(store2, threadId)?.status === "idle") {
+      drainMessageQueue(store2, api2, threadId);
+    }
   });
 }
 function requeueBusyMessage(store2, api2, threadId, item) {
@@ -23862,6 +23882,7 @@ function enqueueUserMessage(store2, threadId, item) {
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
+  if (hasPendingDispatch(store2, threadId)) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (!thread || thread.status !== "idle" || thread.queuePaused) return;
   const pending = thread.pendingMessages ?? [];
@@ -24078,6 +24099,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   sendQueuedMessageNow(store2, api2, threadId, messageId);
 }
+var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
@@ -24086,6 +24108,7 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -65363,6 +65386,74 @@ var init_fork_thread3 = __esm({
   }
 });
 
+// src/renderer/controller/thread-filter.ts
+function createThreadFilter(store2, api2, changed) {
+  const matches2 = /* @__PURE__ */ new Set();
+  let generation = 0;
+  let timer;
+  let scan = Promise.resolve();
+  let pending = false;
+  let failed = false;
+  const cancel = () => {
+    generation += 1;
+    clearTimeout(timer);
+    matches2.clear();
+    pending = false;
+    failed = false;
+  };
+  const search = (query) => {
+    cancel();
+    const { activeProjectId, threads } = store2.getState();
+    if (!query || !activeProjectId) return;
+    const current = generation;
+    const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
+    const candidates = sortThreadsNewestFirst(threads).filter(
+      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+    );
+    const containsRequest = (messages) => messages.some(
+      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
+    );
+    pending = candidates.length > 0;
+    timer = setTimeout(() => {
+      scan = scan.then(async () => {
+        for (const thread of candidates) {
+          if (!isCurrent()) return;
+          try {
+            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            if (!isCurrent()) return;
+            if (matched) {
+              matches2.add(thread.id);
+              changed();
+            }
+          } catch {
+            if (!isCurrent()) return;
+            failed = true;
+          }
+        }
+        if (!isCurrent()) return;
+        pending = false;
+        changed();
+      });
+    }, 200);
+  };
+  return {
+    search,
+    cancel,
+    matches: matches2,
+    get pending() {
+      return pending;
+    },
+    get failed() {
+      return failed;
+    }
+  };
+}
+var init_thread_filter = __esm({
+  "src/renderer/controller/thread-filter.ts"() {
+    init_thread_sort();
+  }
+});
+
 // src/renderer/controller/attention.ts
 function recompute() {
   const next = /* @__PURE__ */ new Set();
@@ -65901,16 +65992,20 @@ function mountProjectsPane(root, store2, api2) {
   );
   const header = el("div", { class: "pane-projects-header" }, title, searchToggle, addBtn);
   let threadFilter = "";
+  const contentFilter = createThreadFilter(store2, api2, () => {
+    render();
+  });
   const searchInput = el("input", {
     type: "text",
     class: "projects-search-input",
-    placeholder: "Filter threads\u2026",
+    placeholder: "Filter titles and requests\u2026",
     "aria-label": "Filter threads",
     spellcheck: "false",
     autocomplete: "off"
   });
   const searchRow = el("div", { class: "projects-search-row", hidden: true }, searchInput);
   const closeThreadFilter = () => {
+    contentFilter.cancel();
     searchInput.value = "";
     threadFilter = "";
     searchRow.hidden = true;
@@ -65928,6 +66023,7 @@ function mountProjectsPane(root, store2, api2) {
   });
   searchInput.addEventListener("input", () => {
     threadFilter = searchInput.value.trim().toLowerCase();
+    contentFilter.search(threadFilter);
     render();
   });
   searchInput.addEventListener("keydown", (e3) => {
@@ -66835,10 +66931,14 @@ function mountProjectsPane(root, store2, api2) {
         projectLine.append(newThreadBtn);
       }
       if (!isExpanded) return entry;
-      const sidebarThreads = getSidebarThreads(store2, project2.id);
-      const isFiltering = threadFilter.length > 0;
+      const isFiltering = threadFilter.length > 0 && project2.id === activeProjectId;
+      const sidebarThreads = isFiltering ? sortThreadsNewestFirst(store2.getState().threads).filter(
+        (thread) => thread.archivedAt == null
+      ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter)
+        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
+          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
+        )
       ) : sidebarThreads;
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
@@ -66869,6 +66969,22 @@ function mountProjectsPane(root, store2, api2) {
       const chats = el("div", { class: "chats-list" });
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store2, project2.id)) {
         chats.append(el("div", { class: "sidebar-empty chats-loading" }, "Loading\u2026"));
+      } else if (isFiltering && contentFilter.pending) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Searching user requests\u2026"
+          )
+        );
+      } else if (isFiltering && contentFilter.failed) {
+        chats.append(
+          el(
+            "div",
+            { class: "sidebar-empty thread-filter-status", role: "status" },
+            "Some threads could not be searched"
+          )
+        );
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
@@ -66912,11 +67028,14 @@ function mountProjectsPane(root, store2, api2) {
   }
   const unsubs = [
     store2.on("projects_changed", render),
+    // Streaming and hydration must not restart the disk scan. Resident human
+    // requests are matched in render(), so new prompts still appear immediately.
     store2.on("threads_changed", render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
+      closeThreadFilter();
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
@@ -66930,6 +67049,7 @@ function mountProjectsPane(root, store2, api2) {
   render();
   refreshOrphans();
   return () => {
+    contentFilter.cancel();
     prStatusGeneration += 1;
     dismissContextMenu();
     renaming = null;
@@ -66956,6 +67076,8 @@ var init_projects_pane = __esm({
     init_automation_dialog();
     init_toast();
     init_fork_thread3();
+    init_thread_filter();
+    init_thread_sort();
     init_sidebar_thread();
     init_attention();
     init_ssh_workspace_ui();
@@ -89647,55 +89769,6 @@ var init_debug_trace_prompt2 = __esm({
 });
 
 // src/shared/usage/footer-usage-summary.ts
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    return { inputTokens, outputTokens, estimated: false };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const cost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
-// src/shared/usage/footer-usage-tooltip.ts
 function collectSubagentUsage(toolCalls, totals) {
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent;
@@ -89717,12 +89790,84 @@ function sumSubagentUsage(messages) {
   }
   return totals;
 }
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls ?? []) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    return {
+      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
+      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+  }
+});
+
+// src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
   if (isLocalModel(model)) return `${tokens} \xB7 free`;
   const cost = costForModelUsage(model, usage, pricing);
   if (!hasModelPricing(model, pricing)) return `${tokens} \xB7 unpriced`;
   return `${tokens} \xB7 ${cost > 0 ? formatUsd(cost) : "free"}`;
+}
+function freeReason(model, pricing) {
+  if (isLocalModel(model)) return "local model";
+  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  return null;
+}
+function buildFreeNote(models, pricing) {
+  const reasons = [];
+  for (const model of models) {
+    const reason = freeReason(model, pricing);
+    if (reason && !reasons.includes(reason)) reasons.push(reason);
+  }
+  return reasons.length > 0 ? `Free: ${reasons.join("; ")}` : null;
 }
 function buildFooterUsageTooltip(display, opts) {
   const { inputTokens, outputTokens, estimated } = display;
@@ -89731,13 +89876,18 @@ function buildFooterUsageTooltip(display, opts) {
     { label: "Input", value: `${approx}${formatTokenCount(inputTokens)}` },
     { label: "Output", value: `${approx}${formatTokenCount(outputTokens)}` }
   ];
+  const threadRows = [];
   const usage = opts.measuredUsage;
   const cacheRead = estimated ? 0 : usage.cacheReadTokens ?? 0;
   const cacheCreation = estimated ? 0 : usage.cacheCreationTokens ?? 0;
-  if (cacheRead > 0) rows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
-  if (cacheCreation > 0) rows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  if (cacheRead > 0) {
+    threadRows.push({ label: "Cache read", value: formatTokenCount(cacheRead) });
+  }
+  if (cacheCreation > 0) {
+    threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
+  }
   const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
-  if (cost) rows.push({ label: "Cost", value: cost });
+  if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
     label: "Subagents",
@@ -89745,6 +89895,8 @@ function buildFooterUsageTooltip(display, opts) {
       subagents.inputTokens
     )} in / ${formatTokenCount(subagents.outputTokens)} out`
   } : null;
+  const conversationLabel = subagentRow ? "Excluding subagents" : null;
+  const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
   const byModel = Object.entries(usage.byModel ?? {}).filter(
     ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
@@ -89759,18 +89911,25 @@ function buildFooterUsageTooltip(display, opts) {
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
   const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
+    conversationLabel,
     rows,
+    threadLabel: threadLabel2,
+    threadRows,
     subagentRow,
     modelRows,
-    note
+    note,
+    freeNote
   };
 }
 var init_footer_usage_tooltip = __esm({
   "src/shared/usage/footer-usage-tooltip.ts"() {
     init_estimate_cost();
+    init_footer_usage_summary();
     init_format_usage_summary();
+    init_footer_usage_summary();
   }
 });
 
@@ -89796,9 +89955,19 @@ function createFooterUsagePopover() {
         return;
       }
       root.append(el("div", { class: "footer-usage-popover-header" }, model.header));
+      if (model.conversationLabel) {
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.conversationLabel));
+      }
       for (const entry of model.rows) root.append(row(entry, "footer-usage-popover-row"));
-      if (model.subagentRow || model.modelRows.length > 0) {
+      if (model.threadLabel) {
         root.append(el("div", { class: "footer-usage-popover-divider" }));
+        root.append(el("div", { class: "footer-usage-popover-section" }, model.threadLabel));
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+      } else {
+        for (const entry of model.threadRows) root.append(row(entry, "footer-usage-popover-row"));
+        if (model.subagentRow || model.modelRows.length > 0) {
+          root.append(el("div", { class: "footer-usage-popover-divider" }));
+        }
       }
       if (model.subagentRow) {
         root.append(row(model.subagentRow, "footer-usage-popover-row is-subagents"));
@@ -89807,6 +89976,9 @@ function createFooterUsagePopover() {
         root.append(row(entry, "footer-usage-popover-row is-model"));
       }
       if (model.note) root.append(el("div", { class: "footer-usage-popover-note" }, model.note));
+      if (model.freeNote) {
+        root.append(el("div", { class: "footer-usage-popover-note" }, model.freeNote));
+      }
     },
     show() {
       if (hasContent) root.hidden = false;
