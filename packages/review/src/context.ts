@@ -8,7 +8,13 @@
 import { readdir, lstat } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix } from 'node:path'
 import { readCheckoutFile } from './checkout-fs.ts'
-import { runGit, type GitRunner, type MaterialisedCheckouts } from './checkouts.ts'
+import {
+  gitInWorktree,
+  runGit,
+  type GitRunner,
+  type MaterialisedCheckouts,
+  type PinnedWorktree,
+} from './checkouts.ts'
 
 export type FileDiffStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'binary'
 
@@ -41,6 +47,8 @@ export interface TestMapEntry {
 export interface ReviewContext {
   readonly mergeBase: string
   readonly headCommit: string
+  /** The head checkout, pinned to its git directory for host-side `git_diff`. */
+  readonly head: PinnedWorktree
   readonly dirtyWorkingTree: boolean
   readonly files: readonly FileDiff[]
   readonly instructions: readonly RepositoryInstructions[]
@@ -306,8 +314,9 @@ export interface BuildContextOptions {
  * intent-to-add in the throwaway worktree so they appear as additions.
  */
 export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner): Promise<string> {
+  const head = pinnedHead(checkouts)
   if (checkouts.untrackedPaths.length > 0) {
-    const added = await git(checkouts.head, [
+    const added = await gitInWorktree(git, head, [
       'add',
       '--intent-to-add',
       '--',
@@ -317,7 +326,7 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
       throw new Error(`Cannot stage untracked context: ${added.stderr.trim()}`)
     }
   }
-  const result = await git(checkouts.head, [
+  const result = await gitInWorktree(git, head, [
     'diff',
     '--no-color',
     '--no-ext-diff',
@@ -332,6 +341,10 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
   return result.stdout
 }
 
+function pinnedHead(checkouts: MaterialisedCheckouts): PinnedWorktree {
+  return { gitDir: checkouts.headGitDir, workTree: checkouts.head }
+}
+
 export async function buildReviewContext(options: BuildContextOptions): Promise<ReviewContext> {
   const git = options.git ?? runGit
   const budgetChars = options.budgetChars ?? DEFAULT_CONTEXT_BUDGET_CHARS
@@ -339,6 +352,7 @@ export async function buildReviewContext(options: BuildContextOptions): Promise<
   return {
     mergeBase: options.checkouts.mergeBase,
     headCommit: options.checkouts.headCommit,
+    head: pinnedHead(options.checkouts),
     dirtyWorkingTree: options.checkouts.dirty,
     files,
     instructions: readInstructions(options.checkouts.head),
@@ -397,12 +411,12 @@ export function renderReviewContext(context: ReviewContext): string {
 
 /** Retrieve the full diff; pin `headCommit` when placing comments on a forge. */
 export async function readFileDiff(
-  headCheckout: string,
+  head: PinnedWorktree,
   mergeBase: string,
   path: string,
   headCommit?: string,
 ): Promise<string> {
-  const result = await runGit(headCheckout, [
+  const result = await gitInWorktree(runGit, head, [
     'diff',
     '--no-color',
     '--no-ext-diff',
