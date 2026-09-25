@@ -1,8 +1,4 @@
-import type {
-  ClassifierProfile,
-  ClassifierRequest,
-  HttpClassifierConnection,
-} from './types.ts'
+import type { ClassifierProfile, ClassifierRequest, HttpClassifierConnection } from './types.ts'
 
 /** Defaults are editable; aliases are recorded alongside returned model versions in results. */
 export const CLASSIFIER_PRESETS: readonly ClassifierProfile[] = [
