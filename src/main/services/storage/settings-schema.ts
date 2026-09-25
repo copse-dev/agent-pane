@@ -94,16 +94,26 @@ export const modelCardProbeCacheSchema = z.record(
 )
 
 const MAIN_ONLY_SETTING_SCHEMAS = {
-  classifierProviders: z.strictObject({
-    version: z.literal(1),
-    profiles: z
-      .array(classifierProfileSchema)
-      .max(64)
-      .refine(
-        (profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length,
-        'Classifier profile IDs must be unique',
-      ),
-  }),
+  classifierProviders: z
+    .strictObject({
+      version: z.literal(1),
+      profiles: z
+        .array(classifierProfileSchema)
+        .max(64)
+        .refine(
+          (profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length,
+          'Classifier profile IDs must be unique',
+        ),
+      // The connection that screens shell commands and terminal reads; absent
+      // means the Instruct / safety model does.
+      screeningProfileId: z.string().optional(),
+    })
+    .refine(
+      (value) =>
+        value.screeningProfileId === undefined ||
+        value.profiles.some((profile) => profile.id === value.screeningProfileId),
+      'The screening classifier must be a saved connection',
+    ),
   windowBounds: windowBoundsSchema,
   // Security / safety toggles read in the main process.
   localServerUrl: z.string().max(2048),

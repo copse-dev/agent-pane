@@ -28,9 +28,17 @@
 import ts from 'typescript'
 import { z } from 'zod'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { isRecord } from '../../src/shared/unknown-value.mts'
 
 // ── Public document shape ────────────────────────────────────────────────────
@@ -939,6 +947,49 @@ export function parseApiProtocolManifest(text: string): ApiProtocolManifest {
  * classification inlines `$ref`s and compares shapes, so that only matters if
  * such a type changed between the two, which the diff of that package shows.
  */
+/**
+ * Give a ref's worktree the base checkout's installed dependencies, but its own
+ * workspace packages. pnpm links `@copse/*` relatively (`../../packages/llm`),
+ * so symlinking `node_modules` wholesale would resolve those links back into
+ * the base checkout: the ref's baseline would then describe the current
+ * package types, and a method added to a package-owned client interface would
+ * read as an existing method whose shape changed. Every entry is linked
+ * individually instead; one that resolves into the base checkout outside
+ * `node_modules` is re-pointed at the same path inside the worktree.
+ */
+export function linkRefNodeModules(base: string, worktree: string): void {
+  const source = join(base, 'node_modules')
+  const target = join(worktree, 'node_modules')
+  const root = realpathSync(base)
+  mkdirSync(target)
+  const link = (from: string, to: string): void => {
+    let real: string
+    try {
+      real = realpathSync(from)
+    } catch {
+      return // A dangling link is unusable in the base checkout too.
+    }
+    const path = relative(root, real)
+    const workspace =
+      path !== '' &&
+      !path.startsWith('..') &&
+      !isAbsolute(path) &&
+      path.split(/[\\/]/)[0] !== 'node_modules'
+    symlinkSync(workspace ? join(worktree, path) : real, to)
+  }
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name)
+    if (entry.name.startsWith('@') && entry.isDirectory()) {
+      mkdirSync(join(target, entry.name))
+      for (const scoped of readdirSync(from)) {
+        link(join(from, scoped), join(target, entry.name, scoped))
+      }
+    } else {
+      link(from, join(target, entry.name))
+    }
+  }
+}
+
 export function generateApiProtocolAtRef(
   ref: string,
   version: number,
@@ -951,7 +1002,7 @@ export function generateApiProtocolAtRef(
       cwd: base,
       stdio: 'pipe',
     })
-    symlinkSync(join(base, 'node_modules'), join(worktree, 'node_modules'), 'dir')
+    linkRefNodeModules(base, worktree)
     return generateApiProtocol({ root: worktree, version })
   } finally {
     try {

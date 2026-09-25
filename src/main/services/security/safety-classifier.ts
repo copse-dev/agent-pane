@@ -13,6 +13,8 @@ import {
   noteSafetyModelTimeout,
 } from './safety-model-cooldown.ts'
 import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
+import { classifyShellScopeWithClassifier } from './safety-classifier-profile.ts'
+import { screeningClassifierId } from '../classifiers/classifier-service.ts'
 
 export type { ClassificationResult } from './safety-classification-parse.ts'
 export { parseClassification } from './safety-classification-parse.ts'
@@ -32,8 +34,39 @@ Mark as "external" if the command might: use the network, read/write outside the
 Mark as "sandbox" only when you are confident the command stays within the workspace with no network.
 When uncertain, use "external" with lower confidence.`
 
+function shellScopePayload(command: string): {
+  tool: string
+  command: string
+  workspace_root: string | null
+  sandbox_enabled: boolean
+  sandbox_rules: Record<string, string>
+} {
+  return {
+    tool: 'run_shell',
+    command,
+    workspace_root: getWorkspaceRoot(),
+    sandbox_enabled: isProjectSandboxEnabled(),
+    sandbox_rules: {
+      network: 'denied',
+      filesystem_read: 'workspace only',
+      filesystem_write: 'workspace only',
+    },
+  }
+}
+
 export async function classifyShellScope(command: string): Promise<ClassificationResult | null> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
+
+  // A classifier chosen in Settings → Classifiers screens instead of the safety model.
+  const classifierId = screeningClassifierId()
+  if (classifierId) {
+    const { verdict, problem } = await classifyShellScopeWithClassifier(
+      classifierId,
+      shellScopePayload(command),
+    )
+    if (problem) reportSafetyModelProblem(problem)
+    return verdict
+  }
 
   // Which model screens — the stored rule expanded, minus anything currently
   // being routed around for missing the budget (`safety-screening-model.ts`).
@@ -53,18 +86,7 @@ export async function classifyShellScope(command: string): Promise<Classificatio
     return null
   }
 
-  const workspaceRoot = getWorkspaceRoot()
-  const payload = {
-    tool: 'run_shell',
-    command,
-    workspace_root: workspaceRoot,
-    sandbox_enabled: isProjectSandboxEnabled(),
-    sandbox_rules: {
-      network: 'denied',
-      filesystem_read: 'workspace only',
-      filesystem_write: 'workspace only',
-    },
-  }
+  const payload = shellScopePayload(command)
 
   try {
     // A classification, not a reasoning task: cap the depth so a deeply-tuned

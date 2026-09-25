@@ -92,4 +92,8 @@ export interface ClassifierClient {
   save(profile: ClassifierProfile): Promise<ClassifierProfileStatus[]>
   remove(id: string): Promise<ClassifierProfileStatus[]>
   test(id: string): Promise<ClassifierResult>
+  /** The saved connection that screens shell commands and terminal reads; `null` means the safety model does. */
+  screening(): Promise<string | null>
+  /** Route safety screening to a saved connection, or back to the safety model with `null`. */
+  setScreening(id: string | null): Promise<string | null>
 }

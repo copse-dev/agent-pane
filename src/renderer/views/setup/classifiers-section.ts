@@ -5,7 +5,11 @@ import type {
   ClassifierProfileStatus,
   ClassifierResult,
 } from '@copse/llm/classifiers/types.ts'
-import { CLASSIFIER_PRESETS, classifierCredentialId } from '@copse/llm/classifiers/presets.ts'
+import {
+  CLASSIFIER_PRESETS,
+  classifierCredentialId,
+  classifierEndpointKey,
+} from '@copse/llm/classifiers/presets.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
 import { showConfirmDialog } from '../confirm-dialog.ts'
@@ -51,6 +55,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   const chips = el('div', { class: 'provider-chips', 'aria-label': 'Classifier profiles' })
   const formHost = el('div', { class: 'provider-form-host' })
   const status = el('p', { class: 'classifier-status', role: 'status', 'aria-live': 'polite' })
+  const screening = el('select', { name: 'classifierScreening' })
   const root = el(
     'fieldset',
     { class: 'classifiers-section' },
@@ -58,13 +63,25 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Connect local or hosted classifiers for evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge.',
+      'Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge.',
+    ),
+    el(
+      'label',
+      { class: 'classifier-screening' },
+      'Safety screening',
+      screening,
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions.',
+      ),
     ),
     chips,
     formHost,
     status,
   )
   let profiles: ClassifierProfileStatus[] = []
+  let screeningId: string | null = null
   let selectedId: string | null = null
   const drafts = new Map<string, ClassifierProfile>()
   let captureDraft: (() => void) | undefined
@@ -111,7 +128,48 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     chips.append(add)
   }
 
+  function renderScreening(): void {
+    clear(screening)
+    screening.append(el('option', { value: '' }, 'Instruct / safety model'))
+    for (const { profile } of profiles) {
+      screening.append(el('option', { value: profile.id }, profile.label))
+    }
+    screening.value = profiles.some((item) => item.profile.id === screeningId)
+      ? (screeningId ?? '')
+      : ''
+  }
+
+  screening.addEventListener('change', () => {
+    const id = screening.value || null
+    if (busy) {
+      renderScreening()
+      return
+    }
+    busy = true
+    root.disabled = true
+    void (async () => {
+      try {
+        screeningId = await api.classifiers.setScreening(id)
+        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label
+        setInlineStatus(
+          status,
+          'ok',
+          chosen
+            ? `Safety screening now uses ${chosen}. No test call has been made.`
+            : 'Safety screening now uses the Instruct / safety model.',
+        )
+      } catch (error) {
+        setInlineStatus(status, 'error', classifierErrorMessage(error))
+      } finally {
+        busy = false
+        root.disabled = false
+        renderScreening()
+      }
+    })()
+  })
+
   function render(): void {
+    renderScreening()
     renderChips()
     clear(formHost)
     clear(status)
@@ -209,7 +267,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       })
       function normalizedUrl(value: string): string {
         try {
-          return new URL(value).href.replace(/\/+$/, '')
+          return classifierEndpointKey(value)
         } catch {
           return value.trim().replace(/\/+$/, '')
         }
@@ -484,7 +542,11 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     })
     remove.addEventListener('click', () => {
       void run(async () => {
-        if (saved) profiles = await api.classifiers.remove(profile.id)
+        if (saved) {
+          profiles = await api.classifiers.remove(profile.id)
+          // Removing the screening connection hands screening back to the safety model.
+          screeningId = await api.classifiers.screening()
+        }
         pending.delete(profile.id)
         selectedId = profiles[0]?.profile.id ?? null
         drafts.delete(profile.id)
@@ -502,7 +564,10 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     if (busy) return
     captureDraft?.()
     try {
-      profiles = await api.classifiers.list()
+      ;[profiles, screeningId] = await Promise.all([
+        api.classifiers.list(),
+        api.classifiers.screening(),
+      ])
       selectedId ??= profiles[0]?.profile.id ?? null
       if (
         selectedId !== null &&

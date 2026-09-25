@@ -437,6 +437,20 @@
           1
         ]
       },
+      "classifiers:screening": {
+        "api": "classifiers.screening",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "classifiers:set-screening": {
+        "api": "classifiers.setScreening",
+        "args": [
+          1,
+          1
+        ]
+      },
       "classifiers:test": {
         "api": "classifiers.test",
         "args": [

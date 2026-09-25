@@ -48,6 +48,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     failure: string | null
     keyFailure: string | null
     removals: string[]
+    screening: string | null
+    screenings: Array<string | null>
   }
 } {
   const state = {
@@ -56,6 +58,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
       hasKey: false,
       encrypted: null,
     })),
+    screening: null as string | null,
+    screenings: new Array<string | null>(),
     tests: new Array<string>(),
     saves: new Array<ClassifierProfile>(),
     keys: new Array<{ id: string; key: string; allowPlaintext: boolean }>(),
@@ -74,18 +78,30 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         const existing = state.profiles.find((item) => item.profile.id === profile.id)
         if (existing) existing.profile = structuredClone(profile)
         else
-          state.profiles.push({ profile: structuredClone(profile), hasKey: false, encrypted: null })
+          state.profiles.push({
+            profile: structuredClone(profile),
+            hasKey: false,
+            encrypted: null,
+          })
         return structuredClone(state.profiles)
       },
       remove: async (id) => {
         state.removals.push(id)
         state.profiles = state.profiles.filter((item) => item.profile.id !== id)
+        if (state.screening === id) state.screening = null
         return structuredClone(state.profiles)
       },
       test: async (id) => {
         state.tests.push(id)
         if (state.failure) throw new Error(state.failure)
         return RESULT
+      },
+      screening: async () => state.screening,
+      setScreening: async (id) => {
+        state.screenings.push(id)
+        if (state.failure) throw new Error(state.failure)
+        state.screening = id
+        return state.screening
       },
     },
     settings: {
@@ -127,6 +143,68 @@ beforeEach(() => {
 })
 
 describe('classifier connections settings', () => {
+  it('routes safety screening to a saved connection and back without an inference call', async () => {
+    const { section, state } = setup([HTTP_PROFILE, { ...HTTP_PROFILE, id: 'other', label: 'Other' }])
+    state.screening = 'other'
+    await section.refresh()
+    const screening = qsRequired<HTMLSelectElement>(section.root, '[name="classifierScreening"]')
+    assert.deepEqual(
+      [...screening.options].map((option) => [option.value, option.textContent]),
+      [
+        ['', 'Instruct / safety model'],
+        ['fixture', 'Fixture classifier'],
+        ['other', 'Other'],
+      ],
+    )
+    assert.equal(screening.value, 'other')
+
+    screening.value = 'fixture'
+    screening.dispatchEvent(new Event('change'))
+    await setImmediate()
+    assert.deepEqual(state.screenings, ['fixture'])
+    assert.equal(screening.value, 'fixture')
+    assert.match(section.root.textContent, /Safety screening now uses Fixture classifier/)
+
+    screening.value = ''
+    screening.dispatchEvent(new Event('change'))
+    await setImmediate()
+    assert.deepEqual(state.screenings, ['fixture', null])
+    assert.equal(screening.value, '')
+    assert.match(section.root.textContent, /now uses the Instruct \/ safety model/)
+    assert.deepEqual(state.tests, [])
+  })
+
+  it('restores the saved screening choice when switching fails', async () => {
+    const { section, state } = setup()
+    await section.refresh()
+    const screening = qsRequired<HTMLSelectElement>(section.root, '[name="classifierScreening"]')
+    state.failure = 'Classifier profile is not configured'
+    screening.value = 'fixture'
+    screening.dispatchEvent(new Event('change'))
+    await setImmediate()
+    assert.equal(screening.value, '')
+    assert.match(
+      qsRequired(section.root, '.classifier-status').textContent,
+      /Classifier profile is not configured/,
+    )
+  })
+
+  it('drops a removed connection from the screening choices', async () => {
+    const { section, state } = setup()
+    await section.refresh()
+    state.screening = 'fixture'
+    await section.refresh()
+    const screening = qsRequired<HTMLSelectElement>(section.root, '[name="classifierScreening"]')
+    assert.equal(screening.value, 'fixture')
+    button(section.root, 'remove').click()
+    await setImmediate()
+    assert.deepEqual(
+      [...screening.options].map((option) => option.value),
+      [''],
+    )
+    assert.equal(screening.value, '')
+  })
+
   it('never calls inference on refresh, typing, or saving; tests only the saved profile', async () => {
     const { section, state } = setup()
     await section.refresh()

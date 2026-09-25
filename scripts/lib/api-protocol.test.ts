@@ -1,7 +1,16 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { API_PROTOCOL_VERSION } from '../../src/shared/api-protocol.mts'
@@ -10,6 +19,7 @@ import {
   analyzePreloadSource,
   compareApiProtocol,
   generateApiProtocol,
+  linkRefNodeModules,
   manifestOf,
   parseApiProtocol,
   parseApiProtocolManifest,
@@ -415,6 +425,41 @@ describe('compareApiProtocol', () => {
   it('parses only documents that carry the fields the tooling reads', () => {
     assert.throws(() => parseApiProtocol('{"version":1}'), /not an API protocol document/)
     assert.equal(parseApiProtocol(serializeApiProtocol(doc({}))).version, 1)
+  })
+})
+
+describe('linkRefNodeModules', () => {
+  it("resolves workspace packages from the ref's worktree and dependencies from the base", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'copse-protocol-links-')))
+    try {
+      const base = join(dir, 'base')
+      const worktree = join(dir, 'ref')
+      for (const path of [
+        'base/packages/llm',
+        'base/node_modules/@copse',
+        'base/node_modules/.pnpm/zod/node_modules/zod',
+        'ref/packages/llm',
+      ]) {
+        mkdirSync(join(dir, path), { recursive: true })
+      }
+      symlinkSync('../../packages/llm', join(base, 'node_modules/@copse/llm'))
+      symlinkSync('.pnpm/zod/node_modules/zod', join(base, 'node_modules/zod'))
+      symlinkSync('../../packages/removed', join(base, 'node_modules/@copse/removed'))
+
+      linkRefNodeModules(base, worktree)
+
+      assert.equal(
+        realpathSync(join(worktree, 'node_modules/@copse/llm')),
+        join(worktree, 'packages/llm'),
+      )
+      assert.equal(
+        realpathSync(join(worktree, 'node_modules/zod')),
+        join(base, 'node_modules/.pnpm/zod/node_modules/zod'),
+      )
+      assert.deepEqual(readdirSync(join(worktree, 'node_modules/@copse')), ['llm'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

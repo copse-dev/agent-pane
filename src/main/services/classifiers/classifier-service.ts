@@ -39,13 +39,24 @@ import { firstNonEmptyString } from '@shared/unknown-value.ts'
 interface ClassifierConfiguration {
   version: 1
   profiles: ClassifierProfile[]
+  /** Saved in the same record as the profiles, so it can never name a removed one. */
+  screeningProfileId?: string
 }
 
 const EMPTY_CONFIGURATION: ClassifierConfiguration = { version: 1, profiles: [] }
 const CONFIGURATION_KEY = 'classifierProviders'
 
+function configuration(): ClassifierConfiguration {
+  return getSetting<ClassifierConfiguration>(CONFIGURATION_KEY, EMPTY_CONFIGURATION)
+}
+
 function configuredProfiles(): ClassifierProfile[] {
-  return getSetting<ClassifierConfiguration>(CONFIGURATION_KEY, EMPTY_CONFIGURATION).profiles
+  return configuration().profiles
+}
+
+/** The saved connection that screens shell commands and terminal reads, if one is chosen. */
+export function screeningClassifierId(): string | null {
+  return configuration().screeningProfileId ?? null
 }
 
 function credentialForProfile(id: string): string {
@@ -110,6 +121,27 @@ export function listClassifierProfiles(): ClassifierProfileStatus[] {
   }))
 }
 
+/**
+ * Choose which saved connection screens shell commands and terminal reads, or
+ * pass `null` to hand screening back to the Instruct / safety model. Choosing
+ * makes no inference call; the host was approved when the connection was saved.
+ */
+export async function setScreeningClassifier(id: string | null): Promise<string | null> {
+  if (id !== null) getClassifierProfile(id)
+  await updateSetting<ClassifierConfiguration>(
+    CONFIGURATION_KEY,
+    EMPTY_CONFIGURATION,
+    ({ screeningProfileId: _previous, ...current }) => {
+      if (id === null) return current
+      if (!current.profiles.some((profile) => profile.id === id)) {
+        throw new Error('Classifier profile is not configured')
+      }
+      return { ...current, screeningProfileId: id }
+    },
+  )
+  return screeningClassifierId()
+}
+
 export async function saveClassifierProfile(
   raw: ClassifierProfile,
 ): Promise<ClassifierProfileStatus[]> {
@@ -130,6 +162,7 @@ export async function saveClassifierProfile(
         deleteApiKey(credential)
       }
       return {
+        ...current,
         version: 1,
         profiles: previous
           ? current.profiles.map((entry) => (entry.id === profile.id ? profile : entry))
@@ -145,9 +178,14 @@ export async function removeClassifierProfile(id: string): Promise<ClassifierPro
   await updateSetting<ClassifierConfiguration>(
     CONFIGURATION_KEY,
     EMPTY_CONFIGURATION,
-    (current) => ({
+    ({ screeningProfileId, ...current }) => ({
+      ...current,
       version: 1,
       profiles: current.profiles.filter((profile) => profile.id !== id),
+      // Removing the screening connection hands screening back to the safety model.
+      ...(screeningProfileId === undefined || screeningProfileId === id
+        ? {}
+        : { screeningProfileId }),
     }),
   )
   deleteApiKey(credential)

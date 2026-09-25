@@ -15,6 +15,8 @@ import {
   noteSafetyModelTimeout,
 } from './safety-model-cooldown.ts'
 import { resolveSafetyScreeningModel } from './safety-screening-model.ts'
+import { classifyTerminalSnapshotWithClassifier } from './safety-classifier-profile.ts'
+import { screeningClassifierId } from '../classifiers/classifier-service.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
@@ -91,6 +93,14 @@ export async function classifyTerminalSnapshot(
   signal?: AbortSignal,
 ): Promise<TerminalReadScreening> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return { verdict: null, problem: null }
+
+  // A classifier chosen in Settings → Classifiers screens instead of the safety model.
+  const classifierId = screeningClassifierId()
+  if (classifierId) {
+    const screening = await classifyTerminalSnapshotWithClassifier(classifierId, text, signal)
+    if (screening.problem) reportSafetyModelProblem(screening.problem)
+    return screening
+  }
 
   const { model, problem: routing } = await resolveSafetyScreeningModel()
   if (routing) {
