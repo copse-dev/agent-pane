@@ -1531,7 +1531,7 @@ function createAcpToolDiff(
   item: Extract<AcpToolCallContent, { type: 'diff' }>,
   workspaceRoot: string | null,
 ): HTMLElement {
-  const displayPath = workspaceResourcePath(item.path, workspaceRoot)
+  const displayPath = workspaceDisplayPath(item.path, workspaceRoot)
   const lines = computeLineDiff(item.oldText ?? '', item.newText)
   const additions = lines.filter((line) => line.kind === 'add').length
   const deletions = lines.filter((line) => line.kind === 'del').length
