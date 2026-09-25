@@ -242,6 +242,29 @@ describe('settings plugins (about:addons)', function () {
       'settings-artifact-checkpoint-plugin.png',
     )
 
+    // Dark factory is groundwork with no consumer yet; its copy must not claim
+    // to watch pull requests.
+    const darkFactoryRow = plugins.$('.plugin-row[data-plugin-id="copse.dark-factory"]')
+    await expect(darkFactoryRow).toBeDisplayed()
+    const darkFactoryText = await darkFactoryRow.getText()
+    assert.match(darkFactoryText, /groundwork only/)
+    assert.doesNotMatch(darkFactoryText, /observes Copse-owned pull requests/)
+    await darkFactoryRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.dark-factory"]',
+      'settings-dark-factory-plugin.png',
+    )
+
+    // The DevTools shortcut is a global accelerator; the row says so.
+    const devtoolsRow = plugins.$('.plugin-row[data-plugin-id="copse.devtools-shortcut"]')
+    await expect(devtoolsRow).toBeDisplayed()
+    assert.match(await devtoolsRow.getText(), /system-wide Ctrl\+Shift\+I/)
+    await devtoolsRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.plugin-row[data-plugin-id="copse.devtools-shortcut"]',
+      'settings-devtools-shortcut-plugin.png',
+    )
+
     // A selected directory remains an ordinary user plugin. Its declared tool
     // behavior is visible even when this platform cannot start the macOS-only
     // isolated worker and therefore leaves the plugin disabled.

@@ -41,7 +41,7 @@ const DEVTOOLS_SHORTCUT_CAPABILITY_DECL: PluginCapabilityDecl = {
   name: DEVTOOLS_SHORTCUT_CAPABILITY,
   title: 'DevTools keyboard shortcut',
   description:
-    'Register Ctrl+Shift+I to toggle the Electron DevTools window, for debugging the app itself (not the agent conversation). While off, no shortcut is registered and the DevTools window cannot be opened.',
+    'Register Ctrl+Shift+I to toggle the Electron DevTools window, for debugging the app itself (not the agent conversation). While on, the shortcut is registered system-wide, so other apps do not receive Ctrl+Shift+I while Copse is running. While off, no shortcut is registered; Developer mode still offers View > Developer Tools.',
 }
 
 /**
@@ -54,7 +54,7 @@ export const devtoolsShortcutPlugin: RegisteredPlugin = definePlugin(
   {
     name: DEVTOOLS_SHORTCUT_PLUGIN_ID,
     description:
-      'DevTools shortcut — register the Ctrl+Shift+I keyboard shortcut that toggles the Electron DevTools window, for debugging the app itself.',
+      'DevTools shortcut — register a system-wide Ctrl+Shift+I shortcut that toggles the Electron DevTools window, for debugging the app itself.',
     trust: 'first-party',
     stability: 'experimental',
     capabilities: [DEVTOOLS_SHORTCUT_CAPABILITY_DECL],

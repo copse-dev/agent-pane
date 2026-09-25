@@ -1422,8 +1422,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <p class="field-hint">
                 When a project is on a remote machine, start the agent there, next to the code,
-                instead of leaving it unavailable. The agent has to be installed and signed in on
-                that machine already.
+                instead of leaving it unavailable. If the agent is not installed there, Copse asks
+                before installing it; you sign in on that machine yourself.
               </p>
             </fieldset>
           </section>
@@ -1439,11 +1439,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
-                Show the read-only Desktop pane
+                Show the Desktop pane
               </label>
               <p class="field-hint">
-                View a VNC server on this machine or through the active SSH workspace's encrypted
-                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+                View a VNC desktop on this machine, on a saved SSH machine, or found nearby on your
+                network, plus booted iOS Simulators and Android emulators. Connections start
+                view-only; turn on control to send keyboard and pointer input. Clipboard is not
+                shared.
               </p>
             </fieldset>
 
@@ -1518,8 +1520,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Enable developer mode
               </label>
               <p class="field-hint">
-                Shows Hooks in Sources and the conversation diagnostics menu. The optional
-                <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
+                Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
+                Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
           </section>
