@@ -16,6 +16,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
@@ -34,11 +35,13 @@ import {
   removeRegisteredWorktreeCheckout,
   renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
+  retireDeletedThreadWorktree,
   retireThreadWorktree,
   sameWorktreePath,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
+  type DeletedThreadWorktreeResult,
 } from './worktree-manager.ts'
 
 function git(cwd: string, args: string[]): string {
@@ -979,5 +982,87 @@ describe('worktree manager', () => {
     assert.ok(!paths.includes(safe.path))
     assert.ok(paths.includes(dirty.path))
     assert.ok(paths.includes(ahead.path))
+  })
+
+  it("removes a deleted thread's clean merged checkout and its merged branch", async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-deleted',
+      projectRoot: repo,
+      prompt: 'Merged before deletion',
+      baseBranch: 'main',
+    })
+    await writeFile(join(worktree.path, 'merged.txt'), 'merged\n')
+    git(worktree.path, ['add', '.'])
+    git(worktree.path, ['commit', '-q', '-m', 'merged work'])
+    git(repo, ['merge', '-q', '--no-edit', worktree.branch])
+    assert.notEqual(await readThreadWorktreeRecoveryMetadata(repo, worktree.branch), null)
+
+    assert.deepEqual(
+      await retireDeletedThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-deleted',
+        projectRoot: repo,
+        worktree,
+      }),
+      { status: 'removed', branch: worktree.branch, branchDeleted: true },
+    )
+    assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
+    await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
+    assert.equal(git(repo, ['branch', '--list', worktree.branch]).trim(), '')
+    // Git drops the branch's config section with it, recovery metadata included.
+    assert.equal(await readThreadWorktreeRecoveryMetadata(repo, worktree.branch), null)
+    assert.equal(git(repo, ['log', '-1', '--format=%s']).trim(), 'merged work')
+  })
+
+  it("keeps a deleted thread's dirty, untracked, or unmerged checkout and its branch", async () => {
+    const { repo } = await setup()
+    const allocate = (threadId: string): Promise<ThreadWorktree> =>
+      allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId,
+        projectRoot: repo,
+        prompt: `Retained ${threadId}`,
+        baseBranch: 'main',
+      })
+    const retire = (
+      threadId: string,
+      worktree: ThreadWorktree,
+    ): Promise<DeletedThreadWorktreeResult> =>
+      retireDeletedThreadWorktree({ projectId: 'project-1', threadId, projectRoot: repo, worktree })
+
+    const modified = await allocate('thread-modified')
+    await writeFile(join(modified.path, 'README.md'), 'edited\n')
+    const untracked = await allocate('thread-untracked')
+    await writeFile(join(untracked.path, 'new.txt'), 'untracked\n')
+    const ahead = await allocate('thread-unmerged')
+    await writeFile(join(ahead.path, 'ahead.txt'), 'ahead\n')
+    git(ahead.path, ['add', '.'])
+    git(ahead.path, ['commit', '-q', '-m', 'unmerged work'])
+
+    assert.deepEqual(await retire('thread-modified', modified), {
+      status: 'blocked-dirty',
+      paths: ['README.md'],
+    })
+    assert.deepEqual(await retire('thread-untracked', untracked), {
+      status: 'blocked-dirty',
+      paths: ['new.txt'],
+    })
+    assert.deepEqual(await retire('thread-unmerged', ahead), {
+      status: 'blocked-unmerged',
+      branch: ahead.branch,
+      baseBranch: 'main',
+    })
+
+    const paths = (await listProjectWorktrees(repo)).map((record) => record.path)
+    for (const worktree of [modified, untracked, ahead]) {
+      assert.ok(paths.includes(worktree.path))
+      assert.equal(getInternalWorkspaceRootRegistration(worktree.path), null)
+      assert.equal(git(repo, ['branch', '--list', worktree.branch]).trim().length > 0, true)
+    }
+    assert.equal(await readFile(join(modified.path, 'README.md'), 'utf-8'), 'edited\n')
+    assert.equal(await readFile(join(untracked.path, 'new.txt'), 'utf-8'), 'untracked\n')
+    assert.equal(git(ahead.path, ['log', '-1', '--format=%s']).trim(), 'unmerged work')
   })
 })
