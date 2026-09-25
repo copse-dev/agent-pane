@@ -9,7 +9,7 @@ import {
   currentBrowserScope,
   grantBrowserOrigin,
 } from '../browser/browser-network-grants.ts'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -117,8 +117,12 @@ import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { assessShellHarm } from './shell-harm.ts'
+import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
+import {
+  TRUSTED_SSH_HOSTS_SETTING,
+  sanitizeTrustedSshHosts,
+} from '@copse/shell-guard/trusted-ssh-hosts.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
@@ -924,6 +928,14 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
   )
 }
 
+/** The user's trusted SSH hosts and a filesystem probe, for the harm gate's host-reach rules. */
+function harmHostReachContext(): Pick<ShellHarmContext, 'trustedSshHosts' | 'pathExists'> {
+  return {
+    trustedSshHosts: sanitizeTrustedSshHosts(getSetting<unknown>(TRUSTED_SSH_HOSTS_SETTING, [])),
+    pathExists: existsSync,
+  }
+}
+
 /**
  * The contained-runtime gate: an unattended run on a container decides every
  * shell command by where its effect lands, not by whether a host sandbox would
@@ -947,6 +959,7 @@ async function ensureContainedShellCommandPermitted(
     canonicalizePath: realpathSync.native,
     readScript: readScriptForHarm,
     isCompiledProgram,
+    ...harmHostReachContext(),
   })
   const decision = decideContainedShellEffect(command, harm)
   firePermissionDecision(
@@ -1125,6 +1138,7 @@ export async function ensureShellCommandPermitted(
         canonicalizePath: realpathSync.native,
         readScript: readScriptForHarm,
         isCompiledProgram,
+        ...harmHostReachContext(),
       })
     : undefined
   const decision = decideShellPermission(command, {

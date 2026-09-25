@@ -771,6 +771,7 @@ export interface ApiClient {
       approvedProviderHosts?: string[]
       providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
+      trustedSshHosts?: string[]
       // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
       // bundles that don't render the picker don't reset the user's choice.
       shellAutoApprovalLevel?: AutoApprovalLevel

@@ -78,6 +78,11 @@ import {
   parseTrustedCommands,
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
+import {
+  TRUSTED_SSH_HOSTS_SETTING,
+  parseTrustedSshHosts,
+  sanitizeTrustedSshHosts,
+} from '@shared/trusted-ssh-hosts.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import {
@@ -882,6 +887,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   project folder (for example <code>xcodebuild</code>). These run with no prompt.
                   A line that also does something destructive or reaches the network still asks.
                   Only applies in a project you trust and while the first option above is on.
+                </span>
+              </label>
+              <label>
+                Trusted SSH hosts
+                <textarea
+                  name="trustedSshHosts"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="build-box.local"
+                ></textarea>
+                <span class="field-hint">
+                  One host name or <code>~/.ssh/config</code> alias per line. In Guarded YOLO,
+                  <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
+                  without asking; any other host asks first. A destructive remote command still
+                  asks.
                 </span>
               </label>
             </fieldset>
@@ -4546,6 +4566,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
           sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
         )
+        textareaControl(form, 'trustedSshHosts').value = sanitizeTrustedSshHosts(
+          await api.settings.get(TRUSTED_SSH_HOSTS_SETTING),
+        ).join('\n')
         selectControl(form, 'shellAutoApprovalLevel').value = sanitizeAutoApprovalLevel(
           await api.settings.get(AUTO_APPROVAL_LEVEL_SETTING),
         )
@@ -4771,6 +4794,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'approvedProviderHosts',
         PROVIDER_ALLOW_USER_APPROVAL_SETTING,
         'trustedShellCommands',
+        TRUSTED_SSH_HOSTS_SETTING,
         AUTO_APPROVAL_LEVEL_SETTING,
       ]
       if (securityFieldNames.some((name) => dirtyFieldNames.has(name))) {
@@ -4792,6 +4816,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             trustedShellCommands: parseTrustedCommands(
               formDataString(data, 'trustedShellCommands'),
             ),
+            trustedSshHosts: parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING)),
             shellAutoApprovalLevel: sanitizeAutoApprovalLevel(
               data.get(AUTO_APPROVAL_LEVEL_SETTING),
             ),

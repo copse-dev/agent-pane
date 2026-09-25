@@ -666,8 +666,10 @@ describe('Guarded YOLO shell harm gate', () => {
       '  https://example.com/install.sh',
     ].join('\n')
 
-    assert.equal(action(command), 'allow')
-    assert.deepEqual(uninspectableReasons(command), [])
+    // `npx` runs the project's own `tool` binary, so nothing is fetched.
+    const pathExists = (path: string): boolean => path === '/work/project/node_modules/.bin/tool'
+    assert.equal(action(command, { pathExists }), 'allow')
+    assert.deepEqual(uninspectableReasons(command, { pathExists }), [])
   })
 })
 

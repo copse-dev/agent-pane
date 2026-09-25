@@ -327,6 +327,24 @@ While active:
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
   it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
   command position is a comment, not a script to inspect.
+- Commands that reach past this machine's project without deleting anything ask once
+  (`host-reach.ts`):
+  - `ssh`, `scp`, `sftp`, `mosh`, and remote `rsync` to a host not listed under Settings →
+    Permissions → Trusted SSH hosts (empty by default; every jump host must be listed too). A
+    trusted host still asks when the client would run a local command (`-o ProxyCommand`, `-F`,
+    `rsync -e`/`--rsh`) or the remote command matches a destructive pattern. Trusting a host
+    otherwise hands it commands as if it were this machine, including reads of its secrets.
+  - printing the environment (`env`, `printenv`, `export -p`, `declare -x`, bare `set`), a
+    secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
+    any network command (`curl`, `wget`, …) whose line references a secret-named variable;
+  - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
+    `pkill`/`killall` of a bare name (a path or multi-word command line names the agent's own
+    process and runs);
+  - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
+    and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`, which always download.
+- Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
+  has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
+  name.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
   allows them.
 

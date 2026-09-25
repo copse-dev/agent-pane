@@ -171,6 +171,9 @@ export const webAllowedOriginsSchema = z
 
 export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).max(500)
 
+/** Hosts trusted with ssh/scp/rsync under Guarded YOLO (see @copse/shell-guard/trusted-ssh-hosts.ts). */
+export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200)
+
 /** Highest auto-approval tier honoured for shell commands (see @shared/auto-approval.ts). */
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 
@@ -471,6 +474,9 @@ export const securitySettingsSchema = z.object({
   // Allow-list of command basenames trusted to run unsandboxed with no prompt.
   // Optional so bundles that never send it don't clobber a saved list.
   trustedShellCommands: trustedShellCommandsSchema.optional(),
+  // Hosts Guarded YOLO may ssh/scp/rsync to without asking. Optional so bundles
+  // that never send it don't clobber a saved list.
+  trustedSshHosts: trustedSshHostsSchema.optional(),
   // Highest auto-approval tier for recognised low-risk shell shapes. Optional so
   // older renderer bundles that never send it don't reset the user's choice.
   shellAutoApprovalLevel: autoApprovalLevelSchema.optional(),

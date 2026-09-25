@@ -3,8 +3,9 @@
 //   node benchmarks/escalation-review/regression/run.mjs [--check]
 //
 // Every case runs as if the workspace were /Users/dev/project and the home
-// directory /Users/dev, with script files served from the case's `files` map and
-// nothing read from this machine. `enforced` cases must hold; `known-gap` cases
+// directory /Users/dev, with files (scripts, binaries, node_modules/.bin entries)
+// served from the case's `files` map, trusted SSH hosts from `trustedSshHosts`,
+// and nothing read from this machine. `enforced` cases must hold; `known-gap` cases
 // record behaviour a planned fix changes. With --check the exit status is non-zero
 // when an enforced case fails or a known gap starts passing (flip it to enforced).
 import { readFileSync } from 'node:fs'
@@ -52,10 +53,13 @@ export async function run(cases = loadCases()) {
       const readScript = (path) => (Object.hasOwn(files, path) ? (files[path].text ?? null) : null)
       const workspace = Object.hasOwn(testCase, 'workspace') ? testCase.workspace : WORKSPACE
       const isCompiledProgram = (path) => Object.hasOwn(files, path) && files[path].binary === true
+      const pathExists = (path) => Object.hasOwn(files, path)
       const result = analyze(guard, testCase.command, workspace, {
         homeDir: HOME,
         readScript,
         isCompiledProgram,
+        pathExists,
+        trustedSshHosts: testCase.trustedSshHosts ?? [],
       })
       const problems = mismatches(testCase, result)
       const outcome =

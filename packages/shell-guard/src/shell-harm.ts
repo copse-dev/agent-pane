@@ -12,6 +12,7 @@ import {
 import { classifyGhSegment } from './gh-argv.ts'
 import { splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
+import { hostReachReasons } from './host-reach.ts'
 import {
   REASON_FIND_DELETE,
   REASON_RECURSIVE_DELETE,
@@ -37,6 +38,13 @@ export interface ShellHarmContext {
    * workspace; absent, every unreadable file prompts.
    */
   isCompiledProgram?: (path: string) => boolean
+  /**
+   * Hosts (or `~/.ssh/config` aliases) the user trusts with `ssh`, `scp`,
+   * `rsync`, and `sftp`, lower-case. Any other host prompts. Empty by default.
+   */
+  trustedSshHosts?: readonly string[]
+  /** Whether a path exists; lets `npx <tool>` run a project dependency's own binary. */
+  pathExists?: (path: string) => boolean
 }
 
 interface MutableDecision {
@@ -880,7 +888,24 @@ function findExecPayloads(argv: string[]): string[][] {
 }
 
 /** The script an interpreter was handed, from its arguments only. */
+/** Shell options that take a separate value (`bash -o pipefail x`). */
+const SHELL_VALUE_OPTIONS = new Set(['-o', '+o', '-O', '+O'])
+
 function interpreterScriptOperand(argv: string[]): string | null {
+  // A shell runs its first operand as a script whatever it is called:
+  // `bash ./payload` was never read, while `bash ./payload.sh` was.
+  if (SHELL_LANGUAGE_INTERPRETERS.has(commandName(argv[0]))) {
+    for (let i = 1; i < argv.length; i++) {
+      const arg = argv[i] ?? ''
+      if (arg === '--') return argv[i + 1] ?? null
+      if (arg.startsWith('-') || arg.startsWith('+')) {
+        if (SHELL_VALUE_OPTIONS.has(arg)) i++
+        continue
+      }
+      return arg
+    }
+    return null
+  }
   for (const arg of argv.slice(1)) {
     if (arg.startsWith('-')) continue
     if (SCRIPT_EXTENSIONS.test(arg)) return arg
@@ -1298,13 +1323,15 @@ function inspectRefusedOutsideReads(
   context: ShellHarmContext,
   out: MutableDecision,
 ): void {
-  if (!context.workspaceRoot) return
+  // With no workspace, relative paths resolve against the process directory, as
+  // `expandPathToken` does. Returning early here skipped the credential deny.
+  const workspaceRoot = context.workspaceRoot ?? process.cwd()
   // Judge each top-level command independently. A non-read sibling must not
   // launder a credential read (`cat ~/.ssh/id && touch marker`) by contributing
   // a whole-line "not a plain read" blocker that suppresses the refusal.
   const segments = splitSegments(command)
   for (const segment of segments.length > 0 ? segments : [command]) {
-    const analysis = analyzeReadOutsideProject(segment, context.workspaceRoot, {
+    const analysis = analyzeReadOutsideProject(segment, workspaceRoot, {
       homeDir: context.homeDir,
     })
     const refused = analysis.blockers.filter(isRefusedOutsideReadBlocker)
@@ -1406,6 +1433,8 @@ function assess(
   if (language === 'shell') {
     inspectGithubCliWrites(inspectableCommand, out)
     inspectRefusedOutsideReads(inspectableCommand, context, out)
+    for (const reason of hostReachReasons(inspectableCommand, context))
+      addUnique(out.prompt, reason)
     inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
   }
 

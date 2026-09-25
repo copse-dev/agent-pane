@@ -5,6 +5,7 @@ import {
   autoApprovalLevelSchema,
   RENDERER_WRITABLE_SETTING_SCHEMAS,
   trustedShellCommandsSchema,
+  trustedSshHostsSchema,
   webAllowedOriginsSchema,
 } from './settings-writable.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
@@ -120,6 +121,9 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // Permissions). Registering the schema is what lets `settings:get` hand the
   // stored array back to the renderer — see the note above SETTING_SCHEMAS.
   trustedShellCommands: trustedShellCommandsSchema,
+  // Hosts Guarded YOLO may ssh/scp/rsync to without a confirmation (Settings →
+  // Permissions). Empty by default.
+  trustedSshHosts: trustedSshHostsSchema,
   mcpAutoAllowReadOnly: z.boolean(),
   // Per-tool user overrides. Missing entries preserve the existing dynamic
   // permission policy; stable keys are constructed in tool-permissions.ts.
