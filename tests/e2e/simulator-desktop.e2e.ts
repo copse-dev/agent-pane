@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { $, $$, browser } from '@wdio/globals'
 import { PNG } from 'pngjs'
 import { readFileSync } from 'node:fs'
@@ -229,5 +230,39 @@ describe('Simulator desktop preview', function () {
     await expect($('.vnc-tab.is-active .vnc-tab-label')).toHaveText('First phone')
     await expect($$('.vnc-tab')).toBeElementsArrayOfSize(2)
     await saveAppScreenshot('simulator-desktop-multiple.png')
+  })
+
+  it('says the Desktop viewer is off, not that the Simulator stopped, when presentation is refused', async () => {
+    // An Apple panel Run presents its Simulator through the same main-process
+    // presenter as this hook, while the experimental viewer defaults to off.
+    const udid = '33333333-2222-4333-8444-555555555555'
+    await browser.execute(async (id) => {
+      await window.api.settings.set('vncEnabled', false)
+      const bridge = (
+        window as unknown as {
+          __copseE2e?: { showSimulatorDesktop(udid: string): Promise<void> }
+        }
+      ).__copseE2e
+      if (!bridge) throw new Error('__copseE2e unavailable')
+      await bridge.showSimulatorDesktop(id)
+    }, udid)
+    const controls = $('.vnc-controls-panel:not([hidden])')
+    await expect(controls.$('.vnc-status-title')).toHaveText('Desktop viewer is off')
+    await expect(controls.$('.vnc-status-detail')).toHaveText(
+      'Turn on Settings → Experimental → Remote desktop viewer to watch the Simulator here.',
+    )
+    await expect($('.vnc-viewer-panel:not([hidden]) .vnc-empty')).toHaveText(
+      'Desktop viewer is off. Turn on Settings → Experimental → Remote desktop viewer to watch the Simulator here.',
+    )
+    await expect(controls.$('.vnc-nearby-feedback')).not.toBeDisplayed()
+    const controlsText = await controls.getText()
+    assert.doesNotMatch(controlsText, /no longer running/)
+    // Discovery is skipped while the viewer is off, so no raw IPC refusals leak through.
+    assert.doesNotMatch(controlsText, /Error invoking remote method/)
+    await controls.$('.vnc-status').scrollIntoView({ block: 'center' })
+    await saveAppScreenshot('simulator-desktop-viewer-off.png')
+    await browser.execute(async () => {
+      await window.api.settings.set('vncEnabled', true)
+    })
   })
 })

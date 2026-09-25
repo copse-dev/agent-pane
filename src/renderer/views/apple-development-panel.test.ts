@@ -328,3 +328,67 @@ describe('Apple Development target selection', () => {
     assert.equal(panel.querySelector('[data-operation-id="mac-build"]'), null)
   })
 })
+
+describe('Apple Development enrollment in Settings', () => {
+  function unsupportedHostState(enrolled: boolean): AppleProjectState {
+    return {
+      pluginEnabled: true,
+      enrolled,
+      supportedHost: false,
+      toolchain: null,
+      candidates: [],
+      destinations: [],
+      metadataRequiresExecution: false,
+      selection: null,
+      operations: [],
+      setupMessage: 'Apple Development requires a local macOS host.',
+    }
+  }
+
+  async function renderSettingsPanel(state: AppleProjectState): Promise<HTMLElement> {
+    const base = createFakeApi()
+    const api = {
+      ...base,
+      appleDevelopment: {
+        ...base.appleDevelopment,
+        state: async (): Promise<AppleProjectState> => state,
+      },
+    } satisfies ApiClient
+    const store = createStore({ activeProjectId: 'project', activeThreadId: 'thread' })
+    const panel = createAppleDevelopmentPanel(store, api, {
+      allowEnrollment: true,
+      pluginEnabled: true,
+    })
+    document.body.append(panel)
+    await tick()
+    return panel
+  }
+
+  function buttonLabels(panel: HTMLElement): string[] {
+    return Array.from(panel.querySelectorAll('button'), (button) => button.textContent)
+  }
+
+  it('does not offer enrollment on a host that cannot run Xcode', async () => {
+    const panel = await renderSettingsPanel(unsupportedHostState(false))
+
+    assert.deepEqual(buttonLabels(panel), [])
+    assert.match(panel.textContent, /requires a local macOS host/)
+    assert.doesNotMatch(panel.textContent, /Enroll/)
+  })
+
+  it('still lets an existing enrollment be removed on an unsupported host', async () => {
+    const panel = await renderSettingsPanel(unsupportedHostState(true))
+
+    assert.deepEqual(buttonLabels(panel), ['Remove project'])
+  })
+
+  it('offers enrollment on a supported host', async () => {
+    const panel = await renderSettingsPanel({
+      ...unsupportedHostState(false),
+      supportedHost: true,
+      setupMessage: 'Enroll this project to use Apple Development.',
+    })
+
+    assert.deepEqual(buttonLabels(panel), ['Enroll project'])
+  })
+})

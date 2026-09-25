@@ -14,7 +14,7 @@ import {
   type AppleDriverDiscovery,
   type AppleDriverResult,
 } from './apple-driver.ts'
-import { AppleDevelopmentService } from './apple-development-service.ts'
+import { AppleDevelopmentService, type AppleInvocation } from './apple-development-service.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
 
@@ -446,5 +446,72 @@ describe('AppleDevelopmentService enrollment', () => {
     assert.equal(state.enrolled, true)
     assert.equal(state.candidates[0]?.id, 'DemoApp.xcworkspace')
     assert.equal(state.metadataRequiresExecution, true)
+  })
+})
+
+describe('AppleDevelopmentService on a host without Xcode', () => {
+  const owner = { projectId: 'linux-project', threadId: 'thread-1' }
+  const context: ThreadExecutionContext = {
+    ...owner,
+    projectRoot: '/project',
+    root: '/project',
+    checkoutMode: 'shared',
+    branch: null,
+  }
+
+  beforeEach(() => {
+    storageDelete(STORE_KEY)
+  })
+
+  afterEach(() => {
+    storageDelete(STORE_KEY)
+  })
+
+  function linuxService(pluginEnabled = true): AppleDevelopmentService {
+    const driver = new InstalledXcodeDriver()
+    driver.discover = (): Promise<AppleDriverDiscovery> =>
+      Promise.reject(new Error('discover must not run on Linux'))
+    return new AppleDevelopmentService({
+      driver,
+      supervisor: new TaskSupervisor({ store: new EmptyTaskStore() }),
+      resolveContext: (): Promise<ThreadExecutionContext> => Promise.resolve(context),
+      pluginEnabled: (): boolean => pluginEnabled,
+      platform: 'linux',
+    })
+  }
+
+  it('reports the host requirement instead of asking the user to enroll', () => {
+    const state = linuxService().getState(owner)
+
+    assert.equal(state.supportedHost, false)
+    assert.equal(state.enrolled, false)
+    assert.equal(state.setupMessage, 'Apple Development requires a local macOS host.')
+  })
+
+  it('reports the host requirement before asking to enable the plugin', () => {
+    assert.equal(
+      linuxService(false).getState(owner).setupMessage,
+      'Apple Development requires a local macOS host.',
+    )
+  })
+
+  it('refuses to enroll but still allows removing an existing enrollment', async () => {
+    const service = linuxService()
+    const invocation: AppleInvocation = {
+      owner,
+      source: 'user',
+      signal: new AbortController().signal,
+    }
+
+    await assert.rejects(service.setEnrolled(invocation, true), /requires a local macOS host/)
+    assert.equal(service.isProjectEnrolled(owner.projectId), false)
+
+    storageSet(STORE_KEY, {
+      version: 1,
+      projects: { [owner.projectId]: { enrolled: true, threads: {} } },
+    })
+    const state = await service.setEnrolled(invocation, false)
+    assert.equal(state.enrolled, false)
+    assert.equal(service.isProjectEnrolled(owner.projectId), false)
   })
 })

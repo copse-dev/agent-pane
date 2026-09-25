@@ -25,6 +25,8 @@ import { subagentHookCallbacks } from '../hooks/subagent.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from '../mcp/mcp-registry.ts'
+import { getThreadExecutionContext } from '../thread-execution-context.ts'
+import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 import { buildProvider, isLocalChatModel } from '../providers/provider-selection.ts'
 import { resolveContextWindow } from '../providers/resolve-context-window.ts'
 
@@ -92,15 +94,18 @@ export async function runCustomAgent(
   // declares `readonly`, or a parent run already in read-only mode, drops every
   // tool that mode forbids so the agent never spends a step on a call the gate
   // would reject.
+  // Apple tools stay scoped to enrolled projects here exactly as in the parent run.
   const readonly = agent.readonly || isAgentRunReadonly()
+  const projectId = getThreadExecutionContext()?.projectId
   const available = ctx.registry.toLLMTools().filter(
     (tool) =>
-      !readonly ||
-      isToolAllowedInReadonlyMode(tool.name, {
-        ...(tool.name.startsWith('mcp__')
-          ? { mcpAnnotations: getMcpToolMeta(tool.name)?.annotations }
-          : {}),
-      }),
+      isAppleDevelopmentToolOffered(tool.name, projectId) &&
+      (!readonly ||
+        isToolAllowedInReadonlyMode(tool.name, {
+          ...(tool.name.startsWith('mcp__')
+            ? { mcpAnnotations: getMcpToolMeta(tool.name)?.annotations }
+            : {}),
+        })),
   )
   const tools = resolveCustomAgentTools(available, agent)
   const systemPrompt = buildCustomAgentSystemPrompt(agent)
