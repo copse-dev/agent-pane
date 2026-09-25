@@ -13,7 +13,12 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, delimiter } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
-import { BUILD_SENTINELS, DEV_STATE } from './lib/dev-sync.mts'
+import {
+  BUILD_SENTINELS,
+  DEPENDENCY_SENTINELS,
+  DEV_STATE,
+  recordLifecycleInstall,
+} from './lib/dev-sync.mts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -92,6 +97,24 @@ describe('make run recovery', () => {
     const second = prepared.run()
     assert.equal(second.status, 0, second.stdout + second.stderr)
     assert.deepEqual(prepared.calls(), ['install --frozen-lockfile', 'run build', 'start', 'start'])
+  })
+
+  it('reuses an install that pnpm postinstall recorded instead of repeating it (#2441)', () => {
+    const prepared = fixture()
+    // What `pnpm install` leaves behind: the tree, then the root postinstall's record.
+    for (const sentinel of DEPENDENCY_SENTINELS) {
+      mkdirSync(dirname(join(prepared.root, sentinel)), { recursive: true })
+      writeFileSync(join(prepared.root, sentinel), 'installed by pnpm')
+    }
+    assert.equal(
+      recordLifecycleInstall(prepared.root, { npm_lifecycle_event: 'postinstall' }),
+      true,
+    )
+
+    const result = prepared.run()
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    assert.match(result.stdout, /Dependencies current/)
+    assert.deepEqual(prepared.calls(), ['run build', 'start'])
   })
 
   it('does not stamp, build, or launch after an install failure, and retries successfully', () => {
