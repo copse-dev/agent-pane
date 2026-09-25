@@ -40,6 +40,7 @@ import type { DiffOrigin, IsolationBackend } from './isolation.ts'
 import { resolveLenses } from './lenses.ts'
 import { serializeCell } from './isolation.ts'
 import {
+  envValue,
   isProviderKind,
   selectProvider,
   PROVIDER_KINDS,
@@ -104,7 +105,7 @@ never the exit code.
   --concurrency <n>       reviewers running at once (default 2)
   --base-url <url>        endpoint for lmstudio / openai-compatible
   --mock-script <path>    scripted steps for --provider mock (a list, or {roles:{...}})
-  --json [<path>]         write the full report as JSON (path, or - for stdout)
+  --json <path|->         write the full report as JSON (a path, or - for stdout)
   --sarif <path>          write the surfaced findings as SARIF 2.1.0
   --events <path>         write the model turn's headless events as JSONL (- for stdout)
   --post-review <forge>   post the findings as one review on the pull request:
@@ -183,8 +184,9 @@ export async function discoverPnpmStore(
 
 function integer(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`)
+  // parseInt alone would read `3x` as 3 and `1.5` as 1.
+  const parsed = /^[1-9]\d*$/.test(value) ? Number(value) : Number.NaN
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be a positive integer`)
   return parsed
 }
 
@@ -222,10 +224,10 @@ export function resolveForgeTarget(
   const number = integer(flags.pr, '--pr')
   if (number === undefined) throw new Error('--post-review needs --pr <n>')
   const token =
-    env['COPSE_REVIEW_FORGE_TOKEN'] ??
-    (forge === 'forgejo' ? env['FORGEJO_TOKEN'] : undefined) ??
-    env['GITHUB_TOKEN']
-  if (token === undefined || token.length === 0) {
+    envValue(env, 'COPSE_REVIEW_FORGE_TOKEN') ??
+    (forge === 'forgejo' ? envValue(env, 'FORGEJO_TOKEN') : undefined) ??
+    envValue(env, 'GITHUB_TOKEN')
+  if (token === undefined) {
     throw new Error('--post-review needs a token in COPSE_REVIEW_FORGE_TOKEN or GITHUB_TOKEN')
   }
   const apiBase =
@@ -607,7 +609,12 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             // files touched by verification. Working-tree findings stay in the body.
             diffForPath: async (path) =>
               checkouts !== null && mergeBase !== null && headCommit !== null && !dirtyWorkingTree
-                ? readFileDiff(checkouts.head, mergeBase, path, headCommit)
+                ? readFileDiff(
+                    { gitDir: checkouts.headGitDir, workTree: checkouts.head },
+                    mergeBase,
+                    path,
+                    headCommit,
+                  )
                 : '',
           },
         )

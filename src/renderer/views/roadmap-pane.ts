@@ -291,7 +291,7 @@ export function mountRoadmapPane(
     'aria-label': 'Roadmap filters',
     hidden: true,
   })
-  filter.append(searchInput, filterToggle, filterMenu)
+  filter.append(searchInput, filterToggle)
   const actionButtons = el('div', { class: 'roadmap-action-buttons' })
   const newBtn = el(
     'button',
@@ -369,7 +369,11 @@ export function mountRoadmapPane(
     actionButtons,
   )
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
-  listRoot.append(listHeader, listBody)
+  // The filter panel docks as a sticky footer below the list (issue #2467)
+  // rather than a dropdown floating over it from the header — see
+  // roadmap.css. Appending it after `listBody` keeps it out of that column's
+  // own scroll, always in normal flow at the bottom of the list panel.
+  listRoot.append(listHeader, listBody, filterMenu)
 
   function appendFilterSection<T extends string>(
     title: string,
@@ -426,7 +430,13 @@ export function mountRoadmapPane(
     filterToggle.setAttribute('aria-expanded', opening ? 'true' : 'false')
   })
   const closeFilterOnOutsideClick = (event: Event): void => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu()
+    if (
+      event.target instanceof Node &&
+      !filter.contains(event.target) &&
+      !filterMenu.contains(event.target)
+    ) {
+      closeFilterMenu()
+    }
   }
   document.addEventListener('click', closeFilterOnOutsideClick)
 

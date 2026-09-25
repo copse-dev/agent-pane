@@ -156,6 +156,55 @@ describe('workspace-level automations section', function () {
     await $('.project-row*=Docs project').click()
     await expect(toggle.$('.automation-threads-count')).toHaveText('2')
 
+    const alignment = await browser.execute(() => {
+      const automationArrow = document.querySelector('.automation-threads-twisty')
+      const automationTitle = document.querySelector('.automation-threads-title')
+      const projectArrow = document.querySelector('.project-twisty')
+      const projectTitle = document.querySelector('.project-name')
+      const automationGroup = document.querySelector('.automation-threads-group')
+      const projectsHeader = document.querySelector('.pane-projects-header')
+      if (
+        !automationArrow ||
+        !automationTitle ||
+        !projectArrow ||
+        !projectTitle ||
+        !automationGroup ||
+        !projectsHeader
+      ) {
+        return null
+      }
+      return {
+        arrowOffset:
+          automationArrow.getBoundingClientRect().left - projectArrow.getBoundingClientRect().left,
+        titleOffset:
+          automationTitle.getBoundingClientRect().left - projectTitle.getBoundingClientRect().left,
+        automationTopBorder: getComputedStyle(automationGroup).borderTopWidth,
+        headerBottomBorder: getComputedStyle(projectsHeader).borderBottomWidth,
+      }
+    })
+    assert.ok(alignment)
+    assert.ok(Math.abs(alignment.arrowOffset) < 1, 'automation and project arrows should align')
+    assert.ok(Math.abs(alignment.titleOffset) < 1, 'automation and project titles should align')
+    assert.equal(alignment.automationTopBorder, '0px')
+    assert.equal(alignment.headerBottomBorder, '1px')
+
+    const scaledTitleOffset = await browser.execute(() => {
+      const root = document.documentElement
+      const previousScale = root.style.getPropertyValue('--ui-scale')
+      root.style.setProperty('--ui-scale', '1.25')
+      const automationTitle = document.querySelector('.automation-threads-title')
+      const projectTitle = document.querySelector('.project-name')
+      const offset =
+        automationTitle && projectTitle
+          ? automationTitle.getBoundingClientRect().left - projectTitle.getBoundingClientRect().left
+          : null
+      root.style.setProperty('--ui-scale', previousScale)
+      return offset
+    })
+    assert.ok(scaledTitleOffset !== null)
+    assert.ok(Math.abs(scaledTitleOffset) < 1, 'titles should also align at 125% interface scale')
+    await saveElementScreenshot('.pane-projects', 'automation-workspace-sidebar.png')
+
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await toggle.click()
 

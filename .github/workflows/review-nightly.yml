@@ -164,45 +164,25 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile --ignore-scripts --filter "@copse/review..."
 
-      - name: Run Stage 0 with the runner as the cell
+      # Pull-request code runs as a separate user with no sudo and no access
+      # to the runner's home, so it cannot reach the actions and command files
+      # later steps execute with the job's Actions runtime token.
+      - name: Run Stage 0 as the unprivileged review cell user
         shell: bash
         env:
           HEAD_SHA: ${{ needs.select.outputs.head_sha }}
           BASE_REF: ${{ needs.select.outputs.base_ref }}
           PR_NUMBER: ${{ needs.select.outputs.number }}
+          OUT_DIR: ground
         run: |
           set -euo pipefail
           setup_node_bin="$(dirname "$(command -v node)")"
           export PATH="${setup_node_bin}:/usr/bin:${PATH}"
           test "$(command -v cargo)" = /usr/bin/cargo
           test "$(command -v node)" = "${setup_node_bin}/node"
-          git fetch --no-tags --quiet origin \
-            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}" \
-            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-          test "$(git rev-parse "refs/remotes/pr/${PR_NUMBER}")" = "$HEAD_SHA"
-
-          # Populate the store for the PR's exact lockfile without running any
-          # contributor manifest or lifecycle script on the host. The checks
-          # themselves remain offline inside the secret-free execution cell.
-          dependency_seed="$RUNNER_TEMP/copse-review-dependencies"
-          mkdir -p "$dependency_seed"
-          git show "${HEAD_SHA}:pnpm-lock.yaml" > "$dependency_seed/pnpm-lock.yaml"
-          if git cat-file -e "${HEAD_SHA}:patches" 2>/dev/null; then
-            git archive --format=tar "$HEAD_SHA" patches | tar -xf - -C "$dependency_seed"
-          fi
-          pnpm fetch --frozen-lockfile --dir "$dependency_seed"
-
           mkdir -p ground
           printf '{"pr":%s,"headSha":"%s","baseRef":"%s"}\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_REF" > ground/meta.json
-          node packages/review/bin/copse-review.mjs \
-            --foreign \
-            --head "refs/remotes/pr/${PR_NUMBER}" \
-            --base "origin/${BASE_REF}" \
-            --backend ephemeral-runner \
-            --scratch-parent "$RUNNER_TEMP" \
-            --trusted-prepare "$GITHUB_WORKSPACE/scripts/prepare-review-stage0.mts" \
-            --no-model \
-            --json ground/report.json
+          bash packages/review/ci/ground-as-cell-user.sh
 
       - uses: actions/upload-artifact@v7
         with:

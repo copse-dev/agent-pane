@@ -109,6 +109,96 @@ describe('resolveFooterUsage', () => {
       null,
     )
   })
+
+  it('folds subagent tokens back out of the measured total (#2464)', () => {
+    // The main process folds a subagent's usage into the thread's raw totals
+    // (subagent-usage.ts); resolveFooterUsage must subtract it back out so the
+    // footer headline excludes recorded subagent sessions.
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        createdAt: 1,
+        toolCalls: [
+          {
+            id: 't1',
+            name: 'explore',
+            args: {},
+            status: 'done',
+            result: 'done',
+            subagent: {
+              id: 'sub-1',
+              kind: 'explore',
+              status: 'done',
+              prompt: 'q',
+              summary: null,
+              messages: [],
+              model: 'lmstudio:qwen',
+              usage: { inputTokens: 800_000, outputTokens: 15_000 },
+            },
+          },
+        ],
+      },
+    ]
+
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 12_900_000, outputTokens: 211_000 },
+      running: false,
+      messages,
+    })
+
+    assert.deepEqual(resolved, {
+      inputTokens: 12_100_000,
+      outputTokens: 196_000,
+      estimated: false,
+      subagentInputTokens: 800_000,
+      subagentOutputTokens: 15_000,
+    })
+  })
+
+  it('never goes negative when a subagent somehow out-totals the measured usage', () => {
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        createdAt: 1,
+        toolCalls: [
+          {
+            id: 't1',
+            name: 'explore',
+            args: {},
+            status: 'done',
+            result: 'done',
+            subagent: {
+              id: 'sub-1',
+              kind: 'explore',
+              status: 'done',
+              prompt: 'q',
+              summary: null,
+              messages: [],
+              usage: { inputTokens: 500, outputTokens: 500 },
+            },
+          },
+        ],
+      },
+    ]
+
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 100, outputTokens: 100 },
+      running: false,
+      messages,
+    })
+
+    assert.deepEqual(resolved, {
+      inputTokens: 0,
+      outputTokens: 0,
+      estimated: false,
+      subagentInputTokens: 500,
+      subagentOutputTokens: 500,
+    })
+  })
 })
 
 describe('formatFooterUsageSummary', () => {
@@ -179,6 +269,24 @@ describe('formatFooterUsageDetail', () => {
       ),
       'Usage: 1.3k tokens · 1.2k in / 80 out · free',
     )
+  })
+
+  it('labels cost as whole-thread when the token total excludes subagents', () => {
+    const detail = formatFooterUsageDetail(
+      {
+        inputTokens: 1200,
+        outputTokens: 80,
+        estimated: false,
+        subagentInputTokens: 500,
+        subagentOutputTokens: 20,
+      },
+      {
+        model: 'claude-sonnet-4-6',
+        measuredUsage: { inputTokens: 1700, outputTokens: 100 },
+      },
+    )
+
+    assert.match(detail, /· whole-thread cost (~\$|<\$)/)
   })
 })
 
