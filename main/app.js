@@ -29100,7 +29100,8 @@ function createDemoApi(scenario, options = {}) {
       completeReview: () => resolved(false),
       abortReview: () => resolved(false),
       onChanged: subscribe,
-      setThread: () => resolved(null)
+      setThread: () => resolved(null),
+      findByThread: () => resolved(null)
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),
@@ -72529,6 +72530,85 @@ var init_tool_interruption = __esm({
   }
 });
 
+// src/renderer/views/thread-roadmap-origin.ts
+function roadmapOriginIcon() {
+  return outlineIcon(
+    "roadmap",
+    ["M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z", "M8 2v16", "M16 6v16"],
+    "thread-roadmap-origin-icon"
+  );
+}
+function mountThreadRoadmapOrigin(store2, api2) {
+  const titleEl2 = el("span", { class: "thread-roadmap-origin-title" });
+  const link = el(
+    "button",
+    { type: "button", class: "thread-roadmap-origin", hidden: true },
+    roadmapOriginIcon(),
+    titleEl2
+  );
+  let itemId = null;
+  let generation = 0;
+  let syncedThreadId;
+  function syncIfThreadChanged() {
+    if (store2.getState().activeThreadId !== syncedThreadId) sync();
+  }
+  function sync() {
+    const gen = ++generation;
+    const threadId = store2.getState().activeThreadId;
+    const threadChanged = threadId !== syncedThreadId;
+    syncedThreadId = threadId;
+    if (!threadId) {
+      itemId = null;
+      link.hidden = true;
+      return;
+    }
+    if (threadChanged) {
+      itemId = null;
+      link.hidden = true;
+    }
+    void api2.roadmap.findByThread(threadId).then((item) => {
+      if (gen !== generation) return;
+      if (!item) {
+        itemId = null;
+        link.hidden = true;
+        return;
+      }
+      itemId = item.id;
+      const title = item.title || "(untitled)";
+      titleEl2.textContent = title;
+      setTooltip(link, `Open roadmap item "${title}"`);
+      link.setAttribute("aria-label", `Open roadmap item "${title}"`);
+      link.hidden = false;
+    }).catch(() => {
+      if (gen !== generation) return;
+      itemId = null;
+      link.hidden = true;
+    });
+  }
+  link.addEventListener("click", () => {
+    if (itemId) navigateToRoadmapItem(store2, itemId);
+  });
+  sync();
+  const unsubscribeThreads = store2.on("threads_changed", syncIfThreadChanged);
+  const unsubscribeRoadmap = api2.roadmap.onChanged(sync);
+  return {
+    element: link,
+    destroy: () => {
+      generation++;
+      unsubscribeThreads();
+      unsubscribeRoadmap();
+    }
+  };
+}
+var init_thread_roadmap_origin = __esm({
+  "src/renderer/views/thread-roadmap-origin.ts"() {
+    init_helpers();
+    init_outline_icon();
+    init_panels();
+    init_tooltip();
+  }
+});
+
 // src/renderer/views/plugin-panel.ts
 function capVisibleRows(list, maxVisible) {
   requestAnimationFrame(() => {
@@ -75816,7 +75896,8 @@ function mountConversation(root, store2, api2) {
     details.scrollIntoView({ block: "nearest" });
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
-  root.append(scrollArea, queuedHost);
+  const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
+  root.append(roadmapOrigin.element, scrollArea, queuedHost);
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
     if (!projectId || !threadId) {
@@ -77128,6 +77209,7 @@ function mountConversation(root, store2, api2) {
     unbindWorkspaceLinks();
     unbindBrowserLinks();
     unbindCodeBlockRuns();
+    roadmapOrigin.destroy();
     unsubs.forEach((u2) => {
       u2();
     });
@@ -77183,6 +77265,7 @@ var init_conversation = __esm({
     init_tool_runs();
     init_tool_interruption();
     init_panels();
+    init_thread_roadmap_origin();
     init_thread_hydration();
     init_plugin_panel();
     init_plugin_panel2();
@@ -109632,7 +109715,7 @@ Notes: ${notes}` : prompt;
       }
     }
     if (selectedId) {
-      void api2.roadmap.setThread(selectedId, threadId).then(() => refresh({ preserveDirty: true })).catch(() => {
+      void api2.roadmap.setThread(selectedId, threadId).catch(() => {
       });
     }
     handlers3?.focusComposer?.();
