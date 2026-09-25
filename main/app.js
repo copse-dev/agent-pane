@@ -23722,6 +23722,35 @@ var init_thread_hydration = __esm({
   }
 });
 
+// packages/std/src/errors.ts
+function errorMessage(err2) {
+  return err2 instanceof Error ? err2.message : String(err2);
+}
+var init_errors3 = __esm({
+  "packages/std/src/errors.ts"() {
+  }
+});
+
+// src/shared/errors.ts
+var init_errors4 = __esm({
+  "src/shared/errors.ts"() {
+    init_errors3();
+  }
+});
+
+// src/shared/agent-turn-busy.ts
+function isAgentTurnBusyError(reason) {
+  if (reason instanceof Error && reason.name === AGENT_TURN_BUSY_ERROR_NAME) return true;
+  return errorMessage(reason).includes(`${AGENT_TURN_BUSY_ERROR_NAME}:`);
+}
+var AGENT_TURN_BUSY_ERROR_NAME;
+var init_agent_turn_busy = __esm({
+  "src/shared/agent-turn-busy.ts"() {
+    init_errors4();
+    AGENT_TURN_BUSY_ERROR_NAME = "AgentTurnBusyError";
+  }
+});
+
 // src/renderer/controller/message-queue.ts
 function isHeldMessage(item) {
   return item.autoDispatch === false;
@@ -23790,7 +23819,21 @@ function refreshPayload(store2, threadId, payload) {
     ...thread?.continuationUsed !== void 0 ? { continuationBudgetUsed: thread.continuationUsed } : {}
   };
 }
-function dispatchAgentRun(store2, api2, threadId, payload) {
+function beginPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2) ?? /* @__PURE__ */ new Map();
+  byThread.set(threadId, (byThread.get(threadId) ?? 0) + 1);
+  pendingDispatches.set(store2, byThread);
+}
+function finishPendingDispatch(store2, threadId) {
+  const byThread = pendingDispatches.get(store2);
+  const count = byThread?.get(threadId) ?? 0;
+  if (count <= 1) byThread?.delete(threadId);
+  else byThread?.set(threadId, count - 1);
+}
+function hasPendingDispatch(store2, threadId) {
+  return (pendingDispatches.get(store2)?.get(threadId) ?? 0) > 0;
+}
+function dispatchAgentRun(store2, api2, threadId, payload, queued) {
   const { activeProjectId, backgroundThreads } = store2.getState();
   const projectId = backgroundThreads.find((entry) => entry.thread.id === threadId)?.projectId ?? activeProjectId;
   if (!projectId) throw new Error("Cannot run thread without an owning project");
@@ -23798,7 +23841,36 @@ function dispatchAgentRun(store2, api2, threadId, payload) {
   setThreadStatus(store2, threadId, "running");
   syncAgentActivity(store2, threadId, false);
   mark("ttft:renderer-dispatch");
-  void api2.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store2, threadId, payload)));
+  if (queued) beginPendingDispatch(store2, threadId);
+  const run2 = api2.agent.run(
+    projectId,
+    threadId,
+    JSON.stringify(refreshPayload(store2, threadId, payload))
+  );
+  if (!queued) {
+    void run2;
+    return;
+  }
+  void run2.catch((err2) => {
+    if (!isAgentTurnBusyError(err2)) throw err2;
+    requeueBusyMessage(store2, api2, threadId, queued);
+  }).finally(() => {
+    finishPendingDispatch(store2, threadId);
+    if (getThreadById(store2, threadId)?.status === "idle") {
+      drainMessageQueue(store2, api2, threadId);
+    }
+  });
+}
+function requeueBusyMessage(store2, api2, threadId, item) {
+  patchThreadAnywhere(store2, threadId, (t2) => {
+    const pending = t2.pendingMessages ?? [];
+    if (pending.some((entry) => entry.messageId === item.messageId)) return t2;
+    const requeued = { ...t2, pendingMessages: [item, ...pending], updatedAt: Date.now() };
+    return isMachineContinuation(item) && (t2.continuationUsed ?? 0) > 0 ? { ...requeued, continuationUsed: (t2.continuationUsed ?? 0) - 1 } : requeued;
+  });
+  store2.emit("message_queued", threadId, item.messageId);
+  store2.emit("threads_changed");
+  if (getThreadById(store2, threadId)?.status === "idle") drainMessageQueue(store2, api2, threadId);
 }
 function enqueueUserMessage(store2, threadId, item) {
   patchThreadAnywhere(store2, threadId, (t2) => ({
@@ -23810,6 +23882,7 @@ function enqueueUserMessage(store2, threadId, item) {
   store2.emit("threads_changed");
 }
 function drainMessageQueue(store2, api2, threadId) {
+  if (hasPendingDispatch(store2, threadId)) return;
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
   if (!thread || thread.status !== "idle" || thread.queuePaused) return;
   const pending = thread.pendingMessages ?? [];
@@ -23847,7 +23920,7 @@ function drainMessageQueue(store2, api2, threadId) {
   store2.setState({ threads });
   if (heldByBudget.length > 0) addMessage(store2, threadId, "error", continuationBudgetHeldNote());
   store2.emit("threads_changed");
-  if (next) dispatchAgentRun(store2, api2, threadId, next.payload);
+  if (next) dispatchAgentRun(store2, api2, threadId, next.payload, next);
 }
 function movePendingUserMessagesToEnd(messages, pending) {
   const messagesById = new Map(messages.map((message2) => [message2.id, message2]));
@@ -24026,6 +24099,7 @@ function releaseHeldMessage(store2, api2, threadId, messageId) {
   store2.emit("threads_changed");
   sendQueuedMessageNow(store2, api2, threadId, messageId);
 }
+var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
@@ -24033,6 +24107,8 @@ var init_message_queue = __esm({
     init_continuation_budget();
     init_thread_hydration();
     init_perf();
+    init_agent_turn_busy();
+    pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -26318,22 +26394,6 @@ var init_image_expand = __esm({
     init_helpers();
     init_toast();
     init_attachment_preview();
-  }
-});
-
-// packages/std/src/errors.ts
-function errorMessage(err2) {
-  return err2 instanceof Error ? err2.message : String(err2);
-}
-var init_errors3 = __esm({
-  "packages/std/src/errors.ts"() {
-  }
-});
-
-// src/shared/errors.ts
-var init_errors4 = __esm({
-  "src/shared/errors.ts"() {
-    init_errors3();
   }
 });
 
@@ -73965,11 +74025,12 @@ function resendLastMessage(store2, api2, threadId, options = {}) {
     images.length > 0 ? [...images] : void 0
   );
   const running = thread.status === "running";
+  const queued = { messageId, payload, createdAt: Date.now() };
   if (running) {
-    enqueueUserMessage(store2, threadId, { messageId, payload, createdAt: Date.now() });
+    enqueueUserMessage(store2, threadId, queued);
   } else {
     startHumanTurnTree(store2, threadId);
-    dispatchAgentRun(store2, api2, threadId, payload);
+    dispatchAgentRun(store2, api2, threadId, payload, queued);
   }
   return {
     messageId,
@@ -93071,15 +93132,12 @@ ${description}
     if (currentBranch) bindThreadGitBranchIfUnset(store2, id, currentBranch);
     recordThreadVideos(store2, id, attachedVideos2);
     recordThreadArchives(store2, id, attachedArchives2);
+    const queued = { messageId, payload, createdAt: Date.now() };
     if (getThreadById(store2, id)?.status === "running") {
-      enqueueUserMessage(store2, id, {
-        messageId,
-        payload,
-        createdAt: Date.now()
-      });
+      enqueueUserMessage(store2, id, queued);
     } else {
       startHumanTurnTree(store2, id);
-      dispatchAgentRun(store2, api2, id, payload);
+      dispatchAgentRun(store2, api2, id, payload, queued);
     }
     const visible = activeComposerThreadId === id;
     const currentDraft = visible ? composer.expandedValue() : getThreadById(store2, id)?.draftPrompt ?? "";
