@@ -143,7 +143,7 @@ import {
   resolveOrchestrationWorkerModelId,
 } from './orchestration-runner.ts'
 import { runThreadReview, runWithReviewToolContext } from './review/review-service.ts'
-import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
+import { runWithSubagentUsageScope, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
   getAgentRunTodos,
@@ -1819,8 +1819,6 @@ export async function runAgent(
 
     const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
-    resetSubagentUsage()
-
     // P4: the todos plugin owns the plan panel. When the `copse.todos` plugin is
     // enabled we emit a level-2 `panel_update` (the plugin-panel data model, P2)
     // alongside the legacy `todo_update` chunk. `todo_update` continues to
@@ -2137,89 +2135,94 @@ export async function runAgent(
           }
         }
 
-        await runWithAgentRunReadonly(readonlyMode, async () => {
-          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-            await runAgentLoop({
-              provider,
-              messages: trimmed,
-              tools: parentLoopTools,
-              usageModel: model,
-              maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-              ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-              ...(options?.adaptiveExtensions !== undefined
-                ? { adaptiveExtensions: options.adaptiveExtensions }
-                : {}),
-              reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
-              reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-              runDeadline: runAbort.deadline,
-              onRunDeadlineActivity: runAbort.schedule,
-              coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-              getOpenTodos: () => getAgentRunTodos(),
-              continuationBudget,
-              resolvePluginSetting,
-              artifactCheckpointEligible: true,
-              recordHookRun: recordFunctionHookRun,
-              recordAppliedNudge: recordAppliedNudgeRun,
-              onLlmCall: (count) => {
-                setHookRunStep(count)
-                // `messages` above is `trimmed`, mutated in place as turns land, so
-                // this persists everything the previous step produced.
-                checkpointHistory()
-                // The previous step's tool results have been streamed; a notice
-                // here cannot come between a tool call and its result.
-                flushNestedInstructionNotices()
-              },
-              recordStreamCut: (record) => {
-                recordStreamCut(record, model)
-              },
-              recordReasoningCheckpoint: (record) => {
-                recordReasoningCheckpoint(record, model)
-              },
-              executeTool: executeParentTool,
-              signal: controller.signal,
-              maxContextTokens: contextWindow,
-              toolSchemaReserveTokens: toolSchemaReserve,
-              onHistoryTrimmed: () => {
-                notifyTrimmed(sendTrimNotice)
-              },
-              getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-              onChunk: (chunk) => {
-                if (chunk.type === 'done') {
-                  // Suppress the loop's terminal `done` (E3): the run emits one
-                  // terminal `done` after post-turn work. Keep its stop reason.
-                  loopStopReason = chunk.stopReason
-                  return
-                }
-                sendChunk(chunk)
-                if (chunk.type === 'usage') {
-                  inputTokens += chunk.inputTokens
-                  outputTokens += chunk.outputTokens
-                }
-              },
-            })
-            // A loop that stopped on a tool step (step cap, abort) still owes
-            // the notice for what that step activated.
-            flushNestedInstructionNotices()
-
-            const subUsage = getAccumulatedSubagentUsage()
-            if (subUsage.inputTokens || subUsage.outputTokens) {
-              inputTokens += subUsage.inputTokens
-              outputTokens += subUsage.outputTokens
-              sendChunk({
-                type: 'usage',
-                model: subagentUsageModel,
-                inputTokens: subUsage.inputTokens,
-                outputTokens: subUsage.outputTokens,
-                ...(subUsage.cacheReadTokens !== undefined
-                  ? { cacheReadTokens: subUsage.cacheReadTokens }
+        // Subagent usage is scoped to this run's loop so a concurrent thread
+        // cannot reset or collect it; the fold below reads the same scope.
+        await runWithSubagentUsageScope(() =>
+          runWithAgentRunReadonly(readonlyMode, async () => {
+            await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+              await runAgentLoop({
+                provider,
+                messages: trimmed,
+                tools: parentLoopTools,
+                usageModel: model,
+                maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+                ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+                ...(options?.adaptiveExtensions !== undefined
+                  ? { adaptiveExtensions: options.adaptiveExtensions }
                   : {}),
-                ...(subUsage.cacheCreationTokens !== undefined
-                  ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-                  : {}),
+                reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+                reasoningRunawayTextToleranceChars:
+                  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+                runDeadline: runAbort.deadline,
+                onRunDeadlineActivity: runAbort.schedule,
+                coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+                getOpenTodos: () => getAgentRunTodos(),
+                continuationBudget,
+                resolvePluginSetting,
+                artifactCheckpointEligible: true,
+                recordHookRun: recordFunctionHookRun,
+                recordAppliedNudge: recordAppliedNudgeRun,
+                onLlmCall: (count) => {
+                  setHookRunStep(count)
+                  // `messages` above is `trimmed`, mutated in place as turns land, so
+                  // this persists everything the previous step produced.
+                  checkpointHistory()
+                  // The previous step's tool results have been streamed; a notice
+                  // here cannot come between a tool call and its result.
+                  flushNestedInstructionNotices()
+                },
+                recordStreamCut: (record) => {
+                  recordStreamCut(record, model)
+                },
+                recordReasoningCheckpoint: (record) => {
+                  recordReasoningCheckpoint(record, model)
+                },
+                executeTool: executeParentTool,
+                signal: controller.signal,
+                maxContextTokens: contextWindow,
+                toolSchemaReserveTokens: toolSchemaReserve,
+                onHistoryTrimmed: () => {
+                  notifyTrimmed(sendTrimNotice)
+                },
+                getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+                onChunk: (chunk) => {
+                  if (chunk.type === 'done') {
+                    // Suppress the loop's terminal `done` (E3): the run emits one
+                    // terminal `done` after post-turn work. Keep its stop reason.
+                    loopStopReason = chunk.stopReason
+                    return
+                  }
+                  sendChunk(chunk)
+                  if (chunk.type === 'usage') {
+                    inputTokens += chunk.inputTokens
+                    outputTokens += chunk.outputTokens
+                  }
+                },
               })
-            }
-          })
-        })
+              // A loop that stopped on a tool step (step cap, abort) still owes
+              // the notice for what that step activated.
+              flushNestedInstructionNotices()
+
+              const subUsage = getAccumulatedSubagentUsage()
+              if (subUsage.inputTokens || subUsage.outputTokens) {
+                inputTokens += subUsage.inputTokens
+                outputTokens += subUsage.outputTokens
+                sendChunk({
+                  type: 'usage',
+                  model: subagentUsageModel,
+                  inputTokens: subUsage.inputTokens,
+                  outputTokens: subUsage.outputTokens,
+                  ...(subUsage.cacheReadTokens !== undefined
+                    ? { cacheReadTokens: subUsage.cacheReadTokens }
+                    : {}),
+                  ...(subUsage.cacheCreationTokens !== undefined
+                    ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+                    : {}),
+                })
+              }
+            })
+          }),
+        )
 
         const parentContinuationBase: RunParentContinuationOptions = {
           provider,
