@@ -10,6 +10,7 @@
  * editor open. Manual: `remote-agent:discover-external` then reload threads.
  */
 import { randomUUID } from 'node:crypto'
+import { errorMessage } from '@shared/errors.ts'
 import type { Message, Thread } from '@shared/types'
 import {
   IMPORTED_CURSOR_AGENT_NOTICE_PREFIX,
@@ -438,5 +439,41 @@ export async function discoverExternalCursorAgents(
     skippedLinked,
     skippedWrongRepo,
     skippedInactive,
+  }
+}
+
+type ExternalCursorAgentDiscovery = (
+  options?: DiscoverExternalCursorAgentsOptions,
+) => Promise<DiscoverExternalCursorAgentsResult>
+
+/**
+ * Adapt optional background discovery for IPC. Electron logs rejected IPC handlers
+ * with a full stack, so failures are returned as an empty scan and summarized once.
+ * Every call still retries discovery, allowing configuration and transient failures
+ * to recover without restarting the app.
+ */
+export function createBestEffortExternalCursorAgentDiscovery(
+  discoverImpl: ExternalCursorAgentDiscovery = discoverExternalCursorAgents,
+  logImpl: (message: string) => void = console.info,
+): ExternalCursorAgentDiscovery {
+  const loggedErrors = new Set<string>()
+
+  return async (options = {}) => {
+    try {
+      return await discoverImpl(options)
+    } catch (err) {
+      const message = errorMessage(err)
+      if (!loggedErrors.has(message)) {
+        loggedErrors.add(message)
+        logImpl(`[cursor-agent-discovery] sync skipped: ${message}`)
+      }
+      return {
+        imported: [],
+        scanned: 0,
+        skippedLinked: 0,
+        skippedWrongRepo: 0,
+        skippedInactive: 0,
+      }
+    }
   }
 }

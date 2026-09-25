@@ -4,6 +4,7 @@ import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 import { mergeModelUsage, usageAtServiceTier } from '@copse/llm/model-usage.ts'
 import { usageServiceTierForCall } from '@copse/llm/service-tier.ts'
 import type { AppStore } from './store.ts'
+import { isThreadSubmitting } from './pending-submissions.ts'
 import { at } from '@shared/array-utils.ts'
 import type {
   Message,
@@ -107,13 +108,18 @@ export function isThreadArchived(thread: Thread): boolean {
 }
 
 /** Blank thread with no draft — safe to collapse when switching away. */
-function isPrunableBlankThread(thread: Thread): boolean {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread)
+function isPrunableBlankThread(store: AppStore, thread: Thread): boolean {
+  return (
+    isBlankThread(thread) &&
+    !hasUnsubmittedPrompt(thread) &&
+    !isThreadArchived(thread) &&
+    !isThreadSubmitting(store, thread.id)
+  )
 }
 
 function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void {
   const { threads, activeThreadId } = store.getState()
-  const remaining = threads.filter((t) => !isPrunableBlankThread(t) || keepIds.has(t.id))
+  const remaining = threads.filter((t) => !isPrunableBlankThread(store, t) || keepIds.has(t.id))
   if (remaining.length === 0 || remaining.length === threads.length) return
   const newActive =
     activeThreadId && remaining.some((t) => t.id === activeThreadId)
@@ -127,7 +133,9 @@ function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void 
 export function normalizeBlankThreads(store: AppStore): void {
   const { threads, activeThreadId } = store.getState()
   // Archived blanks stay put — they are not part of the sidebar blank budget.
-  const blanks = threads.filter((t) => isBlankThread(t) && !isThreadArchived(t))
+  const blanks = threads.filter(
+    (t) => isBlankThread(t) && !isThreadArchived(t) && !isThreadSubmitting(store, t.id),
+  )
   const emptyBlanks = blanks.filter((t) => !hasUnsubmittedPrompt(t))
   if (emptyBlanks.length <= 1) return
   const keepEmptyId =
@@ -180,9 +188,7 @@ export function createThread(store: AppStore, draftPrompt?: string): string {
 /** Open a fresh composer: reuse an unused blank thread or create one. */
 export function openNewThread(store: AppStore): string {
   const { threads, activeThreadId } = store.getState()
-  const existing = threads.find(
-    (t) => isBlankThread(t) && !hasUnsubmittedPrompt(t) && !isThreadArchived(t),
-  )
+  const existing = threads.find((t) => isPrunableBlankThread(store, t))
   if (existing) {
     // Re-seed the reused blank thread's model from the current global default,
     // so the picker reflects the settings-page default rather than whatever
@@ -236,7 +242,7 @@ export function switchThread(store: AppStore, id: string): void {
   // Re-read after the draft flush because its listeners can update the active
   // thread before this combined mutation writes the thread list back.
   const state = store.getState()
-  const pruned = state.threads.filter((t) => !isPrunableBlankThread(t) || t.id === id)
+  const pruned = state.threads.filter((t) => !isPrunableBlankThread(store, t) || t.id === id)
   const threads = (pruned.length > 0 ? pruned : state.threads).map((thread) => {
     if (thread.id !== id || thread.unreadAt === undefined) return thread
     const { unreadAt: _read, ...readThread } = thread
@@ -447,26 +453,18 @@ export function addMessage(
 }
 
 export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPrompt: string): void {
-  const trimmed = draftPrompt.trim()
-  const { threads } = store.getState()
-  const thread = threads.find((t) => t.id === threadId)
+  const thread = getThreadById(store, threadId)
   if (!thread) return
-  if (trimmed.length > 0) {
+  if (draftPrompt.trim()) {
     if (thread.draftPrompt === draftPrompt) return
-    const updated = threads.map((t) =>
-      t.id !== threadId ? t : { ...t, draftPrompt, updatedAt: Date.now() },
-    )
-    store.setState({ threads: updated })
-    store.emit('thread_draft_changed', threadId)
-    return
+    patchThreadAnywhere(store, threadId, (t) => ({ ...t, draftPrompt, updatedAt: Date.now() }))
+  } else {
+    if (thread.draftPrompt === undefined) return
+    patchThreadAnywhere(store, threadId, (t) => {
+      const { draftPrompt: _removed, ...rest } = t
+      return { ...rest, updatedAt: Date.now() }
+    })
   }
-  if (thread.draftPrompt === undefined) return
-  const updated = threads.map((t) => {
-    if (t.id !== threadId) return t
-    const { draftPrompt: _removed, ...rest } = t
-    return { ...rest, updatedAt: Date.now() }
-  })
-  store.setState({ threads: updated })
   store.emit('thread_draft_changed', threadId)
 }
 
@@ -874,7 +872,28 @@ export function setThreadReviewReport(
     else delete next.reviewReport
     return next
   })
-  store.emit('review_report_changed', threadId)
+  store.emit('review_report_changed', threadId, null)
+}
+
+/** Keep each new Copse Reviewer report beside the turn it reviewed. */
+export function setMessageReviewReport(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+  report: ThreadReviewReport | null,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message) => {
+      if (message.id !== messageId) return message
+      const next = { ...message }
+      if (report) next.reviewReport = report
+      else delete next.reviewReport
+      return next
+    }),
+  }))
+  store.emit('review_report_changed', threadId, messageId)
 }
 
 /**
@@ -887,8 +906,27 @@ export function setReviewFindingDismissed(
   threadId: string,
   findingId: string,
   dismissed: boolean,
+  messageId: string | null = null,
 ): void {
   patchThreadAnywhere(store, threadId, (t) => {
+    if (messageId !== null) {
+      return {
+        ...t,
+        updatedAt: Date.now(),
+        messages: t.messages.map((message) => {
+          if (message.id !== messageId || !message.reviewReport) return message
+          return {
+            ...message,
+            reviewReport: {
+              ...message.reviewReport,
+              findings: message.reviewReport.findings.map((finding) =>
+                finding.id === findingId ? { ...finding, dismissed } : finding,
+              ),
+            },
+          }
+        }),
+      }
+    }
     if (!t.reviewReport) return t
     return {
       ...t,
@@ -901,7 +939,7 @@ export function setReviewFindingDismissed(
       },
     }
   })
-  store.emit('review_report_changed', threadId)
+  store.emit('review_report_changed', threadId, messageId)
 }
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */
@@ -952,20 +990,12 @@ export function setThreadWorkingBrief(
   threadId: string,
   workingBrief: string,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) =>
-    t.id !== threadId ? t : { ...t, workingBrief, updatedAt: Date.now() },
-  )
-  store.setState({ threads: updated })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, workingBrief, updatedAt: Date.now() }))
   store.emit('threads_changed')
 }
 
 export function setThreadGitBranch(store: AppStore, threadId: string, branch: string): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) =>
-    t.id !== threadId ? t : { ...t, gitBranch: branch, updatedAt: Date.now() },
-  )
-  store.setState({ threads: updated })
+  patchThreadAnywhere(store, threadId, (t) => ({ ...t, gitBranch: branch, updatedAt: Date.now() }))
   store.emit('threads_changed')
 }
 
@@ -999,16 +1029,13 @@ export function recordThreadVideos(
   videos: VideoAttachmentRef[],
 ): void {
   if (videos.length === 0) return
-  const { threads } = store.getState()
-  const updated = threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const existing = t.videos ?? []
     const known = new Set(existing.map((v) => v.path))
     const added = videos.filter((v) => !known.has(v.path))
     if (added.length === 0) return t
     return { ...t, videos: [...existing, ...added], updatedAt: Date.now() }
   })
-  store.setState({ threads: updated })
   store.emit('threads_changed')
 }
 
@@ -1023,16 +1050,13 @@ export function recordThreadArchives(
   archives: ArchiveAttachmentRef[],
 ): void {
   if (archives.length === 0) return
-  const { threads } = store.getState()
-  const updated = threads.map((t) => {
-    if (t.id !== threadId) return t
+  patchThreadAnywhere(store, threadId, (t) => {
     const existing = t.archives ?? []
     const known = new Set(existing.map((a) => a.path))
     const added = archives.filter((a) => !known.has(a.path))
     if (added.length === 0) return t
     return { ...t, archives: [...existing, ...added], updatedAt: Date.now() }
   })
-  store.setState({ threads: updated })
   store.emit('threads_changed')
 }
 
@@ -1088,19 +1112,15 @@ export function applyPreparedThreadCheckout(
   threadId: string,
   prepared: PreparedThreadCheckout,
 ): void {
-  const { threads } = store.getState()
-  const previousWorktreePath = threads.find((thread) => thread.id === threadId)?.worktree?.path
-  const updated = threads.map((thread) => {
-    if (thread.id !== threadId) return thread
-    return {
-      ...thread,
-      worktreeChoice: prepared.choice,
-      ...(prepared.branch ? { gitBranch: prepared.branch } : {}),
-      ...(prepared.worktree ? { worktree: prepared.worktree } : {}),
-      updatedAt: Date.now(),
-    }
-  })
-  store.setState({ threads: updated })
+  const previousWorktreePath = getThreadById(store, threadId)?.worktree?.path
+  const applied = patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    worktreeChoice: prepared.choice,
+    ...(prepared.branch ? { gitBranch: prepared.branch } : {}),
+    ...(prepared.worktree ? { worktree: prepared.worktree } : {}),
+    updatedAt: Date.now(),
+  }))
+  if (!applied) return
   store.emit('threads_changed')
   if (prepared.worktree && prepared.worktree.path !== previousWorktreePath) {
     store.emit('thread_checkout_changed', threadId)

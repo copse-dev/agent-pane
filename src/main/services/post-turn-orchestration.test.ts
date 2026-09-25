@@ -196,6 +196,11 @@ describe('runPostTurnReviewCycle (E3)', () => {
     // then the last cycle breaks without remediating.
     assert.equal(h.reviews, 2)
     assert.equal(h.remediations.length, 1)
+    const reviews = reviewChunks(h.chunks)
+    // The first pass actually bought a remediation turn, so it needs no note;
+    // only the final, unremediated verdict does.
+    assert.equal(reviews[1]?.followUpNote, undefined)
+    assert.match(reviews.at(-1)?.followUpNote ?? '', /review pass/)
   })
 
   it('does no further post turn on a failing review when maxCycles is 1', async () => {
@@ -214,6 +219,9 @@ describe('runPostTurnReviewCycle (E3)', () => {
     assert.equal(h.reviews, 1)
     assert.equal(h.remediations.length, 0)
     assert.equal(reviewChunks(h.chunks).at(-1)?.issuesFound, true)
+    // #2506: the verdict asked for follow-up but none ran — that has to be
+    // visible, or a "not done" verdict reads as silently ignored.
+    assert.match(reviewChunks(h.chunks).at(-1)?.followUpNote ?? '', /review pass/)
   })
 
   it('runs the configured number of passes when the reviewer keeps failing', async () => {
@@ -278,6 +286,9 @@ describe('runPostTurnReviewCycle (E3)', () => {
     assert.equal(h.reviews, 1)
     assert.equal(h.remediations.length, 0)
     assert.deepEqual(grantReasons, ['post-review-remediation'])
+    // #2506: silently stopping here is the exact bug report — a review that
+    // said the work was not done must not look like it was simply ignored.
+    assert.match(reviewChunks(h.chunks).at(-1)?.followUpNote ?? '', /continuation budget/)
   })
 
   it('stops when a remediation turn makes no edits', async () => {
@@ -296,6 +307,32 @@ describe('runPostTurnReviewCycle (E3)', () => {
     )
     assert.equal(h.reviews, 1)
     assert.equal(h.remediations.length, 1)
+    assert.match(reviewChunks(h.chunks).at(-1)?.followUpNote ?? '', /made no edits/)
+  })
+
+  it('notes the skip when the run is cancelled between a failing verdict and remediation (#2506)', async () => {
+    // The condition the bug report actually hit: a concurrently running model
+    // comparison shared this thread's abort controller, so an unrelated Stop
+    // press could land here — after the review already said the work was not
+    // done, but before the remediation turn it should have bought got a
+    // chance to start. That must be visible, not a silent "turn just ended".
+    const h = newHarness()
+    const ac = new AbortController()
+    await runPostTurnReviewCycle(
+      baseOptions(h, {
+        signal: ac.signal,
+        runReviewOnce: () => {
+          h.reviews += 1
+          ac.abort()
+          return Promise.resolve(outcome(verdict({ issuesFound: true, requestFollowUp: true })))
+        },
+      }),
+    )
+    assert.equal(h.reviews, 1)
+    assert.equal(h.remediations.length, 0)
+    assert.equal(reviewChunks(h.chunks).at(-1)?.status, 'done')
+    assert.equal(reviewChunks(h.chunks).at(-1)?.issuesFound, true)
+    assert.match(reviewChunks(h.chunks).at(-1)?.followUpNote ?? '', /cancelled/)
   })
 
   it('applies the review verdict todo patches via setTodos', async () => {

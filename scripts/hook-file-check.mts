@@ -1,5 +1,5 @@
 /**
- * `afterFileEdit` hook — the targeted half of `npm run check`, for one file.
+ * `afterFileEdit` hook — a targeted preview of `npm run check:local`, for one file.
  *
  * Wired from `.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json`
  * so an agent editing this repo through any of the three harnesses gets the same
@@ -26,7 +26,7 @@
  *   • **Not** `tsc`, and **not** the type-aware rules — both need the whole
  *     program, and neither can be scoped to one file honestly.
  *
- * So this is a fast pre-filter, never a substitute for `npm run check`. The
+ * So this is a fast pre-filter, never a substitute for a pre-commit gate. The
  * report says so, because a hook that implies more coverage than it has is
  * worse than no hook.
  *
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
 }
 
 // A hook that throws must not wedge the agent: report the crash and exit clean.
-// The checks are advisory, and `npm run check` is the real gate.
+// The checks are advisory; `npm run check:local` is the minimum pre-commit gate.
 await main().catch((err: unknown) => {
   process.stderr.write(
     `[hook-file-check] skipped: ${err instanceof Error ? err.message : String(err)}\n`,

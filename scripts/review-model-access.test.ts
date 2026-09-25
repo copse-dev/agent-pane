@@ -239,6 +239,10 @@ describe('paid PR reviewer access', () => {
         findings.env?.['REVIEW_PROFILE'],
         "${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}",
       )
+      assert.equal(
+        findings.env['COPSE_REVIEW_OPENROUTER_PROVIDER'],
+        "${{ vars.COPSE_REVIEW_OPENROUTER_PROVIDER || 'openai' }}",
+      )
       const script = findings.steps.find(
         (step) => step.name === 'Review with focused validation and post the findings',
       )?.run

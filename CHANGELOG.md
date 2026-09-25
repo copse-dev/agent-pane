@@ -1,12 +1,24 @@
 # Changelog and release notes
 
 The canonical changelog is the set of
-[GitHub Releases](https://github.com/copse-dev/agent-pane/releases). Published
-release notes are owned and maintained with the GitHub Release; this file records
-the release-note process and the current unreleased summary rather than copying
-every published entry.
+[GitHub Releases](https://github.com/copse-dev/copse-releases/releases). Published
+release notes are owned and maintained with the GitHub Release; this file holds
+only the notes in flight — `Unreleased`, and the section for the version being
+released — rather than copying every published entry.
 
 ## Unreleased
+
+- Tool calls that miss a numeric bound no longer fail. A model that asks
+  `find_files` for `max_results: 2000` against a schema capped at 200 — a
+  repeated GPT-family failure — gets the call executed at the cap and a
+  system-reminder note naming what was clamped, instead of a schema error and
+  a retry round trip. The repair only fires when numeric range is the sole
+  problem; type, enum, and missing-field errors still produce the plain
+  schema error. This repair is opt-in for safe, idempotent search limits;
+  mutating and third-party tools remain fail-closed. Recovered text-tool-call
+  arguments (models that emit tool calls as text) get the same repair and
+  adjustment note; other invalid known calls now reach the normal schema error
+  instead of disappearing.
 
 - The Browser pane now restores its tabs when Copse is reopened. A window
   remembers the pages it had open and the canvas artefacts it was showing, and
@@ -707,20 +719,19 @@ every published entry.
 
 ## Release-note process
 
-For every release:
-
-1. Draft the GitHub Release from the matching `v<version>` tag.
-2. Turn merged changes into user-facing notes, grouped into features, fixes,
-   security/privacy changes, and developer changes as applicable.
-3. State the supported OS and architectures, known issues, data migrations, and
-   recovery implications. Copse supports forward fixes only; do not recommend a
-   downgrade.
+1. Add a user-facing entry under `Unreleased` in the PR that makes the change.
+2. The version bump ([`scripts/release-bump.mts`](scripts/release-bump.mts), run
+   weekly by `release-bump.yml`) renames `Unreleased` to `## <version>`, opens a
+   new empty `Unreleased`, and drops the previous version's section, which its
+   published GitHub Release already records. Do not rename these headings by
+   hand.
+3. The GitHub Release body is generated from the `## <version>` section with the
+   supported OS, architectures, and update channel added
+   ([`scripts/release-notes.mts`](scripts/release-notes.mts)). Before announcing
+   the release, add known issues, data migrations, and recovery implications to
+   it. Copse supports forward fixes only; do not recommend a downgrade.
 4. Link issues or pull requests that provide important detail without exposing
    confidential security-report information.
-5. Review the notes with the artifacts, then publish them as part of the GitHub
-   Release.
-6. Reset the `Unreleased` section here after publication. Do not mirror the
-   published notes into a second historical list in this file.
 
 The complete shipping procedure is in
 [docs/release-checklist.md](docs/release-checklist.md).

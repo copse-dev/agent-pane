@@ -42,6 +42,7 @@ import { attachAnnotation } from '../drawing/attach-annotation.ts'
 import { trackGuestScroll } from '../drawing/scroll-tracker.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import type { BrowserImageShare, BrowserTextShare } from '@shared/types/browser-share.ts'
+import { setTooltip } from '../dom/tooltip.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -73,6 +74,9 @@ interface BrowserTab {
   backBtn: HTMLButtonElement
   forwardBtn: HTMLButtonElement
   reloadBtn: HTMLButtonElement
+  /** Explains a red/amber `.browser-url-input` outline: mirrored onto its
+   * tooltip and into `statusLine`, and cleared on the next successful load. */
+  statusLine: HTMLElement
   pendingUrl: string | null
   loadError: string | null
   /** When set, this tab renders a sandboxed MCP-UI artefact; the data: URL is
@@ -107,6 +111,44 @@ function webviewUrl(tab: BrowserTab): string {
   } catch {
     return ''
   }
+}
+
+/** Chromium net error: the navigation was superseded, not a real failure. */
+const NET_ERROR_ABORTED = -3
+/** Chromium net error for a `webRequest`-cancelled request. In practice a
+ * cancelled *main-frame* navigation does not reliably reach here at all — see
+ * `handleNavigationBlocked`, the main signal for that case — but a cancelled
+ * subresource or redirect can still report this code, so it is still worth
+ * naming correctly rather than falling through to the generic failure text. */
+const NET_ERROR_BLOCKED_BY_CLIENT = -20
+
+/** Clear a tab's red/amber URL bar: its outline, tooltip and status line. */
+function clearUrlLoadStatus(tab: BrowserTab): void {
+  tab.loadError = null
+  tab.urlInput.classList.remove('has-error', 'has-blocked')
+  setTooltip(tab.urlInput, null)
+  tab.statusLine.textContent = ''
+  tab.statusLine.classList.remove('browser-status-danger', 'browser-status-warning')
+  tab.statusLine.hidden = true
+}
+
+/**
+ * Explain a red/amber URL bar in both places the user looks: a tooltip on the
+ * input (the app tooltip system, not native `title`) and a status line under
+ * the toolbar, so the reason survives a static screenshot too, not only a
+ * hover. `kind` also picks the outline color: `error` keeps `--danger` for a
+ * genuine load failure, `blocked` uses `--warning` for a policy decision that
+ * behaved correctly, not a fault.
+ */
+function setUrlLoadStatus(tab: BrowserTab, kind: 'error' | 'blocked', message: string): void {
+  tab.loadError = message
+  tab.urlInput.classList.toggle('has-error', kind === 'error')
+  tab.urlInput.classList.toggle('has-blocked', kind === 'blocked')
+  setTooltip(tab.urlInput, message)
+  tab.statusLine.textContent = message
+  tab.statusLine.classList.toggle('browser-status-danger', kind === 'error')
+  tab.statusLine.classList.toggle('browser-status-warning', kind === 'blocked')
+  tab.statusLine.hidden = false
 }
 
 function webviewTitle(tab: BrowserTab): string | undefined {
@@ -573,8 +615,7 @@ export function mountBrowserPane(
   }
 
   function navigateWebview(tab: BrowserTab, url: string): void {
-    tab.loadError = null
-    tab.urlInput.classList.remove('has-error')
+    clearUrlLoadStatus(tab)
     // `ensureWebview` installs its own `dom-ready` listener that flushes
     // `pendingUrl`, so for a tab whose navigation is already queued there are two
     // handlers waiting on the same event. Both would navigate: the flush runs
@@ -605,15 +646,24 @@ export function mountBrowserPane(
       // and nothing else in the pane hears about it.
       scheduleSessionSave()
     }
+    // A navigation only reaches `did-navigate`/`did-navigate-in-page` once it
+    // actually commits, so that is the right moment to clear a stale red/amber
+    // URL bar from an earlier failure — `page-title-updated` fires on the same
+    // committed page and carries no news about whether the *next* navigation
+    // (already in flight) will succeed, so it must not clear on its own.
+    const onNavigateSuccess = (): void => {
+      clearUrlLoadStatus(tab)
+      onNavigate()
+    }
 
-    webview.addEventListener('did-navigate', onNavigate)
+    webview.addEventListener('did-navigate', onNavigateSuccess)
     // Marks are anchored to the page they were drawn on; a new document has no
     // use for them.
     webview.addEventListener('did-navigate', () => {
       tab.annotation?.deactivate()
       tab.annotation?.clear()
     })
-    webview.addEventListener('did-navigate-in-page', onNavigate)
+    webview.addEventListener('did-navigate-in-page', onNavigateSuccess)
     webview.addEventListener('page-title-updated', onNavigate)
     // Guest-page pointer events do not bubble into the embedder document. The
     // webview does receive focus after the overflow button had it, which gives
@@ -632,12 +682,53 @@ export function mountBrowserPane(
       }
     })
     webview.addEventListener('did-fail-load', (event: Event) => {
-      const detail = event as Event & { errorDescription?: string; validatedURL?: string }
-      tab.loadError = detail.errorDescription ?? 'Failed to load page'
-      tab.urlInput.classList.add('has-error')
-      tab.urlInput.title = tab.loadError
+      const detail = event as Event & {
+        errorCode?: number
+        errorDescription?: string
+        validatedURL?: string
+        isMainFrame?: boolean
+      }
+      // A failed subresource (a tracker, a missing favicon, a blocked ad) says
+      // nothing about whether the document the address bar names loaded. Only
+      // a main-frame failure should turn the URL bar red.
+      if (detail.isMainFrame === false) return
+      // A superseded navigation (the user typed another URL, or the flush in
+      // `dom-ready`/`navigateWebview` moved on) reports itself as aborted; that
+      // is routine, not a failure to explain.
+      if (detail.errorCode === NET_ERROR_ABORTED) return
+      if (detail.errorCode === NET_ERROR_BLOCKED_BY_CLIENT) {
+        setUrlLoadStatus(tab, 'blocked', 'Blocked by the browser network policy')
+        return
+      }
+      const description = nonEmptyStringOr(detail.errorDescription, 'Failed to load page')
+      setUrlLoadStatus(tab, 'error', `Couldn't load this page: ${description}`)
     })
     return webview
+  }
+
+  /**
+   * The main process denied a main-frame navigation under the browser network
+   * policy. Cancelling that request never reaches the guest as `did-fail-load`
+   * (Chromium can leave the navigation in limbo instead of erroring it), so
+   * main tells the renderer directly — see `browser-web-contents.ts`.
+   */
+  function handleNavigationBlocked(webContentsId: number, url: string): void {
+    for (const tab of tabs.values()) {
+      if (!tab.webview) continue
+      let id: number
+      try {
+        id = tab.webview.getWebContentsId()
+      } catch {
+        continue
+      }
+      if (id !== webContentsId) continue
+      // A denial that arrives after the user has already moved on (typed a
+      // different URL, or a later navigation already committed) is stale and
+      // must not paint over what the address bar shows now.
+      if (tab.urlInput.value !== url) continue
+      setUrlLoadStatus(tab, 'blocked', 'Blocked by the browser network policy')
+      return
+    }
   }
 
   function navigateTab(tab: BrowserTab, rawUrl: string): void {
@@ -1101,8 +1192,15 @@ export function mountBrowserPane(
       annotateBtn,
       menuWrap,
     )
+    const statusLine = el('div', { class: 'browser-status', role: 'status', hidden: '' })
     const webviewHost = el('div', { class: 'browser-webview-host' })
-    const panel = el('div', { class: 'browser-tab-panel', 'data-tab-id': id }, toolbar, webviewHost)
+    const panel = el(
+      'div',
+      { class: 'browser-tab-panel', 'data-tab-id': id },
+      toolbar,
+      statusLine,
+      webviewHost,
+    )
 
     const tab: BrowserTab = {
       id,
@@ -1123,6 +1221,7 @@ export function mountBrowserPane(
       backBtn,
       forwardBtn,
       reloadBtn,
+      statusLine,
       pendingUrl: null,
       loadError: null,
       artefactTitle: null,
@@ -1646,6 +1745,7 @@ export function mountBrowserPane(
     api?.browser.onOpenTab((url, partition) => addTab({ url, partition, activate: false })),
     api?.browser.onShowTab?.(showTabForUrl),
     api?.browser.onPreviewStale?.(refreshStalePreviews),
+    api?.browser.onNavigationBlocked?.(handleNavigationBlocked),
     api?.browser.onShareText(attachSharedText),
     api?.browser.onShareImage(attachSharedImage),
     api?.browser.onPluginTabRequest(ensurePluginBrowserTab),

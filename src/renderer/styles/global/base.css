@@ -30,6 +30,11 @@ body {
   line-height: var(--line-height-base);
   color: var(--text-primary);
   background: var(--bg-base);
+  /* Native checkboxes, radios and range inputs take the configured accent
+     instead of Chromium's default blue. accent-color inherits, so this one
+     declaration reaches every form in every dialog and both themes; do not
+     restate it per control (#3065). */
+  accent-color: var(--accent);
   /* Desktop-app chrome (tabs, sidebars, footers) should not highlight on drag. */
   user-select: none;
   -webkit-user-select: none;
@@ -104,19 +109,20 @@ input[type='password'] {
 /* ---------------------------------------------------------------------------
    Callout surfaces, shared by every block that used to carry an accent rail.
 
-   Two materials, one shape (see `prototypes/side-highlight` — "M, the mix"):
+   Transcript plates share a restrained shape (see `prototypes/side-highlight`
+   — "M, the mix"):
 
    - **plate** — a flat 9% wash of the block's severity hue. Prose the agent
      wrote: GitHub alerts and blockquotes. It is part of the answer, so it gets
      a plain surface.
-   - **hatch** — the same plate rendered as a texture rather than a tint. Copse
-     annotating its own turn: thinking, review, comparison. Not part of the
-     answer, and the material is what says so without spending a fourth hue or
-     a fourth shape. The low-opacity texture keeps the surface quiet even
-     when the commentary spans several lines.
+   - **hatch** — the same plate rendered as a texture rather than a tint. Short
+     status annotations such as review and comparison use it to stand apart
+     from the answer. Expanded reasoning keeps a lighter hatch on an etched
+     surface so longer passages remain readable.
 
-   Components select their material and mix `--sev` at the use site, sharing
-   the tuning values below rather than inheriting a finished background.
+   Flat and hatched plates mix `--sev` at the use site, sharing the tuning
+   values below rather than inheriting a finished background. The reasoning
+   surface uses theme surface and text tokens directly.
 
    The 8px pitch is a visual choice, not an anti-aliasing guarantee. At 135deg
    the horizontal repeat is 8 * sqrt(2) CSS pixels, so divisibility by four

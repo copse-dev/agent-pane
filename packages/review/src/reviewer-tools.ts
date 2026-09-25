@@ -102,6 +102,7 @@ export interface ReportedCandidate {
 }
 
 export interface ReviewerToolHost {
+  /** Writable execution checkout, used by verifier tools; source reads use context.head. */
   readonly headCheckout: string
   readonly context: ReviewContext
   /** The cell to run commands in; `null` when execution was refused. */
@@ -202,7 +203,7 @@ export function reviewerTools(): LLMTool[] {
     {
       name: 'read_file',
       description:
-        'Read a file from the change under review. Returns numbered lines; pass startLine/endLine to read a window.',
+        'Read original source from the frozen change under review, before checks or commands modified it. Returns numbered lines; pass startLine/endLine to read a window.',
       parameters: {
         type: 'object',
         properties: {
@@ -466,7 +467,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
   const commandRuns = new Map<string, CellCommandResult>()
   let completion: ReviewCompletion | null = null
   let completionError: string | null = null
-  const root = jailPath(host.headCheckout, '.')
+  const root = jailPath(host.context.head.workTree, '.')
 
   function readSource(path: string): Promise<string> {
     try {
@@ -604,7 +605,7 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         if (input === null) throw new ToolInputError('git_diff needs { path }')
         const file = host.context.files.find((entry) => entry.path === input.path)
         if (file === undefined) throw new ToolInputError(`${input.path} is not a changed file`)
-        const diff = await readFileDiff(root, host.context.mergeBase, input.path)
+        const diff = await readFileDiff(host.context.head, host.context.mergeBase, input.path)
         signal.throwIfAborted()
         const offset = input.offset ?? 0
         const nextOffset = offset + MAX_TOOL_OUTPUT_CHARS

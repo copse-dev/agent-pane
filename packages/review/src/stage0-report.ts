@@ -37,10 +37,15 @@ const checkOutcomeSchema = z
     verdict: z.enum(['clean', 'regressed', 'failing-on-base', 'fixed', 'undetermined', 'not-run']),
     head: checkRunSchema.nullable(),
     base: checkRunSchema.nullable(),
+    headConfirmation: checkRunSchema.optional(),
     reason: z.string().optional(),
   })
   // `reason` is present or absent, never `undefined` (exactOptionalPropertyTypes).
-  .transform(({ reason, ...outcome }) => (reason === undefined ? outcome : { ...outcome, reason }))
+  .transform(({ reason, headConfirmation, ...outcome }) => ({
+    ...outcome,
+    ...(reason === undefined ? {} : { reason }),
+    ...(headConfirmation === undefined ? {} : { headConfirmation }),
+  }))
 
 const projectSchema = z.union([
   z.object({

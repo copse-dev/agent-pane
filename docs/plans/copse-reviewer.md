@@ -380,6 +380,13 @@ scope.
   no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
+  Repeated reviews may reuse a clean Job A report less than 24 hours old for the identical
+  head and merge-base. A separate trusted read-only lookup verifies GitHub producer identity,
+  successful completion, complete check coverage, and unchanged trusted runner/dependency
+  inputs. The source checkout is pinned to the producer's workflow SHA. Lookup failures or
+  uncertain reports fall back to a fresh Job A; `fresh=true` forces it. The handoff names the
+  original producer run, and Job B still validates its metadata and the current PR. Ordinary
+  merge-commit CI results are not treated as exact-head grounding.
   Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
   validation image and primes a read-only dependency store from the exact head lockfile. Its
   trusted model process holds the credentials; brokered focused commands and reproducers run
@@ -609,6 +616,15 @@ base failure inventory. Missing/ambiguous inventories or other doubly-failing ch
 downgraded the same way. Renamed tests can appear as new failures; the report preserves
 both command outputs for inspection. This is failure identity comparison, not proof of causal blame.
 
+Before comparing a failed test command with base, Stage 0 repeats that command once on head,
+inside the same cell and without redoing preparation. Passing or timed-out confirmation leaves
+the result unverified, with both head attempts retained. Where either attempt supplies a complete
+failure inventory, both must supply the same nonempty set of failing identities; changed or
+missing inventories also remain unverified. Stable failures then run on base as before, with the
+confirmation included in finding evidence. Passing head commands never repeat. This reduces
+one-off process failures becoming confirmed regressions; two repeated failures still do not prove
+causal blame. A genuinely failing test command costs one additional head run.
+
 The reporter executes only where the test command already executes (inside the cell for foreign
 reviews). No repository output or test names are promoted into trusted system instructions.
 
@@ -762,9 +778,11 @@ the app-side review service (`src/main/services/review/review-service.ts`, with
 - **The typed chunk (decision 15).** `review_report` carries `ThreadReviewReport` — the
   package report projected for a card: findings flattened with their anchored source, the
   Stage 0 checks and coverage notes, the execution decision, reviewer turns, verification
-  counts, cost — as a running placeholder, then the report or an error. It is persisted on
-  the thread as `reviewReport` (metadata, like the retired `comparison`) and rendered from
-  that data alone, so a report keeps rendering after the plugin is disabled (decision 17).
+  counts, cost — as a running placeholder, then the report or an error. New reports are
+  persisted on the assistant message for the reviewed turn, so separate turns retain
+  separate cards in transcript order. Threads with no assistant message keep the report
+  on thread metadata; earlier thread-level reports remain readable there. Both forms
+  render from saved data after the plugin is disabled (decision 17).
   No review starts a machine turn, so decision 5's budget is untouched.
 - **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
   verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a
@@ -834,6 +852,12 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+  "Holding no secrets" is not the whole of it: the job still carries an Actions runtime
+  token (which `permissions: {}` does not remove) into the later steps the runner user
+  executes, and that user owns those actions and has sudo. The CI shell therefore runs the
+  CLI as a separate unprivileged user that cannot reach the runner's home
+  (`packages/review/ci/ground-as-cell-user.sh`), and kills everything that user owns before
+  the upload step.
 - **The CI shell, in two privilege domains.** `review-ground.yml` uses
   a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
   `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
@@ -900,6 +924,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **Bound Luna's reply size.** _Added 2026-09-25._ The OpenRouter Luna reviewer requests
+  an 8,192-token output ceiling per response, covering hidden reasoning as well as tool
+  calls and text. A small live PR consumed 68,153 output tokens before an upstream 429
+  ended the review; the step budget alone cannot bound a provider's hidden reasoning.
+  Discovery, challenge and reproduction share this ceiling, while reasoning effort,
+  privacy routing and other models retain their existing settings. This is a response
+  budget, not a whole-review spending limit. Completion validation still prevents an
+  unfinished review from being called clean, and provider throttling can still fail a run.
 - **Streamed rate limits need time to clear.** _Added 2026-09-24 after the Luna rollout._
   Two live attempts exhausted HTTP-200 SSE 429 retries in roughly ten seconds. Recognized
   statusless SDK 429 errors now use 10/20/40-second fallback delays plus up to 10% jitter,
@@ -1302,3 +1334,52 @@ The prompt directs an early small test rather than open-ended setup research; ro
 remain unchanged. This removes an observed source of wasted work, not a guaranteed latency
 reduction. Each role now records total wall time, tool wall time (overlap counted once), and
 the remainder for model calls/retries/orchestration so the next live run can measure it.
+
+### September 24: two concurrent verifications and actual hosting providers
+
+The protected PR workflow now opts into `--verify-concurrency 2` (the CLI keeps
+1 as its compatibility default). Repository variable `COPSE_REVIEW_VERIFY_CONCURRENCY`
+can restore 1 without a workflow edit; invalid values are refused. A bounded worker pool processes findings in
+priority order. Each finding still runs its reproducer before its own challenger
+and keeps the mandatory behavioral-proof audit. Stable turn IDs and result order
+are allocated before workers start. Cancellation stops queued findings; all active
+workers settle before the shared cell can be destroyed.
+
+This overlaps model investigation and model waiting. It does not parallelize
+commands in a shared checkout: one tool queue covers every verification tool,
+including each reproducer's prepare/write/head-run/base-run/base-cleanup sequence.
+Each concurrent finding must use its own root-level `.copse-review/finding-N-`
+filename prefix; a mismatched path is refused before writing or executing. Relative
+imports keep their prior depth. The existing credential-free, offline cell and
+all owner/key/environment checks are unchanged. This is collision prevention in
+the existing shared cell, not separate OS isolation for each finding's code.
+
+Hosting provider names are read from successful response metadata, bounded to a
+short plain label and passed with per-stream usage through secret redaction. The
+review report retains the observed names for each role and puts their union in
+collapsed details. Absent metadata remains unknown; the `openai/` model prefix is
+never used as hosting evidence. This is additive accounting only: no changes to
+agent-loop budgets, hooks, continuations, routing, model choice or retry delays.
+
+The sequential baseline (run 36015789351) took 697.7s for two findings: 618.2s in
+model calls/waiting, including 135.4s of scheduled waits after ten streamed 429s,
+44.4s in tools and 35.2s elsewhere. The second finding's two passes used 148.3s,
+which is an overlap opportunity, not a promised saving under increased load.
+Compare the subsequent protected live run's elapsed time, per-turn overlap,
+provider metadata, retry count and proof quality before claiming a speedup.
+
+### Freeze review source before execution (September 2026)
+
+Materialisation now copies the head, including intentional tracked and untracked author
+changes, to a separate input directory before any preparation or checks run. The directory
+is a sibling of the execution scratch directory and is never mounted writable into the
+cell. Context, instructions, test discovery, model source/search/diff reads and finding
+anchors use that snapshot; commands and reproducers retain the writable execution copies.
+Cleanup removes the snapshot with the review. This prevents a formatter, test or hostile
+check from rewriting what the later reviewer sees. It does not turn the explicitly
+unisolated host backend into a security boundary.
+
+Posted model prose preserves only complete code spans on one line and escapes other
+backticks, backslashes, HTML and mentions. Multiline or unmatched delimiters cannot expose
+an HTML comment or start a fence that consumes the rest of a finding. This deliberately
+normalizes malformed/multiline code formatting while retaining ordinary inline code.

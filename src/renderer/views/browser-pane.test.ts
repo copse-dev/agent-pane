@@ -1088,6 +1088,7 @@ describe('browser pane requested URLs', () => {
       attachTextBlock: (content, label) => {
         attachedText.push({ content, label: label ?? '' })
       },
+      quoteText: () => {},
       attachImage: (dataUrl, mimeType) => {
         assert.equal(mimeType, 'image/png')
         attachedImages.push({ dataUrl, mimeType: 'image/png' })
@@ -1314,6 +1315,256 @@ describe('browser pane webview size sync', () => {
     } finally {
       globalThis.requestAnimationFrame = raf
       recorder.restore()
+      unmount()
+    }
+  })
+})
+
+describe('browser pane load status', () => {
+  it('explains a failed load on the URL bar and clears it once a later navigation succeeds', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openBrowserUrl(store, 'https://authenticator.example/magic-code')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const panel = qsRequired(viewer, '.browser-tab-panel.is-active')
+      const webview = qsRequired<FakeWebview>(panel, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      const urlInput = qsRequired<HTMLInputElement>(panel, '.browser-url-input')
+      const statusLine = qsRequired(panel, '.browser-status')
+      assert.equal(statusLine.hidden, true, 'no message before anything has failed')
+
+      webview.dispatchEvent(
+        Object.assign(new Event('did-fail-load'), {
+          errorCode: -105,
+          errorDescription: 'ERR_NAME_NOT_RESOLVED',
+          validatedURL: 'https://authenticator.example/magic-code',
+          isMainFrame: true,
+        }),
+      )
+
+      assert.ok(urlInput.classList.contains('has-error'), 'a real load failure keeps the red state')
+      assert.ok(!urlInput.classList.contains('has-blocked'))
+      assert.equal(
+        urlInput.getAttribute('data-tooltip'),
+        "Couldn't load this page: ERR_NAME_NOT_RESOLVED",
+      )
+      assert.equal(statusLine.hidden, false, 'the reason is visible without hovering')
+      assert.equal(statusLine.textContent, "Couldn't load this page: ERR_NAME_NOT_RESOLVED")
+      assert.ok(statusLine.classList.contains('browser-status-danger'))
+
+      // A failed subresource (an ad, a tracker, a favicon) says nothing about
+      // the page itself, so it must not touch the URL bar.
+      webview.dispatchEvent(
+        Object.assign(new Event('did-fail-load'), {
+          errorCode: -20,
+          errorDescription: 'net::ERR_BLOCKED_BY_CLIENT',
+          isMainFrame: false,
+        }),
+      )
+      assert.ok(urlInput.classList.contains('has-error'), 'unrelated to a subresource failure')
+
+      // The user retries and the page loads: the stale explanation must go away.
+      webview.getURL = (): string => 'https://authenticator.example/magic-code'
+      webview.dispatchEvent(new Event('did-navigate'))
+
+      assert.ok(!urlInput.classList.contains('has-error'))
+      assert.equal(urlInput.getAttribute('data-tooltip'), null)
+      assert.equal(statusLine.hidden, true)
+      assert.equal(statusLine.textContent, '')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('names a network-policy block distinctly from an ordinary load failure', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openBrowserUrl(store, 'http://169.254.169.254/latest/meta-data')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const panel = qsRequired(viewer, '.browser-tab-panel.is-active')
+      const webview = qsRequired<FakeWebview>(panel, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      const urlInput = qsRequired<HTMLInputElement>(panel, '.browser-url-input')
+      const statusLine = qsRequired(panel, '.browser-status')
+
+      webview.dispatchEvent(
+        Object.assign(new Event('did-fail-load'), {
+          errorCode: -20,
+          errorDescription: 'net::ERR_BLOCKED_BY_CLIENT',
+          validatedURL: 'http://169.254.169.254/latest/meta-data',
+          isMainFrame: true,
+        }),
+      )
+
+      assert.ok(urlInput.classList.contains('has-blocked'), 'a policy denial gets its own state')
+      assert.ok(!urlInput.classList.contains('has-error'), 'not the generic failure state')
+      assert.equal(urlInput.getAttribute('data-tooltip'), 'Blocked by the browser network policy')
+      assert.equal(statusLine.hidden, false)
+      assert.equal(statusLine.textContent, 'Blocked by the browser network policy')
+      assert.ok(statusLine.classList.contains('browser-status-warning'))
+      assert.ok(!statusLine.classList.contains('browser-status-danger'))
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('ignores an aborted navigation superseded by a newer one', async () => {
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openBrowserUrl(store, 'https://example.com/first')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const panel = qsRequired(viewer, '.browser-tab-panel.is-active')
+      const webview = qsRequired<FakeWebview>(panel, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      const urlInput = qsRequired<HTMLInputElement>(panel, '.browser-url-input')
+      webview.dispatchEvent(
+        Object.assign(new Event('did-fail-load'), {
+          errorCode: -3,
+          errorDescription: 'ERR_ABORTED',
+          isMainFrame: true,
+        }),
+      )
+      assert.ok(
+        !urlInput.classList.contains('has-error'),
+        'an aborted load is routine, not a failure',
+      )
+      assert.ok(!urlInput.classList.contains('has-blocked'))
+      assert.equal(urlInput.getAttribute('data-tooltip'), null)
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('explains a network-policy denial the main process reports directly', async () => {
+    // Cancelling a main-frame request via `webRequest.onBeforeRequest` does not
+    // reliably reach the guest as `did-fail-load` (verified against real
+    // Chromium in `browser-network-policy.e2e.ts`), so main reports the denial
+    // over `browser:navigation-blocked` instead. This is the path that actually
+    // fires in the app; the `did-fail-load`-with-ERR_BLOCKED_BY_CLIENT test
+    // above only covers a defensive fallback.
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'browser',
+    })
+    let onNavigationBlocked: ((webContentsId: number, url: string) => void) | undefined
+    const api = createPendingApi({
+      'browser.onNavigationBlocked': (
+        handler: (webContentsId: number, url: string) => void,
+      ): (() => void) => {
+        onNavigationBlocked = handler
+        return (): void => {}
+      },
+    })
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      openBrowserUrl(store, 'http://169.254.169.254/latest/meta-data')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const panel = qsRequired(viewer, '.browser-tab-panel.is-active')
+      const webview = qsRequired<FakeWebview>(panel, '.browser-webview')
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      const urlInput = qsRequired<HTMLInputElement>(panel, '.browser-url-input')
+      const statusLine = qsRequired(panel, '.browser-status')
+
+      assert.ok(onNavigationBlocked)
+      onNavigationBlocked(42, 'http://169.254.169.254/latest/meta-data')
+
+      assert.ok(urlInput.classList.contains('has-blocked'))
+      assert.ok(!urlInput.classList.contains('has-error'))
+      assert.equal(urlInput.getAttribute('data-tooltip'), 'Blocked by the browser network policy')
+      assert.equal(statusLine.hidden, false)
+      assert.equal(statusLine.textContent, 'Blocked by the browser network policy')
+
+      // A denial for a webContentsId this tab does not own, or for a URL the
+      // address bar has since moved on from, must not repaint the URL bar.
+      onNavigationBlocked(42, 'http://different.example/')
+      assert.ok(urlInput.classList.contains('has-blocked'), 'unrelated URL leaves state alone')
+      onNavigationBlocked(999, 'http://169.254.169.254/latest/meta-data')
+      assert.ok(urlInput.classList.contains('has-blocked'), 'unrelated tab leaves state alone')
+    } finally {
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
     }
   })

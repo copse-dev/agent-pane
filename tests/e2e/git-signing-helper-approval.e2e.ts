@@ -15,7 +15,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
-// A public identity only; no private key or real ssh-agent participates in this eval.
+// A public identity for the socket approval; the private-key case generates a disposable key.
 const PUBLIC_KEY =
   'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 const PROJECT_ID = 'e2e-git-signing-helper'
@@ -76,7 +76,6 @@ describe('scoped Git signing approval', function () {
     seedE2eViewport(
       { width: 1280, height: 800 },
       {
-        gitCommitSshAgentSocketAccess: true,
         autoRunSandboxCommands: true,
         safetyClassifierEnabled: false,
         subagentsEnabled: false,
@@ -98,7 +97,68 @@ describe('scoped Git signing approval', function () {
     if (directory) rmSync(directory, { recursive: true, force: true })
   })
 
+  it('offers private-key consent with default settings and signs only after explicit approval', async () => {
+    const key = join(directory, 'commit-key')
+    execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key])
+    git('config', 'user.signingKey', key)
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="permissions"]').click()
+    const toggle = $('input[name="gitCommitSshAgentSocketAccess"]')
+    expect(await toggle.isSelected()).toBe(false)
+    await browser.keys('Escape')
+    await prepareMockToolTurn(
+      'Please commit the changes with the configured key.',
+      { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
+      'The commit operation finished.',
+    )
+    await $('.submit-btn').click()
+    const dialog = $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    const text = await dialog.getText()
+    expect(text).toContain('Allow reading this Git signing key?')
+    expect(text).toContain(key)
+    expect(text).toContain('Approve scoped signing')
+    expect(text).toContain('Applies to this commit only')
+    expect(text).toContain('never sent to the agent')
+    assert.equal(git('diff', '--cached'), '')
+    assert.equal(existsSync(join(root, 'hook-ran')), false)
+    await saveElementScreenshot('#approval-dialog', 'git-private-signing-key-approval.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle()
+    assert.equal(git('diff', '--cached'), '')
+    assert.equal(existsSync(join(root, 'hook-ran')), false)
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
+
+    await prepareMockToolTurn(
+      'Please commit the changes with the configured key.',
+      { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
+      'The commit operation finished.',
+    )
+    await $('.submit-btn').click()
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    expect(await dialog.getText()).toContain('Allow reading this Git signing key?')
+    await dialog.$('.approval-approve').click()
+    await waitForAgentIdle()
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '2')
+    assert.equal(existsSync(join(root, 'hook-ran')), true)
+    assert.match(git('cat-file', 'commit', 'HEAD'), /gpgsig -----BEGIN SSH SIGNATURE-----/)
+    rmSync(join(root, 'hook-ran'))
+    writeFileSync(join(root, 'change.txt'), 'another pending change\n')
+  })
+
   it('identifies the helper, key, socket and remembering scope before any staging or hooks', async () => {
+    git('config', 'user.signingKey', `key::${PUBLIC_KEY}`)
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="permissions"]').click()
+    const toggle = $('input[name="gitCommitSshAgentSocketAccess"]')
+    expect(await toggle.isSelected()).toBe(false)
+    await toggle.click()
+    await $('#settings-dialog button[type="submit"]').click()
+    await $('#settings-dialog').waitForDisplayed({ timeout: 30_000, reverse: true })
+    await $('[aria-label="Settings"]').click()
+    await $('.settings-nav-btn[data-section="permissions"]').click()
+    expect(await toggle.isSelected()).toBe(true)
+    await browser.keys('Escape')
     await prepareMockToolTurn(
       'Please commit the changes with SSH signing.',
       { name: 'git_commit', args: { message: 'Approve scoped signing', stage_all: true } },
@@ -106,16 +166,7 @@ describe('scoped Git signing approval', function () {
     )
     await $('.submit-btn').click()
     const dialog = $('#approval-dialog')
-    await browser.waitUntil(
-      async () =>
-        (await dialog.isDisplayed()) || (await $('.tool-card[data-status="error"]').isExisting()),
-      { timeout: 30_000 },
-    )
-    if (!(await dialog.isDisplayed())) {
-      const failed = $('.tool-card[data-tool-id][data-status="error"]')
-      await failed.$('summary').click()
-      throw new Error(`Signing failed before approval: ${await failed.getText()}`)
-    }
+    await dialog.waitForDisplayed({ timeout: 30_000 })
     const text = await dialog.getText()
     expect(text).toContain('Allow this Git signing helper?')
     expect(text).toContain('/usr/bin/ssh-keygen -Y sign -n git -U')
@@ -128,7 +179,7 @@ describe('scoped Git signing approval', function () {
     await saveElementScreenshot('#approval-dialog', 'git-signing-helper-approval.png')
     await dialog.$('.approval-reject').click()
     await waitForAgentIdle()
-    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '1')
+    assert.equal(git('rev-list', '--count', 'HEAD').trim(), '2')
     assert.equal(git('diff', '--cached'), '')
     assert.equal(existsSync(join(root, 'hook-ran')), false)
   })

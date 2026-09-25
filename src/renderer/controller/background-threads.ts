@@ -15,6 +15,7 @@
  * read may not.
  */
 import type { AppStore } from '@shared/store/store.ts'
+import { isThreadSubmitting } from '@shared/store/pending-submissions.ts'
 import type { BackgroundThread, Thread } from '@shared/types'
 
 /**
@@ -27,7 +28,9 @@ export function carryRunningThreads(
   outgoingProjectId: string,
   outgoingThreads: readonly Thread[],
 ): void {
-  const running = outgoingThreads.filter((t) => t.status === 'running')
+  const running = outgoingThreads.filter(
+    (t) => t.status === 'running' || isThreadSubmitting(store, t.id),
+  )
   if (running.length === 0) return
   const existing = store.getState().backgroundThreads
   const carriedIds = new Set(existing.map((b) => b.thread.id))

@@ -61,3 +61,22 @@ paths = ['''^benchmarks/steer/fixtures/injection-project/secrets\.env$''']
 description = "Container run proxy-token fixture (inert)"
 targetRules = ["generic-api-key"]
 paths = ['''^src/main/services/container-runtime/thread-container\.test\.ts$''']
+
+[[allowlists]]
+# Recorded shell-scope results include SHA-256 provenance for model artefacts.
+# The generic-api-key heuristic mistakes three of those hashes for credentials.
+# Require both an exact result path and the exact named SHA field shape so real
+# credentials elsewhere in the files, or future result files, remain visible.
+description = "Shell-scope result provenance hashes (not credentials)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''(credential-url\.ts|tokenizer(_config)?\.json)"\s*:\s*"[0-9a-f]{64}"''']
+paths = [
+  '''^benchmarks/shell-scope/results/2026-09-22/deterministic\.json$''',
+  '''^benchmarks/shell-scope/results/2026-09-22/diagnostics/historical\.jsonl$''',
+  '''^benchmarks/shell-scope/results/2026-09-22/diagnostics/repeat-options\.jsonl$''',
+  '''^benchmarks/shell-scope/results/2026-09-22/manifest\.json$''',
+  '''^benchmarks/shell-scope/results/2026-09-22/semif-dev\.jsonl$''',
+  '''^benchmarks/shell-scope/results/2026-09-22/semif-holdout\.jsonl$''',
+]

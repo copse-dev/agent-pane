@@ -83,6 +83,19 @@ const api: ApiClient = {
         ipcRenderer.off('browser:preview-stale', listener)
       }
     },
+    onNavigationBlocked: (handler: (webContentsId: number, url: string) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        webContentsId: number,
+        url: string,
+      ): void => {
+        handler(webContentsId, url)
+      }
+      ipcRenderer.on('browser:navigation-blocked', listener)
+      return (): void => {
+        ipcRenderer.off('browser:navigation-blocked', listener)
+      }
+    },
     onShareText: (
       handler: (share: import('@shared/types/browser-share.ts').BrowserTextShare) => void,
     ) => {
@@ -815,7 +828,21 @@ const api: ApiClient = {
     bestValueDefault: () => ipcRenderer.invoke('models:best-value-default'),
     resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolve-dynamic', value),
   },
+  processManager: {
+    snapshot: () => ipcRenderer.invoke('process-manager:snapshot'),
+    stopBackground: (id: string, projectId: string, threadId: string) =>
+      ipcRenderer.invoke('process-manager:stop-background', id, projectId, threadId),
+  },
   menu: {
+    onProcessManager: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:process-manager', listener)
+      return (): void => {
+        ipcRenderer.off('menu:process-manager', listener)
+      }
+    },
     onSettings: (handler: () => void) => {
       const listener = (): void => {
         handler()
@@ -1208,6 +1235,7 @@ const api: ApiClient = {
     },
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
+    findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
   },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),

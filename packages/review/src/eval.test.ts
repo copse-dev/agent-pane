@@ -2,7 +2,6 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   aggregateScores,
-  anchorsOverlap,
   claimMatchesSignals,
   decodeReviewCase,
   matchDefect,
@@ -11,6 +10,7 @@ import {
   wilsonLowerBound95,
   type TruthDefect,
 } from './eval.ts'
+import { anchorsOverlap } from './cluster.ts'
 import type { Finding } from './finding.ts'
 import type { Stage0Report } from './stage0.ts'
 import type { ReviewReport } from './stage5.ts'
