@@ -552,6 +552,7 @@ body {
   line-height: var(--line-height-base);
   color: var(--text-primary);
   background: var(--bg-base);
+  accent-color: var(--accent);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -822,6 +823,7 @@ copse-ui-field input[type=password],
 .pane-projects {
   --projects-action-size: 24px;
   --projects-action-inset: var(--spacing-xs);
+  --projects-disclosure-size: 12px;
   width: var(--projects-width, 240px);
   flex-shrink: 0;
   display: flex;
@@ -947,7 +949,7 @@ copse-ui-field input[type=password],
 .project-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   width: 100%;
   text-align: left;
   padding: var(--list-row-padding-block) var(--spacing-sm);
@@ -1039,7 +1041,7 @@ copse-ui-field input[type=password],
 .project-group-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   width: 100%;
   padding: 5px var(--spacing-sm);
   font-size: var(--font-size-sm);
@@ -1075,11 +1077,11 @@ copse-ui-field input[type=password],
 }
 .project-group-children .project-row,
 .project-group-children .sidebar-empty {
-  padding-left: calc(12px + var(--spacing-md));
+  padding-left: calc(var(--projects-disclosure-size) + var(--spacing-md));
 }
 .project-twisty {
-  width: 12px;
-  height: 12px;
+  width: var(--projects-disclosure-size);
+  height: var(--projects-disclosure-size);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -1098,7 +1100,6 @@ copse-ui-field input[type=password],
 .automation-threads-group {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
 }
 .automation-threads-header,
 .automation-schedule-header {
@@ -1115,7 +1116,7 @@ copse-ui-field input[type=password],
   gap: var(--spacing-xs);
   flex: 1;
   min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   text-align: left;
@@ -1143,8 +1144,8 @@ copse-ui-field input[type=password],
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--font-size-sm);
-  height: var(--font-size-sm);
+  width: var(--projects-disclosure-size);
+  height: var(--projects-disclosure-size);
   transition: transform 0.1s ease;
 }
 .automation-threads-twisty.expanded {
@@ -1472,6 +1473,7 @@ copse-ui-field input[type=password],
   border: none;
   border-radius: var(--radius-lg);
   box-shadow: 0 0 0 1px var(--border), var(--shadow-lg);
+  max-height: calc(100% - 2 * var(--spacing-xl));
 }
 .pane-chat.composer-centered .prompt-input {
   border-top: none;
@@ -1911,6 +1913,10 @@ copse-ui-field input[type=password],
 .git-change-path:not(.pr-list-title) {
   direction: rtl;
   text-align: left;
+}
+.git-change-path:not(.pr-list-title)::before,
+.git-change-path:not(.pr-list-title)::after {
+  content: "\200e";
 }
 .git-changes-empty {
   padding: var(--spacing-md) var(--spacing-sm);
@@ -2962,6 +2968,9 @@ copse-ui-field input[type=password],
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-composer);
+  max-height: calc(100% - 2 * var(--spacing-md));
+  display: flex;
+  flex-direction: column;
 }
 #input-bar::before {
   content: "";
@@ -2977,6 +2986,7 @@ copse-ui-field input[type=password],
 #input-bar > * {
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
 }
 .titlebar {
   -webkit-app-region: drag;
@@ -3571,6 +3581,36 @@ label {
 }
 
 /* src/renderer/styles/global/conversation.css */
+.thread-roadmap-origin {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.thread-roadmap-origin:hover {
+  color: var(--accent);
+}
+.thread-roadmap-origin-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.thread-roadmap-origin-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .messages-list {
   flex: 1;
   overflow-y: auto;
@@ -4092,10 +4132,36 @@ label {
 .msg-assistant {
   background: transparent;
 }
+.agent-avatar {
+  display: block;
+  width: calc(var(--spacing-xl) + var(--spacing-xs));
+  height: calc(var(--spacing-xl) + var(--spacing-xs));
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.message-agent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.message-agent-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
+}
+.message-agent .message-model {
+  margin-bottom: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
@@ -4182,6 +4248,29 @@ label {
   margin-top: var(--spacing-xs);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+.acp-resource-link[hidden],
+.acp-resource-image[hidden] {
+  display: none;
+}
+.acp-referenced-image {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+.acp-referenced-image .tool-result-preview-caption,
+.acp-resource-image .acp-resource-description,
+.acp-resource-image .acp-resource-meta {
+  display: block;
+}
+.acp-resource-image-link {
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
+.acp-referenced-image-path {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .message-visual-evidence {
   display: grid;
@@ -4355,6 +4444,10 @@ label {
 .tool-result-content {
   margin-bottom: var(--spacing-sm);
 }
+.acp-content-blocks:not(:has(> :not([hidden]))),
+.tool-result-content:not(:has(> :not([hidden]))) {
+  display: none;
+}
 .acp-content-image {
   justify-self: start;
 }
@@ -4403,8 +4496,7 @@ span.acp-resource-title {
   color: var(--text-primary);
   font-weight: 600;
 }
-.acp-resource-text,
-.acp-tool-diff-text {
+.acp-resource-text {
   margin: var(--spacing-xs) 0 0;
   max-height: 240px;
   overflow: auto;
@@ -4416,6 +4508,100 @@ span.acp-resource-title {
 .acp-tool-diff > .acp-content-label {
   display: block;
   margin-top: var(--spacing-sm);
+}
+.acp-tool-diff > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  list-style: none;
+}
+.acp-tool-diff > summary::-webkit-details-marker {
+  display: none;
+}
+.acp-tool-diff > summary::before {
+  content: "\203a";
+  flex: none;
+  display: inline-block;
+  width: 0.6em;
+  transition: transform 120ms ease;
+}
+.acp-tool-diff[open] > summary::before {
+  transform: rotate(90deg);
+}
+.acp-tool-diff-label {
+  flex: none;
+}
+.acp-tool-diff-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.acp-tool-diff > summary .tool-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.acp-tool-diff > summary .tool-stat-add {
+  margin-left: auto;
+}
+.acp-tool-diff-lines {
+  display: grid;
+  grid-auto-rows: min-content;
+  margin-top: var(--spacing-sm);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.acp-diff-line {
+  display: flex;
+  min-width: max-content;
+  padding-right: var(--spacing-md);
+  white-space: pre;
+  color: var(--text-secondary);
+}
+.acp-diff-sign {
+  flex: none;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+}
+.acp-diff-add {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-add > .acp-diff-sign {
+  color: var(--success);
+}
+.acp-diff-del {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-del > .acp-diff-sign {
+  color: var(--danger);
+}
+.acp-diff-gap {
+  padding-left: 2ch;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+}
+.acp-diff-eof {
+  padding-left: 2ch;
+  color: var(--text-muted);
+  font-style: italic;
 }
 .message-text .remote-artifact-image {
   display: block;
@@ -5195,6 +5381,13 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .tool-group-item[data-status=error] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
+.tool-interruption-note {
+  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.tool-rollup-body > .tool-interruption-note {
+  margin: var(--spacing-xs) 0;
+}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -5218,6 +5411,16 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .tool-result-markdown > :last-child {
   margin-bottom: 0;
+}
+.tool-result-error-message {
+  font-family: inherit;
+  max-height: 320px;
+}
+.tool-result-error-message p {
+  margin: 0;
+}
+.tool-result-error-message p + p {
+  margin-top: var(--spacing-sm);
 }
 .tool-locations {
   display: flex;
@@ -5244,6 +5447,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
+}
+.tool-subagent-marker {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
+  color: var(--text-secondary);
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
@@ -5544,9 +5756,15 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   cursor: text;
   min-height: calc(2lh + 2 * var(--spacing-md));
   max-height: 40vh;
+  flex: 1 1 auto;
   overflow-y: auto;
+  scrollbar-width: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.prompt-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .prompt-input:empty::before {
   content: attr(data-placeholder);
@@ -5565,6 +5783,12 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .input-row {
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+#input-bar > .input-row {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 #input-bar > .is-composer-top {
   border-top-left-radius: var(--radius-lg);
@@ -6130,6 +6354,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 #app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar {
   bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
+  max-height: calc(100% - var(--chrome-action-band-height) - 2 * var(--spacing-md));
 }
 #app.is-portrait-chrome .pane-chat:not(.composer-centered) .conversation {
   padding-bottom: calc(var(--chat-composer-height) + var(--chrome-action-band-height) + var(--spacing-md));
@@ -6687,6 +6912,11 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+.footer-usage-popover-section {
+  color: var(--text-muted);
+  margin-bottom: 2px;
   white-space: nowrap;
 }
 .footer-usage-popover-row {
@@ -8167,7 +8397,6 @@ dialog.settings-overlay::backdrop {
 .usage-period-btn.active {
   border-color: var(--accent);
   color: var(--text-primary);
-  font-weight: 600;
 }
 .usage-period-label {
   font-size: var(--font-size-sm);
@@ -8438,6 +8667,10 @@ dialog.settings-overlay::backdrop {
   direction: rtl;
   text-align: left;
   pointer-events: none;
+}
+.sources-row-hover-detail::before,
+.sources-row-hover-detail::after {
+  content: "\200e";
 }
 .sources-row:hover .sources-row-hover-detail,
 .sources-row:focus-within .sources-row-hover-detail {
@@ -9204,7 +9437,6 @@ dialog.settings-overlay::backdrop {
   flex-shrink: 0;
   width: auto;
   margin: 0;
-  accent-color: var(--accent);
 }
 #sources-worktrees-selected-count {
   color: var(--text-secondary);
@@ -11282,6 +11514,19 @@ dialog.process-manager-overlay {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.process-manager-activity-item:hover {
+  border-color: var(--border-focus);
+}
+.process-manager-activity-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.process-manager-activity-item[aria-disabled=true] {
+  cursor: default;
 }
 .process-manager-activity-dot {
   width: 7px;
@@ -11305,9 +11550,33 @@ dialog.process-manager-overlay {
 }
 .process-manager-table {
   width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
+}
+.process-manager-table th:nth-child(1) {
+  width: 24%;
+}
+.process-manager-table th:nth-child(2) {
+  width: 14%;
+}
+.process-manager-table th:nth-child(3) {
+  width: 18%;
+}
+.process-manager-table th:nth-child(4) {
+  width: 10%;
+}
+.process-manager-table th:nth-child(5) {
+  width: 15%;
+}
+.process-manager-table th:nth-child(6) {
+  width: 11%;
+  text-align: right;
+}
+.process-manager-table th:nth-child(7) {
+  width: 8%;
 }
 .process-manager-table th,
 .process-manager-table td {
@@ -11347,9 +11616,6 @@ dialog.process-manager-overlay {
   color: var(--text-primary);
   font-weight: 600;
 }
-.process-manager-table tr[data-active-thread=true] .process-manager-name {
-  box-shadow: inset 3px 0 var(--accent);
-}
 .process-manager-number {
   text-align: right !important;
 }
@@ -11366,6 +11632,10 @@ dialog.process-manager-overlay {
   padding: 4px;
 }
 .process-manager-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
   border: 0;
   padding: 0;
   background: none;
@@ -11376,11 +11646,22 @@ dialog.process-manager-overlay {
 .process-manager-sort:hover {
   color: var(--text-primary);
 }
+.process-manager-sort::after {
+  content: "";
+  width: 8px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-inline-start: 5px;
+  background: currentColor;
+  visibility: hidden;
+}
 .process-manager-table th[aria-sort=descending] .process-manager-sort::after {
-  content: " \2193";
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  visibility: visible;
 }
 .process-manager-table th[aria-sort=ascending] .process-manager-sort::after {
-  content: " \2191";
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  visibility: visible;
 }
 .process-manager-sort:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -12711,7 +12992,7 @@ dialog.process-manager-overlay {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
 }
 .remote-folder-toolbar {
   display: flex;
@@ -12791,7 +13072,7 @@ dialog.process-manager-overlay {
 .remote-folder-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin-top: var(--spacing-md);
 }
 .ssh-host-list {
@@ -13654,14 +13935,7 @@ dialog.process-manager-overlay {
 }
 
 /* src/renderer/styles/global/roadmap.css */
-.roadmap-list-header {
-  position: relative;
-  z-index: 30;
-  overflow: visible;
-}
 .roadmap-filter {
-  position: relative;
-  z-index: 30;
   display: flex;
   flex: 1;
   min-width: 120px;
@@ -13682,18 +13956,15 @@ dialog.process-manager-overlay {
   background: var(--bg-hover);
 }
 .roadmap-filter-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 190px;
-  max-height: min(420px, 70vh);
+  flex-shrink: 0;
+  max-height: min(280px, 45vh);
   overflow-y: auto;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-composer);
 }
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
@@ -13722,7 +13993,6 @@ dialog.process-manager-overlay {
   height: auto;
   margin: 0;
   padding: 0;
-  accent-color: var(--accent);
 }
 .roadmap-category-group {
   display: flex;
@@ -14155,7 +14425,6 @@ dialog.process-manager-overlay {
   margin: 0;
   flex: none;
   align-self: center;
-  accent-color: var(--accent);
   background: transparent;
   border: none;
   border-radius: 0;
