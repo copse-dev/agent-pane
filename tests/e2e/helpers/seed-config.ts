@@ -2526,6 +2526,8 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
                 args: { prompt: 'Map the renderer views' },
                 status: 'done',
                 result: 'Mapped the renderer views.',
+                // Runs on a local model — this is the #2464 scenario: a paid
+                // cloud parent whose exploring subagent reads as free.
                 subagent: {
                   id: 'subagent-footer-usage',
                   kind: 'explore',
@@ -2533,8 +2535,33 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
                   prompt: 'Map the renderer views',
                   summary: 'Mapped the renderer views.',
                   messages: [],
-                  model: 'claude-haiku-4-5',
+                  model: 'lmstudio:qwen',
                   usage: { inputTokens: 800_000, outputTokens: 15_000 },
+                },
+              },
+              {
+                id: 'tool-paid-explore-footer-usage',
+                name: 'explore',
+                args: { prompt: 'Check the main-process services' },
+                status: 'done',
+                result: 'Checked the main-process services.',
+                // A paid subagent with cache usage pins the accounting boundary:
+                // its cache and cost belong to the explicitly whole-thread group,
+                // never the subagent-excluded headline group.
+                subagent: {
+                  id: 'paid-subagent-footer-usage',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Check the main-process services',
+                  summary: 'Checked the main-process services.',
+                  messages: [],
+                  model: 'claude-haiku-4-5',
+                  usage: {
+                    inputTokens: 400_000,
+                    outputTokens: 10_000,
+                    cacheReadTokens: 300_000,
+                    cacheCreationTokens: 50_000,
+                  },
                 },
               },
             ],
@@ -2542,10 +2569,10 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
           },
         ],
         usage: {
-          inputTokens: 12_900_000,
-          outputTokens: 211_000,
-          cacheReadTokens: 11_400_000,
-          cacheCreationTokens: 480_000,
+          inputTokens: 13_300_000,
+          outputTokens: 221_000,
+          cacheReadTokens: 11_700_000,
+          cacheCreationTokens: 530_000,
           byModel: {
             'claude-sonnet-4-6': {
               inputTokens: 12_100_000,
@@ -2553,7 +2580,13 @@ export function seedFooterUsageFixture(workspaceRoot: string): void {
               cacheReadTokens: 11_400_000,
               cacheCreationTokens: 480_000,
             },
-            'claude-haiku-4-5': { inputTokens: 800_000, outputTokens: 15_000 },
+            'lmstudio:qwen': { inputTokens: 800_000, outputTokens: 15_000 },
+            'claude-haiku-4-5': {
+              inputTokens: 400_000,
+              outputTokens: 10_000,
+              cacheReadTokens: 300_000,
+              cacheCreationTokens: 50_000,
+            },
           },
         },
         createdAt: now,
