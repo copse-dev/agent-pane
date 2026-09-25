@@ -84,6 +84,23 @@ describe('subagent badge and footer model label', () => {
     resetUserData()
   })
 
+  it('marks the collapsed subagent row with a leading glyph (#2452)', async () => {
+    // The reporter's complaint is specifically about the collapsed row: a
+    // subagent's summary line ("Explored files", "Ran security-reviewer")
+    // otherwise reads exactly like a parent-level tool row. The mark lives in
+    // the `<summary>` itself, so it must be visible before ever opening the
+    // card — not only once expanded.
+    const card = await $('.tool-card-subagent')
+    await card.waitForExist({ timeout: 30_000 })
+    await expect(card).not.toHaveAttribute('open')
+
+    const marker = await card.$('summary.tool-card-header .tool-subagent-marker')
+    await expect(marker).toBeDisplayed()
+    await expect(marker).toHaveAttribute('aria-label', 'Subagent')
+
+    await saveElementScreenshot('.tool-card-subagent', 'subagent-collapsed-marker.png')
+  })
+
   it('renders the subagent badge through the shared labeler and captures a screenshot', async () => {
     const card = await $('.tool-card-subagent')
     await card.waitForExist({ timeout: 30_000 })

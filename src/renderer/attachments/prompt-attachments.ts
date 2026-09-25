@@ -35,6 +35,12 @@ export interface PromptAttachmentHandlers {
    * ever receiving the bytes.
    */
   attachArchive(archive: PromptArchiveAttachment): Promise<void>
+  /**
+   * Insert `content` as a markdown blockquote at the composer caret — plain
+   * editable text, not an attachment chip. Backs "Quote in reply" from the
+   * transcript's selection context menu.
+   */
+  quoteText(content: string): void
   /** Move keyboard focus to the chat composer after a selection attachment. */
   focusComposer?: () => void
 }

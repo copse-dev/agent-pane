@@ -152,6 +152,14 @@ describe('settings sources skills origin hover', () => {
           overflow: style.overflow,
           textOverflow: style.textOverflow,
           direction: style.direction,
+          before: Array.from(
+            getComputedStyle(hover, '::before').content,
+            (character) => character.codePointAt(0) ?? -1,
+          ),
+          after: Array.from(
+            getComputedStyle(hover, '::after').content,
+            (character) => character.codePointAt(0) ?? -1,
+          ),
           rowOverflows: row.scrollWidth > row.clientWidth + 1,
           width: style.width,
         }
@@ -168,6 +176,8 @@ describe('settings sources skills origin hover', () => {
     assert.equal(hoverMetrics.overflow, 'hidden')
     assert.equal(hoverMetrics.textOverflow, 'ellipsis')
     assert.equal(hoverMetrics.direction, 'rtl', 'left-elide long paths')
+    assert.ok(hoverMetrics.before.includes(0x200e), 'path needs a leading LTR mark')
+    assert.ok(hoverMetrics.after.includes(0x200e), 'path needs a trailing LTR mark')
     assert.equal(hoverMetrics.rowOverflows, false, 'long path must not widen the row')
     assert.equal(hoverMetrics.truncated, true, 'long path ellipsizes in the primary gutter')
 

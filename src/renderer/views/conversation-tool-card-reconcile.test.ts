@@ -150,6 +150,7 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     const headerBefore = card.querySelector('.tool-card-header')
     const timelineBefore = card.querySelector('.subagent-timeline')
     assert.ok(headerBefore)
+    assert.equal(card.querySelector('.agent-avatar'), null, 'generic subagents have no avatar')
     assert.ok(timelineBefore)
 
     updateToolCall(store, messageId, 'tc-sub-1', {

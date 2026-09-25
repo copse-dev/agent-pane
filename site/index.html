@@ -8,13 +8,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Copse — AI coding that stays on your machine</title>
     <link rel="icon" href="brand-mark.svg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
     <!-- Markdown twin of this page, for agents that would rather read the copy
          than the chrome. Generated from this file by scripts/sync-site-markdown.mts
          (`npm run site:md`); never edited by hand. -->
     <link rel="alternate" type="text/markdown" href="index.md" />
     <meta
       name="description"
-      content="Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support."
+      content="Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git and pull requests, terminal, and browser support."
     />
     <meta property="og:title" content="Copse — AI coding that stays on your machine" />
     <meta
@@ -36,7 +37,7 @@
         "name": "Copse",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS",
-        "description": "Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git, terminal, and browser support.",
+        "description": "Copse is a free desktop AI coding assistant with direct cloud providers, local models, coding agents, transparent tools, sandboxed commands, git and pull requests, terminal, and browser support.",
         "url": "https://copse.dev/",
         "offers": {
           "@type": "Offer",
@@ -273,6 +274,24 @@
                   agents installed on your machine. Switch without leaving the workspace.
                 </p>
               </article>
+              <article class="feature-list-item">
+                <h3>
+                  <button
+                    class="feature-trigger"
+                    type="button"
+                    aria-expanded="false"
+                    data-image="screenshots/create-pr-dialog.png"
+                    data-alt="The Create pull request dialog opened from the Copse message box"
+                    data-caption="Push committed work and open a pull request without leaving the thread."
+                  >
+                    Ship the pull request
+                  </button>
+                </h3>
+                <p>
+                  Open a pull request from the message box when the work is ready. The PRs panel
+                  then follows its comments, reviews, and individual CI checks.
+                </p>
+              </article>
             </div>
           </div>
 
@@ -312,7 +331,8 @@
               <h3>Set the boundary</h3>
               <p>
                 Keep work inside the project sandbox, approve access beyond it, or allow recognised
-                low-risk command shapes. Permission decisions have a durable audit trail.
+                low-risk command shapes. Allow, ask, or block each Copse and MCP tool on its own.
+                Permission decisions have a durable audit trail.
               </p>
             </article>
             <article class="spotlight-card spotlight-card-zoomed spotlight-card-zoomed-top-left">
@@ -459,10 +479,10 @@
             <div class="other-grid">
               <article>
                 <span aria-hidden="true">✓</span>
-                <h3>Worktrees per thread</h3>
+                <h3>Worktrees ready to work</h3>
                 <p>
-                  Give concurrent tasks isolated branches without losing the state of the main
-                  checkout.
+                  Give each thread an isolated branch with its Node, Python, Go, or Rust
+                  dependencies already installed, then clean up old worktrees in bulk.
                 </p>
               </article>
               <article>
@@ -474,10 +494,10 @@
               </article>
               <article>
                 <span aria-hidden="true">✓</span>
-                <h3>Git, shells, and browser</h3>
+                <h3>Shells and a real browser</h3>
                 <p>
-                  Run tests, review changes and pull requests, or exercise a local site beside the
-                  chat.
+                  Run tests beside the chat, exercise a local site, and draw on the page to show the
+                  agent what to change. Your tabs come back next time.
                 </p>
               </article>
               <article>
@@ -498,6 +518,30 @@
                 <p>
                   Connect MCP servers, JavaScript tools, compatible hooks, and existing Cursor
                   sources.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Side quests, not scope creep</h3>
+                <p>
+                  When the agent spots unrelated work, it offers a new thread you can start with one
+                  click in its own isolated checkout.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Images in the review</h3>
+                <p>
+                  Proposed changes and the Changes pane show before-and-after image diffs, and any
+                  image in chat can be copied straight to the clipboard.
+                </p>
+              </article>
+              <article>
+                <span aria-hidden="true">✓</span>
+                <h3>Pick up where it stopped</h3>
+                <p>
+                  Finished background threads are marked unread, and a turn that leaves plan items
+                  open offers a one-click way to continue.
                 </p>
               </article>
             </div>

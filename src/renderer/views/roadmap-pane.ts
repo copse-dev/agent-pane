@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { paneLoadingRow } from '../dom/pane-loading.ts'
@@ -155,13 +156,6 @@ function itemThreadId(item: RoadmapItem): string {
   return item.fields['thread'] ?? ''
 }
 
-// Electron prefixes errors thrown by ipcMain.handle with
-// "Error invoking remote method 'x:y': Error: " — noise for the user.
-function ipcErrorMessage(err: unknown, fallback: string): string {
-  if (!(err instanceof Error)) return fallback
-  return err.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, '')
-}
-
 function toRoadmapStatus(value: string | null | undefined): RoadmapStatus {
   return STATUS_OPTIONS.find((status) => status === value) ?? 'ready'
 }
@@ -195,6 +189,13 @@ export function mountRoadmapPane(
   let reviewing = false
   /** Item opened from the review triage panel while bulk review is still running. */
   let reviewPeekId: string | null = null
+  /**
+   * True when a review session (`reviewing`) is still live but the user has
+   * navigated the viewer elsewhere (e.g. Import) without closing it — issue
+   * #2438. The session keeps running/holding results; only the overlay is
+   * tucked away, and `.roadmap-review-btn` becomes a "come back" affordance.
+   */
+  let reviewPanelHidden = false
   let reviewResults: ReviewItemResult[] = []
   /** Status the user applied from the review triage panel (id → new status). */
   const reviewApplied = new Map<string, RoadmapStatus>()
@@ -203,6 +204,8 @@ export function mountRoadmapPane(
   /** True while prepareReview/reviewItem loop is running (including prepare). */
   let reviewInFlight = false
   let bulkRunId: string | null = null
+  /** Item count for the current bulk run, for the header's "n/m" progress. */
+  let reviewTotal = 0
   let reviewRunToken = 0
   let cachedCheckpoint:
     | {
@@ -282,7 +285,7 @@ export function mountRoadmapPane(
     'aria-label': 'Roadmap filters',
     hidden: true,
   })
-  filter.append(searchInput, filterToggle, filterMenu)
+  filter.append(searchInput, filterToggle)
   const actionButtons = el('div', { class: 'roadmap-action-buttons' })
   const newBtn = el(
     'button',
@@ -304,6 +307,9 @@ export function mountRoadmapPane(
     },
     downloadIcon('ui-icon ui-icon-sm'),
   )
+  // Shown only while a review session is live but tucked away — see
+  // syncReviewButtonAffordance() (issue #2438).
+  const reviewLiveBadge = el('span', { class: 'roadmap-review-live-badge', hidden: true })
   const reviewBtn = el(
     'button',
     {
@@ -313,6 +319,7 @@ export function mountRoadmapPane(
       'data-tooltip': 'Review whether roadmap items have been resolved',
     },
     searchIcon('ui-icon ui-icon-sm'),
+    reviewLiveBadge,
   )
   const refreshBtn = el(
     'button',
@@ -356,7 +363,11 @@ export function mountRoadmapPane(
     actionButtons,
   )
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
-  listRoot.append(listHeader, listBody)
+  // The filter panel docks as a sticky footer below the list (issue #2467)
+  // rather than a dropdown floating over it from the header — see
+  // roadmap.css. Appending it after `listBody` keeps it out of that column's
+  // own scroll, always in normal flow at the bottom of the list panel.
+  listRoot.append(listHeader, listBody, filterMenu)
 
   function appendFilterSection<T extends string>(
     title: string,
@@ -413,7 +424,13 @@ export function mountRoadmapPane(
     filterToggle.setAttribute('aria-expanded', opening ? 'true' : 'false')
   })
   const closeFilterOnOutsideClick = (event: Event): void => {
-    if (event.target instanceof Node && !filter.contains(event.target)) closeFilterMenu()
+    if (
+      event.target instanceof Node &&
+      !filter.contains(event.target) &&
+      !filterMenu.contains(event.target)
+    ) {
+      closeFilterMenu()
+    }
   }
   document.addEventListener('click', closeFilterOnOutsideClick)
 
@@ -926,7 +943,7 @@ export function mountRoadmapPane(
   /** Keep the viewer column aligned with import/review overlays vs the editor. */
   function syncViewerMode(): void {
     importView.hidden = !importing
-    const reviewPanelActive = reviewing && !reviewPeekId
+    const reviewPanelActive = reviewing && !reviewPeekId && !reviewPanelHidden
     reviewView.hidden = !reviewPanelActive
     if (importing || reviewPanelActive) {
       form.hidden = true
@@ -940,7 +957,7 @@ export function mountRoadmapPane(
   function renderEditor(opts?: { preserveDirty?: boolean }): void {
     errorLine.hidden = true
     syncViewerMode()
-    if (importing || (reviewing && !reviewPeekId)) {
+    if (importing || (reviewing && !reviewPeekId && !reviewPanelHidden)) {
       return
     }
     const item = selectedId ? items.find((m) => m.id === selectedId) : null
@@ -1337,7 +1354,9 @@ export function mountRoadmapPane(
         )
         row.append(main)
         row.addEventListener('click', () => {
-          if (reviewing || importing) return
+          // A hidden review (#2438) no longer owns the viewer, so ordinary
+          // rows stay clickable — the header button is still there to return.
+          if ((reviewing && !reviewPanelHidden) || importing) return
           if (item.id === selectedId) return
           leaveCurrentEditor()
           cancelResolutionCheckUi()
@@ -1388,10 +1407,12 @@ export function mountRoadmapPane(
     loading = false
     items = next
     // Drop a selection whose item vanished (deleted elsewhere), but keep an
-    // in-progress new-item form open. During review/import the viewer column
-    // is owned by the overlay — don't restore a list selection on top of it.
+    // in-progress new-item form open. While the review/import overlay owns the
+    // viewer, don't restore a list selection on top of it — but a *hidden*
+    // review (issue #2438: tucked away behind Import, or navigated past)
+    // no longer owns the viewer, so ordinary selection tracking applies.
     if (
-      !reviewing &&
+      !(reviewing && !reviewPanelHidden) &&
       !importing &&
       selectedId &&
       !items.some((m) => m.id === selectedId) &&
@@ -1402,6 +1423,7 @@ export function mountRoadmapPane(
     renderList()
     if (reviewing) renderReviewResults()
     renderEditor(opts)
+    void rediscoverPendingReview()
   }
 
   function startNew(): void {
@@ -1661,12 +1683,11 @@ export function mountRoadmapPane(
       }
     }
     // Track the started thread on the item so it can be reopened from here
-    // later. Best-effort: a failed stamp only costs the Reopen shortcut.
+    // later. Best-effort: a failed stamp only costs the Reopen shortcut. Main
+    // broadcasts roadmap:changed once the stamp lands, and the onChanged
+    // subscription below refreshes the list — no second refresh here.
     if (selectedId) {
-      void api.roadmap
-        .setThread(selectedId, threadId)
-        .then(() => refresh({ preserveDirty: true }))
-        .catch(() => {})
+      void api.roadmap.setThread(selectedId, threadId).catch(() => {})
     }
     handlers?.focusComposer?.()
   }
@@ -1805,8 +1826,14 @@ export function mountRoadmapPane(
 
   function startImport(): void {
     cancelResolutionCheckUi()
+    // A live review (running or finished-but-unclosed) is tucked behind the
+    // import picker rather than discarded — issue #2438. The header button
+    // becomes the way back; see syncReviewButtonAffordance().
+    if (reviewing) {
+      reviewPanelHidden = true
+      reviewPeekId = null
+    }
     importing = true
-    reviewing = false
     creating = false
     selectedId = null
     openIssues = []
@@ -1821,6 +1848,7 @@ export function mountRoadmapPane(
     importStatus.textContent = 'Loading open issues…'
     renderList()
     renderEditor()
+    syncReviewButtonAffordance()
     void loadMoreOpenIssues(matchToken)
   }
 
@@ -1909,6 +1937,105 @@ export function mountRoadmapPane(
       reviewMarkResolvedBtn.hidden = true
       reviewArchiveResolvedBtn.hidden = true
     }
+  }
+
+  /**
+   * Issue #2438: while a review session is live (running, or finished/stopped
+   * but not yet closed) and its panel isn't the current viewer overlay,
+   * `.roadmap-review-btn` becomes the way back — its own click handler resumes
+   * instead of starting a new run. Called on every state change so the label,
+   * badge and disabled-ness never go stale.
+   */
+  function syncReviewButtonAffordance(): void {
+    const hiddenAway = reviewing && reviewPanelHidden
+    reviewBtn.classList.toggle('roadmap-review-btn-live', hiddenAway)
+    reviewBtn.disabled = reviewInFlight && !hiddenAway
+    if (hiddenAway) {
+      const label = reviewInFlight
+        ? `Review running — ${String(reviewResults.length)} of ${String(reviewTotal)} judged`
+        : `Review finished — ${String(reviewResults.length)} item(s) judged`
+      const full = `${label}. Click to view.`
+      reviewBtn.setAttribute('aria-label', full)
+      reviewBtn.setAttribute('data-tooltip', full)
+      reviewLiveBadge.hidden = false
+      reviewLiveBadge.textContent = reviewInFlight
+        ? `${String(reviewResults.length)}/${String(reviewTotal)}`
+        : String(reviewResults.length)
+    } else {
+      reviewBtn.setAttribute('aria-label', 'Review roadmap resolution')
+      reviewBtn.setAttribute('data-tooltip', 'Review whether roadmap items have been resolved')
+      reviewLiveBadge.hidden = true
+      reviewLiveBadge.textContent = ''
+    }
+  }
+
+  /** Bring the tucked-away review panel back as the active viewer overlay. */
+  function resumeReviewPanel(): void {
+    importing = false
+    reviewPanelHidden = false
+    reviewPeekId = null
+    selectedId = null
+    creating = false
+    renderList()
+    renderEditor()
+    renderReviewResults()
+    syncReviewActionVisibility()
+    syncReviewButtonAffordance()
+  }
+
+  /** Reconstruct review rows already stamped on items for a given bulk run —
+   * durable on the note itself, so a remounted pane (pop-out, or this one
+   * after a reload) can recover progress a still-open run left behind. */
+  function reconstructReviewResults(runId: string): ReviewItemResult[] {
+    const results: ReviewItemResult[] = []
+    for (const item of items) {
+      if (item.fields['reviewBulkRun'] !== runId) continue
+      const verdict = item.fields['reviewVerdict']
+      if (!isRoadmapReviewVerdict(verdict)) continue
+      results.push({
+        id: item.id,
+        verdict,
+        detail: item.fields['reviewDetail'] ?? '',
+        depth: 'bulk',
+        pinnedIssue: null,
+        linkedIssues: [],
+      })
+    }
+    return results
+  }
+
+  /**
+   * On mount (including a pop-out window, or this pane simply becoming active
+   * again) check whether main still has a pending bulk run nobody closed —
+   * e.g. this window was closed mid-review. Rebuilds what it can from the
+   * items' own stamped fields and offers it through the same header
+   * affordance, read-only progress-wise (no live "n/m", since the actual
+   * runner may be gone) but still Stop/Close-able. A no-op once this window
+   * already has its own live session.
+   */
+  async function rediscoverPendingReview(): Promise<void> {
+    if (reviewing || reviewInFlight || bulkRunId !== null) return
+    // reviewRunToken changes on every local start/stop/close/abandon — reading
+    // it (rather than re-reading the booleans above, which tsc would then see
+    // as provably unchanged across the await) catches a session that started
+    // locally while this was in flight.
+    const tokenBefore = reviewRunToken
+    const checkpoint = await ensureCheckpoint()
+    const runId = checkpoint.pendingBulkRun
+    if (!runId) return
+    const results = reconstructReviewResults(runId)
+    if (results.length === 0) return
+    if (reviewRunToken !== tokenBefore) return
+    bulkRunId = runId
+    reviewResults = results
+    reviewApplied.clear()
+    bulkReviewFinished = false
+    reviewInFlight = false
+    reviewTotal = results.length
+    reviewing = true
+    reviewPanelHidden = true
+    reviewStatus.textContent = `Recovered ${String(results.length)} item(s) judged in an unfinished review. View the results or close to discard.`
+    syncReviewButtonAffordance()
   }
 
   function renderReviewResults(): void {
@@ -2018,6 +2145,7 @@ export function mountRoadmapPane(
     renderList()
     renderEditor()
     if (reviewing) renderReviewResults()
+    syncReviewButtonAffordance()
   }
 
   async function applyReviewBulkStatus(status: 'done' | 'archived'): Promise<void> {
@@ -2055,9 +2183,11 @@ export function mountRoadmapPane(
     const runToken = ++reviewRunToken
     reviewing = true
     reviewPeekId = null
+    reviewPanelHidden = false
     bulkReviewFinished = false
     reviewInFlight = false
     bulkRunId = null
+    reviewTotal = 0
     importing = false
     creating = false
     selectedId = null
@@ -2065,9 +2195,9 @@ export function mountRoadmapPane(
     reviewApplied.clear()
     clear(reviewList)
     reviewStatus.textContent = 'Preparing review…'
-    reviewBtn.disabled = true
     reviewInFlight = true
     syncReviewActionVisibility()
+    syncReviewButtonAffordance()
     renderList()
     renderEditor()
     try {
@@ -2077,6 +2207,7 @@ export function mountRoadmapPane(
         return
       }
       bulkRunId = prepared.runId
+      reviewTotal = prepared.items.length
       if (prepared.items.length === 0) {
         reviewStatus.textContent = 'No active roadmap items to review.'
         return
@@ -2091,6 +2222,7 @@ export function mountRoadmapPane(
         if (runToken !== reviewRunToken) return
         reviewResults.push(result)
         renderReviewResults()
+        syncReviewButtonAffordance()
         await refresh({ preserveDirty: true })
       }
       bulkReviewFinished = true
@@ -2107,8 +2239,13 @@ export function mountRoadmapPane(
       // Still needed for the early returns above (stopped mid-run, nothing to
       // review) and the error path; a no-op after a completed run.
       reviewInFlight = false
-      reviewBtn.disabled = false
       syncReviewActionVisibility()
+      // Re-render after reviewInFlight clears — syncReviewActionVisibility()
+      // only ever *hides* the bulk buttons while running; only a render after
+      // it flips false recomputes hasBulk and reveals them again. Unconditional:
+      // harmless even if a concurrent Close already hid/cleared the panel.
+      renderReviewResults()
+      syncReviewButtonAffordance()
     }
   }
 
@@ -2125,14 +2262,56 @@ export function mountRoadmapPane(
       })
     }
     reviewing = false
+    reviewPanelHidden = false
     bulkReviewFinished = false
     reviewInFlight = false
     bulkRunId = null
+    reviewTotal = 0
     renderEditor()
+    syncReviewButtonAffordance()
+  }
+
+  /**
+   * Cancel any live review session outright — used when the roadmap under
+   * review is no longer the active project (issue #2438). A review is bound
+   * to one project's commits and notes, so unlike Import/other in-pane
+   * navigation it cannot be tucked away and resumed: abort it in main
+   * (best-effort) rather than leaving `reviewInFlight`/`bulkRunId` dangling
+   * with no way to ever clear them.
+   */
+  function abandonReviewSession(): void {
+    if (!reviewing && !reviewInFlight && bulkRunId === null) return
+    reviewRunToken++
+    const runId = bulkRunId
+    bulkRunId = null
+    if (runId) {
+      void api.roadmap.abortReview(runId).then(() => {
+        cachedCheckpoint = undefined
+      })
+    }
+    reviewing = false
+    reviewPanelHidden = false
+    reviewInFlight = false
+    bulkReviewFinished = false
+    reviewPeekId = null
+    reviewResults = []
+    reviewApplied.clear()
+    reviewTotal = 0
+    syncReviewActionVisibility()
+    syncReviewButtonAffordance()
   }
 
   importBtn.addEventListener('click', startImport)
-  reviewBtn.addEventListener('click', () => void startReview())
+  reviewBtn.addEventListener('click', () => {
+    // A live session tucked behind another view (issue #2438) — Import, or a
+    // rediscovered run from a previous window — comes back rather than being
+    // discarded by a fresh review.
+    if (reviewing && reviewPanelHidden) {
+      resumeReviewPanel()
+      return
+    }
+    void startReview()
+  })
   reviewBackBtn.addEventListener('click', () => {
     returnToReview()
   })
@@ -2248,16 +2427,22 @@ export function mountRoadmapPane(
       // refresh will replace them. Paint the cleared editor before awaiting IPC.
       loadToken++
       loading = false
+      // A live review is project-scoped too, so it cannot simply be tucked
+      // away and resumed here — abandon it outright (issue #2438).
       cancelResolutionCheckUi()
+      abandonReviewSession()
       selectedId = null
       creating = false
       importing = false
-      reviewing = false
       items = []
       editorDrafts.clear()
       autoSaveToken.clear()
       resetAttachmentEdits()
       attachmentDataCache.clear()
+      // The bulk-review checkpoint is per-project — drop the cached one so a
+      // stale/wrong-project value can't leak into isReviewStale() checks or
+      // rediscoverPendingReview() for the project just switched into.
+      cachedCheckpoint = undefined
       renderList()
       renderEditor()
       if (roadmapModeActive(store)) void refresh()

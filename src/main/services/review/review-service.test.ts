@@ -18,6 +18,9 @@ import { setKnowledgeRootForTest } from '../storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { dismissReviewFinding } from './review-dismissals.ts'
 import {
+  getReviewToolRunner,
+  runWithReviewToolContext,
+  runningReviewReport,
   resolveReviewBase,
   resolveReviewLensSpec,
   resolveReviewModels,
@@ -321,5 +324,34 @@ describe('review service', () => {
     )
     assert.equal(resolveReviewLensSpec(settings({ [REVIEW_LENSES_SETTING_ID]: 'all' })), 'all')
     assert.equal(resolveReviewLensSpec(settings({ [REVIEW_LENSES_SETTING_ID]: 'vibes' })), '')
+  })
+})
+
+describe('review_changes tool context', () => {
+  it("keeps concurrent threads' tool calls bound to their own checkout", async () => {
+    const reviewed: string[] = []
+    const fakeReview: typeof runThreadReview = (options) => {
+      reviewed.push(`${options.threadId}:${options.root}`)
+      const report = runningReviewReport({ reviewer: 'm', challenger: 'm' }, [], 0)
+      return Promise.resolve({ report, summary: options.threadId })
+    }
+    const call = (threadId: string, pause: number): Promise<string> =>
+      runWithReviewToolContext(
+        { threadId, root: `/checkouts/${threadId}`, chatModel: 'm', onChunk: () => undefined },
+        async () => {
+          // The tool reads its context only after awaiting its permission check.
+          await new Promise((resolve) => setTimeout(resolve, pause))
+          const runner = getReviewToolRunner(fakeReview)
+          assert.ok(runner)
+          return runner(new AbortController().signal)
+        },
+      )
+    const results = await Promise.all([call('thread-a', 30), call('thread-b', 0)])
+    assert.deepEqual(results, ['thread-a', 'thread-b'])
+    assert.deepEqual(reviewed.sort(), [
+      'thread-a:/checkouts/thread-a',
+      'thread-b:/checkouts/thread-b',
+    ])
+    assert.equal(getReviewToolRunner(fakeReview), null, 'no context outside a tool call')
   })
 })

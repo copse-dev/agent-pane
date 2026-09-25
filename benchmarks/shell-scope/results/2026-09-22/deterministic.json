@@ -1,0 +1,3753 @@
+{
+  "metadata": {
+    "createdAt": "2026-09-22T12:59:05.454Z",
+    "repositoryBase": "9e5ee3ac2",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "sourceHashes": {
+      "node_modules/.pnpm/shell-quote@1.10.0/node_modules/shell-quote/quote.js": "d0e28af44639cf2a448189a05b11327d9d6b90825d877520b155d5588ef290fa",
+      "node_modules/.pnpm/shell-quote@1.10.0/node_modules/shell-quote/parse.js": "3ba508957858163adbcb7602a9af14cbca77cb0e4d1e86e98e396266f1e56523",
+      "node_modules/.pnpm/shell-quote@1.10.0/node_modules/shell-quote/index.js": "6dba443a976bcfdb5972a479c5c43c298e96bdef471c1629844ce9d6b31f5b68",
+      "packages/shell-guard/src/shell-argv.ts": "eb3fab1c8af0336b47b040a6da77281a853589ad42741ee99386f2310ef60ad3",
+      "packages/shell-guard/src/shell-scope.ts": "669b8a06b3297915e4cc2a500833eead09279b91b3a6a56ba4a096c19aa7d8d0",
+      "packages/shell-guard/src/gh-argv.ts": "84fd35ab60579ff92b0bc0556156102eef81d0c037a3934996edd8c45d9a476f",
+      "packages/shell-guard/src/trusted-commands.ts": "ff531d8c0c4109d652b46c64951327d73892f43062d3a28ba185907e83539044",
+      "packages/shell-guard/src/command-routing.ts": "25d83d2ebc81c77e04969a97ebf442af1602409b7d7b48d22c2323dc94cbbc69",
+      "packages/shell-guard/src/read-outside-project.ts": "bbc690a2d873575c408cef43c3cd05023397c34067f68a449d3499367a017ef1",
+      "packages/shell-guard/src/shell-harm.ts": "4cfc1746443caa4f0d10f6f8a6b9d79ed0bc6c2a2527c7a1ca192d7383e6a780",
+      "packages/shell-guard/src/container-effects.ts": "93274f0450f173504220bc96b2c63c83e923eacb560a789aeeaee537dc7ebcaf",
+      "packages/shell-guard/src/index.ts": "315df02737ec7f3d2a69bde1881f21f4930d007d9563cdfb8d169abeebb24ba8",
+      "dependency-checkout/packages/std/src/member-of.ts": "1cbd621a5630a3a9085a4f42226b6bc220a097b8934770d239d552de9441289c",
+      "src/shared/member-of.ts": "3fdc294f154548384daa7b898f57d3a6b9d2ff7428cbac8fff3be7c8bd8e564e",
+      "src/shared/auto-approval.ts": "4e58c929acbd980e08ce887230f52434aadd54189f682c18bf7e875c0ec1aa68",
+      "dependency-checkout/packages/std/src/nullish.ts": "72039fb3d825d2c37d52d84a5806ed671ba6309b0802e80b8f3704d6f85c7c21",
+      "dependency-checkout/packages/std/src/unknown-value.ts": "175e30e386c70d6e6acac28f106fdab9d8730a022f1f0cb1600be55acca5d456",
+      "src/shared/unknown-value.mts": "e3f71cd186aa154680de93773c112efd16f2ad05662e2f2ca56cd6435556ffdb",
+      "src/shared/unknown-value.ts": "5661bd6b3454d7bacbe6b762f7f261ff936d47fcb562d60b94b1bfd21df46da5",
+      "src/shared/web-origins.ts": "8003f31b991b56c0256a7ec4719cd524474c9f5b4ca689d0587b020c527a9354",
+      "dependency-checkout/packages/llm/src/credential-url.ts": "e99a57a9e8924488db8efee03d18d02d8c67862836d1348ad22592c32fd642be",
+      "src/main/services/security/web-origin-policy.ts": "75d7b84be72141037ca33b024b008bce15c9fdaf63c9e65cd5c5950c60d5e526",
+      "src/main/services/security/permission-policy.ts": "4969fb15bdea91de62b1b228a29653a495b3f15bdbda6bc9e4abebdec902a9d6",
+      "src/main/services/security/auto-approval.ts": "fcc6b841b1244b9413d0f181904aa76b95f3dd0c4eddd367d413cb5eead677d2"
+    },
+    "bundleHash": "d74515252702a7222e37e07569150843b40382870b4fd8171e1395ba3df64ced",
+    "fixtureContext": {
+      "workspaceRoot": "/workspace/project",
+      "homeDir": "/home/user",
+      "sanctionedRoots": [],
+      "scriptContents": "unknown",
+      "symlinks": "none",
+      "shapePolicy": "read only; no configured remote grants"
+    },
+    "notes": [
+      "Pure source APIs only; app host environment binders intentionally replaced by their unchanged pure re-exports.",
+      "Scope preserves ambiguous; conservative binary mapping is a separately labeled hypothetical projection.",
+      "Harm and shape handling are separate outputs without independent gold labels; no accuracy claim for these channels.",
+      "A shape prompt can mean unrecognized, unsupported or disallowed effects. It is not an unknown-command label and not the final permission gate.",
+      "Scope API does not accept arbitrary environment values or all semantic assumptions supplied to models; raw command text is not pre-expanded.",
+      "All fixture commands remain data. No execution or authorization effects."
+    ],
+    "publishEligible": false
+  },
+  "summaries": [
+    {
+      "split": "dev",
+      "source": "all",
+      "planned": 100,
+      "exactBinaryAgreement": 74,
+      "ambiguous": 2,
+      "conservativeBinaryAgreement": 76,
+      "wrongSandbox": 16,
+      "wrongExternal": 8,
+      "ambiguousSandboxLabel": 0,
+      "harm": {
+        "allow": 82,
+        "prompt": 18,
+        "deny": 0
+      },
+      "shapeHandling": {
+        "auto-approve": 13,
+        "prompt": 87
+      }
+    },
+    {
+      "split": "dev",
+      "source": "thread-adapted",
+      "planned": 50,
+      "exactBinaryAgreement": 34,
+      "ambiguous": 1,
+      "conservativeBinaryAgreement": 35,
+      "wrongSandbox": 14,
+      "wrongExternal": 1,
+      "ambiguousSandboxLabel": 0,
+      "harm": {
+        "allow": 40,
+        "prompt": 10,
+        "deny": 0
+      },
+      "shapeHandling": {
+        "auto-approve": 8,
+        "prompt": 42
+      }
+    },
+    {
+      "split": "dev",
+      "source": "controlled",
+      "planned": 50,
+      "exactBinaryAgreement": 40,
+      "ambiguous": 1,
+      "conservativeBinaryAgreement": 41,
+      "wrongSandbox": 2,
+      "wrongExternal": 7,
+      "ambiguousSandboxLabel": 0,
+      "harm": {
+        "allow": 42,
+        "prompt": 8,
+        "deny": 0
+      },
+      "shapeHandling": {
+        "auto-approve": 5,
+        "prompt": 45
+      }
+    },
+    {
+      "split": "holdout",
+      "source": "all",
+      "planned": 100,
+      "exactBinaryAgreement": 87,
+      "ambiguous": 0,
+      "conservativeBinaryAgreement": 87,
+      "wrongSandbox": 3,
+      "wrongExternal": 10,
+      "ambiguousSandboxLabel": 0,
+      "harm": {
+        "allow": 95,
+        "prompt": 5,
+        "deny": 0
+      },
+      "shapeHandling": {
+        "auto-approve": 39,
+        "prompt": 61
+      }
+    },
+    {
+      "split": "holdout",
+      "source": "thread-adapted",
+      "planned": 50,
+      "exactBinaryAgreement": 47,
+      "ambiguous": 0,
+      "conservativeBinaryAgreement": 47,
+      "wrongSandbox": 1,
+      "wrongExternal": 2,
+      "ambiguousSandboxLabel": 0,
+      "harm": {
+        "allow": 50,
+        "prompt": 0,
+        "deny": 0
+      },
+      "shapeHandling": {
+        "auto-approve": 35,
+        "prompt": 15
+      }
+    },
+    {
+      "split": "holdout",
+      "source": "controlled",
+      "planned": 50,
+      "exactBinaryAgreement": 40,
+      "ambiguous": 0,
+      "conservativeBinaryAgreement": 40,
+      "wrongSandbox": 2,
+      "wrongExternal": 8,
+      "ambiguousSandboxLabel": 0,
+      "harm": {
+        "allow": 45,
+        "prompt": 5,
+        "deny": 0
+      },
+      "shapeHandling": {
+        "auto-approve": 4,
+        "prompt": 46
+      }
+    }
+  ],
+  "rows": [
+    {
+      "id": "natural-001",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["corepack (downloads package-manager binaries)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: corepack pnpm test -- worktree-policy"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 3.2652499999999804
+    },
+    {
+      "id": "natural-002",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["corepack (downloads package-manager binaries)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: node"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 2.9350419999999815
+    },
+    {
+      "id": "natural-003",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.8479580000000055
+    },
+    {
+      "id": "natural-004",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: rmdir"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.43549999999999045
+    },
+    {
+      "id": "natural-005",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: find"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.43641700000000583
+    },
+    {
+      "id": "natural-006",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: wdio.conf.ts"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/onboarding.e2e.ts --spec tests/e2e/onboarding-scan-import.e2e.ts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3882080000000201
+    },
+    {
+      "id": "natural-007",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git restore is not an auto-approved shape"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3737079999999935
+    },
+    {
+      "id": "natural-008",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2448750000000075
+    },
+    {
+      "id": "natural-009",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: rmdir"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.36062499999999886
+    },
+    {
+      "id": "natural-010",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: find"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3688330000000235
+    },
+    {
+      "id": "natural-011",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.26829100000000494
+    },
+    {
+      "id": "natural-012",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["git stash clear/drop discards stashed work"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git stash form not recognised: git stash drop 'stash@{0}'"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3118340000000046
+    },
+    {
+      "id": "natural-013",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["package install/update (may fetch + run code from network)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.37608299999999417
+    },
+    {
+      "id": "natural-014",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "absolute path outside workspace: /home/user/.codex/plugins/cache/openai-bundled/visualize/1.0.38"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: find /home/user/.codex/plugins/cache/openai-bundled/visualize/1.0.38 -maxdepth 3 -name 'tweak.md' -print"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.8872079999999869
+    },
+    {
+      "id": "natural-015",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: wdio.conf.ts"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/thread-content-filter.e2e.ts --spec tests/e2e/command-palette.e2e.ts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.7801659999999799
+    },
+    {
+      "id": "natural-016",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git restore is not an auto-approved shape"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3555830000000242
+    },
+    {
+      "id": "natural-017",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2151670000000081
+    },
+    {
+      "id": "natural-018",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: wdio.conf.ts"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node scripts/run-e2e.mts wdio.conf.ts --shard 1/8"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.18454199999999332
+    },
+    {
+      "id": "natural-019",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git log reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.338957999999991
+    },
+    {
+      "id": "natural-020",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "package install/update (may fetch + run code from network)",
+          "dynamic execution / encoding"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.49116699999999014
+    },
+    {
+      "id": "natural-021",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: wdio.conf.ts"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/acp-tool-result-image.e2e.ts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.25012499999999704
+    },
+    {
+      "id": "natural-022",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["git network operation"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "git push does not name a configured remote: git push origin HEAD:copse/approval-survives-acp-turn-end"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.578583999999978
+    },
+    {
+      "id": "natural-023",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: pnpm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.15141700000000924
+    },
+    {
+      "id": "natural-024",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: wdio.conf.ts"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/thread-content-filter.e2e.ts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.24054200000000492
+    },
+    {
+      "id": "natural-025",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git log reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.16670799999999986
+    },
+    {
+      "id": "natural-026",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "package install/update (may fetch + run code from network)",
+          "dynamic execution / encoding"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3187910000000045
+    },
+    {
+      "id": "natural-027",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": [
+          "script contents could not be inspected safely: src/renderer/views/input-bar.ts"
+        ]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3973749999999825
+    },
+    {
+      "id": "natural-028",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["git network operation", "git network read (fetch)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "git fetch does not name a configured remote: git fetch origin copse/approval-survives-acp-turn-end"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3307500000000232
+    },
+    {
+      "id": "natural-029",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.14904100000001108
+    },
+    {
+      "id": "natural-030",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: wdio.conf.ts"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: node scripts/run-e2e.mts wdio.conf.ts"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11662499999999909
+    },
+    {
+      "id": "natural-031",
+      "scope": {
+        "verdict": "ambiguous",
+        "reasons": ["git network read (fetch)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["git reset --hard discards changes"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git reset --hard discards changes"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.37429199999999696
+    },
+    {
+      "id": "natural-032",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["package install/update (may fetch + run code from network)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.14108300000000895
+    },
+    {
+      "id": "natural-033",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["git network operation"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git remote (read)"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08395799999999554
+    },
+    {
+      "id": "natural-034",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12233299999999758
+    },
+    {
+      "id": "natural-035",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git log reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.17541700000001015
+    },
+    {
+      "id": "natural-036",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.13649999999998386
+    },
+    {
+      "id": "natural-037",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command is tier \"local-write\", above the configured level \"read\""]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.16741700000000037
+    },
+    {
+      "id": "natural-038",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.13549999999997908
+    },
+    {
+      "id": "natural-039",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git log reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.1372909999999763
+    },
+    {
+      "id": "natural-040",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.15329099999999585
+    },
+    {
+      "id": "natural-041",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git status reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.07991699999999469
+    },
+    {
+      "id": "natural-042",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: pnpm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1675830000000076
+    },
+    {
+      "id": "natural-043",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git branch (read)", "git rev-list reads repository state"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.24145899999999187
+    },
+    {
+      "id": "natural-044",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.15112499999997908
+    },
+    {
+      "id": "natural-045",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git status reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.12325000000001296
+    },
+    {
+      "id": "natural-046",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12387499999999818
+    },
+    {
+      "id": "natural-047",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git restore is not an auto-approved shape"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.16058300000000258
+    },
+    {
+      "id": "natural-048",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.13474999999999682
+    },
+    {
+      "id": "natural-049",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command is tier \"local-write\", above the configured level \"read\""]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.07941699999997809
+    },
+    {
+      "id": "natural-050",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: pnpm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.17775000000000318
+    },
+    {
+      "id": "natural-051",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["unparseable segment: ls -td .tmp/test-run-* 2>/dev/null"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.26345799999998576
+    },
+    {
+      "id": "natural-052",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: head", "read-only command: sed"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.5441249999999798
+    },
+    {
+      "id": "natural-053",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed", "read-only command: head"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.28462500000000546
+    },
+    {
+      "id": "natural-054",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: wc", "read-only command: tail"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.33762500000000273
+    },
+    {
+      "id": "natural-055",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: wc"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.1397500000000207
+    },
+    {
+      "id": "natural-056",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command substitution or parameter expansion present"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.500333999999981
+    },
+    {
+      "id": "natural-057",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sort", "read-only command: head"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.363915999999989
+    },
+    {
+      "id": "natural-058",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: test"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.7409580000000062
+    },
+    {
+      "id": "natural-059",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: tail"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.33420800000001805
+    },
+    {
+      "id": "natural-060",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed", "read-only command: tail"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.37666600000000017
+    },
+    {
+      "id": "natural-061",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sort"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.27000000000001023
+    },
+    {
+      "id": "natural-062",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: ls", "trivially-safe prep step: true"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.33583300000000804
+    },
+    {
+      "id": "natural-063",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.13116600000000744
+    },
+    {
+      "id": "natural-064",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sed"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2882919999999842
+    },
+    {
+      "id": "natural-065",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: tail"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.12745899999998755
+    },
+    {
+      "id": "natural-066",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "unparseable segment: sed -n '35,80p' node_modules/.pnpm/@anthropic-ai+sandbox-runtime@0.0.74_patch_hash=*/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.35650000000001114
+    },
+    {
+      "id": "natural-067",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: head"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.30916699999997377
+    },
+    {
+      "id": "natural-068",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3152080000000126
+    },
+    {
+      "id": "natural-069",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "absolute path outside workspace: /private/tmp/claude/workspace-image-attachments.png"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: cp tests/e2e/screenshots/workspace-image-attachments.png /private/tmp/claude/workspace-image-attachments.png"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.47870899999998073
+    },
+    {
+      "id": "natural-070",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sort", "read-only command: head"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.4889170000000149
+    },
+    {
+      "id": "natural-071",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: test"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.8106669999999951
+    },
+    {
+      "id": "natural-072",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: tail"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.32545899999999506
+    },
+    {
+      "id": "natural-073",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed", "read-only command: tail"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.21058299999998553
+    },
+    {
+      "id": "natural-074",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sort"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.19999999999998863
+    },
+    {
+      "id": "natural-075",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: ls"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.11241699999999355
+    },
+    {
+      "id": "natural-076",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10474999999999568
+    },
+    {
+      "id": "natural-077",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sed"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2565409999999986
+    },
+    {
+      "id": "natural-078",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: tail"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.11795799999998735
+    },
+    {
+      "id": "natural-079",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.10766599999999471
+    },
+    {
+      "id": "natural-080",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: head"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.26454200000000583
+    },
+    {
+      "id": "natural-081",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.13675000000000637
+    },
+    {
+      "id": "natural-082",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sort"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.43729099999998766
+    },
+    {
+      "id": "natural-083",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: ls"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.2185000000000059
+    },
+    {
+      "id": "natural-084",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2378750000000025
+    },
+    {
+      "id": "natural-085",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sed"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3392910000000029
+    },
+    {
+      "id": "natural-086",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: tail"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.13008300000001327
+    },
+    {
+      "id": "natural-087",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.14249999999998408
+    },
+    {
+      "id": "natural-088",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "unparseable segment: rg -n \"decodeProviderDescription|ProviderDescription\" src/main/services/providers/*.test.ts src/main/services/container-runtime/*.test.ts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2372090000000071
+    },
+    {
+      "id": "natural-089",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: rg -n -C 5 \"from '../services/storage/settings.ts'\" src/main/ipc/register-handlers.ts"
+        ]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.1576249999999959
+    },
+    {
+      "id": "natural-090",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "unparseable segment: ls -ld node_modules/esbuild node_modules/.pnpm/esbuild@*/node_modules/esbuild"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12633399999998574
+    },
+    {
+      "id": "natural-091",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11408399999999119
+    },
+    {
+      "id": "natural-092",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: sed"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2641660000000172
+    },
+    {
+      "id": "natural-093",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: tail", "read-only command: tail", "read-only command: tail"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3314579999999978
+    },
+    {
+      "id": "natural-094",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.13395900000000438
+    },
+    {
+      "id": "natural-095",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg", "read-only command: head"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.5781659999999818
+    },
+    {
+      "id": "natural-096",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2168749999999875
+    },
+    {
+      "id": "natural-097",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: ls"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.23383400000000165
+    },
+    {
+      "id": "natural-098",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["corepack (downloads package-manager binaries)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1334590000000162
+    },
+    {
+      "id": "natural-099",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "unparseable segment: rg -n '^export function seed.*Project|writeSeedConfig\\(' tests/e2e/helpers/seed-config.ts tests/e2e/*.e2e.ts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.19104200000001015
+    },
+    {
+      "id": "natural-100",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: tail"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.1220830000000035
+    },
+    {
+      "id": "cat-paths-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: cat"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.10549999999997794
+    },
+    {
+      "id": "cat-paths-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: cat ../guide.txt"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.12162499999999454
+    },
+    {
+      "id": "cat-paths-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /workspace/project-old/guide.txt"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: cat /workspace/project-old/guide.txt"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.1245839999999987
+    },
+    {
+      "id": "cat-paths-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: cat"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.08320799999998485
+    },
+    {
+      "id": "cat-paths-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: cat ./docs/../../outside.txt"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.17991599999999153
+    },
+    {
+      "id": "rm-paths-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09291600000000244
+    },
+    {
+      "id": "rm-paths-2",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11091699999997218
+    },
+    {
+      "id": "rm-paths-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /workspace/other/scratch.txt"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["recursive/forced delete (rm -rf)"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09504200000000651
+    },
+    {
+      "id": "rm-paths-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: rm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.16479100000000813
+    },
+    {
+      "id": "rm-paths-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["destructive path outside workspace", "$HOME reference"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": [
+          "recursive/forced delete (rm -rf)",
+          "dynamic path or command expansion prevents complete harm analysis"
+        ]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command substitution or parameter expansion present"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3961669999999913
+    },
+    {
+      "id": "curl-network-1",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: curl https://api.example.invalid/health"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2562080000000151
+    },
+    {
+      "id": "curl-network-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: curl --version"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1617920000000197
+    },
+    {
+      "id": "curl-network-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: curl -I -- https://api.example.invalid/health"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.18729200000001356
+    },
+    {
+      "id": "curl-network-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: curl file:///workspace/project/docs/guide.txt"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.17420799999999304
+    },
+    {
+      "id": "curl-network-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: curl file:///outside/guide.txt"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12174999999999159
+    },
+    {
+      "id": "node-code-1",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: node -e \"console.log(17)\""]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.22708299999999326
+    },
+    {
+      "id": "node-code-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: scripts/unknown.mjs"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: node scripts/unknown.mjs"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10762500000001296
+    },
+    {
+      "id": "node-code-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "inline script (interpreter -c/-e/--eval)",
+          "executes an in-workspace file directly (contents opaque to analysis)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node -e \"require('node:fs').readFileSync('docs/guide.txt')\""
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.22587500000000205
+    },
+    {
+      "id": "node-code-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "inline script (interpreter -c/-e/--eval)",
+          "executes an in-workspace file directly (contents opaque to analysis)",
+          "parent directory traversal (../)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node -e \"require('node:fs').writeFileSync('../report.txt', 'ok')\""
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1820419999999956
+    },
+    {
+      "id": "node-code-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "inline script (interpreter -c/-e/--eval)",
+          "executes an in-workspace file directly (contents opaque to analysis)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: node -e \"fetch('https://api.example.invalid/health')\""
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1337090000000103
+    },
+    {
+      "id": "printf-text-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["trivially-safe prep step: printf"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12733300000002146
+    },
+    {
+      "id": "printf-text-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /outside/private.txt"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: printf '%s\\n' '/outside/private.txt'"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09741699999997877
+    },
+    {
+      "id": "printf-text-3",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12204199999999332
+    },
+    {
+      "id": "printf-text-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09166600000000358
+    },
+    {
+      "id": "printf-text-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /outside/report.txt"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09287499999999227
+    },
+    {
+      "id": "git-local-network-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git status reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.09037500000002296
+    },
+    {
+      "id": "git-local-network-2",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["git log reads repository state"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.10012500000001978
+    },
+    {
+      "id": "git-local-network-3",
+      "scope": {
+        "verdict": "ambiguous",
+        "reasons": ["git network read (fetch)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git fetch does not name a configured remote: git fetch origin topic"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.07774999999998045
+    },
+    {
+      "id": "git-local-network-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["git network operation"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["git push does not name a configured remote: git push origin HEAD:topic"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.0821250000000191
+    },
+    {
+      "id": "git-local-network-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "git option names a program or relocates the repo: git -C ../other status --short"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08570799999998258
+    },
+    {
+      "id": "pnpm-opaque-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: pnpm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08041600000001381
+    },
+    {
+      "id": "pnpm-opaque-2",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: pnpm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08125000000001137
+    },
+    {
+      "id": "pnpm-opaque-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["package install/update (may fetch + run code from network)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: pnpm install --frozen-lockfile --ignore-scripts"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10183299999999917
+    },
+    {
+      "id": "pnpm-opaque-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: pnpm"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.06262499999999704
+    },
+    {
+      "id": "pnpm-opaque-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "package install/update (may fetch + run code from network)",
+          "dynamic execution / encoding"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: pnpm exec custom-checker docs/guide.txt"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11920800000001464
+    },
+    {
+      "id": "find-actions-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: find"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10883400000000165
+    },
+    {
+      "id": "find-actions-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: find ../other -name '*.ts' -print"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09591599999998834
+    },
+    {
+      "id": "find-actions-3",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["find -delete bulk removal"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["find -delete bulk removal"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1209999999999809
+    },
+    {
+      "id": "find-actions-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "dynamic execution / encoding",
+          "absolute path outside workspace: /outside/checker"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: find ./src -exec /outside/checker '{}' ';'"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2079999999999984
+    },
+    {
+      "id": "find-actions-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /outside"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: find /outside -maxdepth 1 -type f -print"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12208400000000097
+    },
+    {
+      "id": "env-wrappers-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: env"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2510000000000048
+    },
+    {
+      "id": "env-wrappers-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: env LC_ALL=C cat ../guide.txt"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08995899999999324
+    },
+    {
+      "id": "env-wrappers-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: scripts/unknown.mjs"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: env node scripts/unknown.mjs"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09820799999999963
+    },
+    {
+      "id": "env-wrappers-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: env LC_ALL=C curl https://api.example.invalid/health"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12358299999999645
+    },
+    {
+      "id": "env-wrappers-5",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: env"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.07662499999997863
+    },
+    {
+      "id": "bash-expansion-1",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: bash -c 'printf ok'"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.13054199999999128
+    },
+    {
+      "id": "bash-expansion-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)", "parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: bash -c 'cat ../guide.txt'"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.15587500000000887
+    },
+    {
+      "id": "bash-expansion-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: bash -c 'printf ok > ./build/result.txt'"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.338957999999991
+    },
+    {
+      "id": "bash-expansion-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "command substitution (may hide network or outside-path tools)",
+          "inline script (interpreter -c/-e/--eval)",
+          "parent directory traversal (../)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: bash -c 'printf \"%s\" \"$(cat ../guide.txt)\"'"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.36145799999999895
+    },
+    {
+      "id": "bash-expansion-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: scripts/unknown.sh"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: bash scripts/unknown.sh"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11191699999997695
+    },
+    {
+      "id": "sed-paths-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: sed"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.11845900000000142
+    },
+    {
+      "id": "sed-paths-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /workspace/other/guide.txt"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: sed -n '1,5p' /workspace/other/guide.txt"
+        ]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.12250000000000227
+    },
+    {
+      "id": "sed-paths-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /https:\\/\\//p"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: sed -n '/https:\\/\\//p' docs/guide.txt"
+        ]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.1382080000000201
+    },
+    {
+      "id": "sed-paths-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.13545899999999733
+    },
+    {
+      "id": "sed-paths-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /outside/guide.txt"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.14324999999999477
+    },
+    {
+      "id": "rg-patterns-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: rg"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.11299999999999955
+    },
+    {
+      "id": "rg-patterns-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /outside/private.txt"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: rg -n '/outside/private.txt' src"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.11716699999999491
+    },
+    {
+      "id": "rg-patterns-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: rg -n 'TODO' ../other"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.09837500000000432
+    },
+    {
+      "id": "rg-patterns-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /workspace/project-old"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: rg --files /workspace/project-old"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.12687499999998408
+    },
+    {
+      "id": "rg-patterns-5",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["redirection writes to a file"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12804199999999355
+    },
+    {
+      "id": "python-code-1",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: python3 -c \"print(17)\""]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11583300000000918
+    },
+    {
+      "id": "python-code-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: scripts/unknown.py"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: python3 scripts/unknown.py"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1078329999999994
+    },
+    {
+      "id": "python-code-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "inline script (interpreter -c/-e/--eval)",
+          "executes an in-workspace file directly (contents opaque to analysis)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: python3 -c \"from pathlib import Path; print(Path('docs/guide.txt').read_text())\""
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1958750000000009
+    },
+    {
+      "id": "python-code-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "inline script (interpreter -c/-e/--eval)",
+          "executes an in-workspace file directly (contents opaque to analysis)",
+          "parent directory traversal (../)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: python3 -c \"from pathlib import Path; Path('../report.txt').write_text('ok')\""
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.22587500000000205
+    },
+    {
+      "id": "python-code-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "inline script (interpreter -c/-e/--eval)",
+          "executes an in-workspace file directly (contents opaque to analysis)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: python3 -c \"import urllib.request; urllib.request.urlopen('https://api.example.invalid')\""
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.19445799999999736
+    },
+    {
+      "id": "wget-network-1",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: wget --version"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.07333299999999099
+    },
+    {
+      "id": "wget-network-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: wget --help"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.05995799999999463
+    },
+    {
+      "id": "wget-network-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: wget -O build/page.html https://api.example.invalid"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.24208300000000804
+    },
+    {
+      "id": "wget-network-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: wget --spider https://api.example.invalid"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10066699999998718
+    },
+    {
+      "id": "wget-network-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["network download (curl/wget)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: wget -q https://api.example.invalid -O -"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10000000000002274
+    },
+    {
+      "id": "cp-paths-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: cp"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.17770799999999554
+    },
+    {
+      "id": "cp-paths-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: cp ../guide.txt build/guide.txt"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.18491700000001288
+    },
+    {
+      "id": "cp-paths-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: cp docs/guide.txt ../guide.txt"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.14525000000000432
+    },
+    {
+      "id": "cp-paths-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command substitution or parameter expansion present"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.12937500000001023
+    },
+    {
+      "id": "cp-paths-5",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: cp"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.19129200000000424
+    },
+    {
+      "id": "mv-paths-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: mv"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2692090000000178
+    },
+    {
+      "id": "mv-paths-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: mv ../old.txt build/new.txt"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.2591250000000116
+    },
+    {
+      "id": "mv-paths-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /workspace/project-sibling/new.txt"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["relocation moves build/old.txt out of the workspace"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: mv build/old.txt /workspace/project-sibling/new.txt"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.40237500000000637
+    },
+    {
+      "id": "mv-paths-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: mv"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.4269160000000056
+    },
+    {
+      "id": "mv-paths-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["$HOME reference"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["relocation moves build/old.txt out of the workspace"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command substitution or parameter expansion present"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.3492919999999913
+    },
+    {
+      "id": "tar-effects-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: tar"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10358400000001211
+    },
+    {
+      "id": "tar-effects-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: tar -cf ../docs.tar docs"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.09058299999998098
+    },
+    {
+      "id": "tar-effects-3",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: tar"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08295899999998824
+    },
+    {
+      "id": "tar-effects-4",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: tar"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.11525000000000318
+    },
+    {
+      "id": "tar-effects-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: tar -cf build/docs.tar ../other"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10537500000000932
+    },
+    {
+      "id": "command-wrapper-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08137499999997999
+    },
+    {
+      "id": "command-wrapper-2",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.15425000000001887
+    },
+    {
+      "id": "command-wrapper-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: command sed -n '1,5p' ../guide.txt"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.1208340000000021
+    },
+    {
+      "id": "command-wrapper-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: scripts/unknown.py"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: command python3 scripts/unknown.py"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.25820800000002464
+    },
+    {
+      "id": "command-wrapper-5",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["not an auto-approved shape: command"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.10150000000001569
+    },
+    {
+      "id": "sh-substitution-1",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: sh -c 'head -n 1 docs/guide.txt'"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.18033300000001873
+    },
+    {
+      "id": "sh-substitution-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)", "parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: sh -c 'head -n 1 ../guide.txt'"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.166041000000007
+    },
+    {
+      "id": "sh-substitution-3",
+      "scope": {
+        "verdict": "external",
+        "reasons": [
+          "command substitution (may hide network or outside-path tools)",
+          "inline script (interpreter -c/-e/--eval)"
+        ]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: sh -c 'wc -l \"$(head -n 1 build/path.txt)\"'"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.22529199999999605
+    },
+    {
+      "id": "sh-substitution-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["runs a local script via an interpreter (contents opaque to analysis)"]
+      },
+      "harm": {
+        "action": "prompt",
+        "reasons": ["script contents could not be inspected safely: scripts/unknown.sh"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: sh scripts/unknown.sh"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.08670900000001325
+    },
+    {
+      "id": "sh-substitution-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["inline script (interpreter -c/-e/--eval)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": [
+          "segment reaches outside the workspace: sh -c 'head -n 1 docs/guide.txt | wc -c'"
+        ]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.21833300000000122
+    },
+    {
+      "id": "ls-du-paths-1",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: ls"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.08004100000002268
+    },
+    {
+      "id": "ls-du-paths-2",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["parent directory traversal (../)"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: ls -la ../other"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.07304100000001768
+    },
+    {
+      "id": "ls-du-paths-3",
+      "scope": {
+        "verdict": "sandbox",
+        "reasons": ["no network or outside-path signals detected"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "auto-approve",
+        "tier": "read",
+        "reasons": ["read-only command: du"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.0675420000000031
+    },
+    {
+      "id": "ls-du-paths-4",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["absolute path outside workspace: /workspace/project-other"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["segment reaches outside the workspace: du -sh /workspace/project-other"]
+      },
+      "structuralReadOnly": true,
+      "elapsedMs": 0.09366699999998218
+    },
+    {
+      "id": "ls-du-paths-5",
+      "scope": {
+        "verdict": "external",
+        "reasons": ["$HOME reference"]
+      },
+      "harm": {
+        "action": "allow",
+        "reasons": ["no deterministic harmful-command signals detected"]
+      },
+      "shapeHandling": {
+        "action": "prompt",
+        "reasons": ["command substitution or parameter expansion present"]
+      },
+      "structuralReadOnly": false,
+      "elapsedMs": 0.06874999999999432
+    }
+  ]
+}

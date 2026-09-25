@@ -12,8 +12,8 @@ adversarial challenge, the ranked report, SARIF export and the headless event en
 In the app, the `copse.review` plugin has replaced `copse.model-comparison`: "Review" in
 the Changes view, the "Review changes" bubble and the `review_changes` tool run the same
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
-to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
-pull request runs Stage 0 on a secret-free runner and posts the findings as one review
+to the knowledge store (see §What Phase 3 delivered). In CI, every ready owner pull request
+(and a draft given the `copse-review` label) runs Stage 0 on a secret-free runner and posts the findings as one review
 from a second job whose model process brokers focused validation into a secret-free
 container (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
@@ -380,6 +380,13 @@ scope.
   no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
+  Repeated reviews may reuse a clean Job A report less than 24 hours old for the identical
+  head and merge-base. A separate trusted read-only lookup verifies GitHub producer identity,
+  successful completion, complete check coverage, and unchanged trusted runner/dependency
+  inputs. The source checkout is pinned to the producer's workflow SHA. Lookup failures or
+  uncertain reports fall back to a fresh Job A; `fresh=true` forces it. The handoff names the
+  original producer run, and Job B still validates its metadata and the current PR. Ordinary
+  merge-commit CI results are not treated as exact-head grounding.
   Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
   validation image and primes a read-only dependency store from the exact head lockfile. Its
   trusted model process holds the credentials; brokered focused commands and reproducers run
@@ -609,6 +616,15 @@ base failure inventory. Missing/ambiguous inventories or other doubly-failing ch
 downgraded the same way. Renamed tests can appear as new failures; the report preserves
 both command outputs for inspection. This is failure identity comparison, not proof of causal blame.
 
+Before comparing a failed test command with base, Stage 0 repeats that command once on head,
+inside the same cell and without redoing preparation. Passing or timed-out confirmation leaves
+the result unverified, with both head attempts retained. Where either attempt supplies a complete
+failure inventory, both must supply the same nonempty set of failing identities; changed or
+missing inventories also remain unverified. Stable failures then run on base as before, with the
+confirmation included in finding evidence. Passing head commands never repeat. This reduces
+one-off process failures becoming confirmed regressions; two repeated failures still do not prove
+causal blame. A genuinely failing test command costs one additional head run.
+
 The reporter executes only where the test command already executes (inside the cell for foreign
 reviews). No repository output or test names are promoted into trusted system instructions.
 
@@ -762,9 +778,11 @@ the app-side review service (`src/main/services/review/review-service.ts`, with
 - **The typed chunk (decision 15).** `review_report` carries `ThreadReviewReport` — the
   package report projected for a card: findings flattened with their anchored source, the
   Stage 0 checks and coverage notes, the execution decision, reviewer turns, verification
-  counts, cost — as a running placeholder, then the report or an error. It is persisted on
-  the thread as `reviewReport` (metadata, like the retired `comparison`) and rendered from
-  that data alone, so a report keeps rendering after the plugin is disabled (decision 17).
+  counts, cost — as a running placeholder, then the report or an error. New reports are
+  persisted on the assistant message for the reviewed turn, so separate turns retain
+  separate cards in transcript order. Threads with no assistant message keep the report
+  on thread metadata; earlier thread-level reports remain readable there. Both forms
+  render from saved data after the plugin is disabled (decision 17).
   No review starts a machine turn, so decision 5's budget is untouched.
 - **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
   verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a
@@ -834,10 +852,17 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+  "Holding no secrets" is not the whole of it: the job still carries an Actions runtime
+  token (which `permissions: {}` does not remove) into the later steps the runner user
+  executes, and that user owns those actions and has sudo. The CI shell therefore runs the
+  CLI as a separate unprivileged user that cannot reach the runner's home
+  (`packages/review/ci/ground-as-cell-user.sh`), and kills everything that user owns before
+  the upload step.
 - **The CI shell, in two privilege domains.** `review-ground.yml` uses
   a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
-  `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
-  the trusted default branch even when the pull request predates it. (`issues:labeled` does not
+  `pull_request_target` (`opened`, `reopened` and `ready_for_review` for a non-draft pull request;
+  `labeled` for the `copse-review` label; never for one labelled `copse-review-skip`), so its
+  definition comes from the trusted default branch even when the pull request predates it. (`issues:labeled` does not
   fire for pull requests, while `pull_request:labeled` selects the pull request revision.) The
   target context is deliberately confined to resolving current PR metadata and dispatching the
   ground workflow: it checks out and executes no repository content. Grounding gets the PR
@@ -891,8 +916,9 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   `COPSE_REVIEW_PR_PROFILE=configured` rolls both paths back to the retained
   `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`, and `COPSE_REVIEW_BASE_URL` variables
   (the Scaleway `qwen3.8-27b` route). The benchmark profile remains separately selectable.
-  A separate schedule samples no more than one recent, unlabelled same-repository pull
-  request per night, including drafts; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
+  A separate schedule samples no more than one recent, unlabelled same-repository draft pull
+  request per night (ready ones are reviewed when they become ready); `copse-review-skip` is the
+  opt-out. Both paths run the trusted default-branch CLI,
   preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
   secret-redacted diff and file context leave the GitHub runner for the selected provider. Human
@@ -900,6 +926,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **Bound Luna's reply size.** _Added 2026-09-25._ The OpenRouter Luna reviewer requests
+  an 8,192-token output ceiling per response, covering hidden reasoning as well as tool
+  calls and text. A small live PR consumed 68,153 output tokens before an upstream 429
+  ended the review; the step budget alone cannot bound a provider's hidden reasoning.
+  Discovery, challenge and reproduction share this ceiling, while reasoning effort,
+  privacy routing and other models retain their existing settings. This is a response
+  budget, not a whole-review spending limit. Completion validation still prevents an
+  unfinished review from being called clean, and provider throttling can still fail a run.
 - **Streamed rate limits need time to clear.** _Added 2026-09-24 after the Luna rollout._
   Two live attempts exhausted HTTP-200 SSE 429 retries in roughly ten seconds. Recognized
   statusless SDK 429 errors now use 10/20/40-second fallback delays plus up to 10% jitter,
@@ -1335,3 +1369,19 @@ model calls/waiting, including 135.4s of scheduled waits after ten streamed 429s
 which is an overlap opportunity, not a promised saving under increased load.
 Compare the subsequent protected live run's elapsed time, per-turn overlap,
 provider metadata, retry count and proof quality before claiming a speedup.
+
+### Freeze review source before execution (September 2026)
+
+Materialisation now copies the head, including intentional tracked and untracked author
+changes, to a separate input directory before any preparation or checks run. The directory
+is a sibling of the execution scratch directory and is never mounted writable into the
+cell. Context, instructions, test discovery, model source/search/diff reads and finding
+anchors use that snapshot; commands and reproducers retain the writable execution copies.
+Cleanup removes the snapshot with the review. This prevents a formatter, test or hostile
+check from rewriting what the later reviewer sees. It does not turn the explicitly
+unisolated host backend into a security boundary.
+
+Posted model prose preserves only complete code spans on one line and escapes other
+backticks, backslashes, HTML and mentions. Multiline or unmatched delimiters cannot expose
+an HTML comment or start a fence that consumes the rest of a finding. This deliberately
+normalizes malformed/multiline code formatting while retaining ordinary inline code.

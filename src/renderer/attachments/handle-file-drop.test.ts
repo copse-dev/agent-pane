@@ -36,6 +36,7 @@ function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Re
         recorded.files.push(f)
       },
       attachTextBlock: (): void => {},
+      quoteText: (): void => {},
       attachImage: (dataUrl, mimeType): void => {
         recorded.images.push({ dataUrl, mimeType })
       },
@@ -150,6 +151,17 @@ describe('attaching dropped files', () => {
       { dataUrl: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' },
     ])
     assert.equal(recorded.files.length, 0)
+  })
+
+  it('keeps the absolute path when the dropped path is the workspace root', async () => {
+    const { handlers, recorded } = recordingHandlers()
+
+    await handleFileDrop(workspacePathDrop('/repo'), handlers, api, '/repo', {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+    })
+
+    assert.deepEqual(recorded.files, [{ path: '/repo', content: 'file contents' }])
   })
 
   it('keeps workspace SVG on the text-file path', async () => {

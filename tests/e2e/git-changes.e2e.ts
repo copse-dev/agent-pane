@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
@@ -6,6 +7,7 @@ import {
   resetUserData,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -37,6 +39,7 @@ describe('git changes viewer', function () {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     repoRoot = seedGitChangesFixture()
+    writeFileSync(join(repoRoot, '.bashrc'), 'export COPSE_DOTFILE_PROOF=1\n')
     await browser.reloadSession()
     await waitForWorkspace()
     await waitForComposer()
@@ -88,6 +91,26 @@ describe('git changes viewer', function () {
     await expect(paths).toContain('unstaged.ts')
     await expect(paths).toContain('untracked.ts')
     await expect(paths).toContain('committed.ts')
+    await expect(paths).toContain('.bashrc')
+
+    const dotfileBidi = await browser.execute(() => {
+      const path = Array.from(document.querySelectorAll<HTMLElement>('.git-change-path')).find(
+        (element) => element.textContent?.trim() === '.bashrc',
+      )
+      if (!path) return null
+      const codePoints = (content: string): number[] =>
+        Array.from(content, (character) => character.codePointAt(0) ?? -1)
+      return {
+        text: path.textContent?.trim() ?? '',
+        before: codePoints(getComputedStyle(path, '::before').content),
+        after: codePoints(getComputedStyle(path, '::after').content),
+      }
+    })
+    assert.ok(dotfileBidi, 'expected the real dotfile row')
+    assert.equal(dotfileBidi.text, '.bashrc')
+    assert.ok(dotfileBidi.before.includes(0x200e), 'dotfile needs a leading LTR mark')
+    assert.ok(dotfileBidi.after.includes(0x200e), 'dotfile needs a trailing LTR mark')
+    await saveElementScreenshot('#git-changes-host', 'git-changes-dotfile-path.png')
 
     const untrackedBadge = await $('.git-change-status-untracked')
     await expect(untrackedBadge).toHaveText('?')

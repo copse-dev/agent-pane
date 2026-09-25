@@ -19,6 +19,8 @@ import {
   type TrustedPreparation,
 } from './stage0.ts'
 import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
+import { buildReviewContext } from './context.ts'
+import { createReviewerToolExecutor } from './reviewer-tools.ts'
 
 /**
  * A project whose checks are plain `node` scripts, declared through
@@ -26,11 +28,18 @@ import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
  * reads a marker file the scenario writes on head or base.
  */
 const CHECK_SCRIPT = `
-const { readFileSync } = require('node:fs')
+const { readFileSync, writeFileSync } = require('node:fs')
 const kind = process.argv[2]
 let spec = {}
 try { spec = JSON.parse(readFileSync('checks.json', 'utf8')) } catch {}
-const entry = spec[kind] ?? { exit: 0 }
+let entry = spec[kind] ?? { exit: 0 }
+if (Array.isArray(entry)) {
+  const marker = kind + '.attempt'
+  let attempt = 0
+  try { attempt = Number(readFileSync(marker, 'utf8')) } catch {}
+  writeFileSync(marker, String(attempt + 1))
+  entry = entry[Math.min(attempt, entry.length - 1)]
+}
 if (entry.stdout) process.stdout.write(entry.stdout)
 if (entry.env) process.stdout.write(JSON.stringify(process.env))
 if (entry.sleepMs) setTimeout(() => process.exit(entry.exit ?? 0), entry.sleepMs)
@@ -90,6 +99,112 @@ function run(
 }
 
 describe('runStage0', () => {
+  it('keeps original source, author edits and anchors after checks rewrite the execution head', async () => {
+    const original = 'export const add = (a, b) => a + b\n'
+    const regression = 'export const add = (a, b) => a - b\n'
+    const repo = await createTestRepo({
+      'package.json': JSON.stringify({ name: 'fixture' }),
+      'src/math.js': original,
+      'AGENTS.md': 'Original instructions.\n',
+      'src/math.test.js': '// original test\n',
+      [REVIEW_CONFIG_FILENAME]: JSON.stringify({
+        commands: {
+          prepare: null,
+          build: null,
+          lint: null,
+          typecheck: null,
+          test: [
+            process.execPath,
+            '-e',
+            `const fs = require('node:fs'); fs.writeFileSync('src/math.js', ${JSON.stringify(original)}); fs.writeFileSync('AGENTS.md', 'replacement instructions'); fs.rmSync('src/math.test.js'); fs.writeFileSync('generated.js', 'generated');`,
+          ],
+        },
+      }),
+    })
+    repos.push(repo)
+    repo.git('checkout', '-q', '-b', 'feature')
+    await repo.write({ 'src/math.js': regression })
+    repo.commit('regression')
+    await repo.write({
+      'src/author.js': '// untracked author change\n',
+      'src/math.test.js': '// author test edit\n',
+    })
+    const ground = await openReviewGround({
+      repoRoot: repo.root,
+      baseRef: 'main',
+      backend: createHostProcessBackend(),
+      diffOrigin: 'own',
+      unisolatedConsent: true,
+    })
+    assert.ok(ground.checkouts)
+    assert.ok(ground.cell)
+    const checkouts = ground.checkouts
+    try {
+      for (const writable of [ground.cell.spec.scratchDir, checkouts.base, checkouts.head]) {
+        assert.ok(!checkouts.reviewHead.startsWith(`${writable}/`))
+        assert.notEqual(checkouts.reviewHead, writable)
+      }
+      const report = await runStage0Checks(ground)
+      assert.equal(report.checks[0]?.verdict, 'clean')
+      assert.equal(await readFile(join(checkouts.head, 'src/math.js'), 'utf8'), original)
+      const context = await buildReviewContext({ checkouts })
+      assert.equal(context.headCommit, checkouts.headCommit)
+      assert.equal(context.dirtyWorkingTree, true)
+      assert.match(context.files.find((file) => file.path === 'src/math.js')?.text ?? '', /a - b/)
+      assert.ok(context.files.some((file) => file.path === 'src/author.js'))
+      assert.equal(context.instructions[0]?.text, 'Original instructions.\n')
+      assert.ok(
+        context.testMap.some((entry) =>
+          entry.tests.some((test) => test.path === 'src/math.test.js'),
+        ),
+      )
+      const executor = createReviewerToolExecutor({
+        context,
+        headCheckout: checkouts.head,
+        cell: ground.cell,
+        shellDecision: 'allow',
+        scrub: (text) => text,
+      })
+      const signal = new AbortController().signal
+      assert.match(
+        await executor.execute('read_file', { path: 'src/math.js' }, signal, 'read'),
+        /a - b/,
+      )
+      assert.match(
+        await executor.execute('read_file', { path: 'src/math.test.js' }, signal, 'test'),
+        /author test edit/,
+      )
+      assert.match(
+        await executor.execute('search_code', { pattern: 'a - b' }, signal, 'search'),
+        /src\/math.js/,
+      )
+      assert.doesNotMatch(await executor.execute('list_dir', {}, signal, 'list'), /generated.js/)
+      assert.match(
+        await executor.execute('git_diff', { path: 'src/math.js' }, signal, 'diff'),
+        /a - b/,
+      )
+      const result = await executor.execute(
+        'report_finding',
+        {
+          path: 'src/math.js',
+          startLine: 1,
+          class: 'contract',
+          severity: 'high',
+          confidence: 'high',
+          claim: 'Addition incorrectly subtracts the second operand.',
+          reason: 'The implementation returns a - b instead of a + b.',
+        },
+        signal,
+        'finding',
+      )
+      assert.doesNotMatch(result, /^Error/)
+      assert.equal(executor.reported()[0]?.anchoredText, regression.trimEnd())
+    } finally {
+      await ground.close()
+    }
+    await assert.rejects(access(checkouts.reviewHead))
+  })
+
   it('is one clean line when every check passes on head, and never runs base', async () => {
     const repo = await scenario({}, {})
     const report = await run(repo)
@@ -256,6 +371,7 @@ describe('runStage0', () => {
       [
         ['head', 1],
         ['base', 0],
+        ['head', 1],
       ],
     )
     const testCheck = report.checks.find((check) => check.kind === 'test')
@@ -266,6 +382,63 @@ describe('runStage0', () => {
     // The findings list is its own contract.
     assert.deepEqual(decodeFindings(JSON.parse(JSON.stringify(report.findings))), report.findings)
     assert.match(renderStage0Report(report), /1 finding\(s\):\n1\. \[test\] package\.json:\d+ —/)
+  })
+
+  it('keeps intermittent test failures unverified and skips the base run', async () => {
+    for (const confirmation of [{ exit: 0 }, { exit: 1, sleepMs: 2_000 }]) {
+      const repo = await scenario(
+        {},
+        { test: [{ exit: 1, stdout: 'first failure' }, confirmation] },
+        {
+          kinds: ['test'],
+          timeoutsMs: { test: 500 },
+        },
+      )
+      const report = await run(repo)
+      assert.deepEqual(report.findings, [])
+      assert.equal(report.checks[0]?.verdict, 'undetermined')
+      assert.equal(report.checks[0].head?.status, 'failed')
+      assert.equal(
+        report.checks[0].headConfirmation?.status,
+        confirmation.exit === 0 ? 'passed' : 'timed-out',
+      )
+      assert.equal(report.checks[0].base, null)
+      assert.match(report.coverage.notChecked[0]?.reason ?? '', /on confirmation/)
+      assert.deepEqual(decodeStage0Report(JSON.parse(JSON.stringify(report))), report)
+    }
+  })
+
+  it('does not equate changing or missing failure inventories across head attempts', async () => {
+    const inventory = (name: string): string =>
+      TEST_FAILURE_REPORT_PREFIX +
+      JSON.stringify({
+        tier: 'unit-component',
+        complete: true,
+        failed: 1,
+        failures: [{ path: 'src/example.test.ts', name }],
+      }) +
+      '\n'
+    for (const stdout of [inventory('a different failure'), 'missing inventory']) {
+      const repo = await scenario(
+        {},
+        {
+          test: [
+            { exit: 1, stdout: inventory('original failure') },
+            { exit: 1, stdout },
+          ],
+        },
+        { kinds: ['test'] },
+      )
+      const report = await run(repo)
+      assert.deepEqual(report.findings, [])
+      assert.equal(report.checks[0]?.verdict, 'undetermined')
+      assert.equal(report.checks[0].base, null)
+      assert.match(report.coverage.notChecked[0]?.reason ?? '', /same complete failure list/)
+    }
+    const clean = await scenario({}, { test: [{ exit: 0 }, { exit: 1 }] }, { kinds: ['test'] })
+    const report = await run(clean)
+    assert.equal(report.checks[0]?.verdict, 'clean')
+    assert.equal(report.checks[0].headConfirmation, undefined)
   })
 
   it('compares individual failures when both aggregate test commands fail', async () => {

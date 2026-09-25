@@ -10,7 +10,9 @@
 // does not contain, so an inline comment that is rejected is folded into the
 // body rather than lost: a finding at a line the diff never touched (Stage 0's
 // anchor at the script in `package.json`, say) still reaches the reader.
+import { z } from 'zod'
 import { errorMessage } from '@copse/std/errors.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import type { Finding } from './finding.ts'
 import { reviewerLimitations, type ReviewReport } from './stage5.ts'
@@ -69,15 +71,54 @@ function where(finding: Finding): string {
     : `${finding.anchor.path}:${String(finding.anchor.startLine)}`
 }
 
+/**
+ * Model- or report-derived prose as inert markdown. Hostile diff content can
+ * steer what a model writes, and the review posts under the App's identity:
+ * outside code spans, `<` and `>` are escaped (no raw HTML, so an unterminated `<!--`
+ * cannot hide the rest of the review) and an `@` that would mention a user or
+ * team gets a zero-width space. Code spans are kept as written — neither
+ * renders inside one.
+ */
+function inertMarkdown(text: string): string {
+  const inert = (prose: string): string =>
+    prose
+      .replaceAll('\\', '\\\\')
+      .replaceAll('`', '\\`')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replace(/@(?=[A-Za-z0-9])/g, '@\u200b')
+  // Preserve only self-contained, single-line code spans. Blank paragraphs
+  // and block syntax end CommonMark inline parsing; a regex spanning them can
+  // mistake raw HTML for code. Escape every other backtick/backslash so an
+  // unmatched delimiter cannot form a new span or fence with surrounding text.
+  const span = /(?<![\\`])(`+)(?!`)[^\r\n]*?(?<!`)\1(?!`)/g
+  let out = ''
+  let last = 0
+  for (const match of text.matchAll(span)) {
+    out += inert(text.slice(last, match.index)) + match[0]
+    last = match.index + match[0].length
+  }
+  return out + inert(text.slice(last))
+}
+
+/** `text` as one inline code span, whatever backticks or newlines it holds. */
+function codeSpan(text: string): string {
+  const flat = text.replace(/\s*\n\s*/g, ' ')
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length))
+  const fence = '`'.repeat(longest + 1)
+  const pad = flat.startsWith('`') || flat.endsWith('`') ? ' ' : ''
+  return `${fence}${pad}${flat}${pad}${fence}`
+}
+
 function evidenceLines(finding: Finding): string[] {
   return finding.evidence.map((evidence) => {
     switch (evidence.kind) {
       case 'command':
-        return `- \`${evidence.command}\` on ${evidence.target}: exit ${evidence.exitCode === null ? 'killed' : String(evidence.exitCode)}`
+        return `- ${codeSpan(evidence.command)} on ${evidence.target}: exit ${evidence.exitCode === null ? 'killed' : String(evidence.exitCode)}`
       case 'reproducer':
-        return `- reproducer \`${evidence.testPath}\`: ${evidence.failsOnHead ? 'fails' : 'passes'} on head, ${evidence.passesOnBase ? 'passes' : 'fails'} on base`
+        return `- reproducer ${codeSpan(evidence.testPath)}: ${evidence.failsOnHead ? 'fails' : 'passes'} on head, ${evidence.passesOnBase ? 'passes' : 'fails'} on base`
       case 'citation':
-        return `- \`${evidence.path}:${String(evidence.startLine)}–${String(evidence.endLine)}\``
+        return `- ${codeSpan(`${evidence.path}:${String(evidence.startLine)}–${String(evidence.endLine)}`)}`
     }
   })
 }
@@ -119,14 +160,14 @@ export function renderFindingComment(finding: Finding): string {
         ? 'Dismissed after further checking.'
         : 'Possible issue — not confirmed by a test.'
   return [
-    `**${finding.claim}**`,
+    `**${inertMarkdown(finding.claim)}**`,
     '',
     `${finding.severity.charAt(0).toUpperCase()}${finding.severity.slice(1)} priority. ${status}`,
     '',
     details(
       'Why this was flagged',
       [
-        finding.verdict.reason,
+        inertMarkdown(finding.verdict.reason),
         '',
         ...evidenceLines(finding),
         '',
@@ -161,7 +202,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     )
   }
   for (const note of stage0.coverage.notChecked) {
-    lines.push(`Not checked: ${note.kind === 'all' ? '' : `${note.kind} — `}${note.reason}.`)
+    lines.push(
+      `Not checked: ${note.kind === 'all' ? '' : `${note.kind} — `}${inertMarkdown(note.reason)}.`,
+    )
   }
   if (report.verification !== null) {
     const { counts } = report.verification
@@ -179,7 +222,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
     for (const review of incomplete) {
       const reason =
         review.error?.replace(/\s+/g, ' ') ?? `${review.outcome} (${review.stopReason})`
-      lines.push(`Incomplete reviewer: ${review.model} (${review.lens}) — ${reason}.`)
+      lines.push(
+        `Incomplete reviewer: ${review.model} (${review.lens}) — ${inertMarkdown(reason)}.`,
+      )
     }
   }
   const limitations = reviewerLimitations(report.reviews)
@@ -188,7 +233,9 @@ function reviewDetails(report: ReviewReport, options: ForgeReviewOptions): strin
       `Review limits: ${String(limitations.length)} completed reviewer run(s) left material uncertainty.`,
     )
     for (const limitation of limitations) {
-      lines.push(`Could not verify (${limitation.model}, ${limitation.lens}): ${limitation.detail}`)
+      lines.push(
+        `Could not verify (${limitation.model}, ${limitation.lens}): ${inertMarkdown(limitation.detail)}`,
+      )
     }
   }
   if (options.headCommit !== null) lines.push(`Head: \`${options.headCommit.slice(0, 12)}\`.`)
@@ -277,7 +324,7 @@ export function buildForgeReview(
         '',
         `#### Issue ${String(number)}`,
         '',
-        `\`${where(finding)}\``,
+        codeSpan(where(finding)),
         '',
         renderFindingComment(finding),
       )
@@ -314,7 +361,7 @@ export interface ForgeTarget {
 
 export type FetchLike = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: { method: string; headers: Record<string, string>; body?: string },
 ) => Promise<{ status: number; text(): Promise<string> }>
 
 function reviewsUrl(target: ForgeTarget): string {
@@ -369,6 +416,98 @@ export interface PostedReview {
   readonly inline: number
   /** Anchored findings kept in the body because their line could not be used. */
   readonly folded: number
+  /** Earlier Copse reviews on the pull request marked superseded (GitHub only). */
+  readonly superseded?: number
+  /** Why superseding earlier reviews stopped; the new review is posted regardless. */
+  readonly supersedeError?: string
+}
+
+/** Every posted review carries it; a superseded one no longer does. */
+const REVIEW_MARKER = /<!-- copse-review:[0-9a-f]{40} -->/
+const postedReviewSchema = z.object({
+  id: z.number(),
+  html_url: z.string(),
+  user: z.object({ login: z.string() }).nullable(),
+})
+const listedReviewSchema = z.array(
+  z.object({
+    id: z.number(),
+    body: z.string().nullable(),
+    user: z.object({ login: z.string() }).nullable(),
+  }),
+)
+const reviewCommentsSchema = z.array(z.object({ node_id: z.string() }))
+
+function graphqlUrl(apiBase: string): string {
+  const base = apiBase.replace(/\/+$/, '')
+  // GitHub Enterprise serves REST at /api/v3 and GraphQL at /api/graphql.
+  return base.endsWith('/api/v3') ? `${base.slice(0, -'/v3'.length)}/graphql` : `${base}/graphql`
+}
+
+/**
+ * Mark this identity's earlier Copse reviews on the pull request superseded
+ * by the one just posted. A submitted review cannot be deleted, so its body
+ * is replaced with a link to the new one and its inline comments are hidden
+ * as outdated — reversible, and replies to them are kept.
+ */
+async function supersedeEarlierReviews(
+  target: ForgeTarget,
+  posted: z.infer<typeof postedReviewSchema>,
+  fetchImpl: FetchLike,
+): Promise<number> {
+  const url = reviewsUrl(target)
+  const request = async (method: string, requestUrl: string, body?: unknown): Promise<string> => {
+    const response = await fetchImpl(requestUrl, {
+      method,
+      headers: headers(target),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+    const text = await response.text()
+    if (response.status < 200 || response.status >= 300) {
+      throw new ForgeReviewError(
+        response.status,
+        `github returned ${String(response.status)} for ${method} ${requestUrl}: ${text.slice(0, ERROR_EXCERPT_CHARS)}`,
+      )
+    }
+    return text
+  }
+  const login = posted.user?.login
+  if (login === undefined) return 0
+  const earlier: number[] = []
+  for (let page = 1; ; page++) {
+    const listed = safeJsonParse(
+      await request('GET', `${url}?per_page=100&page=${String(page)}`),
+      decodeWithSchema(listedReviewSchema),
+    )
+    if (listed === null) throw new Error('github returned an unreadable review list')
+    for (const review of listed) {
+      if (
+        review.id !== posted.id &&
+        review.user?.login === login &&
+        REVIEW_MARKER.test(review.body ?? '')
+      ) {
+        earlier.push(review.id)
+      }
+    }
+    if (listed.length < 100) break
+  }
+  for (const id of earlier) {
+    await request('PUT', `${url}/${String(id)}`, {
+      body: `### Copse Reviewer\n\nSuperseded by [a newer review](${posted.html_url})${target.headCommit === null ? '' : ` of \`${target.headCommit.slice(0, 12)}\``}.`,
+    })
+    const comments = safeJsonParse(
+      await request('GET', `${url}/${String(id)}/comments?per_page=100`),
+      decodeWithSchema(reviewCommentsSchema),
+    )
+    for (const comment of comments ?? []) {
+      await request('POST', graphqlUrl(target.apiBase), {
+        query:
+          'mutation($id: ID!) { minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { clientMutationId } }',
+        variables: { id: comment.node_id },
+      })
+    }
+  }
+  return earlier.length
 }
 
 const ERROR_EXCERPT_CHARS = 512
@@ -390,14 +529,14 @@ export async function postForgeReview(
 ): Promise<PostedReview> {
   const fetchImpl: FetchLike = options.fetch ?? fetch
   const url = reviewsUrl(target)
-  const attempt = async (review: ForgeReview): Promise<number> => {
+  const attempt = async (review: ForgeReview): Promise<string> => {
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
         headers: headers(target),
         body: JSON.stringify(reviewPayload(target, review)),
       })
-      if (response.status >= 200 && response.status < 300) return response.status
+      if (response.status >= 200 && response.status < 300) return await response.text()
       const text = (await response.text()).slice(0, ERROR_EXCERPT_CHARS)
       throw new ForgeReviewError(
         response.status,
@@ -431,17 +570,32 @@ export async function postForgeReview(
   const anchored = report.findings.filter(
     (finding) => finding.anchor.startLine !== undefined,
   ).length
+  // A re-run replaces the earlier review rather than stacking another beside it.
+  const supersede = async (responseText: string): Promise<Partial<PostedReview>> => {
+    if (target.forge !== 'github') return {}
+    const posted = safeJsonParse(responseText, decodeWithSchema(postedReviewSchema))
+    if (posted === null) return {}
+    try {
+      return { superseded: await supersedeEarlierReviews(target, posted, fetchImpl) }
+    } catch (err) {
+      return { supersedeError: errorMessage(err) }
+    }
+  }
   try {
-    await attempt(inline)
-    return { inline: inline.comments.length, folded: anchored - inline.comments.length }
+    const response = await attempt(inline)
+    return {
+      inline: inline.comments.length,
+      folded: anchored - inline.comments.length,
+      ...(await supersede(response)),
+    }
   } catch (err) {
     if (!(err instanceof ForgeReviewError) || err.status !== 422 || inline.comments.length === 0) {
       throw err
     }
   }
   const everything = new Set(report.findings.map((_finding, index) => index))
-  await attempt(buildForgeReview(report, reviewOptions, everything))
-  return { inline: 0, folded: anchored }
+  const response = await attempt(buildForgeReview(report, reviewOptions, everything))
+  return { inline: 0, folded: anchored, ...(await supersede(response)) }
 }
 
 export class ForgeReviewError extends Error {

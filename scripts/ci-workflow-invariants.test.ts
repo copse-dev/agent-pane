@@ -573,6 +573,60 @@ describe('release-cut.yml workflow invariants', () => {
     assert.match(workflow, /release-channel\.mts --channel/)
     assert.match(workflow, /release-notes\.mts/)
   })
+
+  it('validates notes for a new tag but not for an already-released version', () => {
+    // Versions released before notes were kept per version have no section, so
+    // an ordinary no-op promotion must not fail on them. A tag at this exact
+    // commit is a recovery run and is validated like a new one.
+    assert.match(
+      workflow,
+      /if \[ -z "\$existing" \] \|\| \[ "\$existing" = "\$RELEASE_SHA" \]; then\n\s+node scripts\/release-notes\.mts "\$version"/,
+    )
+  })
+})
+
+describe('release-bump.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/release-bump.yml'), 'utf8')
+
+  it('runs weekly, ahead of the daily promotion', () => {
+    assert.match(workflow, /^ {4}- cron: '37 5 \* \* 1'$/m)
+    const promotion = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
+    assert.match(
+      promotion,
+      /^ {4}- cron: '17 8 \* \* \*'$/m,
+      'move the bump if the promotion moves',
+    )
+  })
+
+  it('bumps main through a PR, never by pushing to main or release', () => {
+    // The bump must pass the same `CI Passed` gate as any other change to main.
+    assert.match(workflow, /peter-evans\/create-pull-request@/)
+    assert.match(workflow, /^ {10}base: main$/m)
+    assert.match(workflow, /^ {10}branch: chore\/release-bump$/m)
+    assert.doesNotMatch(workflow, /git push/)
+    assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --auto --squash/)
+  })
+
+  it('opens the PR as the release App so CI runs on it', () => {
+    // A GITHUB_TOKEN PR triggers no workflows, so it could never go green.
+    assert.match(workflow, /token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
+    assert.match(workflow, /^ {2}contents: read$/m)
+    assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
+  })
+
+  it('keeps one release in flight and skips an empty week', () => {
+    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
+    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const bump = workflow.indexOf('node scripts/release-bump.mts')
+    assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
+    assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('passes the dispatch version through the environment, not the script text', () => {
+    // An expression interpolated into `run:` is shell injection from the dispatch form.
+    assert.match(workflow, /REQUESTED_VERSION: \$\{\{ inputs\.version \}\}/)
+    assert.equal(workflow.split('${{ inputs.version }}').length - 1, 1)
+  })
 })
 
 describe('release-mac.yml workflow invariants', () => {
@@ -794,6 +848,10 @@ describe('Copse Reviewer workflow invariants', () => {
     'utf8',
   )
   const reviewCellDockerfile = readFileSync(resolve('packages/review/Dockerfile.cell'), 'utf8')
+  const groundCellScript = readFileSync(
+    resolve('packages/review/ci/ground-as-cell-user.sh'),
+    'utf8',
+  )
   const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
 
   function workflowJobBlock(workflow: string, name: string): string {
@@ -806,12 +864,39 @@ describe('Copse Reviewer workflow invariants', () => {
   }
 
   it('executes pull-request code only in credential-free execution cells', () => {
-    assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
+    assert.match(
+      triggerWorkflow,
+      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled\]$/m,
+    )
+    assert.doesNotMatch(triggerWorkflow, /synchronize/, 'a push must not post another review')
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
     assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
     const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
-    assert.match(dispatcher, /github\.event\.label\.name == 'copse-review'/)
+    // Ready pull requests by default; a draft only with the label; never with the opt-out.
+    assert.match(
+      dispatcher,
+      /github\.event\.action == 'labeled' && github\.event\.label\.name == 'copse-review'/,
+    )
+    assert.match(
+      dispatcher,
+      /github\.event\.action != 'labeled' && !github\.event\.pull_request\.draft/,
+    )
+    assert.match(
+      dispatcher,
+      /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'copse-review-skip'\)/,
+    )
+    assert.match(dispatcher, /if \[ "\$skipped" = "true" \]/)
+    assert.match(dispatcher, /if \[ "\$draft" = "true" \] && \[ "\$labelled" != "true" \]/)
+    // The findings job re-resolves the pull request and must apply the same rule;
+    // a label-only recheck here failed every default-on review closed.
+    const findingsJob = workflowJobBlock(findingsWorkflow, 'findings')
+    assert.match(findingsJob, /test "\$skipped" = false/)
+    assert.match(findingsJob, /test "\$draft" = false \|\| test "\$labelled" = true/)
+    assert.doesNotMatch(findingsJob, /^\s*test "\$labelled" = true$/m)
+    const authorize = workflowJobBlock(findingsWorkflow, 'authorize')
+    assert.match(authorize, /labels\.includes\('copse-review-skip'\)/)
+    assert.match(authorize, /pull\.draft && !labels\.includes\('copse-review'\)/)
     assert.match(dispatcher, /github\.actor_id == '338988'/)
     assert.match(dispatcher, /github\.event\.pull_request\.user\.id == 338988/)
     assert.match(dispatcher, /github\.event\.pull_request\.head\.repo\.id == 1274237362/)
@@ -831,15 +916,41 @@ describe('Copse Reviewer workflow invariants', () => {
     for (const job of groundJobs) {
       assert.match(job, /permissions: \{\}/)
       assert.doesNotMatch(job, /\$\{\{\s*secrets\./)
-      assert.match(job, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+      assert.match(job, /ref: \$\{\{ github\.(?:sha|event\.repository\.default_branch) \}\}/)
       assert.match(job, /persist-credentials: false/)
-      assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
-      assert.match(job, /--backend ephemeral-runner/)
-      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
+      assert.match(job, /bash packages\/review\/ci\/ground-as-cell-user\.sh/)
+      assert.doesNotMatch(job, /--backend ephemeral-runner/, 'never as the runner user')
     }
+    // Pull-request code runs as a user that can reach nothing a later step
+    // executes with the job's Actions runtime token.
+    assert.match(groundCellScript, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
+    assert.match(groundCellScript, /--backend ephemeral-runner/)
+    assert.match(groundCellScript, /--scratch-parent "\$cell_home\/scratch"/)
+    assert.match(groundCellScript, /sudo useradd [^\n]*"\$cell_user"/)
+    assert.match(groundCellScript, /sudo chmod 0700 "\$HOME"/)
+    assert.match(groundCellScript, /sudo -u "\$cell_user" -- env -i \\/)
+    assert.match(groundCellScript, /sudo usermod --lock --expiredate 1 "\$cell_user"/)
+    assert.match(groundCellScript, /sudo pkill -KILL -u "\$cell_user"/)
+    const cli = groundCellScript.indexOf('--backend ephemeral-runner')
+    assert.ok(groundCellScript.indexOf('sudo chmod 0700 "$HOME"') < cli)
+    assert.ok(groundCellScript.lastIndexOf('as_cell ', cli) < cli, 'the CLI runs as the cell user')
+    assert.ok(cli < groundCellScript.indexOf('sudo pkill'))
+    assert.ok(
+      groundCellScript.indexOf('sudo pkill') < groundCellScript.indexOf('> "$OUT_DIR/report.json"'),
+    )
 
     const handoff = workflowJobBlock(groundWorkflow, 'handoff')
-    assert.match(handoff, /needs: ground/)
+    assert.match(handoff, /needs: \[reuse, ground\]/)
+    assert.match(handoff, /needs\.reuse\.outputs\.run_id \|\| github\.run_id/)
+    const reuse = workflowJobBlock(groundWorkflow, 'reuse')
+    assert.match(reuse, /actions: read/)
+    assert.match(reuse, /continue-on-error: true/)
+    assert.match(
+      groundWorkflow,
+      /if: always\(\) && !cancelled\(\) && needs\.reuse\.outputs\.run_id == ''/,
+    )
+    assert.doesNotMatch(reuse, /--backend|secrets\./)
+    assert.match(reuse, /node packages\/review\/ci\/reuse-ground\.mts/)
     assert.match(handoff, /actions: write/)
     assert.doesNotMatch(handoff, /actions\/checkout/)
     assert.doesNotMatch(handoff, /actions\/download-artifact/)
@@ -937,17 +1048,22 @@ describe('Copse Reviewer workflow invariants', () => {
 
   it('primes the isolated checks from data-only files at the exact pull-request head', () => {
     for (const workflow of [groundWorkflow, nightlyWorkflow]) {
-      const job = workflowJobBlock(workflow, 'ground')
-      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
-      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
-      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
-      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
-      assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
-      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+      assert.match(workflowJobBlock(workflow, 'ground'), /ground-as-cell-user\.sh/)
+    }
+    {
+      const job = groundCellScript
+      assert.match(job, /git -C "\$GITHUB_WORKSPACE" show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git -C "\$GITHUB_WORKSPACE" archive --format=tar "\$HEAD_SHA" patches/)
       assert.match(
         job,
-        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+        /pnpm fetch --frozen-lockfile --dir "\$dependency_seed" --store-dir "\$store"/,
       )
+      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
+      const fetch = job.indexOf('pnpm fetch --frozen-lockfile')
+      assert.ok(job.indexOf('rev-parse "refs/remotes/pr/') < fetch)
+      assert.ok(fetch < job.indexOf('--backend ephemeral-runner'))
+      assert.match(job, /--store "\$store"/)
+      assert.match(job, /--trusted-prepare "\$trusted\/scripts\/prepare-review-stage0\.mts"/)
     }
 
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
@@ -979,8 +1095,8 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /export PATH="\$\{setup_node_bin\}:\/usr\/bin:\$\{PATH\}"/)
       assert.match(job, /test "\$\(command -v cargo\)" = \/usr\/bin\/cargo/)
       assert.match(job, /test "\$\(command -v node\)" = "\$\{setup_node_bin\}\/node"/)
-      assert.ok(job.indexOf('apt-get install') < job.indexOf('refs/pull/'))
-      assert.ok(job.indexOf('export PATH=') < job.indexOf('--backend ephemeral-runner'))
+      assert.ok(job.indexOf('apt-get install') < job.indexOf('ground-as-cell-user.sh'))
+      assert.ok(job.indexOf('export PATH=') < job.indexOf('ground-as-cell-user.sh'))
     }
   })
 
@@ -1147,7 +1263,7 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {
+  it('samples at most one recent same-repository draft PR and has an explicit opt-out', () => {
     assert.match(nightlyWorkflow, /^ {2}schedule:$/m)
     assert.match(nightlyWorkflow, /^ {2}workflow_dispatch:$/m)
     assert.match(nightlyWorkflow, /pull\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
@@ -1155,8 +1271,9 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review'\)/)
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review-skip'\)/)
     assert.match(nightlyWorkflow, /selected = candidates\[utcDay % candidates\.length\]/)
-    assert.doesNotMatch(nightlyWorkflow, /!pull\.draft/)
-    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/)
+    // Ready pull requests are reviewed on becoming ready; the sample covers drafts.
+    assert.match(nightlyWorkflow, /pull\.draft === true/)
+    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/, 'a dispatched PR may be either')
     assert.doesNotMatch(nightlyWorkflow, /^ {2}pull_request:/m)
   })
 

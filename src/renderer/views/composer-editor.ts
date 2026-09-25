@@ -73,6 +73,13 @@ export interface ComposerEditor extends ComposerTextInput {
   insertPasteChip(content: string, label?: string): void
   /** Insert a thread chip at the caret and keep its attachment state in sync. */
   insertThreadChip(thread: InlineThreadChip, onRemove: () => void): void
+  /**
+   * Insert plain text at the caret (end when unfocused) and emit `input`.
+   * Unlike {@link insertPasteChip} the text lands as ordinary editable
+   * content, not an atomic chip — used for "Quote in reply", which inserts a
+   * markdown blockquote the user can keep editing.
+   */
+  insertText(text: string): void
   /** Text with paste chips expanded and thread placeholders removed. */
   expandedValue(): string
   /** Draft text with paste chips expanded and thread positions preserved. */
@@ -109,6 +116,26 @@ export function mountComposerEditor(): ComposerEditor {
   root.setAttribute('role', 'textbox')
   root.setAttribute('aria-multiline', 'true')
   root.setAttribute('aria-label', 'Message')
+
+  // #2489: keep the tail pinned to the box's own bottom edge across a resize
+  // of the box itself — the outer card shrinking (a window resize, an
+  // advisory banner appearing above it) after a long draft is already
+  // showing, which is a plain size change CSS has no hook for ("re-scroll
+  // this box when its own height changes"). Only re-pins when the box was
+  // already at (or within a few px of) its own bottom, so a caret mid-typing
+  // (already kept in view natively) or a user who scrolled up to reread an
+  // earlier line is never yanked back — same "pinned unless the reader
+  // moved away" rule `conversation.ts` uses for the transcript's own
+  // auto-scroll (`isNearBottom` / `SCROLL_PIN_THRESHOLD_PX`).
+  const SCROLL_PIN_THRESHOLD_PX = 4
+  let pinnedToBottom = true
+  root.addEventListener('scroll', () => {
+    pinnedToBottom =
+      root.scrollHeight - root.scrollTop - root.clientHeight <= SCROLL_PIN_THRESHOLD_PX
+  })
+  new ResizeObserver(() => {
+    if (pinnedToBottom) root.scrollTop = root.scrollHeight
+  }).observe(root)
 
   const blocks = new Map<string, InlinePasteBlock>()
   const threadChips = new Map<string, { thread: InlineThreadChip; onRemove: () => void }>()
@@ -334,6 +361,17 @@ export function mountComposerEditor(): ComposerEditor {
       root.replaceChildren(frag)
       pruneChips()
       if (editor.isFocused()) caretToEnd()
+      // #2489: a real keystroke gets Chromium's native "keep the caret in
+      // view" scroll inside the overflow: auto box for free — no CSS or JS
+      // needed there. Replacing the content wholesale (a restored draft, a
+      // follow-up suggestion, a queued message loaded back for editing)
+      // bypasses that: there is no keystroke to trigger it, and no CSS
+      // selector can express "scroll this box to its own bottom when its
+      // content changes". So this is the one line of JS the CSS-first
+      // approach cannot avoid — it makes a fresh long value behave like a
+      // typed one, showing the tail with earlier lines scrolled out of view
+      // above rather than the top of a draft nobody asked to see first.
+      root.scrollTop = root.scrollHeight
     },
 
     get selectionStart(): number {
@@ -394,6 +432,23 @@ export function mountComposerEditor(): ComposerEditor {
       const state = { thread, onRemove }
       threadChips.set(id, state)
       insertChip(makeThreadChip(id, state))
+    },
+
+    insertText(text: string): void {
+      const node = document.createTextNode(text)
+      const sel = editor.isFocused() ? selectionInRoot() : null
+      if (sel) {
+        const range = sel.getRangeAt(0)
+        range.deleteContents()
+        range.insertNode(node)
+        range.setStartAfter(node)
+        range.collapse(true)
+        sel.removeAllRanges()
+        sel.addRange(range)
+      } else {
+        root.append(node)
+      }
+      emitInput()
     },
 
     expandedValue(): string {

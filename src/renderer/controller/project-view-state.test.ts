@@ -33,6 +33,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     themePreference: 'system',
     fontSize: 14,
     uiScale: 1,
+    animateAgentAvatars: true,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     openLinksInBuiltInBrowser: true,
