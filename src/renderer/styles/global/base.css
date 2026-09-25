@@ -30,6 +30,11 @@ body {
   line-height: var(--line-height-base);
   color: var(--text-primary);
   background: var(--bg-base);
+  /* Native checkboxes, radios and range inputs take the configured accent
+     instead of Chromium's default blue. accent-color inherits, so this one
+     declaration reaches every form in every dialog and both themes; do not
+     restate it per control (#3065). */
+  accent-color: var(--accent);
   /* Desktop-app chrome (tabs, sidebars, footers) should not highlight on drag. */
   user-select: none;
   -webkit-user-select: none;

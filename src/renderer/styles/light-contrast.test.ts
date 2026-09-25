@@ -199,6 +199,70 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
       'light redefines --accent-fill; primary-button contrast must be re-measured if that is intended',
     )
   })
+
+  it('gives the roadmap Save button and Changes badge fill/label pair >= 4.5:1 in both themes', () => {
+    // The two controls the report named by appearance. Both take their colour
+    // from `.memories-btn-primary` (the roadmap Save button's primary class,
+    // `roadmap-pane.ts`) and `.titlebar-btn-badge` (the sidebar/footer Changes
+    // count, `panel-mode-controls.ts`) — and both declare
+    // `background: var(--accent-fill); color: var(--text-on-accent)` directly
+    // (memories.css, titlebar.css). Neither token is redefined by either theme
+    // block (pinned above and below), so one measurement of the shipped default
+    // pair stands for both controls in both themes — this computes the actual
+    // WCAG ratio rather than trusting the token names, so a future change to
+    // either hex still has to clear AA.
+    const tokens = readFileSync(resolve(STYLES, 'tokens.css'), 'utf8')
+    const themes = readFileSync(resolve(STYLES, 'themes.css'), 'utf8')
+    const read = (css: string, name: string, pattern: RegExp): string => {
+      const found = pattern.exec(css)?.[1]
+      assert.ok(found, `could not read ${name} — the token derivation changed, re-check this test`)
+      return found
+    }
+    const accentColor = read(tokens, '--accent-color', /--accent-color:\s*(#[0-9a-fA-F]{3,8})/)
+    const textOnAccent = read(tokens, '--text-on-accent', /--text-on-accent:\s*(#[0-9a-fA-F]{3,8})/)
+
+    for (const theme of ['dark', 'light'] as const) {
+      const block = new RegExp(`\\[data-theme='${theme}'\\]\\s*\\{([\\s\\S]*?)\\n\\}`).exec(
+        themes,
+      )?.[1]
+      assert.ok(block, `could not find the ${theme} theme block`)
+      assert.ok(
+        !/^\s*--accent-fill:/m.test(block) && !/^\s*--text-on-accent:/m.test(block),
+        `${theme} redefines --accent-fill or --text-on-accent; re-measure this pair against its own values`,
+      )
+    }
+
+    const ratio = contrastRatio(parseHex(accentColor), parseHex(textOnAccent))
+    assert.ok(
+      ratio >= AA_BODY_TEXT,
+      `--accent-fill (${accentColor}) / --text-on-accent (${textOnAccent}) must clear ` +
+        `${String(AA_BODY_TEXT)}:1 in both themes, measured ${ratio.toFixed(2)}:1`,
+    )
+  })
+
+  it('would still fail at the pre-fix --accent/--text-on-accent pairing in light (guards the guard)', () => {
+    // Mirrors the Dark+ guard below: proves the maths above would have caught
+    // the actual bug, not just a value that happens to already pass. Before the
+    // fix, both controls filled with `--accent` (the light-only 30%-of-black
+    // derivation meant for small text/borders) instead of `--accent-fill`.
+    const tokens = readFileSync(resolve(STYLES, 'tokens.css'), 'utf8')
+    const themes = readFileSync(resolve(STYLES, 'themes.css'), 'utf8')
+    const accentColor = /--accent-color:\s*(#[0-9a-fA-F]{3,8})/.exec(tokens)?.[1]
+    const textOnAccent = /--text-on-accent:\s*(#[0-9a-fA-F]{3,8})/.exec(tokens)?.[1]
+    assert.ok(accentColor && textOnAccent, 'expected default accent/text-on-accent tokens')
+    const lightBlock = /\[data-theme='light'\]\s*\{([\s\S]*?)\n\}/.exec(themes)?.[1]
+    assert.ok(lightBlock, 'could not find the light theme block')
+    const percent = /--accent:\s*color-mix\(in srgb, var\(--accent-color\) (\d+)%, black\)/.exec(
+      lightBlock,
+    )?.[1]
+    assert.ok(percent, 'could not read the light --accent derivation — re-check this test')
+    const darkenedAccent = mix(parseHex(accentColor), Number(percent) / 100, [0, 0, 0])
+    const ratio = contrastRatio(darkenedAccent, parseHex(textOnAccent))
+    assert.ok(
+      ratio < AA_BODY_TEXT,
+      `expected the pre-fix --accent/--text-on-accent pairing to stay unreadable in light, measured ${ratio.toFixed(2)}:1`,
+    )
+  })
 })
 
 describe('light theme: syntax highlighting is readable (issue #2486)', () => {

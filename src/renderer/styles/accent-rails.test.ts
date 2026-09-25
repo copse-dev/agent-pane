@@ -156,8 +156,13 @@ function rail(body: string): { side: Side; kind: 'border' | 'shadow'; declaratio
   }
   // An inset shadow is a rail when it is offset horizontally with no blur: a
   // ring (`inset 0 0 0 1px`) has a zero offset and follows the radius evenly.
+  // The blur length is optional in the shorthand (`inset 3px 0 var(--accent)`),
+  // so accept two lengths as well as three; `.process-manager-name` hid behind
+  // that gap.
   const shadow = body.match(/box-shadow:\s*([^;]+)/)
-  const inset = (shadow?.[1] ?? '').match(/inset\s+(-?[\d.]+)px\s+0(?:px)?\s+0(?:px)?(?!\s*[\d.])/)
+  const inset = (shadow?.[1] ?? '').match(
+    /inset\s+(-?[\d.]+)px\s+0(?:px)?(?:\s+0(?:px)?)?(?!\s*[\d.])/,
+  )
   if (inset) {
     const offset = Number(inset[1])
     if (offset !== 0) {

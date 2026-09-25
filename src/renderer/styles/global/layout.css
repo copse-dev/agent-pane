@@ -1225,6 +1225,15 @@
   direction: rtl;
   text-align: left;
 }
+/* Under that RTL paragraph a neutral character at either end (`.` in `.bashrc`,
+   `/` in `docs/`) takes the paragraph direction and jumps to the far end, so
+   dotfiles read `bashrc.` (#3065). Zero-width left-to-right marks at both ends
+   give those characters a strong neighbour and keep them in place; the box
+   still elides from the left. */
+.git-change-path:not(.pr-list-title)::before,
+.git-change-path:not(.pr-list-title)::after {
+  content: '\200E';
+}
 .git-changes-empty {
   padding: var(--spacing-md) var(--spacing-sm);
   font-size: var(--font-size-sm);

@@ -71,6 +71,7 @@ describe('selection-to-chat', () => {
         attachedContent = content
         attachedLabel = label
       },
+      quoteText: () => {},
       attachImage: () => {},
       attachVideo: () => Promise.resolve(),
       attachArchive: () => Promise.resolve(),

@@ -10,7 +10,7 @@
 // the code the cell exists to contain. Nothing from the checkouts is executed
 // by this module.
 import { execFile } from 'node:child_process'
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
@@ -141,6 +141,8 @@ export interface MaterialisedCheckouts {
   readonly repositoryRoot: string
   readonly base: string
   readonly head: string
+  /** Frozen source copied before execution, outside every cell-writable mount. */
+  readonly reviewHead: string
   readonly mergeBase: string
   readonly headCommit: string
   /**
@@ -210,12 +212,14 @@ export async function materialiseCheckouts(
   const base = resolve(input.scratchDir, 'base')
   const head = resolve(input.scratchDir, 'head')
   const worktrees: string[] = []
+  let reviewHead: string | undefined
   const cleanup = async (): Promise<void> => {
     for (const path of worktrees.splice(0)) {
       await git(repositoryRoot, ['worktree', 'remove', '--force', path])
       await removeTree(path)
     }
     await git(repositoryRoot, ['worktree', 'prune'])
+    if (reviewHead !== undefined) await removeTree(reviewHead)
   }
 
   try {
@@ -247,7 +251,19 @@ export async function materialiseCheckouts(
     if (includeWorkingTree) {
       // Tracked changes, staged or not, as one binary patch applied to the head
       // worktree. `git diff HEAD` covers both the index and the working tree.
-      const patch = await git(repositoryRoot, ['diff', '--binary', 'HEAD'])
+      // Pinned so the author's own diff settings (noprefix, colour, an
+      // external driver or textconv) cannot change or break the patch.
+      const patch = await git(repositoryRoot, [
+        'diff',
+        '--binary',
+        '--no-color',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--no-relative',
+        '--src-prefix=a/',
+        '--dst-prefix=b/',
+        'HEAD',
+      ])
       if (patch.code !== 0) throw new CheckoutError('Cannot diff the working tree', patch)
       if (patch.stdout.length > 0) {
         dirty = true
@@ -272,14 +288,29 @@ export async function materialiseCheckouts(
         dirty = true
         const target = join(head, relative)
         await mkdir(dirname(target), { recursive: true })
-        await cp(join(repositoryRoot, relative), target, { recursive: true })
+        // Verbatim: a relative link keeps pointing inside the checkout rather
+        // than being rewritten to an absolute path into the author's tree.
+        await cp(join(repositoryRoot, relative), target, {
+          recursive: true,
+          verbatimSymlinks: true,
+        })
       }
     }
+
+    // A sibling of scratchDir, never beneath a path the cell may write. Copy
+    // before preparation or any repository code runs, preserving author edits
+    // and symlinks as data (brokered reads continue to reject symlinks). Do not
+    // hardlink: writes to the execution checkout must not change the snapshot.
+    reviewHead = await realpath(
+      await mkdtemp(join(dirname(resolve(input.scratchDir)), 'copse-review-input-')),
+    )
+    await cp(head, reviewHead, { recursive: true, verbatimSymlinks: true })
 
     return {
       repositoryRoot,
       base,
       head,
+      reviewHead,
       mergeBase,
       headCommit,
       gitCommonDir,

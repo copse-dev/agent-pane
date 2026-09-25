@@ -129,6 +129,10 @@ export function selectProvider(
         model,
         createOpenRouterProvider(model, required(env, 'OPENROUTER_API_KEY'), undefined, {
           ...(preferredProvider ? { preferredProvider } : {}),
+          // Review replies contain bounded tool calls and findings, not a large
+          // deliverable. Cap Luna's per-response output (including hidden
+          // reasoning) instead of inheriting its much larger server default.
+          ...(model === 'openai/gpt-6-luna' ? { params: { maxOutputTokens: 8_192 } } : {}),
         }),
       )
     }

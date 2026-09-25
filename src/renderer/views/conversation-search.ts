@@ -42,12 +42,110 @@ export function findMatchOffsets(haystack: string, needle: string): number[] {
   return offsets
 }
 
-let openImpl: (() => void) | null = null
+/**
+ * Collapse whitespace runs to one space and trim the ends. Both the query and
+ * the transcript text go through this, so a selection copied across lines or
+ * paragraphs (which picks up newlines), or a query typed with different
+ * spacing, still matches the rendered text.
+ */
+export function normalizeSearchText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/** One transcript text node's contribution to the flattened search text. */
+export interface SearchSegment {
+  text: string
+  /** True when this text starts a different block than the previous segment. */
+  breakBefore: boolean
+}
+
+/**
+ * The transcript's text nodes flattened into one whitespace-normalised string,
+ * with each character mapped back to the segment and raw offset it came from.
+ * Matching runs over `text`, so a query can span formatting (bold, inline
+ * code, links) and block boundaries, which live in separate text nodes.
+ */
+export interface SearchIndex {
+  text: string
+  segmentAt: Int32Array
+  offsetAt: Int32Array
+}
+
+const WHITESPACE_CHAR = /\s/
+
+export function buildSearchIndex(segments: readonly SearchSegment[]): SearchIndex {
+  const capacity = segments.reduce((n, segment) => n + segment.text.length + 1, 0)
+  const segmentAt = new Int32Array(capacity)
+  const offsetAt = new Int32Array(capacity)
+  const chars: string[] = []
+  let pendingSpace = false
+  segments.forEach((segment, seg) => {
+    if (segment.breakBefore && chars.length > 0) pendingSpace = true
+    for (let i = 0; i < segment.text.length; i++) {
+      const ch = segment.text.charAt(i)
+      if (WHITESPACE_CHAR.test(ch)) {
+        if (chars.length > 0) pendingSpace = true
+        continue
+      }
+      if (pendingSpace) {
+        // A collapsed whitespace run (or a block boundary) becomes one space.
+        // Normalised queries are trimmed, so it is never a match endpoint.
+        segmentAt[chars.length] = seg
+        offsetAt[chars.length] = i
+        chars.push(' ')
+        pendingSpace = false
+      }
+      segmentAt[chars.length] = seg
+      offsetAt[chars.length] = i
+      chars.push(ch)
+    }
+  })
+  return {
+    text: chars.join(''),
+    segmentAt: segmentAt.subarray(0, chars.length),
+    offsetAt: offsetAt.subarray(0, chars.length),
+  }
+}
+
+/** A match's raw endpoints in the indexed segments; `endOffset` is exclusive. */
+export interface SegmentMatch {
+  startSegment: number
+  startOffset: number
+  endSegment: number
+  endOffset: number
+}
+
+/** Every (case-insensitive, whitespace-normalised) match of `query` in `index`. */
+export function findSegmentMatches(index: SearchIndex, query: string): SegmentMatch[] {
+  const needle = normalizeSearchText(query)
+  return findMatchOffsets(index.text, needle).map((start) => {
+    const last = start + needle.length - 1
+    return {
+      startSegment: index.segmentAt[start] ?? 0,
+      startOffset: index.offsetAt[start] ?? 0,
+      endSegment: index.segmentAt[last] ?? 0,
+      endOffset: (index.offsetAt[last] ?? 0) + 1,
+    }
+  })
+}
+
+// Text in a different one of these than the previous text node renders on a
+// new line (and a copied selection carries a newline there), though the DOM
+// holds no whitespace between them.
+const SEARCH_BLOCK_SELECTOR =
+  'p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, td, th, dt, dd, summary, figcaption, div'
+
+let openImpl: ((query?: string) => void) | null = null
 let closeImpl: (() => void) | null = null
 let isOpenImpl: (() => boolean) | null = null
 
-export function openConversationSearch(): void {
-  openImpl?.()
+/**
+ * Open the find bar. With `query`, prefills it and runs the search — used by
+ * the transcript's "Search" context menu action to reuse this bar instead of
+ * inventing a second search surface.
+ */
+export function openConversationSearch(query?: string): void {
+  openImpl?.(query)
 }
 
 export function closeConversationSearch(): void {
@@ -139,26 +237,28 @@ export function mountConversationSearch(root: HTMLElement): void {
 
   function collectRanges(query: string): Range[] {
     const container = messagesList()
-    if (!container || !query) return []
-    const found: Range[] = []
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        // Skip whitespace-only nodes so the walk stays cheap on large transcripts.
-        return node.nodeValue && node.nodeValue.trim()
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT
-      },
-    })
+    if (!container || !normalizeSearchText(query)) return []
+    const nodes: Node[] = []
+    const segments: SearchSegment[] = []
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    let previousBlock: Element | null = null
     let node = walker.nextNode()
     while (node) {
-      const text = node.nodeValue ?? ''
-      for (const offset of findMatchOffsets(text, query)) {
-        const range = new Range()
-        range.setStart(node, offset)
-        range.setEnd(node, offset + query.length)
-        found.push(range)
-      }
+      const block = node.parentElement?.closest(SEARCH_BLOCK_SELECTOR) ?? null
+      nodes.push(node)
+      segments.push({ text: node.nodeValue ?? '', breakBefore: block !== previousBlock })
+      previousBlock = block
       node = walker.nextNode()
+    }
+    const found: Range[] = []
+    for (const match of findSegmentMatches(buildSearchIndex(segments), query)) {
+      const start = nodes[match.startSegment]
+      const end = nodes[match.endSegment]
+      if (!start || !end) continue
+      const range = document.createRange()
+      range.setStart(start, match.startOffset)
+      range.setEnd(end, match.endOffset)
+      found.push(range)
     }
     return found
   }
@@ -248,9 +348,10 @@ export function mountConversationSearch(root: HTMLElement): void {
     close()
   })
 
-  function open(): void {
+  function open(query?: string): void {
     const alreadyOpen = !bar.hidden
     bar.hidden = false
+    if (query !== undefined) input.value = query
     if (!alreadyOpen) {
       // Re-run after the transcript rebuilds (streaming tokens, tool updates,
       // thread switches) so highlighted ranges never point at detached nodes.
@@ -267,7 +368,13 @@ export function mountConversationSearch(root: HTMLElement): void {
     }
     input.focus()
     input.select()
-    if (input.value) runSearch(true)
+    if (query !== undefined) {
+      // A new query starts from its first match, shown on screen.
+      runSearch(false)
+      scrollCurrentIntoView()
+    } else if (input.value) {
+      runSearch(true)
+    }
   }
 
   function close(): void {
