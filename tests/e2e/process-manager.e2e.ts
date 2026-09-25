@@ -101,30 +101,45 @@ describe('Process manager', function () {
     )
 
     const memorySort = dialog.$('.process-manager-sort=Memory')
+    const sortIndicator = async (direction: 'ascending' | 'descending') =>
+      browser.execute((order) => {
+        const button = document.querySelector(
+          `.process-manager-table th[aria-sort="${order}"] button`,
+        )
+        if (!button) throw new Error(`${order} sort button is missing`)
+        const style = getComputedStyle(button, '::after')
+        return {
+          width: style.width,
+          height: style.height,
+          visibility: style.visibility,
+          clipPath: style.clipPath,
+        }
+      }, direction)
+
     await memorySort.click()
     await expect(dialog.$('th[aria-sort="descending"]')).toHaveText('Memory')
-    assert.equal(
-      await browser.execute(() => {
-        const button = document.querySelector(
-          '.process-manager-table th[aria-sort="descending"] button',
-        )
-        if (!button) throw new Error('Descending sort button is missing')
-        return getComputedStyle(button, '::after').borderTopWidth
-      }),
-      '6px',
+    const descendingIndicator = await sortIndicator('descending')
+    assert.deepEqual(
+      {
+        width: descendingIndicator.width,
+        height: descendingIndicator.height,
+        visibility: descendingIndicator.visibility,
+      },
+      { width: '8px', height: '6px', visibility: 'visible' },
     )
+    assert.match(descendingIndicator.clipPath, /^polygon\(0(?:px)? 0(?:px)?, 100% 0/)
     await memorySort.click()
     await expect(dialog.$('th[aria-sort="ascending"]')).toHaveText('Memory')
-    assert.equal(
-      await browser.execute(() => {
-        const button = document.querySelector(
-          '.process-manager-table th[aria-sort="ascending"] button',
-        )
-        if (!button) throw new Error('Ascending sort button is missing')
-        return getComputedStyle(button, '::after').borderBottomWidth
-      }),
-      '6px',
+    const ascendingIndicator = await sortIndicator('ascending')
+    assert.deepEqual(
+      {
+        width: ascendingIndicator.width,
+        height: ascendingIndicator.height,
+        visibility: ascendingIndicator.visibility,
+      },
+      { width: '8px', height: '6px', visibility: 'visible' },
     )
+    assert.match(ascendingIndicator.clipPath, /^polygon\(50% 0(?:px)?, 100% 100%/)
     await memorySort.click()
     const values = await browser.execute(() =>
       [...document.querySelectorAll('#process-manager-dialog tbody tr td:nth-child(5)')]
