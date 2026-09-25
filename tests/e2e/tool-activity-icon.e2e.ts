@@ -21,7 +21,14 @@ async function submitToolPrompt(): Promise<void> {
   if (await warning.isDisplayed()) await warning.$('.composer-dirty-send-btn').click()
 }
 
-describe('tool activity icon', () => {
+describe('tool activity icon', function () {
+  // Set on the suite, not inside the test: WebdriverIO's hook/test wrapper
+  // captures the runnable's timeout before the body runs, so an in-body
+  // `this.timeout()` does not lift its own race past the config default (30s
+  // locally). The test runs a real `sleep 40` (see below) plus submit, the
+  // approval wait and the follow-up model turn, so it needs more than the 90s
+  // convention used by other real-shell/tool-card specs (see wdio.ci.conf.ts).
+  this.timeout(120_000)
   let server: ConversationServer
 
   before(async () => {
@@ -37,10 +44,16 @@ describe('tool activity icon', () => {
     server.enqueue(
       {
         user: 'Run a short shell command',
-        // Long enough that the running-state assertions (geometry probe, settle
-        // pause, screenshot) all land while the card is still `running`, including
-        // the approval round-trip on platforms without an OS sandbox.
-        toolCalls: [{ name: 'run_shell', args: { command: 'sleep 15' } }],
+        // Must outlast `approveShellCommandIfPrompted()` *plus* the running-state
+        // assertions (geometry probe, settle pause, screenshot). Where an OS
+        // sandbox auto-runs the command (bubblewrap on Linux CI, seatbelt on
+        // macOS) no dialog ever appears, and on non-darwin the helper sits out
+        // its full 15s timeout while the command is already running — so a
+        // `sleep 15` could finish before the probe and leave no running card.
+        // 40s leaves ~20s of headroom over that ~18s worst case on a loaded
+        // runner. That exceeds run_shell's 30s default foreground timeout, so
+        // the call asks for a longer one through the tool's own `timeout_ms`.
+        toolCalls: [{ name: 'run_shell', args: { command: 'sleep 40', timeout_ms: 60_000 } }],
       },
       {
         user: 'Run a short shell command',
@@ -60,11 +73,9 @@ describe('tool activity icon', () => {
     }
   })
 
-  it('shows the spiral only while running without shifting the tool label', async function () {
-    // Runs a real `sleep 15` through run_shell and waits for the tool card to
-    // settle. 90s matches the convention used by other real-shell/tool-card
-    // specs (terminal-display, double-submit; see wdio.ci.conf.ts).
-    this.timeout(90_000)
+  it('shows the spiral only while running without shifting the tool label', async () => {
+    // Runs a real `sleep 40` through run_shell and waits for the tool card to
+    // settle (suite timeout above).
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await setComposerValue('Run a short shell command')
     await submitToolPrompt()
@@ -117,7 +128,7 @@ describe('tool activity icon', () => {
       }
     })
     expect(runningGeometry.runningStatus).toBe('running')
-    expect(runningGeometry.runningText).toBe('sleep 15')
+    expect(runningGeometry.runningText).toBe('sleep 40')
     expect(runningGeometry.runningHasIcon).toBe(true)
     expect(runningGeometry.animationName).toBe(
       runningGeometry.reducedMotion ? 'none' : 'reasoning-activity-draw',
@@ -130,7 +141,9 @@ describe('tool activity icon', () => {
     await browser.pause(900)
     await saveAppScreenshot('tool-activity-icon-alignment.png')
 
-    await expect(card).toHaveAttribute('data-status', 'done', { wait: 40_000 })
+    // The screenshot lands ~18s into the 40s command at worst; allow the rest
+    // of the sleep plus the follow-up turn with room to spare.
+    await expect(card).toHaveAttribute('data-status', 'done', { wait: 60_000 })
     const settledGeometry = await browser.execute(() => {
       const settledCard = document.querySelector('.tool-card[data-status="done"]')
       const settledName = settledCard?.querySelector('.tool-name')
@@ -153,7 +166,9 @@ describe('tool activity icon', () => {
   })
 })
 
-describe('tool activity icon — nested rollup row', () => {
+describe('tool activity icon — nested rollup row', function () {
+  // Same 40s command and suite-level timeout reasoning as the suite above.
+  this.timeout(120_000)
   let server: ConversationServer
 
   before(async () => {
@@ -166,12 +181,15 @@ describe('tool activity icon — nested rollup row', () => {
       model: 'claude-sonnet-4-6',
     })
     writeSettings({ ...readSeededSettings(), ...server.settings })
+    // Same race as the test above: the command must outlast the approval
+    // helper's 15s no-dialog wait plus the running measurement and screenshot
+    // (and so, like it, needs a `timeout_ms` above run_shell's 30s default).
     const longCommand =
-      'sleep 15 # Allow the preview server time to load the workspace, restore cached dependencies, compile the application, and finish preparing the local development page before checking its readiness.'
+      'sleep 40 # Allow the preview server time to load the workspace, restore cached dependencies, compile the application, and finish preparing the local development page before checking its readiness.'
     server.enqueue(
       {
         user: 'Wait briefly for the preview server to finish starting.',
-        toolCalls: [{ name: 'run_shell', args: { command: longCommand } }],
+        toolCalls: [{ name: 'run_shell', args: { command: longCommand, timeout_ms: 60_000 } }],
       },
       {
         user: 'Wait briefly for the preview server to finish starting.',
@@ -191,7 +209,7 @@ describe('tool activity icon — nested rollup row', () => {
     }
   })
 
-  it('does not let a nested row double up on trailing icons while running', async function () {
+  it('does not let a nested row double up on trailing icons while running', async () => {
     // A rollup's own tool card (the one this row nests under) trails its
     // spiral in flow instead of the gutter (see .tool-rollup-body
     // .tool-activity-icon-slot in tool-cards.css), so it costs the label real
@@ -200,7 +218,6 @@ describe('tool activity icon — nested rollup row', () => {
     // `.tool-name` for space instead of one, so a long command ellipsized
     // further while running than once it settled to a single glyph. That
     // extra squeeze is exactly the "right edge reads more cut off" report.
-    this.timeout(90_000)
 
     // A comfortably wide column never exercises `.tool-name`'s shrink path at
     // all — narrow it so the (already 96-char-capped, see SHELL_LABEL_MAX)
@@ -226,6 +243,7 @@ describe('tool activity icon — nested rollup row', () => {
       const headerRect = header?.getBoundingClientRect()
       const messageRect = message?.getBoundingClientRect()
       return {
+        status: header?.closest('.tool-card')?.getAttribute('data-status') ?? null,
         text: name?.textContent ?? null,
         nameWidth: nameRect?.width ?? null,
         nameRight: nameRect?.right ?? null,
@@ -236,6 +254,7 @@ describe('tool activity icon — nested rollup row', () => {
     }
 
     const running = await browser.execute(measureNestedRow)
+    expect(running.status).toBe('running')
     // The live spiral alone conveys "running" — the static status glyph
     // (redundant with it) is hidden rather than also claiming a slot.
     expect(running.statusVisible).toBe(false)
@@ -250,7 +269,7 @@ describe('tool activity icon — nested rollup row', () => {
     await browser.pause(600)
     await saveAppScreenshot('tool-activity-icon-nested-row-running.png')
 
-    await expect(nestedCard).toHaveAttribute('data-status', 'done', { wait: 40_000 })
+    await expect(nestedCard).toHaveAttribute('data-status', 'done', { wait: 60_000 })
     await browser.pause(300)
     const settled = await browser.execute(measureNestedRow)
     expect(settled.statusVisible).toBe(true)
