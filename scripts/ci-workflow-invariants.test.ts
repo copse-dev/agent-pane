@@ -573,6 +573,60 @@ describe('release-cut.yml workflow invariants', () => {
     assert.match(workflow, /release-channel\.mts --channel/)
     assert.match(workflow, /release-notes\.mts/)
   })
+
+  it('validates notes for a new tag but not for an already-released version', () => {
+    // Versions released before notes were kept per version have no section, so
+    // an ordinary no-op promotion must not fail on them. A tag at this exact
+    // commit is a recovery run and is validated like a new one.
+    assert.match(
+      workflow,
+      /if \[ -z "\$existing" \] \|\| \[ "\$existing" = "\$RELEASE_SHA" \]; then\n\s+node scripts\/release-notes\.mts "\$version"/,
+    )
+  })
+})
+
+describe('release-bump.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/release-bump.yml'), 'utf8')
+
+  it('runs weekly, ahead of the daily promotion', () => {
+    assert.match(workflow, /^ {4}- cron: '37 5 \* \* 1'$/m)
+    const promotion = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
+    assert.match(
+      promotion,
+      /^ {4}- cron: '17 8 \* \* \*'$/m,
+      'move the bump if the promotion moves',
+    )
+  })
+
+  it('bumps main through a PR, never by pushing to main or release', () => {
+    // The bump must pass the same `CI Passed` gate as any other change to main.
+    assert.match(workflow, /peter-evans\/create-pull-request@/)
+    assert.match(workflow, /^ {10}base: main$/m)
+    assert.match(workflow, /^ {10}branch: chore\/release-bump$/m)
+    assert.doesNotMatch(workflow, /git push/)
+    assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --auto --squash/)
+  })
+
+  it('opens the PR as the release App so CI runs on it', () => {
+    // A GITHUB_TOKEN PR triggers no workflows, so it could never go green.
+    assert.match(workflow, /token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
+    assert.match(workflow, /^ {2}contents: read$/m)
+    assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
+  })
+
+  it('keeps one release in flight and skips an empty week', () => {
+    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
+    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const bump = workflow.indexOf('node scripts/release-bump.mts')
+    assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
+    assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('passes the dispatch version through the environment, not the script text', () => {
+    // An expression interpolated into `run:` is shell injection from the dispatch form.
+    assert.match(workflow, /REQUESTED_VERSION: \$\{\{ inputs\.version \}\}/)
+    assert.equal(workflow.split('${{ inputs.version }}').length - 1, 1)
+  })
 })
 
 describe('release-mac.yml workflow invariants', () => {

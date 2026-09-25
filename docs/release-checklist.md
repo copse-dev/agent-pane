@@ -11,8 +11,19 @@ blockers, and record the actual candidate revision. Dated audit snapshots are su
 not an automatically current release decision.
 
 Tagging is automatic: bumping `package.json` and promoting it to `release` is
-what cuts the release. Everything below has to be true _before_ the version bump
-reaches `release`, not after.
+what cuts the release, and
+[`Bump release version`](../.github/workflows/release-bump.yml) opens that bump
+every Monday.
+
+**Weekly betas** are cut on schedule without the per-release sign-off below.
+They rely on the gates every change already passes — the full `CI Passed` tier
+on promotion, and signing, notarization, and the packaged smoke test — plus the
+owner's install test before `Publish release artifacts`. Anything that would
+need a checklist item below (a data migration, a security or privacy change, a
+known issue) is held by disabling auto-merge on that week's bump PR.
+
+**Stable releases, and any beta cut by hand,** need everything below to be true
+_before_ the version bump reaches `release`, not after.
 
 - [ ] Confirm the target commit is on current `main` and required CI is green.
 - [ ] Run `npm run check`, `npm run build`, and the release/e2e validation
@@ -36,13 +47,14 @@ reaches `release`, not after.
 
 ## Release notes
 
-- [ ] Update the `Unreleased` section of [CHANGELOG.md](../CHANGELOG.md). The
-      publisher generates the GitHub Release body from it
-      ([`scripts/release-notes.mts`](../scripts/release-notes.mts)) and fails
-      closed if it is empty, so write it in the version-bump PR.
-- [ ] Leave those notes in `Unreleased` through promotion: both tag cutting and
-      packaging read them from the promoted commit and fail closed if the
-      section is empty.
+- [ ] Write the notes in the `Unreleased` section of
+      [CHANGELOG.md](../CHANGELOG.md) — ordinarily each PR adds its own entry.
+      The version bump ([`scripts/release-bump.mts`](../scripts/release-bump.mts))
+      moves them under `## <version>`, and the publisher generates the GitHub
+      Release body from that section
+      ([`scripts/release-notes.mts`](../scripts/release-notes.mts)). Tag cutting
+      and packaging both read it from the promoted commit and fail closed if it
+      is missing or empty.
 - [ ] Confirm the generated body reads as release notes: run
       `node scripts/release-notes.mts` and check it. The channel, macOS 26+
       requirement, and `arm64`/`x64` support are added automatically; known
@@ -77,9 +89,6 @@ reaches `release`, not after.
       public. Do not rebuild or publish locally.
 - [ ] Confirm the published artifacts and release notes identify the same
       version, channel, minimum OS, and architectures.
-- [ ] After the GitHub Release exists, reset `Unreleased` for subsequent work in
-      a follow-up PR. Promoting that reset is safe because the unchanged package
-      version is already tagged and `Cut release tag` treats it as a no-op.
 
 ## Channel rehearsal
 
