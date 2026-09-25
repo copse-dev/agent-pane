@@ -76,8 +76,14 @@ import {
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
-import { isRasterImagePath } from '@shared/fs/image-path.ts'
+import {
+  acpWorkspaceRoot,
+  hydrateAcpResourceImages,
+  replaceAcpResourceBlock,
+  syncAcpResourceReferences,
+  workspaceDisplayPath,
+  workspaceResourceFilePath,
+} from './acp-resource-previews.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
@@ -505,7 +511,7 @@ function syncToolResultContent(
   if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
     rendered = createToolResultContent(visible, previewImageDataUrls, workspaceRoot)
     toolResultContentSignatures.set(rendered, signature)
-    if (current) current.replaceWith(rendered)
+    if (current) replaceAcpResourceBlock(current, rendered)
     else msgEl.append(rendered)
   }
 
@@ -1400,212 +1406,6 @@ function acpResourceLabel(uri: string, title?: string): string {
   }
 }
 
-function acpWorkspaceRoot(store: AppStore): string | null {
-  return getActiveThread(store)?.worktree?.path ?? store.getState().workspaceRoot
-}
-
-function workspaceResourcePath(path: string, workspaceRoot: string | null): string {
-  if (!workspaceRoot) return path
-  const normalizedPath = path.replace(/\\/g, '/')
-  const root = workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '') || '/'
-  const comparablePath = /^[a-z]:\//i.test(root) ? normalizedPath.toLowerCase() : normalizedPath
-  const comparableRoot = /^[a-z]:\//i.test(root) ? root.toLowerCase() : root
-  if (comparablePath === comparableRoot) return '.'
-  const prefix = comparableRoot === '/' ? '/' : `${comparableRoot}/`
-  if (!comparablePath.startsWith(prefix)) return path
-  const relativePath = normalizedPath.slice(prefix.length)
-  return relativePath.split('/').includes('..') ? path : relativePath
-}
-
-function workspaceResourceFilePath(uri: string, workspaceRoot: string | null): string | null {
-  if (!workspaceRoot || !uri || uri.startsWith('\\')) return null
-  if (/^[a-z][a-z\d+.-]*:/i.test(uri) && !/^[a-z]:[\\/]/i.test(uri)) return null
-  const relativePath = workspaceResourcePath(uri, workspaceRoot)
-  if (relativePath === uri && (/^\//.test(uri) || /^[a-z]:[\\/]/i.test(uri))) return null
-  if (relativePath === '.' || relativePath.split(/[\\/]/).includes('..')) return null
-  return relativePath
-}
-
-function workspaceResourceImagePath(uri: string, workspaceRoot: string | null): string | null {
-  return isRasterImagePath(uri) ? workspaceResourceFilePath(uri, workspaceRoot) : null
-}
-
-const resourceImageReads = new WeakMap<HTMLElement, Promise<string>>()
-
-/** Load local image links through the same contained IPC used by file preview. */
-function hydrateWorkspaceResourceImages(root: HTMLElement, api: ApiClient, store: AppStore): void {
-  const owner = getActiveThreadOwner(store)
-  if (!owner) return
-  const workspaceRoot = acpWorkspaceRoot(store)
-  for (const card of root.querySelectorAll<HTMLElement>(
-    '.acp-resource-link[data-workspace-image-path]:not([data-image-preview-requested])',
-  )) {
-    const path = card.dataset['workspaceImagePath']
-    if (!path) continue
-    card.dataset['imagePreviewRequested'] = 'true'
-    const imageRead = api.fs.readImage(owner.projectId, owner.threadId, path)
-    resourceImageReads.set(card, imageRead)
-    void imageRead.then(
-      (src) => {
-        const currentOwner = getActiveThreadOwner(store)
-        if (
-          !card.isConnected ||
-          currentOwner?.projectId !== owner.projectId ||
-          currentOwner.threadId !== owner.threadId ||
-          acpWorkspaceRoot(store) !== workspaceRoot
-        )
-          return
-        const label = card.querySelector('.acp-resource-title')?.textContent ?? path
-        const image = el('img', {
-          class: 'tool-result-preview-image',
-          src,
-          alt: label,
-          loading: 'lazy',
-        })
-        attachImageExpand(image, label)
-        const figure = el(
-          'figure',
-          {
-            class: 'tool-result-preview acp-resource-image',
-            title: card.title,
-            'data-acp-resource-uri': card.dataset['acpResourceUri'] ?? '',
-            'data-workspace-resource-path': card.dataset['workspaceResourcePath'] ?? '',
-            'data-workspace-image-path': path,
-          },
-          image,
-          el('figcaption', { class: 'tool-result-preview-caption' }, path),
-        )
-        image.addEventListener(
-          'error',
-          () => {
-            if (figure.isConnected) figure.replaceWith(card)
-          },
-          { once: true },
-        )
-        figure.hidden = card.hidden
-        card.replaceWith(figure)
-      },
-      () => {
-        // Missing, oversized, or disallowed files keep their readable path card.
-      },
-    )
-  }
-}
-
-function syncReferencedResourceVisibility(list: HTMLElement, uri: string): void {
-  const referenced = Array.from(
-    list.querySelectorAll<HTMLElement>(
-      '.acp-referenced-image[data-acp-resource-uri], .msg-assistant .message-text a[data-acp-resource-uri]',
-    ),
-  ).some((reference) => reference.dataset['acpResourceUri'] === uri)
-  for (const resource of list.querySelectorAll<HTMLElement>(
-    '.acp-resource-link[data-acp-resource-uri], .acp-resource-image[data-acp-resource-uri]',
-  )) {
-    if (resource.dataset['acpResourceUri'] === uri) resource.hidden = referenced
-  }
-}
-
-/** A reply can cite a tool's resource URI with an ordinary Markdown link. */
-function hydrateReferencedResources(list: HTMLElement, api: ApiClient, store: AppStore): void {
-  const owner = getActiveThreadOwner(store)
-  if (!owner) return
-  const workspaceRoot = acpWorkspaceRoot(store)
-  const resources = Array.from(
-    list.querySelectorAll<HTMLElement>(
-      '.acp-resource-link[data-acp-resource-uri], .acp-resource-image[data-acp-resource-uri]',
-    ),
-  )
-  if (resources.length === 0) return
-
-  for (const reference of list.querySelectorAll<HTMLElement>(
-    '.acp-referenced-image[data-acp-resource-uri], .msg-assistant .message-text a[data-acp-resource-uri]',
-  )) {
-    const uri = reference.dataset['acpResourceUri']
-    if (uri) syncReferencedResourceVisibility(list, uri)
-  }
-
-  for (const link of list.querySelectorAll<HTMLAnchorElement>(
-    '.msg-assistant .message-text a[href]:not([data-image-reference-requested]):not([data-acp-resource-uri])',
-  )) {
-    const href = link.getAttribute('href')
-    if (!href) continue
-    let uri = href
-    try {
-      uri = decodeURI(href)
-    } catch {
-      // Preserve malformed escape sequences as literal path characters.
-    }
-    const resource = resources.find((node) => node.dataset['acpResourceUri'] === uri)
-    const filePath = resource?.dataset['workspaceResourcePath']
-    if (!filePath) continue
-    link.dataset['workspaceResourcePath'] = filePath
-    const path = resource.dataset['workspaceImagePath']
-    if (!path) {
-      link.dataset['acpResourceUri'] = uri
-      syncReferencedResourceVisibility(list, uri)
-      continue
-    }
-    link.dataset['imageReferenceRequested'] = 'true'
-    const existingImage = resource.querySelector<HTMLImageElement>('.tool-result-preview-image')
-    const imageRead = existingImage?.src
-      ? Promise.resolve(existingImage.src)
-      : (resourceImageReads.get(resource) ??
-        api.fs.readImage(owner.projectId, owner.threadId, path))
-    void imageRead.then(
-      (src) => {
-        const currentOwner = getActiveThreadOwner(store)
-        if (
-          !link.isConnected ||
-          currentOwner?.projectId !== owner.projectId ||
-          currentOwner.threadId !== owner.threadId ||
-          acpWorkspaceRoot(store) !== workspaceRoot
-        )
-          return
-        const label = link.textContent.trim() || path
-        const image = el('img', {
-          class: 'tool-result-preview-image',
-          src,
-          alt: label,
-          loading: 'lazy',
-        })
-        attachImageExpand(image, label)
-        const caption = el(
-          'span',
-          { class: 'tool-result-preview-caption' },
-          label === uri || label === path ? path : label,
-        )
-        const preview = el(
-          'span',
-          {
-            class: 'tool-result-preview acp-referenced-image',
-            title: uri,
-            'data-acp-resource-uri': uri,
-          },
-          image,
-          caption,
-          ...(label !== uri && label !== path
-            ? [el('code', { class: 'acp-referenced-image-path' }, path)]
-            : []),
-        )
-        image.addEventListener(
-          'error',
-          () => {
-            if (!preview.isConnected) return
-            preview.replaceWith(link)
-            syncReferencedResourceVisibility(list, uri)
-          },
-          { once: true },
-        )
-        link.replaceWith(preview)
-        syncReferencedResourceVisibility(list, uri)
-      },
-      () => {
-        // A missing or disallowed image remains a normal Markdown file link.
-      },
-    )
-  }
-}
-
 /** Render one non-text ACP content block without passing binary through Markdown. */
 function createAcpContentBlock(
   block: AcpContentBlock,
@@ -1650,10 +1450,9 @@ function createAcpContentBlock(
   }
   if (block.type === 'resource_link') {
     const label = block.title ?? block.name
-    const displayLabel = workspaceResourcePath(label, workspaceRoot)
-    const displayUri = workspaceResourcePath(block.uri, workspaceRoot)
+    const displayLabel = workspaceDisplayPath(label, workspaceRoot)
+    const displayUri = workspaceDisplayPath(block.uri, workspaceRoot)
     const filePath = workspaceResourceFilePath(block.uri, workspaceRoot)
-    const imagePath = workspaceResourceImagePath(block.uri, workspaceRoot)
     const description = block.description
       ? el('span', { class: 'acp-resource-description' }, block.description)
       : null
@@ -1681,7 +1480,6 @@ function createAcpContentBlock(
         ...(filePath
           ? { 'data-workspace-resource-path': filePath, 'data-acp-resource-uri': block.uri }
           : {}),
-        ...(imagePath ? { 'data-workspace-image-path': imagePath } : {}),
       },
       labelNode,
       ...(description ? [description] : []),
@@ -2120,7 +1918,7 @@ function syncAcpMessageContent(
     current?.remove()
     return
   }
-  if (current) current.replaceWith(replacement)
+  if (current) replaceAcpResourceBlock(current, replacement)
   else body.append(replacement)
 }
 
@@ -3547,7 +3345,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       run ? (isRunMember ? [] : run.toolCalls) : toolCalls,
       acpWorkspaceRoot(store),
     )
-    hydrateWorkspaceResourceImages(msgEl, api, store)
+    hydrateAcpResourceImages(msgEl, api, store)
     registerReasoningDisclosures(msgEl)
     syncToolRunMemberVisibility(msgEl)
   }
@@ -3647,7 +3445,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
     syncRunStepReasoning(runCard, run, liveStepMessageId(thread), acpWorkspaceRoot(store))
-    hydrateWorkspaceResourceImages(runCard, api, store)
+    hydrateAcpResourceImages(runCard, api, store)
   }
 
   /**
@@ -3734,8 +3532,6 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
     renderMessageTurnRecovery(threadId, msgId)
-    hydrateWorkspaceResourceImages(msgEl, api, store)
-    hydrateReferencedResources(list, api, store)
   }
 
   /**
@@ -3784,6 +3580,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // show in the footer picker.)
     syncModelLabels()
     syncUserActions()
+    syncAcpResourceReferences(list, api, store)
     scrollToBottom(msg.role === 'user')
     // Correct for a prompt taller than the viewport: scrollToBottom above
     // hugs the transcript's tail, which can scroll the top of a long prompt
@@ -4234,6 +4031,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // runResend resends the thread's *latest* prompt, not the one beside the
     // button, so clicking a stray one silently repeats the wrong message.
     syncUserActions()
+    // A chunk can hold resources that the replies already on screen cite.
+    syncAcpResourceReferences(list, api, store)
     updateScrollButton()
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -4292,6 +4091,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // the view lands at the bottom before the chrome is inserted around it.
     syncModelLabels()
     syncUserActions()
+    syncAcpResourceReferences(list, api, store)
     if (preservedScrollTop === null) {
       scrollToBottom(true)
     } else {
@@ -4357,8 +4157,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     // This message's tools may belong to a rollup anchored on another bubble.
     if (run) syncRunLayout(thread, run, msgId)
-    hydrateWorkspaceResourceImages(msgEl, api, store)
-    hydrateReferencedResources(list, api, store)
+    syncAcpResourceReferences(list, api, store)
     if (wasPinned) {
       scrollToBottom()
     } else restoreReadingAnchor(readingAnchor, prevScrollTop)
@@ -4440,7 +4239,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
             acpWorkspaceRoot(store),
           )
         registerReasoningDisclosures(msgEl)
-        hydrateWorkspaceResourceImages(msgEl, api, store)
+        // Rebuilt content blocks start visible and unloaded; re-cite them.
+        syncAcpResourceReferences(list, api, store)
         syncToolRunMemberVisibility(msgEl)
         scrollToBottom()
       }
@@ -4462,7 +4262,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
             acpWorkspaceRoot(store),
           )
         registerReasoningDisclosures(msgEl)
-        hydrateWorkspaceResourceImages(msgEl, api, store)
+        hydrateAcpResourceImages(msgEl, api, store)
         activityBar.classList.add('agent-activity-clickable')
         setActivity(activityLabel.textContent)
         scrollToBottom()
@@ -4476,7 +4276,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, false, api)
         hydrateRemoteArtifactImages(list, api)
-        hydrateReferencedResources(list, api, store)
+        syncAcpResourceReferences(list, api, store)
       }
       if (msg?.role === 'assistant' && msgEl) {
         msgEl.classList.toggle(
