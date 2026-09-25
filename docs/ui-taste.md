@@ -559,6 +559,16 @@ separator after it — that paints `/ / usr` for `/usr`. Skip the separator when
 [`remote-folder-path.test.ts`](../src/renderer/views/remote-folder-path.test.ts),
 [`tests/e2e/remote-folder-breadcrumbs.e2e.ts`](../tests/e2e/remote-folder-breadcrumbs.e2e.ts).
 
+## Left-elided paths need a bidi guard
+
+`.git-change-path` elides from the left with `direction: rtl` so the filename, the meaningful
+end, stays visible. That makes the span an RTL paragraph, and a neutral character at either end
+(`.` in `.bashrc`, `/` in `docs/`) takes the paragraph direction and jumps to the far end: the
+Changes list rendered dotfiles as `bashrc.` and `gitconfig.` (#3065). `layout.css` puts a
+zero-width left-to-right mark (`\200E`) in `::before` and `::after` so those characters keep a
+strong neighbour on both sides while the box still elides from the left. Copy the guard
+wherever the trick is copied. Spec: `modern-css.test.ts`.
+
 ## SSH project sidebar labels
 
 SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
@@ -875,6 +885,12 @@ see "Sidebar selections". Interface tint is only a subtle
 wash through otherwise neutral surfaces. Derive hover and link shades from the accent per theme,
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
+
+Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent)` on
+`html, body`, and every checkbox, radio and range input inherits it. Do not restate it per
+control: three local copies were all that kept the accent on, and every other checkbox in
+Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
+declaration to `base.css`.
 
 ## Roadmap list rows
 
