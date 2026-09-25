@@ -10,6 +10,7 @@ import type { Message, Thread, StreamChunk, ThreadReviewReport } from '@shared/t
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
 import { getReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
+import { markSendNowAbort, takeSendNowAbort } from './send-now-aborts.ts'
 import { sessionUpdateToStreamChunks } from '../../main/services/acp/session-update-adapter.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
@@ -1114,4 +1115,37 @@ test('a standalone review that ends without a report settles its card as an erro
   assert.equal(settled?.reviewReport?.status, 'error')
   assert.equal(settled.reviewReport.error, 'The review ended before it produced a report.')
   assert.equal(getReviewReportTarget(store, 't1'), undefined)
+})
+
+test('a user-cancelled turn records whether a send-now or a Stop aborted it', () => {
+  const cancelled = {
+    status: 'cancelled' as const,
+    stopReason: 'cancelled' as const,
+    source: 'user' as const,
+    executor: 'acp' as const,
+    provider: 'codex-acp',
+    model: 'acp:codex-acp#gpt-5.6-sol',
+    endedAt: 10,
+  }
+  const { send, messages } = setup()
+  markSendNowAbort('t1')
+  send({ type: 'turn_outcome', outcome: cancelled })
+  send({ type: 'done' })
+  assert.deepEqual(at(messages(), 0).turnOutcome, { ...cancelled, userAbort: 'send_now' })
+
+  // The mark was consumed: the next cancellation is a plain Stop.
+  send({ type: 'text', text: 'Next turn' })
+  send({ type: 'turn_outcome', outcome: { ...cancelled, endedAt: 20 } })
+  send({ type: 'done' })
+  assert.equal(at(messages(), 1).turnOutcome?.userAbort, 'stop')
+
+  // Only user cancellations carry a cause; a host timeout stays untouched.
+  markSendNowAbort('t1')
+  send({ type: 'text', text: 'Third turn' })
+  const timedOut = { ...cancelled, status: 'failed' as const, source: 'host' as const }
+  send({ type: 'turn_outcome', outcome: timedOut })
+  send({ type: 'done' })
+  assert.deepEqual(at(messages(), 2).turnOutcome, timedOut)
+  // `done` drops a mark that no cancellation consumed.
+  assert.equal(takeSendNowAbort('t1'), false)
 })

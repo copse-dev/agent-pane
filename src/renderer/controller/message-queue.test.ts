@@ -1,3 +1,4 @@
+import { takeSendNowAbort } from './send-now-aborts.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
@@ -458,6 +459,8 @@ test('sendQueuedMessageNow reorders to the front and aborts the running thread',
   )
   assert.deepEqual(api.aborts, [threadId])
   assert.equal(api.runs.length, 0)
+  // The cancelled turn's outcome is labelled a send-now, not a Stop.
+  assert.equal(takeSendNowAbort(threadId), true)
 })
 
 test('sendQueuedMessageNow aborts a running remote agent so the follow-up can drain', () => {

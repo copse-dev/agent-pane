@@ -2912,6 +2912,8 @@ export function seedAcpPromptInterruptedFixture(workspaceRoot: string): void {
               executor: 'acp',
               provider: 'codex-acp',
               model: 'acp:codex-acp#gpt-5.6-sol',
+              // Recorded by the renderer when a queued prompt was sent now.
+              userAbort: 'send_now',
               // Send-now queues the human bubble before cancellation settles.
               endedAt: now + 4,
             },
