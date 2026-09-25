@@ -15,10 +15,10 @@ import {
 } from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 function cleanIpcError(error: unknown): string {
-  if (!(error instanceof Error)) return 'Automation request failed.'
-  return error.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
+  return ipcErrorMessage(error, 'Automation request failed.')
 }
 
 function lastRunLabel(timestamp: number | undefined): string {

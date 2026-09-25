@@ -33,6 +33,19 @@
   vertical-align: middle;
 }
 
+/* Settled outcomes carry their semantic hue on both glyph and text, so a
+   rejected key or a failed connect reads as an error wherever the line sits
+   (the icon strokes in currentColor). pending / filled / idle inherit. */
+.ui-inline-status[data-status-kind='error'] {
+  color: var(--error);
+}
+.ui-inline-status[data-status-kind='ok'] {
+  color: var(--success);
+}
+.ui-inline-status[data-status-kind='warn'] {
+  color: var(--warning);
+}
+
 /* Only true in-progress statuses spin. Settled "idle" (minus) stays static so
    Local models "Not loaded" / onboarding "not found" don't look like a hang. */
 @keyframes ui-inline-status-spin {

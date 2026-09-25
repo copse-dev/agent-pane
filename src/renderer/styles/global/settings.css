@@ -1540,9 +1540,6 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   overflow-x: auto;
 }
-.acp-cmd-copy {
-  flex: none;
-}
 
 /* Sources section — read-only view of everything auto-loaded for the workspace
    (instruction files, skills, Cursor hooks, Cursor plugins). */

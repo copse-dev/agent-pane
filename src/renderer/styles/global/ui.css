@@ -4,12 +4,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-lg);
   border-radius: var(--radius);
   border: 1px solid transparent;
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
+  /* A label never breaks inside its chip ("Test / key") and a long sibling
+     never squeezes the chip; the sibling wraps instead. */
+  white-space: nowrap;
   cursor: pointer;
   color: var(--text-primary);
   background: var(--bg-secondary, var(--bg-elevated));

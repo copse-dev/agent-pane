@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { CURSOR_AGENTS_WEB_URL } from '../../src/shared/remote-agent.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 describe('Cursor Cloud Agent settings list hint', () => {
   before(async () => {
@@ -47,6 +48,9 @@ describe('Cursor Cloud Agent settings list hint', () => {
     const link = hint.$('a')
     await expect(link).toHaveAttribute('href', CURSOR_AGENTS_WEB_URL)
     await expect(link).toHaveAttribute('target', '_blank')
+
+    // Install / sign-in command rows: Copy is a kit chip like "Re-scan device".
+    await assertKitButtonChrome('#settings-dialog .acp-cmd-copy', 'secondary')
 
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')

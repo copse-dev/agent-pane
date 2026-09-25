@@ -135,6 +135,12 @@ When building dialogs, settings forms, or labelled controls, prefer the shared k
 [`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
 [`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
 classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+A class with no rule of its own (`primary`, `foo-save`) is not a button style: the global
+`button` reset in `forms.css` strips border and fill, so such a control renders as a bare word.
+Kit buttons never wrap their label and never shrink in a flex row; a long sibling (an inline
+status, an error) wraps instead. Inline status lines (`setInlineStatus`) paint `error` / `ok` /
+`warn` in `--error` / `--success` / `--warning` themselves; show IPC failures through
+`ipcErrorMessage` so Electron's `Error invoking remote method '…'` wrapping never reaches copy.
 Only add a new kit primitive once **two product call sites** need it and it does more than
 class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
 (tabs+content, list+viewer chrome) over inventing more atom variants — see

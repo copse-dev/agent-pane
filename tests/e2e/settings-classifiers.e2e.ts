@@ -14,6 +14,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
+import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 /** Exercises the real classifier profile, credential, and invocation IPC against a local server. */
 describe('classifier connections settings', () => {
@@ -117,6 +118,7 @@ describe('classifier connections settings', () => {
     await openClassifiers()
     const host = $('#settings-classifiers-host')
     await host.$('[name="classifierPreset"]').selectByAttribute('value', 'typesafe')
+    await assertKitButtonChrome('#settings-classifiers-host .classifier-create', 'secondary')
     await host.$('.classifier-create').click()
     await host.$('[name="classifierLabel"]').setValue('Hosted classifier fixture')
     await host.$('[name="classifierModel"]').setValue('fixture-model')
@@ -159,6 +161,9 @@ describe('classifier connections settings', () => {
     assert.equal(lastAuthorization, 'Bearer classifier-e2e-secret')
     assert.match(await host.$('.classifier-status').getText(), /color: red/)
     assert.match(await host.$('.classifier-status').getText(), /kev-fixture-1/)
+    await assertKitButtonChrome('#settings-classifiers-host .classifier-save', 'primary')
+    await assertKitButtonChrome('#settings-classifiers-host .classifier-test', 'secondary')
+    await assertKitButtonChrome('#settings-classifiers-host .classifier-remove', 'danger')
     await saveElementScreenshot('#settings-dialog', 'settings-classifiers.png')
     await host.$('[name="classifierUrl"]').setValue('https://example.com/v1')
     await expect(host.$('.classifier-destination-note')).toBeDisplayed()
@@ -290,6 +295,7 @@ describe('classifier connections settings', () => {
       { timeout: 10_000 },
     )
     assert.match(await host.$('.classifier-status').getText(), /auth|401|key/i)
+    await assertErrorColor('#settings-classifiers-host .classifier-status .ui-inline-status')
     await saveElementScreenshot('#settings-dialog', 'settings-classifiers-error.png')
     await clickAction('remove')
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 1, {

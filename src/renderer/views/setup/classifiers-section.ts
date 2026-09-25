@@ -10,6 +10,7 @@ import { el, clear } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
 import { showConfirmDialog } from '../confirm-dialog.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { unwrapIpcErrorText } from '../../ipc-error-message.ts'
 
 interface ClassifiersSectionApi {
   classifiers: ClassifierClient
@@ -22,10 +23,11 @@ export interface ClassifiersSection {
 }
 
 function classifierErrorMessage(error: unknown): string {
-  const message = errorMessage(error).replace(
-    /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
-    '',
-  )
+  // The service's own error name can sit between IPC layers; peel it with them.
+  let message = unwrapIpcErrorText(errorMessage(error))
+  while (message.startsWith('ClassifierError:')) {
+    message = unwrapIpcErrorText(message.slice('ClassifierError:'.length))
+  }
   if (message.startsWith('IpcValidationError:')) {
     return 'The supplied settings are invalid. Check the field values and try again.'
   }
@@ -126,7 +128,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       presets.append(el('option', { value: 'custom' }, 'Custom compatible endpoint'))
       const add = el(
         'button',
-        { type: 'button', class: 'classifier-create' },
+        { type: 'button', class: 'ui-btn ui-btn-secondary classifier-create' },
         'Configure classifier',
       )
       add.addEventListener('click', () => {
@@ -317,15 +319,24 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     }
     advanced.append(el('label', {}, 'Timeout (seconds)', timeout))
     form.append(advanced)
-    const save = el('button', { type: 'button', class: 'classifier-save' }, 'Save classifier')
+    const save = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-primary classifier-save' },
+      'Save classifier',
+    )
     const test = el(
       'button',
-      { type: 'button', class: 'classifier-test', disabled: !saved },
+      { type: 'button', class: 'ui-btn ui-btn-secondary classifier-test', disabled: !saved },
       'Test classifier',
     )
     const remove = el(
       'button',
-      { type: 'button', class: 'classifier-remove' },
+      {
+        type: 'button',
+        class: saved
+          ? 'ui-btn ui-btn-danger classifier-remove'
+          : 'ui-btn ui-btn-secondary classifier-remove',
+      },
       saved ? 'Remove classifier' : 'Discard draft',
     )
     const actions = el('div', { class: 'provider-actions' }, save, test, remove)

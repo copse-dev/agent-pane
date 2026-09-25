@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
+import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 describe('Open remote folder — add host inline', () => {
   before(async () => {
@@ -49,10 +50,23 @@ describe('Open remote folder — add host inline', () => {
       { timeout: 5_000, timeoutMsg: 'host id did not auto-slugify from the label' },
     )
 
+    // Import is a quiet (ghost) kit button beside the outlined Cancel (#3078).
+    await expect(dialog.$('.remote-folder-import-config')).toHaveElementClass('ui-btn-ghost')
+    await assertKitButtonChrome('#remote-folder-dialog .remote-folder-cancel-add', 'secondary')
+    await assertKitButtonChrome('#remote-folder-dialog .remote-folder-save-host', 'primary')
+    await assertKitButtonChrome('#remote-folder-dialog .remote-folder-cancel', 'secondary')
+
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-add-host.png')
-    // Save host is the filled primary; Import is a quiet kit button (#3065).
-    await expect(dialog.$('.remote-folder-save-host')).toHaveElementClass('ui-btn-primary')
-    await expect(dialog.$('.remote-folder-import-config')).toHaveElementClass('ui-btn')
+
+    // A draft the parser rejects stays in the form and reports in the error hue.
+    await dialog.$('input[name="remoteFolderHostPort"]').setValue('22garbage')
+    await dialog.$('.remote-folder-save-host').click()
+    const errorStatus = dialog.$('.remote-folder-status [data-status-kind="error"]')
+    await errorStatus.waitForExist({ timeout: 5_000 })
+    await expect(errorStatus).toHaveText('Port must be a whole number from 1 to 65535.')
+    await assertErrorColor('#remote-folder-dialog .remote-folder-status .ui-inline-status')
+    await expect(addForm).toBeDisplayed()
+    await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-add-host-error.png')
     await dialog.$('.remote-folder-cancel').click()
     await expect(dialog).not.toBeDisplayed()
   })

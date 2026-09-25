@@ -7,6 +7,7 @@ import {
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
+import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 function settingsSection(section: 'ssh') {
   return $(`.settings-section[data-section="${section}"]`)
@@ -95,6 +96,10 @@ describe('SSH settings section', () => {
       'Port must be a whole number from 1 to 65535.',
     )
     await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    await assertErrorColor('.ssh-host-status .ui-inline-status')
+    await assertKitButtonChrome('.ssh-host-save', 'primary')
+    await assertKitButtonChrome('.ssh-host-clear', 'secondary')
+    await assertKitButtonChrome('.ssh-import-config', 'secondary')
     await browser.execute(() => {
       document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
     })

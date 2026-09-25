@@ -13,6 +13,8 @@ import {
 } from './setup/ssh-host-helpers.ts'
 import { fillRemotePathBreadcrumbs, parentRemotePath } from './remote-folder-path.ts'
 import { arrowLeftIcon } from '../dom/icons.ts'
+import { setInlineStatus } from '../dom/inline-status.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 export interface RemoteFolderPick {
   hostId: string
@@ -282,14 +284,15 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         draft.identityFile = identityInput.value
         const parsed = parseSshHostDraft(draft)
         if (!parsed.ok) {
-          status.textContent = parsed.error
+          setInlineStatus(status, 'error', parsed.error)
           return
         }
         try {
           await persistAndSelect(parsed.host)
         } catch (err) {
-          status.textContent = err instanceof Error ? err.message : String(err)
-          showToast(status.textContent, { variant: 'error' })
+          const message = ipcErrorMessage(err, 'Could not save the host.')
+          setInlineStatus(status, 'error', message)
+          showToast(message, { variant: 'error' })
         }
       })()
     })
@@ -299,7 +302,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         try {
           const aliases = await api.sshWorkspace.listConfigAliases()
           if (aliases.length === 0) {
-            status.textContent = 'No Host entries found in ~/.ssh/config.'
+            setInlineStatus(status, 'error', 'No Host entries found in ~/.ssh/config.')
             return
           }
           const raw = await api.settings.get('sshWorkspaceHosts')
@@ -315,8 +318,9 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
               : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`
           if (currentHostId) await browse('/')
         } catch (err) {
-          status.textContent = err instanceof Error ? err.message : String(err)
-          showToast(status.textContent, { variant: 'error' })
+          const message = ipcErrorMessage(err, 'Could not import from ~/.ssh/config.')
+          setInlineStatus(status, 'error', message)
+          showToast(message, { variant: 'error' })
         }
       })()
     })
@@ -336,7 +340,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         setAddingHost(false)
         await browse('/')
       } catch (err) {
-        status.textContent = err instanceof Error ? err.message : String(err)
+        setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not load SSH hosts.'))
       }
     }
 
@@ -386,7 +390,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         // every failed connect while browsing and trip e2e toast guards.
         currentPath = path
         renderBreadcrumbs(currentPath)
-        status.textContent = err instanceof Error ? err.message : String(err)
+        setInlineStatus(status, 'error', ipcErrorMessage(err, 'Could not reach the host.'))
       } finally {
         loading = false
         if (hosts.length > 0 && currentHostId) {

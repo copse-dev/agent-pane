@@ -155,7 +155,11 @@ export function validateDraft(
 /** A label + monospace command + copy button (used for install / sign-in lines). */
 function commandRow(label: string, command: string): HTMLElement {
   const code = el('code', { class: 'acp-cmd' }, command)
-  const copy = el('button', { type: 'button', class: 'acp-cmd-copy', title: 'Copy' }, 'Copy')
+  const copy = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary acp-cmd-copy', title: 'Copy' },
+    'Copy',
+  )
   copy.addEventListener('click', () => {
     void navigator.clipboard.writeText(command)
   })

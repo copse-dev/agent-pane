@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { unwrapIpcErrorText } from '../ipc-error-message.ts'
 
 /**
  * What to print in the terminal when a shell will not start.
@@ -20,28 +21,11 @@ import { errorMessage } from '@shared/errors.ts'
  * original.
  */
 
-/**
- * Electron wraps a main-process throw as
- * `Error invoking remote method '<channel>': <original>`, and `String(err)`
- * prefixes each layer with `Error: `. Peel both, repeatedly — the nesting is
- * two deep today and there is no reason to depend on that.
- */
-function unwrapIpcError(raw: string): string {
-  let message = raw
-  for (;;) {
-    const next = message
-      .replace(/^Error:\s*/, '')
-      .replace(/^Error invoking remote method '[^']*':\s*/, '')
-    if (next === message) return message.trim()
-    message = next
-  }
-}
-
 /** `Thread "<id>" does not belong to project "<id>"`, as main phrases it. */
 const CROSS_PROJECT = /^Thread "[^"]*" does not belong to project "[^"]*"$/
 
 export function terminalStartFailureMessage(err: unknown): string {
-  const detail = unwrapIpcError(errorMessage(err))
+  const detail = unwrapIpcErrorText(errorMessage(err))
   if (CROSS_PROJECT.test(detail)) {
     // Deliberately no ids: they name the two records that disagree, which is a
     // fact about Copse's state rather than about anything the user did. What

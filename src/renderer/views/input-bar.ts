@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
@@ -1040,8 +1041,7 @@ export function mountInputBar(
   }
 
   function checkoutErrorMessage(error: unknown): string {
-    const message = error instanceof Error ? error.message : 'Could not prepare the checkout'
-    return message.replace(/^Error invoking remote method 'agent:prepare-checkout': Error:\s*/, '')
+    return ipcErrorMessage(error, 'Could not prepare the checkout')
   }
 
   function selectCheckout(choice: ThreadWorktreeChoice): void {
