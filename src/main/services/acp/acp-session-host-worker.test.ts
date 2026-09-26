@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -70,7 +71,10 @@ export const SandboxManager = {
 export function getApplySeccompBinaryPath() { return null }
 `
 
-function spawnWorker(workerPath: string, cwd: string): ChildProcess {
+const RELAY_AGENT =
+  "process.stdout.write(`env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))"
+
+function spawnWorker(workerPath: string, cwd: string, agentScript = RELAY_AGENT): ChildProcess {
   return spawn(process.execPath, [workerPath], {
     cwd,
     env: {
@@ -79,10 +83,7 @@ function spawnWorker(workerPath: string, cwd: string): ChildProcess {
       [ACP_SESSION_HOST_REQUEST_ENV]: JSON.stringify({
         config: {
           command: process.execPath,
-          args: [
-            '-e',
-            "process.stdout.write(`env:${String(!process.env.COPSE_ACP_SESSION_HOST_REQUEST && !process.env.ELECTRON_RUN_AS_NODE && process.env.AGENT_SETTING === 'kept')}\\n`); process.stdin.on('data', chunk => process.stdout.write('agent:' + chunk.toString()))",
-          ],
+          args: ['-e', agentScript],
           env: { AGENT_SETTING: 'kept' },
           cwd,
           sandbox: { allowedDomains: ['api.example'] },
@@ -160,6 +161,27 @@ describe('ACP session host worker', () => {
       const output = waitForStdout(child, 'agent:hello')
       child.stdin?.write('hello\n')
       assert.match(await output, /agent:hello/)
+    } finally {
+      child.kill('SIGTERM')
+    }
+  })
+
+  it('forwards stdin EOF and lets the agent exit on its own before any signal', async () => {
+    const dir = makeBundleDir('eof-')
+    const stub = join(dir, 'sandbox-runtime-stub.mjs')
+    writeFileSync(stub, SANDBOX_RUNTIME_STUB)
+    // Exit 7 on EOF, 9 on SIGTERM: the host exits with the agent's code.
+    const agent =
+      "process.on('SIGTERM', () => process.exit(9)); process.stdin.resume(); process.stdin.on('end', () => setTimeout(() => process.exit(7), 100)); process.stdout.write('up\\n')"
+    const child = spawnWorker(bundleWorker(dir, stub), dir, agent)
+    try {
+      await waitForReady(child)
+      await waitForStdout(child, 'up')
+      const exited = once(child, 'exit')
+      child.stdin?.end()
+      const exit = await exited
+      const code: unknown = exit[0]
+      assert.equal(code, 7)
     } finally {
       child.kill('SIGTERM')
     }
