@@ -3,7 +3,7 @@
 // escalation-review scripts judge commands with the product's own code rather
 // than a copy of it. Host settings and environment binders are excluded.
 import { mkdtemp } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -79,6 +79,8 @@ export function analyze(guard, command, workspaceRoot, options = {}) {
     homeDir = process.env.HOME ?? '/',
     readScript = guard.readScriptForHarm,
     isCompiledProgram = guard.isCompiledProgram,
+    pathExists = existsSync,
+    trustedSshHosts = [],
   } = options
   const scope = guard.analyzeShellCommand(command, workspaceRoot)
   const autoApproval = {}
@@ -103,6 +105,8 @@ export function analyze(guard, command, workspaceRoot, options = {}) {
       canonicalizePath,
       readScript,
       isCompiledProgram,
+      pathExists,
+      trustedSshHosts,
     })
   } catch (error) {
     harm = { action: 'error', reasons: [String(error)] }

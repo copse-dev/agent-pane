@@ -666,8 +666,10 @@ describe('Guarded YOLO shell harm gate', () => {
       '  https://example.com/install.sh',
     ].join('\n')
 
-    assert.equal(action(command), 'allow')
-    assert.deepEqual(uninspectableReasons(command), [])
+    // `npx` runs the project's own `tool` binary, so nothing is fetched.
+    const pathExists = (path: string): boolean => path === '/work/project/node_modules/.bin/tool'
+    assert.equal(action(command, { pathExists }), 'allow')
+    assert.deepEqual(uninspectableReasons(command, { pathExists }), [])
   })
 })
 
@@ -716,5 +718,13 @@ describe('Guarded YOLO shell harm gate — false positives', () => {
     ]) {
       assert.equal(action(command), 'prompt', command)
     }
+  })
+})
+
+describe('Guarded YOLO shell harm gate — cd into credentials', () => {
+  it('denies a credential read reached through cd', () => {
+    assert.equal(action('cd ~/.ssh && cat id_rsa'), 'deny')
+    assert.equal(action('cd ~/.aws; cat credentials'), 'deny')
+    assert.equal(action('cd /work/other && cat notes.md'), 'allow')
   })
 })
