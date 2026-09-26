@@ -5443,6 +5443,14 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   word-break: break-word;
   overflow-wrap: anywhere;
 }
+.tool-result-note {
+  margin: var(--spacing-sm) 0 0;
+  font-family: var(--font-family);
+  color: var(--text-muted);
+}
+.tool-result-note:first-child {
+  margin-top: 0;
+}
 .tool-result-markdown {
   font-family: inherit;
   max-height: 320px;

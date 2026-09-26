@@ -75383,6 +75383,48 @@ var init_tool_error_format = __esm({
   }
 });
 
+// packages/agent/src/hooks/inject-context.ts
+var SYSTEM_REMINDER_TAG;
+var init_inject_context = __esm({
+  "packages/agent/src/hooks/inject-context.ts"() {
+    init_nullish();
+    SYSTEM_REMINDER_TAG = "system-reminder";
+  }
+});
+
+// src/renderer/views/tool-result-reminders.ts
+function splitAppendedReminders(result, lengths) {
+  const raw = { output: result, reminders: [] };
+  if (lengths === void 0 || lengths.length === 0) return raw;
+  let end = result.length;
+  const reminders = [];
+  for (let index = lengths.length - 1; index >= 0; index -= 1) {
+    const length = lengths[index];
+    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
+    const start = end - length;
+    if (start < SEPARATOR.length) return raw;
+    const block = result.slice(start, end);
+    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
+      return raw;
+    }
+    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
+    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
+    end = start - SEPARATOR.length;
+  }
+  return { output: result.slice(0, end), reminders };
+}
+var OPEN, CLOSE, SEPARATOR;
+var init_tool_result_reminders = __esm({
+  "src/renderer/views/tool-result-reminders.ts"() {
+    init_inject_context();
+    OPEN = `<${SYSTEM_REMINDER_TAG}>
+`;
+    CLOSE = `
+</${SYSTEM_REMINDER_TAG}>`;
+    SEPARATOR = "\n\n";
+  }
+});
+
 // src/renderer/controller/thread-proposals.ts
 async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
   const projectId = store2.getState().activeProjectId;
@@ -76293,26 +76335,35 @@ function createToolArgsSection(args) {
     el("pre", {}, rendered)
   );
 }
-function createToolResultSection(result, status, format, showEmptyState = false) {
+function createToolResultSection(result, status, format, showEmptyState = false, appendedReminderLengths) {
   if (!result) {
     return showEmptyState ? el("div", { class: "tool-result tool-result-empty" }, "No tool details were provided.") : el("div", { class: "tool-result" });
   }
-  const errorMessage2 = status === "error" ? mcpErrorMessage(result) : null;
+  const { output: output2, reminders } = splitAppendedReminders(result, appendedReminderLengths);
+  const notes = reminders.map((reminder) => el("p", { class: "tool-result-note" }, reminder));
+  const errorMessage2 = status === "error" ? mcpErrorMessage(output2) : null;
   if (errorMessage2) {
     const paragraphs = errorMessage2.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
     return el(
       "div",
       { class: "tool-result tool-result-error-message" },
-      ...paragraphs.map((line) => el("p", {}, line))
+      ...paragraphs.map((line) => el("p", {}, line)),
+      ...notes
     );
   }
   if (format === "markdown") {
     const wrap = el("div", { class: "tool-result tool-result-markdown message-text" });
-    wrap.innerHTML = renderMarkdown(result);
+    wrap.innerHTML = renderMarkdown(output2);
     attachCodeBlockCopyButtons(wrap);
+    wrap.append(...notes);
     return wrap;
   }
-  return el("div", { class: "tool-result" }, el("pre", {}, renderToolArgs(result)));
+  return el(
+    "div",
+    { class: "tool-result" },
+    ...output2.length > 0 || notes.length === 0 ? [el("pre", {}, renderToolArgs(output2))] : [],
+    ...notes
+  );
 }
 function createToolLocationsSection(locations) {
   if (!locations?.length) return null;
@@ -76401,7 +76452,8 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
         tc2.result,
         tc2.status,
         tc2.resultFormat,
-        argsSection === null && tc2.status !== "running"
+        argsSection === null && tc2.status !== "running",
+        tc2.appendedReminderLengths
       ),
       ...appendIfPresent(createToolLocationsSection(tc2.locations))
     );
@@ -79408,6 +79460,7 @@ var init_conversation = __esm({
     init_review_actions();
     init_tool_args_format();
     init_tool_error_format();
+    init_tool_result_reminders();
     init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
@@ -133557,6 +133610,7 @@ function startAgentController(store2, api2) {
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
+            ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           if (chunk.toolCallId && !chunk.isError) {
@@ -133671,6 +133725,7 @@ function startAgentController(store2, api2) {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
+            ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
         }
