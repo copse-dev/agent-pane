@@ -47,6 +47,7 @@ import {
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { createThreadFilter } from '../controller/thread-filter.ts'
@@ -181,6 +182,64 @@ function automationSetupBtn(
     open()
   })
   return btn
+}
+
+/** One schedule's run/setup actions, addressed the way the sidebar groups are. */
+interface AutomationMenuTarget {
+  project: Project
+  scheduleName: string
+  scheduleId: string
+}
+
+/**
+ * Fire a schedule immediately through the same IPC the editor's Run-now
+ * button uses. The outcome surfaces as a toast: this runs from a menu that
+ * has already closed, so unlike the editor there is no inline status element
+ * to write into. A coalesced run says why, as the editor's status line does.
+ */
+function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
+  void api.automations
+    .runNow(target.project.id, target.scheduleId)
+    .then((event) => {
+      showToast(
+        event.disposition === 'started'
+          ? `Started “${target.scheduleName}”.`
+          : event.coalescedReason === 'worktree-limit'
+            ? `“${target.scheduleName}” has reached its live worktree limit.`
+            : `“${target.scheduleName}” is already pending or running.`,
+      )
+    })
+    .catch((error: unknown) => {
+      showErrorToast(
+        `Could not run “${target.scheduleName}”`,
+        ipcErrorMessage(error, 'The run could not start'),
+      )
+    })
+}
+
+/**
+ * One schedule's shared right-click actions, rendered on the sidebar's
+ * schedule headings. "Run now" is the editor's Run-now button, reached
+ * without opening the dialog.
+ */
+function automationMenuEntries(
+  api: ApiClient,
+  target: AutomationMenuTarget,
+  openSetup: () => void,
+): ContextMenuEntry[] {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: 'Run now',
+      onSelect: (): void => {
+        startRunNow(api, target)
+      },
+    },
+    {
+      label: 'Automation setup…',
+      onSelect: openSetup,
+    },
+  ]
 }
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -931,6 +990,16 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           ...(scheduleId
             ? [
                 {
+                  label: 'Run now',
+                  onSelect: (): void => {
+                    startRunNow(api, {
+                      project,
+                      scheduleName: thread.automation?.scheduleName ?? thread.title,
+                      scheduleId,
+                    })
+                  },
+                },
+                {
                   label: 'Automation setup…',
                   onSelect: (): void => {
                     openAutomationDialog(store, api, { projectId: project.id, scheduleId })
@@ -1053,6 +1122,18 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         automationsSectionExpanded = !automationsSectionExpanded
         render()
       })
+      toggle.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        showContextMenu(e.clientX, e.clientY, [
+          {
+            label: 'New automation…',
+            onSelect: (): void => {
+              openAutomationDialog(store, api, { createNew: true })
+            },
+          },
+        ])
+      })
       section.append(
         el(
           'div',
@@ -1151,6 +1232,25 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               }),
             ),
           )
+          scheduleToggle.addEventListener('contextmenu', (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            showContextMenu(
+              e.clientX,
+              e.clientY,
+              automationMenuEntries(
+                api,
+                {
+                  project,
+                  scheduleName,
+                  scheduleId,
+                },
+                () => {
+                  openAutomationDialog(store, api, { projectId: project.id, scheduleId })
+                },
+              ),
+            )
+          })
           if (scheduleRevealed) {
             const runRows = el('div', { class: 'automation-schedule-runs' })
             const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns
