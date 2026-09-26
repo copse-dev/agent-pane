@@ -140,8 +140,11 @@ describe('settings → Customise / MCP / Storage', function () {
     const declaredRow = declared.$(`.mcp-declared-row[data-plugin-id="${PLUGIN_ID}"]`)
     await declaredRow.waitForExist({ timeout: 15_000 })
     const text = await declaredRow.getText()
-    assert.match(text, /^plugin_acme-mcp-declarer_declared_reviewer_[a-f0-9]{12} \(stdio\)/)
-    assert.match(text, /not running/)
+    // The row names the server as the plugin declares it, not Copse's internal
+    // runtime name, and the status follows the transport without a dangling colon.
+    const summary = await declaredRow.$('.mcp-server-summary').getText()
+    assert.match(summary, /^declared_reviewer \(stdio\)\s+not running$/)
+    assert.doesNotMatch(text, /plugin_acme|\):/)
     const origin = declaredRow.$('.mcp-origin-chip')
     await origin.waitForExist({ timeout: 15_000 })
     assert.equal(await origin.getAttribute('data-mcp-origin'), 'plugin')
