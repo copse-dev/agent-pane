@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
-import { classifyAgentError } from './agent-errors.ts'
+import { agentErrorNotice, classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import {
@@ -284,7 +284,7 @@ export async function prepareThreadExecutionContext(
     if (context.checkoutMode === 'worktree') dependencies.startWorktreeIndexing?.(context.root)
     return context
   } catch (error) {
-    host.emit(threadId, { type: 'text', text: classifyAgentError(error) })
+    host.emit(threadId, { type: 'text', text: agentErrorNotice(classifyAgentError(error)) })
     host.emit(threadId, { type: 'done' })
     return null
   }

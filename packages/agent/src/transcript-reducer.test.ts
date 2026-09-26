@@ -58,6 +58,7 @@ describe('transcript reducer', () => {
         result: 'read',
         isError: false,
         editStats: { additions: 1, deletions: 0 },
+        appendedReminderLengths: [42],
       },
       () => {
         throw new Error('results must not create messages')
@@ -67,6 +68,8 @@ describe('transcript reducer', () => {
     assert.equal(first.toolCalls[0]?.status, 'done')
     assert.equal(first.toolCalls[0].result, 'read')
     assert.deepEqual(first.toolCalls[0].editStats, { additions: 1, deletions: 0 })
+    // A subagent's card keeps the registry's appended-block lengths too.
+    assert.deepEqual(first.toolCalls[0].appendedReminderLengths, [42])
     assert.equal(first.toolCalls[1]?.status, 'error')
     assert.equal(first.toolCalls[1].result, 'interrupted')
   })
