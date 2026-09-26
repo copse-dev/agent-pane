@@ -180,6 +180,18 @@ class-name sugar (tests/docs do not count). Prefer extracting repeated **panel s
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
+Dense surfaces — pane rows (Ports), list editors (Memories, Roadmap), card headers (review
+Retry / ×), PR lifecycle actions, inline row actions (automation Edit / Run now / Delete) — add
+the one size modifier, **`.ui-btn-compact`**, to the same variant classes:
+`ui-btn ui-btn-secondary ui-btn-compact`. It shrinks the box (24px min-height,
+`--spacing-sm` inline padding, `--font-size-xs`) and keeps the kit radius and border; an
+icon-only compact button with an `aria-label` becomes a 24px square. Do not give a surface its
+own `padding: 2px 8px; font-size: 11px` button to be "smaller" — that is how `.memories-btn`,
+`.ports-btn`, `.pr-action-btn` and `.card-retry-button` each grew a private stack. A screen hook
+class (`.ports-kill-btn`) may stay for JS/tests and for placement (`margin-left: auto`), but must
+not restate background, radius or padding; `src/renderer/styles/kit-buttons.test.ts` enforces
+that for the migrated hooks.
+
 ### Chips and composer strips share one box each
 
 - Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
@@ -271,6 +283,18 @@ rendered colour, case, and corner.
   Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
   strong text); block or interactive Markdown remains literal because buttons are controls, not
   document containers.
+- The same applies to system copy that names commands, paths, or environment variables in
+  backticks (plan-usage sign-in hints, known ACP agent notes, tool descriptions in Tool
+  permissions, key-storage errors): render it with `setInlineMarkdown`
+  ([`inline-markdown.ts`](../src/renderer/markdown/inline-markdown.ts)) so `code` becomes `<code>`,
+  rather than assigning it to `textContent`. Native `title` tooltips cannot hold markup, so write
+  their text without delimiters.
+- Machine identifiers shown as labels — tool names without a curated display name, first-party
+  plugin ids — go through `humanizeIdentifier`
+  ([`humanize-identifier.ts`](../src/shared/humanize-identifier.ts)): sentence case, acronyms and
+  product names in their canonical spelling ("Launch GUI app", "GitHub PR create"), prose compounds
+  hyphenated ("Post-turn review"), and a listed instruction-file slug as the file ("AGENTS.md").
+  Extend its word lists rather than special-casing a label at one call site.
 - Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
   provider/ACP wording in a visually subordinate technical-details block so it remains copyable
   without competing with the fix.
@@ -293,6 +317,8 @@ install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action:
   Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
 - Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
   one-line PR target does not look like a `<pre>` of JSON.
+- Reasons are sentences (capitalised, one concern each) and render as a real list: the main
+  process sends them as `• ` lines and the dialog turns each run into `ul.approval-reasons`.
 
 The same rule covers the staged-diff Accept / Reject bar in the Changes pane (Accept = primary,
 Reject = secondary, `uiActions` gap).
@@ -1037,6 +1063,16 @@ checked box is a fill: light's darkened `--accent` would paint it a near-black p
 control: three local copies were all that kept the accent on, and every other checkbox in
 Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
 declaration to `base.css`.
+
+Canvas-painted surfaces follow the same rule. xterm and Monaco take their colours from a JS theme,
+not from the cascade, so hard-coded VS Code greys left a grey slab in a teal pane under Strong + the
+Copse tint (#3065). Both now build their theme from the resolved tokens (`--bg-base`, `--bg-elevated`,
+`--text-primary`, the borders, `--selection-bg` / `--selection-text`) in
+[`dom/editor-theme.ts`](../src/renderer/dom/editor-theme.ts), which re-resolves them whenever the
+theme, tint or accent changes on `<html>`. Monaco keeps its base theme's syntax and selection colours. Do not
+pass `vs` / `vs-dark` or a literal xterm palette to a new editor or terminal. Create editors with
+`COPSE_MONACO_THEME` and terminals with `xtermThemeFromTokens`. Specs: `terminal-display.e2e.ts`,
+`file-viewer-changes.e2e.ts`.
 
 ## Roadmap list rows
 
