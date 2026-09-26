@@ -23003,7 +23003,7 @@ function humanizeIdentifier(identifier) {
     const previous = merged.at(-1);
     if (previous !== void 0 && HYPHENATED_COMPOUNDS.has(`${previous}-${word}`)) {
       merged[merged.length - 1] = `${previous}-${word}`;
-    } else if (previous !== void 0 && word === "md") {
+    } else if (previous !== void 0 && word === "md" && MARKDOWN_FILE_STEMS.has(previous)) {
       merged[merged.length - 1] = `${previous.toUpperCase()}.md`;
     } else {
       merged.push(word);
@@ -23011,7 +23011,7 @@ function humanizeIdentifier(identifier) {
   }
   return merged.map((word, index) => casedWord(word, index === 0)).join(" ");
 }
-var CANONICAL_WORDS, HYPHENATED_COMPOUNDS;
+var CANONICAL_WORDS, HYPHENATED_COMPOUNDS, MARKDOWN_FILE_STEMS;
 var init_humanize_identifier = __esm({
   "src/shared/humanize-identifier.ts"() {
     CANONICAL_WORDS = /* @__PURE__ */ new Map([
@@ -23053,6 +23053,7 @@ var init_humanize_identifier = __esm({
       "read-only",
       "sign-in"
     ]);
+    MARKDOWN_FILE_STEMS = /* @__PURE__ */ new Set(["agents", "claude"]);
   }
 });
 
