@@ -319,6 +319,21 @@ export function parseWorktreePorcelain(raw: string): WorktreeRecord[] {
  */
 const reattachingRoots = new Set<string>()
 
+/**
+ * A validation can read a detached HEAD, then settle after a reattach has put
+ * the checkout back on its branch and dropped its `reattachingRoots` pin. Each
+ * successful reattach stamps its root with a new generation; a detached
+ * observation that started before that stamp is stale and must not release
+ * the reattached root.
+ */
+let reattachGeneration = 0
+const reattachedAtGeneration = new Map<string, number>()
+
+function releaseDetachedWorktreeRoot(executionRoot: string, observedAtGeneration: number): void {
+  if ((reattachedAtGeneration.get(executionRoot) ?? 0) > observedAtGeneration) return
+  releaseWorktreeRoot(executionRoot)
+}
+
 /** Drop a retired/failed worktree's internal-root authority and its index/watcher (#1400). */
 export function releaseWorktreeRoot(executionRoot: string): void {
   if (reattachingRoots.has(executionRoot)) return
@@ -1187,10 +1202,11 @@ async function validateThreadWorktreeState(
 export async function validateThreadWorktree(
   input: ValidateWorktreeInput,
 ): Promise<ValidatedThreadWorktree> {
+  const observedAt = reattachGeneration
   const validated = await validateThreadWorktreeState(input)
   const branch = validated.branch
   if (!branch) {
-    releaseWorktreeRoot(validated.root)
+    releaseDetachedWorktreeRoot(validated.root, observedAt)
     throw new ThreadWorktreeDetachedError(input.worktree.branch)
   }
   return { ...validated, branch }
@@ -1203,6 +1219,7 @@ export async function validateThreadWorktree(
 export async function validateThreadWorktreeRecovery(
   input: ValidateWorktreeInput,
 ): Promise<ValidatedThreadWorktreeRecovery> {
+  const observedAt = reattachGeneration
   const validated = await validateThreadWorktreeState(input)
   try {
     if (validated.branch) throw new Error('Thread worktree does not need Git recovery')
@@ -1211,7 +1228,7 @@ export async function validateThreadWorktreeRecovery(
     }
     return { ...validated, branch: null }
   } catch (error) {
-    releaseWorktreeRoot(validated.root)
+    releaseDetachedWorktreeRoot(validated.root, observedAt)
     throw error
   }
 }
@@ -1224,6 +1241,7 @@ export async function validateThreadWorktreeRecovery(
 export async function inspectThreadWorktreeAttachment(
   input: ValidateWorktreeInput,
 ): Promise<ThreadWorktreeAttachment> {
+  const observedAt = reattachGeneration
   const validated = await validateThreadWorktreeState(input)
   if (validated.branch) return { state: 'attached' }
   try {
@@ -1233,7 +1251,7 @@ export async function inspectThreadWorktreeAttachment(
       recovery: await activeGitRecovery(validated.gitDir),
     }
   } finally {
-    releaseWorktreeRoot(validated.root)
+    releaseDetachedWorktreeRoot(validated.root, observedAt)
   }
 }
 
@@ -1260,6 +1278,7 @@ export async function reattachThreadWorktree(
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
     const validated = await validateThreadWorktreeState(input)
     reattachingRoots.add(validated.root)
+    let failed = false
     try {
       // A concurrent validation may have released the root between this
       // validation registering it and the pin above; restore the grant.
@@ -1309,10 +1328,12 @@ export async function reattachThreadWorktree(
       await switchTo(['-C', branch])
       return { branch, keptDetachedCommits: true, backupBranch }
     } catch (error) {
+      failed = true
       reattachingRoots.delete(validated.root)
       releaseWorktreeRoot(validated.root)
       throw error
     } finally {
+      if (!failed) reattachedAtGeneration.set(validated.root, ++reattachGeneration)
       reattachingRoots.delete(validated.root)
     }
   })

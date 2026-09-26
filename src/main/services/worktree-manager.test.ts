@@ -1,6 +1,8 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { promises as fsPromises, type PathLike } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import {
   chmod,
   lstat,
@@ -15,7 +17,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
@@ -862,6 +864,46 @@ describe('worktree manager', () => {
       await assert.rejects(reattachThreadWorktree(input), /Cannot reattach thread worktree/)
       assert.equal(await readFile(join(path, 'later.txt'), 'utf8'), 'uncommitted\n')
       assert.equal((await inspectThreadWorktreeAttachment(input)).state, 'detached')
+    })
+
+    it('keeps the reattached root when an earlier detached inspection settles afterwards', async (t) => {
+      const { input, path, branch } = await detachedWorktree()
+      git(path, ['checkout', '-q', '--detach', 'HEAD'])
+      const root = await realpath(path)
+
+      // Hold the inspection at its recovery-marker probe, after it has
+      // observed the detached HEAD, until the reattach has fully finished.
+      const probing = Promise.withResolvers<undefined>()
+      const resume = Promise.withResolvers<undefined>()
+      const realLstat = fsPromises.lstat
+      let held = false
+      t.mock.method(fsPromises, 'lstat', async (target: PathLike) => {
+        if (!held && String(target).endsWith(`${sep}rebase-merge`)) {
+          held = true
+          probing.resolve(undefined)
+          await resume.promise
+        }
+        return realLstat(target)
+      })
+      syncBuiltinESMExports()
+      t.after(() => {
+        t.mock.restoreAll()
+        syncBuiltinESMExports()
+      })
+
+      const inspection = inspectThreadWorktreeAttachment(input)
+      await probing.promise
+      await reattachThreadWorktree(input)
+      assert.equal(headBranch(path), branch)
+      assert.equal(getInternalWorkspaceRootRegistration(root)?.checkoutRoot, root)
+
+      resume.resolve(undefined)
+      assert.equal((await inspection).state, 'detached')
+      assert.equal(
+        getInternalWorkspaceRootRegistration(root)?.checkoutRoot,
+        root,
+        'a stale detached inspection released the reattached root',
+      )
     })
   })
 
