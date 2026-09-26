@@ -605,7 +605,9 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         if (input === null) throw new ToolInputError('git_diff needs { path }')
         const file = host.context.files.find((entry) => entry.path === input.path)
         if (file === undefined) throw new ToolInputError(`${input.path} is not a changed file`)
-        const diff = await readFileDiff(host.context.head, host.context.mergeBase, input.path)
+        const diff = await readFileDiff(host.context.head, host.context.mergeBase, input.path, {
+          oldPath: file.oldPath,
+        })
         signal.throwIfAborted()
         const offset = input.offset ?? 0
         const nextOffset = offset + MAX_TOOL_OUTPUT_CHARS
