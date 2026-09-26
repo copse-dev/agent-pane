@@ -113,6 +113,26 @@ on them. Each slice:
     `npx serve`, an opaque compiled program) and allows 94–96% of eligible ones. Its over-tier
     approvals are high in the write modes (151 in local-write), because most commands here that
     need an outside tier are harmless.
+- **Models:** Kev-4b and Winnow-12B were served from the persistent cache. Their records are in
+  `results/2026-09-26/*/history-2026-09-26.jsonl`. Kev had 4 calls time out, which count as wrong.
+  Each blend uses the threshold chosen on dev earlier; none was tuned on this slice.
+
+  | Approver on 1,117 real commands         | Tiers correct | local-write coverage | outside-write coverage | `ask` approved |
+  | --------------------------------------- | ------------- | -------------------- | ---------------------- | -------------- |
+  | Deterministic tiers                     | –             | 573/938 (61%)        | 627/1104 (57%)         | 0              |
+  | Harm gate alone                         | –             | 900/938, 151 over    | 1048/1104, 3 over      | 0              |
+  | Kev alone                               | 1,004 (90%)   | 708/938 (75%)        | 1096/1104 (99%)        | 6              |
+  | Winnow alone                            | 1,064 (95%)   | 895/938 (95%)        | 1074/1104 (97%)        | 2              |
+  | Deterministic OR (Kev AND harm gate)    | –             | 792/938, 2 over      | 1047/1104 (95%)        | 0              |
+  | Deterministic OR (Winnow AND harm gate) | –             | 873/938, 1 over      | 1030/1104 (93%)        | 0              |
+
+  Both models caught 8 of the 10 `ask` commands. Winnow alone approved `npx serve` and
+  `screencapture`. Kev alone, at its looser outside-write threshold, also approved three `launchctl`
+  commands and an opaque compiled program. The harm gate stopped all of them, so the
+  blends made no `ask` approvals. On real traffic the Winnow blend covers 93% of eligible commands
+  in local-write mode, against 61% for the deterministic tiers, with one approval above the
+  configured tier.
+
 - **Caveat:** 10 `ask` commands are too few to bound a miss rate. Later slices will add to it.
 
 ## Deterministic gates
