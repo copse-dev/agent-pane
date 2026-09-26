@@ -549,40 +549,72 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
   // The guest sends its key over plain http to the alias, so a run is refused
   // before anything starts unless the broker will dial the alias on the host's
   // loopback — the CLI takes the URL, allowlist and remap from its caller.
+  const url = 'http://model.copse.internal:1234/v1'
+  const aliasRun = (
+    dir: string,
+    egressResolve: Record<string, string>,
+    apiKeyEnv: string,
+  ): Promise<unknown> =>
+    runThreadInContainer({
+      workspace: join(dir, 'missing-checkout'),
+      runtimesDir: join(dir, 'runtimes'),
+      prompt: 'hello',
+      model: 'm',
+      provider: {
+        kind: 'openai-compatible',
+        model: 'm',
+        apiKeySlug: 'cli',
+        url,
+        label: 'the --provider-url endpoint',
+        local: true,
+        includeUsage: true,
+        apiStyle: null,
+        extraBody: null,
+        params: {},
+      },
+      apiKeyEnv,
+      budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
+      egressAllowlist: ['model.copse.internal:1234'],
+      egressResolve,
+    })
+
   it('refuses a run whose alias the broker would dial off the loopback', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
     process.env['COPSE_TEST_ALIAS_KEY'] = 'sk-test'
     try {
-      const url = 'http://model.copse.internal:1234/v1'
-      for (const egressResolve of [{ 'model.copse.internal': '203.0.113.5' }, {}]) {
+      for (const egressResolve of [
+        { 'model.copse.internal': '203.0.113.5' },
+        { 'model.copse.internal': 'models.lan:1234' },
+        { 'model.copse.internal': 'localhost.lan' },
+        { 'model.copse.internal': '127.0.0.2' },
+        {},
+      ]) {
         await assert.rejects(
-          runThreadInContainer({
-            workspace: join(dir, 'missing-checkout'),
-            runtimesDir: join(dir, 'runtimes'),
-            prompt: 'hello',
-            model: 'm',
-            provider: {
-              kind: 'openai-compatible',
-              model: 'm',
-              apiKeySlug: 'cli',
-              url,
-              label: 'the --provider-url endpoint',
-              local: true,
-              includeUsage: true,
-              apiStyle: null,
-              extraBody: null,
-              params: {},
-            },
-            apiKeyEnv: 'COPSE_TEST_ALIAS_KEY',
-            budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
-            egressAllowlist: ['model.copse.internal:1234'],
-            egressResolve,
-          }),
+          aliasRun(dir, egressResolve, 'COPSE_TEST_ALIAS_KEY'),
           /model\.copse\.internal .*loopback/,
+          JSON.stringify(egressResolve),
         )
       }
     } finally {
       delete process.env['COPSE_TEST_ALIAS_KEY']
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('lets a run map the alias to a loopback literal or localhost', async () => {
+    // The key variable is left unset, so an admitted run stops at the next
+    // check — past the alias guard, before anything starts.
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
+    delete process.env['COPSE_TEST_ALIAS_UNSET']
+    try {
+      for (const dial of ['127.0.0.1', '::1', 'localhost', 'LOCALHOST:1234']) {
+        await assert.rejects(
+          aliasRun(dir, { 'model.copse.internal': dial }, 'COPSE_TEST_ALIAS_UNSET'),
+          /COPSE_TEST_ALIAS_UNSET is not set on the host/,
+          dial,
+        )
+      }
+    } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })

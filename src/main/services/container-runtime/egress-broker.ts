@@ -23,7 +23,7 @@
  * Refusals are logged, because they can happen: a target the guest asked for
  * and did not get is exactly what a reviewer wants to see.
  */
-import { lookup as dnsLookup } from 'node:dns'
+import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import { connect, type Socket, type TcpSocketConnectOpts } from 'node:net'
 import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
@@ -68,6 +68,36 @@ const TRANSIENT_DIAL_CODES = new Set(['EAI_AGAIN', 'ENOTFOUND', 'ECONNRESET', 'E
 const DIAL_ATTEMPTS = 3
 const DIAL_BACKOFF_MS = [250, 750]
 
+/** Addresses the host-local alias may be dialled at by literal (A16). */
+const LOOPBACK_LITERALS = new Set(['127.0.0.1', '::1'])
+
+function isLocalhost(host: string): boolean {
+  return host.toLowerCase() === 'localhost'
+}
+
+/**
+ * What `localhost` means to the broker: the host's loopback, IPv4 first, and
+ * never a resolver's answer, so `/etc/hosts` or a DNS server cannot move a
+ * dial of it (the host-local alias remapped to `localhost`, A16) off the host.
+ * Both families are offered so a server bound to either is reached.
+ */
+const LOCALHOST_ADDRESSES: readonly LookupAddress[] = [
+  { address: '127.0.0.1', family: 4 },
+  { address: '::1', family: 6 },
+]
+
+const answerLocalhost: LookupFunction = (_hostname, options, callback) => {
+  const family = options.family === 'IPv4' ? 4 : options.family === 'IPv6' ? 6 : options.family
+  const matching = LOCALHOST_ADDRESSES.filter((entry) => entry.family === family)
+  const addresses = matching.length > 0 ? matching : LOCALHOST_ADDRESSES
+  if (options.all) {
+    callback(null, [...addresses])
+    return
+  }
+  const first = addresses[0] ?? { address: '127.0.0.1', family: 4 }
+  callback(null, first.address, first.family)
+}
+
 /**
  * One resolver answer per host per run. A dependency install opens a
  * connection per package — a thousand lookups of the same name in a minute,
@@ -78,6 +108,10 @@ const DIAL_BACKOFF_MS = [250, 750]
 function cachedLookup(): LookupFunction {
   const cache = new Map<string, { address: string; family: number; at: number }>()
   return (hostname, options, callback) => {
+    if (isLocalhost(hostname)) {
+      answerLocalhost(hostname, options, callback)
+      return
+    }
     if (options.all) {
       dnsLookup(hostname, options, callback)
       return
@@ -145,8 +179,9 @@ function dialAddress(
  * counts {@link HOST_LOCAL_ALIAS} as loopback and sends its key there over
  * plain http (`docs/plans/thread-in-container.md`, A16), which holds only
  * while the broker dials the alias on the host's own loopback. So an allowlist
- * that admits the alias needs a remap of it to a loopback literal — never DNS,
- * never another address — whoever assembled the run.
+ * that admits the alias needs a remap of it to `127.0.0.1`, `::1` or
+ * `localhost` (which the broker's lookup answers with loopback itself) — never
+ * DNS, never another name or address — whoever assembled the run.
  */
 export function hostLocalAliasRefusal(
   rules: readonly EgressRule[],
@@ -157,8 +192,8 @@ export function hostLocalAliasRefusal(
   const dial = Object.hasOwn(resolve, HOST_LOCAL_ALIAS)
     ? dialAddress(resolve, HOST_LOCAL_ALIAS, 0).host
     : null
-  if (dial === '127.0.0.1' || dial === '::1') return null
-  return `${HOST_LOCAL_ALIAS} is reserved for a model server on this computer's loopback; the egress allowlist admits it (${admits.map(formatEgressRule).join(', ')}), so it must be resolved to 127.0.0.1 or ::1, not ${dial === null ? 'left to DNS' : `"${dial}"`}.`
+  if (dial !== null && (LOOPBACK_LITERALS.has(dial) || isLocalhost(dial))) return null
+  return `${HOST_LOCAL_ALIAS} is reserved for a model server on this computer's loopback; the egress allowlist admits it (${admits.map(formatEgressRule).join(', ')}), so it must be resolved to 127.0.0.1, ::1 or localhost, not ${dial === null ? 'left to DNS' : `"${dial}"`}.`
 }
 
 export class EgressBroker {

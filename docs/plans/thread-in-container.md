@@ -677,9 +677,15 @@ guarantee, and the record must say so.
   names it (the broker would otherwise resolve it through DNS). The CLI takes its
   endpoint, allowlist and `--resolve` from its caller and has no such rewrite, so the
   invariant is held where every run meets it: an allowlist that admits the alias
-  (exactly or by a wildcard) needs `egressResolve` to map it to `127.0.0.1` or `::1`,
-  or `runThreadInContainer` refuses the run before anything starts and `EgressBroker`
-  refuses to be built (`hostLocalAliasRefusal`) — never DNS, never another address.
+  (exactly or by a wildcard) needs `egressResolve` to map it to `127.0.0.1`, `::1` or
+  `localhost` (by that name, any case, optional `:port`), or `runThreadInContainer`
+  refuses the run before anything starts and `EgressBroker` refuses to be built
+  (`hostLocalAliasRefusal`) — never left to DNS, never a LAN name or another address
+  (`127.0.0.2` and the rest of `127.0.0.0/8` included). `localhost` is admitted because
+  a local model server is usually configured by that name, and it holds the invariant
+  only because the broker answers it itself: its lookup returns `127.0.0.1` then `::1`
+  for `localhost` and never asks the resolver, so neither `/etc/hosts` nor a DNS server
+  can send the alias off the host, and a server bound to either family is reached.
   Rejected: loosening the rule for `*.internal` or for any host on the egress
   allowlist, which would let a tampered or synced setting send a key in plaintext to a
   real host; and rewriting the guest's client back to `127.0.0.1`, which the guest's `NO_PROXY` sends to its own
