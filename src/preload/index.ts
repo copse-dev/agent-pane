@@ -4,6 +4,7 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { ApiClient } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -1336,6 +1337,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('apple-development:state', projectId, threadId),
     detectProject: (projectId: string) =>
       ipcRenderer.invoke('apple-development:detect-project', projectId),
+    suggestion: (projectId: string) =>
+      ipcRenderer.invoke('apple-development:suggestion', projectId),
+    answerSuggestion: (projectId: string, answer: AppleSuggestionAnswer) =>
+      ipcRenderer.invoke('apple-development:answer-suggestion', projectId, answer),
     setEnrolled: (projectId: string, threadId: string, enrolled: boolean) =>
       ipcRenderer.invoke('apple-development:set-enrolled', projectId, threadId, enrolled),
     discover: (projectId: string, threadId: string, includeMetadata: boolean) =>

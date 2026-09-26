@@ -248,6 +248,13 @@
           2
         ]
       },
+      "apple-development:answer-suggestion": {
+        "api": "appleDevelopment.answerSuggestion",
+        "args": [
+          2,
+          2
+        ]
+      },
       "apple-development:configure": {
         "api": "appleDevelopment.configure",
         "args": [
@@ -309,6 +316,13 @@
         "args": [
           3,
           3
+        ]
+      },
+      "apple-development:suggestion": {
+        "api": "appleDevelopment.suggestion",
+        "args": [
+          1,
+          1
         ]
       },
       "approval:respond": {

@@ -14,7 +14,7 @@ import {
   type AppleDriverDiscovery,
   type AppleDriverResult,
 } from './apple-driver.ts'
-import { AppleDevelopmentService } from './apple-development-service.ts'
+import { AppleDevelopmentService, type AppleInvocation } from './apple-development-service.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
 
@@ -91,6 +91,85 @@ describe('AppleDevelopmentService enrollment', () => {
       supportedHost: true,
     })
     assert.deepEqual(roots, ['/project'])
+  })
+
+  describe('open-time suggestion', () => {
+    function suggestionService(
+      options: { detected?: boolean; pluginOn?: boolean; suggest?: boolean } = {},
+    ): AppleDevelopmentService {
+      return new AppleDevelopmentService({
+        supervisor: new TaskSupervisor({ store: new EmptyTaskStore() }),
+        pluginEnabled: (): boolean => options.pluginOn ?? false,
+        suggestionsEnabled: (): boolean => options.suggest ?? true,
+        platform: 'darwin',
+        resolveProjectRoot: (): string => '/project',
+        detectProject: (): Promise<boolean> => Promise.resolve(options.detected ?? true),
+      })
+    }
+
+    it('offers the dialog for a detected project while the plugin is still off', async () => {
+      assert.deepEqual(await suggestionService().projectSuggestion('project-1'), {
+        offer: 'dialog',
+        pluginEnabled: false,
+      })
+    })
+
+    it('reports that the plugin is already on so the dialog only asks to allow', async () => {
+      assert.deepEqual(await suggestionService({ pluginOn: true }).projectSuggestion('project-1'), {
+        offer: 'dialog',
+        pluginEnabled: true,
+      })
+    })
+
+    it('offers nothing for a project without Xcode markers', async () => {
+      const suggestion = await suggestionService({ detected: false }).projectSuggestion('project-1')
+      assert.equal(suggestion.offer, 'none')
+    })
+
+    it('offers nothing when the user turned suggestions off', async () => {
+      const suggestion = await suggestionService({ suggest: false }).projectSuggestion('project-1')
+      assert.equal(suggestion.offer, 'none')
+    })
+
+    it('turns "Not now" into a reminder and "Don\'t ask" into silence', async () => {
+      const service = suggestionService()
+      await service.answerSuggestion('project-1', 'snoozed')
+      assert.equal((await service.projectSuggestion('project-1')).offer, 'reminder')
+      await service.answerSuggestion('project-1', 'dismissed')
+      assert.equal((await service.projectSuggestion('project-1')).offer, 'none')
+    })
+
+    it('stays silent for an enrolled project and after the user removes it', async () => {
+      const service = new AppleDevelopmentService({
+        supervisor: new TaskSupervisor({ store: new EmptyTaskStore() }),
+        pluginEnabled: (): boolean => true,
+        suggestionsEnabled: (): boolean => true,
+        platform: 'linux',
+        resolveProjectRoot: (): string => '/project',
+        detectProject: (): Promise<boolean> => Promise.resolve(true),
+        resolveContext: (projectId, threadId): Promise<ThreadExecutionContext> =>
+          Promise.resolve({
+            projectId,
+            threadId,
+            projectRoot: '/project',
+            root: '/project',
+            checkoutMode: 'shared',
+            branch: 'main',
+          }),
+      })
+      const invocation: AppleInvocation = {
+        owner: { projectId: 'project-1', threadId: 'thread-1' },
+        source: 'user',
+        signal: new AbortController().signal,
+      }
+      await service.answerSuggestion('project-1', 'snoozed')
+      await service.setEnrolled(invocation, true)
+      const enrolled = await suggestionService({ pluginOn: true }).projectSuggestion('project-1')
+      assert.equal(enrolled.offer, 'none')
+      await service.setEnrolled(invocation, false)
+      const removed = await suggestionService({ pluginOn: true }).projectSuggestion('project-1')
+      assert.equal(removed.offer, 'none')
+    })
   })
 
   it('records direct user authority for an unsandboxed Apple operation', async () => {
