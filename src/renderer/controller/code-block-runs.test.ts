@@ -97,3 +97,16 @@ test('a result for a thread that no longer exists is not sent', async () => {
   assert.deepEqual(runs, [])
   assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
 })
+
+test('a result is not sent when the checkout branch cannot be read', async () => {
+  const store = storeWith({ ...runThread('idle'), gitBranch: 'feature' })
+  const { api, runs } = sendApi()
+  api.git.currentBranch = async () => {
+    throw new Error('git unavailable')
+  }
+
+  assert.equal(await sendCodeBlockRunResult(store, api, result()), false)
+
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
+})

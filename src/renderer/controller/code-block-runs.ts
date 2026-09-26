@@ -36,10 +36,16 @@ export async function sendCodeBlockRunResult(
   await ensureThreadMessages(projectId, threadId)
   const thread = getThreadById(store, threadId)
   if (!thread || needsHydration(thread)) return false
-  const [currentBranch, promptState] = await Promise.all([
-    api.git.currentBranch(projectId, threadId).catch(() => null),
-    api.git.promptState(projectId, threadId).catch(() => null),
+  const [branchResult, promptResult] = await Promise.allSettled([
+    api.git.currentBranch(projectId, threadId),
+    api.git.promptState(projectId, threadId),
   ])
+  // Like the composer's Send, an unverifiable checkout is not a match: keep
+  // the result as a draft attachment rather than run the agent on a checkout
+  // that may have moved off the thread's branch.
+  if (branchResult.status === 'rejected') return false
+  const currentBranch = branchResult.value
+  const promptState = promptResult.status === 'fulfilled' ? promptResult.value : null
   const current = getThreadById(store, threadId)
   if (!current) return false
   if (

@@ -174,6 +174,32 @@ describe('attachCodeBlockCopyButtons', () => {
     assert.equal(qs(finished, '.code-block-output-text')?.textContent, 'ok')
   })
 
+  it('keeps a run on its own fence when a message repeats the command', async () => {
+    const message = document.createElement('div')
+    message.dataset['messageId'] = 'msg-repeated'
+    const body = (): HTMLElement => {
+      const wrapper = document.createElement('div')
+      wrapper.append(preWithCode('pnpm build'), preWithCode('pnpm build'))
+      return wrapper
+    }
+    const first = body()
+    message.append(first)
+    attachCodeBlockCopyButtons(first, { runCommands: true })
+    const [, second] = first.querySelectorAll<HTMLButtonElement>('.code-block-run')
+    assert.ok(second)
+    second.click()
+    setCodeBlockRunOutcome(message, second.dataset['runId'] ?? '', { exitCode: 0, output: 'built' })
+
+    const rebuilt = body()
+    attachCodeBlockCopyButtons(rebuilt, { runCommands: true })
+    message.replaceChildren(rebuilt)
+    await Promise.resolve()
+    const [idle, restored] = rebuilt.querySelectorAll<HTMLButtonElement>('.code-block-run')
+    assert.equal(idle?.dataset['runState'], 'idle')
+    assert.equal(restored?.dataset['runState'], 'succeeded')
+    assert.equal(rebuilt.querySelectorAll('.code-block-output').length, 1)
+  })
+
   it('is idempotent and skips mermaid pre blocks', () => {
     const root = document.createElement('div')
     root.innerHTML =

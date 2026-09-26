@@ -104,9 +104,21 @@ interface CodeBlockRun {
 const REMEMBERED_RUN_LIMIT = 100
 const runsByBlock = new Map<string, CodeBlockRun>()
 
+// A message can repeat the same command in several fences, so the key also
+// counts which occurrence of the command this block is: each fence keeps its
+// own run, and a rebuilt message restores each run onto the same fence.
 function runKey(pre: HTMLElement, command: string): string | null {
-  const messageId = pre.closest<HTMLElement>('[data-message-id]')?.dataset['messageId']
-  return messageId ? `${messageId}\u0000${command}` : null
+  const message = pre.closest<HTMLElement>('[data-message-id]')
+  const messageId = message?.dataset['messageId']
+  if (!message || !messageId) return null
+  let occurrence = 0
+  for (const other of message.querySelectorAll('pre')) {
+    if (other === pre) break
+    if (other.closest('[data-message-id]') !== message) continue
+    const otherCode = other.querySelector<HTMLElement>('code')
+    if (otherCode && copyButtonText(otherCode).trim() === command) occurrence++
+  }
+  return `${messageId}\u0000${String(occurrence)}\u0000${command}`
 }
 
 function rememberRun(key: string, run: CodeBlockRun): void {
