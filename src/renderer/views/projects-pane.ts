@@ -193,19 +193,21 @@ interface AutomationMenuTarget {
 
 /**
  * Fire a schedule immediately through the same IPC the editor's Run-now
- * button uses. Failures surface as a toast: this runs from a menu that has
- * already closed, so unlike the editor there is no inline status element to
- * write into.
+ * button uses. The outcome surfaces as a toast: this runs from a menu that
+ * has already closed, so unlike the editor there is no inline status element
+ * to write into. A coalesced run says why, as the editor's status line does.
  */
-function startRunNow(
-  api: ApiClient,
-  target: AutomationMenuTarget,
-  onStarted: (disposition: 'started' | 'coalesced') => void,
-): void {
+function startRunNow(api: ApiClient, target: AutomationMenuTarget): void {
   void api.automations
     .runNow(target.project.id, target.scheduleId)
     .then((event) => {
-      onStarted(event.disposition)
+      showToast(
+        event.disposition === 'started'
+          ? `Started “${target.scheduleName}”.`
+          : event.coalescedReason === 'worktree-limit'
+            ? `“${target.scheduleName}” has reached its live worktree limit.`
+            : `“${target.scheduleName}” is already pending or running.`,
+      )
     })
     .catch((error: unknown) => {
       showErrorToast(
@@ -216,23 +218,21 @@ function startRunNow(
 }
 
 /**
- * One schedule's shared right-click actions. Rendered on the sidebar's
- * schedule headings, whose context menu previously had only "Automation
- * setup…" — "Run now" is the editor's Run-now button, reached without
- * opening the dialog.
+ * One schedule's shared right-click actions, rendered on the sidebar's
+ * schedule headings. "Run now" is the editor's Run-now button, reached
+ * without opening the dialog.
  */
 function automationMenuEntries(
   api: ApiClient,
   target: AutomationMenuTarget,
   openSetup: () => void,
-  onStarted: (disposition: 'started' | 'coalesced') => void,
 ): ContextMenuEntry[] {
   return [
     { heading: target.scheduleName },
     {
       label: 'Run now',
       onSelect: (): void => {
-        startRunNow(api, target, onStarted)
+        startRunNow(api, target)
       },
     },
     {
@@ -992,21 +992,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 {
                   label: 'Run now',
                   onSelect: (): void => {
-                    startRunNow(
-                      api,
-                      {
-                        project,
-                        scheduleName: thread.automation?.scheduleName ?? thread.title,
-                        scheduleId,
-                      },
-                      (disposition) => {
-                        showToast(
-                          disposition === 'started'
-                            ? `Started “${thread.automation?.scheduleName ?? thread.title}”.`
-                            : `“${thread.automation?.scheduleName ?? thread.title}” is already pending or running.`,
-                        )
-                      },
-                    )
+                    startRunNow(api, {
+                      project,
+                      scheduleName: thread.automation?.scheduleName ?? thread.title,
+                      scheduleId,
+                    })
                   },
                 },
                 {
@@ -1257,13 +1247,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 },
                 () => {
                   openAutomationDialog(store, api, { projectId: project.id, scheduleId })
-                },
-                (disposition) => {
-                  showToast(
-                    disposition === 'started'
-                      ? `Started “${scheduleName}”.`
-                      : `“${scheduleName}” is already pending or running.`,
-                  )
                 },
               ),
             )

@@ -659,6 +659,65 @@ describe('workspace-level automations section (#2511)', () => {
     assert.match(toast.textContent, /already pending or running/)
   })
 
+  for (const surface of ['run row', 'schedule heading'] as const) {
+    it(`explains the live worktree limit when Run now on a ${surface} is blocked`, async () => {
+      const store = createStore({
+        projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+        activeProjectId: 'a',
+        expandedProjectId: 'a',
+        workspaceRoot: '/a',
+        threads: [
+          thread('docs-latest', 'Docs freshness', 'schedule-docs', 20),
+          thread('docs-previous', 'Docs freshness', 'schedule-docs', 10),
+        ],
+        activeThreadId: 'chat',
+      })
+      const api = createFakeApi()
+      api.automations.runNow = (): Promise<{
+        projectId: string
+        scheduleId: string
+        threadId: string
+        triggeredAt: number
+        disposition: 'started' | 'coalesced'
+        coalescedReason?: 'busy' | 'worktree-limit'
+      }> =>
+        Promise.resolve({
+          projectId: 'a',
+          scheduleId: 'schedule-docs',
+          threadId: 'docs-latest',
+          triggeredAt: 2,
+          disposition: 'coalesced',
+          coalescedReason: 'worktree-limit',
+        })
+      const host = document.createElement('div')
+      document.body.append(host)
+      mountProjectsPane(host, store, api)
+
+      host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+      if (surface === 'schedule heading') {
+        const scheduleHeading = host.querySelector('.automation-schedule-toggle')
+        assert.ok(scheduleHeading)
+        scheduleHeading.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+      } else {
+        host.querySelector<HTMLButtonElement>('.automation-schedule-toggle')?.click()
+        const row = host.querySelector('.chat-row.is-automation')
+        assert.ok(row)
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+      }
+      const runNow = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((item) => item.textContent === 'Run now')
+      assert.ok(runNow)
+      runNow.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      const toast = document.querySelector<HTMLElement>('.toast')
+      assert.ok(toast?.textContent)
+      assert.match(toast.textContent, /“Docs freshness” has reached its live worktree limit/)
+      assert.doesNotMatch(toast.textContent, /already pending or running/)
+    })
+  }
+
   it('surfaces a failed run-now as an error toast', async () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
