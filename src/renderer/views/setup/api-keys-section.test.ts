@@ -217,6 +217,11 @@ describe('api-keys-section', () => {
     assert.equal(state.savedKeys['anthropic'], undefined)
     assert.equal(input.value, 'sk-test')
     const status = section.root.querySelector<HTMLElement>('[data-key="anthropic"]')
-    assert.match(status?.textContent ?? '', /plaintext is disabled/i)
+    assert.ok(status)
+    assert.match(status.textContent, /^Not saved: secure storage is unavailable/)
+    assert.match(status.textContent, /plaintext secret storage is disabled/i)
+    // The environment variable renders as inline code, not backtick-delimited text.
+    assert.equal(status.querySelector('code')?.textContent, 'COPSE_ALLOW_PLAINTEXT_SECRETS=1')
+    assert.doesNotMatch(status.textContent, /`/)
   })
 })

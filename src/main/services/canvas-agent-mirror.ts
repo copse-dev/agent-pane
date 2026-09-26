@@ -23,6 +23,7 @@ interface CanvasMirrorNavigateOptions {
   newTab?: boolean | undefined
   viewId?: string | undefined
   backgroundColor?: string | undefined
+  defaultTextColor?: string | undefined
 }
 
 export interface CanvasMirrorSession {
@@ -58,6 +59,7 @@ export async function mirrorArtefactToAgent(
   artefact: CanvasArtefact,
   session: CanvasMirrorSession,
   backgroundColor?: string,
+  textColor?: string,
 ): Promise<string | null> {
   // `text/uri-list` is supplied by an MCP server and may name any external
   // origin. Navigating it here would bypass the approval that guards
@@ -75,6 +77,8 @@ export async function mirrorArtefactToAgent(
   const known = viewIdByArtefact.get(key)
   const navigation: CanvasMirrorNavigateOptions = known ? { viewId: known } : { newTab: true }
   if (backgroundColor) navigation.backgroundColor = backgroundColor
+  // Text colour only travels with the backdrop it was chosen against.
+  if (backgroundColor && textColor) navigation.defaultTextColor = textColor
 
   let viewId: string
   try {
@@ -89,6 +93,7 @@ export async function mirrorArtefactToAgent(
     try {
       const retry: CanvasMirrorNavigateOptions = { newTab: true }
       if (backgroundColor) retry.backgroundColor = backgroundColor
+      if (backgroundColor && textColor) retry.defaultTextColor = textColor
       viewId = (await session.navigate(url, retry)).viewId
     } catch {
       return null

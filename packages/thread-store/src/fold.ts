@@ -161,6 +161,8 @@ function parseToolArgsJson(raw: string): unknown {
   return JSON.parse(raw) as unknown
 }
 
+const appendedReminderLengthsSchema = z.array(z.number().int().nonnegative()).min(1)
+
 const acpContentBlockSchema: z.ZodType<AcpContentBlock> = z.union([
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({
@@ -274,6 +276,9 @@ function explodeToolCall(
     ...(content !== undefined ? { content } : {}),
     ...(tc.locations !== undefined ? { locations: tc.locations } : {}),
     ...(tc.resultFormat !== undefined ? { resultFormat: tc.resultFormat } : {}),
+    ...(tc.appendedReminderLengths !== undefined
+      ? { appendedReminderLengths: tc.appendedReminderLengths }
+      : {}),
     ...(images !== undefined ? { images } : {}),
   }
 
@@ -551,6 +556,13 @@ function foldToolCall(
     }
   })
 
+  // Tool-call entries are not field-checked by the spine parser, and this one
+  // decides which text the transcript shows as a Copse note: decode it, and
+  // drop a malformed value so the card falls back to the raw result.
+  const appendedReminderLengths = appendedReminderLengthsSchema.safeParse(
+    spine.appendedReminderLengths,
+  ).data
+
   let content: AcpToolCallContent[] | undefined
   if (spine.content !== undefined) {
     const serialized = resolve(spine.content.ref)
@@ -571,6 +583,7 @@ function foldToolCall(
     ...(content !== undefined ? { content } : {}),
     ...(spine.locations !== undefined ? { locations: spine.locations } : {}),
     ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
+    ...(appendedReminderLengths !== undefined ? { appendedReminderLengths } : {}),
     ...(images !== undefined ? { images } : {}),
   }
 
