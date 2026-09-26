@@ -19,6 +19,12 @@ export interface AskUserRequest {
 export interface AskUserResult {
   /** One answer per question, in order. Empty strings mean "left blank". */
   answers: string[]
+  /**
+   * The run stopped before the user answered. The answers are blank, but no one
+   * left them blank: the question was withdrawn, so a caller must not report it
+   * as answered.
+   */
+  cancelled?: true
 }
 
 // A pending ask never auto-resolves, so the agent loop would hang forever if the
@@ -50,12 +56,18 @@ function blankAnswers(req: AskUserRequest): AskUserResult {
   return { answers: req.questions.map(() => '') }
 }
 
+/** The run stopped while (or before) asking: blank answers, marked as withdrawn. */
+function cancelledAnswers(req: AskUserRequest): AskUserResult {
+  return { ...blankAnswers(req), cancelled: true }
+}
+
 export function requestUserAnswers(
   req: AskUserRequest,
   signal?: AbortSignal,
 ): Promise<AskUserResult> {
   const activeHandler = scopedHandler.getStore() ?? handler
-  if (!activeHandler || signal?.aborted) return Promise.resolve(blankAnswers(req))
+  if (signal?.aborted) return Promise.resolve(cancelledAnswers(req))
+  if (!activeHandler) return Promise.resolve(blankAnswers(req))
   // A question on screen is a host-side wait on a human, exactly like an
   // approval modal, so it pauses the run's sliding idle deadline the same way
   // `requestApprovalInteractive` does. Without this the 15-minute idle budget
@@ -78,7 +90,7 @@ function requestUserAnswersUnpaused(
   if (!signal) return activeHandler(req)
   return new Promise<AskUserResult>((resolve, reject) => {
     const onAbort = (): void => {
-      resolve(blankAnswers(req))
+      resolve(cancelledAnswers(req))
     }
     signal.addEventListener('abort', onAbort, { once: true })
     void activeHandler(req, signal).then(

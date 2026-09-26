@@ -32,6 +32,32 @@ describe('requestUserAnswers pluggable transport', () => {
     assert.deepEqual(seen, [req])
   })
 
+  it('marks the answers cancelled when the run already stopped', async () => {
+    let asked = false
+    setAskUserHandler(async () => {
+      asked = true
+      return { answers: ['x', 'y'] }
+    })
+    const controller = new AbortController()
+    controller.abort()
+
+    assert.deepEqual(await requestUserAnswers(req, controller.signal), {
+      answers: ['', ''],
+      cancelled: true,
+    })
+    assert.equal(asked, false)
+  })
+
+  it('marks the answers cancelled when the run stops mid-question', async () => {
+    setAskUserHandler(() => new Promise(() => {}))
+    const controller = new AbortController()
+    const pending = requestUserAnswers(req, controller.signal)
+
+    controller.abort()
+
+    assert.deepEqual(await pending, { answers: ['', ''], cancelled: true })
+  })
+
   it('reverts to blank answers once the handler is cleared', async () => {
     setAskUserHandler(async () => ({ answers: ['x', 'y'] }))
     assert.deepEqual((await requestUserAnswers(req)).answers, ['x', 'y'])

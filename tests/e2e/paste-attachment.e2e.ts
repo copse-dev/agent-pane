@@ -7,7 +7,7 @@ import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue, composerText } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { waitForAgentIdle } from './helpers.ts'
+import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-paste-attachment-project'
 const SCREENSHOT = 'paste-attachment-chip.png'
@@ -133,6 +133,11 @@ describe('Pasting text into the composer', () => {
       { containing: true },
     )
     await scenario.assertComplete()
+    // The stored prompt is the typed text plus the chip's placeholder, and the
+    // mock title model does not match it, so this is the word-slice fallback
+    // title: it must name the prompt's words without the placeholder glyph.
+    await waitForActiveThreadTitle()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Summarize this feedback:')
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 

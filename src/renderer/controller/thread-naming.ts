@@ -7,6 +7,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
 import { isInitialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { queuedMessageIds } from './message-queue.ts'
 import { backgroundProjectOf } from './background-threads.ts'
@@ -43,6 +44,15 @@ function firstWords(text: string, n = 6): string {
 }
 
 /**
+ * A prompt's own words. Inline paste and thread-reference chips are stored as
+ * U+FFFC placeholders that only the transcript knows how to draw; left in, one
+ * reaches the title as a boxed "OBJ" glyph.
+ */
+function promptWords(message: Message): string {
+  return stripPastePlaceholders(message.content)
+}
+
+/**
  * What the naming model sees: the opening message (the thread's original goal)
  * plus the most recent few, so a re-title reflects where the thread actually
  * went without losing what it set out to do.
@@ -51,7 +61,10 @@ function namingInput(userMessages: Message[]): string {
   const first = userMessages[0]
   if (!first) return ''
   const recent = userMessages.slice(1).slice(-3)
-  return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join('\n\n')
+  return [first, ...recent]
+    .map((m) => promptWords(m).slice(0, 300))
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 const branchRenameInFlight = new Set<string>()
@@ -121,7 +134,8 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
   void (async (): Promise<void> => {
     let title: string | null
     try {
-      title = await api.agent.suggestTitle(input)
+      // A prompt that was nothing but chips leaves the model nothing to name.
+      title = input ? await api.agent.suggestTitle(input) : null
     } catch {
       title = null
     } finally {
@@ -135,7 +149,7 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
     // A failed later pass keeps the title it already has rather than falling back
     // to a word slice, but still spends the pass so a dead model can't be
     // re-asked on every turn.
-    const fallback = passes === 0 ? firstWords(first.content) : current.title
+    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title
     setThreadTitle(store, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1,
     })

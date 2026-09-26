@@ -154,6 +154,46 @@ test('maybeNameThread falls back to first words when suggestTitle fails', async 
   assert.equal(requireThread(store, 't-fallback').title, 'Fix the flicker please now')
 })
 
+// Inline paste and thread-reference chips are stored as U+FFFC placeholders in
+// the message content. They are transcript markup, not words: neither the
+// naming model nor the word-slice fallback may carry one into the title, where
+// it renders as a boxed "OBJ" glyph.
+test('maybeNameThread keeps chip placeholders out of the title and the naming input', async () => {
+  const store = createStore({
+    threads: [
+      newThread('t-chips', [
+        userMessage('Summarize this feedback: ￼'),
+        userMessage('Compare ￼ with ￼ please'),
+        userMessage('￼'),
+      ]),
+    ],
+    activeThreadId: 't-chips',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => {
+    throw new Error('no small-tasks model')
+  })
+
+  maybeNameThread(store, api, 't-chips')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(requireThread(store, 't-chips').title, 'Summarize this feedback:')
+  assert.deepEqual(titleCalls, ['Summarize this feedback:\n\nCompare with please'])
+})
+
+test('maybeNameThread does not ask the model to name a prompt that was only chips', async () => {
+  const store = createStore({
+    threads: [newThread('t-only-chip', [userMessage('￼')])],
+    activeThreadId: 't-only-chip',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Unexpected')
+
+  maybeNameThread(store, api, 't-only-chip')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, [])
+  assert.equal(requireThread(store, 't-only-chip').title, 'New Thread')
+})
+
 test('maybeNameThread is a no-op when the title is already set', async () => {
   const named = newThread('t-named', [userMessage('Already named')])
   named.title = 'Custom Title'
