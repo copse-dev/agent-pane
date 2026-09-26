@@ -18,7 +18,7 @@ import {
   type Stage0Report,
   type TrustedPreparation,
 } from './stage0.ts'
-import { createTestRepo, worktreeCount, type TestRepo } from './test-repo.ts'
+import { createTestRepo, toolText, worktreeCount, type TestRepo } from './test-repo.ts'
 import { buildReviewContext } from './context.ts'
 import { createReviewerToolExecutor } from './reviewer-tools.ts'
 
@@ -167,20 +167,23 @@ describe('runStage0', () => {
       })
       const signal = new AbortController().signal
       assert.match(
-        await executor.execute('read_file', { path: 'src/math.js' }, signal, 'read'),
+        toolText(await executor.execute('read_file', { path: 'src/math.js' }, signal, 'read')),
         /a - b/,
       )
       assert.match(
-        await executor.execute('read_file', { path: 'src/math.test.js' }, signal, 'test'),
+        toolText(await executor.execute('read_file', { path: 'src/math.test.js' }, signal, 'test')),
         /author test edit/,
       )
       assert.match(
-        await executor.execute('search_code', { pattern: 'a - b' }, signal, 'search'),
+        toolText(await executor.execute('search_code', { pattern: 'a - b' }, signal, 'search')),
         /src\/math.js/,
       )
-      assert.doesNotMatch(await executor.execute('list_dir', {}, signal, 'list'), /generated.js/)
+      assert.doesNotMatch(
+        toolText(await executor.execute('list_dir', {}, signal, 'list')),
+        /generated.js/,
+      )
       assert.match(
-        await executor.execute('git_diff', { path: 'src/math.js' }, signal, 'diff'),
+        toolText(await executor.execute('git_diff', { path: 'src/math.js' }, signal, 'diff')),
         /a - b/,
       )
       const result = await executor.execute(
@@ -197,7 +200,7 @@ describe('runStage0', () => {
         signal,
         'finding',
       )
-      assert.doesNotMatch(result, /^Error/)
+      assert.doesNotMatch(toolText(result), /^Error/)
       assert.equal(executor.reported()[0]?.anchoredText, regression.trimEnd())
     } finally {
       await ground.close()

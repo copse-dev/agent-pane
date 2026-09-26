@@ -13,7 +13,8 @@ import { memberOf } from '@copse/std/member-of.ts'
 /**
  * Binding decision B4: bugs and regressions only. No `docs`, no style. A lint
  * failure is "the linter's job" (§The quality bar) — Stage 0 reports it as a
- * failed check, never as a finding.
+ * failed check, never as a finding. `visual` is a user-visible rendering
+ * regression seen in an image (B4 as amended 2026-09-26), not taste.
  */
 export const FINDING_CLASSES = [
   'build',
@@ -24,6 +25,7 @@ export const FINDING_CLASSES = [
   'concurrency',
   'resource',
   'api-compat',
+  'visual',
 ] as const
 export type FindingClass = (typeof FINDING_CLASSES)[number]
 export const isFindingClass = memberOf(FINDING_CLASSES)

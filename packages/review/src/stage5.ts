@@ -100,6 +100,12 @@ export interface ReviewReport {
     readonly truncated: readonly string[]
     readonly budgetChars: number
     readonly usedChars: number
+    /** What the reviewers read of the pull request's conversation, when it was read. */
+    readonly conversation?: {
+      readonly entries: number
+      readonly omittedEntries: number
+      readonly images: number
+    }
   } | null
   readonly reviews: readonly ReviewerSummary[]
   readonly verification: VerificationSummary | null
@@ -287,6 +293,15 @@ export function assembleReviewReport(input: AssembleReportInput): ReviewReport {
               .map((file) => file.path),
             budgetChars: input.context.budgetChars,
             usedChars: input.context.usedChars,
+            ...(input.context.conversation === undefined
+              ? {}
+              : {
+                  conversation: {
+                    entries: input.context.conversation.entries.length,
+                    omittedEntries: input.context.conversation.omittedEntries,
+                    images: input.context.conversation.images.length,
+                  },
+                }),
           },
     reviews: input.reviews.map(summarizeReview),
     verification:

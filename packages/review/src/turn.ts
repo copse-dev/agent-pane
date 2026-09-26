@@ -19,6 +19,7 @@ import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { hasLastUsage } from '@copse/llm/provider-usage.ts'
 import type { LLMMessage, LLMProvider, LLMStreamOptions, LLMTool } from '@copse/llm/wire-types.ts'
 import { errorMessage } from '@copse/std/errors.ts'
+import type { ReviewerToolOutput } from './reviewer-tools.ts'
 
 /**
  * Review turns should spend their budget on evidence and tools, not narrated
@@ -67,7 +68,12 @@ export interface TurnOptions {
   readonly systemPrompt: string
   readonly userPrompt: string
   readonly tools: readonly LLMTool[]
-  execute(name: string, args: unknown, signal: AbortSignal, toolCallId: string): Promise<string>
+  execute(
+    name: string,
+    args: unknown,
+    signal: AbortSignal,
+    toolCallId: string,
+  ): Promise<ReviewerToolOutput>
   readonly threadId: string
   readonly turnId: string
   readonly maxSteps: number

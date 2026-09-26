@@ -99,6 +99,38 @@ export function gitInWorktree(
   ])
 }
 
+/**
+ * A committed file's bytes, read from the object database rather than a
+ * checkout, which executed code may have rewritten. `cat-file blob` applies no
+ * filter driver. `null` when the path does not exist at that commit or the
+ * blob is larger than `maxBytes`.
+ */
+export async function readCommittedBlob(
+  worktree: PinnedWorktree,
+  commit: string,
+  path: string,
+  maxBytes: number,
+): Promise<Buffer | null> {
+  const spec = `${commit}:${path}`
+  const size = await runGit(worktree.gitDir, [
+    `--git-dir=${worktree.gitDir}`,
+    'cat-file',
+    '-s',
+    spec,
+  ])
+  if (size.code !== 0 || Number(size.stdout.trim()) > maxBytes) return null
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      [...DISABLE_GIT_HOOKS, `--git-dir=${worktree.gitDir}`, 'cat-file', 'blob', spec],
+      { cwd: worktree.gitDir, encoding: 'buffer', maxBuffer: maxBytes + 1 },
+    )
+    return stdout
+  } catch {
+    return null
+  }
+}
+
 export class CheckoutError extends Error {
   constructor(action: string, result: GitResult) {
     const detail = (result.stderr || result.stdout).trim()
