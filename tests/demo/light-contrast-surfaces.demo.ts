@@ -114,7 +114,7 @@ describe('browser-hosted light-theme contrast', () => {
       const badge = document.querySelector<HTMLElement>('.titlebar-btn-badge')
       if (!badge) return null
       const memoryAction = document.createElement('button')
-      memoryAction.className = 'memories-btn memories-btn-primary'
+      memoryAction.className = 'ui-btn ui-btn-primary ui-btn-compact'
       memoryAction.textContent = 'Save'
       document.body.append(memoryAction)
       const controls = [badge, memoryAction].map((control) => {

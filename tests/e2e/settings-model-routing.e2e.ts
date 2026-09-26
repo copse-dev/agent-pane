@@ -158,7 +158,7 @@ describe('settings model routing placement', function () {
         generalHasRouting: !!routingHost?.querySelector('fieldset'),
         modelsLegend: modelSection?.querySelector('legend')?.textContent?.trim() ?? '',
         modelControlNames: [
-          ...(modelSection?.querySelectorAll<HTMLSelectElement>('select') ?? []),
+          ...(modelSection?.querySelectorAll<HTMLSelectElement>('select[name]') ?? []),
         ].map((select) => select.name),
         standaloneModelLegends: [...(generalSection?.querySelectorAll('legend') ?? [])]
           .map((legend) => legend.textContent?.trim())
