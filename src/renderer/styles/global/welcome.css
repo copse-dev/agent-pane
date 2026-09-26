@@ -29,7 +29,7 @@
   text-align: center;
 }
 .welcome-heading {
-  font-size: 24px;
+  font-size: calc(24px * var(--ui-scale));
   /* Display face (brand.css); Averia ships only 400. */
   font-weight: 400;
 }

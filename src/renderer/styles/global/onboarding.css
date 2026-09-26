@@ -233,7 +233,7 @@
   line-height: var(--line-height-base);
 }
 .preferred-model-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .preferred-model-status.ok {
@@ -248,6 +248,6 @@
   font-size: var(--font-size-sm);
 }
 .download-progress {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
