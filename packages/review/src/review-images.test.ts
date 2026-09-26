@@ -49,7 +49,7 @@ function fakeFetch(replies: Record<string, Reply>): {
               ? String(reply.length ?? bytes.byteLength)
               : null,
       },
-      arrayBuffer: () => Promise.resolve(bytes.slice().buffer),
+      body: new Blob([bytes.slice()]).stream(),
     })
   }
   return { fetch, calls }
@@ -151,5 +151,29 @@ describe('createRemoteImageFetcher', () => {
     const url = 'https://raw.githubusercontent.com/other/app/main/huge.png'
     const { fetch } = fakeFetch({ [url]: { status: 200, length: MAX_IMAGE_BYTES + 1 } })
     await assert.rejects(createRemoteImageFetcher(REF, { fetch })(url, signal), /larger than/)
+  })
+
+  it('stops reading a body with no Content-Length once it passes the cap', async () => {
+    const url = 'https://raw.githubusercontent.com/other/app/main/endless.png'
+    const chunk = new Uint8Array(1024 * 1024)
+    let pulled = 0
+    let cancelled = false
+    const endless = new ReadableStream<Uint8Array>(
+      {
+        pull: (controller) => {
+          pulled += chunk.byteLength
+          controller.enqueue(chunk)
+        },
+        cancel: () => {
+          cancelled = true
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const fetch: BinaryFetchLike = () =>
+      Promise.resolve({ status: 200, headers: { get: () => null }, body: endless })
+    await assert.rejects(createRemoteImageFetcher(REF, { fetch })(url, signal), /larger than/)
+    assert.ok(cancelled, 'the stream is cancelled at the cap')
+    assert.ok(pulled <= MAX_IMAGE_BYTES + chunk.byteLength, `read ${String(pulled)} bytes`)
   })
 })

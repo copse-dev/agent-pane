@@ -1105,6 +1105,12 @@ describe('Copse Reviewer workflow invariants', () => {
         postingStep,
         /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ steps\.review-app-token\.outputs\.token \}\}/,
       )
+      // Reads driven by the pull request's text use the read-only workflow
+      // token; the App's write token is for the post alone.
+      assert.match(
+        postingStep,
+        /^ {10}COPSE_REVIEW_READ_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}$/m,
+      )
       assert.doesNotMatch(
         postingStep,
         /^\s+GITHUB_TOKEN:/m,

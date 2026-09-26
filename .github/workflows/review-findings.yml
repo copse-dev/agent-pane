@@ -269,6 +269,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.COPSE_REVIEW_OPENROUTER_API_KEY }}
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           COPSE_REVIEW_FORGE_TOKEN: ${{ steps.review-app-token.outputs.token }}
+          # --read-pr reads with the job's read-only workflow token, so the App's
+          # write token is sent only with the review post, never with the
+          # conversation and image reads that the pull request's text drives.
+          COPSE_REVIEW_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
           HEAD_SHA: ${{ steps.pr.outputs.head }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}

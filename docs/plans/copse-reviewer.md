@@ -1427,8 +1427,11 @@ nothing specific to one repository or one bot.
   token goes only to the forge's API: a same-repository GitHub raw or blob link at a commit
   is read through the contents endpoint, which also serves a private repository; everything
   else is fetched without credentials. On Forgejo the token accompanies same-origin
-  requests only. The conversation text is wrapped as external content, and the prompt says
-  a claim made there is not evidence.
+  requests only. Reading uses `COPSE_REVIEW_READ_TOKEN` when it is set, else the forge
+  token; CI passes the job's read-only `GITHUB_TOKEN` there, so the App's write token is
+  sent only with the review post. A body is read as a stream and cancelled once it passes
+  5 MB, whatever its `Content-Length` says. The conversation text is wrapped as external
+  content, and the prompt says a claim made there is not evidence.
 - **The `visual` lens** looks only at what users see: changed image files compared base to
   head, and conversation images. It anchors a regression at the style, markup or
   component lines that cause it, or, failing that, at the test or story line that captures

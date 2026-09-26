@@ -861,7 +861,7 @@ describe('copse-review CLI', () => {
           return Promise.resolve({
             status: 200,
             headers: { get: () => null },
-            arrayBuffer: () => Promise.resolve(png.slice().buffer),
+            body: new Blob([png.slice()]).stream(),
           })
         },
       },
@@ -913,6 +913,17 @@ describe('copse-review CLI', () => {
       number: 7,
     })
     assert.equal(resolvePullRequestRef(flags, { GITHUB_TOKEN: 'ghs_x' })?.token, 'ghs_x')
+    // A read-only token, when given, is used for reading instead of the posting token.
+    const both = { COPSE_REVIEW_READ_TOKEN: 'ghs_read', COPSE_REVIEW_FORGE_TOKEN: 'ghs_write' }
+    assert.equal(resolvePullRequestRef(flags, both)?.token, 'ghs_read')
+    assert.equal(
+      resolveForgeTarget({ ...flags, 'post-review': 'github' }, both)?.token,
+      'ghs_write',
+    )
+    assert.equal(
+      resolvePullRequestRef(flags, { COPSE_REVIEW_FORGE_TOKEN: 'ghs_write' })?.token,
+      'ghs_write',
+    )
     assert.equal(resolvePullRequestRef({ repo: 'acme/app', pr: '7' }, {}), null)
     assert.throws(
       () => resolvePullRequestRef({ ...flags, 'read-pr': 'gitlab' }, {}),

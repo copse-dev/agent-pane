@@ -282,8 +282,9 @@ reviewer. It says plain “No findings” only when those structured attestation
 material unverified; a bounded read-only review is never presented as broader assurance than it was.
 The GitHub dogfood jobs mint a repository-scoped token for the existing Copse release/deploy
 App with only `pull-requests: write` and pass it as `COPSE_REVIEW_FORGE_TOKEN`; their
-`GITHUB_TOKEN` remains read-only. For other callers the token is
-`COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
+`GITHUB_TOKEN` remains read-only and is passed as `COPSE_REVIEW_READ_TOKEN`, which
+`--read-pr` prefers, so the write token is sent only with the post. For other callers the
+token is `COPSE_REVIEW_FORGE_TOKEN`, else `GITHUB_TOKEN`; the model key `COPSE_REVIEW_API_KEY`.
 Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`) take precedence over that shared model key when set.
 

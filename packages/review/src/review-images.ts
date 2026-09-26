@@ -84,7 +84,8 @@ export type BinaryFetchLike = (
 ) => Promise<{
   status: number
   headers: { get(name: string): string | null }
-  arrayBuffer(): Promise<ArrayBuffer>
+  /** Read as a stream, so an oversized body is cancelled at the cap, never buffered whole. */
+  body: ReadableStream<Uint8Array> | null
 }>
 
 export interface RemoteImageOptions {
@@ -145,16 +146,45 @@ export function sameRepositoryContentsPath(ref: PullRequestRef, url: URL): strin
   return `${base}/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/contents/${encoded}?ref=${commit}`
 }
 
+/** Drop a response body the caller will not read, so its connection is released. */
+async function discard(response: Awaited<ReturnType<BinaryFetchLike>>): Promise<void> {
+  await response.body?.cancel().catch(() => undefined)
+}
+
+/**
+ * The body, read chunk by chunk and cancelled as soon as it passes
+ * `MAX_IMAGE_BYTES`. A missing or understated Content-Length therefore costs
+ * at most one chunk past the cap, not the whole body.
+ */
 async function readCapped(
   response: Awaited<ReturnType<BinaryFetchLike>>,
   url: string,
 ): Promise<Uint8Array> {
+  const tooLarge = (): Error => new Error(`${url} is larger than ${String(MAX_IMAGE_BYTES)} bytes`)
   const declared = Number(response.headers.get('content-length') ?? '0')
-  if (declared > MAX_IMAGE_BYTES)
-    throw new Error(`${url} is larger than ${String(MAX_IMAGE_BYTES)} bytes`)
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > MAX_IMAGE_BYTES) {
-    throw new Error(`${url} is larger than ${String(MAX_IMAGE_BYTES)} bytes`)
+  if (declared > MAX_IMAGE_BYTES) {
+    await discard(response)
+    throw tooLarge()
+  }
+  if (response.body === null) return new Uint8Array(0)
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_IMAGE_BYTES) {
+      await reader.cancel().catch(() => undefined)
+      throw tooLarge()
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
   }
   return bytes
 }
@@ -182,6 +212,7 @@ export function createRemoteImageFetcher(
       })
       if (response.status === 200) return readCapped(response, url)
       // A 404 at a commit this token cannot see falls back to the public URL.
+      await discard(response)
     }
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       if (current.protocol !== 'https:' || !hostAllowed(ref, current.hostname, extra)) {
@@ -204,12 +235,14 @@ export function createRemoteImageFetcher(
         signal,
       })
       if (response.status >= 300 && response.status < 400) {
+        await discard(response)
         const location = response.headers.get('location')
         if (location === null) throw new Error(`${current.href} redirected without a location`)
         current = new URL(location, current)
         continue
       }
       if (response.status !== 200) {
+        await discard(response)
         throw new Error(`${current.href} returned ${String(response.status)}`)
       }
       return readCapped(response, url)
