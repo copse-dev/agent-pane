@@ -45,8 +45,11 @@ describe('askUserTool', () => {
     assert.equal(result, 'The user answered: (no answer)')
   })
 
+  // Stopping the run withdraws the question; it must not be reported as a
+  // question the user answered by leaving it blank. The loop records a thrown
+  // tool as an error, so the transcript card does not show a success check.
   it(
-    'returns a blank answer when the run stops while waiting for the user',
+    'fails as cancelled, not answered, when the run stops while waiting for the user',
     { timeout: 500 },
     async () => {
       setAskUserHandler(() => new Promise(() => {}))
@@ -58,7 +61,20 @@ describe('askUserTool', () => {
 
       controller.abort()
 
-      assert.equal(await pending, 'The user answered: (no answer)')
+      await assert.rejects(async () => await pending, /stopped before the user answered/)
     },
   )
+
+  it('keeps an answer that arrived before the run stopped', async () => {
+    const controller = new AbortController()
+    setAskUserHandler(async () => ({ answers: ['Postgres'] }))
+
+    const result = await askUserTool.execute(
+      { questions: [{ question: 'Which DB?' }] },
+      controller.signal,
+    )
+    controller.abort()
+
+    assert.equal(result, 'The user answered: Postgres')
+  })
 })

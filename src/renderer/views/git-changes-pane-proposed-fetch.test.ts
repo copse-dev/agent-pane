@@ -138,7 +138,6 @@ function makeMonacoStub(
         return self
       },
       createModel: (value: string): StubModel => createModel(value),
-      setTheme(): void {},
     },
     KeyCode: { KeyL: 42 },
   }
