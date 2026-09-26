@@ -453,6 +453,43 @@ Thread deletion becomes an ordered main-process operation:
 Do not let renderer autosave delete the thread directory before cleanup completes.
 Cleanup should be idempotent so a crash between steps is recoverable.
 
+**What ships today** (`src/main/services/thread-deletion.ts`): steps 3, 4, and 7, plus the
+safe half of steps 5 and 6. After the run, ACP session, terminals, and background processes
+are stopped and before the store is deleted, a thread with a live (not retired) worktree is
+passed to `retireDeletedThreadWorktree` in the manager. It applies `retireThreadWorktree`'s
+predicate unchanged, which is also the predicate `pruneSafeOrphans` uses. The worktree is
+removed only when it has no uncommitted, untracked, or ignored content and its branch is
+already contained by its recorded `baseBranch`. The call is serialized on the manager's
+per-repository key. After a removal, the branch goes to `git branch -d`, as the Settings
+removal does, which also drops its `branch.<name>.copse-worktree-recovery` metadata. If Git
+refuses the delete, the branch and its metadata stay. A dirty or unmerged worktree is not
+removed; the thread is still deleted, and the worktree appears as an orphan in Settings →
+Storage → Worktrees. A kept worktree also loses its internal-root registration and indexing,
+which is the same state it would be in after a restart. Threads on the shared project
+checkout skip this step. Retired or parked worktrees are already off disk, so the step also
+skips them. When autosave prunes a blank thread, it deletes the thread through
+`threads:delete`, so this same step runs for that thread too.
+
+The focused tests are `thread-deletion.test.ts` and `worktree-manager.test.ts`. The Electron
+spec `tests/e2e/thread-delete-worktree.e2e.ts` deletes a clean thread and a dirty thread from
+the sidebar, then checks the result on disk and in Settings → Storage → Worktrees.
+
+The worktree step never fails deletion; errors are logged and deletion continues. Its only
+fallback is keeping the worktree, which is what deletion always did before and which the
+Settings surface already handles. If the step aborted deletion instead, a thread whose
+worktree is already missing, whose project has moved, or whose Git is unavailable could never
+be deleted, and retrying would not fix it. The step also cannot lose work, because the
+manager removes nothing it has not proved clean and merged.
+
+**Still to do:**
+
+- steps 1–2: before deleting a thread whose worktree is dirty or unmerged, show an itemized
+  confirmation and let the user discard or keep the worktree;
+- parking a PR-backed worktree at deletion (today only the post-turn path parks);
+- package-manager directories such as `node_modules` count as ignored content, so a worktree
+  with installed dependencies is kept rather than removed;
+- startup reconciliation that calls `pruneSafeOrphans`.
+
 At startup, compare git's registered worktrees, thread metadata, and on-disk paths.
 Automatically prune only provably clean, merged, ownerless entries. Surface every other
 orphan with retain/reconnect/remove actions. Retention count/age may limit suggestions,
