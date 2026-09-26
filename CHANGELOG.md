@@ -8,6 +8,12 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- The update prompt now lists what changed in every release since the one you
+  are running, newest first, instead of only naming the new version. Skipping a
+  few weekly betas no longer means missing their notes; an "All release notes"
+  link opens the full history. Stable installations list stable releases only.
+  If the release notes cannot be fetched, the prompt still offers the update.
+
 - Tool calls that miss a numeric bound no longer fail. A model that asks
   `find_files` for `max_results: 2000` against a schema capped at 200 — a
   repeated GPT-family failure — gets the call executed at the cap and a
@@ -729,7 +735,9 @@ released — rather than copying every published entry.
    supported OS, architectures, and update channel added
    ([`scripts/release-notes.mts`](scripts/release-notes.mts)). Before announcing
    the release, add known issues, data migrations, and recovery implications to
-   it. Copse supports forward fixes only; do not recommend a downgrade.
+   it. Copse supports forward fixes only; do not recommend a downgrade. The
+   in-app update prompt shows each skipped version's notes from below the
+   body's `<!-- copse:changelog -->` marker, so keep that line when editing.
 4. Link issues or pull requests that provide important detail without exposing
    confidential security-report information.
 

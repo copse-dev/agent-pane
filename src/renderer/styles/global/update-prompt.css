@@ -1,6 +1,9 @@
 #update-prompt-dialog {
   max-width: 480px;
 }
+#update-prompt-dialog.has-changelog {
+  max-width: 560px;
+}
 .update-prompt-message {
   margin: 0 0 var(--spacing-sm);
   font-size: var(--font-size-md);
@@ -9,6 +12,43 @@
   margin: 0 0 var(--spacing-lg);
   color: var(--text-secondary);
   line-height: var(--line-height-base);
+}
+/* Every missed release's notes, newest first; scrolls rather than growing
+   the dialog past the window. */
+.update-prompt-changelog {
+  margin: 0 0 var(--spacing-lg);
+}
+.update-prompt-changelog-title {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.update-prompt-changelog-list {
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+.update-prompt-release + .update-prompt-release {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.update-prompt-version {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+.update-prompt-notes {
+  font-size: var(--font-size-sm);
+}
+.update-prompt-notes :is(h1, h2, h3, h4) {
+  font-size: var(--font-size-sm);
+}
+.update-prompt-all-notes {
+  display: inline-block;
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-sm);
 }
 /* Button look lives on `.ui-btn*` (ui.css); keep legacy hooks for tests. */
 .update-prompt-buttons {
