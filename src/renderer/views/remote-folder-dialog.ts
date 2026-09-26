@@ -118,10 +118,18 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     { type: 'button', class: 'ui-btn ui-btn-ghost remote-folder-import-config' },
     'Import from ~/.ssh/config',
   )
+  // The form's own lead-in, above its first field. With no hosts saved yet it
+  // also says that this is the next step, rather than leaving that to the status
+  // line under the form it refers to.
+  const addHostHint = el(
+    'p',
+    { class: 'field-hint remote-folder-add-host-hint' },
+    'Add an SSH host to browse and open a remote folder.',
+  )
   const addHostForm = el(
     'div',
     { class: 'remote-folder-add-host-form ssh-host-form', hidden: true },
-    el('p', { class: 'field-hint' }, 'Add an SSH host to browse and open a remote folder.'),
+    addHostHint,
     el('label', {}, 'Id ', idInput),
     el('label', {}, 'Label ', labelInput),
     el('label', {}, 'Host ', hostInput),
@@ -182,6 +190,10 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       portInput.value = ''
       identityInput.value = ''
       idInput.disabled = false
+      addHostHint.textContent =
+        hosts.length === 0
+          ? 'No SSH hosts yet. Add one to browse and open a remote folder.'
+          : 'Add an SSH host to browse and open a remote folder.'
       status.textContent = ''
       labelInput.focus()
     }
@@ -193,7 +205,9 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       hostSelect.append(el('option', { value: host.id }, `${host.label} (${host.host})`))
     }
     if (hosts.length === 0) {
-      hostSelect.append(el('option', { value: '', disabled: true }, 'No hosts yet'))
+      // Selected as well as disabled: a select whose only option is disabled
+      // selects nothing and paints an empty box.
+      hostSelect.append(el('option', { value: '', disabled: true, selected: true }, 'No hosts yet'))
       hostSelect.disabled = true
       currentHostId = ''
       return
@@ -330,7 +344,6 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
           openBtn.disabled = true
           upBtn.disabled = true
           setAddingHost(true)
-          status.textContent = 'Add a host below to continue.'
           return
         }
         setAddingHost(false)

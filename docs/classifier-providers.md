@@ -48,6 +48,36 @@ dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cl
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
 environment variable supplied by the caller.
 
+## Self-hosted systemone servers
+
+Several open classifiers serve TypeSafe's `POST /v1/systemone` format, so each is one profile
+with `protocol: "systemone"` and a `baseUrl` ending in `/v1`. Start the server, then run an eval
+with its example profile. Model names and ports below are the projects' documented defaults
+(checked 2026-09-25); adjust the profile if you start a server differently.
+
+| Classifier    | Start the server                                                                                                                                                               | Example profile                                          | Notes                                                                                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kev           | `uv sync --extra serve`, then `uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009`                                                                  | [`kev.json`](../benchmarks/classifiers/kev.json)         | Pass `--port 8009`; the code defaults to 8008. Binds 127.0.0.1. Verified 2026-09-25 on MLX (M1 Max): batches concurrent requests.                                                                                             |
+| Winnow-12B    | `python3 scripts/serve.py` in EldanRing/winnow-inference                                                                                                                       | [`winnow.json`](../benchmarks/classifiers/winnow.json)   | Port 8091; 2–64 options. llama.cpp with Metal or CUDA.                                                                                                                                                                        |
+| reflex 4B     | `uv sync --no-sources`, then `uv run --no-sync reflex-serve --stable --device mps --dtype float16 --port 8008` on a Mac                                                        | [`reflex.json`](../benchmarks/classifiers/reflex.json)   | Up to 26 options. Use `main`: the `stable` tag's code has no MPS path, and `--stable` on `main` reads the same configuration. Verified 2026-09-25.                                                                            |
+| decider-4b    | `DECIDER_MODEL=Mapika/decider-4b DECIDER_DEVICE=mps uvicorn decider.serve:app --host 127.0.0.1 --port 8000` after `pip install "decider-ai[serve,metal]" "transformers>=5.17"` | [`decider.json`](../benchmarks/classifiers/decider.json) | Verified 2026-09-25 (tag `v2`, M1 Max, MPS float16): warm calls 0.7–1.2 s, every field the hosted API sends. `scripts/serve.sh` binds `0.0.0.0` with no authentication; bind `127.0.0.1` as shown.                            |
+| metask-jev-4b | `python serve.py --port 8000 --model wayfind/metask-jev-4b-policy-mix` with `inference/` on `PYTHONPATH`                                                                       | [`metask.json`](../benchmarks/classifiers/metask.json)   | Omits `model` and `choice` (derived). `serve.py` hardcodes `0.0.0.0` with no authentication; change `app.run` to `127.0.0.1`. Send one request at a time on MPS: concurrent requests crashed the server. Verified 2026-09-25. |
+
+JevK5 and Jobe also serve `/v1/systemone`, but their servers are CUDA-only. Hopper answers one
+question per request and its weights are for non-commercial use. djev serves `/v1/request` rather
+than `/v1/systemone` and needs a B200-class GPU. None of these has a preset.
+
+Self-hosted servers often omit fields the hosted API always sends. The adapter derives them rather
+than rejecting the answer, and lists each one in the result's `metadata.derivedFields`:
+
+- a missing top-level `model` is reported as the requested model;
+- a missing `choice` is the likeliest option, the first offered on a tie (the answer also carries
+  `derived: true`);
+- a missing `score` is the distribution's expected level, and a missing `legend` is skipped.
+
+Fields that are present are still validated in full, and the distribution must still cover exactly
+the offered options.
+
 ## Run an eval
 
 Use Node 24+ and the repository's installed pnpm dependencies. Fixtures are a JSON array or JSONL
