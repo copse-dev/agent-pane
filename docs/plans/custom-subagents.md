@@ -380,9 +380,10 @@ registry now uses the same code, and its existing tests held green through the m
 real boundary rather than through a test-only escape hatch.
 
 **P2 — Explicit invocation (the feature). Landed.** Generalise the slash picker and
-`resolveSkillInvocation` to invocables; `invokedAgent` through the run payload; the `task`
-tool (registered once, withheld in `parentTools` except on invoking turns — see
-decision 2); `custom-agent-runner.ts`
+`resolveSkillInvocation` to invocables; `invokedAgent` through the run payload; the invoked
+agent run deterministically before the parent's first LLM call, behind a synthesized `task`
+card (decision 2's fallback — the model-callable `task` tool is unbuilt and belongs to P4);
+`custom-agent-runner.ts`
 (ALS-scoped context, like `explore-subagent-runner.ts`, so fanned-out calls do not cross
 wires); tool translation + filtering; model resolution; session kind + card. Hook parity
 comes free — `runSubagent` already fires `subagentStart` / `subagentStop` with the
@@ -402,6 +403,7 @@ allow-list entry (`readonly-tools.ts`), and a forbidden-tool entry
 (`CUSTOM_AGENT_FORBIDDEN_TOOLS`). The registry, `parentTools` withholding, and
 ALS-validation design in decision 2 option (1) is therefore unbuilt and moves to P4,
 along with the `task`-registry traps below.
+
 Read-only mode **allows** `task`: the read-only scope is ALS-based and covers everything
 the run awaits, so a subagent's own calls are gated by the same allow-list — withholding
 the entry point would only block a read-only reviewer agent for no safety gain, unlike
