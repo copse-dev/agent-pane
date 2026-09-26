@@ -259,6 +259,11 @@ Chrome band tokens (not spacing, but reach for these before inventing heights):
   introducing a new magic number. This mirrors what `onboarding.css` already does.
 - Colors: `--bg-base` / `--bg-elevated` / `--bg-hover`, `--text-primary` / `--text-secondary` /
   `--text-muted`, `--border`, `--accent`, and the `--error` / `--success` / `--warning` status hues.
+  There is no `--bg-primary`, `--bg-secondary`, `--bg`, `--radius-md`, or `--transition-*`. A
+  `var()` naming a token that does not exist computes to the initial value — a transparent fill,
+  square corners — without any warning, so
+  [`custom-properties.test.ts`](../src/renderer/styles/custom-properties.test.ts) fails on any
+  fallback-less `var(--x)` whose property no stylesheet declares and no renderer `setProperty` sets.
 - Per user preference: before adding any constant, check whether one already exists to import/use.
 - Column widths in markdown tables are magic numbers too — see **Markdown tables in chat** below.
 

@@ -12,7 +12,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
 }
 
 .apple-development-heading,
@@ -113,7 +113,7 @@
   min-width: 0;
   padding: 6px 8px;
   border-radius: var(--radius);
-  background: var(--bg-primary);
+  background: var(--bg-base);
   font-size: 11px;
 }
 
@@ -168,7 +168,7 @@
   gap: 3px;
   padding: 6px 8px;
   border-radius: var(--radius);
-  background: var(--bg-primary);
+  background: var(--bg-base);
   font-size: 12px;
 }
 

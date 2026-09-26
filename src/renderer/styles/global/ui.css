@@ -12,7 +12,7 @@
   line-height: var(--line-height-base);
   cursor: pointer;
   color: var(--text-primary);
-  background: var(--bg-secondary, var(--bg-elevated));
+  background: var(--bg-elevated);
 }
 
 .ui-btn:hover:not(:disabled) {
