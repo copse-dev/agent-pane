@@ -138,6 +138,14 @@ class PortableEnginesTest(unittest.TestCase):
         self.assertEqual(result["smallTasksModel"], "user:small")
         self.assertNotIn("advisorModel", result)
 
+    def test_unconfigured_profile_fills_selections_left_as_empty_strings(self):
+        engines.atomic_json(self.settings, {"model": "", "reviewModel": "", "roleModels": {}})
+        engines.configure_settings(self.root, self.models)
+        result = json.loads(self.settings.read_text())
+        first = "portable-gguf:" + self.models[0]["id"]
+        for key in engines.ROUTED_KEYS:
+            self.assertEqual(result[key], first)
+
     def test_existing_role_assignments_are_never_replaced(self):
         engines.atomic_json(self.settings, {"roleModels": {"advisor": "user:advisor"}})
         engines.configure_settings(self.root, self.models)

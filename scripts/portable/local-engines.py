@@ -199,8 +199,10 @@ def configure_settings(root, engines):
     if not settings.get("model"):
         first = engines[0]
         selection = "portable-{}:{}".format(first["kind"], first["id"])
+        # A key the Settings UI cleared back to "" is as unset as a missing one.
         for key in ROUTED_KEYS:
-            settings.setdefault(key, selection)
+            if not str(settings.get(key) or "").strip():
+                settings[key] = selection
         role_models = settings.get("roleModels", {})
         unassigned = [role for role, legacy in ROUTED_ROLES.items()
                       if not str(role_models.get(role) or "").strip()
