@@ -177,7 +177,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -248,7 +248,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -331,11 +331,12 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   & .stream-pending-h6 {
     font-size: 0.67em;
   }
-  & .stream-complete > .stream-pending-block:last-child,
-  & .stream-complete > h2 + .stream-pending-block,
-  & .stream-complete > h3 + .stream-pending-block,
-  & .stream-complete > h4 + .stream-pending-block {
+  & .stream-complete > :is(p, ul, ol, h1, h2, h3, h4, h5, h6) + .stream-pending-paragraph,
+  & .stream-complete > p + .stream-pending-heading {
     margin-top: var(--sm-space-sm, 8px);
+  }
+  & .stream-complete > .stream-pending-block:first-child {
+    margin-top: 0;
   }
   & code {
     font-family: var(--sm-font-mono, ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace);
@@ -3212,6 +3213,11 @@ input:focus,
 textarea:focus {
   border-color: var(--accent);
 }
+input[aria-invalid=true],
+textarea[aria-invalid=true],
+select[aria-invalid=true] {
+  border-color: var(--error);
+}
 select {
   appearance: none;
   background-image: var(--select-chevron);
@@ -3750,6 +3756,23 @@ label {
 }
 .agent-activity[hidden] {
   display: none;
+  height: 0;
+  min-height: 0;
+  padding-block: 0;
+  margin-block-start: calc(-1 * var(--spacing-sm));
+  opacity: 0;
+  overflow: clip;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-activity {
+    interpolate-size: allow-keywords;
+    transition:
+      height 0.2s ease,
+      padding-block 0.2s ease,
+      margin-block-start 0.2s ease,
+      opacity 0.15s ease,
+      display 0.2s allow-discrete;
+  }
 }
 .reasoning-activity-icon {
   width: var(--font-size-lg);
@@ -4664,6 +4687,9 @@ span.acp-resource-title {
   position: relative;
   margin: var(--spacing-sm) 0;
 }
+.message-text table:not(.table-copy-scroll > table) {
+  margin-block: var(--spacing-sm);
+}
 .message-text .table-copy-scroll {
   overflow-x: auto;
   max-width: 100%;
@@ -5022,6 +5048,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   padding: var(--spacing-sm) var(--spacing-md);
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-secondary);
+}
+.streaming-markdown blockquote.stream-pending-blockquote {
+  margin: var(--spacing-sm) 0;
 }
 .streaming-markdown blockquote.markdown-alert {
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
@@ -7112,7 +7141,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .welcome-heading {
   font-size: calc(24px * var(--ui-scale));
-  font-weight: 600;
+  font-weight: 400;
 }
 .welcome-sub {
   color: var(--text-secondary);
@@ -7257,7 +7286,7 @@ dialog.settings-overlay {
   padding: 0;
   border: none;
   color: inherit;
-  overflow: hidden;
+  overflow: clip;
 }
 dialog.settings-overlay::backdrop {
   background: var(--bg-base);
@@ -7308,7 +7337,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 .settings-nav {
   width: calc(240px * var(--ui-scale));
@@ -7348,15 +7377,17 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-xs) 0;
 }
 .settings-nav-subheading {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  align-content: center;
   gap: var(--spacing-sm);
   text-align: left;
   min-height: calc(30px * var(--ui-scale));
   padding: var(--spacing-xs) var(--spacing-md) var(--spacing-xs) calc(var(--spacing-xl) + var(--spacing-xs));
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: 400;
 }
 .settings-nav-subheading::before {
   content: "\21b3";
@@ -7424,7 +7455,7 @@ dialog.settings-overlay::backdrop {
 .settings-section.active {
   display: block;
 }
-.settings-section h3 {
+.settings-section > h3 {
   font-family: var(--font-display);
   font-size: calc(28px * var(--ui-scale));
   font-weight: 400;
@@ -7442,9 +7473,6 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-md);
   max-width: 62ch;
   margin-bottom: calc(var(--spacing-xl) + var(--spacing-sm));
-}
-.settings-content legend + .field-hint {
-  margin-bottom: var(--spacing-lg);
 }
 .settings-field-label {
   display: block;
@@ -7562,10 +7590,14 @@ dialog.settings-overlay::backdrop {
 }
 .settings-section > fieldset,
 .settings-section > .settings-mount > fieldset,
-.settings-search-results > fieldset {
+.settings-search-results > fieldset,
+.usage-section-root > fieldset {
   background: none;
   padding: 0;
   margin-bottom: calc(var(--spacing-xl) * 2);
+}
+.usage-section-root > fieldset {
+  margin-bottom: 0;
 }
 .settings-content legend {
   padding: 0;
@@ -7575,12 +7607,22 @@ dialog.settings-overlay::backdrop {
 }
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
-.settings-search-results > fieldset > legend {
+.settings-search-results > fieldset > legend,
+.usage-section-root > fieldset > legend {
   font-family: var(--font-display);
   font-size: calc(20px * var(--ui-scale));
   font-weight: 400;
   line-height: var(--line-height-base);
   margin-bottom: var(--spacing-md);
+}
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .usage-section-root > fieldset) > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: var(--spacing-md);
+}
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .usage-section-root > fieldset) > legend ~ * {
+  clear: both;
 }
 .settings-content fieldset label {
   margin-bottom: calc(var(--spacing-lg) + var(--spacing-sm));
@@ -7697,14 +7739,20 @@ dialog.settings-overlay::backdrop {
 .settings-content label select,
 .settings-content label input[type=text],
 .settings-content label input[type=password],
-.settings-content label input[type=number] {
+.settings-content label input[type=number],
+.settings-content label input[type=url],
+.settings-content label input[type=email],
+.settings-content label input[type=search] {
   width: 100%;
   max-width: 480px;
   min-height: var(--action-min-height);
 }
 .settings-content label input[type=text],
 .settings-content label input[type=password],
-.settings-content label input[type=number] {
+.settings-content label input[type=number],
+.settings-content label input[type=url],
+.settings-content label input[type=email],
+.settings-content label input[type=search] {
   padding-inline: var(--spacing-md);
 }
 .settings-content label select {
@@ -8005,12 +8053,7 @@ dialog.settings-overlay::backdrop {
 .provider-add-model {
   align-self: flex-start;
 }
-.provider-advanced summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.provider-advanced[open] summary {
+.provider-advanced[open] > summary {
   margin-bottom: var(--spacing-sm);
 }
 .routing-advanced {
@@ -8018,12 +8061,7 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: var(--spacing-sm);
 }
-.routing-advanced summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.routing-advanced[open] summary {
+.routing-advanced[open] > summary {
   margin-bottom: var(--spacing-sm);
 }
 .usage-section-root {
@@ -8037,6 +8075,10 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+.usage-plan-section > .settings-fieldset-desc,
+.usage-worth-section > .settings-fieldset-desc {
+  margin-bottom: 0;
 }
 .usage-plan-heading,
 .usage-worth-heading,
@@ -8760,22 +8802,7 @@ dialog.settings-overlay::backdrop {
 }
 .sources-hook-test-btn {
   flex: none;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-sm);
-  cursor: pointer;
-}
-.sources-hook-test-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.sources-hook-test-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+  padding-block: var(--spacing-xs);
 }
 .hook-test {
   margin-top: var(--spacing-sm);
@@ -9042,7 +9069,8 @@ dialog.settings-overlay::backdrop {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--spacing-sm);
 }
-.plugin-settings-summary {
+.plugin-settings-summary,
+.settings-disclosure-summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -9055,20 +9083,28 @@ dialog.settings-overlay::backdrop {
   cursor: pointer;
   list-style: none;
 }
-.plugin-settings-summary::-webkit-details-marker {
+.plugin-settings-summary::-webkit-details-marker,
+.settings-disclosure-summary::-webkit-details-marker {
   display: none;
 }
-.plugin-settings-summary:hover {
+.plugin-settings-summary:hover,
+.settings-disclosure-summary:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.plugin-settings-chevron {
+.plugin-settings-chevron,
+.settings-disclosure-chevron {
   width: 16px;
   height: 16px;
+  flex: none;
   transition: transform 0.15s ease;
 }
-.plugin-settings-fold[open] .plugin-settings-chevron {
+.plugin-settings-fold[open] .plugin-settings-chevron,
+details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   transform: rotate(180deg);
+}
+.settings-disclosure-summary {
+  width: fit-content;
 }
 .plugin-settings {
   display: flex;
@@ -9296,6 +9332,7 @@ dialog.settings-overlay::backdrop {
   grid-column: 1 / -1;
   margin: 0;
   font-size: var(--font-size-md);
+  font-weight: 600;
 }
 .automation-label {
   display: flex;
@@ -9463,9 +9500,11 @@ dialog.settings-overlay::backdrop {
 /* src/renderer/styles/global/onboarding.css */
 .onboarding-overlay {
   z-index: 250;
+  -webkit-app-region: no-drag;
+}
+.onboarding-overlay[open] {
   display: flex;
   justify-content: center;
-  -webkit-app-region: no-drag;
 }
 .onboarding-shell {
   width: min(720px, 100%);
@@ -9497,11 +9536,6 @@ dialog.settings-overlay::backdrop {
 }
 .onboarding-body > section > :first-child {
   margin-top: 0;
-}
-.onboarding-body h3 {
-  font-size: calc(18px * var(--ui-scale));
-  font-weight: 600;
-  margin: 0 0 var(--spacing-xs);
 }
 .onboarding-body .settings-section-desc {
   margin-bottom: var(--spacing-md);
@@ -10158,9 +10192,10 @@ dialog.settings-overlay::backdrop {
 .container-run-section {
   margin: 0 0 var(--spacing-md);
 }
-.container-run-section h3 {
+.container-run-section h4 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -10233,7 +10268,7 @@ dialog.settings-overlay::backdrop {
 .new-project-dialog h3 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 400;
 }
 .new-project-dialog .field-hint {
   margin: 0 0 var(--spacing-md);
@@ -10299,7 +10334,7 @@ dialog.settings-overlay::backdrop {
 .create-pr-dialog h3 {
   margin: 0 0 var(--spacing-md);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 400;
 }
 .create-pr-dialog-field {
   display: flex;
@@ -11428,7 +11463,7 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: 400;
 }
 .keyboard-shortcuts-grid {
   display: grid;
@@ -12320,15 +12355,15 @@ dialog.process-manager-overlay {
 
 /* src/renderer/styles/global/apple-development.css */
 .apple-development-host {
-  margin: 6px 12px 0;
+  margin: var(--spacing-sm) var(--spacing-md) 0;
 }
 .apple-development-host[hidden] {
   display: none;
 }
 .apple-development-panel {
   display: grid;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   background: var(--bg-elevated);
@@ -12343,11 +12378,11 @@ dialog.process-manager-overlay {
   align-items: center;
 }
 .apple-development-heading {
-  gap: 7px;
-  min-height: 22px;
+  gap: var(--spacing-sm);
+  min-height: var(--line-height-base);
 }
 .apple-development-heading-actions {
-  gap: 2px;
+  gap: calc(var(--spacing-xs) / 2);
 }
 .apple-development-title {
   margin: 0;
@@ -12399,8 +12434,8 @@ dialog.process-manager-overlay {
 .apple-development-selection {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(100px, 1fr) auto minmax(150px, 1fr) auto;
-  gap: 6px;
-  padding-top: 6px;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
 }
 .apple-development-selection select {
   min-width: 0;
@@ -12412,16 +12447,15 @@ dialog.process-manager-overlay {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) auto auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   min-width: 0;
-  padding: 6px 8px;
+  padding: var(--spacing-sm);
   border-radius: var(--radius);
   background: var(--bg-base);
   font-size: var(--font-size-xs);
 }
 .apple-development-target-name {
   display: grid;
-  gap: 1px;
   min-width: 0;
 }
 .apple-development-target-name span {
@@ -12431,10 +12465,10 @@ dialog.process-manager-overlay {
   white-space: nowrap;
 }
 .apple-development-target-meta {
-  gap: 5px;
+  gap: var(--spacing-xs);
 }
 .apple-development-target-meta span {
-  padding: 1px 5px;
+  padding: 0 var(--spacing-xs);
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   color: var(--text-muted);
@@ -12442,37 +12476,38 @@ dialog.process-manager-overlay {
 }
 .apple-development-actions,
 .apple-development-operation-controls {
-  gap: 4px;
+  gap: var(--spacing-xs);
 }
 .apple-development-actions .btn,
 .apple-development-heading-actions .btn,
 .apple-development-operation .btn {
-  min-height: 24px;
-  padding: 3px 8px;
+  min-height: var(--spacing-xl);
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
   font-size: var(--font-size-xs);
 }
 .apple-development-operations {
+  --apple-development-indicator-size: 7px;
   display: grid;
-  gap: 4px;
+  gap: var(--spacing-xs);
   padding: 0;
   margin: 0;
   list-style: none;
 }
 .apple-development-operation {
   display: grid;
-  gap: 3px;
-  padding: 6px 8px;
+  gap: calc(var(--spacing-xs) / 2);
+  padding: var(--spacing-sm);
   border-radius: var(--radius);
   background: var(--bg-base);
   font-size: var(--font-size-sm);
 }
 .apple-development-operation-line {
-  gap: 7px;
+  gap: var(--spacing-sm);
   min-width: 0;
 }
 .apple-development-operation-indicator {
-  width: 7px;
-  height: 7px;
+  width: var(--apple-development-indicator-size);
+  height: var(--apple-development-indicator-size);
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--text-muted);
@@ -12485,7 +12520,7 @@ dialog.process-manager-overlay {
   margin-left: auto;
 }
 .apple-development-operation-detail {
-  padding-left: 14px;
+  padding-left: calc(var(--apple-development-indicator-size) + var(--spacing-sm));
   line-height: var(--line-height-base);
   overflow-wrap: anywhere;
 }
@@ -12519,11 +12554,6 @@ dialog.process-manager-overlay {
 .plugin-settings .apple-development-host {
   margin: 0;
 }
-.settings-section .plugin-settings-fold .apple-development-title {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
 @media (max-width: 760px) {
   .apple-development-selection {
     grid-template-columns: 1fr 1fr;
@@ -12539,29 +12569,24 @@ dialog.process-manager-overlay {
 
 /* src/renderer/styles/global/app-run.css */
 #app-run-dialog {
-  width: min(520px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
-  padding: 20px;
+  width: min(520px, calc(100vw - 2 * var(--spacing-lg)));
+  max-height: calc(100vh - 2 * var(--spacing-xl));
   overflow-y: auto;
-  background: var(--bg-base);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
 }
 .app-run-heading,
 .app-run-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-md);
   flex-wrap: wrap;
 }
 .app-run-heading {
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-lg);
 }
 .app-run-heading h2 {
   margin: 0;
-  font-size: calc(20px * var(--ui-scale));
+  font-size: var(--font-size-lg);
 }
 .app-run-spacer {
   flex: 1;
@@ -12569,7 +12594,7 @@ dialog.process-manager-overlay {
 .app-run-fields,
 .app-run-setup {
   display: grid;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 .app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-fields,
 .app-run-panel:has(.app-run-setup:not([hidden]) .app-run-setup-apply) > .app-run-actions {
@@ -12582,7 +12607,7 @@ dialog.process-manager-overlay {
 }
 .app-run-panel label {
   display: grid;
-  gap: 5px;
+  gap: var(--spacing-xs);
 }
 .app-run-panel select,
 .app-run-panel input:not([type=checkbox]) {
@@ -12592,11 +12617,11 @@ dialog.process-manager-overlay {
 .app-run-panel .app-run-check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 .app-run-panel .app-run-actions {
-  margin-top: 14px;
+  margin-top: var(--spacing-md);
 }
 .app-run-more summary,
 .app-run-logs summary {
@@ -12604,7 +12629,7 @@ dialog.process-manager-overlay {
   cursor: pointer;
 }
 .app-run-more > label {
-  margin-top: 12px;
+  margin-top: var(--spacing-md);
 }
 .app-run-notice,
 .app-run-elapsed {
@@ -12620,8 +12645,8 @@ dialog.process-manager-overlay {
 .app-run-operation,
 .app-run-setup {
   border-top: 1px solid var(--border);
-  margin-top: 16px;
-  padding-top: 12px;
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
 }
 .app-run-operation[data-stage=running] .app-run-stage {
   color: var(--success);
@@ -12631,10 +12656,12 @@ dialog.process-manager-overlay {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: var(--font-size-sm)/1.5 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
 }
 .app-run-logs {
-  margin-top: 10px;
+  margin-top: var(--spacing-sm);
 }
 .app-run-issue p {
   white-space: pre-wrap;
@@ -13638,11 +13665,19 @@ dialog.process-manager-overlay {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.vnc-device {
+  container: vnc-device / inline-size;
+}
 .vnc-device-details {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
   padding: 0 var(--spacing-sm) var(--spacing-sm) calc(34px + var(--spacing-md));
+}
+@container vnc-device (max-width: 260px) {
+  .vnc-device-details {
+    padding-left: var(--spacing-sm);
+  }
 }
 .vnc-setup-credentials {
   display: flex;
@@ -13661,28 +13696,21 @@ dialog.process-manager-overlay {
 }
 .vnc-saved-login {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
+  line-height: var(--line-height-base);
 }
 .vnc-saved-login-copy {
-  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+.vnc-saved-login-copy strong {
+  display: inline-block;
+  max-width: 100%;
   overflow-wrap: anywhere;
-}
-.vnc-setup-forget-login {
-  flex-shrink: 0;
-  padding: 0;
-  color: var(--text-muted);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  background: transparent;
-  border: 0;
-}
-.vnc-setup-forget-login:hover {
-  color: var(--text-primary);
 }
 .vnc-field-label {
   display: flex;
@@ -13701,10 +13729,13 @@ dialog.process-manager-overlay {
   padding: var(--spacing-sm);
   color: var(--text-primary);
   font: inherit;
-  font-family: var(--font-mono);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+.vnc-port-input,
+.vnc-address-input {
+  font-family: var(--font-mono);
 }
 .vnc-port-input:focus,
 .vnc-address-input:focus,
@@ -13759,23 +13790,21 @@ dialog.process-manager-overlay {
   font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
 }
-.vnc-auth-panel {
-  --sev: var(--accent);
+.vnc-auth-panel,
+.vnc-status {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 6px minmax(0, 1fr);
   align-items: start;
-  column-gap: var(--spacing-xs);
+  column-gap: var(--spacing-sm);
+}
+.vnc-auth-panel {
+  --sev: var(--warning);
   row-gap: var(--spacing-sm);
   padding: var(--spacing-md);
-  background: color-mix(in srgb, var(--sev) 6%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
-.vnc-auth-icon {
-  grid-column: 1;
-  justify-self: center;
-  margin-top: 3px;
-  color: var(--sev);
-}
-.vnc-auth-panel > :not(.vnc-auth-icon) {
+.vnc-auth-panel > :not(.vnc-status-dot),
+.vnc-status > :not(.vnc-status-dot) {
   grid-column: 2;
 }
 .vnc-auth-panel[hidden] {
@@ -13784,6 +13813,7 @@ dialog.process-manager-overlay {
 .vnc-auth-title {
   color: var(--sev);
   font-weight: 600;
+  line-height: var(--line-height-base);
 }
 .vnc-auth-description {
   color: var(--text-secondary);
@@ -13798,6 +13828,10 @@ dialog.process-manager-overlay {
   font-family: system-ui, sans-serif;
   -webkit-text-security: disc;
 }
+.vnc-password-input::placeholder,
+.vnc-setup-password-input::placeholder {
+  font-family: var(--font-family);
+}
 .vnc-remember-password {
   display: flex;
   flex-direction: row;
@@ -13810,10 +13844,17 @@ dialog.process-manager-overlay {
 .vnc-remember-password[hidden] {
   display: none;
 }
-.vnc-forget-login {
+.vnc-forget-login,
+.vnc-setup-forget-login {
   align-self: flex-start;
+  min-height: var(--spacing-xl);
+  margin-inline-start: calc(-1 * var(--spacing-sm));
+  padding: 0 var(--spacing-sm);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
+}
+.vnc-connect-form:has(> .vnc-setup-fields:not([hidden])) ~ .vnc-forget-login {
+  display: none;
 }
 .vnc-authenticate-btn {
   justify-content: center;
@@ -13881,10 +13922,6 @@ dialog.process-manager-overlay {
 }
 .vnc-status {
   --sev: var(--border-strong);
-  display: grid;
-  grid-template-columns: 6px 1fr;
-  align-items: start;
-  column-gap: var(--spacing-sm);
   row-gap: var(--spacing-xs);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -13899,9 +13936,6 @@ dialog.process-manager-overlay {
   border-radius: 50%;
   background: var(--sev);
   margin-top: calc((var(--line-height-base) - 6px) / 2);
-}
-.vnc-status > :not(.vnc-status-dot) {
-  grid-column: 2;
 }
 .vnc-status[data-kind=working] {
   --sev: var(--accent);

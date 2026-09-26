@@ -56,6 +56,10 @@
     "label": "Remote desktop discovered-port list with one selected"
   },
   {
+    "id": "vnc-saved-login",
+    "label": "Remote desktop device with a saved login in a narrow rail"
+  },
+  {
     "id": "inline-thread-reference",
     "label": "Inline thread reference chip geometry"
   },
