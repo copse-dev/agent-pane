@@ -1,7 +1,8 @@
 name: Copse review nightly sample
 
-# One bounded dogfood sample per night, including draft pull requests. Copse's
-# active backlog is draft-heavy, and draft state does not change the trust
+# One bounded dogfood sample per night from draft pull requests; ready ones are
+# reviewed when they become ready (review-trigger.yml). Copse's active backlog
+# is draft-heavy, and draft state does not change the trust
 # boundary: only same-repository heads can enter the secret-free ground job.
 # The trust split is the same as the
 # label-triggered pair, but all three jobs live in this scheduled workflow so
@@ -82,6 +83,8 @@ jobs:
                 return pull.head.repo?.full_name === `${owner}/${repo}` &&
                   pull.head.repo?.id === 1274237362 && pull.base.repo?.id === 1274237362 &&
                   pull.user?.id === 338988 &&
+                  // Ready pull requests are reviewed when they become ready.
+                  pull.draft === true &&
                   Date.parse(pull.updated_at) >= cutoff &&
                   !labels.includes('copse-review') &&
                   !labels.includes('copse-review-skip') &&

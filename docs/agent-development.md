@@ -27,6 +27,8 @@ the convention. These records do not establish or change branch-review requireme
 
 ## Runtime and standard scripts
 
+For a removable-drive toolchain, see [portable development](portable-development.md).
+
 Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it
 runs `check-node`, content-addresses dependency and build inputs, verifies the complete `dist/` tree,
 and then starts the app. It is safe to repeat and does the minimum work needed even after branch
@@ -256,22 +258,47 @@ A typical Electron fixture flow is:
 
 The test oracle defines screenshot ownership. The CI run remains read-only and attaches changed
 renders as an immutable artifact retained for 14 days. After a successful same-repository run, a
-trusted follow-up links that evidence from the parent PR. Ordinary runs do not open another PR or
-update references. Review the screenshots with the change; an artifact is evidence, not visual
-acceptance. The candidate artifact is filtered for noise, drift, and ownership; raw renders remain
-in the run's shard artifacts.
+trusted follow-up validates those PNGs and pushes them as one bot commit on top of the rendered head
+to a view-only `screenshot-compare/pr-<N>/<sha12>` branch. The parent PR's screenshot comment links
+GitHub's compare view for that commit, so the image diff (2-up, swipe, onion skin) opens in the
+browser with no download; the artifact link stays as the immutable record. The comment also shows a
+Before/After table of up to 20 candidates with a link to the compare view for the rest. Screenshots
+the PR touches come first under their own heading: reference PNGs the PR changes, and names that the
+e2e specs it changes mention literally. Other candidates, usually rendering drift, fill the remaining
+rows; each group is sorted by name. Its images are raw URLs pinned to the head SHA and the compare commit SHA, never a branch, so
+they cannot change under the comment; they render inline only because this repository is public. The
+compare branch is never merged, opens no PR, and runs no CI. A newer successful head replaces it,
+and closing the parent deletes it. Runs never open a PR or update references. Review the screenshots
+with the change; a compare view or artifact is evidence, not visual acceptance. The candidate set is
+filtered for noise, drift, and ownership; raw renders remain in the run's shard artifacts.
 
 CI invokes screenshot freshness checking with `--plan`, which is advisory. A broad regeneration
 plan alone does not require `update-screenshots`; reserve that label for an intentional reference
 refresh. The standalone `pnpm run check:screenshots` command reports stale references as a local
 diagnostic and is not part of `pnpm run check`.
 
-When references intentionally need updating, add `update-screenshots`. It runs the complete e2e
-reference set and asks the trusted publisher to open a bot-owned PNG review PR into the source
-branch. Review GitHub's image diffs, then merge the accepted references. Remove the label once the
-review PR is created to avoid repeating the full refresh. A newer successful source-head run closes
-stale review PRs. Do not accept unrelated drift just because CI captured it. You can also download
-and commit reviewed PNGs manually. Forks and promotion PRs whose source is an integration branch
-always use that manual path. Local filtering is implemented by
-`scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
+Screenshot review blocks merging. The publisher sets a `Screenshot review` commit status on every
+same-repository PR head, which the default-branch ruleset requires beside `CI Passed`. It is pending
+while candidates await a decision and passes when there are none. A maintainer decides with a label,
+which `.github/workflows/screenshot-review-labels.yml` acts on and then removes:
+`accept-screenshots` fast-forwards the PR branch to the compare commit, after checking that it is
+one commit on the live head that only adds or updates PNGs under `tests/e2e/screenshots/`. It
+pushes with the release App token so CI runs on the new head, and CI skips e2e there because the
+commit only changes screenshots. `decline-screenshots` passes the check and commits nothing, for
+unrelated drift or references that belong in another PR. A refused label is removed with a comment
+saying why. The decision belongs to the head it was made on, so any push starts a new review.
+Adding a label also re-runs CI on that head. After an accept, the fast-forward supersedes that run;
+after a decline it is a repeat, and the publisher keeps the decision when the run lands. Promotion
+and merge-back PRs from `main` or `release` pass the check without a decision.
+
+Accepting references means committing the PNGs to the PR branch. Besides the label, the comment
+gives the exact command: `git fetch origin screenshot-compare/pr-<N>/<sha12> && git cherry-pick <compare-commit>`
+applies every candidate, and `git checkout <compare-commit> -- tests/e2e/screenshots/<name>.png`
+after the fetch takes only some. When the whole reference set should be re-rendered, add
+`update-screenshots`: CI runs the complete e2e reference set and the publisher pushes all of it to
+the compare branch, previewing up to 20 in the comment, touched screenshots first. Remove the label after that run to avoid
+repeating the full refresh. Nothing opens a PR for screenshots. Do not accept unrelated drift just
+because CI captured it. Forks and promotion PRs whose source is an integration branch get no compare
+branch; download the artifact and commit the reviewed PNGs manually. Local filtering is implemented
+by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
 [`testing-strategy.md`](testing-strategy.md).
