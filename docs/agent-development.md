@@ -260,8 +260,10 @@ trusted follow-up validates those PNGs and pushes them as one bot commit on top 
 to a view-only `screenshot-compare/pr-<N>/<sha12>` branch. The parent PR's screenshot comment links
 GitHub's compare view for that commit, so the image diff (2-up, swipe, onion skin) opens in the
 browser with no download; the artifact link stays as the immutable record. The comment also shows a
-Before/After table of up to 20 candidates, sorted by name, with a link to the compare view for the
-rest. Its images are raw URLs pinned to the head SHA and the compare commit SHA, never a branch, so
+Before/After table of up to 20 candidates with a link to the compare view for the rest. Screenshots
+the PR touches come first under their own heading: reference PNGs the PR changes, and names that the
+e2e specs it changes mention literally. Other candidates, usually rendering drift, fill the remaining
+rows; each group is sorted by name. Its images are raw URLs pinned to the head SHA and the compare commit SHA, never a branch, so
 they cannot change under the comment; they render inline only because this repository is public. The
 compare branch is never merged, opens no PR, and runs no CI. A newer successful head replaces it,
 and closing the parent deletes it. Runs never open a PR or update references. Review the screenshots
@@ -278,7 +280,7 @@ command: `git fetch origin screenshot-compare/pr-<N>/<sha12> && git cherry-pick 
 applies every candidate, and `git checkout <compare-commit> -- tests/e2e/screenshots/<name>.png`
 after the fetch takes only some. When the whole reference set should be re-rendered, add
 `update-screenshots`: CI runs the complete e2e reference set and the publisher pushes all of it to
-the compare branch, previewing the first 20 in the comment. Remove the label after that run to avoid
+the compare branch, previewing up to 20 in the comment, touched screenshots first. Remove the label after that run to avoid
 repeating the full refresh. Nothing opens a PR for screenshots. Do not accept unrelated drift just
 because CI captured it. Forks and promotion PRs whose source is an integration branch get no compare
 branch; download the artifact and commit the reviewed PNGs manually. Local filtering is implemented
