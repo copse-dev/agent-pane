@@ -18,6 +18,7 @@ import {
   type AcpProbeOptions,
 } from './acp-capability-probe.ts'
 import { buildMatrixJson, renderMatrixMarkdown } from './acp-support-matrix.ts'
+import type { AcpContinuityTrial } from './acp-continuity-probe.ts'
 
 /**
  * Stand up an in-memory ACP agent with fully controllable `initialize` /
@@ -296,5 +297,87 @@ describe('renderMatrixMarkdown / buildMatrixJson', () => {
     assert.ok(firstReport)
     const snapshot = expectRecord(firstReport['snapshot'])
     assert.equal(snapshot['loadSession'], true)
+  })
+
+  it('renders observed continuity rows, including resume in a new cwd', () => {
+    const trial = (
+      method: 'load' | 'resume',
+      cwd: 'same' | 'new',
+      outcome: 'recalled' | 'forgot' | 'rejected' | 'unsupported',
+    ): AcpContinuityTrial => ({
+      method,
+      cwd,
+      outcome,
+      replayedMessages: 0,
+      replayHadCodeword: false,
+      reportedCwd: null,
+      survivesSecondRestart: cwd === 'new' && outcome === 'recalled' ? true : null,
+    })
+    const base = {
+      command: 'x',
+      args: [],
+      requestedProtocolVersion: 1,
+      ok: true,
+      snapshot: extractCapabilitySnapshot({ protocolVersion: 1 }, { sessionId: 's' }),
+    }
+    const md = renderMatrixMarkdown([
+      {
+        ...base,
+        agentId: 'moves',
+        title: 'Moves',
+        continuity: {
+          agentVersion: '1',
+          advertised: { load: true, resume: true },
+          trials: [
+            trial('load', 'same', 'recalled'),
+            trial('load', 'new', 'recalled'),
+            trial('resume', 'same', 'recalled'),
+            trial('resume', 'new', 'forgot'),
+          ],
+        },
+      },
+      {
+        ...base,
+        agentId: 'stuck',
+        title: 'Stuck',
+        continuity: {
+          agentVersion: '1',
+          advertised: { load: true, resume: false },
+          trials: [
+            trial('load', 'same', 'recalled'),
+            trial('load', 'new', 'rejected'),
+            trial('resume', 'same', 'unsupported'),
+            trial('resume', 'new', 'unsupported'),
+          ],
+        },
+      },
+      { ...base, agentId: 'unprobed', title: 'Unprobed' },
+    ])
+    const row = (label: string): string | undefined =>
+      md.split('\n').find((line) => line.startsWith(`| ${label} |`))
+    assert.equal(
+      row('Resume in new cwd (observed)'),
+      '| Resume in new cwd (observed) | ✓ load | ✗ | — |',
+    )
+    assert.equal(
+      row('Restart → session/resume, new cwd'),
+      '| Restart → session/resume, new cwd | forgot | · | — |',
+    )
+    assert.match(md, /The _Restart_ rows are observed, not advertised/)
+  })
+
+  it('omits the continuity rows when no report ran the trials', () => {
+    const md = renderMatrixMarkdown([
+      {
+        agentId: 'a',
+        title: 'A',
+        command: 'a',
+        args: [],
+        requestedProtocolVersion: 1,
+        ok: true,
+        snapshot: extractCapabilitySnapshot({ protocolVersion: 1 }, { sessionId: 's' }),
+      },
+    ])
+    assert.doesNotMatch(md, /Resume in new cwd/)
   })
 })

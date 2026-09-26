@@ -1,4 +1,10 @@
 import type { AcpCapabilityReport, AcpCapabilitySnapshot } from './acp-capability-probe.ts'
+import type {
+  AcpContinuityCwd,
+  AcpContinuityMethod,
+  AcpContinuitySnapshot,
+  AcpContinuityTrial,
+} from './acp-continuity-probe.ts'
 
 /**
  * Render {@link AcpCapabilityReport}s into the two committed artifacts of the
@@ -59,6 +65,73 @@ const ROWS: Row[] = [
   },
 ]
 
+/**
+ * Observed-continuity rows, rendered only when a report carries the Tier-2
+ * continuity trials (`--continuity`). These are what an agent DID across a
+ * restart, not what it advertises: `✓` it remembered, `forgot` it accepted the
+ * reattach and did not remember, `✗` it refused, `·` not advertised, `—` not
+ * probed or inconclusive.
+ */
+function continuityOf(report: AcpCapabilityReport): AcpContinuitySnapshot | null {
+  const continuity = report.continuity
+  return continuity && 'trials' in continuity ? continuity : null
+}
+
+function trialOf(
+  snapshot: AcpContinuitySnapshot,
+  method: AcpContinuityMethod,
+  cwd: AcpContinuityCwd,
+): AcpContinuityTrial | undefined {
+  return snapshot.trials.find((trial) => trial.method === method && trial.cwd === cwd)
+}
+
+function trialCell(trial: AcpContinuityTrial | undefined): string {
+  if (!trial) return CELL.unknown
+  switch (trial.outcome) {
+    case 'recalled':
+      // A new-cwd continuation must also hold across the next restart there.
+      return trial.survivesSecondRestart === false ? '✓ (lost on 2nd restart)' : CELL.yes
+    case 'forgot':
+      return 'forgot'
+    case 'rejected':
+      return '✗'
+    case 'unsupported':
+      return CELL.no
+    case 'error':
+      return CELL.unknown
+  }
+}
+
+/**
+ * The capability a thread moving into its worktree needs: SOME method carried
+ * the conversation into a new cwd and kept it there across a further restart.
+ */
+function resumeInNewCwdCell(snapshot: AcpContinuitySnapshot): string {
+  const methods = (['load', 'resume'] as const).filter((method) => {
+    const trial = trialOf(snapshot, method, 'new')
+    return trial?.outcome === 'recalled' && trial.survivesSecondRestart !== false
+  })
+  if (methods.length > 0) return `${CELL.yes} ${methods.join(' + ')}`
+  const tried = snapshot.trials.some(
+    (trial) => trial.cwd === 'new' && trial.outcome !== 'unsupported',
+  )
+  return tried ? '✗' : CELL.no
+}
+
+const CONTINUITY_ROWS: { label: string; cell: (snapshot: AcpContinuitySnapshot) => string }[] = [
+  { label: 'Resume in new cwd (observed)', cell: resumeInNewCwdCell },
+  { label: 'Restart → session/load, same cwd', cell: (s) => trialCell(trialOf(s, 'load', 'same')) },
+  { label: 'Restart → session/load, new cwd', cell: (s) => trialCell(trialOf(s, 'load', 'new')) },
+  {
+    label: 'Restart → session/resume, same cwd',
+    cell: (s) => trialCell(trialOf(s, 'resume', 'same')),
+  },
+  {
+    label: 'Restart → session/resume, new cwd',
+    cell: (s) => trialCell(trialOf(s, 'resume', 'new')),
+  },
+]
+
 function escapePipes(text: string): string {
   return text.replace(/\|/g, '\\|')
 }
@@ -100,7 +173,25 @@ export function renderMatrixMarkdown(
     )
     lines.push(`| ${[label, ...cells].join(' | ')} |`)
   }
+  if (reports.some((report) => report.continuity !== undefined)) {
+    for (const row of CONTINUITY_ROWS) {
+      const cells = reports.map((report) => {
+        const continuity = continuityOf(report)
+        return continuity ? escapePipes(row.cell(continuity)) : CELL.unknown
+      })
+      lines.push(`| ${[row.label, ...cells].join(' | ')} |`)
+    }
+  }
   lines.push('')
+  if (reports.some((report) => report.continuity !== undefined)) {
+    lines.push(
+      '> The _Restart_ rows are observed, not advertised: `--continuity` restarts each agent, ' +
+        'reattaches with that method, and asks for a codeword planted before the restart (this ' +
+        'DOES spend tokens). `✓` remembered · `forgot` reattached without the conversation · ' +
+        '`✗` refused · `·` not advertised · `—` not probed or inconclusive.',
+    )
+    lines.push('')
+  }
   lines.push(
     '> `≥` on _Slash commands_ is a lower bound: agents register commands asynchronously ' +
       '(often one MCP server at a time), so the fixed settle window samples whatever has arrived. ' +
@@ -152,6 +243,16 @@ export function renderMatrixMarkdown(
     }
     if (s.metaKeys.length > 0) {
       lines.push(`- \`_meta\` keys: ${s.metaKeys.map((k) => `\`${k}\``).join(', ')}`)
+    }
+    if (report.continuity && 'error' in report.continuity) {
+      lines.push(`- **Continuity trials failed:** ${report.continuity.error}`)
+    }
+    for (const trial of continuityOf(report)?.trials ?? []) {
+      if (trial.error) {
+        lines.push(
+          `- Continuity ${trial.method}/${trial.cwd}-cwd: ${trial.outcome} — ${trial.error}`,
+        )
+      }
     }
     lines.push('')
   }
