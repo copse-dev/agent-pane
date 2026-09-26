@@ -1,3 +1,4 @@
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import type { McpServerOrigin, McpServerStatus } from '@shared/types/mcp.ts'
 import {
   type ToolPermissionCatalog,
@@ -150,14 +151,6 @@ export async function setToolPermissionForExecution(
   return true
 }
 
-function humanizeToolName(name: string): string {
-  return name
-    .split(/[_-]+/u)
-    .filter(Boolean)
-    .map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`)
-    .join(' ')
-}
-
 function defaultPolicy(executionName: string): ToolPermissionPolicy {
   return executionName.startsWith(MCP_TOOL_PREFIX) ||
     executionName.startsWith(CUSTOM_TOOL_PREFIX) ||
@@ -228,7 +221,7 @@ export function listToolPermissionCatalog(
       catalogTool(
         copseToolPermissionId(name),
         name,
-        humanizeToolName(name),
+        humanizeIdentifier(name),
         description,
         overrides,
       ),
@@ -249,7 +242,7 @@ export function listToolPermissionCatalog(
         return catalogTool(
           mcpToolPermissionId(target),
           executionName,
-          humanizeToolName(toolName),
+          humanizeIdentifier(toolName),
           descriptor ? descriptionWithoutMcpPrefix(descriptor.description, status.name) : '',
           overrides,
         )
