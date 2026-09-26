@@ -33,7 +33,7 @@ export interface StandaloneMainBundle {
    * way — a file-tree walk launches dozens of doomed processes and stalls the
    * main loop.
    */
-  manifest?: Record<string, unknown>
+  manifest?: { type: 'commonjs' }
   /**
    * Replaces the main bundle's `external` list. A bundle that runs somewhere
    * without the app's node_modules must carry everything the main bundle
