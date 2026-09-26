@@ -7,7 +7,9 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
-import { mobileActivity, mobileThread } from './mobile-activity.ts'
+import { MOBILE_CONTENT_SECURITY_POLICY } from '../../../shared/mobile-content-security-policy.ts'
+import { MobileActionRequests, mobileActionSchema, performMobileAction } from './mobile-actions.ts'
+import { mobileActivity, mobileThread, mobileProjects } from './mobile-activity.ts'
 import { mobileCertificate } from './mobile-certificate.ts'
 import { MobileDevices } from './mobile-devices.ts'
 
@@ -59,8 +61,7 @@ function headers(contentType: string): Record<string, string> {
   return {
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
-    'Content-Security-Policy':
-      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': MOBILE_CONTENT_SECURITY_POLICY,
     'X-Frame-Options': 'DENY',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
@@ -72,20 +73,20 @@ function send(res: ServerResponse, status: number, value: unknown): void {
   res.end(JSON.stringify(value))
 }
 
-async function readPairBody(req: IncomingMessage): Promise<{ label: string } | null> {
+async function readBody(req: IncomingMessage, maxBytes: number): Promise<string | null> {
   const chunks: Buffer[] = []
   let length = 0
   try {
     for await (const chunk of req) {
       if (!Buffer.isBuffer(chunk)) return null
       length += chunk.length
-      if (length > 1024) return null
+      if (length > maxBytes) return null
       chunks.push(chunk)
     }
   } catch {
     return null
   }
-  return safeJsonParse(Buffer.concat(chunks).toString('utf8'), decodeWithSchema(pairSchema))
+  return Buffer.concat(chunks).toString('utf8')
 }
 
 interface Pairing {
@@ -106,7 +107,7 @@ export interface MobileServer {
 export async function startMobileServer(options: {
   address: string
   devices: MobileDevices
-  approvePair: (label: string, code: string) => Promise<boolean>
+  approvePair: (label: string, code: string) => Promise<'read' | 'control' | null>
   assetsDir?: string
   onStop?: () => void
 }): Promise<MobileServer> {
@@ -131,6 +132,7 @@ export async function startMobileServer(options: {
     ]),
   )
   const pairings = new Map<string, Pairing>()
+  const actions = new MobileActionRequests(randomUUID())
   const failedAuth = new Map<string, { attempts: number; blockedUntil: number }>()
   let stopped = false
   let authority = ''
@@ -160,7 +162,8 @@ export async function startMobileServer(options: {
             send(res, 429, { error: 'Pairing already in progress' })
             return
           }
-          const body = await readPairBody(req)
+          const raw = await readBody(req, 1024)
+          const body = raw === null ? null : safeJsonParse(raw, decodeWithSchema(pairSchema))
           if (!body) {
             send(res, 400, { error: 'Invalid pairing request' })
             return
@@ -174,7 +177,7 @@ export async function startMobileServer(options: {
             .approvePair(body.label, code)
             .then((approved) => {
               if (pairings.get(id) !== pairing) return
-              if (approved) pairing.token = options.devices.issue(body.label).token
+              if (approved) pairing.token = options.devices.issue(body.label, approved).token
               else pairing.denied = true
             })
             .catch(() => {
@@ -209,7 +212,8 @@ export async function startMobileServer(options: {
           send(res, 429, { error: 'Too many failed requests' })
           return
         }
-        if (!options.devices.authenticate(req.headers.authorization)) {
+        const principal = options.devices.principal(req.headers.authorization)
+        if (!principal) {
           const attempts =
             prior?.blockedUntil && prior.blockedUntil < Date.now() ? 1 : (prior?.attempts ?? 0) + 1
           failedAuth.set(peer, {
@@ -220,8 +224,41 @@ export async function startMobileServer(options: {
           return
         }
         failedAuth.delete(peer)
+        if (req.method === 'POST' && path.pathname === '/api/action') {
+          if (principal.access !== 'control') {
+            send(res, 403, {
+              error:
+                'Enable control for this phone in View → Mobile Companion → Manage paired phones on the Mac.',
+            })
+            return
+          }
+          const raw = await readBody(req, 128_000)
+          const action =
+            raw === null ? null : safeJsonParse(raw, decodeWithSchema(mobileActionSchema))
+          if (!action) {
+            send(res, 400, { error: 'Invalid action.' })
+            return
+          }
+          const stillAuthorized = (): boolean =>
+            !stopped && options.devices.principal(req.headers.authorization)?.access === 'control'
+          if (!stillAuthorized()) {
+            send(res, 403, { error: 'Phone control was disabled.' })
+            return
+          }
+          const result = await actions.run(action, principal, () =>
+            performMobileAction(action, principal, stillAuthorized),
+          )
+          send(res, result.status, result.body)
+          return
+        }
         if (req.method === 'GET' && path.pathname === '/api/activity') {
-          send(res, 200, { rows: await MOBILE_READ_DISPATCH.activity(), refreshedAt: Date.now() })
+          send(res, 200, {
+            rows: await MOBILE_READ_DISPATCH.activity(),
+            projects: mobileProjects(),
+            refreshedAt: Date.now(),
+            access: principal.access,
+            sessionId: actions.sessionId,
+          })
           return
         }
         const match = /^\/api\/thread\/([^/]+)\/([^/]+)$/.exec(path.pathname)
@@ -234,7 +271,13 @@ export async function startMobileServer(options: {
           match
         ) {
           const thread = await MOBILE_READ_DISPATCH.thread(projectId, threadId)
-          send(res, thread ? 200 : 404, thread ?? { error: 'Thread unavailable' })
+          send(
+            res,
+            thread ? 200 : 404,
+            thread
+              ? { ...thread, access: principal.access, sessionId: actions.sessionId }
+              : { error: 'Thread unavailable' },
+          )
           return
         }
         send(res, 404, { error: 'Not found' })
@@ -247,7 +290,7 @@ export async function startMobileServer(options: {
   server.maxConnections = 8
   server.headersTimeout = 10_000
   server.requestTimeout = 15_000
-  server.timeout = 15_000
+  server.timeout = 75_000
   const stop = async (): Promise<void> => {
     if (stopped) return
     stopped = true

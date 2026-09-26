@@ -105,14 +105,23 @@ project-defined MCP servers are gated behind workspace trust, the
 10. **LAN control-surface compromise.** A peer attempts DNS rebinding, cross-origin
     requests, bearer guessing, or pairing without the person at the desktop.
     _Backstop:_ Mobile Companion is off by default; when enabled it binds one chosen
-    private IPv4 address, requires exact Host and Origin checks, and exposes only
-    read-only activity and saved transcript endpoints after desktop-approved
-    pairing. Device tokens are individually revocable and only their hashes are
-    persisted. The enabled choice and paired devices persist across restarts; the
+    private IPv4 address and requires exact Host and Origin checks. Desktop-approved
+    pairing grants reads; a separate per-device control grant permits bounded chat,
+    question, approve-once/deny, and exact-run Stop actions. Existing pairings stay
+    read-only until upgraded. Every write rechecks access and project/thread ownership;
+    strict envelopes reject arbitrary IPC, remembered approvals, and broader leases.
+    Request IDs deduplicate deliveries within a server session; session IDs and issue
+    times reject stale replays, and prompt/run IDs prevent acting on replaced work.
+    Phone decisions record the device UUID and label in the durable decision log.
+    Device tokens are individually revocable and only their hashes are persisted.
+    The enabled choice and paired devices persist across restarts; the
     listener has no inactivity expiry and stays bound to its selected interface
     while the app runs. The root must
     be transferred directly to the phone; a certificate-warning click-through
-    is a weaker trust path and does not authorize phone-side decisions.
+    is a weaker trust path and does not authorize phone-side decisions. The desktop
+    asks the person granting control to confirm installation and trust; browsers
+    cannot attest this to the server. The primary renderer remains the sole chat
+    writer, and accepted work can finish after a device is downgraded or revoked.
 
 ## Internal Git execution
 
@@ -299,11 +308,13 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 These are the places where the posture above is aspirational rather than
 enforced, ordered by how much they widen the blast radius:
 
-- **Mobile reads have no per-request replay protection or token expiry.**
-  A stolen device bearer can be reused until revocation. This first
-  slice offers no phone-side decision or steering action, and the decision log
-  has no device-principal field yet. Installing the local root and testing on
-  physical iOS and Android devices remain release gates for stronger claims.
+- **Mobile bearer tokens have no automatic expiry.** A stolen device bearer can
+  be reused until revocation, including for new actions when that device has
+  control. Write-envelope deduplication and expiry do not prevent an attacker
+  holding the bearer from creating fresh requests. The experimental companion
+  relies on manually installing and trusting the local root; physical-device
+  certificate setup, live certificate renewal and live IP rebinding remain
+  outstanding. Simulator and local HTTPS tests do not establish those guarantees.
 
 - **No OS sandbox on Windows (or after ASRT init failure).** The project sandbox
   runs on macOS (seatbelt) and Linux (bubblewrap). On Windows, and after a sandbox

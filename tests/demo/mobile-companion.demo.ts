@@ -1,9 +1,17 @@
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { join } from 'node:path'
 import { E2E_SCREENSHOT_DIR } from '../e2e/helpers/screenshot.ts'
 
+async function screenshot(name: string): Promise<void> {
+  expect(
+    await browser.execute(() => document.documentElement.scrollWidth > window.innerWidth),
+  ).toBe(false)
+  await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, name))
+}
+
 describe('Mobile Companion at phone width', () => {
-  it('shows pairing, attention groups, and escaped completed output in both themes', async () => {
+  it('uses desktop foundations for readable pairing, activity, and output in both themes', async () => {
     await browser.setWindowSize(390, 844)
     await browser.sendCommand('Emulation.setDeviceMetricsOverride', {
       width: 390,
@@ -13,31 +21,137 @@ describe('Mobile Companion at phone width', () => {
     })
     await browser.url('/mobile/')
     expect(await browser.execute(() => window.innerWidth)).toBe(390)
-    await expect($('#pair h1')).toHaveText('See what needs you.')
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'mobile-companion-pair-dark.png'))
 
-    await browser.execute(() => localStorage.setItem('copse-mobile-token', 'visual-test-token'))
-    await browser.refresh()
-    await expect($('.group .row')).toBeDisplayed()
-    await expect($('#groups')).toHaveText(expect.stringContaining('NEEDS YOU'))
-    await expect($('#groups')).toHaveText(expect.stringContaining('WORKING'))
-    await expect($('#groups')).toHaveText(expect.stringContaining('RECENT'))
-    const overflow = await browser.execute(
-      () => document.documentElement.scrollWidth > window.innerWidth,
-    )
-    expect(overflow).toBe(false)
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'mobile-companion-activity-dark.png'))
+    for (const theme of ['dark', 'light']) {
+      // Exercise a live OS-theme change as well as the fresh page's startup.
+      await browser.sendCommand('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: theme }],
+      })
+      await expect($('html')).toHaveAttribute('data-theme', theme)
+      await browser.execute(async () => {
+        await fetch('/mobile-fixture/reset')
+        localStorage.removeItem('copse-mobile-token')
+      })
+      await browser.refresh()
+      await expect($('html')).toHaveAttribute('data-theme', theme)
+      await expect($('#pair h1')).toHaveText('See what needs you.')
 
-    await browser.sendCommand('Emulation.setEmulatedMedia', {
-      features: [{ name: 'prefers-color-scheme', value: 'light' }],
-    })
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'mobile-companion-activity-light.png'))
-    await $('.group .row').click()
-    await expect($('#thread-title')).toHaveText('Review the release')
-    await expect($('#messages')).toHaveText(
-      expect.stringContaining('</p><img src=x onerror=alert(1)>'),
-    )
-    expect(await browser.execute(() => document.querySelectorAll('#messages img').length)).toBe(0)
-    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'mobile-companion-thread-light.png'))
+      const appearance = await browser.execute(async () => {
+        await document.fonts.ready
+        const button = document.querySelector('#pair-button')
+        const heading = document.querySelector('#pair h1')
+        const mark = document.querySelector('.brand-mark')
+        if (!button || !heading || !mark) throw new Error('Missing mobile pairing content')
+        const style = getComputedStyle(button)
+        const channels = (value: string): number[] => value.match(/[\d.]+/g)?.map(Number) ?? []
+        const luminance = (value: string): number => {
+          const rgb = channels(value)
+            .slice(0, 3)
+            .map((channel) => {
+              const scaled = value.startsWith('color(') ? channel : channel / 255
+              return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
+            })
+          return 0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!
+        }
+        const background = luminance(style.backgroundColor)
+        const foreground = luminance(style.color)
+        return {
+          font: getComputedStyle(document.body).fontFamily,
+          headingFont: getComputedStyle(heading).fontFamily,
+          headingWeight: getComputedStyle(heading).fontWeight,
+          loadedFonts: [...document.fonts]
+            .filter((face) => face.status === 'loaded')
+            .map((face) => face.family.replaceAll('"', '')),
+          fill: style.backgroundColor,
+          label: style.color,
+          height: button.getBoundingClientRect().height,
+          contrast:
+            (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05),
+          surfaceLuminance: luminance(getComputedStyle(document.body).backgroundColor),
+          brand: getComputedStyle(mark).backgroundImage.startsWith('url("data:image/svg+xml'),
+          chromeMatches:
+            document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content ===
+            getComputedStyle(document.body).backgroundColor,
+        }
+      })
+      expect(appearance.font).toContain('Pliant')
+      expect(appearance.headingFont).toContain('Averia Serif Libre')
+      expect(appearance.headingWeight).toBe('400')
+      expect(appearance.loadedFonts).toContain('Pliant')
+      expect(appearance.loadedFonts).toContain('Averia Serif Libre')
+      expect(appearance.fill).toBe('rgb(255, 147, 208)')
+      expect(appearance.label).toBe('rgb(68, 68, 68)')
+      assert.ok(
+        appearance.contrast >= 4.5,
+        `${theme} primary label contrast: ${appearance.contrast}`,
+      )
+      assert.ok(appearance.height >= 44, 'Pairing must remain a phone-sized touch target')
+      expect(appearance.surfaceLuminance > 0.5).toBe(theme === 'light')
+      expect(appearance.brand).toBe(true)
+      expect(appearance.chromeMatches).toBe(true)
+      await screenshot(`mobile-companion-pair-${theme}.png`)
+
+      await browser.execute(() => localStorage.setItem('copse-mobile-token', 'visual-test-token'))
+      await browser.refresh()
+      await expect($('.group .row')).toBeDisplayed()
+      await browser.execute(async () => {
+        await document.fonts.ready
+      })
+      await expect($('#groups')).toHaveText(expect.stringContaining('NEEDS YOU'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('WORKING'))
+      await expect($('#groups')).toHaveText(expect.stringContaining('RECENT'))
+      await expect($('.state.needs-approval')).toHaveText('needs approval')
+      await expect($('.state.finished')).toHaveText('finished')
+      await screenshot(`mobile-companion-activity-${theme}.png`)
+
+      await $('.group .row').click()
+      await expect($('#thread-title')).toHaveText('Review the release')
+      await expect($('#messages')).toHaveText(
+        expect.stringContaining('</p><img src=x onerror=alert(1)>'),
+      )
+      expect(await browser.execute(() => document.querySelectorAll('#messages img').length)).toBe(0)
+      await screenshot(`mobile-companion-thread-${theme}.png`)
+      await expect($('#composer')).toBeDisplayed()
+      await expect($('#stop')).toBeDisplayed()
+      await expect($('.attention-body')).toHaveText('pnpm run check')
+      await $('.decision-actions .ui-btn-primary').click()
+      await expect($('.attention label')).toHaveText('Which tests should I run?')
+      await $('.answer').setValue('Keep this draft during polling')
+      await browser.waitUntil(async () => {
+        const count = await browser.execute(
+          () =>
+            performance
+              .getEntriesByType('resource')
+              .filter((entry) => entry.name.includes('/api/thread/')).length,
+        )
+        return count >= 3
+      })
+      await expect($('.answer')).toHaveValue('Keep this draft during polling')
+      await screenshot(`mobile-companion-question-${theme}.png`)
+      await $('.answer-options .ui-btn').click()
+      await expect($('.answer')).toHaveValue('Focused tests')
+      await $('.attention > .ui-btn-primary').click()
+      await expect($('.attention')).not.toExist()
+      await $('#message').setValue('Please run those tests and report back.')
+      await $('#send').scrollIntoView()
+      await screenshot(`mobile-companion-compose-${theme}.png`)
+      await $('#send').click()
+      await expect($('#message')).toHaveValue('')
+      await expect($('#messages')).toHaveText(
+        expect.stringContaining('Please run those tests and report back.'),
+      )
+      await $('#stop').click()
+      await expect($('#stop')).not.toBeDisplayed()
+      await expect($('#send')).toHaveText('Send')
+      await $('#back').click()
+      await $('#new-chat').click()
+      await $('#new-message').setValue('Start a fresh release review.')
+      await screenshot(`mobile-companion-new-chat-${theme}.png`)
+      await $('#new-chat-form button').click()
+      await expect($('#thread')).toBeDisplayed()
+      await expect($('#messages')).toHaveText(
+        expect.stringContaining('Start a fresh release review.'),
+      )
+    }
   })
 })

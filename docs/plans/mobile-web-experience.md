@@ -2,16 +2,13 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
-**Status: First read-only slice in progress.** Activity and saved transcript reads,
-desktop-approved pairing, an opt-in persistent HTTPS listener, per-device revocation,
-and a purpose-built phone page are implemented. Diff reading, full pending
-decision subjects, certificate installation UX, and physical-device validation
-remain before the L0 exit gate is met. The first slice serves a small,
-purpose-built web page from the running desktop app to one paired phone on the same
-network, showing which threads need you and what they did. It is a **second view of a
-running desktop session** — the laptop must be awake and Copse must be open — so it is
-not device independence, not detached execution, and not a way to start work from a
-phone.
+**Status: Experimental, opt-in LAN companion with desktop-authorized chat and run control.** Activity,
+saved transcripts, pairing, persistent HTTPS, per-device revocation, phone message
+submission, new chats, stop, questions, and one-shot approvals are implemented.
+The Mac must stay awake with Copse open. Phone messages enter the primary desktop
+renderer after startup restoration and use its usual checkout and queue paths.
+Diff reading, live token streaming, certificate installation UX, and physical-device
+validation remain outstanding; the verified certificate proof uses iPhone Simulator.
 
 You start four threads, close the lid on nothing, and walk to the kitchen. One of them
 finished nine minutes ago. One is waiting on an approval it raised eight minutes ago.
@@ -142,13 +139,19 @@ expensive is an axis this version simply does not have.
    while the agent keeps running. L1 moves the reducer into main and fixes both. Shipping
    "watch the run from your phone" before this would ship a feature that is wrong exactly
    when it is used.
-5. **The phone is never a writer of thread state, and never starts work.**
-   The codebase already made this call for its existing second client: pop-out windows
-   skip `startAgentController` and `attachAutosave` "so the two don't race"
-   (`src/renderer/main.ts:296-306`). The mobile client inherits that position. Starting a
-   run from a phone is trigger ingress, which [`background-supervisor.md`](background-supervisor.md)
-   decision 10 already legislates for and gates behind authenticated trigger envelopes —
-   out of scope here by ownership, not by timidity.
+5. **The desktop renderer remains the sole transcript and queue writer.** On
+   26 September 2026 the user explicitly requested full chat control: phone
+   follow-ups and new chats may start human-authored runs. Authenticated control
+   devices submit a bounded, strict message envelope through `/api/action`.
+   Main validates the project/thread and forwards only that command to the primary
+   renderer, with a deadline and an acknowledgement. The renderer activates the
+   project through its normal trust/workspace path, hydrates history, prepares a
+   first checkout, and uses `enqueueUserMessage` / `dispatchAgentRun`. This changes
+   the Mac's selected project/thread. It does not add a second transcript writer,
+   a generic IPC bridge, or machine-initiated continuation authority. Phone chat
+   currently sends plain text and uses desktop project/model settings.
+   Request IDs deduplicate deliveries for the current server session; a server
+   session UUID and bounded issue time reject replay after restart or expiry.
 6. **The listener is off by default and stays enabled until explicitly turned off.**
    The user chose persistent availability on 26 September 2026: once enabled, Copse
    starts the LAN server on every launch and does not disconnect it for inactivity,
@@ -224,11 +227,16 @@ expensive is an axis this version simply does not have.
     what makes revocation and "which device answered" possible at all, and
     retrofitting it after users have paired is a migration nobody will do.
 
-11. **Authority is gated on trust tier.** Reading (L0/L1) works in either tier. **Answering
-    an approval or steering a run (L2/L3) requires the installed root.** A phone tap is the
-    lowest-context consent in the product; it must not rest on a warning we told the user
-    to dismiss. This is the mechanism that reconciles an honest security claim with the
-    product's ambitions, and it maps exactly onto the existing phase boundary.
+11. **Control requires an explicit desktop grant after local-root installation.**
+    Existing device records default to read-only. Pairing or Manage paired phones
+    can grant control only after a desktop checkbox confirms that this phone has
+    installed and trusted the local root. The grant is persisted per device and
+    checked on every POST, including again after asynchronous store reads. Browsers
+    cannot attest their trust settings to this server: this is a human-confirmed
+    setup prerequisite, not cryptographic proof of installation. Do not interpret
+    `isSecureContext`, a request flag, or the TLS handshake as such proof. Revoking
+    or downgrading a device prevents further actions; already accepted work may
+    finish. Control grants authorize human chat submissions, never wider tool policy.
 
 12. **The phone may answer a decision the local gate already raised. It may never widen
     policy.** When L2 lands: `remember` and `grantScope: 'turn-tree'` are rejected
@@ -236,7 +244,7 @@ expensive is an axis this version simply does not have.
     `ipc-guards.ts:150-156`); the full subject renders or the answer is refused; the
     desktop keeps showing the same prompt and first-answer-wins; and the decision-log line
     records the device principal — which requires adding that field first, since
-    `DecisionActor` is `'user' | 'classifier' | 'hook' | 'system'`
+    `DecisionActor` now includes `'mobile-device'`, with the device UUID and label in `source` (previously only `'user' | 'classifier' | 'hook' | 'system'`)
     (`src/shared/threads/decision-log.ts:41`) and would otherwise attest that "the user
     approved" something nobody at the keyboard saw.
 13. **Push is Server-Sent Events, not WebSocket.** SSE needs zero new dependencies on the
@@ -423,7 +431,7 @@ device.
 
 ### L3 — steer
 
-Queue a message on an existing thread; stop a run. Not starting one (decision 5).
+Send/queue a message on an existing thread, start a new chat, or stop the exact run shown on the phone (decision 5, revised by user request).
 
 Exit gate: a queued message lands in the thread's queue and is picked up by the running
 turn, with no second submission path.
@@ -708,3 +716,19 @@ by hand, on a device the app cannot reach.
   "browser-served mode" entry are where this attaches; it is not a fifth independent
   surface.
 - [`../threat-model.md`](../threat-model.md) — amended in the same PR (see Security).
+
+### September 2026 control implementation
+
+- The HTTP write allow-list is approval, answer, stop, message. Strict envelopes
+  reject remember, grantScope, arbitrary channel names and extra properties.
+- Phone decisions reuse the desktop pending prompt, consume it synchronously,
+  withdraw the desktop modal, and retain device attribution in the decision spine.
+  Polling refreshes pending and cancelled prompts together on an open phone thread;
+  stale answers return 409. SSE and main-owned live transcript reduction remain L1 work.
+- Stop names an opaque ID for the actual AbortController, so a stale page cannot
+  stop a replacement run. Question answers must match the full question count.
+- Phones with read access cannot use any action. Access changes take effect without
+  reparsing settings or restarting the listener. Revocation during an already accepted
+  submission does not roll back a started checkout or a queued message.
+- Saved text still appears after desktop persistence. This slice does not claim
+  token streaming, attachment composition, or model selection from the phone.

@@ -4,8 +4,33 @@ const thread = document.getElementById('thread')
 const error = document.getElementById('error')
 const groups = document.getElementById('groups')
 const messages = document.getElementById('messages')
+const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+
+function applyTheme() {
+  document.documentElement.dataset.theme = systemTheme.matches ? 'dark' : 'light'
+  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(
+    document.body,
+  ).backgroundColor
+}
+
+applyTheme()
+systemTheme.addEventListener('change', applyTheme)
+
 let token = localStorage.getItem('copse-mobile-token')
 let selected = null
+let sessionId = null
+let access = 'read'
+let runId = null
+let refreshing = false
+let sending = false
+let decisionSignature = ''
+let messageSignature = ''
+let projectSignature = ''
+const drafts = new Map()
+const pendingActions = new Map()
+const composer = document.getElementById('composer')
+const messageInput = document.getElementById('message')
+const actionStatus = document.getElementById('action-status')
 
 function show(view) {
   pair.hidden = view !== pair
@@ -26,12 +51,18 @@ async function api(path, options = {}) {
   })
   if (response.status === 401) {
     token = null
+    selected = null
     localStorage.removeItem('copse-mobile-token')
     show(pair)
     throw new Error('Pair this phone again from the desktop.')
   }
-  if (!response.ok) throw new Error(`Desktop returned ${response.status}.`)
-  return response.json()
+  const data = await response.json()
+  if (!response.ok) {
+    const failure = new Error(data.error || `Desktop returned ${response.status}.`)
+    failure.status = response.status
+    throw failure
+  }
+  return data
 }
 
 function age(timestamp) {
@@ -70,11 +101,7 @@ function renderGroup(label, key, rows) {
     const button = element('button', 'row')
     button.type = 'button'
     const top = element('span', 'row-top')
-    const state = element(
-      'span',
-      `state ${key === 'needs-you' ? 'urgent' : ''}`,
-      row.state.replaceAll('-', ' '),
-    )
+    const state = element('span', `state ${row.state}`, row.state.replaceAll('-', ' '))
     top.append(state, element('span', 'time', age(row.lastSavedAt)))
     button.append(
       top,
@@ -88,10 +115,30 @@ function renderGroup(label, key, rows) {
 }
 
 async function refresh() {
-  if (!token || selected) return
+  if (!token || selected || refreshing) return
+  refreshing = true
   try {
     const data = await api('/api/activity')
-    fail('')
+    if (selected) return
+    access = data.access
+    sessionId = data.sessionId
+    document.getElementById('new-chat').hidden = access !== 'control'
+    if (access !== 'control') document.getElementById('new-chat-form').hidden = true
+    const projectSelect = document.getElementById('project')
+    const nextProjects = JSON.stringify(data.projects)
+    if (projectSignature !== nextProjects) {
+      projectSignature = nextProjects
+      const priorProject = projectSelect.value
+      projectSelect.replaceChildren(
+        ...data.projects.map((project) => {
+          const option = element('option', '', project.name)
+          option.value = project.id
+          return option
+        }),
+      )
+      if (data.projects.some((project) => project.id === priorProject))
+        projectSelect.value = priorProject
+    }
     groups.replaceChildren(
       renderGroup(
         'NEEDS YOU',
@@ -110,33 +157,167 @@ async function refresh() {
       ),
     )
     document.getElementById('freshness').textContent =
-      `Updated ${age(data.refreshedAt)} · Read only`
+      `Updated ${age(data.refreshedAt)} · ${access === 'control' ? 'Chat and run control' : 'Read only · enable control on your Mac'}`
     show(activity)
   } catch (cause) {
     fail(cause.message)
+  } finally {
+    refreshing = false
   }
 }
 
-async function openThread(row) {
-  selected = row
-  show(thread)
-  document.getElementById('thread-title').textContent = row.title
-  document.getElementById('thread-project').textContent = row.projectName
-  messages.replaceChildren(element('p', 'empty', 'Loading completed output…'))
+async function act(payload) {
+  if (!sessionId || access !== 'control') throw new Error('Enable phone control on the Mac first.')
+  const key = JSON.stringify(payload)
+  // Retain the exact envelope after an uncertain network result. An explicit
+  // retry then reaches the server's dedupe cache instead of starting two runs.
+  let envelope = pendingActions.get(key)
+  if (!envelope || envelope.sessionId !== sessionId) {
+    envelope = { ...payload, requestId: crypto.randomUUID(), sessionId, issuedAt: Date.now() }
+    pendingActions.set(key, envelope)
+  }
+  try {
+    const result = await api('/api/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+    })
+    pendingActions.delete(key)
+    return result
+  } catch (cause) {
+    if (cause.status && cause.status < 500) pendingActions.delete(key)
+    throw cause
+  }
+}
+
+function decisionButton(label, primary, callback) {
+  const button = element('button', primary ? 'ui-btn ui-btn-primary' : 'ui-btn', label)
+  button.type = 'button'
+  button.addEventListener('click', callback)
+  return button
+}
+
+function renderDecisions(data, row) {
+  const signature = JSON.stringify([data.decisions, data.attention, data.access])
+  if (signature === decisionSignature) return
+  decisionSignature = signature
+  const answerDrafts = new Map(
+    [...document.querySelectorAll('#attention textarea')].map((input) => [input.id, input.value]),
+  )
+  const cards = data.decisions.map((decision) => {
+    const card = element('section', 'attention')
+    card.dataset.decisionId = decision.id
+    const submit = async (answer) => {
+      const buttons = [...card.querySelectorAll('button')]
+      buttons.forEach((button) => {
+        button.disabled = true
+      })
+      try {
+        fail('')
+        await act({
+          ...answer,
+          projectId: row.projectId,
+          threadId: row.threadId,
+          decisionId: decision.id,
+        })
+        actionStatus.textContent = 'Response sent.'
+        await refreshThread()
+      } catch (cause) {
+        fail(cause.message)
+        await refreshThread()
+      } finally {
+        buttons.forEach((button) => {
+          button.disabled = false
+        })
+      }
+    }
+    if (decision.kind === 'approval') {
+      card.append(element('div', 'attention-title', decision.title))
+      if (decision.advice) card.append(element('p', 'decision-advice', decision.advice))
+      card.append(element('pre', 'attention-body', decision.body))
+      if (decision.footer) card.append(element('p', 'decision-advice', decision.footer))
+      if (data.access === 'control') {
+        const actions = element('div', 'decision-actions')
+        actions.append(
+          decisionButton('Deny', false, () => submit({ action: 'approval', approved: false })),
+          decisionButton('Approve once', true, () =>
+            submit({ action: 'approval', approved: true }),
+          ),
+        )
+        card.append(actions)
+      }
+    } else {
+      card.append(element('div', 'attention-title', 'Answer needed'))
+      const inputs = decision.questions.map((question, index) => {
+        const label = element('label', '', question.question)
+        const input = element('textarea', 'answer')
+        input.id = `answer-${decision.id}-${index}`
+        input.value = answerDrafts.get(input.id) || ''
+        input.maxLength = 8000
+        input.rows = 2
+        label.htmlFor = input.id
+        card.append(label)
+        if (data.access === 'control') {
+          card.append(input)
+          const options = element('div', 'answer-options')
+          for (const option of question.options || [])
+            options.append(
+              decisionButton(option, false, () => {
+                input.value = option
+              }),
+            )
+          card.append(options)
+        }
+        return input
+      })
+      if (data.access === 'control')
+        card.append(
+          decisionButton('Send answers', true, () =>
+            submit({ action: 'answer', answers: inputs.map((input) => input.value) }),
+          ),
+        )
+    }
+    return card
+  })
+  // Some external-agent prompts still have a desktop-only transport.
+  if (!data.decisions.length)
+    for (const item of data.attention) {
+      const card = element('section', 'attention')
+      card.append(
+        element('div', 'attention-title', item.title),
+        element('pre', 'attention-body', item.body),
+        element('p', 'hint', 'Answer this prompt on the desktop.'),
+      )
+      cards.push(card)
+    }
+  document.getElementById('attention').replaceChildren(...cards)
+}
+
+async function refreshThread() {
+  const row = selected
+  if (!token || !row) return
   try {
     const data = await api(
       `/api/thread/${encodeURIComponent(row.projectId)}/${encodeURIComponent(row.threadId)}`,
     )
-    document.getElementById('attention').replaceChildren(
-      ...data.attention.map((item) => {
-        const card = element('section', 'attention')
-        card.append(
-          element('div', 'attention-title', item.title),
-          element('pre', 'attention-body', item.body),
-        )
-        return card
-      }),
-    )
+    if (selected !== row) return
+    access = data.access
+    sessionId = data.sessionId
+    runId = data.runId
+    composer.hidden = access !== 'control'
+    document.getElementById('stop').hidden = access !== 'control' || !runId
+    document.getElementById('send').textContent = runId ? 'Queue message' : 'Send'
+    document.getElementById('thread-title').textContent = data.title
+    document.getElementById('thread-status').textContent =
+      access !== 'control'
+        ? 'Read only · Enable control in Mobile Companion on your Mac.'
+        : runId
+          ? 'Running · Saved output refreshes automatically.'
+          : 'Send a message to continue this chat.'
+    renderDecisions(data, row)
+    const signature = JSON.stringify(data.messages)
+    if (signature === messageSignature) return
+    messageSignature = signature
     messages.replaceChildren(
       ...data.messages.map((message) => {
         const card = element('article', 'message')
@@ -154,20 +335,123 @@ async function openThread(row) {
     )
     if (!data.messages.length)
       messages.append(
-        element(
-          'p',
-          'empty',
-          'No completed messages are saved yet. A running turn appears after it is persisted on the desktop.',
-        ),
+        element('p', 'empty', 'A running response appears after it is saved on the desktop.'),
       )
-    fail('')
   } catch (cause) {
     fail(cause.message)
   }
 }
 
+async function openThread(row) {
+  if (selected) drafts.set(selected.threadId, messageInput.value)
+  selected = row
+  runId = null
+  decisionSignature = ''
+  messageSignature = ''
+  composer.hidden = true
+  document.getElementById('stop').hidden = true
+  document.getElementById('attention').replaceChildren()
+  messageInput.value = drafts.get(row.threadId) || ''
+  show(thread)
+  document.getElementById('thread-title').textContent = row.title
+  document.getElementById('thread-project').textContent = row.projectName
+  messages.replaceChildren(element('p', 'empty', 'Loading saved output…'))
+  fail('')
+  await refreshThread()
+}
+
+composer.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const row = selected
+  const text = messageInput.value.trim()
+  if (!row || !text || sending) return
+  sending = true
+  document.getElementById('send').disabled = true
+  try {
+    fail('')
+    const result = await act({
+      action: 'message',
+      projectId: row.projectId,
+      threadId: row.threadId,
+      text,
+    })
+    drafts.delete(row.threadId)
+    if (selected === row && messageInput.value.trim() === text) messageInput.value = ''
+    actionStatus.textContent = result.queued
+      ? 'Message queued on your Mac.'
+      : 'Message sent to your Mac.'
+    await refreshThread()
+  } catch (cause) {
+    fail(`${cause.message} Your message is still here.`)
+  } finally {
+    sending = false
+    document.getElementById('send').disabled = false
+  }
+})
+
+document.getElementById('stop').addEventListener('click', async () => {
+  const row = selected
+  const currentRun = runId
+  if (!row || !currentRun) return
+  const button = document.getElementById('stop')
+  button.disabled = true
+  try {
+    fail('')
+    await act({
+      action: 'stop',
+      projectId: row.projectId,
+      threadId: row.threadId,
+      runId: currentRun,
+    })
+    actionStatus.textContent = 'Stop requested.'
+    await refreshThread()
+  } catch (cause) {
+    fail(cause.message)
+  } finally {
+    button.disabled = false
+  }
+})
+
+document.getElementById('new-chat').addEventListener('click', () => {
+  const form = document.getElementById('new-chat-form')
+  form.hidden = !form.hidden
+})
+document.getElementById('new-chat-form').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  if (sending) return
+  const input = document.getElementById('new-message')
+  const project = document.getElementById('project')
+  const text = input.value.trim()
+  const projectId = project.value
+  if (!text || !projectId) return
+  const button = event.currentTarget.querySelector('button')
+  sending = true
+  button.disabled = true
+  try {
+    fail('')
+    const result = await act({ action: 'message', projectId, threadId: null, text })
+    input.value = ''
+    document.getElementById('new-chat-form').hidden = true
+    await openThread({
+      projectId,
+      threadId: result.threadId,
+      title: 'New chat',
+      projectName: project.selectedOptions[0]?.textContent || '',
+    })
+    actionStatus.textContent = 'Chat started on your Mac.'
+  } catch (cause) {
+    fail(`${cause.message} Your message is still here.`)
+  } finally {
+    sending = false
+    button.disabled = false
+  }
+})
+
 document.getElementById('back').addEventListener('click', () => {
+  if (selected) drafts.set(selected.threadId, messageInput.value)
   selected = null
+  actionStatus.textContent = ''
+  fail('')
   void refresh()
 })
 document.getElementById('pair-button').addEventListener('click', async () => {
@@ -211,5 +495,7 @@ document.getElementById('pair-button').addEventListener('click', async () => {
 show(token ? activity : pair)
 if (token) void refresh()
 setInterval(() => {
-  if (token && !selected) void refresh()
+  if (!token || document.hidden) return
+  if (selected) void refreshThread()
+  else void refresh()
 }, 2500)

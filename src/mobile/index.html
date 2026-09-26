@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#101a17" />
+    <meta name="theme-color" content="#1e201e" />
     <title>Copse · Activity</title>
     <link rel="stylesheet" href="app.css" />
     <script src="app.js" defer></script>
@@ -11,7 +11,7 @@
   <body>
     <main class="shell">
       <header class="topbar">
-        <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span> Copse</div>
+        <div class="brand"><span class="brand-mark" aria-hidden="true"></span> Copse</div>
         <span class="session-label">DESKTOP SESSION</span>
       </header>
       <section id="pair" class="pair" hidden>
@@ -19,11 +19,11 @@
         <h1>See what needs you.</h1>
         <p>
           Your Mac must be awake with Copse open. Pair this phone from the desktop to read your
-          thread activity.
+          threads and control runs.
         </p>
         <label for="device-name">This phone’s name</label>
         <input id="device-name" maxlength="64" autocomplete="off" value="My phone" />
-        <button id="pair-button" class="primary">Request pairing</button>
+        <button id="pair-button" class="ui-btn ui-btn-primary">Request pairing</button>
         <div id="pair-code" class="pair-code" hidden></div>
         <p id="pair-status" class="status" role="status"></p>
       </section>
@@ -33,16 +33,44 @@
           <h1>Activity</h1>
           <p id="freshness">Checking desktop…</p>
         </div>
+        <button id="new-chat" class="ui-btn ui-btn-primary" hidden>New chat</button>
+        <form id="new-chat-form" hidden>
+          <label for="project">Project</label>
+          <select id="project" required></select>
+          <label for="new-message">Message</label>
+          <textarea
+            id="new-message"
+            rows="4"
+            maxlength="32000"
+            required
+            placeholder="What would you like to work on?"
+          ></textarea>
+          <p class="hint">Opens on your Mac using its project and model settings.</p>
+          <button class="ui-btn ui-btn-primary" type="submit">Start chat</button>
+        </form>
         <div id="groups"></div>
       </section>
       <section id="thread" hidden>
         <button id="back" class="back">← Activity</button>
         <span id="thread-project" class="eyebrow"></span>
         <h1 id="thread-title"></h1>
-        <p class="read-only">Read only · Decisions still need the desktop</p>
+        <p id="thread-status" class="read-only"></p>
+        <button id="stop" class="ui-btn" hidden>Stop run</button>
         <div id="attention"></div>
         <div id="messages"></div>
+        <form id="composer" hidden>
+          <label for="message">Message</label>
+          <textarea
+            id="message"
+            rows="3"
+            maxlength="32000"
+            required
+            placeholder="Send a follow-up…"
+          ></textarea>
+          <button id="send" class="ui-btn ui-btn-primary" type="submit">Send</button>
+        </form>
       </section>
+      <p id="action-status" class="status" role="status"></p>
       <p id="error" class="error" role="alert" hidden></p>
     </main>
   </body>

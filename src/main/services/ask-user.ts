@@ -10,6 +10,10 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
+import { mobileDecisions, mobileDecisionSource } from './mobile/mobile-decisions.ts'
+import { getActiveProjectId } from './workspace.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { recordDecision } from './security/decision-log-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 
 export interface AskUserRequest {
@@ -212,7 +216,6 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       const threadId = getActiveRunThread() ?? undefined
       const stopAlert = deps.alertUser('interaction', 'An agent has a question.', threadId)
       const withdraw = (result: AskUserResult): void => {
-        deps.send('agent:ask-user-cancelled', { id })
         deps.settle(id, result)
       }
       // Settle as cancelled here too: this listener runs before the deferred
@@ -225,9 +228,33 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
         withdraw(blankAnswers(req))
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
+      const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+      const removeMobile =
+        projectId && threadId
+          ? mobileDecisions.register(
+              projectId,
+              threadId,
+              { id, kind: 'question', questions: req.questions },
+              (answer, device) => {
+                if (answer.kind !== 'question') return
+                recordDecision({
+                  projectId,
+                  threadId,
+                  kind: 'ask-user',
+                  actor: 'mobile-device',
+                  verdict: 'approved',
+                  subject: 'Answered agent questions',
+                  source: mobileDecisionSource(device),
+                })
+                deps.settle(id, { answers: answer.answers })
+              },
+            )
+          : (): void => {}
       deps.register(
         id,
         (result) => {
+          removeMobile()
+          deps.send('agent:ask-user-cancelled', { id })
           clearTimeout(timer)
           signal?.removeEventListener('abort', onAbort)
           stopAlert()

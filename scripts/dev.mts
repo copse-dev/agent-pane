@@ -9,6 +9,7 @@ import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 import { MAIN_EXTERNALS, MAIN_LOG_OVERRIDE } from './main-externals.mts'
 import { expectString } from '../src/shared/unknown-value.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
+import { buildMobileAssets } from './mobile-build.mts'
 
 const require = createRequire(import.meta.url)
 const electronPath = expectString(require('electron'))
@@ -26,7 +27,7 @@ cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/mate
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
 copyFileSync('src/renderer/theme-boot.js', 'dist/renderer/theme-boot.js')
 cpSync('assets', 'dist/assets', { recursive: true })
-cpSync('src/mobile', 'dist/mobile', { recursive: true })
+await buildMobileAssets()
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })

@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { mobileDecisions, type MobileDecision } from './mobile-decisions.ts'
+import { mobileRunId } from '../agent-service.ts'
 import { listRunningThreadIds } from '../agent-service.ts'
 import { pendingApprovalCountForThread, pendingApprovalRequestsForThread } from '../approval.ts'
 import { pendingAskUserCountForThread, pendingAskUserQuestionsForThread } from '../ask-user.ts'
@@ -63,10 +65,9 @@ export async function mobileActivity(): Promise<MobileActivityRow[]> {
         state,
         detail:
           approvals > 0
-            ? `${pendingApprovalRequestsForThread(thread.id)[0]?.title ?? 'Approval needed'} · ${String(approvals)} waiting on desktop`
+            ? `${pendingApprovalRequestsForThread(thread.id)[0]?.title ?? 'Approval needed'} · ${String(approvals)} waiting`
             : questions > 0
-              ? (pendingAskUserQuestionsForThread(thread.id)[0]?.question ??
-                'Answer needed on desktop')
+              ? (pendingAskUserQuestionsForThread(thread.id)[0]?.question ?? 'Answer needed')
               : running.has(thread.id)
                 ? 'Agent running · last saved activity shown below'
                 : thread.status === 'error'
@@ -88,6 +89,8 @@ export async function mobileThread(
   projectName: string
   title: string
   attention: Array<{ title: string; body: string }>
+  decisions: MobileDecision[]
+  runId: string | null
   messages: Array<{ role: 'user' | 'assistant' | 'error'; content: string; summary: string | null }>
 } | null> {
   if (!safeId.test(projectId) || !safeId.test(threadId)) return null
@@ -116,6 +119,8 @@ export async function mobileThread(
     projectName: project.name,
     title: thread.title || 'Untitled thread',
     attention,
+    decisions: mobileDecisions.list(projectId, threadId),
+    runId: mobileRunId(threadId),
     messages,
   }
 }

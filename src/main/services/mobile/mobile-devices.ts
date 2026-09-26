@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import type { MobilePrincipal } from './mobile-decisions.ts'
 import { copseDataRoot } from '../storage/copse-paths.ts'
 
 const deviceSchema = z.object({
@@ -10,6 +11,7 @@ const deviceSchema = z.object({
   label: z.string().min(1).max(64),
   tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
   createdAt: z.number().int().nonnegative(),
+  access: z.enum(['read', 'control']).default('read'),
 })
 type Device = z.infer<typeof deviceSchema>
 
@@ -34,15 +36,16 @@ export class MobileDevices {
     }
   }
 
-  list(): Array<{ id: string; label: string; createdAt: number }> {
-    return this.devices.map(({ id, label, createdAt }) => ({
+  list(): Array<MobilePrincipal & { createdAt: number; access: 'read' | 'control' }> {
+    return this.devices.map(({ id, label, createdAt, access }) => ({
       id,
       label,
       createdAt,
+      access,
     }))
   }
 
-  issue(label: string): { id: string; token: string } {
+  issue(label: string, access: 'read' | 'control' = 'read'): { id: string; token: string } {
     const token = randomBytes(32).toString('hex')
     const id = randomUUID()
     this.devices.push({
@@ -50,19 +53,32 @@ export class MobileDevices {
       label,
       tokenHash: createHash('sha256').update(token).digest('hex'),
       createdAt: Date.now(),
+      access,
     })
     this.save()
     return { id, token }
   }
 
   authenticate(header: string | undefined): boolean {
-    if (!header?.startsWith('Bearer ')) return false
+    return this.principal(header) !== null
+  }
+
+  principal(header: string | undefined): (MobilePrincipal & { access: 'read' | 'control' }) | null {
+    if (!header?.startsWith('Bearer ')) return null
     const token = header.slice(7)
-    if (!/^[0-9a-f]{64}$/.test(token)) return false
+    if (!/^[0-9a-f]{64}$/.test(token)) return null
     const candidate = createHash('sha256').update(token).digest()
-    return this.devices.some((device) =>
+    const device = this.devices.find((device) =>
       timingSafeEqual(candidate, Buffer.from(device.tokenHash, 'hex')),
     )
+    return device ? { id: device.id, label: device.label, access: device.access } : null
+  }
+
+  setAccess(id: string, access: 'read' | 'control'): void {
+    const device = this.devices.find((item) => item.id === id)
+    if (!device) return
+    device.access = access
+    this.save()
   }
 
   revoke(id: string): void {

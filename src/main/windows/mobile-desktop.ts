@@ -58,7 +58,7 @@ async function manageDevices(win: BrowserWindow, devices: MobileDevices): Promis
   const result = await dialog.showMessageBox(win, {
     type: 'question',
     title: 'Paired phones',
-    message: 'Choose a phone to revoke its access.',
+    message: 'Choose a phone to manage its access.',
     detail:
       'Revoking access takes effect immediately. If you installed the Copse Local Root on that phone, remove it in the phone’s certificate settings too.',
     buttons: [...list.map((device) => device.label), 'Cancel'],
@@ -67,11 +67,39 @@ async function manageDevices(win: BrowserWindow, devices: MobileDevices): Promis
   })
   const selected = list[result.response]
   if (!selected) return
+  const access = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: selected.label,
+    message: `Access: ${selected.access === 'control' ? 'Chat and run control' : 'Read only'}`,
+    detail:
+      'Control lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Install and trust the Copse Local Root on the phone before enabling control. The browser cannot report its certificate trust settings to Copse.',
+    checkboxLabel: 'The Copse Local Root is installed and trusted on this phone',
+    checkboxChecked: false,
+    buttons: [
+      'Cancel',
+      selected.access === 'control' ? 'Make read only' : 'Allow control',
+      'Revoke phone',
+    ],
+    defaultId: 0,
+    cancelId: 0,
+  })
+  if (access.response === 0) return
+  if (access.response === 1) {
+    if (selected.access === 'control') devices.setAccess(selected.id, 'read')
+    else if (access.checkboxChecked) devices.setAccess(selected.id, 'control')
+    else
+      await dialog.showMessageBox(win, {
+        type: 'info',
+        message:
+          'Install and trust the local certificate, then confirm the checkbox to allow control.',
+      })
+    return
+  }
   devices.revoke(selected.id)
   await dialog.showMessageBox(win, {
     type: 'info',
     title: 'Phone revoked',
-    message: `${selected.label} can no longer read Copse from a phone.`,
+    message: `${selected.label} can no longer access Copse.`,
   })
 }
 
@@ -83,17 +111,27 @@ function launch(address: string, devices: MobileDevices): Promise<MobileServer> 
     devices,
     approvePair: async (label, code) => {
       const win = getFocusedMainWindow()
-      if (!win || win.isDestroyed() || quitting) return false
+      if (!win || win.isDestroyed() || quitting) return null
       const decision = await dialog.showMessageBox(win, {
         type: 'question',
         title: 'Pair a phone with Copse',
         message: `Does this code appear on ${label}?`,
-        detail: `${code}\n\nApproving gives this phone read access to your thread names, saved messages, and activity whenever Mobile Companion is enabled. Only approve a phone you hold.`,
-        buttons: ['Deny', 'Approve phone'],
+        detail: `${code}\n\nRead only shares thread names, saved messages, and activity. Allow control also lets this phone send messages, start chats, stop runs, answer questions, and approve individual requests. Only pair a phone you hold.`,
+        checkboxLabel: 'The Copse Local Root is installed and trusted on this phone',
+        checkboxChecked: false,
+        buttons: ['Deny', 'Read only', 'Allow control'],
         defaultId: 0,
         cancelId: 0,
       })
-      return decision.response === 1
+      if (decision.response === 1) return 'read'
+      if (decision.response === 2 && decision.checkboxChecked) return 'control'
+      if (decision.response === 2)
+        await dialog.showMessageBox(win, {
+          type: 'info',
+          message:
+            'Pairing was declined. Install and trust the local certificate, then confirm the checkbox when pairing again.',
+        })
+      return null
     },
     onStop: () => {
       active = null
@@ -194,7 +232,7 @@ export async function showMobileCompanion(win: BrowserWindow): Promise<void> {
     title: 'Enable Mobile Companion',
     message: 'Choose the local address to share with paired phones.',
     detail:
-      'This opens an encrypted, read-only view. Pairing requires your approval on this Mac. Once enabled, Copse keeps the server running while the app is open and starts it again on launch. If this address changes, Copse may use another private address. Use this menu to turn it off.',
+      'This opens an encrypted companion for your threads. Pairing and phone control require your approval on this Mac. Once enabled, Copse keeps the server running while the app is open and starts it again on launch. If this address changes, Copse may use another private address. Use this menu to turn it off.',
     buttons: [...addresses, 'Cancel'],
     defaultId: addresses.length,
     cancelId: addresses.length,
