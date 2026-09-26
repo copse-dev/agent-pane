@@ -2,6 +2,23 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedAcpAuthErrorFixture } from './helpers/seed-config.ts'
 import { savePreparedElementScreenshot } from './helpers/screenshot.ts'
 
+/**
+ * Where each env-var hint rendered: inside the numbered sign-in steps (the
+ * markdown package folds a trailing unindented paragraph into the last ordered
+ * item) or in the credentials note that follows them.
+ */
+async function hintPlacement(messageId: string) {
+  return browser.execute((id) => {
+    const root = document.querySelector(`[data-message-id="${id}"] .message-text`)
+    const codeText = (selector: string) =>
+      [...(root?.querySelectorAll(selector) ?? [])].map((code) => code.textContent)
+    return {
+      inSteps: codeText('ol code'),
+      inNote: codeText('blockquote:not(.markdown-alert) code'),
+    }
+  }, messageId)
+}
+
 describe('ACP authentication error presentation', () => {
   // Screenshot preparation changes the frame and overflow. Each recovery path
   // needs a fresh viewport so one capture cannot clip the next message's prose.
@@ -46,7 +63,16 @@ describe('ACP authentication error presentation', () => {
       if (!root || !warningEl || !steps || !diagnostic) return { error: 'missing auth error block' }
       const rootRect = root.getBoundingClientRect()
       const diagnosticRect = diagnostic.getBoundingClientRect()
+      const diagnosticStyle = getComputedStyle(diagnostic)
+      const diagnosticLines = (diagnostic.textContent ?? '').trimEnd().split('\n').length
+      const diagnosticContentHeight =
+        diagnostic.clientHeight -
+        parseFloat(diagnosticStyle.paddingTop) -
+        parseFloat(diagnosticStyle.paddingBottom)
       return {
+        diagnosticLines,
+        diagnosticFontSize: parseFloat(diagnosticStyle.fontSize),
+        diagnosticLinePitch: diagnosticContentHeight / diagnosticLines,
         warningBeforeSteps:
           warningEl.getBoundingClientRect().bottom <= steps.getBoundingClientRect().top,
         stepsBeforeDiagnostic: steps.getBoundingClientRect().bottom <= diagnosticRect.top,
@@ -57,6 +83,16 @@ describe('ACP authentication error presentation', () => {
     expect(layout.warningBeforeSteps).toBe(true)
     expect(layout.stepsBeforeDiagnostic).toBe(true)
     expect(layout.diagnosticContained).toBe(true)
+    // Fenced diagnostics use code density, not the 16px/1.65 prose line box
+    // (~26px per 12px line before #3065).
+    expect(layout.diagnosticLines).toBe(2)
+    expect(layout.diagnosticFontSize).toBe(12)
+    expect(layout.diagnosticLinePitch).toBeGreaterThanOrEqual(21)
+    expect(layout.diagnosticLinePitch).toBeLessThanOrEqual(24)
+
+    const hints = await hintPlacement('msg-assistant-acp-auth')
+    expect(hints.inSteps).toEqual(['claude /login'])
+    expect(hints.inNote).toEqual(['ANTHROPIC_API_KEY'])
 
     await savePreparedElementScreenshot(
       '[data-message-id="msg-assistant-acp-auth"]',
@@ -69,10 +105,12 @@ describe('ACP authentication error presentation', () => {
     const warning = await message.$('.markdown-alert-warning')
     await expect(warning.$('strong')).toHaveText('Cursor sign-in expired')
     await expect(message.$('ol code')).toHaveText('cursor-agent login')
-    // List items also contain paragraphs, so the first `p code` is the login
-    // command above. Check the complete prose token set for the recovery hint.
+    // Check the complete prose token set for the recovery hint.
     const paragraphCodeText = await message.$$('p code').map((code) => code.getText())
     expect(paragraphCodeText).toContain('CURSOR_SESSION_TOKEN')
+    const hints = await hintPlacement('msg-assistant-cursor-auth')
+    expect(hints.inSteps).toEqual(['cursor-agent login'])
+    expect(hints.inNote).toEqual(['CURSOR_SESSION_TOKEN'])
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('expired WorkosCursorSessionToken'),
     )
@@ -91,6 +129,9 @@ describe('ACP authentication error presentation', () => {
     const paragraphCodeText = await message.$$('p code').map((code) => code.getText())
     expect(paragraphCodeText).toContain('CODEX_API_KEY')
     expect(paragraphCodeText).toContain('OPENAI_API_KEY')
+    const hints = await hintPlacement('msg-assistant-codex-auth')
+    expect(hints.inSteps).toEqual(['codex login'])
+    expect(hints.inNote).toEqual(['CODEX_API_KEY', 'OPENAI_API_KEY'])
     await expect(message.$('pre code')).toHaveText(
       expect.stringContaining('workspace routing discovery unauthorized (401)'),
     )

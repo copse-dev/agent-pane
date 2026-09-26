@@ -4,6 +4,8 @@ import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
+import { switchTheme } from './helpers/theme.ts'
 
 const QUEUED_TEXT = 'Which unit tests should cover the parser refactor?'
 const FIRST_PROMPT = 'Suggest a safe refactor for the JSON parser error paths.'
@@ -121,6 +123,33 @@ describe('queued message delete', function () {
       await expect(chip.edge).toBeGreaterThan(1.6)
     }
     await saveElementScreenshot(ROW_SELECTOR, 'queued-actions-row.png')
+
+    // Send now used to flip its label to white on hover while the fill stayed
+    // the accent: 1.86:1 in both themes, only while the pointer was on it.
+    // The loop leaves the app in light, so put the starting theme back (even on a
+    // failed assertion) before the full-app capture below.
+    const sendNow = '.conversation-queued .queued-send-now'
+    const startTheme = await browser.execute(() => document.documentElement.dataset['theme'])
+    try {
+      for (const theme of ['dark', 'light'] as const) {
+        const current = await browser.execute(() => document.documentElement.dataset['theme'])
+        if (current !== theme) await switchTheme(theme)
+        await $(sendNow).waitForDisplayed()
+        const rest = await fillContrast(sendNow)
+        await $(sendNow).moveTo()
+        await browser.pause(200)
+        const hovered = await fillContrast(sendNow)
+        if (!rest || !hovered) throw new Error('Send now chip not found')
+        await expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+        await expect(hovered.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+        await saveElementScreenshot(ROW_SELECTOR, `queued-actions-row-hover-${theme}.png`)
+      }
+    } finally {
+      const restore = startTheme === 'light' ? 'light' : 'dark'
+      const current = await browser.execute(() => document.documentElement.dataset['theme'])
+      if (current !== restore) await switchTheme(restore)
+    }
+    await $('.prompt-input').moveTo()
 
     await $('.queued-delete').click()
 
