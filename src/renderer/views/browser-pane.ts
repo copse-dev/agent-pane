@@ -21,6 +21,7 @@ import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { artefactUrl } from '@shared/canvas/artefact.ts'
+import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canvas/guest-surface.ts'
 import {
   BROWSER_SESSION_PARTITION,
   browserSessionPartition,
@@ -57,6 +58,9 @@ interface BrowserWebviewElement extends HTMLElement {
   getTitle(): string
   openDevTools(): void
   getWebContentsId(): number
+  /** Electron guests only; the iframe fallback has no way into the document. */
+  executeJavaScript?(code: string): Promise<unknown>
+  insertCSS?(css: string): Promise<string>
 }
 
 interface BrowserTab {
@@ -628,6 +632,26 @@ export function mountBrowserPane(
     })
   }
 
+  /**
+   * A transparent inline-HTML artefact shows the host's `--bg-base` through its
+   * root, but host CSS does not inherit into the guest, so its text would stay
+   * Chromium's default black on the dark surface. Give the guest the host's text
+   * colour — only when its roots really are transparent, so an artefact that
+   * paints its own background keeps the defaults it was written against. The
+   * agent mirror makes the same decision (see `guest-surface.ts`).
+   */
+  function applyCanvasGuestText(tab: BrowserTab, webview: BrowserWebviewElement): void {
+    if (!tab.artefactTitle || !webview.getURL().startsWith('data:text/html')) return
+    const css = canvasGuestTextCss(getComputedStyle(tab.webviewHost).color)
+    if (!css || !webview.executeJavaScript || !webview.insertCSS) return
+    const insertCSS = webview.insertCSS.bind(webview)
+    void webview
+      .executeJavaScript(CANVAS_TRANSPARENT_ROOT_PROBE)
+      .then((transparent) => (transparent === true ? insertCSS(css) : undefined))
+      // Best-effort: a guest that navigated away mid-probe simply keeps its defaults.
+      .catch(() => undefined)
+  }
+
   function ensureWebview(tab: BrowserTab): BrowserWebviewElement {
     if (tab.webview) return tab.webview
 
@@ -667,6 +691,7 @@ export function mountBrowserPane(
       tab.webviewReady = true
       syncAddressBar(tab)
       syncWebviewSize(tab)
+      applyCanvasGuestText(tab, webview)
       if (tab.pendingUrl) {
         const url = tab.pendingUrl
         tab.pendingUrl = null

@@ -378,6 +378,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
             ...(chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {}),
+            ...(chunk.appendedReminderLengths
+              ? { appendedReminderLengths: chunk.appendedReminderLengths }
+              : {}),
             ...(chunk.images ? { images: chunk.images } : {}),
           })
           if (chunk.toolCallId && !chunk.isError) {
@@ -518,6 +521,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             status: chunk.isError ? 'error' : 'done',
             result: chunk.result,
             ...(chunk.editStats ? { editStats: chunk.editStats } : {}),
+            ...(chunk.appendedReminderLengths
+              ? { appendedReminderLengths: chunk.appendedReminderLengths }
+              : {}),
             ...(chunk.images ? { images: chunk.images } : {}),
           })
         }

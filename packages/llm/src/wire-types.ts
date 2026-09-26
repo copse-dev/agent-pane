@@ -181,6 +181,11 @@ export type ProviderStreamChunk =
        * and should render through the Markdown pipeline rather than a raw `<pre>`.
        */
       resultFormat?: 'markdown'
+      /**
+       * Lengths of the system-reminder blocks Copse appended to `result` for the
+       * model; display metadata for the transcript (see `ToolCall`).
+       */
+      appendedReminderLengths?: number[]
       /** Images returned by the tool, rendered beside its transcript card. */
       images?: ToolResultImage[]
     }
