@@ -150,24 +150,35 @@ The scorer reports:
 - the per-mode table for the model alone at P ≥ 0.5 and P ≥ 0.9, and for
   `deterministic OR (model AND harm gate)` using the pinned verdicts.
 
-### Kev-4b, 2026-09-26
+### Model runs, 2026-09-26
 
-The first model run is [Kev-4b](results/2026-09-26/kev-4b/README.md), served locally. It got 305 of
-416 dev tiers right (73%) and 272 of 366 holdout tiers (74%), with `ask` recall of 0.91 on dev and
-0.75 on holdout. Holdout, as coverage / over-tier / must-ask:
+Two models were served locally from the persistent cache (`pnpm run classifier:serve`), and their
+raw records are committed: [Kev-4b](results/2026-09-26/kev-4b/README.md) and
+[Winnow-12B](results/2026-09-26/winnow-12b/README.md).
 
-| Approver                                     | local-write    | remote-write    | outside-read   | outside-write  |
-| -------------------------------------------- | -------------- | --------------- | -------------- | -------------- |
-| Deterministic tiers                          | 62/189, 0, 0   | 63/199, 0, 0    | 84/239, 0, 0   | 84/265, 0, 0   |
-| Harm gate alone                              | 177/189, 78, 0 | 182/199, 73, 0  | 226/239, 29, 0 | 250/265, 5, 0  |
-| Kev P ≥ 0.5 alone                            | 151/189, 11, 9 | 165/199, 16, 16 | 214/239, 4, 22 | 251/265, 1, 34 |
-| Deterministic OR (Kev P ≥ 0.5 AND harm gate) | 145/189, 11, 0 | 155/199, 16, 0  | 204/239, 3, 0  | 237/265, 0, 0  |
+| Model      | Dev tiers correct | Holdout tiers correct | `ask` recall, dev / holdout | Median call |
+| ---------- | ----------------: | --------------------: | --------------------------: | ----------: |
+| Kev-4b     |     305/416 (73%) |         272/366 (74%) |                 0.91 / 0.75 |       2.3 s |
+| Winnow-12B |     312/416 (75%) |         284/366 (78%) |                 0.96 / 0.97 |       2.0 s |
 
-- **Kev alone is not a gate.** It approves between 9 and 34 `ask` commands, depending on the mode.
-- **Behind the harm gate it makes no must-ask approvals.** Compared with the harm gate alone, it
-  cuts over-tier approvals in local-write mode from 78 to 11, and gives up 17% of coverage.
-- **P ≥ 0.9 almost never fires.** It covers 2–21% alone, because the served temperature of 2.4
-  flattens the probabilities. The dev-selected threshold is 0.5.
+Neither model is a gate on its own. The threshold was the lowest that made no over-tier or
+must-ask approval on dev. At that threshold on holdout, Kev alone approves 3 `ask` commands in
+each outside mode. Winnow alone approves 1 in outside-write mode, and at P ≥ 0.9 it approves
+`env` twice and `screencapture`. The harm gate stops every one of them.
+
+Blended as `deterministic OR (model ≥ t AND harm gate)`, with t chosen the same way on dev, neither
+makes a must-ask approval on holdout. Holdout coverage for each mode:
+
+| Mode          | Deterministic alone |       Kev blend (t) |    Winnow blend (t) | Over-tier (Kev / Winnow) |
+| ------------- | ------------------: | ------------------: | ------------------: | -----------------------: |
+| local-write   |        62/189 (33%) |  92/189 (49%), 0.76 | 122/189 (65%), 0.95 |                    2 / 2 |
+| remote-write  |        63/199 (32%) | 102/199 (51%), 0.77 | 126/199 (63%), 0.95 |                    2 / 2 |
+| outside-read  |        84/239 (35%) | 135/239 (56%), 0.79 | 180/239 (75%), 0.50 |                    1 / 1 |
+| outside-write |        84/265 (32%) | 229/265 (86%), 0.56 | 197/265 (74%), 0.50 |                    0 / 0 |
+
+Winnow's blend covers more in three of the four modes. Kev's is ahead in outside-write only. The
+harm gate's zero is in-sample, because its rules were fixed using this set, so treat these as
+upper bounds until a fresh slice of real history is labelled.
 
 The likeliest tier wins, and a tie goes to `ask`. Choose prompts and thresholds on `dev` before
 reading `holdout`. A profile pointing at a hosted endpoint sends every command to that provider.
