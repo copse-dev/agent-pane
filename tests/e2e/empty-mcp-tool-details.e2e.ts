@@ -29,6 +29,8 @@ describe('empty MCP tool details', () => {
     await card.$('summary.tool-card-header').click()
 
     await expect(card).toHaveAttribute('open')
+    // Sentence casing keeps the acronym next to its colon.
+    await expect(card.$('.tool-name')).toHaveText('MCP: tool')
     await expect(card.$$('.tool-args')).toBeElementsArrayOfSize(0)
     await expect(card.$$('.tool-result-empty')).toBeElementsArrayOfSize(1)
     await expect(card.$('.tool-result-empty')).toHaveText('No tool details were provided.')

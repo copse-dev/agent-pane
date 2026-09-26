@@ -1,3 +1,4 @@
+import { setInlineMarkdown } from '../markdown/inline-markdown.ts'
 import { el } from './helpers.ts'
 import { checkIcon, closeIcon, dotIcon, minusIcon, spinnerIcon, warningIcon } from './icons.ts'
 
@@ -33,4 +34,20 @@ export function inlineStatus(kind: InlineStatusKind, text: string): HTMLSpanElem
 
 export function setInlineStatus(target: Element, kind: InlineStatusKind, text: string): void {
   target.replaceChildren(inlineStatus(kind, text))
+}
+
+/**
+ * Like {@link setInlineStatus}, but the text may name commands or environment
+ * variables in backticks, which render as inline code rather than delimiters.
+ */
+export function setInlineStatusMarkdown(
+  target: Element,
+  kind: InlineStatusKind,
+  source: string,
+): void {
+  const text = el('span', { class: 'ui-inline-status-text' })
+  setInlineMarkdown(text, source)
+  target.replaceChildren(
+    el('span', { class: 'ui-inline-status', 'data-status-kind': kind }, statusIcon(kind), text),
+  )
 }

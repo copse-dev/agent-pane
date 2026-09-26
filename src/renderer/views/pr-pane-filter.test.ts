@@ -21,7 +21,6 @@ const MONACO_STUB: GitDiffMonaco = {
   editor: {
     createDiffEditor: unreachableMonacoCall,
     createModel: unreachableMonacoCall,
-    setTheme: (): void => {},
   },
 }
 

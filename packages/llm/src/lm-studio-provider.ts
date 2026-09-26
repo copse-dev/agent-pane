@@ -12,7 +12,7 @@ import {
 } from '@lmstudio/sdk'
 import {
   openAiParameterFields,
-  recommendedOutputCeiling,
+  resolvedOutputCeiling,
   type ModelParameters,
 } from './model-parameters.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
@@ -195,7 +195,7 @@ export class LMStudioProvider implements LLMProvider {
     // The production factory keeps either unsupported setting on LM Studio's
     // OpenAI-compatible transport, so this mapper only receives SDK fields.
     const fields = openAiParameterFields(this.params)
-    const ceiling = recommendedOutputCeiling(this.modelName, this.params)
+    const ceiling = resolvedOutputCeiling(this.modelName, this.params)
     return {
       ...(fields.temperature !== undefined ? { temperature: fields.temperature } : {}),
       ...(fields.top_p !== undefined ? { topPSampling: fields.top_p } : {}),
