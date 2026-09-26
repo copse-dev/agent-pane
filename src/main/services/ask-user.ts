@@ -19,6 +19,12 @@ export interface AskUserRequest {
 export interface AskUserResult {
   /** One answer per question, in order. Empty strings mean "left blank". */
   answers: string[]
+  /**
+   * The run stopped before the user answered. The answers are blank, but no one
+   * left them blank: the question was withdrawn, so a caller must not report it
+   * as answered.
+   */
+  cancelled?: true
 }
 
 // A pending ask never auto-resolves, so the agent loop would hang forever if the
@@ -50,12 +56,18 @@ function blankAnswers(req: AskUserRequest): AskUserResult {
   return { answers: req.questions.map(() => '') }
 }
 
+/** The run stopped while (or before) asking: blank answers, marked as withdrawn. */
+function cancelledAnswers(req: AskUserRequest): AskUserResult {
+  return { ...blankAnswers(req), cancelled: true }
+}
+
 export function requestUserAnswers(
   req: AskUserRequest,
   signal?: AbortSignal,
 ): Promise<AskUserResult> {
   const activeHandler = scopedHandler.getStore() ?? handler
-  if (!activeHandler || signal?.aborted) return Promise.resolve(blankAnswers(req))
+  if (signal?.aborted) return Promise.resolve(cancelledAnswers(req))
+  if (!activeHandler) return Promise.resolve(blankAnswers(req))
   // A question on screen is a host-side wait on a human, exactly like an
   // approval modal, so it pauses the run's sliding idle deadline the same way
   // `requestApprovalInteractive` does. Without this the 15-minute idle budget
@@ -77,8 +89,13 @@ function requestUserAnswersUnpaused(
 ): Promise<AskUserResult> {
   if (!signal) return activeHandler(req)
   return new Promise<AskUserResult>((resolve, reject) => {
+    // Cancel only after pending promise reactions drain: an answer that settled
+    // in the same turn as the stop, even through an async handler's extra hops,
+    // resolves first and is kept. `resolve` ignores whichever call comes second.
     const onAbort = (): void => {
-      resolve(blankAnswers(req))
+      setImmediate(() => {
+        resolve(cancelledAnswers(req))
+      })
     }
     signal.addEventListener('abort', onAbort, { once: true })
     void activeHandler(req, signal).then(
@@ -130,35 +147,66 @@ export function initAskUser(
   })
 
   setAskUserHandler(
-    (req, signal) =>
-      new Promise<AskUserResult>((resolve) => {
-        const blank = (): AskUserResult => ({ answers: req.questions.map(() => '') })
-        if (signal?.aborted) {
-          resolve(blank())
-          return
-        }
-        const id = randomUUID()
-        // Attribute to the running thread so a background thread's question
-        // surfaces as a sidebar attention indicator instead of interrupting
-        // whichever thread the user is currently focused on.
-        const threadId = getActiveRunThread() ?? undefined
-        const stopAlert = alertUser('interaction', 'An agent has a question.')
-        const cancel = (): void => {
-          win.webContents.send('agent:ask-user-cancelled', { id })
-          settle(id, blank())
-        }
-        const timer = setTimeout(() => {
-          cancel()
-        }, ASK_USER_TIMEOUT_MS)
-        if (typeof timer.unref === 'function') timer.unref()
-        pending.set(id, (result) => {
-          clearTimeout(timer)
-          signal?.removeEventListener('abort', cancel)
-          stopAlert()
-          resolve(result)
-        })
-        signal?.addEventListener('abort', cancel, { once: true })
-        win.webContents.send('agent:ask-user-request', { id, threadId, questions: req.questions })
-      }),
+    createWindowAskUserHandler({
+      send: (channel, payload) => {
+        win.webContents.send(channel, payload)
+      },
+      register: (id, resolve) => {
+        pending.set(id, resolve)
+      },
+      settle,
+      alertUser,
+    }),
   )
+}
+
+/** What the window-backed handler needs from `initAskUser`'s window and pending map. */
+export interface WindowAskUserDeps {
+  send: (channel: 'agent:ask-user-request' | 'agent:ask-user-cancelled', payload: object) => void
+  register: (id: string, resolve: (result: AskUserResult) => void) => void
+  settle: (id: string, result: AskUserResult) => void
+  alertUser: UserAlertSender
+}
+
+/**
+ * The handler that shows the question in the window and waits for `ask:respond`.
+ * A stop withdraws the question as cancelled; the timeout withdraws it with
+ * blank answers, which the tool reports as unanswered.
+ */
+export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHandler {
+  return (req, signal) =>
+    new Promise<AskUserResult>((resolve) => {
+      if (signal?.aborted) {
+        resolve(cancelledAnswers(req))
+        return
+      }
+      const id = randomUUID()
+      // Attribute to the running thread so a background thread's question
+      // surfaces as a sidebar attention indicator instead of interrupting
+      // whichever thread the user is currently focused on.
+      const threadId = getActiveRunThread() ?? undefined
+      const stopAlert = deps.alertUser('interaction', 'An agent has a question.')
+      const withdraw = (result: AskUserResult): void => {
+        deps.send('agent:ask-user-cancelled', { id })
+        deps.settle(id, result)
+      }
+      // Settle as cancelled here too: this listener runs before the deferred
+      // one in `requestUserAnswersUnpaused`, so a plain blank result would win
+      // and record the withdrawn question as answered.
+      const onAbort = (): void => {
+        withdraw(cancelledAnswers(req))
+      }
+      const timer = setTimeout(() => {
+        withdraw(blankAnswers(req))
+      }, ASK_USER_TIMEOUT_MS)
+      if (typeof timer.unref === 'function') timer.unref()
+      deps.register(id, (result) => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        stopAlert()
+        resolve(result)
+      })
+      signal?.addEventListener('abort', onAbort, { once: true })
+      deps.send('agent:ask-user-request', { id, threadId, questions: req.questions })
+    })
 }
