@@ -1,12 +1,13 @@
 import type { Options } from '@wdio/types'
 import electronBinary from 'electron'
 import { createRequire } from 'node:module'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { resolveElectronBrowserVersion } from './tests/e2e/helpers/electron-browser-version.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
+import { makeE2eScratchDir } from './tests/e2e/helpers/scratch-dir.ts'
 import {
   createEvalProject,
   loadEvalScenario,
@@ -117,9 +118,7 @@ export const config: Options.Testrunner = {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
 
-    evalUserDataDir = mkdtempSync(
-      join(process.cwd(), `.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`),
-    )
+    evalUserDataDir = makeE2eScratchDir(`.wdio-eval-userdata-${randomBytes(4).toString('hex')}-`)
     process.env.COPSE_PANEL_USER_DATA = evalUserDataDir
     const evalWorkspaceDir = join(evalUserDataDir, 'workspace')
     process.env.COPSE_WORKSPACE_DIR = evalWorkspaceDir
@@ -217,9 +216,7 @@ export const config: Options.Testrunner = {
     }
     const chromeOptions = cap['goog:chromeOptions'] ?? {}
     const debugPort = 19200 + Math.floor(Math.random() * 200)
-    evalChromeProfileDir = mkdtempSync(
-      join(process.cwd(), `.wdio-eval-chrome-${randomBytes(4).toString('hex')}-`),
-    )
+    evalChromeProfileDir = makeE2eScratchDir(`.wdio-eval-chrome-${randomBytes(4).toString('hex')}-`)
     cap['goog:chromeOptions'] = {
       ...chromeOptions,
       args: (chromeOptions.args ?? [])

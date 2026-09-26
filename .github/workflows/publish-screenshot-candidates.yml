@@ -8,7 +8,9 @@ name: Publish screenshot candidates
 # GitHub's compare view for that commit, so image diffs (2-up/swipe/onion skin)
 # need no download, and previews up to 20 before/after pairs inline from raw
 # URLs pinned to the head and compare commit SHAs (the repository is public, so
-# GitHub renders them in the comment).
+# GitHub renders them in the comment). Screenshots the PR touches (reference
+# PNGs it changes, or names its changed e2e specs mention) preview first, so
+# unrelated rendering drift cannot crowd them out of the table.
 #
 # The branch is pushed with this job's GITHUB_TOKEN, which starts no workflows,
 # so it never runs CI or demo previews, and it is never merged. Accepting
@@ -16,6 +18,13 @@ name: Publish screenshot candidates
 # cherry-picking the compare commit. `update-screenshots` only makes CI render
 # the full reference set; the result reaches this workflow like any other
 # candidate set. No code path here opens a PR or mints an App token.
+#
+# Review is blocking. Every eligible head gets a `Screenshot review` commit
+# status, which the default-branch ruleset requires: pending while candidates
+# await a decision, success when there are none. The `accept-screenshots` and
+# `decline-screenshots` labels record the decision
+# (screenshot-review-labels.yml); a push starts a new review, because statuses
+# belong to one SHA.
 #
 # `workflow_run` is deliberately used instead of adding a
 # write token to the job that executes pull-request code. Nothing from the
@@ -49,6 +58,7 @@ jobs:
       actions: read
       contents: write
       pull-requests: write
+      statuses: write
     steps:
       - name: Resolve the live parent PR and exact artifact
         id: discover
@@ -80,6 +90,17 @@ jobs:
             const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const sameRepository = parent.head.repo?.full_name === `${owner}/${repo}`;
             const integrationHead = parent.head.ref === 'main' || parent.head.ref === 'release';
+            // Promotion and merge-back PRs carry commits whose screenshots were
+            // reviewed on their source PRs; their review gate passes unasked.
+            if (
+              parent.state === 'open' &&
+              sameRepository &&
+              integrationHead &&
+              parent.head.sha === runHeadSha
+            ) {
+              core.setOutput('gate-sha', runHeadSha);
+              core.setOutput('integration', 'true');
+            }
             if (
               parent.state !== 'open' ||
               !sameRepository ||
@@ -111,6 +132,7 @@ jobs:
             core.setOutput('eligible', 'true');
             core.setOutput('parent-number', String(number));
             core.setOutput('head-sha', runHeadSha);
+            core.setOutput('gate-sha', runHeadSha);
             // A separate prefix: `screenshots/pr-<N>/` belonged to the retired
             // review PRs, whose legacy cleanup still matches on it.
             core.setOutput(
@@ -120,6 +142,33 @@ jobs:
             if (matches.length === 1) {
               core.setOutput('has-artifact', 'true');
               core.setOutput('artifact-id', String(matches[0].id));
+              // The comment previews screenshots this PR touches first: the
+              // reference PNGs it changes and the e2e specs it changes. Only
+              // names and paths leave here; the candidate step re-validates
+              // them. A failed listing only loses the ordering.
+              const screenshotPath = /^tests\/e2e\/screenshots\/([A-Za-z0-9][A-Za-z0-9._-]*\.png)$/;
+              const specPath =
+                /^tests\/e2e\/(?:[A-Za-z0-9][A-Za-z0-9_-]*\/)*[A-Za-z0-9][A-Za-z0-9._-]*\.e2e\.ts$/;
+              const focusScreenshots = [];
+              const focusSpecs = [];
+              try {
+                const files = await github.paginate(github.rest.pulls.listFiles, {
+                  owner,
+                  repo,
+                  pull_number: number,
+                  per_page: 100,
+                });
+                for (const file of files) {
+                  if (typeof file?.filename !== 'string' || file.status === 'removed') continue;
+                  const screenshot = screenshotPath.exec(file.filename);
+                  if (screenshot && focusScreenshots.length < 500) focusScreenshots.push(screenshot[1]);
+                  if (specPath.test(file.filename) && focusSpecs.length < 200) focusSpecs.push(file.filename);
+                }
+              } catch (error) {
+                core.notice(`Could not list PR #${number} files; previews stay in name order: ${error.message}`);
+              }
+              core.setOutput('focus-screenshots', focusScreenshots.join('\n'));
+              core.setOutput('focus-specs', focusSpecs.join('\n'));
             } else {
               core.notice(`Run ${runId} published no changed screenshot candidates.`);
             }
@@ -152,9 +201,26 @@ jobs:
         id: candidates
         env:
           CANDIDATE_ROOT: ${{ runner.temp }}/screenshot-candidates
+          FOCUS_SCREENSHOTS: ${{ steps.discover.outputs.focus-screenshots }}
+          FOCUS_SPECS: ${{ steps.discover.outputs.focus-specs }}
         run: |
           listing="$RUNNER_TEMP/screenshot-candidate-names"
           : > "$listing"
+
+          # Screenshots this PR touches: reference PNGs it changes, plus every
+          # literal `<name>.png` in the e2e specs it changes. Specs are read as
+          # blobs from the head commit, never executed or followed as links.
+          focus_names="$RUNNER_TEMP/screenshot-focus-names"
+          focus_text="$RUNNER_TEMP/screenshot-focus-specs"
+          printf '%s\n' "$FOCUS_SCREENSHOTS" |
+            grep -xE '[A-Za-z0-9][A-Za-z0-9._-]*\.png' > "$focus_names" || true
+          : > "$focus_text"
+          while IFS= read -r spec; do
+            if [[ "$spec" =~ ^tests/e2e/([A-Za-z0-9][A-Za-z0-9_-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\.e2e\.ts$ ]]; then
+              git cat-file blob "HEAD:$spec" >> "$focus_text" 2> /dev/null || true
+            fi
+          done <<< "$FOCUS_SPECS"
+          grep -oE '[A-Za-z0-9][A-Za-z0-9._-]*\.png' "$focus_text" >> "$focus_names" || true
           if find "$CANDIDATE_ROOT" -type l -print -quit | grep -q .; then
             echo '::error::Screenshot candidate artifact contains a symlink.'
             exit 1
@@ -173,7 +239,8 @@ jobs:
                   echo "::error::Invalid screenshot candidate path: $relative"
                   exit 1
                 fi
-                size="$(stat -c '%s' "$path")"
+                # wc -c, not GNU stat -c, so the step's unit test also runs on macOS.
+                size="$(wc -c < "$path" | tr -d ' ')"
                 signature="$(head -c 8 "$path" | od -An -t x1 | tr -d ' \n')"
                 if [ "$signature" != '89504e470d0a1a0a' ]; then
                   echo "::error::Candidate is not a PNG: $relative"
@@ -194,10 +261,13 @@ jobs:
                   exit 1
                 fi
                 # Recorded before applying: a name absent from the head tree is new.
+                # The leading rank sorts screenshots this PR touches first.
+                rank=1
+                if grep -qxF -- "$name" "$focus_names"; then rank=0; fi
                 if git cat-file -e "HEAD:tests/e2e/screenshots/$name" 2> /dev/null; then
-                  printf '%s changed\n' "$name" >> "$listing"
+                  printf '%s %s changed\n' "$rank" "$name" >> "$listing"
                 else
-                  printf '%s new\n' "$name" >> "$listing"
+                  printf '%s %s new\n' "$rank" "$name" >> "$listing"
                 fi
                 install -m 0644 "$path" "tests/e2e/screenshots/$name"
                 ;;
@@ -214,14 +284,16 @@ jobs:
           fi
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
-          # The parent comment previews the first names in byte order. Emit only
-          # a bounded prefix: a full refresh can carry thousands of names, and one
-          # environment variable is capped at 128 KiB on Linux. `count` stays
-          # the exact total. Names already matched the strict pattern above, so
-          # they need no JSON escaping.
+          # The parent comment previews the first names: those this PR touches,
+          # then the rest, each in byte order. Emit only a bounded prefix: a
+          # full refresh can carry thousands of names, and one environment
+          # variable is capped at 128 KiB on Linux. `count` stays the exact
+          # total. Names already matched the strict pattern above, so they need
+          # no JSON escaping.
           names="$(LC_ALL=C sort "$listing" | awk '
             NR <= 50 {
-              printf "%s{\"name\":\"%s\",\"new\":%s}", (NR > 1 ? "," : ""), $1, ($2 == "new" ? "true" : "false")
+              printf "%s{\"name\":\"%s\",\"new\":%s,\"focus\":%s}", (NR > 1 ? "," : ""), $2,
+                ($3 == "new" ? "true" : "false"), ($1 == "0" ? "true" : "false")
             }')"
           echo "names=[$names]" >> "$GITHUB_OUTPUT"
 
@@ -292,6 +364,68 @@ jobs:
           echo 'pushed=true' >> "$GITHUB_OUTPUT"
           # The parent comment pins its "after" images to this immutable commit.
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      # The blocking review gate, set before the best-effort cleanup below so a
+      # cleanup error cannot leave the head without it. Statuses belong to one
+      # SHA, so no decision outlives the head it was made on. A decision already
+      # recorded for this head is kept: the `labeled` event that carried it
+      # re-runs CI on the same head, and that run's candidates must not reopen
+      # the review. The last step below fails the gate closed if this job
+      # breaks before reaching here.
+      - name: Gate the parent on screenshot review
+        id: gate
+        if: steps.discover.outputs.gate-sha != ''
+        uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
+          INTEGRATION: ${{ steps.discover.outputs.integration }}
+          CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const statusContext = 'Screenshot review';
+            const sha = process.env.GATE_SHA;
+            const count = Number(process.env.CANDIDATE_COUNT) || 0;
+            const number = Number(process.env.PARENT_NUMBER);
+            const setStatus = (state, description) =>
+              github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha,
+                state,
+                context: statusContext,
+                description,
+                ...(number > 0 ? { target_url: `https://github.com/${owner}/${repo}/pull/${number}` } : {}),
+              });
+
+            if (process.env.INTEGRATION === 'true') {
+              await setStatus('success', 'Integration branch: screenshots were reviewed on the source PRs');
+              return;
+            }
+            // Newest first, so the first match is the current state.
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner,
+              repo,
+              ref: sha,
+              per_page: 100,
+            });
+            const latest = statuses.find((status) => status.context === statusContext);
+            if (latest?.state === 'success' && /^(?:Accepted|Declined) by @/.test(latest.description ?? '')) {
+              core.info(`Keeping the recorded decision: ${latest.description}`);
+              core.setOutput('decision', latest.description);
+              return;
+            }
+            if (count === 0) {
+              await setStatus('success', 'No changed reference screenshots');
+              return;
+            }
+            const noun = count === 1 ? 'screenshot awaits' : 'screenshots await';
+            await setStatus(
+              'pending',
+              `${count} changed ${noun} review: label accept-screenshots or decline-screenshots`,
+            );
+            core.setOutput('pending', 'true');
 
       # Legacy cleanup. Earlier versions of this workflow opened PNG review PRs
       # from `screenshots/pr-<N>/` branches; nothing creates them any more, so
@@ -401,6 +535,8 @@ jobs:
           COMPARE_COMMIT: ${{ steps.compare.outputs.commit }}
           CANDIDATE_NAMES: ${{ steps.candidates.outputs.names }}
           CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
+          REVIEW_DECISION: ${{ steps.gate.outputs.decision }}
+          REVIEW_PENDING: ${{ steps.gate.outputs.pending }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         with:
@@ -436,18 +572,25 @@ jobs:
                   (entry) =>
                     typeof entry?.name === 'string' &&
                     namePattern.test(entry.name) &&
-                    typeof entry.new === 'boolean',
+                    typeof entry.new === 'boolean' &&
+                    (entry.focus === undefined || typeof entry.focus === 'boolean'),
                 )
               ) {
                 return [];
               }
-              const sorted = [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-              const shown = sorted.slice(0, previewLimit);
+              // Screenshots this PR touches lead; unrelated changes (usually
+              // rendering drift) fill whatever rows remain.
+              const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+              const touched = entries.filter((entry) => entry.focus === true).sort(byName);
+              const others = entries.filter((entry) => entry.focus !== true).sort(byName);
+              const shownTouched = touched.slice(0, previewLimit);
+              const shownOthers = others.slice(0, previewLimit - shownTouched.length);
+              const shownCount = shownTouched.length + shownOthers.length;
               const total = Math.max(Number(process.env.CANDIDATE_COUNT) || 0, entries.length);
               const raw = (sha, name) =>
                 `https://github.com/${owner}/${repo}/raw/${sha}/tests/e2e/screenshots/${name}`;
               const image = (sha, name) => `<img src="${raw(sha, name)}" width="360">`;
-              const lines = [
+              const rows = (shown) => [
                 '| Screenshot | Before | After |',
                 '| --- | --- | --- |',
                 ...shown.map(
@@ -457,8 +600,22 @@ jobs:
                     `${image(commit, entry.name)} |`,
                 ),
               ];
-              if (total > shown.length) {
-                lines.push('', `…and ${total - shown.length} more — see [the compare view](${compareUrl}).`);
+              const lines = [];
+              if (shownTouched.length === 0) {
+                lines.push(...rows(shownOthers));
+              } else {
+                lines.push('**Screenshots this PR touches**', '', ...rows(shownTouched));
+                if (shownOthers.length > 0) {
+                  lines.push(
+                    '',
+                    '**Other changed screenshots**, not linked to this PR’s files (often rendering drift):',
+                    '',
+                    ...rows(shownOthers),
+                  );
+                }
+              }
+              if (total > shownCount) {
+                lines.push('', `…and ${total - shownCount} more — see [the compare view](${compareUrl}).`);
               }
               return ['', ...lines];
             };
@@ -504,6 +661,32 @@ jobs:
               : 'To re-render every reference into the compare branch, add `update-screenshots`, ' +
                 'then remove it after that run to avoid repeating full runs.';
             const commit = process.env.COMPARE_COMMIT || '';
+            const acceptable = compareUrl !== '' && /^[0-9a-f]{40}$/.test(commit);
+            // The blocking gate's state for this head, from the gate step.
+            // screenshot-review-labels.yml rewrites the text between the
+            // markers when a label records a decision.
+            const decision = (process.env.REVIEW_DECISION || '').replace(/[<>`]/g, '');
+            const reviewState = decision
+              ? [`**Reviewed:** ${decision}.`]
+              : process.env.REVIEW_PENDING === 'true'
+                ? [
+                    '**Review required.** The `Screenshot review` check blocks merging until a maintainer adds one label:',
+                    ...(acceptable
+                      ? [
+                          '- `accept-screenshots` commits every candidate: the PR branch is fast-forwarded to the ' +
+                            'compare commit, and CI re-runs on it without e2e.',
+                        ]
+                      : []),
+                    '- `decline-screenshots` passes the check and commits nothing. Use it for unrelated drift, or for ' +
+                      'references that belong in another PR.',
+                    '',
+                    'Committing reviewed PNGs yourself also works: a screenshot-only commit re-runs CI without e2e. ' +
+                      'Any push starts a new review.',
+                  ]
+                : [];
+            const review = reviewState.length
+              ? ['<!-- copse-screenshot-review-state -->', ...reviewState, '<!-- /copse-screenshot-review-state -->', '']
+              : [];
             let body;
             if (process.env.ARTIFACT_ID) {
               const artifactUrl = `${process.env.RUN_URL}/artifacts/${process.env.ARTIFACT_ID}`;
@@ -513,7 +696,8 @@ jobs:
                 marker,
                 '### Screenshot evidence',
                 '',
-                ...(compareUrl && /^[0-9a-f]{40}$/.test(commit)
+                ...review,
+                ...(acceptable
                   ? [
                       `**[View the changed reference screenshots](${compareUrl})** for \`${sha12}\` in ` +
                         'GitHub’s image diff (2-up, swipe, onion skin).',
@@ -521,7 +705,7 @@ jobs:
                         'head and is never merged.',
                       ...table,
                       '',
-                      'To accept every candidate, cherry-pick the compare commit onto the PR branch:',
+                      'To accept every candidate locally instead, cherry-pick the compare commit onto the PR branch:',
                       '',
                       '```sh',
                       `git fetch origin ${process.env.COMPARE_BRANCH} && git cherry-pick ${commit}`,
@@ -567,3 +751,25 @@ jobs:
                 body,
               });
             }
+
+      # Fail the gate closed: a head whose evidence could not be validated or
+      # linked must not look reviewable, and a missing status reads as "waiting"
+      # rather than broken. `decline-screenshots` can still override it.
+      - name: Fail the screenshot review closed
+        if: failure() && steps.discover.outputs.gate-sha != '' && steps.gate.outcome != 'success'
+        uses: actions/github-script@v9
+        env:
+          GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
+          PUBLISHER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: process.env.GATE_SHA,
+              state: 'error',
+              context: 'Screenshot review',
+              description: 'Screenshot evidence could not be published; see the publisher run',
+              target_url: process.env.PUBLISHER_RUN_URL,
+            });

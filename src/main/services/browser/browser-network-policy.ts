@@ -45,6 +45,28 @@ export function isBrowserRequestAllowed(input: {
   return isDocumentNetworkAllowed(documentUrl, target)
 }
 
+/** Chooses the document whose network limits govern a request.
+ *
+ * `navigationUrl` is the webContents' latest main-frame navigation, recorded when its
+ * request starts. `frameUrl` is the requesting frame's last committed URL, which names
+ * a data: subframe or a data: document that is still live while the host navigates
+ * away. It can also be stale: the next document's first subresource requests can reach
+ * the session before the browser process records that document's commit, so the frame
+ * still reports the previous data: preview. A data: document always has an opaque
+ * origin, so a request with a real initiator origin cannot come from one. Opaque and
+ * browser-started (absent) initiators keep the data: document's limits.
+ */
+export function browserRequestDocumentUrl(input: {
+  frameUrl: string
+  navigationUrl: string
+  initiatorOrigin: string | undefined
+}): string {
+  const { frameUrl, navigationUrl, initiatorOrigin } = input
+  if (!frameUrl.startsWith('data:')) return navigationUrl
+  if (initiatorOrigin === undefined || initiatorOrigin === 'null') return frameUrl
+  return navigationUrl
+}
+
 function isDocumentNetworkAllowed(documentUrl: string, target: URL): boolean {
   // Requests without an owning document (e.g. a service worker) fail closed.
   if (!URL.canParse(documentUrl)) return false
