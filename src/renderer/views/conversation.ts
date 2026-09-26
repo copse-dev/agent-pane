@@ -52,6 +52,8 @@ import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
+import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
+import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -642,6 +644,14 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
 // `.message-text` element so re-entrant token events reuse the same DOM regions
 // instead of rebuilding the whole message innerHTML each token (O(n²)).
 const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
+// Streamed text reaches `.message-text` through the package's input smoother,
+// one frame at a time, so the transcript learns about each paint and the
+// deferred final render through these events rather than at the call site.
+const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
+/** A paced frame of streamed text landed in this `.message-text`. Bubbles. */
+const STREAM_PAINT_EVENT = 'copse:stream-paint'
+/** A paced stream finished revealing and took its final render. Bubbles. */
+const STREAM_SETTLED_EVENT = 'copse:stream-settled'
 
 /**
  * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
@@ -690,6 +700,36 @@ function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
   syncAcpTransportNoiseDisclosure(messageTextEl, pending)
 }
 
+function paintStreamingMarkdown(el: HTMLElement, display: string): void {
+  let renderer = streamingRenderers.get(el)
+  if (!renderer) {
+    renderer = new StreamingMarkdownRenderer(el)
+    streamingRenderers.set(el, renderer)
+  }
+  renderer.update(display)
+  attachCodeBlockCopyButtons(el, { runCommands: true })
+}
+
+function streamSmootherFor(el: HTMLElement, display: string): InputSmoother {
+  const existing = streamSmoothers.get(el)
+  if (existing) return existing
+  // Text already on screen — a message rebuilt mid-stream — stays put; only
+  // what arrives from now on is paced. A fresh bubble paces from its start.
+  const shown = el.hasChildNodes() ? display : ''
+  if (shown) paintStreamingMarkdown(el, shown)
+  const smoother = createInputSmoother({
+    update: (text) => {
+      paintStreamingMarkdown(el, text)
+      el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
+    },
+    // Follow the provider's own rate: a steady reveal a little behind it.
+    cadence: 'adaptive',
+    initial: shown,
+  })
+  streamSmoothers.set(el, smoother)
+  return smoother
+}
+
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
@@ -699,15 +739,23 @@ function setAssistantMarkdown(
   const { body: display, transportNoise } = assistantDisplayParts(content)
   if (streaming) {
     el.classList.add('is-streaming')
-    let renderer = streamingRenderers.get(el)
-    if (!renderer) {
-      renderer = new StreamingMarkdownRenderer(el)
-      streamingRenderers.set(el, renderer)
-    }
-    renderer.update(display)
-    attachCodeBlockCopyButtons(el, { runCommands: true })
+    streamSmootherFor(el, display).push(display)
     // Demote as soon as the trailing line is complete; keep collapsed while live.
     syncAcpTransportNoiseDisclosure(el, transportNoise)
+    return
+  }
+  const smoother = streamSmoothers.get(el)
+  if (smoother) {
+    // Let the reveal catch up before the final render replaces the scaffold,
+    // so the end of the answer doesn't arrive in one pop. A later call pushes
+    // again, which voids this settle in favour of its own content.
+    smoother.push(display)
+    smoother.finish(() => {
+      smoother.dispose()
+      streamSmoothers.delete(el)
+      setAssistantMarkdown(el, content, false, api)
+      el.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }))
+    })
     return
   }
   // Final render: replace the incremental scaffold with the finished markdown.
@@ -2402,6 +2450,8 @@ function hydrationFailureEl(): HTMLElement {
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
+/** Time constant of the glide that keeps streamed text in view. */
+const STREAM_FOLLOW_EASE_MS = 90
 /** Fast operations should finish without flashing their detail open. */
 const TOOL_AUTO_REVEAL_DELAY_MS = 300
 /** Once shown, live detail remains visible long enough to be read. */
@@ -2975,6 +3025,33 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom(true)
   })
 
+  // Streamed prose grows a line at a time. Snapping to the bottom on every
+  // paint jerks the whole transcript up a line-height at once; glide there
+  // instead, closing a fixed fraction of the distance each frame.
+  const streamFollow = createFrameLoop((dt) => {
+    if (!shouldAutoScroll()) return false
+    const gap = list.scrollHeight - list.clientHeight - list.scrollTop
+    if (gap <= 1 || dt === Infinity) {
+      scrollToBottom()
+      return false
+    }
+    setScrollTopProgrammatically(
+      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS))),
+    )
+    // Still following: the view is pinned, only a few pixels short mid-glide.
+    scrollToBottomBtn.hidden = true
+    return true
+  })
+  list.addEventListener(STREAM_PAINT_EVENT, () => {
+    if (shouldAutoScroll()) streamFollow.start()
+  })
+  list.addEventListener(STREAM_SETTLED_EVENT, () => {
+    // The final render ran after message_done had already synced the list.
+    hydrateRemoteArtifactImages(list, api)
+    syncAcpResourceReferences(list, api, store)
+    scrollToBottom()
+  })
+
   function setActivity(label: string | null): void {
     if (!label) {
       activityBar.hidden = true
@@ -2984,6 +3061,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // identical, and the row is aria-live, so an unconditional write re-announces
     // the same label. Emitters outside the agent controller (message queue,
     // retry/review) do not share its dedupe key, so guard here too.
+    // The same label also re-arrives with every streamed chunk; only a row that
+    // appears or changes can move the transcript's bottom edge.
+    const changed = activityBar.hidden || activityLabel.textContent !== label
     if (activityLabel.textContent !== label) activityLabel.textContent = label
     // Once reasoning tokens exist, the disclosure title is the activity row.
     // Keep the standalone row for the initial wait before the first token, but
@@ -3002,7 +3082,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       !!list.querySelector('.msg-assistant .message-reasoning'),
     )
     activityBar.hidden = false
-    scrollToBottom()
+    // Snapping on an unchanged row would cut short the streamed text's glide.
+    if (changed) scrollToBottom()
   }
 
   function syncFromStore(): void {
@@ -4272,9 +4353,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           const absorbed =
             (msg.toolCalls.some((tc) => !tc.subagent) && !msgEl.querySelector('.tool-card')) ||
             (Boolean(msg.reasoning?.trim()) && trails.length === 0)
-          if (absorbed) resyncRunMembership(thread, mid)
+          if (absorbed) {
+            resyncRunMembership(thread, mid)
+            scrollToBottom()
+          }
         }
-        scrollToBottom()
+        // The text itself lands a frame later, through the input smoother; its
+        // STREAM_PAINT_EVENT keeps the transcript following it.
       }
     }),
     store.on('message_canvas_artefacts_changed', (mid) => {
