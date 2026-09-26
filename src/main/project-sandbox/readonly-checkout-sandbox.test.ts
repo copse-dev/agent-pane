@@ -12,7 +12,7 @@ import {
   shutdownProjectSandbox,
   spawnShellInProjectSandbox,
 } from './index.ts'
-import { withoutCheckoutWrites, workspaceSandboxOverlay } from './config.ts'
+import { ensureWorkspaceTmpDir, withoutCheckoutWrites, workspaceSandboxOverlay } from './config.ts'
 import { clearAllowedWorkspaceRootsForTest } from '../services/workspace.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
 
@@ -35,9 +35,7 @@ async function shell(
 ): Promise<{ output: string; code: number }> {
   const child = await spawnShellInProjectSandbox(command, {
     cwd,
-    // Only what the command needs on top of the spawn's own environment. The
-    // host's full env would override the sandbox's $TMPDIR with a directory
-    // the sandbox cannot see (it did on Linux CI), unlike the real shell tool.
+    // Only what the command needs on top of the spawn's own environment.
     env: gitIdentity,
     stdio: ['pipe', 'pipe', 'pipe'],
     ...(readonlyCheckout ? { readonlyCheckout } : {}),
@@ -124,15 +122,14 @@ describe('read-only checkout shell sandbox', () => {
     assert.match(status.output, /M tracked\.txt/)
     assert.match(status.output, /initial/)
 
-    // Scratch space outside the checkout stays writable, so tools that stage
-    // through $TMPDIR keep working.
-    const scratch = await shell(
-      'echo "TMPDIR=$TMPDIR" && echo ok > "$TMPDIR/copse-readonly-probe"',
-      repo,
-      true,
-    )
+    // Copse's own scratch directory, outside the checkout, stays writable. Name
+    // it explicitly: on Linux the sandbox runtime replaces $TMPDIR with
+    // /tmp/claude in every profile, and a fresh runner has no such directory.
+    const probe = join(ensureWorkspaceTmpDir(), 'copse-readonly-probe')
+    const scratch = await shell(`echo ok > '${probe}'`, repo, true)
     assert.equal(scratch.code, 0, scratch.output)
-    assert.ok(!scratch.output.includes(`TMPDIR=${repo}`), 'scratch must live outside the checkout')
+    assert.equal(await readFile(probe, 'utf-8'), 'ok\n')
+    await rm(probe, { force: true })
 
     // Every way of writing the checkout is refused, and nothing lands.
     const overwrite = await shell('echo agent > tracked.txt', repo, true)
