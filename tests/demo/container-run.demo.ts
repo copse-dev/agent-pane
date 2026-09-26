@@ -88,6 +88,9 @@ describe('unattended container run (browser-hosted)', () => {
     const bannerText = await banner.getText()
     expect(bannerText).toContain('Container run: finished')
     expect(bannerText).toContain('3 commits back, 1 waiting for review')
+    // Dismiss is the kit's close icon, not a literal "×" glyph.
+    await expect(banner.$('.container-run-dismiss svg[data-icon="close"]')).toBeExisting()
+    expect((await banner.$('.container-run-dismiss').getText()).trim()).toBe('')
     await saveElementScreenshot('#input-bar', 'container-run-banner-finished.png')
 
     await banner.$('.container-run-details').click()
