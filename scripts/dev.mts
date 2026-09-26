@@ -1,8 +1,8 @@
 import * as esbuild from 'esbuild'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { cpSync, copyFileSync, rmSync } from 'node:fs'
+import { cpSync, copyFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
@@ -286,6 +286,14 @@ await Promise.all([
   ...standaloneCtxs.map((ctx) => ctx.rebuild()),
 ])
 copyFileSync('src/renderer/video/decoder.html', 'dist/renderer/video/decoder.html')
+// Static side files esbuild does not emit, written once after the first build
+// (so `dist/main/` exists) rather than in a watch hook: `rebuild()` never
+// removes a manifest emitted earlier. Paths are cwd-relative, like `outfile`.
+for (const { outfile, manifest } of STANDALONE_MAIN_BUNDLES) {
+  if (manifest) {
+    writeFileSync(join(dirname(outfile), 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+  }
+}
 console.log(`[dev] profile: ${devProfileRoot}`)
 writeMermaidFrameHtml('dist/renderer')
 startElectron()

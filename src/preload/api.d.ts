@@ -435,6 +435,8 @@ export interface ApiClient {
         id: string
         message: string
         detail?: string
+        changelog?: { version: string; notes: string }[]
+        changelogUrl?: string
         buttons: string[]
         defaultIndex?: number
         cancelIndex?: number
