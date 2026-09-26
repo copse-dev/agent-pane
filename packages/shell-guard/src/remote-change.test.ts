@@ -150,6 +150,11 @@ describe('remoteChangeReasons', () => {
       'act -W https://logs.example.io/ci.yml',
       'pg_loader --contrib --host 127.0.0.1 -c load.cfg',
       'pg_restore -d app dump.sql',
+      'pg_restore dump.custom',
+      'pg_restore -f out.sql -d app dump.custom',
+      'influx write -b metrics -f points.lp',
+      'influx delete --bucket metrics --start 2020-01-01T00:00:00Z --stop now',
+      'influx bucket delete -n metrics',
       'mongorestore --drop dump/',
       'psql -f migrate.sql app',
       'redis-cli --pipe',
@@ -160,6 +165,11 @@ describe('remoteChangeReasons', () => {
       'npx playwright test',
       'act -W .github/workflows/ci.yml',
       'psql -c "select 1"',
+      'pg_restore -f out.sql dump.custom',
+      'pg_restore --list dump.custom',
+      'influx query "from(bucket:\\"m\\") |> range(start: -1h)"',
+      'influx ping',
+      'influx version',
     ])
   })
 })
