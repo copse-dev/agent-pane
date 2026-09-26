@@ -136,19 +136,26 @@
 }
 .roadmap-row .memories-row-main {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 2px var(--spacing-xs);
 }
+/* The title claims a readable minimum before the indicators: its 8em basis is
+   what the wrap check measures, so when title + chips cannot share the line the
+   chips drop under the title instead of crushing it to one letter ("M…"). With
+   room it still grows to fill the line and ellipsizes as before. */
 .roadmap-row-title {
-  flex: 1 1 auto;
+  flex: 1 1 8em;
   min-width: 0;
 }
 .roadmap-row-meta {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--spacing-xs);
   align-items: center;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
 }
 

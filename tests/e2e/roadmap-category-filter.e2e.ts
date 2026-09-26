@@ -90,6 +90,37 @@ describe('roadmap category grouping and filters', () => {
     const project = categories.find((category) => category.text === 'project')
     assert.ok(project)
     assert.notEqual(project.color, blocked.color, 'project category ≠ blocked status colour')
+
+    // Badges never crush a title: each keeps its 8em readable minimum (or the
+    // whole row, if narrower), and the blocked row's three chips drop under
+    // the title in this narrow pane instead of squeezing it to "M…".
+    const titleFit = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.roadmap-row')).map((row) => {
+        const main = row.querySelector<HTMLElement>('.memories-row-main')
+        const title = row.querySelector<HTMLElement>('.roadmap-row-title')
+        const meta = row.querySelector<HTMLElement>('.roadmap-row-meta')
+        if (!main || !title || !meta) return null
+        const titleBox = title.getBoundingClientRect()
+        return {
+          text: title.textContent,
+          width: titleBox.width,
+          floor: Math.min(8 * parseFloat(getComputedStyle(title).fontSize), main.clientWidth),
+          metaBelow: meta.getBoundingClientRect().top >= titleBox.bottom - 1,
+          blocked: row.querySelector('.roadmap-status-badge.is-blocked') !== null,
+        }
+      }),
+    )
+    for (const fit of titleFit) {
+      assert.ok(fit, 'every roadmap row has a title and meta slot')
+      assert.ok(
+        fit.width >= fit.floor - 1,
+        `"${fit.text ?? ''}" keeps a readable width (${String(fit.width)} < ${String(fit.floor)})`,
+      )
+    }
+    assert.ok(
+      titleFit.some((fit) => fit?.blocked && fit.metaBelow),
+      'the blocked row wraps its chips under the title',
+    )
     // The `done` toolbar toggle is gone; status is a filter facet now.
     assert.equal((await $$('.roadmap-show-done-btn')).length, 0)
 

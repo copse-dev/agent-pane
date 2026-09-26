@@ -959,7 +959,10 @@ Roadmap backlog rows (`.roadmap-row` in
 sidebar taste as thread rows and PR status icons:
 
 - **Title first, one line.** Title on the left; trailing indicators on the right.
-  No second meta row of chips under every title.
+  No second meta row of chips under every title. The title keeps a readable
+  minimum (an `8em` flex basis): when a narrow pane cannot fit that plus the
+  row's chips, the chips wrap under the title for that row only, rather than
+  squeezing the title to one letter.
 - **Hide the default state.** `ready` items show no status badge — the title is
   the signal. `done` is strikethrough on the title only (`.roadmap-row.is-done`),
   not a "done" pill. Only exceptional statuses (`blocked`, `conflicts`,
