@@ -141,4 +141,25 @@ describe('remoteChangeReasons', () => {
       'nc -z localhost 5432',
     ])
   })
+
+  it('asks for tools pointed at another host or loading a database', () => {
+    assertChanges([
+      'python3 -m pytest --runner-url=https://prod.example.com tests/',
+      'pytest --base-url https://staging.example.com',
+      'artillery run --target https://api.example.com load.yml',
+      'act -W https://logs.example.io/ci.yml',
+      'pg_loader --contrib --host 127.0.0.1 -c load.cfg',
+      'pg_restore -d app dump.sql',
+      'mongorestore --drop dump/',
+      'psql -f migrate.sql app',
+      'redis-cli --pipe',
+    ])
+    assertReads([
+      'python3 -m pytest tests/ -q',
+      'pytest --base-url http://localhost:8000',
+      'npx playwright test',
+      'act -W .github/workflows/ci.yml',
+      'psql -c "select 1"',
+    ])
+  })
 })

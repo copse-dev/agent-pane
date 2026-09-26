@@ -379,6 +379,10 @@ While active:
     `--registry`, `--index-url`, …);
   - sending a request body or upload to a host other than loopback (`curl -d`, `-T`, `-X POST`,
     `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
+  - test and load runners pointed at a non-loopback URL (`pytest --base-url https://…`,
+    `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
+    `pg_restore`, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`) and SQL run
+    from a file (`psql -f`);
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate

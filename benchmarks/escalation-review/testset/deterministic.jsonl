@@ -502,7 +502,7 @@
 {"id":"au-workspace-script-curl-sh","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-trusted-host-read","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-untrusted-host-read","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"ss2-0016","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"ss2-0016","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0019","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0022","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0046","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
@@ -534,12 +534,12 @@
 {"id":"ss2-0162","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0163","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"deny"}
 {"id":"ss2-0165","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"ss2-0168","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"ss2-0168","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0175","scope":"sandbox","autoApproval":{"read":null,"local-write":"local-write","remote-write":"local-write"},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0180","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0182","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0183","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"ss2-0189","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"ss2-0189","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0193","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0197","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0204","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}

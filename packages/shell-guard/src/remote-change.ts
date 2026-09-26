@@ -410,6 +410,89 @@ function listenerReason(head: string, argv: readonly string[]): string | null {
 const MAIL_CLIENTS = new Set(['mail', 'mailx', 'sendmail', 'msmtp', 'mutt', 'swaks'])
 
 // ---------------------------------------------------------------------------
+// Tools pointed at something remote
+// ---------------------------------------------------------------------------
+
+/** Remote (non-loopback) hosts named by URL arguments, including `--flag=URL`. */
+function remoteHosts(argv: readonly string[]): string[] {
+  const hosts = argv
+    .slice(1)
+    .map((arg) =>
+      urlHost(arg.startsWith('-') && arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : arg),
+    )
+    .filter((host) => host !== null)
+    .filter((host) => !LOOPBACK.test(host))
+  return [...new Set(hosts)]
+}
+
+const TEST_RUNNERS = new Set([
+  'pytest',
+  'jest',
+  'vitest',
+  'mocha',
+  'playwright',
+  'cypress',
+  'k6',
+  'artillery',
+  'locust',
+  'newman',
+])
+
+/**
+ * A test or load run pointed at another host exercises that host, and a test
+ * suite's setup and teardown write: `pytest --runner-url=https://prod…`,
+ * `artillery run --target https://…`. Against localhost it is ordinary testing.
+ */
+function remoteTestReason(head: string, argv: readonly string[]): string | null {
+  const module = argv.indexOf('-m')
+  const runner =
+    TEST_RUNNERS.has(head) ||
+    (/^python[\d.]*$/.test(head) && module !== -1 && argv[module + 1] === 'pytest')
+  if (!runner) return null
+  const hosts = remoteHosts(argv)
+  return hosts.length > 0 ? `runs tests against another host (${hosts.join(', ')})` : null
+}
+
+/** `act -W https://…/ci.yml` runs a workflow it downloads, with the workspace mounted. */
+function remoteWorkflowReason(head: string, argv: readonly string[]): string | null {
+  if (head !== 'act') return null
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i] ?? ''
+    const value =
+      arg === '-W' || arg === '--workflows'
+        ? argv[i + 1]
+        : /^(?:-W|--workflows=)(.+)$/.exec(arg)?.[1]
+    if (value !== undefined && urlHost(value) !== null)
+      return 'runs a workflow it downloads (act -W)'
+  }
+  return null
+}
+
+/** Bulk loaders and restores, which write whatever their input or config says. */
+const DATABASE_LOADERS = new Set([
+  'pgloader',
+  'pg_loader',
+  'pg_restore',
+  'mongorestore',
+  'mongoimport',
+  'mysqlimport',
+  'influx',
+])
+
+function databaseLoadReason(head: string, argv: readonly string[]): string | null {
+  if (DATABASE_LOADERS.has(head)) return `loads data into a database (${head})`
+  if (
+    (head === 'psql' || head === 'mysql' || head === 'mariadb') &&
+    argv.some((arg) => /^(?:-f|--file(?:=|$))/.test(arg))
+  ) {
+    return `runs SQL from a file the gate does not read (${head} -f)`
+  }
+  if (head === 'redis-cli' && argv.includes('--pipe'))
+    return 'loads data into a database (redis-cli --pipe)'
+  return null
+}
+
+// ---------------------------------------------------------------------------
 
 /** Every remote-change reason for one segment. `argv` is unwrapped; `rawArgv` is not. */
 export function remoteChangeReasons(rawArgv: readonly string[], argv: readonly string[]): string[] {
@@ -426,6 +509,9 @@ export function remoteChangeReasons(rawArgv: readonly string[], argv: readonly s
     registryReason(rawArgv, argv),
     uploadReason(head, argv),
     listenerReason(head, argv),
+    remoteTestReason(head, argv),
+    remoteWorkflowReason(head, argv),
+    databaseLoadReason(head, argv),
     MAIL_CLIENTS.has(head) ? `sends email (${head})` : null,
   ]
   return reasons.filter((reason) => reason !== null)
