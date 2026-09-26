@@ -180,8 +180,8 @@ export function buildDeterministicFollowUps(
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
     // Point the follow-up at the investigate_ci subagent tool only when the
     // turn is actually offered it — the same predicate the system prompt's tool
-    // line reads (plugin on, gh usable, subagents on); otherwise fall back to
-    // the generic "Debug CI Failure" prompt.
+    // line reads (plugin on, gh usable, subagents on, not read-only); otherwise
+    // fall back to the generic "Debug CI Failure" prompt.
     const ci = buildDebugCiSuggestion(isInvestigateCiOffered())
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }

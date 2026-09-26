@@ -396,7 +396,8 @@ export function syncGhTools(registry: ToolRegistry): void {
  * recomputed here via the same `isGhAvailable()` probe `createRegistry` uses, so
  * a live plugin enable respects the probed environment.
  *
- * `parentTools` additionally withholds `investigate_ci` while subagents are off;
+ * `parentTools` additionally withholds `investigate_ci` while subagents are off
+ * or read-only mode is on;
  * `isInvestigateCiOffered` is the combined predicate the prompt and the
  * CI follow-up read.
  */

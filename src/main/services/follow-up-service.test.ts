@@ -475,12 +475,14 @@ describe('debug-ci deterministic bubble', () => {
     setDefaultPluginRegistry(null)
     setGhAvailableForTest(null)
     setSetting(SUBAGENTS_ENABLED_SETTING, false)
+    setSetting('defaultReadonlyMode', false)
   })
 
   function ciBubble(
     plugin: boolean,
     gh: boolean,
     subagents: boolean,
+    readonly: boolean,
   ): { label: string; prompt: string } {
     const plugins = createFirstPartyPluginRegistry()
     if (plugin) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
@@ -488,28 +490,32 @@ describe('debug-ci deterministic bubble', () => {
     setDefaultPluginRegistry(plugins)
     setGhAvailableForTest(gh)
     setSetting(SUBAGENTS_ENABLED_SETTING, subagents)
+    setSetting('defaultReadonlyMode', readonly)
     const ci = buildDeterministicFollowUps(failingPr, turn).find((s) => s.id === 'debug-ci')
     assert.ok(ci, 'a failing PR should offer the CI bubble')
     return { label: ci.label, prompt: ci.prompt ?? '' }
   }
 
   // The bubble names investigate_ci only when the turn is offered the tool:
-  // plugin on AND gh usable AND subagents on (parentTools hides the entry tool
-  // otherwise). Every other combination falls back to the generic prompt.
+  // plugin on AND gh usable AND subagents on AND not read-only (parentTools
+  // hides the entry tool otherwise). Every other combination falls back to the
+  // generic prompt.
   for (const plugin of [false, true]) {
     for (const gh of [false, true]) {
       for (const subagents of [false, true]) {
-        const offered = plugin && gh && subagents
-        it(`plugin=${String(plugin)} gh=${String(gh)} subagents=${String(subagents)} ${offered ? 'names' : 'omits'} investigate_ci`, () => {
-          const ci = ciBubble(plugin, gh, subagents)
-          if (offered) {
-            assert.equal(ci.label, 'Investigate CI failure')
-            assert.match(ci.prompt, /investigate_ci/)
-          } else {
-            assert.equal(ci.label, 'Debug CI Failure')
-            assert.doesNotMatch(ci.prompt, /investigate_ci/)
-          }
-        })
+        for (const readonly of [false, true]) {
+          const offered = plugin && gh && subagents && !readonly
+          it(`plugin=${String(plugin)} gh=${String(gh)} subagents=${String(subagents)} readonly=${String(readonly)} ${offered ? 'names' : 'omits'} investigate_ci`, () => {
+            const ci = ciBubble(plugin, gh, subagents, readonly)
+            if (offered) {
+              assert.equal(ci.label, 'Investigate CI failure')
+              assert.match(ci.prompt, /investigate_ci/)
+            } else {
+              assert.equal(ci.label, 'Debug CI Failure')
+              assert.doesNotMatch(ci.prompt, /investigate_ci/)
+            }
+          })
+        }
       }
     }
   }

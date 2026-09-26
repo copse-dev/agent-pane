@@ -21,8 +21,8 @@
 // `gh`, so `registry-bootstrap.ts` ANDs `gh` availability into the sync — but
 // the plugin toggle remains the user-visible master switch. The "Investigate CI
 // failure" follow-up and the system prompt's tool line name `investigate_ci`
-// only when a turn is offered it (plugin on, `gh` usable, subagents on — see
-// the host's `isInvestigateCiOffered`).
+// only when a turn is offered it (plugin on, `gh` usable, subagents on, not
+// read-only — see the host's `isInvestigateCiOffered`).
 //
 // Electron-free (execution-guidance rule 4): pure declarations. Host wiring (the
 // tool registration + live sync) reads the plugin registry via the shared

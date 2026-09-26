@@ -136,8 +136,8 @@ export async function buildSystemPromptWithMetadata(
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
   // Name investigate_ci only when this turn can call it: the shared predicate
-  // (plugin on, gh usable, subagents on), and — on a real turn — the exact
-  // offered tool list, which can drop it further (read-only mode).
+  // (plugin on, gh usable, subagents on, not read-only), and — on a real turn —
+  // the exact offered tool list parentTools built for it.
   const investigateCiOffered =
     isInvestigateCiOffered(subagentsEnabled) &&
     (opts.availableToolNames?.includes(INVESTIGATE_CI_TOOL_NAME) ?? true)
