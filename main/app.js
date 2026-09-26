@@ -90217,7 +90217,8 @@ function mountFileTree(root, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "sidebar-header sidebar-header-compact" },
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Explorer"),
     panePopoutButton(store2, api2, "explorer", "explorer"),
     paneMaximizeButton(store2, "explorer"),
     refreshBtn
@@ -106481,8 +106482,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   });
   const listHeader = el(
     "div",
-    { class: "terminals-list-header terminal-rail-section-header" },
-    "Shells"
+    { class: "pane-header terminals-list-header terminal-rail-section-header" },
+    el("span", { class: "pane-header-title" }, "Shells")
   );
   const newBtn = el(
     "button",
@@ -107767,8 +107768,8 @@ function defaultProposedPath(queue, activeDiff) {
   return first.path;
 }
 function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
-  const listHeader = el("div", { class: "git-changes-header" });
-  const headerTitle = el("span", { class: "git-changes-title" }, "Changes");
+  const listHeader = el("div", { class: "pane-header git-changes-header" });
+  const headerTitle = el("span", { class: "pane-header-title" }, "Changes");
   const bulkActions = el("div", { class: "git-changes-bulk-actions" });
   const acceptAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Accept all");
   const rejectAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Reject all");
@@ -108951,9 +108952,9 @@ function collectLinkedPrs(store2) {
   return refs;
 }
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
-  const listHeader = el("div", { class: "git-changes-header" });
+  const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Pull requests"),
+    el("span", { class: "pane-header-title" }, "Pull requests"),
     panePopoutButton(store2, api2, "prs", "pull requests"),
     paneMaximizeButton(store2, "pull requests"),
     el(
@@ -110004,9 +110005,9 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   let creating = false;
   let loadToken = 0;
   let loading = false;
-  const listHeader = el("div", { class: "git-changes-header" });
+  const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Memories"),
+    el("span", { class: "pane-header-title" }, "Memories"),
     panePopoutButton(store2, api2, "memories", "memories"),
     paneMaximizeButton(store2, "memories"),
     el(
@@ -110936,7 +110937,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   const collapsedCategories = /* @__PURE__ */ new Set();
   const editorDrafts = /* @__PURE__ */ new Map();
   const autoSaveToken = /* @__PURE__ */ new Map();
-  const listHeader = el("div", { class: "git-changes-header roadmap-list-header" });
+  const listHeader = el("div", { class: "pane-header roadmap-list-header" });
   const filter = el("div", { class: "roadmap-filter" });
   const searchInput = el("input", {
     type: "search",
@@ -111030,7 +111031,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   });
   actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn);
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Roadmap"),
+    el("span", { class: "pane-header-title" }, "Roadmap"),
     panePopoutButton(store2, api2, "roadmap", "roadmap"),
     paneMaximizeButton(store2, "roadmap"),
     filter,
@@ -113184,7 +113185,11 @@ function createWebview(partition, resolveWorkspacePreview) {
   return guest;
 }
 function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
-  const listHeader = el("div", { class: "browser-tabs-list-header" }, "Tabs");
+  const listHeader = el(
+    "div",
+    { class: "pane-header browser-tabs-list-header" },
+    el("span", { class: "pane-header-title" }, "Tabs")
+  );
   const newBtn = el(
     "button",
     {
@@ -130424,8 +130429,8 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "git-changes-header" },
-    el("span", { class: "git-changes-title" }, "Desktop"),
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Desktop"),
     el(
       "div",
       { class: "vnc-header-actions" },
