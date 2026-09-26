@@ -1,5 +1,7 @@
 import { join } from 'node:path'
-import { commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
+import { CODE_INTERPRETERS, commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
+import { remoteChangeReasons } from './remote-change.ts'
+import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
 import { dangerousInSandboxReasons } from './shell-scope.ts'
 import { normalizeSshHost } from './trusted-ssh-hosts.ts'
 
@@ -292,11 +294,95 @@ function fetchedCodeReasons(argv: readonly string[], context: HostReachContext):
 }
 
 // ---------------------------------------------------------------------------
+// Privilege, PATH and downloaded programs
+// ---------------------------------------------------------------------------
+
+const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas', 'run0', 'pkexec', 'su'])
+
+/**
+ * `sudo` is a pass-through wrapper for every other inspector, which judge the
+ * command it runs. Running it as root is its own effect: `… | sudo sh` and
+ * `sudo chown $USER /etc/passwd` looked like ordinary commands.
+ */
+function privilegeReason(rawArgv: readonly string[], argv: readonly string[]): string | null {
+  const prefix = rawArgv.slice(0, rawArgv.length - argv.length + 1)
+  const wrapper = prefix
+    .map((token) => commandName(token))
+    .find((name) => PRIVILEGE_WRAPPERS.has(name))
+  return wrapper ? `runs a command as another user (${wrapper})` : null
+}
+
+const TEMPORARY_PATH_ENTRY =
+  /^(?:\/tmp|\/private\/tmp|\/var\/tmp|\/private\/var\/tmp|\/var\/folders|\/private\/var\/folders|\/dev\/shm|\$\{?TMPDIR\b)/
+
+/**
+ * A temporary directory on `PATH` lets any program written there stand in for an
+ * ordinary command: `export PATH=/tmp/x:$PATH; git status` runs `/tmp/x/git`.
+ */
+function temporaryPathReason(command: string): string | null {
+  for (const match of command.matchAll(/(?:^|[\s;&|(])PATH=(?:"([^"]*)"|'([^']*)'|(\S*))/g)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? ''
+    const entry = value.split(':').find((part) => TEMPORARY_PATH_ENTRY.test(part))
+    if (entry !== undefined) return `puts a temporary directory on PATH (${entry})`
+  }
+  return null
+}
+
+/** Files a `curl -o`/`wget -O` in the command writes. */
+function downloadedFiles(segments: readonly (readonly string[])[]): Set<string> {
+  const out = new Set<string>()
+  for (const argv of segments) {
+    const head = commandName(argv[0])
+    if (head !== 'curl' && head !== 'wget') continue
+    for (let i = 1; i < argv.length; i++) {
+      const arg = argv[i] ?? ''
+      // Short flags combine: `curl -Lo tool`, `wget -qO tool`.
+      const flag =
+        head === 'curl' ? /^(?:-[A-Za-z]*o|--output)$/ : /^(?:-[A-Za-z]*O|--output-document)$/
+      const attached =
+        head === 'curl' ? /^(?:-o|--output=)(.+)$/ : /^(?:-O|--output-document=)(.+)$/
+      const value = flag.test(arg) ? argv[i + 1] : attached.exec(arg)?.[1]
+      if (value && value !== '-') out.add(value.replace(/^\.\//, ''))
+    }
+  }
+  return out
+}
+
+/**
+ * `curl -Lo tool URL && chmod +x tool && ./tool`: nothing the gate can read
+ * exists until the command runs, and a compiled download inside the workspace
+ * would otherwise pass as a program the project built.
+ */
+function downloadThenRunReason(segments: readonly (readonly string[])[]): string | null {
+  const downloaded = downloadedFiles(segments)
+  if (downloaded.size === 0) return null
+  const named = (token: string | undefined): boolean =>
+    token !== undefined && downloaded.has(token.replace(/^\.\//, ''))
+  for (const argv of segments) {
+    const head = argv[0]
+    if (named(head)) return `runs a file it has just downloaded (${head ?? ''})`
+    const name = commandName(head)
+    const runner = CODE_INTERPRETERS.has(name) || name === 'source' || name === '.'
+    const script = runner ? argv.slice(1).find(named) : undefined
+    if (script !== undefined) return `runs a file it has just downloaded (${script})`
+    if (
+      commandName(head) === 'chmod' &&
+      argv.some((arg) => /x/.test(arg) && !named(arg)) &&
+      argv.some(named)
+    ) {
+      return 'makes a file it has just downloaded executable'
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 
 /** Every host-reach reason for a shell command line, deduplicated. */
 export function hostReachReasons(command: string, context: HostReachContext): string[] {
   const reasons = new Set<string>(secretOverNetworkReasons(command))
-  for (const rawArgv of shellSegments(command)) {
+  const segments = shellSegments(command)
+  for (const rawArgv of segments) {
     const argv = unwrapWrappers(rawArgv)
     const head = commandName(argv[0])
     const found = [
@@ -304,8 +390,15 @@ export function hostReachReasons(command: string, context: HostReachContext): st
       ...secretReasons(rawArgv, argv),
       ...hostControlReasons(argv),
       ...fetchedCodeReasons(argv, context),
+      ...remoteChangeReasons(rawArgv, argv),
+      privilegeReason(rawArgv, argv),
+      tokenPrinterReason(argv),
+      secretFileExposure(argv),
     ]
-    for (const reason of found) reasons.add(reason)
+    for (const reason of found) if (reason !== null) reasons.add(reason)
+  }
+  for (const reason of [temporaryPathReason(command), downloadThenRunReason(segments)]) {
+    if (reason !== null) reasons.add(reason)
   }
   return [...reasons]
 }

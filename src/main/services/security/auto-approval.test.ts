@@ -524,3 +524,23 @@ describe('assessAutoApproval — text and home paths', () => {
     assert.equal(decide('cd /tmp'), 'prompt')
   })
 })
+
+describe('assessAutoApproval — secrets inside the workspace', () => {
+  it('refuses to read a secret file even though it is inside the workspace', () => {
+    for (const command of [
+      'cat .env',
+      'cat .env.production',
+      'grep -i secret .env',
+      'head certs/server.key',
+    ]) {
+      prompts(command, 'read')
+    }
+    assert.equal(approved('cat .env.example', 'read'), 'read')
+  })
+
+  it('refuses gh auth status --show-token, which prints the token', () => {
+    prompts('gh auth status --show-token', 'read')
+    prompts('gh auth status -t', 'read')
+    assert.equal(approved('gh auth status', 'read'), 'read')
+  })
+})
