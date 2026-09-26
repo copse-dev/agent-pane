@@ -339,16 +339,20 @@ describe('portrait panel controls row', () => {
     expect(Math.abs(stacked.barHeight - stacked.settingsHeight)).toBeLessThanOrEqual(1)
     expect(stacked.seamHitTargetId).toBe('resizer-files')
 
-    // The pane opens on "Loading changes…" until its first git status lands;
-    // capture the loaded list, not whichever side of that race this run hit.
+    await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
+    // The pane mounts empty, then shows "Loading changes…" until its first git
+    // status lands. Wait for the loaded list itself: an absent loading label
+    // alone also matches the instant before the pane has rendered anything.
     await browser.waitUntil(
       () =>
-        browser.execute(
-          () => !document.getElementById('pane-files')?.textContent?.includes('Loading changes'),
-        ),
+        browser.execute(() => {
+          const list =
+            document.querySelector('#git-changes-host .git-changes-list')?.textContent ?? ''
+          const pane = document.getElementById('pane-files')?.textContent ?? ''
+          return list.trim() !== '' && !pane.includes('Loading changes')
+        }),
       { timeout: 15_000, timeoutMsg: 'the Changes pane never finished loading' },
     )
-    await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-with-panel.png'))
   })
 
