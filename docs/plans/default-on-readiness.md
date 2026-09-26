@@ -408,3 +408,21 @@ the visual evidence that `AGENTS.md` requires:
 - Roadmap plans: [#3072](https://github.com/copse-dev/agent-pane/issues/3072)
 - CI investigator: [#3073](https://github.com/copse-dev/agent-pane/issues/3073)
 - Forced planning: [#3074](https://github.com/copse-dev/agent-pane/issues/3074)
+
+## Fix pull requests
+
+The concrete defects this audit found are being fixed in these draft pull requests. None of them changes a default.
+
+- [#3098](https://github.com/copse-dev/agent-pane/pull/3098): CI investigator: only mention `investigate_ci` when the turn can call it (#3073)
+- [#3099](https://github.com/copse-dev/agent-pane/pull/3099): Dark-factory upgrade seed; canvas toggle reloads MCP servers; e2e default-off list derived from the product; CSP tests (#3068)
+- [#3100](https://github.com/copse-dev/agent-pane/pull/3100): ACP over SSH: remote agents are never treated as sandboxed; no native bridge; pinned remote install; SSH docs — needs security sign-off
+- [#3102](https://github.com/copse-dev/agent-pane/pull/3102): Remove `eslint-disable` suppressions (#3070); hooks plan decision 5 lists long-task wakes
+- [#3103](https://github.com/copse-dev/agent-pane/pull/3103): Roadmap, long-task and memory stores follow the thread's own project (#3072); memory taint carries forward; `recall` capped — needs security sign-off
+- [#3104](https://github.com/copse-dev/agent-pane/pull/3104): Advisor: output cap, Stop cancels, selector expanded before the lift check, transcript cap, demo entry
+- [#3105](https://github.com/copse-dev/agent-pane/pull/3105): Container runs: provider key never passed through an environment variable; base image pinned by digest; accurate egress copy; gated orphan sweep — needs security sign-off
+- [#3107](https://github.com/copse-dev/agent-pane/pull/3107): PII redaction: keep URLs/IPs, restart-safe placeholders, visible fail-open notice, accurate copy and docs — needs privacy sign-off
+- [#3108](https://github.com/copse-dev/agent-pane/pull/3108): Apple Development: tools scoped to enrolled macOS projects; no Enroll on Linux; clear viewer-off message (#3069)
+- [#3110](https://github.com/copse-dev/agent-pane/pull/3110): Model classifier and delegating steps take effect without restart; Parallel Search cannot be enabled without a key
+- [#3111](https://github.com/copse-dev/agent-pane/pull/3111): Next-step suggestions: usage recorded against the model that answered; `suggestNextStep` tests
+- [#3112](https://github.com/copse-dev/agent-pane/pull/3112): Native SSH shell commands are gated as unsandboxed — needs security sign-off
+- [#3118](https://github.com/copse-dev/agent-pane/pull/3118): Settings and plugin copy for the Desktop pane, Developer mode, SSH agents, DevTools shortcut and dark factory
