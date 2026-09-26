@@ -11,6 +11,10 @@ import {
 export interface UpdatePromptRequest {
   message: string
   detail?: string
+  /** Notes for each version the update brings, newest first (Markdown). */
+  changelog?: { version: string; notes: string }[]
+  /** Where every release's notes are published. */
+  changelogUrl?: string
   buttons: [string, ...string[]]
   defaultIndex?: number
   cancelIndex?: number
@@ -68,6 +72,8 @@ export function initUpdatePrompt(win: BrowserWindow): void {
         id,
         message: req.message,
         detail: req.detail,
+        changelog: req.changelog,
+        changelogUrl: req.changelogUrl,
         buttons: req.buttons,
         defaultIndex: req.defaultIndex,
         cancelIndex: req.cancelIndex,

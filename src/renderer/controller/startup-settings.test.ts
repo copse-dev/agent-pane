@@ -28,6 +28,7 @@ test('loads every first-paint setting concurrently', async () => {
     'openLinksInBuiltInBrowser',
     'theme',
     'fontSize',
+    'animateAgentAvatars',
     'uiScale',
     'uiAccentColor',
     'uiTintColor',
@@ -39,6 +40,7 @@ test('loads every first-paint setting concurrently', async () => {
   for (const release of releases) release()
   const loaded = await pending
   assert.equal(loaded.model, 'model')
+  assert.equal(loaded.animateAgentAvatars, 'animateAgentAvatars')
   assert.equal(loaded.uiTintStrength, 'uiTintStrength')
   assert.equal(loaded.developerMode, 'developerMode')
 })

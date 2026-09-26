@@ -108,14 +108,15 @@ export function resendLastMessage(
   )
 
   const running = thread.status === 'running'
+  const queued = { messageId, payload, createdAt: Date.now() }
   if (running) {
-    enqueueUserMessage(store, threadId, { messageId, payload, createdAt: Date.now() })
+    enqueueUserMessage(store, threadId, queued)
   } else {
     // Same contract as a typed prompt at idle (decision 16): a human submission
     // starts a fresh turn tree, so late async hooks from the previous turn are
     // held rather than folded into this one.
     startHumanTurnTree(store, threadId)
-    dispatchAgentRun(store, api, threadId, payload)
+    dispatchAgentRun(store, api, threadId, payload, queued)
   }
 
   return {

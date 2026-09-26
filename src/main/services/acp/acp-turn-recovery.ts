@@ -1,5 +1,8 @@
 import type { StreamChunk } from '@shared/types'
+import { ACP_CANCELLED_TOOL_CALL_RESULT } from '@shared/tools/tool-interruption.ts'
 import { normalizeStopReason } from '@copse/agent/headless-contract.ts'
+
+export { ACP_CANCELLED_TOOL_CALL_RESULT }
 
 export type AcpLastMeaningfulEvent = 'text' | 'reasoning' | 'tool' | null
 
@@ -17,20 +20,6 @@ export const ACP_UNFINISHED_TURN_FALLBACK =
 
 export const ACP_UNFINISHED_TURN_BUDGET_FALLBACK =
   'Copse could not request a final response automatically because this turn reached its continuation limit. Send “continue” to resume.'
-
-/**
- * Result written onto a tool call the turn ended on top of (#2332). `ToolCall`
- * has no `cancelled` status, so this reuses `error` and says so in the payload.
- *
- * The text matters as much as the status: the transcript is what the *next*
- * turn's model reads. An interrupted call left `running` renders as a spinner
- * that never stops, and one the agent stamps `completed` — some emit a terminal
- * `tool_call_update` carrying the call's own description where its output should
- * be — reads as a command that ran and printed nothing. Both invite the model to
- * build on an outcome the host cannot actually know.
- */
-export const ACP_CANCELLED_TOOL_CALL_RESULT =
-  'Interrupted before completion — no final output was received. This tool may have partially run or produced effects; inspect the current state before retrying it.'
 
 /**
  * What a turn produced, as opposed to what it happened to end on.

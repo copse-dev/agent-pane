@@ -121,6 +121,14 @@ describe('composer editor value serialization', () => {
     assert.equal(removals, 1)
   })
 
+  it('inserts plain text (not a chip) at the end when unfocused', () => {
+    const editor = mountComposerEditor()
+    editor.value = 'before '
+    editor.insertText('> quoted\n> lines\n\n')
+    assert.equal(editor.value, 'before > quoted\n> lines\n\n')
+    assert.equal(editor.getBlocks().length, 0, 'inserted text is plain, not a chip block')
+  })
+
   it('clears text and every chip kind together', () => {
     const editor = mountComposerEditor()
     editor.value = 'text'
