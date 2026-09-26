@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TIERS } from '../scripts/score.mjs'
-import { build, family, jsonl, relocateShellScope } from './build.mjs'
+import { MAX_FIXTURES_PER_FILE, build, family, jsonl, relocateShellScope } from './build.mjs'
 import { SNAPSHOT, analyzeTestset, drift, loadTestset, violations } from './gates.mjs'
 import { parseCsv, shuffle } from './sample-hf.mjs'
 import { anonymise, leakReason } from './import-history.mjs'
@@ -10,9 +10,12 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { TESTSET } from './paths.mjs'
 
-test('the committed test set and fixtures are current', () => {
+test('the committed test set and fixtures are current, and each fixture file fits the runner', () => {
   for (const [name, content] of Object.entries(build())) {
     assert.equal(readFileSync(join(TESTSET, name), 'utf8'), content, `${name} is stale`)
+    if (name.startsWith('fixtures/')) {
+      assert.ok(content.trim().split('\n').length <= MAX_FIXTURES_PER_FILE, `${name} is too large`)
+    }
   }
 })
 

@@ -173,16 +173,30 @@ export function build() {
   })
   const line = (value) => JSON.stringify(value)
   const text = (values) => values.map(line).join('\n') + '\n'
-  return {
-    'cases.jsonl': text(cases),
-    ...Object.fromEntries(
-      SPLITS.map((split) => [
-        `fixtures/tier-${split}.jsonl`,
-        text(cases.filter((c) => c.split === split).map(fixture)),
-      ]),
-    ),
+  // The curated splits keep their own files, so their scores stay comparable as history
+  // slices arrive; each slice gets its own. eval:classifier takes at most 1,000 fixtures
+  // per file, so larger groups are written in parts.
+  const groups = new Map()
+  for (const c of cases) {
+    const name = c.source.startsWith('history:')
+      ? `tier-history-${c.source.slice('history:'.length)}`
+      : `tier-${c.split}`
+    groups.set(name, [...(groups.get(name) ?? []), c])
   }
+  const outputs = { 'cases.jsonl': text(cases) }
+  for (const [name, group] of groups) {
+    const parts = Math.ceil(group.length / MAX_FIXTURES_PER_FILE)
+    for (let part = 0; part < parts; part++) {
+      const file = parts === 1 ? `${name}.jsonl` : `${name}-part${String(part + 1)}.jsonl`
+      const slice = group.slice(part * MAX_FIXTURES_PER_FILE, (part + 1) * MAX_FIXTURES_PER_FILE)
+      outputs[`fixtures/${file}`] = text(slice.map(fixture))
+    }
+  }
+  return outputs
 }
+
+/** The most fixtures `pnpm run eval:classifier` accepts in one input file. */
+export const MAX_FIXTURES_PER_FILE = 1000
 
 /** Deterministic shuffle (prepare.mjs's) so batches mix sources for the labeller. */
 function shuffled(rows) {

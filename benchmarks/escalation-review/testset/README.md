@@ -36,8 +36,13 @@ shell-safety-v2's own label follows a different policy (it asks on `Select-Strin
 - `cases.jsonl` holds one case per line: `id`, `source`, `command`, `workspace`, the optional
   `files` and `trustedSshHosts` (the same meaning as in the regression set), `split`, and the
   reference `tier`, `effects` and `rationale`. `scope` appears only where a source reviewed it.
-- `fixtures/tier-dev.jsonl` and `fixtures/tier-holdout.jsonl` are `eval:classifier` fixtures. They
-  ask the tier question, with `expected.tier` set, and `expected.scope` where one is known.
+- `fixtures/` holds the `eval:classifier` fixtures. They ask the tier question, with
+  `expected.tier` set, and `expected.scope` where one is known:
+  - `tier-dev.jsonl` and `tier-holdout.jsonl` are the curated splits;
+  - `tier-history-<slice>[-partN].jsonl` holds each history slice.
+
+  No file holds more than the runner's limit of 1,000 fixtures.
+
 - `deterministic.jsonl` is the pinned verdict of every deterministic gate for every case.
 - `labels.jsonl` holds the reference labels, and `build.mjs` joins them to the sources.
 
