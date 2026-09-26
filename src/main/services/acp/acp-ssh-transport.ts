@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { PassThrough, Readable, Writable } from 'node:stream'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
+import { containerAcpAgent } from '@shared/container-acp-agents.ts'
 import { getSetting } from '../storage/settings.ts'
 import {
   isSshExecutionTarget,
@@ -223,6 +224,25 @@ export function remoteNpmInstallScript(pkg: string, npmBinDir: string | null): s
 }
 
 /**
+ * The exact `package@version` a remote install may fetch for a catalog agent,
+ * or `null` when Copse has no vetted pin for it. The pin is the one the
+ * unattended-container worker image bakes (`CONTAINER_ACP_AGENTS`), so every
+ * place Copse installs an adapter somewhere it cannot put Socket Firewall in
+ * front of npm installs the same reviewed version. Local installs float
+ * because Socket Firewall screens them; a remote install has no such screen,
+ * so it never takes whatever `latest` happens to be — no pin, no install.
+ */
+export function remoteAcpInstallSpec(known: {
+  id: string
+  installPackage?: string | undefined
+}): string | null {
+  if (!known.installPackage) return null
+  const pinned = containerAcpAgent(known.id)
+  if (pinned?.npmPackage !== known.installPackage) return null
+  return `${pinned.npmPackage}@${pinned.version}`
+}
+
+/**
  * Approval copy for a remote install. Deliberately names the host and the Node
  * prefix, and is explicit that Socket Firewall does not cover this install:
  * `sfw` runs on the desktop, so a remote install cannot be proxied through it.
@@ -274,7 +294,9 @@ async function installRemoteAcpAgent(
   signal?: AbortSignal,
 ): Promise<boolean> {
   const known = KNOWN_ACP_AGENTS.find((agent) => agent.command === command)
-  if (!known?.autoInstall || !known.installPackage) return false
+  if (!known?.autoInstall) return false
+  const spec = remoteAcpInstallSpec(known)
+  if (!spec) return false
 
   // Reuse the version-manager sweep to locate npm, newest Node first — the same
   // ordering rationale as the agent search: the agent needs a *newer* Node than
@@ -285,7 +307,7 @@ async function installRemoteAcpAgent(
   const npmBinDir = search ? (parseVersionManagerHits(search.stdout)[0] ?? null) : null
 
   const { title, body } = formatRemoteAcpInstallApproval({
-    pkg: known.installPackage,
+    pkg: spec,
     hostLabel,
     npmBinDir,
   })
@@ -293,8 +315,8 @@ async function installRemoteAcpAgent(
   // no way to prompt) — see acp-remote-install-approval.ts.
   if (!(await approveRemoteAcpInstall({ title, body }, signal))) return false
 
-  const script = remoteNpmInstallScript(known.installPackage, npmBinDir)
-  emitShellOutput(`[acp-ssh] installing ${known.installPackage} on ${hostLabel}…\n`)
+  const script = remoteNpmInstallScript(spec, npmBinDir)
+  emitShellOutput(`[acp-ssh] installing ${spec} on ${hostLabel}…\n`)
   // With a resolved Node prefix a clean non-interactive shell suffices; without
   // one, only an interactive login shell has a version manager's npm on PATH.
   const argv = npmBinDir ? [loginShell, '-lc', script] : [loginShell, '-i', '-l', '-c', script]
@@ -302,7 +324,7 @@ async function installRemoteAcpAgent(
     .execArgv(argv, { timeoutMs: REMOTE_INSTALL_TIMEOUT_MS })
     .catch(() => null)
   if (!result) {
-    emitShellOutput(`[acp-ssh] install of ${known.installPackage} failed to run.\n`)
+    emitShellOutput(`[acp-ssh] install of ${spec} failed to run.\n`)
     return false
   }
   emitShellOutput(`${result.stdout}${result.stderr}`)

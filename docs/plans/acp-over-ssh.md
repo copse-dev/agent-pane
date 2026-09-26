@@ -1,10 +1,10 @@
 # ACP agents over SSH
 
-**Status: In progress (Phase 1).** Lets Copse drive an external **ACP agent on
+**Status: Phase 1 shipped behind an opt-in.** Lets Copse drive an external **ACP agent on
 the remote host** of an SSH workspace, instead of blocking ACP entirely there.
 The agent process runs where the code lives; Copse stays the ACP _Client_ (UI,
 approvals, diff queue) locally. Gated behind a single opt-in — `acpOverSshEnabled`
-— in Settings → ACP agents.
+— in Settings → SSH ("Agents on the remote machine"), default off.
 
 Builds directly on the SSH-workspace stack that shipped in
 [#942](https://github.com/copse-dev/agent-pane/pull/942)
@@ -105,28 +105,38 @@ Both `spawnTransport` (`acp-client.ts`) and `spawnProbeTransport`
 the askpass bridge + the user's `~/.ssh/config` and `known_hosts`. The agent
 transport rides the connection the workspace already opened.
 
-**Auth the agent to its model provider** — the agent authenticates **on the
-remote host**, where the code (and the agent binary) live: `claude /login` /
-`cursor-agent login` / a token in the remote shell profile, run once on the
-host. Copse forwards **only** a locale/term allow-list to the remote agent — it
-does **not** forward Copse's local provider keys, the local `process.env`, or
-even the agent's Copse-configured `env` secrets. Two reasons: (1) the
-"auth-where-the-code-is" model makes local secrets the wrong ones anyway, and
-(2) `env KEY=VAL` values are visible in `ps` to other users on a shared remote
-host. (Forwarding configured `env` as an explicit per-agent opt-in is a possible
-follow-up.) This is the direct application of zed#38392.
+**Auth the agent to its model provider** — by default the agent authenticates
+**on the remote host**, where the code (and the agent binary) live:
+`claude /login` / `cursor-agent login` / a token in the remote shell profile,
+run once on the host (the re-auth flow opens a terminal on the host for this).
+The remote command line carries only a locale/term allow-list; Copse never
+forwards the local `process.env` or its own provider keys. The agent's
+Copse-configured `env` (Settings → ACP agents) crosses to the host **only after
+a consent prompt** (`acp-remote-env-gate.ts`): the dialog names the agent, the
+host and the variable names; the answer is remembered per agent + host +
+name-set until restart, and a denial strips `env` from the spawn config before
+it leaves the main process. Approved values travel as a single base64 stdin
+preamble line that the remote wrapper `read`s and `eval`s into exported
+variables — never on the remote argv, so they stay out of `ps` on a shared host
+(zed#38392) — and are never written to the remote disk. Model probes never
+forward env.
 
-**Install the agent binary** — assume-present, with a preflight and clear
-guidance. Before the first spawn, Copse checks the agent command resolves on the
-remote login-shell PATH (`command -v` over the connection). If it doesn't, the
-turn fails with the known agent's own install line (e.g.
-`npm install -g @agentclientprotocol/claude-agent-acp`) to run **on the remote host**.
-Copse does **not** auto-install remotely in v1: the Socket-Firewall supply-chain
-wrapper that guards local auto-setup does not extend to the remote host, so
-auto-installing there would bypass a security control (and zed#47910 shows how
-local/remote install confusion bites).
+**Install the agent binary** — preflight, then an approval-gated install.
+Before the first spawn, Copse checks the agent command resolves on the remote
+host (non-interactive login PATH, then interactive login PATH, then a
+version-manager sweep for a newer Node). If it is still missing and the agent is
+a curated catalog preset with `autoInstall`, Copse asks — naming the host, the
+Node prefix and the exact `package@version` — and on approval runs
+`npm install -g --ignore-scripts <package>@<version>` on the host. The version
+is the pin the unattended-container worker image bakes
+(`src/shared/container-acp-agents.ts`); a catalog agent without such a pin is
+not auto-installed. The approval states that Socket Firewall does **not** cover
+this install (it runs on the desktop); `--ignore-scripts` and the pin are the
+remaining supply-chain controls. The install fails closed where no approver is
+wired (inside ACP workers). Other agents fail with the catalog's own install
+line to run on the host.
 
-**Gating (the one toggle)** — `acpOverSshEnabled`, in Settings → ACP agents,
+**Gating (the one toggle)** — `acpOverSshEnabled`, in Settings → SSH,
 default **off**. It is only meaningful when `sshWorkspaceEnabled` is also on
 (you cannot remote an ACP agent without an SSH workspace). When **off** on an
 SSH workspace, ACP stays blocked with the existing message; ACP agents are
@@ -140,24 +150,40 @@ host and appear in the picker.
   apply; the agent runs unsandboxed on the remote host exactly as a remote
   shell command does. Approvals, the diff queue, and permission prompts all
   stay in the **local** main process.
-- **No local secrets cross the wire** — locale allow-list only (above).
+- **A remote agent is never treated as sandboxed.** When an ACP SSH target
+  resolves, the turn's containment is "unsandboxed" regardless of the local
+  sandbox state (`resolveAcpRunContainment` in `acp-agent-service.ts`): Claude
+  presets keep their own prompting mode instead of `acceptEdits`, read/search
+  and Codex code-mode requests prompt, and execute requests reach the shell gate
+  with `sandboxEnabled: false`, so ambiguous commands and opaque interpreter
+  scripts prompt (see `docs/shell-permissions.md`, "SSH workspaces").
+- **No native-tool bridge for remote agents.** The bridge listens on the
+  desktop's loopback; the remote host cannot reach it, and its URL and bearer
+  token must not be handed to a process on another machine. The session pool
+  starts no bridge for a remote session and `openAcpSession` never offers one to
+  it, until a reverse tunnel exists (#771). Bridged-title auto-approval is off
+  for remote agents for the same reason.
+- **Local secrets cross the wire only with consent** — locale allow-list on the
+  command line; configured agent `env` only after the forwarding prompt, via
+  stdin (above).
 - **`ssh` classification is untouched** — the transport is injected below
   command routing, so user-authored `ssh` stays hard-external.
 - **Host trust** is the user's own `known_hosts` via OpenSSH; no parallel store.
 
 ## Phasing
 
-- **Phase 1 (this work).** Toggle + remote transport + flip the guard + preflight
-  install check + picker visibility + unit tests. Agent runs remotely; its own
-  tools + Copse's diff-queue writes operate on the remote host.
+- **Phase 1 (shipped, opt-in).** Toggle + remote transport + flip the guard +
+  preflight install check with approval-gated pinned install + consent-gated env
+  forwarding + picker visibility + unit tests. Agent runs remotely; its own
+  tools + Copse's diff-queue writes operate on the remote host. No native-tool
+  bridge.
 - **Phase 2.** MCP forwarding to the remote agent — launch the user's stdio MCP
   servers **on the remote host** from raw config (never SSH-proxied, per
   zed#52254). Copse's native-tool bridge (http/localhost) needs a **reverse
   tunnel**, which is [#771](https://github.com/copse-dev/agent-pane/issues/771)'s
   scope.
-- **Phase 3.** Remote model-detection polish, optional per-agent env forwarding
-  opt-in, remote auto-install story (if Socket-Firewall equivalent can be
-  extended), terminal (`terminal/*`) parity on the remote host.
+- **Phase 3.** Remote model-detection polish, a Socket-Firewall equivalent for
+  the remote install, terminal (`terminal/*`) parity on the remote host.
 
 ## Testing
 

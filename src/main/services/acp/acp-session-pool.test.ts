@@ -1,11 +1,19 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ndJsonStream } from '@agentclientprotocol/sdk'
+import {
+  agent,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  type NewSessionRequest,
+} from '@agentclientprotocol/sdk'
 import { z } from 'zod'
 import type { StreamChunk } from '@shared/types'
 import { buildAcpAgentApp, type AcpTurnRunner } from './acp-agent-server.ts'
 import { runAcpSessionPrompt, type AcpClientHandlers, type AcpTransport } from './acp-client.ts'
 import { ToolRegistry } from '../tool-registry.ts'
+import { setSetting } from '../storage/settings.ts'
+import { storageSet } from '../storage/storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   clearUnrepairableOpenFileFault,
   unrepairableOpenFileFault,
@@ -441,5 +449,99 @@ describe('acp-session-pool', () => {
       createTransport,
     })
     assert.equal(entry.open.promptImage, false)
+  })
+})
+
+/**
+ * The native-tool bridge listens on this machine's loopback. A remote
+ * (ACP-over-SSH) agent resolves that address on its own host, so it must never
+ * be handed the bridge's URL or bearer token (docs/plans/acp-over-ssh.md; real
+ * remote bridging is #771).
+ */
+describe('acp-session-pool native bridge on SSH workspaces', () => {
+  const REMOTE_ROOT = '/remote/project'
+
+  beforeEach(async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    await setSetting('acpOverSshEnabled', true)
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: REMOTE_ROOT, sshHost: 'dev' }])
+    setWorkspaceRootForTest(REMOTE_ROOT)
+  })
+
+  afterEach(async () => {
+    await disposeAllAcpSessions()
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+    await setSetting('acpOverSshEnabled', false)
+  })
+
+  /** An agent that can mount an http MCP server and records what `session/new` offered it. */
+  function httpCapableAgent(offered: NewSessionRequest[]): () => Promise<AcpTransport> {
+    const app = agent({ name: 'bridge-capture-agent' })
+      .onRequest('initialize', () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: { mcpCapabilities: { http: true } },
+      }))
+      .onRequest('session/new', (ctx) => {
+        offered.push(ctx.params)
+        return { sessionId: `s-${String(offered.length)}` }
+      })
+    return () => {
+      const c2a = new TransformStream<Uint8Array, Uint8Array>()
+      const a2c = new TransformStream<Uint8Array, Uint8Array>()
+      const agentConnection = app.connect(ndJsonStream(a2c.writable, c2a.readable))
+      return Promise.resolve({
+        stream: ndJsonStream(c2a.writable, a2c.readable),
+        dispose: () => {
+          agentConnection.close()
+        },
+      })
+    }
+  }
+
+  function registryWithOneTool(): ToolRegistry {
+    const registry = new ToolRegistry()
+    registry.register({
+      name: 'read_file',
+      description: 'Read a workspace file',
+      parameters: z.object({}),
+      execute: () => Promise.resolve('contents'),
+    })
+    return registry
+  }
+
+  it('offers a remote agent no bridge and no bearer token', async () => {
+    const offered: NewSessionRequest[] = []
+    const { entry } = await acquireAcpSession({
+      threadId: 'remote-bridge',
+      config: { command: 'unused-in-tests', cwd: REMOTE_ROOT },
+      createTransport: httpCapableAgent(offered),
+      registry: registryWithOneTool(),
+    })
+    assert.equal(entry.bridge, null, 'no loopback bridge is started for a remote agent')
+    assert.equal(offered.length, 1)
+    assert.deepEqual(offered[0]?.mcpServers, [])
+    assert.doesNotMatch(JSON.stringify(offered[0]), /Bearer|127\.0\.0\.1/)
+  })
+
+  it('still offers the bridge to a local agent on the same machine', async () => {
+    const offered: NewSessionRequest[] = []
+    const { entry } = await acquireAcpSession({
+      threadId: 'local-bridge',
+      config: CONFIG,
+      createTransport: httpCapableAgent(offered),
+      registry: registryWithOneTool(),
+    })
+    assert.ok(entry.bridge, 'a local agent keeps its bridge')
+    const servers = offered[0]?.mcpServers ?? []
+    assert.equal(servers.length, 1)
+    assert.match(JSON.stringify(servers[0]), /Bearer /)
   })
 })
