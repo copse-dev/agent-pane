@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -8,6 +9,7 @@ import {
   seedPrPanelChatFixture,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { tokenColour } from './helpers/theme.ts'
 
 /**
  * Drives the PR-pane lifecycle action buttons (Rerun CI / Approve / Mark ready /
@@ -108,6 +110,45 @@ describe('PR panel lifecycle actions (mock gh)', () => {
       expect.stringMatching(/ready for review/i),
     )
     await saveElementScreenshot('#pane-files', 'pr-actions-ready.png')
+
+    // Auto-merge is a setting, not a status: it keeps the neutral badge, while
+    // the CI dots take the status tokens rather than their own hues.
+    const automerge = await browser.execute(() => {
+      const badge = document.querySelector('.pr-badge-automerge')
+      if (!badge) return null
+      const style = getComputedStyle(badge)
+      return { color: style.color, border: style.borderTopColor }
+    })
+    assert.ok(automerge, 'expected the Auto-merge badge')
+    assert.equal(automerge.color, await tokenColour('--text-secondary'))
+    assert.equal(automerge.border, await tokenColour('--border', 'border-top-color'))
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector('.pr-list-ci-success') !== null &&
+            document.querySelector('.pr-list-ci-failure') !== null,
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected passing and failing CI dots in the PR list' },
+    )
+    const ciTokens: [string, string][] = [
+      ['success', '--success'],
+      ['failure', '--error'],
+      ['pending', '--warning'],
+    ]
+    for (const [state, token] of ciTokens) {
+      const dots = await browser.execute(
+        (selector) =>
+          Array.from(
+            document.querySelectorAll(selector),
+            (dot) => getComputedStyle(dot).backgroundColor,
+          ),
+        `.pr-list-ci-${state}`,
+      )
+      const expected = await tokenColour(token, 'background-color')
+      for (const painted of dots)
+        assert.equal(painted, expected, `CI ${state} dot must be ${token}`)
+    }
 
     // Switch to the failing workspace PR (#88) and re-run its failed CI.
     await $('.pr-list-title*=Tidy up workspace status polling').click()

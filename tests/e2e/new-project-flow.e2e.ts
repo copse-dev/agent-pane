@@ -54,6 +54,33 @@ describe('new project flow', () => {
     expect(radii!.newRadius).toBe(radii!.actionRadius)
     // Guard against regressing to the square UI-kit radius (6px).
     expect(radii!.newRadius).not.toMatch(/^6px/)
+
+    // New Project is the one filled primary; Open Folder is the outlined
+    // secondary (welcome.css) and must not pick up the brand accent fill.
+    const fills = await browser.execute(() => {
+      const newBtn = document.querySelector('.welcome-new-btn')
+      const openBtn = document.querySelector('.welcome-open-btn')
+      if (!(newBtn instanceof HTMLElement) || !(openBtn instanceof HTMLElement)) {
+        return null
+      }
+      const probe = document.createElement('div')
+      probe.style.backgroundColor = 'var(--accent-fill)'
+      document.body.append(probe)
+      const accentFill = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      const open = getComputedStyle(openBtn)
+      return {
+        accentFill,
+        newBackground: getComputedStyle(newBtn).backgroundColor,
+        openBackground: open.backgroundColor,
+        openBorderWidth: open.borderTopWidth,
+      }
+    })
+    expect(fills).not.toBeNull()
+    expect(fills!.newBackground).toBe(fills!.accentFill)
+    expect(fills!.openBackground).not.toBe(fills!.accentFill)
+    expect(fills!.openBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(fills!.openBorderWidth).toBe('1px')
     await saveAppScreenshot('welcome-empty.png')
 
     await $('.welcome-new-btn').click()
