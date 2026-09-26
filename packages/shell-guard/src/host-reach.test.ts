@@ -207,5 +207,8 @@ describe('hostReachReasons — shell history', () => {
     assert.ok(!reaches('history'))
     assert.ok(!reaches('history | grep make'))
     assert.ok(!reaches('grep -rn token src'))
+    assert.ok(!reaches('history; rg token src'))
+    assert.ok(!reaches('history && grep -rn PASSWORD src'))
+    assert.ok(reaches('history 50 | tail -20 | grep -i secret'))
   })
 })
