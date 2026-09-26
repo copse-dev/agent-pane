@@ -107432,13 +107432,20 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   const conflictBanner = el("div", { class: "diff-conflict-banner" });
   conflictBanner.hidden = true;
   const diffWrap = el("div", { class: "git-diff-editor-wrap" });
-  const acceptBtn = el("button", { type: "button", class: "diff-accept-btn" }, "Accept");
-  const rejectBtn = el("button", { type: "button", class: "diff-reject-btn" }, "Reject");
+  const acceptBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary diff-accept-btn" },
+    "Accept"
+  );
+  const rejectBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary diff-reject-btn" },
+    "Reject"
+  );
   acceptBtn.hidden = true;
   rejectBtn.hidden = true;
-  const approvalBar = el("div", { class: "diff-approval-bar" });
+  const approvalBar = uiActions(rejectBtn, acceptBtn, { className: "diff-approval-bar" });
   approvalBar.hidden = true;
-  approvalBar.append(rejectBtn, acceptBtn);
   const imageWrap = el("div", { class: "git-image-diff-wrap" });
   const dirWrap = el("div", { class: "git-dir-view" });
   dirWrap.hidden = true;
@@ -108265,6 +108272,7 @@ var init_git_changes_pane = __esm({
     init_array_utils2();
     init_toast();
     init_confirm_dialog();
+    init_actions();
     init_review_actions();
     init_review_plugin();
     init_staged_diff_ui();
