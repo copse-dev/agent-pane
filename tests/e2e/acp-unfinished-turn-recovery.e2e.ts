@@ -241,19 +241,17 @@ describe('ACP interrupted by a new chat prompt', () => {
     const run = await $('.tool-card-rollup[data-rollup-key="run"]')
     await expect(run).toHaveAttribute('data-status', 'interrupted')
     await expect(run).not.toHaveAttribute('open')
-    await expect(run.$(':scope > summary .tool-name')).toHaveText(
-      'Used 4 tools · 2 steps · Interrupted',
-    )
+    await expect(run.$(':scope > summary .tool-name')).toHaveText('Used 4 tools · Interrupted')
     await savePreparedElementScreenshot('.messages-list', 'acp-prompt-interruption-collapsed.png')
 
     await run.$(':scope > summary').click()
     await expect(run.$(':scope > .tool-rollup-body > .tool-interruption-note')).toHaveText(
       'Interrupted when you sent a new message.',
     )
-    const step = await run.$('[data-step-message-id="msg-assistant-acp-interrupted-step"]')
-    await expect(step).not.toHaveAttribute('open')
-    await step.$(':scope > summary').click()
-    const call = await step.$('[data-tool-id="tc-acp-interrupted-read"]')
+    // A user interruption is not a failure, so the call stays inside the run.
+    const call = await run.$(
+      ':scope > .tool-rollup-body > [data-tool-id="tc-acp-interrupted-read"]',
+    )
     await expect(call).toHaveAttribute('data-status', 'interrupted')
     await expect(call).not.toHaveAttribute('open')
     await call.$(':scope > summary').click()
@@ -408,14 +406,14 @@ describe('ACP successful turn with an unterminated tool call', () => {
     const anchor = await $('[data-message-id="msg-assistant-acp-settled-first-step"]')
     const rollup = await anchor.$('.tool-card-rollup')
     await expect(rollup).toHaveAttribute('data-status', 'error')
-    await expect(rollup.$('summary.tool-card-header')).toHaveText(
-      'Used 2 tools · 2 steps · 1 failed',
-    )
+    await expect(rollup.$('summary.tool-card-header')).toHaveText('Used 2 tools · 1 failed')
     await expect(anchor.$('[data-status="running"]')).not.toExist()
 
-    await expect(rollup).toHaveAttribute('open')
-    const failedSearch = await anchor.$('[data-tool-id="tc-acp-settled-web-search"]')
+    // The run stays quiet; the genuine failure is shown open beside it.
+    await expect(rollup).not.toHaveAttribute('open')
+    const failedSearch = await anchor.$(':scope > [data-tool-id="tc-acp-settled-web-search"]')
     await expect(failedSearch).toHaveAttribute('data-status', 'error')
+    await expect(failedSearch).toHaveAttribute('open')
     await expect(
       $('[data-message-id="msg-assistant-acp-settled-answer"] .message-text'),
     ).toHaveText('Five pull requests landed this week.')

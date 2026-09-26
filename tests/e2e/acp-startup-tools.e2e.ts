@@ -72,14 +72,14 @@ describe('Codex MCP startup failures', () => {
   after(() => resetUserData())
 
   it('shows distinct failed servers with their diagnostics and no activity spinner', async () => {
-    const rollup = $('.tool-card-rollup')
-    await rollup.waitForExist({ timeout: 30_000 })
-    await expect(rollup).toHaveAttribute('data-status', 'error')
-    await expect(rollup).toHaveAttribute('open')
-    await expect(rollup.$('.tool-name')).toHaveText('Used 2 tools · 2 failed')
-
-    const docs = $('[data-tool-id="startup-docs"]')
-    const tracker = $('[data-tool-id="startup-issue-tracker"]')
+    const docs = $('[data-message-id="startup-assistant"] > [data-tool-id="startup-docs"]')
+    const tracker = $(
+      '[data-message-id="startup-assistant"] > [data-tool-id="startup-issue-tracker"]',
+    )
+    await docs.waitForExist({ timeout: 30_000 })
+    // Every call failed, so there is no quiet activity to summarise: the
+    // failure cards stand alone rather than under an empty rollup.
+    await expect($('[data-message-id="startup-assistant"] .tool-card-rollup')).not.toExist()
     await expect(docs.$('.tool-name')).toHaveText('docs startup')
     await expect(tracker.$('.tool-name')).toHaveText('issue_tracker startup')
     await expect(docs).toHaveAttribute('data-status', 'error')

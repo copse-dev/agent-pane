@@ -20,7 +20,7 @@ describe('browser tool display', () => {
     const rollup = await $('.tool-card-rollup')
     await expect(rollup).toBeDisplayed()
     await expect(rollup.$('summary.tool-card-header .tool-name')).toHaveText('Used browser')
-    await expect(rollup.$('summary.tool-card-header .tool-count')).toHaveText('×3')
+    await expect(rollup).toHaveAttribute('data-tool-count', '3')
 
     const screenshot = $(
       '[data-message-id="msg-assistant-browser"] > .tool-result-images .tool-result-preview-image',
@@ -33,15 +33,11 @@ describe('browser tool display', () => {
 
     await rollup.$('summary.tool-card-header').click()
     await expect(rollup).toHaveAttribute('open')
-    const group = await rollup.$('.tool-card-group')
-    await expect(group.$('.tool-name')).toHaveText('Used browser')
+    await expect(rollup.$$('.tool-rollup-body > .tool-card')).toBeElementsArrayOfSize(3)
     await expect(screenshot).toBeDisplayed()
     await saveAppScreenshot('browser-tools-expanded.png')
 
-    await group.$(':scope > summary').click()
-    await expect(group).toHaveAttribute('open')
-
-    const screenshotTool = await group.$('[data-tool-id="tc-browser-screenshot"]')
+    const screenshotTool = await rollup.$('[data-tool-id="tc-browser-screenshot"]')
     await expect(screenshotTool).toBeDisplayed()
     await screenshotTool.$(':scope > summary').click()
     await expect(screenshotTool).toHaveAttribute('open')

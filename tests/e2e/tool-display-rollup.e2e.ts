@@ -7,7 +7,7 @@ import {
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 
-describe('tool call turn rollup', () => {
+describe('compact tool activity', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     process.env.COPSE_PANEL_MOCK_LLM = '1'
@@ -18,225 +18,82 @@ describe('tool call turn rollup', () => {
     await browser.reloadSession()
   })
 
-  after(() => {
-    resetUserData()
-  })
+  after(() => resetUserData())
 
-  it('rolls three tool-only segments into one run and keeps the lone segment per-message', async () => {
+  it('keeps successful work quiet while showing a failed tool directly', async () => {
     await $('.tool-card-rollup').waitForExist({ timeout: 30_000 })
+    await expect($$('.tool-card-rollup')).toBeElementsArrayOfSize(2)
+    const run = $('.tool-card-rollup[data-rollup-key="run"]')
+    await expect(run).not.toHaveAttribute('open')
+    await expect(run.$('.tool-card-header .tool-name')).toHaveText('Used 10 tools · 1 failed')
+    const failure = $('.msg > .tool-card[data-tool-id="tc-read-2"]')
+    await expect(failure).toHaveAttribute('open')
+    await expect(failure.$('.tool-result')).toHaveText(expect.stringContaining('ENOENT'))
+    await expect($$('.message-reasoning[open]')).toBeElementsArrayOfSize(0)
+    await expect($$('.tool-card-step')).toBeElementsArrayOfSize(0)
 
-    // Two summaries, not four: the three prose-less segments are one run, and
-    // the segment after the prose answer stands on its own.
-    const rollups = await $$('.tool-card-rollup')
-    await expect(rollups).toBeElementsArrayOfSize(2)
-    await expect(rollups[0]!).toHaveAttribute('data-rollup-key', 'run')
-    await expect(rollups[1]!).toHaveAttribute('data-rollup-key', 'turn')
-
-    // The run's summary counts every member's operations and carries the
-    // failure; the per-message rollup keeps its own polished label.
-    await expect(rollups[0]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Used 10 tools · 3 steps · 1 failed',
-    )
-    await expect(rollups[1]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Verified the settings fix',
-    )
-
-    // The run renders on its anchor — the first segment of the burst — and the
-    // members it absorbed render no cards of their own.
-    await expect(
-      $('[data-message-id="msg-assistant-search"] > .tool-card-rollup[data-rollup-key="run"]'),
-    ).toExist()
-    await expect($$('[data-message-id="msg-assistant-reads"] .tool-card')).toBeElementsArrayOfSize(
-      0,
-    )
-    await expect($$('[data-message-id="msg-assistant-html"] .tool-card')).toBeElementsArrayOfSize(0)
-
-    // Absorbed messages remain addressable DOM nodes, but must not stack empty
-    // `.msg` padding and row gaps between the run summary and the prose answer.
-    const collapsedMemberLayout = await browser.execute(() => {
-      const ids = ['msg-assistant-reads', 'msg-assistant-html']
-      const members = ids.map((id) => {
-        const member = document.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
-        return member
-          ? {
-              id,
-              display: getComputedStyle(member).display,
-              height: member.getBoundingClientRect().height,
-            }
+    const layout = await browser.execute(() => {
+      const members = ['msg-assistant-reads', 'msg-assistant-html'].map((id) => {
+        const node = document.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+        return node
+          ? { display: getComputedStyle(node).display, height: node.getBoundingClientRect().height }
           : null
       })
-      const anchor = document.querySelector<HTMLElement>('[data-message-id="msg-assistant-search"]')
-      const answer = document.querySelector<HTMLElement>('[data-message-id="msg-assistant-answer"]')
-      const list = document.querySelector<HTMLElement>('.messages-list')
-      return {
-        members,
-        gap:
-          anchor && answer
-            ? answer.getBoundingClientRect().top - anchor.getBoundingClientRect().bottom
-            : null,
-        rowGap: list ? Number.parseFloat(getComputedStyle(list).rowGap) : null,
-        answerMargin: answer ? Number.parseFloat(getComputedStyle(answer).marginTop) : null,
-      }
+      const summary = document.querySelector('.tool-card-rollup > summary')
+      return { members, summaryHeight: summary?.getBoundingClientRect().height ?? 0 }
     })
-    expect(collapsedMemberLayout.members).toEqual([
-      { id: 'msg-assistant-reads', display: 'none', height: 0 },
-      { id: 'msg-assistant-html', display: 'none', height: 0 },
+    expect(layout.members).toEqual([
+      { display: 'none', height: 0 },
+      { display: 'none', height: 0 },
     ])
-    const { gap, rowGap, answerMargin } = collapsedMemberLayout
-    if (gap === null || rowGap === null || answerMargin === null) {
-      throw new Error('Expected the run anchor, prose answer, and message list to render')
-    }
-    expect(gap).toBeLessThanOrEqual(rowGap + answerMargin + 1)
+    expect(layout.summaryHeight).toBeGreaterThan(0)
+    expect(layout.summaryHeight).toBeLessThan(32)
+    await run.scrollIntoView()
+    await saveAppScreenshot('tool-display-rollup-collapsed.png')
+  })
 
-    // Reasoning lives on each step, so no member keeps a standalone trail; only
-    // the prose answer (which ran no tools) still has a body-level one.
-    await expect($$('.msg-assistant .message-body > .message-reasoning')).toBeElementsArrayOfSize(1)
-
-    const italicFont = await browser.execute(async () => {
-      const el = document.querySelector('.tool-card-rollup > .tool-card-header .tool-name')
-      if (!el) return null
-      const style = getComputedStyle(el)
-      await document.fonts.load(`${style.fontStyle} ${style.fontSize} ${style.fontFamily}`)
+  it('expands to a flat list with one quiet reasoning disclosure', async () => {
+    const run = $('.tool-card-rollup[data-rollup-key="run"]')
+    await run.$('summary.tool-card-header').click()
+    await expect(run).toHaveAttribute('open')
+    await expect(run.$$('.tool-rollup-body > .tool-card')).toBeElementsArrayOfSize(9)
+    await expect(
+      run.$$('.tool-card-step, .tool-card-group, .tool-card-rollup'),
+    ).toBeElementsArrayOfSize(0)
+    await expect(run.$$('.message-reasoning')).toBeElementsArrayOfSize(1)
+    const reasoning = run.$('.message-reasoning')
+    await expect(reasoning).not.toHaveAttribute('open')
+    await reasoning.$('summary').click()
+    await expect(reasoning).toHaveAttribute('open')
+    await expect(reasoning.$('[data-reasoning-message-id="msg-assistant-reads"]')).toHaveText(
+      'Reading key files to diagnose the settings flicker and missing button text.',
+    )
+    const material = await browser.execute(() => {
+      const reasoning = document.querySelector('.tool-card-rollup .message-reasoning[open]')
+      if (!reasoning) throw new Error('Missing expanded reasoning')
+      const style = getComputedStyle(reasoning)
       return {
-        style: style.fontStyle,
-        hasLoadedFace: Array.from(document.fonts).some(
-          (face) => face.family === 'Pliant' && face.style === 'italic' && face.status === 'loaded',
-        ),
+        background: style.backgroundImage,
+        border: style.borderLeftWidth,
+        padding: style.padding,
+        shadow: style.boxShadow,
       }
     })
-    expect(italicFont).toEqual({ style: 'italic', hasLoadedFace: true })
+    expect(material).toEqual({ background: 'none', border: '0px', padding: '0px', shadow: 'none' })
+    await saveElementScreenshot(
+      '.tool-card-rollup .message-reasoning[open]',
+      'reasoning-etched-in-tool-rollup.png',
+    )
+    await reasoning.$('summary').click()
 
+    const tool = run.$('[data-tool-id="tc-read-1"]')
+    await tool.$('summary').click()
+    await expect(tool).toHaveAttribute('open')
+    await expect(tool.$('.tool-result')).toBeDisplayed()
     await browser.execute(() => {
       const list = document.querySelector('.messages-list')
       if (list) list.scrollTop = 0
     })
-    await saveAppScreenshot('tool-display-rollup-collapsed.png')
-  })
-
-  it('expands the run into one step per message, each with its own reasoning and tools', async () => {
-    const run = await $('.tool-card-rollup[data-rollup-key="run"]')
-    await run.scrollIntoView()
-    // The failed run opens automatically so the diagnostic is immediately visible.
-    await expect(run).toHaveAttribute('open')
-
-    // One step per persisted message, in the order they streamed, each headed
-    // by that message's own polished label.
-    const steps = await run.$$('.tool-card-step')
-    await expect(steps).toBeElementsArrayOfSize(3)
-    await expect(steps[0]!).toHaveAttribute('data-step-message-id', 'msg-assistant-search')
-    await expect(steps[1]!).toHaveAttribute('data-step-message-id', 'msg-assistant-reads')
-    await expect(steps[2]!).toHaveAttribute('data-step-message-id', 'msg-assistant-html')
-    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Searched the settings UI')
-    await expect(steps[1]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Inspected the repo layout · 1 failed',
-    )
-    await expect(steps[2]!.$('.tool-card-header .tool-name')).toHaveText(
-      'Read settings template paths',
-    )
-
-    // Expand the mixed-success step: its reasoning and tool rows live inside it,
-    // not on the run and not on the message bubble.
-    const mixed = steps[1]!
-    await mixed.scrollIntoView()
-    // The failed step opens with its parent for the same reason.
-    await expect(mixed).toHaveAttribute('open')
-    await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
-    await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')
-    // Completed reasoning is a separate, initially closed disclosure inside
-    // the step. Open it before asserting the text a user can actually read.
-    const closedBackground = await mixed.$('.message-reasoning').getCSSProperty('background-image')
-    expect(closedBackground.value).toBe('none')
-    await mixed.$('.message-reasoning-summary').click()
-    await expect(mixed.$('.message-reasoning')).toHaveAttribute('open')
-    await expect(mixed.$('.message-reasoning-text')).toHaveText(
-      'Reading key files to diagnose the settings flicker and missing button text.',
-    )
-
-    // Nesting must preserve the etched surface's inset, including the left
-    // edge that the old flat-row rule stripped to zero.
-    const reasoningLayout = await browser.execute(() => {
-      const reasoning = document.querySelector<HTMLElement>(
-        '[data-step-message-id="msg-assistant-reads"] .message-reasoning[open]',
-      )
-      const summary = reasoning?.querySelector('.message-reasoning-summary')
-      const text = reasoning?.querySelector('.message-reasoning-text')
-      if (!reasoning || !summary || !text) throw new Error('Expected expanded reasoning')
-      const secondarySample = document.createElement('span')
-      secondarySample.style.color = 'var(--text-secondary)'
-      reasoning.append(secondarySample)
-      const secondaryColor = getComputedStyle(secondarySample).color
-      secondarySample.remove()
-      const style = getComputedStyle(reasoning)
-      const box = reasoning.getBoundingClientRect()
-      const summaryBox = summary.getBoundingClientRect()
-      const textBox = text.getBoundingClientRect()
-      return {
-        background: style.backgroundImage,
-        borderWidth: style.borderLeftWidth,
-        textColor: getComputedStyle(text).color,
-        secondaryColor,
-        padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
-        summaryLeft: summaryBox.left - box.left,
-        summaryTop: summaryBox.top - box.top,
-        textLeft: textBox.left - box.left,
-        textRight: box.right - textBox.right,
-        textBottom: box.bottom - textBox.bottom,
-      }
-    })
-    expect(reasoningLayout.background).toContain('linear-gradient')
-    expect(reasoningLayout.background).toContain('radial-gradient')
-    expect(reasoningLayout.background).toContain('repeating-linear-gradient')
-    expect(reasoningLayout.borderWidth).toBe('1px')
-    expect(reasoningLayout.textColor).toBe(reasoningLayout.secondaryColor)
-    expect(reasoningLayout.padding).toEqual(['12px', '16px', '12px', '16px'])
-    expect(reasoningLayout.summaryLeft).toBeGreaterThanOrEqual(16)
-    expect(reasoningLayout.summaryTop).toBeGreaterThanOrEqual(12)
-    expect(reasoningLayout.textLeft).toBeGreaterThanOrEqual(16)
-    expect(reasoningLayout.textRight).toBeGreaterThanOrEqual(16)
-    expect(reasoningLayout.textBottom).toBeGreaterThanOrEqual(12)
-    await saveElementScreenshot(
-      '[data-step-message-id="msg-assistant-reads"] .message-reasoning[open]',
-      'reasoning-etched-in-tool-rollup.png',
-    )
-    await expect(mixed.$('.tool-card-group .tool-name')).toHaveText('Read files')
-    await expect(mixed.$('.tool-card-group .tool-count')).toHaveText('×2')
-    await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"] .tool-name')).toHaveText('Read file')
-    await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"]')).toHaveAttribute(
-      'data-status',
-      'error',
-    )
-
-    // The run adds exactly one rail: the run body, then the step body. Groups
-    // below a step inset without a rule of their own.
-    const railDepth = await browser.execute(() => {
-      const errored = document.querySelector('.tool-card[data-tool-id="tc-read-2"]')
-      if (!errored) return null
-      let rails = 0
-      for (let el = errored.parentElement; el; el = el.parentElement) {
-        if (el.classList.contains('msg')) break
-        if (getComputedStyle(el).borderLeftStyle !== 'none') rails += 1
-      }
-      return rails
-    })
-    expect(railDepth).toBe(2)
-
-    // Nested success rows keep their own color even when the step is mixed.
-    const iconColors = await browser.execute(() => {
-      const success = document.querySelector(
-        '.tool-card-step[data-status="error"] .tool-card-group[data-status="done"] > .tool-card-header > .tool-status-icon',
-      )
-      const failure = document.querySelector(
-        '.tool-card-step[data-status="error"] .tool-card[data-status="error"] > .tool-card-header > .tool-status-icon',
-      )
-      return {
-        success: success ? getComputedStyle(success).color : null,
-        failure: failure ? getComputedStyle(failure).color : null,
-      }
-    })
-    expect(iconColors.success).toBeTruthy()
-    expect(iconColors.failure).toBeTruthy()
-    expect(iconColors.success).not.toBe(iconColors.failure)
-
     await saveAppScreenshot('tool-display-rollup-expanded.png')
   })
 })
