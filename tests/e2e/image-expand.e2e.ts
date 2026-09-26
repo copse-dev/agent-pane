@@ -89,6 +89,17 @@ async function assertDialogChrome(): Promise<void> {
   assert.equal(chrome.titleFont, '16px')
 }
 
+/**
+ * "Copy image" confirms with a short-lived "Copied image" toast. Wait for it to
+ * show and then auto-dismiss, so the next capture shows the surface under test
+ * rather than a leftover toast over the composer footer.
+ */
+async function waitForCopiedToastToClear(): Promise<void> {
+  const toast = $('.toast=Copied image')
+  await toast.waitForExist({ timeout: 5_000 })
+  await toast.waitForExist({ reverse: true, timeout: 5_000 })
+}
+
 describe('Screenshot click-to-expand', () => {
   let workspaceRoot = ''
 
@@ -121,6 +132,7 @@ describe('Screenshot click-to-expand', () => {
     await saveAppScreenshot(THREAD_COPY_MENU_SHOT)
     await $('.context-menu-item').click()
     await expect(threadCopyMenu).not.toExist()
+    await waitForCopiedToastToClear()
 
     const thumbnailClipboardImage = await browser.execute(async () => {
       const item = (await navigator.clipboard.read())[0]
@@ -153,6 +165,7 @@ describe('Screenshot click-to-expand', () => {
     await saveAppScreenshot(IMAGE_COPY_MENU_SHOT)
     await $('.context-menu-item').click()
     await expect(copyMenu).not.toBeExisting()
+    await waitForCopiedToastToClear()
 
     const clipboardImage = await browser.execute(async () => {
       const items = await navigator.clipboard.read()
