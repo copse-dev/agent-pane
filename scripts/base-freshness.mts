@@ -67,8 +67,11 @@
 // existing branch rule or consumer changes, and nothing here can open a merge
 // window that was closed before.
 //
-// Within a candidate this run does reach, the report is conservative: when
-// freshness cannot be established the verdict is `failure`, never a quiet pass.
+// A branch behind its base is `neutral` unless the commits it lacks change a
+// file it also changes; then it is `failure` and names the files (see
+// `decideBaseFreshness`). Within a candidate this run does reach, the report is
+// conservative: when freshness cannot be established the verdict is `failure`,
+// never a quiet pass.
 // Every path self-heals — the next push to the base and the pull request's own
 // next event both re-evaluate it.
 //
@@ -91,6 +94,15 @@ export const CHECK_NAME = 'Base Current'
 export const MAX_CANDIDATES = 500
 
 const API_ROOT = 'https://api.github.com'
+
+/**
+ * GitHub lists at most this many changed files for one comparison. A list that
+ * long may be truncated, so the overlap it would give is unknown, not empty.
+ */
+export const MAX_COMPARE_FILES = 300
+
+/** Overlapping files named in a verdict; the rest are counted. */
+const OVERLAP_LISTED = 10
 
 export type Candidate = {
   number: number
@@ -120,17 +132,29 @@ export type Verdict = {
  * merging" uses. Zero means the tested merge result is still the merge result.
  * A positive count is reported as exactly that — the branch is behind — and
  * deliberately makes no claim about which base CI merged (see the header).
- * It is `neutral`, not `failure`: every push to the base makes every open pull
- * request behind, and a red check there invites a base merge on each one,
- * which re-runs its whole CI and restarts its reviews for no finding. This
- * context is advisory and never required, so `neutral` passing a required
+ *
+ * Being behind alone is `neutral`, not `failure`: every push to the base makes
+ * every open pull request behind, and a red check there invites a base merge on
+ * each one, which re-runs its whole CI and restarts its reviews for no finding.
+ * This context is advisory and never required, so `neutral` passing a required
  * check does not apply.
+ *
+ * `overlap` is what makes it red: the files that both the missing base commits
+ * and this pull request change. Those are where the tested merge result is most
+ * likely to differ from the one that would land, so a non-empty overlap is
+ * `failure` and names them. An empty overlap is `neutral`; `null` means the
+ * overlap could not be established (a truncated file list, or a comparison that
+ * failed) and is `neutral` too, saying so, because it is no evidence of risk.
  *
  * `behindBy === null` means the comparison could not be established at all.
  * That is a failure, not a neutral: an unestablished base is indistinguishable
  * from a stale one at merge time.
  */
-export function decideBaseFreshness(candidate: Candidate, behindBy: number | null): Verdict {
+export function decideBaseFreshness(
+  candidate: Candidate,
+  behindBy: number | null,
+  overlap: readonly string[] | null = null,
+): Verdict {
   const where = `\`${candidate.baseRef}\``
   // Success is reachable from exactly one value. Anything else — absent,
   // fractional, negative — is a comparison this run did not establish, and an
@@ -148,14 +172,36 @@ export function decideBaseFreshness(candidate: Candidate, behindBy: number | nul
   }
   if (behindBy > 0) {
     const commits = behindBy === 1 ? '1 commit' : `${String(behindBy)} commits`
+    const deficit =
+      `This branch does not contain ${commits} on ${where}. This reports the branch only: ` +
+      `\`CI Passed\` may already have tested a merge with some or all of those commits, or ` +
+      `none of them, depending on when it ran.`
+    if (overlap !== null && overlap.length > 0) {
+      const listed = overlap.slice(0, OVERLAP_LISTED).map((file) => `- \`${file}\``)
+      const more = overlap.length - listed.length
+      return {
+        conclusion: 'failure',
+        title: `Branch is ${commits} behind ${candidate.baseRef}, which changed files this PR changes`,
+        summary: [
+          `${deficit} Those commits change ${overlap.length === 1 ? 'a file' : 'files'} this ` +
+            `pull request also changes:`,
+          '',
+          ...listed,
+          ...(more > 0 ? [`- and ${String(more)} more`] : []),
+          '',
+          `Update the branch from ${where} so CI tests these changes together.`,
+        ].join('\n'),
+      }
+    }
     return {
       conclusion: 'neutral',
       title: `Branch is ${commits} behind ${candidate.baseRef}`,
       summary:
-        `This branch does not contain ${commits} on ${where}. This reports the branch only: ` +
-        `\`CI Passed\` may already have tested a merge with some or all of those commits, or ` +
-        `none of them, depending on when it ran. Update the branch from ${where} so the ` +
-        `branch itself contains the base that would land.`,
+        overlap === null
+          ? `${deficit} Whether those commits change a file this pull request changes could ` +
+            `not be established, so this is reported without a recommendation.`
+          : `${deficit} None of those commits change a file this pull request changes, so ` +
+            `there is no need to update the branch for this alone.`,
     }
   }
   return {
@@ -210,15 +256,51 @@ export function decodeCandidateResponse(text: string): Candidate {
   return decodeCandidate(value)
 }
 
+/** What one `base...head` comparison established. */
+export type Comparison = {
+  /** Commits on the base the head does not contain, or null when absent. */
+  behindBy: number | null
+  /** The comparison's merge base, or null when it carries none. */
+  mergeBase: string | null
+  /**
+   * Every path the head side changes since the merge base, renames under both
+   * names; null when the list is absent or may be truncated.
+   */
+  files: readonly string[] | null
+}
+
+/** The changed paths a comparison lists, or null when absent or possibly truncated. */
+function decodeFiles(value: unknown): readonly string[] | null {
+  const files = field(value, 'files')
+  if (!Array.isArray(files) || files.length >= MAX_COMPARE_FILES) return null
+  const paths: string[] = []
+  for (const file of files) {
+    for (const key of ['filename', 'previous_filename']) {
+      const path = field(file, key)
+      if (typeof path === 'string') paths.push(path)
+    }
+  }
+  return paths
+}
+
+export function decodeComparison(text: string): Comparison {
+  const value: unknown = JSON.parse(text)
+  const behindBy = field(value, 'behind_by')
+  const mergeBase = field(field(value, 'merge_base_commit'), 'sha')
+  return {
+    behindBy:
+      typeof behindBy === 'number' && Number.isInteger(behindBy) && behindBy >= 0 ? behindBy : null,
+    mergeBase: typeof mergeBase === 'string' && /^[0-9a-f]{40}$/.test(mergeBase) ? mergeBase : null,
+    files: decodeFiles(value),
+  }
+}
+
 /**
  * `behind_by` from a base...head comparison, or null when the response does not
  * carry one. Callers turn null into a fail-closed verdict rather than guessing.
  */
 export function decodeBehindBy(text: string): number | null {
-  const value: unknown = JSON.parse(text)
-  const behindBy = field(value, 'behind_by')
-  if (typeof behindBy !== 'number' || !Number.isInteger(behindBy) || behindBy < 0) return null
-  return behindBy
+  return decodeComparison(text).behindBy
 }
 
 /** The commit a `/git/ref/heads/...` lookup resolves to, or null when it carries none. */
@@ -262,9 +344,10 @@ export function githubApi(repository: string, token: string, fetchImpl: typeof f
  *
  * Drafts are skipped on the fan-out path because they cannot merge, and their
  * own `ready_for_review` event re-evaluates them the moment they can. That
- * keeps a push to a busy base to two requests per mergeable candidate (one
- * comparison, one check-run POST) plus the listing and one base lookup, which
- * is what holds this inside the Actions token's hourly budget.
+ * keeps a push to a busy base to about two requests per mergeable candidate
+ * (one comparison, one check-run POST; the base-side file list is shared by
+ * candidates with the same merge base) plus the listing and one base lookup,
+ * which is what holds this inside the Actions token's hourly budget.
  */
 export async function listCandidates(api: Api, baseRef: string): Promise<Candidate[]> {
   const candidates: Candidate[] = []
@@ -300,21 +383,54 @@ export async function baseTip(api: Api, baseRef: string): Promise<string | null>
   }
 }
 
-export async function behindBy(
+/** Base-side changed paths per merge base, shared by one run's candidates. */
+export type BaseFilesCache = Map<string, readonly string[] | null>
+
+/**
+ * The verdict for one candidate against `baseSha`: one `base...head` comparison,
+ * and, only when the head is behind, one `mergeBase...base` comparison for the
+ * paths the missing commits change. Candidates that share a merge base share
+ * that second request through `cache`, which keeps a push to a busy base close
+ * to one comparison and one check-run POST per candidate.
+ */
+export async function assess(
   api: Api,
   candidate: Candidate,
   baseSha: string | null,
-): Promise<number | null> {
-  if (baseSha === null) return null
+  cache: BaseFilesCache,
+): Promise<Verdict> {
+  if (baseSha === null) return decideBaseFreshness(candidate, null)
+  let comparison: Comparison
   try {
-    // `per_page=1` trims the commit list to one entry; `behind_by` is a total
-    // and does not depend on it. (The file list cannot be turned off.)
-    return decodeBehindBy(await api.get(`/compare/${baseSha}...${candidate.headSha}?per_page=1`))
+    // `per_page=1` trims the commit list to one entry; `behind_by` is a total,
+    // and the file list (up to MAX_COMPARE_FILES) comes on the first page.
+    comparison = decodeComparison(
+      await api.get(`/compare/${baseSha}...${candidate.headSha}?per_page=1`),
+    )
   } catch {
     // A comparison this run could not make is not evidence of freshness. The
     // null flows into decideBaseFreshness and becomes an explicit failure.
-    return null
+    return decideBaseFreshness(candidate, null)
   }
+  const { behindBy, mergeBase, files } = comparison
+  if (behindBy === null || behindBy === 0 || mergeBase === null || files === null) {
+    return decideBaseFreshness(candidate, behindBy)
+  }
+  let baseFiles = cache.get(mergeBase)
+  if (baseFiles === undefined) {
+    try {
+      baseFiles = decodeComparison(
+        await api.get(`/compare/${mergeBase}...${baseSha}?per_page=1`),
+      ).files
+    } catch {
+      baseFiles = null
+    }
+    cache.set(mergeBase, baseFiles)
+  }
+  if (baseFiles === null) return decideBaseFreshness(candidate, behindBy)
+  const changedOnBase = new Set(baseFiles)
+  const overlap = [...new Set(files)].filter((path) => changedOnBase.has(path)).sort()
+  return decideBaseFreshness(candidate, behindBy, overlap)
 }
 
 export async function publish(api: Api, candidate: Candidate, verdict: Verdict): Promise<void> {
@@ -355,8 +471,9 @@ export async function evaluate(
   baseSha: string | null,
 ): Promise<Outcome[]> {
   const outcomes: Outcome[] = []
+  const cache: BaseFilesCache = new Map()
   for (const candidate of candidates) {
-    outcomes.push(await evaluateOne(api, candidate, publishImpl, baseSha))
+    outcomes.push(await evaluateOne(api, candidate, publishImpl, baseSha, cache))
   }
   return outcomes
 }
@@ -366,8 +483,9 @@ async function evaluateOne(
   candidate: Candidate,
   publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
   baseSha: string | null,
+  cache: BaseFilesCache,
 ): Promise<Outcome> {
-  const verdict = decideBaseFreshness(candidate, await behindBy(api, candidate, baseSha))
+  const verdict = await assess(api, candidate, baseSha, cache)
   try {
     await publishImpl(candidate, verdict)
     return { candidate, verdict, published: true }
@@ -412,18 +530,19 @@ export async function evaluateSettled(
   candidate: Candidate,
   publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
 ): Promise<Outcome> {
+  const cache: BaseFilesCache = new Map()
   let tip = await baseTip(api, candidate.baseRef)
-  let outcome = await evaluateOne(api, candidate, publishImpl, tip)
+  let outcome = await evaluateOne(api, candidate, publishImpl, tip, cache)
   for (let round = 1; outcome.published && tip !== null; round += 1) {
     const now = await baseTip(api, candidate.baseRef)
     // The tip this verdict was computed against is still the tip, so nothing
     // overtook the POST and it stands.
     if (now === tip) return outcome
     if (round >= MAX_SETTLE_ROUNDS) {
-      return await evaluateOne(api, candidate, publishImpl, null)
+      return await evaluateOne(api, candidate, publishImpl, null, cache)
     }
     tip = now
-    outcome = await evaluateOne(api, candidate, publishImpl, tip)
+    outcome = await evaluateOne(api, candidate, publishImpl, tip, cache)
   }
   return outcome
 }
