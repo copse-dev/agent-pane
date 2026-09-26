@@ -193,10 +193,11 @@ export interface BuildProviderOptions {
 }
 
 /**
- * Generation parameters the user tuned for this exact model selection
- * (Settings → Models → Model parameters), sanitized against what the model
- * accepts so a value saved before the selection changed cannot 400 the turn.
- * Empty for every model the user has not touched.
+ * Generation parameters for this exact model selection: the model's curated
+ * recipe, if we hold one, with anything the user tuned in Settings → Models →
+ * Model parameters replacing it field by field. Sanitized against what the
+ * model accepts so a value saved before the selection changed cannot 400 the
+ * turn. Empty for a model with no recipe that the user has not touched.
  *
  * Keyed by selection rather than by feature, so a model carries its parameters
  * wherever it runs — chat, a task role, a subagent — the same way an ACP

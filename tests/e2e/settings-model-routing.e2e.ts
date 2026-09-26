@@ -94,7 +94,8 @@ describe('settings model routing placement', function () {
     )
     assert.equal(
       await $('#settings-models-section').$$('.model-picker-field-host').length,
-      6,
+      // Includes Model parameters' own "Model to tune" picker.
+      7,
       'every model control in the Settings model section should use the shared picker',
     )
     await scrollSettingsToLegend('Models')
