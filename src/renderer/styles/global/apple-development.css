@@ -237,12 +237,6 @@
   margin: 0;
 }
 
-.settings-section .plugin-settings-fold .apple-development-title {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
-
 @media (max-width: 760px) {
   .apple-development-selection {
     grid-template-columns: 1fr 1fr;
