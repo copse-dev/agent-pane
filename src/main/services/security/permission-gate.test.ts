@@ -2231,6 +2231,27 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
     })
   })
 
+  it('asks again when shell expansion could step out of the approved directory', async () => {
+    await withRoot(async (root, readDir) => {
+      await runWithActiveRunIdentity('thread-read-expand', () =>
+        runGate(`ls -la ${readDir}`, { approved: true, remember: true }, root),
+      )
+      // bash expands `{..,nested}` to `${readDir}/../private.txt`, a sibling of
+      // the granted directory, although the literal token sits beneath it.
+      for (const command of [
+        `cat ${readDir}/{..,nested}/private.txt`,
+        `cat ${readDir}/.*/private.txt`,
+        `cat ${readDir}/[.][.]/private.txt`,
+      ]) {
+        const expanded = await runWithActiveRunIdentity('thread-read-expand', () =>
+          runGate(command, { approved: false, remember: false }, root),
+        )
+        assert.equal(expanded.permitted, false, command)
+        assert.equal(expanded.prompt?.title, 'Allow read access outside of the project?', command)
+      }
+    })
+  })
+
   it('limits a file grant to that file and requires every target in a command to be covered', async () => {
     await withRoot(async (root, readDir) => {
       const note = join(readDir, 'note.txt')
