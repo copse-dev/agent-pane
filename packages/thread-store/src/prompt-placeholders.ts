@@ -1,13 +1,16 @@
 /**
- * A stored user prompt keeps its inline pastes as single U+FFFC placeholders
- * (see `renderer/views/composer-editor.ts`): the transcript draws a chip at each
- * one from the message's `paste` attachments, while the pasted text itself was
- * expanded into the run payload and never stored.
+ * A stored user prompt keeps its inline pastes and thread references as single
+ * U+FFFC placeholders (see `renderer/views/composer-editor.ts`): the transcript
+ * draws a chip at each one from the message's positional `paste`/`thread`
+ * attachments, while the pasted text itself was expanded into the run payload
+ * and never stored.
  *
  * Anything that re-derives a *prompt to send* from a stored message — resending
  * the last message, rebuilding a fork's provider history — must drop those
  * placeholders. Their chips are not being re-attached, and a bare U+FFFC in the
- * prompt is noise the model would have to interpret.
+ * prompt is noise the model would have to interpret. The same goes for text
+ * derived for display outside the transcript, such as an auto-generated thread
+ * title, where a bare U+FFFC renders as a boxed "OBJ" glyph.
  */
 
 /** U+FFFC OBJECT REPLACEMENT CHARACTER — one inline paste chip. */
