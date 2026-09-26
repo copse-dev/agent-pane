@@ -76,6 +76,9 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   },
   preflight_worktree: { running: 'Checking worktree', done: 'Checked worktree' },
   prepare_worktree: { running: 'Preparing worktree', done: 'Prepared worktree' },
+  coordination_check: { running: 'Checking overlapping work', done: 'Checked overlapping work' },
+  coordination_note: { running: 'Sending peer note', done: 'Sent peer note' },
+  coordination_read: { running: 'Reading peer notes', done: 'Read peer notes' },
 }
 
 interface ToolGroupDef {

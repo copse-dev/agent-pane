@@ -86,9 +86,12 @@ import {
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
+import { registerCoordinationDemoTools } from './coordination-demo.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
+  if (typeof __COPSE_TEST_SCENARIOS__ !== 'undefined' && __COPSE_TEST_SCENARIOS__)
+    registerCoordinationDemoTools(registry)
   registry.register(readFileTool)
   registry.register(writeFileTool)
   registry.register(strReplaceTool)
