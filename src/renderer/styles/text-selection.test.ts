@@ -11,12 +11,16 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import {
+  FALLBACK_EDITOR_THEME_TOKENS,
+  xtermThemeFromTokens,
+  type EditorThemeTokens,
+} from '../dom/editor-theme.ts'
 
 const GLOBAL_CSS_DIR = resolve(process.cwd(), 'src/renderer/styles/global')
 const BASE_CSS = resolve(process.cwd(), 'src/renderer/styles/global/base.css')
 const TOKENS_CSS = resolve(process.cwd(), 'src/renderer/styles/tokens.css')
 const THEMES_CSS = resolve(process.cwd(), 'src/renderer/styles/themes.css')
-const TERMINALS = resolve(process.cwd(), 'src/renderer/views/terminals-pane.ts')
 
 /** Relative luminance of a `#rrggbb` colour, per WCAG 2.1. */
 function luminance(hex: string): number {
@@ -151,20 +155,53 @@ describe('text-selection policy', () => {
     }
   })
 
-  it('gives the terminal an inactive selection colour per theme', () => {
-    const source = readFileSync(TERMINALS, 'utf8')
-    // xterm's default (#3A3D41) is a dark grey: fine on the dark surface, a
-    // near-black block under near-black text on the light one.
-    const inactive = [...source.matchAll(/selectionInactiveBackground:\s*'(#[0-9a-fA-F]{6})'/g)]
-    assert.equal(inactive.length, 2, 'both xterm themes must set selectionInactiveBackground')
-    const foregrounds = [...source.matchAll(/foreground:\s*'(#[0-9a-fA-F]{6})'/g)]
-    for (const [index, match] of inactive.entries()) {
-      const background = match[1] ?? ''
-      const text = foregrounds[index]?.[1] ?? ''
-      assert.ok(
-        contrast(background, text) >= 4.5,
-        `terminal text ${text} is unreadable on the inactive selection ${background}`,
-      )
+  it('keeps terminal selections legible, focused and not, in both themes', () => {
+    // The xterm theme is derived from the tokens (dom/editor-theme.ts). xterm's
+    // own inactive default (#3A3D41) is a dark grey: fine on the dark surface, a
+    // near-black block under near-black text on the light one. Check the pair on
+    // the untinted surfaces and on Strong + the Copse tint, the darkest one.
+    const tokens = readFileSync(TOKENS_CSS, 'utf8')
+    const themes = readFileSync(THEMES_CSS, 'utf8')
+    const copseStrong =
+      "[data-theme='dark'][data-tint-palette='copse'][data-tint-strength='strong']"
+    const surfaces: Array<[string, EditorThemeTokens]> = [
+      [
+        'dark',
+        {
+          ...FALLBACK_EDITOR_THEME_TOKENS.dark,
+          selectionBackground: token(tokens, ':root', '--selection-bg'),
+          selectionForeground: token(tokens, ':root', '--selection-text'),
+        },
+      ],
+      [
+        'dark copse strong',
+        {
+          ...FALLBACK_EDITOR_THEME_TOKENS.dark,
+          background: token(themes, copseStrong, '--bg-base'),
+          selectionBackground: token(tokens, ':root', '--selection-bg'),
+          selectionForeground: token(tokens, ':root', '--selection-text'),
+        },
+      ],
+      [
+        'light',
+        {
+          ...FALLBACK_EDITOR_THEME_TOKENS.light,
+          selectionBackground: token(themes, "[data-theme='light']", '--selection-bg'),
+          selectionForeground: token(themes, "[data-theme='light']", '--selection-text'),
+        },
+      ],
+    ]
+    for (const [surface, surfaceTokens] of surfaces) {
+      const theme = xtermThemeFromTokens(surfaceTokens)
+      const text = theme.selectionForeground ?? ''
+      assert.ok(text, `${surface}: the terminal selection must set a foreground`)
+      for (const background of [theme.selectionBackground, theme.selectionInactiveBackground]) {
+        assert.ok(background, `${surface}: the terminal selection must set both fills`)
+        assert.ok(
+          contrast(background, text) >= 4.5,
+          `${surface}: terminal text ${text} is unreadable on the selection ${background}`,
+        )
+      }
     }
   })
 
