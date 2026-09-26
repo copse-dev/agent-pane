@@ -13,6 +13,7 @@ import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { droppedHostSecrets } from './isolation.ts'
+import { withProviderBackoff } from './provider-backoff.ts'
 import { ScriptedProvider, stepsForRole, type MockScript } from './scripted-provider.ts'
 
 export const PROVIDER_KINDS = [
@@ -87,7 +88,15 @@ export function selectProvider(
   const kind = selection.kind ?? inferProviderKind(selection.model)
   const secrets = droppedHostSecrets(env)
   const shared = (model: string, provider: LLMProvider, isRemote: boolean): SelectedProvider => {
-    const wrapped = isRemote ? withSecretRedaction(provider, secrets) : provider
+    const backedOff = withProviderBackoff(provider, {
+      onRetry: (attempt, delayMs) => {
+        // stderr: stdout may carry the JSON report or the event stream.
+        console.warn(
+          `[review] ${model}: provider retries exhausted; replaying in ${String(Math.round(delayMs / 1000))}s (backoff ${String(attempt)})`,
+        )
+      },
+    })
+    const wrapped = isRemote ? withSecretRedaction(backedOff, secrets) : backedOff
     return { kind, model, provider: wrapped, remote: isRemote, providerFor: () => wrapped }
   }
   const remote = (model: string, provider: LLMProvider): SelectedProvider =>

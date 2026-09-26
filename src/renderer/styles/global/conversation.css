@@ -200,6 +200,29 @@
 }
 .agent-activity[hidden] {
   display: none;
+  height: 0;
+  min-height: 0;
+  padding-block: 0;
+  /* Cancel the .messages-list gap in front of the row as well, so nothing is
+     left to jump when display:none finally lands. */
+  margin-block-start: calc(-1 * var(--spacing-sm));
+  opacity: 0;
+  overflow: clip;
+}
+/* The row goes away when a turn ends, under a transcript pinned to its bottom.
+   Collapse it rather than drop it, so the answer eases down instead of jumping
+   by the row's height. Showing stays instant: a row leaving display:none has
+   no before-change style to transition from. */
+@media (prefers-reduced-motion: no-preference) {
+  .agent-activity {
+    interpolate-size: allow-keywords;
+    transition:
+      height 0.2s ease,
+      padding-block 0.2s ease,
+      margin-block-start 0.2s ease,
+      opacity 0.15s ease,
+      display 0.2s allow-discrete;
+  }
 }
 .reasoning-activity-icon {
   width: var(--font-size-lg);
@@ -1252,6 +1275,11 @@ span.acp-resource-title {
 .message-text .table-copy-shell {
   position: relative;
   margin: var(--spacing-sm) 0;
+}
+/* A table streams bare and is wrapped in .table-copy-shell by the final render.
+   Give it the shell's margin meanwhile, so completion doesn't shift the answer. */
+.message-text table:not(.table-copy-scroll > table) {
+  margin-block: var(--spacing-sm);
 }
 /* A table too wide to fit (e.g. an unbroken URL) scrolls within its own box
    rather than adding a horizontal scrollbar to the whole conversation. */
