@@ -200,6 +200,29 @@
 }
 .agent-activity[hidden] {
   display: none;
+  height: 0;
+  min-height: 0;
+  padding-block: 0;
+  /* Cancel the .messages-list gap in front of the row as well, so nothing is
+     left to jump when display:none finally lands. */
+  margin-block-start: calc(-1 * var(--spacing-sm));
+  opacity: 0;
+  overflow: clip;
+}
+/* The row goes away when a turn ends, under a transcript pinned to its bottom.
+   Collapse it rather than drop it, so the answer eases down instead of jumping
+   by the row's height. Showing stays instant: a row leaving display:none has
+   no before-change style to transition from. */
+@media (prefers-reduced-motion: no-preference) {
+  .agent-activity {
+    interpolate-size: allow-keywords;
+    transition:
+      height 0.2s ease,
+      padding-block 0.2s ease,
+      margin-block-start 0.2s ease,
+      opacity 0.15s ease,
+      display 0.2s allow-discrete;
+  }
 }
 .reasoning-activity-icon {
   width: var(--font-size-lg);
@@ -472,7 +495,7 @@
   top: 0;
   right: 0;
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -513,7 +536,7 @@
   opacity: 1;
 }
 .msg-action {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -576,7 +599,7 @@
   align-items: center;
   gap: 4px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.25;
   color: var(--text-secondary);
   background: transparent;
@@ -967,7 +990,7 @@
 .visual-evidence-source-url {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1187,7 +1210,7 @@ span.acp-resource-title {
 .code-block-copy,
 .code-block-run {
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1231,6 +1254,11 @@ span.acp-resource-title {
   position: relative;
   margin: var(--spacing-sm) 0;
 }
+/* A table streams bare and is wrapped in .table-copy-shell by the final render.
+   Give it the shell's margin meanwhile, so completion doesn't shift the answer. */
+.message-text table:not(.table-copy-scroll > table) {
+  margin-block: var(--spacing-sm);
+}
 /* A table too wide to fit (e.g. an unbroken URL) scrolls within its own box
    rather than adding a horizontal scrollbar to the whole conversation. */
 .message-text .table-copy-scroll {
@@ -1248,7 +1276,7 @@ span.acp-resource-title {
   top: var(--spacing-xs);
   right: var(--spacing-xs);
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1321,7 +1349,7 @@ span.acp-resource-title {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg-elevated, var(--bg));
+  background: var(--bg-elevated);
 }
 .canvas-preview-image {
   display: block;
@@ -1331,7 +1359,7 @@ span.acp-resource-title {
   max-height: 260px;
   object-fit: cover;
   object-position: top center;
-  background: var(--bg);
+  background: var(--bg-base);
 }
 .canvas-preview-footer {
   display: flex;
@@ -1346,7 +1374,7 @@ span.acp-resource-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted, var(--text));
 }
 
@@ -1411,7 +1439,7 @@ span.acp-resource-title {
   gap: 2px;
 }
 .canvas-inline-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .canvas-preview-open {

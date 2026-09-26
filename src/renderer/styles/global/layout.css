@@ -85,7 +85,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -101,7 +101,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius);
-  font-size: 20px;
+  font-size: calc(20px * var(--ui-scale));
   line-height: 1;
   color: var(--text-secondary);
   margin-left: 6px;
@@ -502,7 +502,7 @@
   min-width: 0;
   font: inherit;
   color: var(--text-primary);
-  background: var(--bg-input, var(--bg-primary));
+  background: var(--bg-input);
   border: 1px solid var(--border-focus, var(--accent));
   border-radius: 3px;
   padding: 0 2px;
@@ -921,7 +921,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-sm) var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -960,7 +960,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   line-height: 1.2;
 }
 .terminals-tab-rename {
@@ -968,7 +968,7 @@
   min-width: 0;
   font: inherit;
   color: var(--text-primary);
-  background: var(--bg-input, var(--bg-primary));
+  background: var(--bg-input);
   border: 1px solid var(--border-focus, var(--accent));
   border-radius: 3px;
   padding: 0 2px;
@@ -986,7 +986,7 @@
   align-items: center;
   opacity: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 0 4px;
 }
 .terminals-tab:hover .terminals-tab-close {
@@ -996,7 +996,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   line-height: 1;
   color: var(--text-muted);
   padding: 0 4px;
@@ -1036,7 +1036,7 @@
   margin-left: auto;
 }
 .git-changes-bulk-btn {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   padding: 2px 6px;
   border-radius: var(--radius);
   color: var(--text-secondary);
@@ -1081,7 +1081,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   line-height: 1;
   padding: 2px 6px;
   border-radius: var(--radius);
@@ -1122,13 +1122,13 @@
   flex-shrink: 0;
 }
 .git-changes-restore-label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   line-height: var(--line-height-base);
 }
 .git-changes-restore-btn {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   padding: 2px 8px;
   border-radius: var(--radius);
   color: var(--text-primary);
@@ -1150,7 +1150,7 @@
 }
 .git-changes-section-title {
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1175,23 +1175,27 @@
 .git-change-status {
   flex-shrink: 0;
   width: 16px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   text-align: center;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
+/* Change-status tokens (tokens.css), shared with the +/- stats and the diff
+   washes, so every "added" in the app is the same green. */
 .git-change-status-modified {
-  color: #e2b340;
+  color: var(--change-modified);
 }
 .git-change-status-added,
 .git-change-status-untracked {
-  color: #73c991;
+  color: var(--change-added);
 }
-.git-change-status-deleted {
-  color: #f14c4c;
+/* The PR pane's file list passes GitHub's `removed` straight through. */
+.git-change-status-deleted,
+.git-change-status-removed {
+  color: var(--change-deleted);
 }
 .git-change-status-renamed {
-  color: #75beff;
+  color: var(--change-renamed);
 }
 .git-change-path {
   overflow: hidden;
@@ -1285,9 +1289,9 @@
 .pr-list-number {
   flex-shrink: 0;
   width: 36px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: var(--text-muted);
 }
 .pr-list-title {
@@ -1303,13 +1307,13 @@
   background: transparent;
 }
 .pr-list-ci-success {
-  background: #73c991;
+  background: var(--success);
 }
 .pr-list-ci-failure {
-  background: #f14c4c;
+  background: var(--error);
 }
 .pr-list-ci-pending {
-  background: #e2b340;
+  background: var(--warning);
 }
 .pr-list-ci-loading {
   background: transparent;
@@ -1320,7 +1324,7 @@
 .pr-list-agent-badge {
   flex-shrink: 0;
   margin-left: var(--spacing-xs);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1;
 }
 .pr-other-toggle {
@@ -1440,6 +1444,8 @@
   justify-content: space-between;
   gap: var(--spacing-sm);
 }
+/* <h4>: the PR title is a utility heading in a dense side pane, not a page
+   masthead, so it stays in the interface family (docs/ui-taste.md). */
 .pr-viewer-title {
   margin: 0;
   font-size: var(--font-size-md);
@@ -1506,7 +1512,7 @@
   gap: 4px;
 }
 .pr-badge {
-  font-size: var(--font-size-xs, 11px);
+  font-size: var(--font-size-xs);
   padding: 1px 6px;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -1520,10 +1526,6 @@
 .pr-badge-approved {
   color: var(--success);
   border-color: var(--success);
-}
-.pr-badge-automerge {
-  color: var(--accent);
-  border-color: var(--accent);
 }
 .pr-viewer-description {
   flex-shrink: 0;
@@ -1552,7 +1554,7 @@
   gap: 4px;
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1590,21 +1592,17 @@
   min-height: 0;
 }
 .git-diff-editor-wrap .line-insert,
-.git-diff-editor-wrap .char-insert {
-  background-color: color-mix(in srgb, #2ea043 28%, transparent) !important;
+.git-diff-editor-wrap .char-insert,
+.git-diff-editor-wrap .gutter-insert,
+.git-diff-editor-wrap .inline-added-margin-view-zone {
+  background-color: var(--diff-insert) !important;
 }
 .git-diff-editor-wrap .line-delete,
 .git-diff-editor-wrap .char-delete,
-.git-diff-editor-wrap .inline-deleted-text {
-  background-color: color-mix(in srgb, #f85149 26%, transparent) !important;
-}
-.git-diff-editor-wrap .gutter-insert,
-.git-diff-editor-wrap .inline-added-margin-view-zone {
-  background-color: color-mix(in srgb, #2ea043 22%, transparent) !important;
-}
+.git-diff-editor-wrap .inline-deleted-text,
 .git-diff-editor-wrap .gutter-delete,
 .git-diff-editor-wrap .inline-deleted-margin-view-zone {
-  background-color: color-mix(in srgb, #f85149 22%, transparent) !important;
+  background-color: var(--diff-delete) !important;
 }
 .git-image-diff-wrap {
   flex: 1;
@@ -1627,7 +1625,7 @@
   gap: var(--spacing-xs);
 }
 .git-image-diff-label {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1689,7 +1687,7 @@
 }
 .agent-tasks-section-header {
   padding: var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1837,7 +1835,7 @@
 }
 .supervised-task-state {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: capitalize;
 }
 .supervised-task-cancel {
@@ -1910,7 +1908,7 @@
   min-height: var(--browser-chrome-band-height);
   max-height: var(--browser-chrome-band-height);
   padding: 0 var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1956,7 +1954,7 @@
   align-items: center;
   opacity: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 0 4px;
 }
 .browser-tabs-tab:hover .browser-tabs-tab-close {
@@ -1966,7 +1964,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   line-height: 1;
   color: var(--text-muted);
   padding: 0 4px;
@@ -2203,7 +2201,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -2298,7 +2296,7 @@
    Reads as a quiet action beside the bulk buttons, not a primary CTA — a review
    spends model calls, so the label says what it is and the tooltip says who. */
 .git-changes-review-btn {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   padding: 2px 8px;
   border-radius: var(--radius);
   border: 1px solid var(--border);

@@ -1,0 +1,12 @@
+{
+  "id": "reflex-local",
+  "label": "reflex 4B local eval",
+  "model": "jev-latest",
+  "timeoutMs": 60000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8008/v1",
+    "auth": "none"
+  }
+}
