@@ -393,7 +393,9 @@ While active:
   `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
   text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
   command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
-  or one glued to a substitution (`$(…)/Platforms`) is not executed. Anything run from a temporary
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. A program in command position
+  is inspected however its path is spelled (`$HOME/x.sh`, `"$HOME/x.sh"`, `'/abs/x.sh'`); a spelling
+  the gate cannot match to the parse is inspected rather than skipped. Anything run from a temporary
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate

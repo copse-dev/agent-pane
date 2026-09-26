@@ -1035,15 +1035,25 @@ function directExecutionOperand(
 }
 
 /**
- * Whether `word` appears where a command starts rather than glued to what came
- * before: shell-quote reads `ls $(xcode-select -p)/Platforms` as ending a
- * substitution and then running `/Platforms`.
+ * Whether a parsed head is only the tail of a word glued to a substitution:
+ * shell-quote reads `ls $(xcode-select -p)/Platforms` as ending a substitution
+ * and then running `/Platforms`.
+ *
+ * This needs positive evidence — the word written straight after a `)` and
+ * nowhere at a command boundary. The parse hands back the word the shell runs,
+ * with quotes removed and `$HOME` expanded, so its spelling in the text often
+ * differs (`"$HOME/x.sh"`, `'/abs/x.sh'`, `/abs/"x.sh"`). Requiring the text to
+ * spell a head at a boundary dropped every such head uninspected; a head whose
+ * spelling cannot be found is kept, so it is read or prompts.
  */
-function startsACommand(text: string, word: string): boolean {
+function isGluedToSubstitution(text: string, word: string): boolean {
+  let glued = false
   for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + 1)) {
-    if (at === 0 || /[\s;&|(`]/.test(text[at - 1] ?? '')) return true
+    const before = text[at - 1] ?? ''
+    if (at === 0 || /[\s;&|(`]/.test(before)) return false
+    if (before === ')') glued = true
   }
-  return false
+  return glued
 }
 
 /**
@@ -1709,7 +1719,7 @@ function inspectCommandLine(
   const parsedHeads = new Set(
     shellSegments(expanded, false)
       .map((segment) => unwrapWrappers(segment)[0] ?? '')
-      .filter((head) => !isAbsolute(head) || startsACommand(expanded, head)),
+      .filter((head) => !isAbsolute(head) || !isGluedToSubstitution(expanded, head)),
   )
   for (const segment of shellSegments(expanded)) {
     const argv = unwrapWrappers(segment)
