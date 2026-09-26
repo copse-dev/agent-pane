@@ -14,10 +14,6 @@ export const containerRunRequestSchema = z.object({
       .max(24 * 60 * 60_000),
     tokenCeiling: z.number().int().min(1_000).max(100_000_000),
   }),
-  extraEgress: z
-    .array(z.string().regex(/^(?:\*\.)?[a-z0-9.-]+:\d{1,5}$/i))
-    .max(16)
-    .optional(),
   useAgentLogin: z.boolean().optional(),
   installDependencies: z.boolean().optional(),
   continueFrom: z
@@ -34,6 +30,12 @@ export const containerRunRequestSchema = z.object({
         .nullable(),
     })
     .optional(),
+})
+
+/** Saved with the run card so a follow-up can preserve the user's choices. */
+export const containerRunSettingsSchema = containerRunRequestSchema.pick({
+  budgets: true,
+  installDependencies: true,
 })
 
 export const threadContainerResultSchema = z.object({

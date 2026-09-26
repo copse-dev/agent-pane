@@ -11,7 +11,12 @@
  * it — the spine persists a tool call only when it is no longer running, so a
  * run the app quit on leaves no half-card behind.
  */
-import type { ContainerRunCredential, ContainerRunProgress } from '../types/container-run.ts'
+import type {
+  ContainerRunCredential,
+  ContainerRunProgress,
+  ContainerRunSettings,
+} from '../types/container-run.ts'
+import { containerRunSettingsSchema } from '../container-run-schema.ts'
 import type { SubagentMessage, SubagentSession, Thread, ToolCall } from '@shared/types'
 import type { AppStore } from './store.ts'
 import { isRecord } from '../unknown-value.ts'
@@ -40,6 +45,7 @@ export interface ContainerRunToolArgs {
   ref: string | null
   /** What the guest held, so a continuation can ask for the same (A14). */
   credential: ContainerRunCredential
+  settings?: ContainerRunSettings
   /** The earlier run this one continued, when it did. */
   continuedFrom: string | null
   /** The agent's last words, so a follow-up can quote them without the record. */
@@ -56,6 +62,7 @@ export interface LatestContainerRun {
   report: string | null
   model: string
   credential: ContainerRunCredential
+  settings?: ContainerRunSettings
   ref: string | null
   status: ToolCall['status']
   /** The card is the thread's last message: nothing was said since the run. */
@@ -73,6 +80,7 @@ function argsOf(toolCall: ToolCall): ContainerRunToolArgs | null {
   const credential = record['credential']
   const continuedFrom = record['continuedFrom']
   const report = record['report']
+  const settings = containerRunSettingsSchema.safeParse(record['settings'])
   return {
     task,
     model,
@@ -81,6 +89,7 @@ function argsOf(toolCall: ToolCall): ContainerRunToolArgs | null {
     credential: credential === 'key' || credential === 'login' ? credential : 'none',
     continuedFrom: typeof continuedFrom === 'string' ? continuedFrom : null,
     report: typeof report === 'string' ? report : null,
+    ...(settings.success ? { settings: settings.data } : {}),
   }
 }
 
@@ -105,6 +114,7 @@ export function latestContainerRun(thread: Pick<Thread, 'messages'>): LatestCont
       report: args.report,
       model: args.model,
       credential: args.credential,
+      ...(args.settings ? { settings: args.settings } : {}),
       ref: args.ref,
       status: toolCall.status,
       isLastTurn: index === thread.messages.length - 1,
@@ -224,6 +234,7 @@ export function containerRunToolCall(progress: ContainerRunProgress): ToolCall {
     runtimeId: progress.runtimeId,
     ref: progress.record?.carryOut.ref ?? null,
     credential: progress.credential,
+    ...(progress.settings ? { settings: progress.settings } : {}),
     continuedFrom: progress.continuedFrom,
     report: progress.record?.result?.finalText ?? null,
   }

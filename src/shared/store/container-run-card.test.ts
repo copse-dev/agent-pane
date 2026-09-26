@@ -232,7 +232,16 @@ describe('latestContainerRun', () => {
     assert.equal(latestContainerRun(thread()), null)
     syncContainerRunCard(
       store,
-      progress({ phase: 'finished', runtimeId: 'run-1', credential: 'login', record: record() }),
+      progress({
+        phase: 'finished',
+        runtimeId: 'run-1',
+        credential: 'login',
+        settings: {
+          budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
+          installDependencies: false,
+        },
+        record: record(),
+      }),
     )
     const first = store.getState().threads[0]
     assert.ok(first)
@@ -243,6 +252,10 @@ describe('latestContainerRun', () => {
     assert.equal(latest.report, 'Done.')
     assert.equal(latest.model, 'claude-sonnet-4-6')
     assert.equal(latest.credential, 'login')
+    assert.deepEqual(latest.settings, {
+      budgets: { wallClockMs: 180_000, tokenCeiling: 20_000 },
+      installDependencies: false,
+    })
     assert.equal(latest.ref, 'refs/copse/runs/run-1')
     assert.equal(latest.status, 'done')
     assert.equal(latest.isLastTurn, true)

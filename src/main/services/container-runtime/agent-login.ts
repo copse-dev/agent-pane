@@ -47,16 +47,21 @@ export async function stageAgentLogin(
   const staged: string[] = []
   const stageRoot = join(runDir, LOGIN_STAGE_DIR)
   await rm(stageRoot, { recursive: true, force: true })
-  for (const file of files) {
-    const source = join(homeDir, file)
-    if (!(await exists(source))) continue
-    const target = join(stageRoot, file)
-    // The guest reads as a uid the host does not know; the whole stage is
-    // deleted when the run ends (see removeStagedLogin).
-    await mkdir(dirname(target), { recursive: true, mode: 0o755 })
-    await copyFile(source, target)
-    await chmod(target, 0o644)
-    staged.push(file)
+  try {
+    for (const file of files) {
+      const source = join(homeDir, file)
+      if (!(await exists(source))) continue
+      const target = join(stageRoot, file)
+      // The guest reads as a uid the host does not know; the whole stage is
+      // deleted when the run ends (see removeStagedLogin).
+      await mkdir(dirname(target), { recursive: true, mode: 0o755 })
+      await copyFile(source, target)
+      await chmod(target, 0o644)
+      staged.push(file)
+    }
+  } catch (error) {
+    await rm(stageRoot, { recursive: true, force: true })
+    throw error
   }
   if (staged.length === 0) {
     throw new Error(

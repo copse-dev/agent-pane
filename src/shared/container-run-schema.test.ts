@@ -15,7 +15,6 @@ describe('container wire contracts', () => {
       ...request,
       useAgentLogin: true,
       installDependencies: true,
-      extraEgress: ['*.example.com:443'],
       continueFrom: 'run-123',
       continueContext: {
         prompt: 'previous prompt',
@@ -29,10 +28,15 @@ describe('container wire contracts', () => {
   it('retains the IPC limits and rejects arbitrary continuation refs', () => {
     for (const input of [
       { ...request, budgets: { ...request.budgets, wallClockMs: 59_999 } },
-      { ...request, extraEgress: ['https://example.com'] },
       { ...request, continueContext: { prompt: '', report: '', ref: 'refs/heads/main' } },
     ])
       assert.equal(containerRunRequestSchema.safeParse(input).success, false)
+  })
+  it('does not carry renderer-supplied egress overrides into a run', () => {
+    assert.deepEqual(
+      containerRunRequestSchema.parse({ ...request, extraEgress: ['*.example.com:443'] }),
+      request,
+    )
   })
   it('rejects incomplete results and unknown stop reasons', () => {
     assert.equal(threadContainerResultSchema.safeParse({ threadId: 'thread' }).success, false)

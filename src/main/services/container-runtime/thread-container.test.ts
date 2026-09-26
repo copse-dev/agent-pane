@@ -1,13 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import {
   buildAttestation,
+  runDocker,
+  runThreadInContainer,
   waitForContainer,
   workerBuildFingerprint,
   containerName,
@@ -20,6 +22,7 @@ import {
   loadRunForContinuation,
   providerOrigin,
   secretCanaryCheck,
+  teardownRuntime,
   WORKER_UID,
   writeCarryInBundle,
   type DockerRunInput,
@@ -383,6 +386,154 @@ describe('adoptCarryOut', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+})
+
+describe('run preparation cleanup', () => {
+  it(
+    'removes staged credentials after a later preparation failure without changing the host canary',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const workspace = initRepo()
+      const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-preparation-'))
+      const fakeDockerDir = mkdtempSync(join(tmpdir(), 'copse-docker-probe-'))
+      const previousCanary = process.env['COPSE_SECRET_CANARY']
+      const previousPath = process.env['PATH']
+      try {
+        writeFileSync(join(fakeDockerDir, 'docker'), '#!/bin/sh\n[ "$1" = info ]\n', {
+          mode: 0o755,
+        })
+        process.env['PATH'] = `${fakeDockerDir}:${previousPath ?? ''}`
+        await assert.rejects(
+          runThreadInContainer(
+            {
+              workspace,
+              runtimesDir,
+              threadId: 'thread',
+              prompt: 'work',
+              model: 'acp:codex-acp',
+              acp: {
+                agent: { id: 'codex-acp', title: 'Codex', command: 'codex-acp', enabled: true },
+                keyEnvName: 'CODEX_API_KEY',
+                login: { files: ['synthetic.json'] },
+              },
+              budgets: { wallClockMs: 60_000, tokenCeiling: 1_000 },
+              egressAllowlist: [],
+            },
+            {
+              runtimeId: 'failed-preparation',
+              canary: 'synthetic-canary',
+              onLog: (line) => {
+                if (line.includes('sign-in carried in')) throw new Error('preparation failed')
+              },
+            },
+            {
+              stageLogin: (_home, _files, runDir) => {
+                mkdirSync(join(runDir, 'login'))
+                writeFileSync(join(runDir, 'login', 'synthetic.json'), 'synthetic-token')
+                return Promise.resolve(['synthetic.json'])
+              },
+            },
+          ),
+          /preparation failed/,
+        )
+        assert.equal(existsSync(join(runtimesDir, 'failed-preparation', 'login')), false)
+        assert.equal(process.env['COPSE_SECRET_CANARY'], previousCanary)
+      } finally {
+        if (previousPath === undefined) delete process.env['PATH']
+        else process.env['PATH'] = previousPath
+        rmSync(workspace, { recursive: true, force: true })
+        rmSync(runtimesDir, { recursive: true, force: true })
+        rmSync(fakeDockerDir, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
+describe('Docker command deadlines', () => {
+  it(
+    'kills a daemon client that never returns',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const bin = mkdtempSync(join(tmpdir(), 'copse-docker-client-'))
+      try {
+        writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexec sleep 60\n', { mode: 0o755 })
+        await assert.rejects(
+          runDocker(['container', 'inspect', 'test'], {
+            timeoutMs: 50,
+            env: { ...process.env, PATH: bin + ':' + (process.env['PATH'] ?? '') },
+          }),
+          { killed: true, signal: 'SIGKILL' },
+        )
+      } finally {
+        rmSync(bin, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
+describe('teardownRuntime', () => {
+  // A fake Docker client: `container inspect` fails with whatever stderr the
+  // case sets, `rm` succeeds unless told otherwise, and every call is logged.
+  async function teardownWith(
+    inspectStderr: string,
+    rmExit = 0,
+  ): Promise<{
+    outcome: Awaited<ReturnType<typeof teardownRuntime>>
+    calls: string[]
+  }> {
+    const bin = mkdtempSync(join(tmpdir(), 'copse-docker-teardown-'))
+    const log = join(bin, 'calls.log')
+    writeFileSync(
+      join(bin, 'docker'),
+      [
+        '#!/bin/sh',
+        `echo "$*" >> '${log}'`,
+        'case "$1 $2" in',
+        `  "container inspect") echo '${inspectStderr}' >&2; exit 1 ;;`,
+        `  "rm --force") exit ${String(rmExit)} ;;`,
+        'esac',
+        'exit 0',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    )
+    const previousPath = process.env['PATH']
+    process.env['PATH'] = bin + ':' + (previousPath ?? '')
+    try {
+      const outcome = await teardownRuntime('run-teardown')
+      const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []
+      return { outcome, calls }
+    } finally {
+      if (previousPath === undefined) delete process.env['PATH']
+      else process.env['PATH'] = previousPath
+      rmSync(bin, { recursive: true, force: true })
+    }
+  }
+
+  it(
+    'reports already-gone only when the daemon says there is no such container',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const { outcome, calls } = await teardownWith(
+        `Error response from daemon: No such container: ${containerName('run-teardown')}`,
+      )
+      assert.equal(outcome, 'already-gone')
+      assert.ok(!calls.some((call) => call.startsWith('rm ')), 'nothing to force-remove')
+    },
+  )
+
+  it(
+    'still force-removes when inspect fails for another reason, such as a hung daemon',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const unreachable = 'error during connect: context deadline exceeded'
+      const removed = await teardownWith(unreachable)
+      assert.equal(removed.outcome, 'removed')
+      assert.ok(removed.calls.includes(`rm --force ${containerName('run-teardown')}`))
+      const stuck = await teardownWith(unreachable, 1)
+      assert.equal(stuck.outcome, 'failed', 'a container that may be live is never reported gone')
+    },
+  )
 })
 
 describe('waitForContainer', () => {
