@@ -1,0 +1,12 @@
+{
+  "id": "gliner-decide-local",
+  "label": "GLiNER2.5-Decide (local)",
+  "model": "fastino/GLiNER2.5-Decide",
+  "timeoutMs": 60000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8010/v1",
+    "auth": "none"
+  }
+}
