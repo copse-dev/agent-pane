@@ -101,7 +101,7 @@ test('a result for a thread that no longer exists is not sent', async () => {
 test('a result is not sent when the checkout branch cannot be read', async () => {
   const store = storeWith({ ...runThread('idle'), gitBranch: 'feature' })
   const { api, runs } = sendApi()
-  api.git.currentBranch = async () => {
+  api.git.currentBranch = async (): Promise<string | null> => {
     throw new Error('git unavailable')
   }
 
