@@ -7,6 +7,7 @@ import {
   waitForViewModelDiff,
 } from './diff-scroll.ts'
 import type { MonacoShortcutApi, MonacoShortcutSource } from './selection-to-chat.ts'
+import { COPSE_MONACO_THEME } from '../dom/editor-theme.ts'
 
 export interface GitDiffModel {
   dispose(): void
@@ -58,7 +59,6 @@ export interface GitDiffMonaco extends MonacoShortcutApi {
       options: Monaco.editor.IStandaloneDiffEditorConstructionOptions,
     ): GitDiffEditor
     createModel(value: string, language?: string, uri?: { toString(): string }): GitDiffModel
-    setTheme(theme: string): void
   }
   Uri: { parse(value: string): { toString(): string } }
 }
@@ -133,12 +133,11 @@ export function createGitChangesDiffEditor(
   container: HTMLElement,
   monaco: GitDiffMonaco,
   fontSize: number,
-  theme: 'vs' | 'vs-dark',
 ): GitDiffEditor {
   const diffEditor = monaco.editor.createDiffEditor(container, {
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,
     fontSize,
-    theme,
+    theme: COPSE_MONACO_THEME,
   })
   keepSingleGutterInInlineView(container, diffEditor)
   return diffEditor
