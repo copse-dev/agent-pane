@@ -20,6 +20,7 @@ import {
   electronRuntimeAllowReadPaths,
   ensureWorkspaceTmpDir,
   fsServerSandboxOverlay,
+  fsWorkerOneShotSandboxOverlay,
   fsWorkerSandboxOverlay,
   gitBackupSandboxOverlay,
   readAllowedSandboxOverlay,
@@ -786,6 +787,33 @@ describe('fsServerSandboxOverlay', () => {
     assert.ok(filesystem)
     assert.deepEqual(filesystem.allowWrite, [])
     assert.deepEqual(filesystem.denyWrite, [])
+  })
+})
+
+describe('fsWorkerOneShotSandboxOverlay', () => {
+  const worker = join(
+    '/Applications/Copse.app/Contents/Resources/app/dist/main',
+    'sandbox-fs-worker.js',
+  )
+
+  it('keeps a read fallback read-only so it creates no write-deny placeholders', () => {
+    const overlay = fsWorkerOneShotSandboxOverlay('/Users/me/project', worker, 'read')
+    assert.deepEqual(overlay, fsServerSandboxOverlay('/Users/me/project', worker))
+    const filesystem = overlay.filesystem
+    assert.ok(filesystem)
+    assert.deepEqual(filesystem.allowWrite, [])
+    assert.deepEqual(filesystem.denyWrite, [])
+    // Same read confinement as the writable worker: reads are not widened.
+    const writable = fsWorkerSandboxOverlay('/Users/me/project', worker)
+    assert.deepEqual(filesystem.allowRead, writable.filesystem?.allowRead)
+    assert.deepEqual(filesystem.denyRead, writable.filesystem?.denyRead)
+    assert.deepEqual(overlay.network, writable.network)
+  })
+
+  it('gives only a write request the workspace write rules and mandatory denies', () => {
+    const overlay = fsWorkerOneShotSandboxOverlay('/Users/me/project', worker, 'write')
+    assert.ok(overlay.filesystem?.denyWrite.includes('/Users/me/project/.bashrc'))
+    assert.deepEqual(overlay, fsWorkerSandboxOverlay('/Users/me/project', worker))
   })
 })
 

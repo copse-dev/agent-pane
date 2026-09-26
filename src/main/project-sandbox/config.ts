@@ -676,6 +676,23 @@ export function fsServerSandboxOverlay(
 }
 
 /**
+ * Overlay for a one-shot fs worker. Only a write request gets the writable
+ * workspace rules of {@link fsWorkerSandboxOverlay}. A read (the fallback when
+ * the persistent server is unavailable) keeps the server's read-only overlay,
+ * so listing or previewing a checkout never makes Linux bubblewrap create
+ * write-deny placeholders (.bashrc, .vscode, ...) inside it.
+ */
+export function fsWorkerOneShotSandboxOverlay(
+  workspaceRoot: string,
+  workerJsPath: string,
+  access: 'read' | 'write',
+): Partial<SandboxRuntimeConfig> {
+  return access === 'write'
+    ? fsWorkerSandboxOverlay(workspaceRoot, workerJsPath)
+    : fsServerSandboxOverlay(workspaceRoot, workerJsPath)
+}
+
+/**
  * Seatbelt overlay for an external ACP agent process (issue #590): the same
  * workspace-scoped filesystem rules native auto-run commands get, with two
  * agent-specific relaxations the contained profile can't afford to make:

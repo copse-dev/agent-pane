@@ -14,7 +14,7 @@ import {
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { readWorkspaceImage } from '../services/workspace-fs/image-content.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
-import { fsWorkerSandboxOverlay } from './config.ts'
+import { fsWorkerOneShotSandboxOverlay } from './config.ts'
 import { isProjectSandboxEnabled } from './spawn.ts'
 import {
   requestViaServer,
@@ -168,7 +168,11 @@ async function invokeWorkerOneShot(
         ...(sandboxed ? { [SANDBOX_FS_REQUEST_ENV]: requestJson } : {}),
       },
       stdoutMaxBytes: SANDBOX_FS_WORKER_STDOUT_MAX_BYTES,
-      sandboxConfig: fsWorkerSandboxOverlay(root, workerPath),
+      sandboxConfig: fsWorkerOneShotSandboxOverlay(
+        root,
+        workerPath,
+        request['op'] === 'writeFile' ? 'write' : 'read',
+      ),
     },
   )
 
