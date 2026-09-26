@@ -332,9 +332,7 @@ export function mountModelPicker(
         'button',
         {
           type: 'button',
-          // `is-group-choice` drops the model list's monospace treatment: these
-          // are prose labels the agent wrote ("High"), not model identifiers.
-          class: 'model-picker-option is-group-choice',
+          class: 'model-picker-option',
           role: 'option',
           'data-value': choice.value,
           'aria-selected': choice.value === activeValue ? 'true' : 'false',
@@ -439,6 +437,9 @@ export function mountModelPicker(
           'aria-selected': opt.value === activeValue ? 'true' : 'false',
           'aria-current': selected ? 'true' : undefined,
           disabled: opt.disabled ? true : undefined,
+          // The label ellipsizes at the menu's width cap; the tooltip keeps the
+          // whole of it reachable.
+          title: opt.label,
         },
         el('span', { class: 'model-picker-option-label' }, opt.label),
         ...(recentMode && selected

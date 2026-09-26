@@ -70,6 +70,13 @@ choice load-bearing rather than stylistic:
   the eye reads as "the accent, with text on it" — takes `--accent-fill` (and `--accent-fill-hover`).
   `.ui-btn-primary` in `global/ui.css` is the reference recipe. Painting `--text-on-accent` onto
   `--accent` gives 1.24:1 in light with the shipped accent: dark text on a dark fill (#2488).
+- **Never hard-code white on a fill.** The label tier follows the fill: `--text-on-accent` on
+  `--accent-fill` (recomputed for a custom accent by `accentTextColor()` in `settings-dialog.ts`),
+  `--text-on-warning` on `--warning` (dark text in dark, white in light — no single colour clears AA
+  on both). A hover keeps that label: the queued `Send now` / `Release` chips once flipped it to
+  white on hover and measured 1.86:1. Where a filled chip's hover must hold AA for text, lift it
+  with `filter: brightness()`; light's `--accent-fill-hover` darkens the fill and leaves the default
+  label at 3.49:1, which is fine for a glyph (3:1) but not for words.
 - **Native checkboxes, radios, and range sliders** are fills too: a checked box is the accent with a
   mark on it, and Chromium picks the mark's colour from the fill. Their `accent-color` is
   `--accent-fill` (see "Accent colour versus interface tint").
@@ -157,10 +164,27 @@ When building dialogs, settings forms, or labelled controls, prefer the shared k
 [`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
 [`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
 classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+A class with no rule of its own (`primary`, `foo-save`) is not a button style: the global
+`button` reset in `forms.css` strips border and fill, so such a control renders as a bare word.
+Kit buttons never wrap their label and never shrink in a flex row; a long sibling (an inline
+status, an error) wraps instead. Inline status lines (`setInlineStatus`) paint `error` / `ok` /
+`warn` in `--error` / `--success` / `--warning` themselves; show IPC failures through
+`ipcErrorMessage` so Electron's `Error invoking remote method '…'` wrapping never reaches copy.
 Only add a new kit primitive once **two product call sites** need it and it does more than
 class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
+
+### Chips and composer strips share one box each
+
+- Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
+  transcript attachment chips, roadmap attachments, thread-proposal chips — take `--radius`. They
+  are data, not calls to action, and pill geometry is reserved for primary CTAs.
+- Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
+  context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
+  `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,
+  `.composer-banner-danger` for danger) colours its wash, icon, and action borders; add a new strip
+  by composing those classes, not by re-declaring the button.
 
 ### An outlined chip needs an edge you can find
 
