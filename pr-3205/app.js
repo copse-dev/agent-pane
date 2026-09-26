@@ -66561,9 +66561,7 @@ function mountProjectsPane(root, store2, api2) {
         lines.push(`\u2022 ${title2}`);
       }
       if (orphan.threadCount > orphan.sampleTitles.length) {
-        lines.push(
-          `\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`
-        );
+        lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
       }
     } else {
       lines.push("");
