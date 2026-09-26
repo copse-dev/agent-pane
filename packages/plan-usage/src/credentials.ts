@@ -1,14 +1,13 @@
 import { isRecord } from './internal-utils.ts'
 
 /**
- * Full Claude.ai OAuth credential as `claude /login` stores it. The access token
- * is short-lived; `refreshToken` mints a new one and `expiresAt` (epoch ms) says
- * when the current one dies. Both are `null` for env / bare-token installs that
- * only carry an access token.
+ * Claude.ai OAuth credential as `claude /login` stores it. The access token is
+ * short-lived and `expiresAt` (epoch ms) says when it dies; `null` for env /
+ * bare-token installs. The refresh token is deliberately never read: only
+ * Claude Code may spend it (see `fetchClaudePlanUsageForCredential`).
  */
 export interface ClaudeOAuthCredential {
   accessToken: string
-  refreshToken: string | null
   expiresAt: number | null
 }
 
@@ -24,10 +23,8 @@ export function parseClaudeOAuthCredential(raw: unknown): ClaudeOAuthCredential 
     try {
       return parseClaudeOAuthCredential(JSON.parse(trimmed) as unknown)
     } catch {
-      // Bare token string (rare) — no refresh token travels with it.
-      return trimmed.startsWith('sk-ant-oat')
-        ? { accessToken: trimmed, refreshToken: null, expiresAt: null }
-        : null
+      // Bare token string (rare) — no expiry travels with it.
+      return trimmed.startsWith('sk-ant-oat') ? { accessToken: trimmed, expiresAt: null } : null
     }
   }
   if (!isRecord(raw)) return null
@@ -35,11 +32,9 @@ export function parseClaudeOAuthCredential(raw: unknown): ClaudeOAuthCredential 
   if (!isRecord(oauth)) return null
   const token = oauth['accessToken']
   if (typeof token !== 'string' || !token.trim()) return null
-  const refresh = oauth['refreshToken']
   const expires = oauth['expiresAt']
   return {
     accessToken: token.trim(),
-    refreshToken: typeof refresh === 'string' && refresh.trim() ? refresh.trim() : null,
     expiresAt: typeof expires === 'number' && Number.isFinite(expires) ? expires : null,
   }
 }
@@ -116,7 +111,7 @@ export function orderClaudeOAuthCredentials(input: {
   push('keychain', parseClaudeOAuthCredential(input.keychainJson ?? null))
   push('credentials.json', parseClaudeOAuthCredential(input.credentialsJson ?? null))
   const envToken = input.envToken?.trim()
-  push('env', envToken ? { accessToken: envToken, refreshToken: null, expiresAt: null } : null)
+  push('env', envToken ? { accessToken: envToken, expiresAt: null } : null)
 
   return out
 }

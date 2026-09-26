@@ -1,4 +1,3 @@
-import { refreshClaudeOAuthToken, type ClaudeRefreshedToken } from './claude-oauth.ts'
 import {
   clampPercent,
   CLAUDE_PROFILE_SCOPE_HINT,
@@ -23,6 +22,12 @@ const CLAUDE_BETA = 'oauth-2025-04-20'
 const CLAUDE_USER_AGENT = 'claude-code/2.1.72'
 const CLAUDE_AUTH_REJECTED_HINT =
   'Claude credentials were rejected. Re-run `claude /login` so Copse can read a fresh Claude OAuth login token.'
+/**
+ * The stored login is fine but its access token has lapsed. Only Claude Code
+ * refreshes it, so this must not read as a sign-in problem (no `claude /login`).
+ */
+const CLAUDE_TOKEN_EXPIRED_HINT =
+  'Claude’s access token has expired. Usage updates the next time Claude Code refreshes it (any `claude` session or Claude agent turn).'
 
 /** Legacy flat keys — still present on older payloads, but often null now. */
 const LEGACY_WINDOW_SPECS = [
@@ -423,112 +428,40 @@ export async function fetchClaudePlanUsage(
   }
 }
 
-/** A Claude OAuth credential the usage fetch can refresh when it goes stale. */
+/** A Claude OAuth credential read from where Claude Code stored it. */
 export interface ClaudeCredentialInput {
   accessToken: string
-  /** Long-lived token used to mint a fresh access token; `null` when absent. */
-  refreshToken?: string | null
-  /** Epoch ms the access token expires; drives a proactive refresh. */
+  /** Epoch ms the access token expires; `null` when the store doesn't say. */
   expiresAt?: number | null
-  /** Opaque tag echoed back to `onTokenRefreshed` (e.g. the store to write). */
-  source?: string
 }
-
-export interface ClaudePlanUsageFetchOptions extends PlanUsageFetchOptions {
-  /**
-   * Called after a successful refresh so the host can persist the rotated
-   * tokens (refresh tokens rotate on use — not persisting eventually breaks
-   * the next refresh). Best-effort: a throw here never fails the usage fetch.
-   */
-  onTokenRefreshed?: (
-    credential: ClaudeCredentialInput,
-    refreshed: ClaudeRefreshedToken,
-  ) => void | Promise<void>
-}
-
-/** Refresh a minute early so an in-flight request never races the expiry. */
-const TOKEN_EXPIRY_SKEW_MS = 60_000
 
 function accessTokenExpired(expiresAt: number | null | undefined, nowMs: number): boolean {
-  return (
-    typeof expiresAt === 'number' &&
-    Number.isFinite(expiresAt) &&
-    expiresAt - TOKEN_EXPIRY_SKEW_MS <= nowMs
-  )
-}
-
-async function tryRefresh(
-  credential: ClaudeCredentialInput,
-  refreshToken: string,
-  options: ClaudePlanUsageFetchOptions,
-): Promise<ClaudeRefreshedToken | null> {
-  try {
-    const refreshed = await refreshClaudeOAuthToken(refreshToken, options)
-    if (options.onTokenRefreshed) {
-      try {
-        await options.onTokenRefreshed(credential, refreshed)
-      } catch {
-        // Persistence is best-effort; the fresh token still serves this fetch.
-      }
-    }
-    return refreshed
-  } catch {
-    // Refresh token dead/revoked or network failure — caller falls back to the
-    // access token we already have (and ultimately the "re-run login" hint).
-    return null
-  }
+  return typeof expiresAt === 'number' && Number.isFinite(expiresAt) && expiresAt <= nowMs
 }
 
 /**
- * Fetch plan usage for one credential, refreshing its access token when we know
- * it is expired (proactive) or when the server rejects it (reactive, one retry).
+ * Fetch plan usage for one credential. Copse never refreshes the token itself:
+ * refresh tokens rotate on use, so a refresh here revokes the tokens a running
+ * `claude` CLI or Claude ACP agent still holds and forces a new sign-in.
  */
 async function fetchClaudePlanUsageForCredential(
   credential: ClaudeCredentialInput,
-  options: ClaudePlanUsageFetchOptions,
+  options: PlanUsageFetchOptions,
 ): Promise<ProviderPlanResult> {
   const now = options.now ?? Date.now
-  const trimmedRefreshToken = credential.refreshToken?.trim()
-  const refreshToken =
-    trimmedRefreshToken === undefined || trimmedRefreshToken.length === 0
-      ? null
-      : trimmedRefreshToken
-  let accessToken = credential.accessToken.trim()
-  let refreshed = false
-
-  if (refreshToken && accessTokenExpired(credential.expiresAt, now())) {
-    const next = await tryRefresh(credential, refreshToken, options)
-    if (next) {
-      accessToken = next.accessToken
-      refreshed = true
-    }
+  if (accessTokenExpired(credential.expiresAt, now())) {
+    return { status: 'unavailable', provider: 'claude', reason: CLAUDE_TOKEN_EXPIRED_HINT }
   }
-
-  let result = await fetchClaudePlanUsage(accessToken, options)
-
-  // A rejection despite a live-looking token means the stored access token was
-  // already stale; refresh once and retry before giving up on this credential.
-  if (
-    !refreshed &&
-    refreshToken &&
-    result.status === 'unavailable' &&
-    result.reason === CLAUDE_AUTH_REJECTED_HINT
-  ) {
-    const next = await tryRefresh(credential, refreshToken, options)
-    if (next) result = await fetchClaudePlanUsage(next.accessToken, options)
-  }
-
-  return result
+  return fetchClaudePlanUsage(credential.accessToken.trim(), options)
 }
 
 /**
- * Try Claude OAuth credentials in order, refreshing stale access tokens along
- * the way. Skips `user:profile` scope misses so a Keychain login token can win
+ * Try Claude OAuth credentials in order, skipping expired ones. Skips `user:profile` scope misses so a Keychain login token can win
  * after an env setup-token 403s.
  */
 export async function fetchClaudePlanUsageFromCredentials(
   credentials: ReadonlyArray<ClaudeCredentialInput>,
-  options: ClaudePlanUsageFetchOptions = {},
+  options: PlanUsageFetchOptions = {},
 ): Promise<ProviderPlanResult> {
   const seen = new Set<string>()
   let sawProfileScopeMiss = false
@@ -568,8 +501,8 @@ export async function fetchClaudePlanUsageFromCredentials(
 
 /**
  * Try bare Claude OAuth tokens in order. Back-compat wrapper over
- * {@link fetchClaudePlanUsageFromCredentials} for callers without refresh
- * tokens (behaviour is unchanged: no token can be refreshed).
+ * {@link fetchClaudePlanUsageFromCredentials} for callers with bare tokens and
+ * no expiry.
  */
 export async function fetchClaudePlanUsageFromCandidates(
   tokens: ReadonlyArray<string | null | undefined>,
