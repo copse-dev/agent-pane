@@ -950,6 +950,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: 'demo', report: null }),
+      openLicenseFile: resolvedVoid,
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {

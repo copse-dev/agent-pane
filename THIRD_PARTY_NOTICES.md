@@ -3,6 +3,21 @@
 Copse is licensed under AGPL-3.0-only. It also bundles or optionally loads
 third-party components whose licenses require attribution. Those are listed here.
 
+## The complete list ships with the app
+
+Every build generates the full notice set from what it actually ships
+(`scripts/write-third-party-licenses.mts`): packages esbuild compiles into the
+bundles (read from the esbuild metafiles), the production `node_modules`
+electron-builder copies into app.asar, and the vendored components (these fonts,
+the gortex binary and the Go modules compiled into it, the Cursor skills snapshot,
+copied source, and the Electron runtime). The build fails if any of them lacks its
+licence text or is GPL-family only, and packaging (`scripts/after-pack.cjs`)
+checks the real archive again. In the app the files are in
+`Copse.app/Contents/Resources/app.asar.unpacked/dist/resources/licenses/`
+(`THIRD_PARTY_LICENSES.txt`, `LICENSES.chromium.html.gz` for Chromium and Node.js,
+and `LICENSE.txt`), and **Settings → About** lists every component with its
+licence.
+
 ## Copse interface fonts
 
 - **Pliant:** Jona Saucedo / Non Foundry — bundled as the interface and body

@@ -4,6 +4,7 @@
  * CI supplies one target-specific gortex to each matrix job.
  */
 module.exports = async function afterPack(context) {
+  await checkLicenses(context)
   if (context.electronPlatformName !== 'darwin') return
 
   // `Arch` originates in builder-util, but that is only a transitive dependency:
@@ -76,4 +77,28 @@ module.exports = async function afterPack(context) {
   } finally {
     rmSync(thinned, { force: true })
   }
+}
+
+/**
+ * Read the packaged app.asar and fail when a package in it has no entry in the
+ * shipped licence report, is GPL-family only, or is sharp/libvips — or when the
+ * licence files themselves are missing. See scripts/check-packaged-licenses.mts.
+ * Runs before the macOS steps below so it covers every platform; the keyring
+ * binary they delete is in the report either way.
+ */
+async function checkLicenses(context) {
+  const [{ join }, { pathToFileURL }] = await Promise.all([import('node:path'), import('node:url')])
+  const { assertPackagedLicenses } = await import(
+    pathToFileURL(join(__dirname, 'check-packaged-licenses.mts')).href
+  )
+  const resources =
+    context.electronPlatformName === 'darwin'
+      ? join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          'Contents',
+          'Resources',
+        )
+      : join(context.appOutDir, 'resources')
+  assertPackagedLicenses(resources)
 }
