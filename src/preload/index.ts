@@ -718,6 +718,8 @@ const api: ApiClient = {
   },
   threads: {
     loadProject: (projectId: string) => ipcRenderer.invoke('threads:load-project', projectId),
+    backfillPrRefs: (projectId: string, threadIds: string[]) =>
+      ipcRenderer.invoke('threads:backfill-pr-refs', projectId, threadIds),
     loadMessages: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:load-messages', projectId, threadId),
     onPrRefs: (

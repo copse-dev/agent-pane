@@ -766,6 +766,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             ? Promise.reject(new Error('demo: transcript read failed'))
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => undefined,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,

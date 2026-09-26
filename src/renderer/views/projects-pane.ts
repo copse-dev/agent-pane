@@ -329,6 +329,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenAvailability)
 
   const visibleThreadCounts = new Map<string, number>()
+  const prBackfillRequested = new Map<string, Set<string>>()
+  let prBackfillObserver: IntersectionObserver | null = null
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
   // every schedule regardless of which project it belongs to. Expansion is
@@ -811,7 +813,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(): void {
+    prBackfillObserver?.disconnect()
+    prBackfillObserver = null
     clear(list)
+    const prBackfillRows: Array<{ row: HTMLElement; projectId: string; threadId: string }> = []
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } =
       store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
@@ -965,6 +970,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (prRollup) {
         chatRow.classList.add('has-pr-status')
         chatRow.append(chatPrStatus(prRollup))
+      }
+
+      if (thread.prRefs === undefined) {
+        prBackfillRows.push({ row: chatRow, projectId: project.id, threadId: thread.id })
       }
 
       if (canMutate) {
@@ -1484,6 +1493,41 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     }
 
     if (orphans.length > 0) list.append(renderOrphansSection())
+
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
+      const rowThreads = new Map<Element, { projectId: string; threadId: string }>(
+        prBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
+      )
+      const observer = new IntersectionObserver((entries) => {
+        if (prBackfillObserver !== observer) return
+        const pending = new Map<string, string[]>()
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          observer.unobserve(entry.target)
+          const thread = rowThreads.get(entry.target)
+          if (!thread) continue
+          const requested = prBackfillRequested.get(thread.projectId) ?? new Set<string>()
+          prBackfillRequested.set(thread.projectId, requested)
+          if (requested.has(thread.threadId)) continue
+          requested.add(thread.threadId)
+          const ids = pending.get(thread.projectId) ?? []
+          ids.push(thread.threadId)
+          pending.set(thread.projectId, ids)
+        }
+        for (const [projectId, threadIds] of pending) {
+          const requested = prBackfillRequested.get(projectId)
+          for (let i = 0; i < threadIds.length; i += 10) {
+            const batch = threadIds.slice(i, i + 10)
+            void api.threads.backfillPrRefs(projectId, batch).catch((err: unknown) => {
+              for (const threadId of batch) requested?.delete(threadId)
+              console.warn('[threads] visible PR-ref backfill failed:', err)
+            })
+          }
+        }
+      })
+      prBackfillObserver = observer
+      for (const { row } of prBackfillRows) observer.observe(row)
+    }
   }
 
   const unsubs = [
@@ -1513,6 +1557,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   refreshOrphans()
   return () => {
     contentFilter.cancel()
+    prBackfillObserver?.disconnect()
+    prBackfillObserver = null
     prStatusGeneration += 1
     dismissContextMenu()
     renaming = null

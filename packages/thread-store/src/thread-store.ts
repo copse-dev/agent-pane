@@ -653,25 +653,32 @@ async function mergePrRefsIntoMeta(
 }
 
 /**
- * Fill in `prRefs` for threads written before it existed.
- *
- * Without this, every thread predating the cache would lose its PR chip until it
- * was next opened or appended to. It is the one place that still pays the old
- * whole-project read — but exactly once per project, in the background, after
- * the project is already on screen, and never again (each thread's metadata
- * records the result). `onBatch` reports refs back so the sidebar can fill in
- * live rather than waiting for the next launch.
- *
- * Threads whose metadata already carries `prRefs`, and archived threads (no
- * sidebar row, so no chip) are skipped without reading anything.
+ * Fill in `prRefs` for legacy threads requested by visible sidebar rows.
+ * The caller supplies a bounded page of ids; opening a project must not scan
+ * every transcript just to populate chips for rows the user has not seen.
+ * Cached and archived threads are skipped, and each successful scan records
+ * even an empty result so later visits do not repeat the read.
  */
-export async function backfillThreadPrRefs(
+export function backfillThreadPrRefs(
   projectId: string,
+  threadIds: readonly string[],
+  onBatch: (refs: Array<{ threadId: string; prRefs: GithubPrRef[] }>) => void,
+): Promise<void> {
+  // Serialize batches across projects too, so overlapping viewport requests
+  // cannot multiply the transcript-read concurrency limit below.
+  return runSerialized('pr-ref-backfill:global', () =>
+    backfillSelectedThreadPrRefs(projectId, threadIds, onBatch),
+  )
+}
+
+async function backfillSelectedThreadPrRefs(
+  projectId: string,
+  threadIds: readonly string[],
   onBatch: (refs: Array<{ threadId: string; prRefs: GithubPrRef[] }>) => void,
 ): Promise<void> {
   const pending: string[] = []
-  for (const threadId of listThreadIds(projectId)) {
-    const meta = parseMeta(safeRead(join(threadDir(projectId, threadId), META_FILE)))
+  for (const threadId of new Set(threadIds)) {
+    const meta = parseMeta(await readOrNull(join(threadDir(projectId, threadId), META_FILE)))
     if (meta === null || meta.prRefs !== undefined || meta.archivedAt != null) continue
     pending.push(threadId)
   }
@@ -720,8 +727,8 @@ export async function backfillThreadPrRefs(
   flush()
 }
 
-/** Kept well below the load path's concurrency: this is background work. */
-const BACKFILL_CONCURRENCY = 4
+/** Keep transcript folding from competing heavily with foreground reads. */
+const BACKFILL_CONCURRENCY = 2
 
 /** The transcript for one thread, folded on demand when it is opened. */
 export function loadThreadMessages(projectId: string, threadId: string): Promise<Message[]> {
