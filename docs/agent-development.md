@@ -283,7 +283,10 @@ applies every candidate, and `git checkout <compare-commit> -- tests/e2e/screens
 after the fetch takes only some. When the whole reference set should be re-rendered, add
 `update-screenshots`: CI runs the complete e2e reference set and the publisher pushes all of it to
 the compare branch, previewing up to 20 in the comment, touched screenshots first. Remove the label after that run to avoid
-repeating the full refresh. Nothing opens a PR for screenshots. Do not accept unrelated drift just
+repeating the full refresh. Committed references are CI's Linux renders. A dedicated
+re-baseline PR with this label is the one place to accept accumulated drift: review every
+candidate for regressions before committing it, and never overwrite references with local macOS
+renders. Nothing opens a PR for screenshots. Do not accept unrelated drift just
 because CI captured it. Forks and promotion PRs whose source is an integration branch get no compare
 branch; download the artifact and commit the reviewed PNGs manually. Local filtering is implemented
 by `scripts/lib/screenshot-scope.mts`; fixture determinism and tier selection are documented in
