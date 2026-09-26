@@ -92210,6 +92210,7 @@ function collectSubagentUsage(toolCalls, totals) {
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent;
     if (!session) continue;
+    if (session.kind === "container") continue;
     if (session.usage) {
       totals.runs += 1;
       totals.inputTokens += session.usage.inputTokens;
