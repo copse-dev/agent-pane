@@ -119,26 +119,26 @@ dialog.process-manager-overlay {
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 }
-.process-manager-table th:nth-child(1) {
+.process-manager-table thead th:nth-child(1) {
   width: 24%;
 }
-.process-manager-table th:nth-child(2) {
+.process-manager-table thead th:nth-child(2) {
   width: 14%;
 }
-.process-manager-table th:nth-child(3) {
+.process-manager-table thead th:nth-child(3) {
   width: 18%;
 }
-.process-manager-table th:nth-child(4) {
+.process-manager-table thead th:nth-child(4) {
   width: 10%;
 }
-.process-manager-table th:nth-child(5) {
+.process-manager-table thead th:nth-child(5) {
   width: 15%;
 }
-.process-manager-table th:nth-child(6) {
+.process-manager-table thead th:nth-child(6) {
   width: 11%;
   text-align: right;
 }
-.process-manager-table th:nth-child(7) {
+.process-manager-table thead th:nth-child(7) {
   width: 8%;
 }
 .process-manager-table th,
@@ -181,6 +181,59 @@ dialog.process-manager-overlay {
 }
 .process-manager-number {
   text-align: right !important;
+}
+.process-manager-group > th,
+.process-manager-group > td {
+  padding-block: 5px;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.process-manager-group[data-active-thread='true'] > th,
+.process-manager-group[data-active-thread='true'] > td {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  color: var(--text-primary);
+}
+.process-manager-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.process-manager-group-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.process-manager-group-chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+.process-manager-group-toggle[aria-expanded='true'] .process-manager-group-chevron {
+  transform: rotate(90deg);
+}
+.process-manager-group-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.process-manager-group-count {
+  flex: none;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.process-manager-process > .process-manager-name {
+  padding-inline-start: calc(var(--spacing-md) + 20px);
+}
+.process-manager-process[hidden] {
+  display: none;
 }
 .process-manager-pid {
   color: var(--text-muted);

@@ -258,6 +258,11 @@ export function gortexHomeDir(): string {
   return join(getElectronUserDataPath(), 'gortex')
 }
 
+/** Where the detached gortex daemon records its pid under {@link gortexHomeDir}. */
+export function gortexDaemonPidPath(): string {
+  return join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
+}
+
 function gortexRunOpts(
   workspaceRoot: string,
   extra: Omit<RunCommandOptions, 'cwd' | 'env'> = {},

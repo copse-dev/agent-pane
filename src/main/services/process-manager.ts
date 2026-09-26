@@ -11,7 +11,7 @@ const CACHE_MS = 850
 export function createProcessManagerSampler(
   readMetrics: () => readonly ProcessMetricSample[],
   readLabels: () => ReadonlyMap<number, string>,
-  readOwnedRows: () => Promise<ProcessManagerRow[]>,
+  readOwnedRows: (appPids: ReadonlySet<number>) => Promise<ProcessManagerRow[]>,
   readActiveRunThreadIds: () => string[],
 ): () => Promise<ProcessManagerSnapshot> {
   let cached: ProcessManagerSnapshot | null = null
@@ -22,9 +22,10 @@ export function createProcessManagerSampler(
     const now = Date.now()
     if (cached && now - cached.sampledAt < CACHE_MS) return Promise.resolve(cached)
     if (pending) return pending
-    const result = buildProcessSnapshot(readMetrics(), readLabels(), samples, now)
+    const metrics = readMetrics()
+    const result = buildProcessSnapshot(metrics, readLabels(), samples, now)
     samples = result.samples
-    pending = readOwnedRows()
+    pending = readOwnedRows(new Set(metrics.map((metric) => metric.pid)))
       .then((owned) => {
         cached = {
           sampledAt: now,

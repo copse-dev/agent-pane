@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { afterEach, before, test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
+import type { ProcessManagerRow } from '@shared/types/process-manager.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { patchPreviewDialog } from '../attachments/preview-dialog.test-support.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
@@ -239,5 +240,80 @@ test('activity refresh preserves keyboard focus and hands it back when a run fin
     document.activeElement === document.querySelector('[aria-label="Close process manager"]'),
     'finishing a run returns focus to the close button',
   )
+  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
+})
+
+test('processes group under their thread, expanded by default, with shared processes last', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  const store = createStore({
+    projects: [{ id: 'project-a', path: '/a', name: 'A' }],
+    activeProjectId: 'project-a',
+    threads: [thread('thread-a'), thread('thread-b')],
+  })
+  const row = (pid: number, threadId: string | null, cpuPercent: number): ProcessManagerRow => ({
+    pid,
+    startedAt: 1,
+    label: `process ${String(pid)}`,
+    type: 'Command',
+    threadId,
+    cpuPercent,
+    memoryMiB: 1,
+  })
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
+    processManager: {
+      ...base.processManager,
+      snapshot: async () => ({
+        sampledAt: Date.now(),
+        activeRunThreadIds: [],
+        processes: [
+          row(1, null, 50),
+          row(2, 'thread-a', 1),
+          row(3, 'thread-b', 4),
+          row(4, 'thread-a', 2),
+        ],
+      }),
+    },
+  }
+  mountProcessManagerDialog(api, store)()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  const layout = (): string[] =>
+    [...document.querySelectorAll<HTMLTableRowElement>('.process-manager-rows tr')].map((tr) =>
+      tr.classList.contains('process-manager-group')
+        ? `${tr.dataset['groupKey'] === '' ? 'shared' : (tr.dataset['groupKey'] ?? '')}:${tr.querySelector('.process-manager-group-count')?.textContent ?? ''}`
+        : `${tr.dataset['pid'] ?? ''}${tr.hidden ? ' hidden' : ''}`,
+    )
+  assert.deepEqual(layout(), [
+    'thread-b:1 process',
+    '3',
+    'thread-a:2 processes',
+    '4',
+    '2',
+    'shared:1 process',
+    '1',
+  ])
+  const toggle = document.querySelector<HTMLButtonElement>(
+    '.process-manager-group-toggle[data-group-key="thread-a"]',
+  )
+  assert.ok(toggle)
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true')
+  toggle.focus()
+  toggle.click()
+  assert.deepEqual(layout().slice(2, 5), ['thread-a:2 processes', '4 hidden', '2 hidden'])
+  assert.equal(
+    document.activeElement?.getAttribute('data-group-key'),
+    'thread-a',
+    'toggling keeps focus on the group toggle',
+  )
+
+  t.mock.timers.tick(1_000)
+  await Promise.resolve()
+  const refreshed = document.querySelector<HTMLButtonElement>(
+    '.process-manager-group-toggle[data-group-key="thread-a"]',
+  )
+  assert.equal(refreshed?.getAttribute('aria-expanded'), 'false', 'collapse survives refresh')
+  assert.ok(document.activeElement === refreshed, 'refresh keeps focus on the group toggle')
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })
