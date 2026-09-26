@@ -438,6 +438,7 @@ export default ts.config(
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         structuredClone: 'readonly',
+        fetch: 'readonly',
       },
     },
     // TypeScript-only annotation requirements cannot be expressed in these .mjs files.

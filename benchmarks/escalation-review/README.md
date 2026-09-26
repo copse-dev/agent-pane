@@ -33,6 +33,11 @@ passing, so the fix that closes a gap must also mark it `enforced`.
 node benchmarks/escalation-review/regression/run.mjs --check
 ```
 
+**The public test set** is [`testset/`](testset/README.md): 782 anonymised, labelled commands. It
+contains the regression cases, the shell-scope corpus, commands written for it, and samples from two
+MIT-licensed Hugging Face datasets. It pins every deterministic verdict, and it ships
+`eval:classifier` fixtures so any model can be scored the same way.
+
 ## Running the private eval
 
 ```bash
