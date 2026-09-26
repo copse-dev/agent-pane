@@ -35,6 +35,7 @@ import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import {
+  acpTurnInterruptionFor,
   acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
@@ -134,7 +135,7 @@ import { applyVideoToolAvailability, getThreadVideos } from './video/thread-vide
 import { applyArchiveToolAvailability, getThreadArchives } from './archive/thread-archives.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
-import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
+import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
@@ -144,10 +145,10 @@ import {
 } from './orchestration-runner.ts'
 import {
   runThreadReview,
-  setReviewToolContext,
+  runWithReviewToolContext,
   type ReviewRunResult,
 } from './review/review-service.ts'
-import { resetSubagentUsage, getAccumulatedSubagentUsage } from './subagent-usage.ts'
+import { runWithSubagentUsageScope, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
   getAgentRunTodos,
@@ -1273,6 +1274,15 @@ export async function runAgent(
       const authFailure = aborted
         ? null
         : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      // A helper that cannot nest a second seatbelt inside the agent's own dies
+      // the same way on every retry, so the marker must say that instead of the
+      // generic provider-error note (2026-09-23: Codex CUA node_repl under the
+      // codex-acp seatbelt). Chosen in the same order as `classifyAgentError`.
+      const interruption = acpTurnInterruptionFor(err, {
+        aborted,
+        authFailure,
+        acpAgentId: acpRunAgentId,
+      })
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
@@ -1313,11 +1323,7 @@ export async function runAgent(
       const cleanedPartial = partial?.assistantText
         ? stripInlineVisualizationReferences(stripCursorAcpTransportNoise(partial.assistantText))
         : undefined
-      const content = [
-        cleanedPartial,
-        msg,
-        acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
-      ]
+      const content = [cleanedPartial, msg, acpTurnInterruptionMarker(interruption, acpRunAgentId)]
         .filter(isNonEmptyString)
         .join('\n\n')
       return resultWithOutcome({
@@ -1823,8 +1829,6 @@ export async function runAgent(
 
     const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
 
-    resetSubagentUsage()
-
     // P4: the todos plugin owns the plan panel. When the `copse.todos` plugin is
     // enabled we emit a level-2 `panel_update` (the plugin-panel data model, P2)
     // alongside the legacy `todo_update` chunk. `todo_update` continues to
@@ -2013,22 +2017,22 @@ export async function runAgent(
             )
           }
           if (name === 'investigate_ci' && subagentsEnabled) {
-            setCiInvestigatorContext({
-              parentToolCallId: toolCallId,
-              parentGoal,
-              provider: subagentRoute?.provider ?? provider,
-              registry,
-              contextWindow: subagentRoute?.contextWindow ?? contextWindow,
-              toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
-              onChunk: sendChunk,
-              usageModel: subagentUsageModel,
-              localFallback: subagentLocalFallback,
-            })
-            try {
-              return await registry.execute(name, args, signal)
-            } finally {
-              setCiInvestigatorContext(null)
-            }
+            // ALS-scoped (not a global slot): concurrent threads can each be
+            // inside an investigate_ci call at once.
+            return runWithCiInvestigatorContext(
+              {
+                parentToolCallId: toolCallId,
+                parentGoal,
+                provider: subagentRoute?.provider ?? provider,
+                registry,
+                contextWindow: subagentRoute?.contextWindow ?? contextWindow,
+                toolSchemaReserve: subagentRoute?.toolSchemaReserve ?? toolSchemaReserve,
+                onChunk: sendChunk,
+                usageModel: subagentUsageModel,
+                localFallback: subagentLocalFallback,
+              },
+              () => registry.execute(name, args, signal),
+            )
           }
           if (name === 'advisor') {
             // Client-side advisor: hand the tool the live transcript so it can
@@ -2072,17 +2076,10 @@ export async function runAgent(
             if (executionRoot === undefined) {
               return 'Error: review is not available without a thread checkout.'
             }
-            setReviewToolContext({
-              threadId,
-              root: executionRoot,
-              chatModel: model,
-              onChunk: sendChunk,
-            })
-            try {
-              return await registry.executeNormalized(name, args, signal)
-            } finally {
-              setReviewToolContext(null)
-            }
+            return await runWithReviewToolContext(
+              { threadId, root: executionRoot, chatModel: model, onChunk: sendChunk },
+              () => registry.executeNormalized(name, args, signal),
+            )
           }
           if (name === 'run_shell') {
             // Tag the command's streamed output with this tool-call id so the
@@ -2148,89 +2145,94 @@ export async function runAgent(
           }
         }
 
-        await runWithAgentRunReadonly(readonlyMode, async () => {
-          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-            await runAgentLoop({
-              provider,
-              messages: trimmed,
-              tools: parentLoopTools,
-              usageModel: model,
-              maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
-              ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-              ...(options?.adaptiveExtensions !== undefined
-                ? { adaptiveExtensions: options.adaptiveExtensions }
-                : {}),
-              reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
-              reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
-              runDeadline: runAbort.deadline,
-              onRunDeadlineActivity: runAbort.schedule,
-              coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
-              getOpenTodos: () => getAgentRunTodos(),
-              continuationBudget,
-              resolvePluginSetting,
-              artifactCheckpointEligible: true,
-              recordHookRun: recordFunctionHookRun,
-              recordAppliedNudge: recordAppliedNudgeRun,
-              onLlmCall: (count) => {
-                setHookRunStep(count)
-                // `messages` above is `trimmed`, mutated in place as turns land, so
-                // this persists everything the previous step produced.
-                checkpointHistory()
-                // The previous step's tool results have been streamed; a notice
-                // here cannot come between a tool call and its result.
-                flushNestedInstructionNotices()
-              },
-              recordStreamCut: (record) => {
-                recordStreamCut(record, model)
-              },
-              recordReasoningCheckpoint: (record) => {
-                recordReasoningCheckpoint(record, model)
-              },
-              executeTool: executeParentTool,
-              signal: controller.signal,
-              maxContextTokens: contextWindow,
-              toolSchemaReserveTokens: toolSchemaReserve,
-              onHistoryTrimmed: () => {
-                notifyTrimmed(sendTrimNotice)
-              },
-              getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
-              onChunk: (chunk) => {
-                if (chunk.type === 'done') {
-                  // Suppress the loop's terminal `done` (E3): the run emits one
-                  // terminal `done` after post-turn work. Keep its stop reason.
-                  loopStopReason = chunk.stopReason
-                  return
-                }
-                sendChunk(chunk)
-                if (chunk.type === 'usage') {
-                  inputTokens += chunk.inputTokens
-                  outputTokens += chunk.outputTokens
-                }
-              },
-            })
-            // A loop that stopped on a tool step (step cap, abort) still owes
-            // the notice for what that step activated.
-            flushNestedInstructionNotices()
-
-            const subUsage = getAccumulatedSubagentUsage()
-            if (subUsage.inputTokens || subUsage.outputTokens) {
-              inputTokens += subUsage.inputTokens
-              outputTokens += subUsage.outputTokens
-              sendChunk({
-                type: 'usage',
-                model: subagentUsageModel,
-                inputTokens: subUsage.inputTokens,
-                outputTokens: subUsage.outputTokens,
-                ...(subUsage.cacheReadTokens !== undefined
-                  ? { cacheReadTokens: subUsage.cacheReadTokens }
+        // Subagent usage is scoped to this run's loop so a concurrent thread
+        // cannot reset or collect it; the fold below reads the same scope.
+        await runWithSubagentUsageScope(() =>
+          runWithAgentRunReadonly(readonlyMode, async () => {
+            await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+              await runAgentLoop({
+                provider,
+                messages: trimmed,
+                tools: parentLoopTools,
+                usageModel: model,
+                maxLlmCalls: options?.maxLlmCalls ?? DEFAULT_MAX_LLM_CALLS,
+                ...(options?.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+                ...(options?.adaptiveExtensions !== undefined
+                  ? { adaptiveExtensions: options.adaptiveExtensions }
                   : {}),
-                ...(subUsage.cacheCreationTokens !== undefined
-                  ? { cacheCreationTokens: subUsage.cacheCreationTokens }
-                  : {}),
+                reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+                reasoningRunawayTextToleranceChars:
+                  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+                runDeadline: runAbort.deadline,
+                onRunDeadlineActivity: runAbort.schedule,
+                coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
+                getOpenTodos: () => getAgentRunTodos(),
+                continuationBudget,
+                resolvePluginSetting,
+                artifactCheckpointEligible: true,
+                recordHookRun: recordFunctionHookRun,
+                recordAppliedNudge: recordAppliedNudgeRun,
+                onLlmCall: (count) => {
+                  setHookRunStep(count)
+                  // `messages` above is `trimmed`, mutated in place as turns land, so
+                  // this persists everything the previous step produced.
+                  checkpointHistory()
+                  // The previous step's tool results have been streamed; a notice
+                  // here cannot come between a tool call and its result.
+                  flushNestedInstructionNotices()
+                },
+                recordStreamCut: (record) => {
+                  recordStreamCut(record, model)
+                },
+                recordReasoningCheckpoint: (record) => {
+                  recordReasoningCheckpoint(record, model)
+                },
+                executeTool: executeParentTool,
+                signal: controller.signal,
+                maxContextTokens: contextWindow,
+                toolSchemaReserveTokens: toolSchemaReserve,
+                onHistoryTrimmed: () => {
+                  notifyTrimmed(sendTrimNotice)
+                },
+                getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
+                onChunk: (chunk) => {
+                  if (chunk.type === 'done') {
+                    // Suppress the loop's terminal `done` (E3): the run emits one
+                    // terminal `done` after post-turn work. Keep its stop reason.
+                    loopStopReason = chunk.stopReason
+                    return
+                  }
+                  sendChunk(chunk)
+                  if (chunk.type === 'usage') {
+                    inputTokens += chunk.inputTokens
+                    outputTokens += chunk.outputTokens
+                  }
+                },
               })
-            }
-          })
-        })
+              // A loop that stopped on a tool step (step cap, abort) still owes
+              // the notice for what that step activated.
+              flushNestedInstructionNotices()
+
+              const subUsage = getAccumulatedSubagentUsage()
+              if (subUsage.inputTokens || subUsage.outputTokens) {
+                inputTokens += subUsage.inputTokens
+                outputTokens += subUsage.outputTokens
+                sendChunk({
+                  type: 'usage',
+                  model: subagentUsageModel,
+                  inputTokens: subUsage.inputTokens,
+                  outputTokens: subUsage.outputTokens,
+                  ...(subUsage.cacheReadTokens !== undefined
+                    ? { cacheReadTokens: subUsage.cacheReadTokens }
+                    : {}),
+                  ...(subUsage.cacheCreationTokens !== undefined
+                    ? { cacheCreationTokens: subUsage.cacheCreationTokens }
+                    : {}),
+                })
+              }
+            })
+          }),
+        )
 
         const parentContinuationBase: RunParentContinuationOptions = {
           provider,

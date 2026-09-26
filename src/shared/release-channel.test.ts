@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  compareReleaseVersions,
   getAutoUpdatePolicy,
   getGitHubReleaseType,
   getPublishedUpdateChannels,
@@ -46,5 +47,29 @@ describe('release channel', () => {
     ]) {
       assert.throws(() => getReleaseChannel(version), /Unsupported release version/)
     }
+  })
+})
+
+describe('compareReleaseVersions', () => {
+  it('orders betas numerically, not lexically', () => {
+    assert.ok(compareReleaseVersions('0.1.0-beta.10', '0.1.0-beta.9') > 0)
+  })
+
+  it('orders a stable release after every beta of the same version', () => {
+    assert.ok(compareReleaseVersions('0.1.0', '0.1.0-beta.99') > 0)
+    assert.ok(compareReleaseVersions('0.1.0-beta.1', '0.1.0') < 0)
+  })
+
+  it('orders by major, minor, then patch', () => {
+    assert.ok(compareReleaseVersions('1.0.0-beta.1', '0.9.9') > 0)
+    assert.ok(compareReleaseVersions('0.2.0', '0.10.0') < 0)
+    assert.equal(compareReleaseVersions('0.1.0-beta.3', '0.1.0-beta.3'), 0)
+  })
+
+  it('rejects a version shape neither channel supports', () => {
+    assert.throws(
+      () => compareReleaseVersions('0.1.0-rc.1', '0.1.0'),
+      /Unsupported release version/,
+    )
   })
 })

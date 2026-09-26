@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { CURSOR_AGENTS_WEB_URL } from '../../src/shared/remote-agent.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertLegendInsideCard } from './helpers/settings-geometry.ts'
 
 describe('Cursor Cloud Agent settings list hint', () => {
   before(async () => {
@@ -47,6 +48,9 @@ describe('Cursor Cloud Agent settings list hint', () => {
     const link = hint.$('a')
     await expect(link).toHaveAttribute('href', CURSOR_AGENTS_WEB_URL)
     await expect(link).toHaveAttribute('target', '_blank')
+
+    // The nested auth card's title sits inside the card, not on its top edge.
+    await assertLegendInsideCard('Cursor authentication')
 
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')
