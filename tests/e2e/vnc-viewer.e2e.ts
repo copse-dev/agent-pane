@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 import { $, browser } from '@wdio/globals'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
+import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -481,6 +482,25 @@ describe('VNC viewer', function () {
     if (secureCredentialStorage) {
       assert.match(await $('.vnc-remember-password').getText(), /remember password securely/i)
       assert.equal(await $('.vnc-remember-password-input').isSelected(), true)
+    }
+    // "Remember password" is a checkbox line: the box sits beside its wording,
+    // not stacked above it by forms.css's column `label`. Linux CI has no
+    // secure store, so the product keeps the line hidden there; its layout is
+    // still pure CSS on the real node, so show it for the measurement and
+    // hand the panel back exactly as the product left it.
+    if (!secureCredentialStorage) {
+      await browser.execute(() => {
+        const field = document.querySelector<HTMLElement>('.vnc-remember-password')
+        if (field) field.hidden = false
+      })
+    }
+    await assertCheckboxBesideLabel('.vnc-remember-password')
+    await saveElementScreenshot('.vnc-auth-panel', 'vnc-viewer-remember-password-row.png')
+    if (!secureCredentialStorage) {
+      await browser.execute(() => {
+        const field = document.querySelector<HTMLElement>('.vnc-remember-password')
+        if (field) field.hidden = true
+      })
     }
     assert.equal(await $('.vnc-disconnect-btn').getText(), 'Cancel')
     await saveElementScreenshot('#pane-files', 'vnc-viewer-auth-required.png')
