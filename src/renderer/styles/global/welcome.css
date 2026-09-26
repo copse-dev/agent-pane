@@ -29,7 +29,7 @@
   text-align: center;
 }
 .welcome-heading {
-  font-size: 24px;
+  font-size: calc(24px * var(--ui-scale));
   font-weight: 600;
 }
 .welcome-sub {
