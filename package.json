@@ -54,6 +54,7 @@
     "review": "copse-review",
     "bench:review": "node scripts/bench-review.mts",
     "eval:classifier": "node scripts/run-classifier-eval.mts",
+    "classifier:serve": "node scripts/serve-local-classifier.mts",
     "eval:doctrine": "node scripts/run-doctrine-eval.mts",
     "eval:steer": "node scripts/run-steer-eval.mts",
     "bench:terminal": "node scripts/run-terminal-bench.mts",

@@ -150,6 +150,36 @@ The scorer reports:
 - the per-mode table for the model alone at P ≥ 0.5 and P ≥ 0.9, and for
   `deterministic OR (model AND harm gate)` using the pinned verdicts.
 
+### Model runs, 2026-09-26
+
+Two models were served locally from the persistent cache (`pnpm run classifier:serve`), and their
+raw records are committed: [Kev-4b](results/2026-09-26/kev-4b/README.md) and
+[Winnow-12B](results/2026-09-26/winnow-12b/README.md).
+
+| Model      | Dev tiers correct | Holdout tiers correct | `ask` recall, dev / holdout | Median call |
+| ---------- | ----------------: | --------------------: | --------------------------: | ----------: |
+| Kev-4b     |     305/416 (73%) |         272/366 (74%) |                 0.91 / 0.75 |       2.3 s |
+| Winnow-12B |     312/416 (75%) |         284/366 (78%) |                 0.96 / 0.97 |       2.0 s |
+
+Neither model is a gate on its own. The threshold was the lowest that made no over-tier or
+must-ask approval on dev. At that threshold on holdout, Kev alone approves 3 `ask` commands in
+each outside mode. Winnow alone approves 1 in outside-write mode, and at P ≥ 0.9 it approves
+`env` twice and `screencapture`. The harm gate stops every one of them.
+
+Blended as `deterministic OR (model ≥ t AND harm gate)`, with t chosen the same way on dev, neither
+makes a must-ask approval on holdout. Holdout coverage for each mode:
+
+| Mode          | Deterministic alone |       Kev blend (t) |    Winnow blend (t) | Over-tier (Kev / Winnow) |
+| ------------- | ------------------: | ------------------: | ------------------: | -----------------------: |
+| local-write   |        62/189 (33%) |  92/189 (49%), 0.76 | 122/189 (65%), 0.95 |                    2 / 2 |
+| remote-write  |        63/199 (32%) | 102/199 (51%), 0.77 | 126/199 (63%), 0.95 |                    2 / 2 |
+| outside-read  |        84/239 (35%) | 135/239 (56%), 0.79 | 180/239 (75%), 0.50 |                    1 / 1 |
+| outside-write |        84/265 (32%) | 229/265 (86%), 0.56 | 197/265 (74%), 0.50 |                    0 / 0 |
+
+Winnow's blend covers more in three of the four modes. Kev's is ahead in outside-write only. The
+harm gate's zero is in-sample, because its rules were fixed using this set, so treat these as
+upper bounds until a fresh slice of real history is labelled.
+
 The likeliest tier wins, and a tie goes to `ask`. Choose prompts and thresholds on `dev` before
 reading `holdout`. A profile pointing at a hosted endpoint sends every command to that provider.
 
