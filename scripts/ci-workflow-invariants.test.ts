@@ -909,6 +909,7 @@ describe('Copse Reviewer workflow invariants', () => {
   const triggerWorkflow = readFileSync(resolve('.github/workflows/review-trigger.yml'), 'utf8')
   const groundWorkflow = readFileSync(resolve('.github/workflows/review-ground.yml'), 'utf8')
   const findingsWorkflow = readFileSync(resolve('.github/workflows/review-findings.yml'), 'utf8')
+  const summaryWorkflow = readFileSync(resolve('.github/workflows/review-summary.yml'), 'utf8')
   const nightlyWorkflow = readFileSync(resolve('.github/workflows/review-nightly.yml'), 'utf8')
   const modelBenchWorkflow = readFileSync(
     resolve('.github/workflows/review-model-bench.yml'),
@@ -933,13 +934,27 @@ describe('Copse Reviewer workflow invariants', () => {
   it('executes pull-request code only in credential-free execution cells', () => {
     assert.match(
       triggerWorkflow,
-      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled\]$/m,
+      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled, synchronize\]$/m,
     )
-    assert.doesNotMatch(triggerWorkflow, /synchronize/, 'a push must not post another review')
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
     assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
     const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
+    // A push must not post another review: only the summary follows the head.
+    assert.match(dispatcher, /github\.event\.action != 'synchronize' &&/)
+    const summariser = workflowJobBlock(triggerWorkflow, 'summary')
+    assert.match(summariser, /gh workflow run review-summary\.yml/)
+    assert.doesNotMatch(summariser, /review-ground|review-findings/)
+    assert.match(summariser, /github\.actor_id == '338988'/)
+    assert.match(summariser, /github\.event\.pull_request\.user\.id == 338988/)
+    assert.match(summariser, /github\.event\.pull_request\.head\.repo\.id == 1274237362/)
+    assert.match(
+      summariser,
+      /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'copse-review-skip'\)/,
+    )
+    assert.match(summariser, /if \[ "\$skipped" = "true" \]/)
+    assert.match(summariser, /if \[ "\$draft" = "true" \] && \[ "\$labelled" != "true" \]/)
+    assert.equal(triggerWorkflow.match(/gh workflow run review-ground\.yml/g)?.length, 1)
     // Ready pull requests by default; a draft only with the label; never with the opt-out.
     assert.match(
       dispatcher,
@@ -1074,6 +1089,52 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(findingsWorkflow, /pulls\/\$\{number\}/)
     assert.match(findingsWorkflow, /HEAD_SHA: \$\{\{ steps\.pr\.outputs\.head \}\}/)
     assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
+  })
+
+  it('summarises on every push without executing pull-request code', () => {
+    assert.match(summaryWorkflow, /^on:\n {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(
+      summaryWorkflow,
+      /^ {2}(?:pull_request|pull_request_target|workflow_run|push):/m,
+    )
+    assert.match(
+      summaryWorkflow,
+      /^permissions:\n {2}contents: read\n {2}pull-requests: read$/m,
+      'the default workflow token must not retain write permission',
+    )
+    assert.match(summaryWorkflow, /^ {2}group: copse-review-summary-\$\{\{ inputs\.pr \}\}$/m)
+    const authorize = workflowJobBlock(summaryWorkflow, 'authorize')
+    assert.match(authorize, /labels\.includes\('copse-review-skip'\)/)
+    assert.match(authorize, /pull\.draft && !labels\.includes\('copse-review'\)/)
+    assert.match(authorize, /pull\.head\.sha !== process\.env\.EXPECTED_HEAD/)
+    const job = workflowJobBlock(summaryWorkflow, 'summary')
+    assert.match(job, /^ {4}needs: authorize$/m)
+    assert.match(job, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+    assert.match(job, /filter: blob:none/)
+    assert.match(job, /persist-credentials: false/)
+    // Read-only by construction: no Stage 0, no cell, no review.
+    assert.match(job, /--summary-only/)
+    assert.match(job, /--post-summary github/)
+    assert.doesNotMatch(job, /--stage0-json|--backend|--post-review|--trusted-prepare|pnpm fetch/)
+    assert.doesNotMatch(job, /docker|download-artifact/)
+    assert.match(job, /test "\$author_id" = 338988/)
+    assert.match(job, /test "\$skipped" = false/)
+    assert.match(job, /test "\$draft" = false \|\| test "\$labelled" = true/)
+    assert.match(
+      job,
+      /- name: Mint the Copse GitHub App review token\n {8}id: review-app-token\n {8}if: steps\.pr\.outputs\.current == 'true'\n {8}uses: actions\/create-github-app-token@v3/,
+    )
+    assert.match(job, /permission-pull-requests: write/)
+    const posting = job.slice(job.indexOf('- name: Summarise the pull request and update'))
+    assert.match(
+      posting,
+      /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ steps\.review-app-token\.outputs\.token \}\}/,
+    )
+    assert.doesNotMatch(posting, /^\s+GITHUB_TOKEN:/m)
+    const fetch = job.indexOf('git fetch')
+    assert.ok(fetch >= 0 && fetch < job.indexOf('- name: Mint the Copse GitHub App review token'))
+    // The full review rewrites the summary with its evidence.
+    assert.match(workflowJobBlock(findingsWorkflow, 'findings'), /--post-summary github/)
   })
 
   it('posts GitHub reviews as the least-privilege Copse App identity', () => {
@@ -1302,7 +1363,14 @@ describe('Copse Reviewer workflow invariants', () => {
         /secrets(?:\.OPENROUTER_API_KEY|\[['"]OPENROUTER_API_KEY['"]\])/,
         name,
       )
-      if (!['review-model-bench.yml', 'review-findings.yml', 'review-nightly.yml'].includes(name)) {
+      if (
+        ![
+          'review-model-bench.yml',
+          'review-findings.yml',
+          'review-nightly.yml',
+          'review-summary.yml',
+        ].includes(name)
+      ) {
         assert.ok(!workflow.includes(secret), name)
       }
     }
@@ -1328,6 +1396,15 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(findings, /test "\$head_repo_id" = 1274237362/)
       assert.match(findings, /test "\$base_repo_id" = 1274237362/)
     }
+    const summary = workflowJobBlock(summaryWorkflow, 'summary')
+    assert.equal(summaryWorkflow.split(secret).length - 1, 1)
+    assert.match(summary, /^ {4}environment: copse-review-models$/m)
+    assert.ok(
+      summary.indexOf('- name: Summarise the pull request and update its description') <
+        summary.indexOf(secret),
+    )
+    assert.match(summary, /unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID/)
+    assert.match(summary, /configured\) unset OPENROUTER_API_KEY/)
   })
 
   it('samples at most one recent same-repository draft PR and has an explicit opt-out', () => {
