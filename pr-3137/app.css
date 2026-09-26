@@ -8830,9 +8830,13 @@ dialog.settings-overlay::backdrop {
 .plugin-source-details dt {
   color: var(--text-muted);
 }
+.settings-code-input {
+  font-family: var(--font-mono);
+}
 .plugin-source-details dd {
   margin: 0;
   color: var(--text-secondary);
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 .plugin-badge-stable,
@@ -9599,11 +9603,11 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
-.approval-advice-item {
-  display: inline-block;
-  max-width: 100%;
-  padding-left: 1.05em;
-  text-indent: -1.05em;
+.approval-reasons {
+  margin: var(--spacing-xs) 0 0;
+  padding-left: 1.25em;
+  list-style: disc;
+  white-space: normal;
 }
 .approval-footer {
   margin-top: var(--spacing-sm);
