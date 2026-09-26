@@ -133,13 +133,16 @@ h3 {
   color: var(--text-primary);
 }
 
+/* Accent fill for primary actions. A destructive confirm (`showConfirmDialog`
+   with `danger: true`) keys off the kit's own .ui-btn-danger so it keeps the
+   danger fill; it still takes the shared pill geometry from the list above. */
 :is(
   .welcome-new-btn,
   .submit-btn,
   .settings-buttons button[type='submit'],
   .onboarding-primary,
   .ask-user-submit,
-  .confirm-dialog-confirm:not(.confirm-dialog-danger),
+  .confirm-dialog-confirm:not(.ui-btn-danger),
   .update-prompt-primary,
   .ssh-prompt-submit
 ) {
@@ -153,7 +156,7 @@ h3 {
   .settings-buttons button[type='submit'],
   .onboarding-primary,
   .ask-user-submit,
-  .confirm-dialog-confirm:not(.confirm-dialog-danger),
+  .confirm-dialog-confirm:not(.ui-btn-danger),
   .update-prompt-primary,
   .ssh-prompt-submit
 ):hover {

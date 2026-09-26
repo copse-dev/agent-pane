@@ -374,7 +374,8 @@ export async function fetchClaudePlanUsage(
     return {
       status: 'unavailable',
       provider: 'claude',
-      reason: 'No Claude OAuth token (sign in with `claude /login` or set CLAUDE_CODE_OAUTH_TOKEN)',
+      reason:
+        'No Claude OAuth token (sign in with `claude /login` or set `CLAUDE_CODE_OAUTH_TOKEN`)',
     }
   }
   if (token.startsWith('sk-ant-api')) {

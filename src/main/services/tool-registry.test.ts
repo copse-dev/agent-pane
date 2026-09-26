@@ -12,6 +12,7 @@ import { clearAllToolResultCachesForTest } from './search/tool-result-cache.ts'
 import {
   setExecutionRootWatchForTest,
   stopAllExecutionRootWatchers,
+  watchedExecutionRootsForTest,
 } from './search/execution-root-watcher.ts'
 import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
@@ -441,6 +442,24 @@ describe('ToolRegistry', () => {
         await reg.execute('search_code', { pattern: 'foo' }, signal)
       })
       assert.equal(searchCalls, 2)
+    })
+
+    // Node's recursive watch walks the whole checkout synchronously. Armed inside
+    // the call, it held a millisecond find_files in `running` past the
+    // transcript's 300 ms auto-reveal, so the card flashed open and collapsed.
+    it('arms the root watcher after the first cacheable call returns, not inside it', async () => {
+      setExecutionRootWatchForTest(null)
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal))
+      assert.deepEqual(watchedExecutionRootsForTest(), [])
+      await new Promise((resolve) => setImmediate(resolve))
+      assert.deepEqual(watchedExecutionRootsForTest(), [root])
+      await inThread('t1', async () => {
+        await reg.execute('search_code', { pattern: 'foo' }, signal)
+        await reg.execute('search_code', { pattern: 'foo' }, signal)
+      })
+      assert.equal(searchCalls, 2, 'only the result produced before the watch armed is uncached')
     })
 
     it('does not share cached results across threads', async () => {

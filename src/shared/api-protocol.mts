@@ -44,4 +44,5 @@
 // v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
 // v16 conservatively versions the optional post-turn review follow-up note on agent chunks.
 // v17 conservatively versions the optional release changelog on update prompts.
-export const API_PROTOCOL_VERSION = 17 as const
+// v21 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
+export const API_PROTOCOL_VERSION = 21 as const
