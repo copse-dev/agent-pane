@@ -52,7 +52,8 @@ import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
-import { createFrameLoop, createStreamPacer, type StreamPacer } from './stream-pacer.ts'
+import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
+import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -643,10 +644,10 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
 // `.message-text` element so re-entrant token events reuse the same DOM regions
 // instead of rebuilding the whole message innerHTML each token (O(n²)).
 const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
-// Streamed text reaches `.message-text` through a pacer (see stream-pacer.ts),
+// Streamed text reaches `.message-text` through the package's input smoother,
 // one frame at a time, so the transcript learns about each paint and the
 // deferred final render through these events rather than at the call site.
-const streamPacers = new WeakMap<HTMLElement, StreamPacer>()
+const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
 /** A paced frame of streamed text landed in this `.message-text`. Bubbles. */
 const STREAM_PAINT_EVENT = 'copse:stream-paint'
 /** A paced stream finished revealing and took its final render. Bubbles. */
@@ -709,19 +710,24 @@ function paintStreamingMarkdown(el: HTMLElement, display: string): void {
   attachCodeBlockCopyButtons(el, { runCommands: true })
 }
 
-function streamPacerFor(el: HTMLElement, display: string): StreamPacer {
-  const existing = streamPacers.get(el)
+function streamSmootherFor(el: HTMLElement, display: string): InputSmoother {
+  const existing = streamSmoothers.get(el)
   if (existing) return existing
   // Text already on screen — a message rebuilt mid-stream — stays put; only
   // what arrives from now on is paced. A fresh bubble paces from its start.
   const shown = el.hasChildNodes() ? display : ''
   if (shown) paintStreamingMarkdown(el, shown)
-  const pacer = createStreamPacer((text) => {
-    paintStreamingMarkdown(el, text)
-    el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
-  }, shown)
-  streamPacers.set(el, pacer)
-  return pacer
+  const smoother = createInputSmoother({
+    update: (text) => {
+      paintStreamingMarkdown(el, text)
+      el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
+    },
+    // Follow the provider's own rate: a steady reveal a little behind it.
+    cadence: 'adaptive',
+    initial: shown,
+  })
+  streamSmoothers.set(el, smoother)
+  return smoother
 }
 
 function setAssistantMarkdown(
@@ -733,19 +739,20 @@ function setAssistantMarkdown(
   const { body: display, transportNoise } = assistantDisplayParts(content)
   if (streaming) {
     el.classList.add('is-streaming')
-    streamPacerFor(el, display).push(display)
+    streamSmootherFor(el, display).push(display)
     // Demote as soon as the trailing line is complete; keep collapsed while live.
     syncAcpTransportNoiseDisclosure(el, transportNoise)
     return
   }
-  const pacer = streamPacers.get(el)
-  if (pacer) {
+  const smoother = streamSmoothers.get(el)
+  if (smoother) {
     // Let the reveal catch up before the final render replaces the scaffold,
     // so the end of the answer doesn't arrive in one pop. A later call pushes
     // again, which voids this settle in favour of its own content.
-    pacer.push(display)
-    pacer.finish(() => {
-      streamPacers.delete(el)
+    smoother.push(display)
+    smoother.finish(() => {
+      smoother.dispose()
+      streamSmoothers.delete(el)
       setAssistantMarkdown(el, content, false, api)
       el.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }))
     })
@@ -4346,7 +4353,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
             scrollToBottom()
           }
         }
-        // The text itself lands a frame later, through the stream pacer; its
+        // The text itself lands a frame later, through the input smoother; its
         // STREAM_PAINT_EVENT keeps the transcript following it.
       }
     }),
