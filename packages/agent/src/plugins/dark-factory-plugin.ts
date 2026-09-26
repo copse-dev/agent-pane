@@ -6,7 +6,7 @@ export const darkFactoryPlugin: RegisteredPlugin = definePlugin(
   {
     name: DARK_FACTORY_PLUGIN_ID,
     description:
-      'Observes Copse-owned pull requests with one adaptive fleet sensor so CI and stale-work events can be handled without per-thread pollers.',
+      'Groundwork only: while on, runs a fleet poll timer that nothing acts on yet. It does not read, watch, or change pull requests or CI.',
     trust: 'first-party',
     stability: 'experimental',
     storage: { namespace: DARK_FACTORY_PLUGIN_ID },
