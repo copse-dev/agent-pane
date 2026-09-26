@@ -7,6 +7,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread } from '@shared/types'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
 import { isInitialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { queuedMessageIds } from './message-queue.ts'
 import { backgroundProjectOf } from './background-threads.ts'
@@ -29,17 +30,28 @@ const PASS_THRESHOLDS = [1, 3, 8]
  * benefit but carry an `origin`; a "continue" from a stop hook says nothing
  * about the thread's goal and must not advance a pass. A still-queued follow-up
  * is likewise not part of the conversation yet — it renders as a user bubble
- * before it dispatches — so it waits until it leaves the pending queue.
+ * before it dispatches — so it waits until it leaves the pending queue. A
+ * prompt that was nothing but chips has no words to name the thread by, so it
+ * neither spends a pass nor counts towards the next one.
  */
 function namingMessages(thread: Thread): Message[] {
   const queued = queuedMessageIds(thread)
   return thread.messages.filter(
-    (m) => m.role === 'user' && !m.origin && !queued.has(m.id) && m.content.trim(),
+    (m) => m.role === 'user' && !m.origin && !queued.has(m.id) && promptWords(m),
   )
 }
 
 function firstWords(text: string, n = 6): string {
   return text.split(/\s+/).slice(0, n).join(' ').slice(0, 60) || 'New Thread'
+}
+
+/**
+ * A prompt's own words. Inline paste and thread-reference chips are stored as
+ * U+FFFC placeholders that only the transcript knows how to draw; left in, one
+ * reaches the title as a boxed "OBJ" glyph.
+ */
+function promptWords(message: Message): string {
+  return stripPastePlaceholders(message.content)
 }
 
 /**
@@ -51,7 +63,7 @@ function namingInput(userMessages: Message[]): string {
   const first = userMessages[0]
   if (!first) return ''
   const recent = userMessages.slice(1).slice(-3)
-  return [first, ...recent].map((m) => m.content.trim().slice(0, 300)).join('\n\n')
+  return [first, ...recent].map((m) => promptWords(m).slice(0, 300)).join('\n\n')
 }
 
 const branchRenameInFlight = new Set<string>()
@@ -135,7 +147,7 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
     // A failed later pass keeps the title it already has rather than falling back
     // to a word slice, but still spends the pass so a dead model can't be
     // re-asked on every turn.
-    const fallback = passes === 0 ? firstWords(first.content) : current.title
+    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title
     setThreadTitle(store, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1,
     })

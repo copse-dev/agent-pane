@@ -132,7 +132,10 @@ and 1.65 line-height inside the existing chat column. Paragraph and section
 spacing use the markdown package's tokens so pending and committed text share
 the same rhythm. Keep this treatment on text that shares a message with tools
 as well; adding a tool must not change the prose size or wrapping. Tool output
-and reasoning disclosures keep their own density. Display headings use the same
+and reasoning disclosures keep their own density, and so do fenced code blocks
+inside the prose: the `pre` takes the code size and the shared
+`--line-height-base` that tool output uses (12px on 22px at the base scale)
+instead of the prose line box. Display headings use the same
 family and weight while pending and after completion.
 
 The browser fixture and real renderer interaction checks live in
@@ -388,7 +391,8 @@ dense meta rows. `src/renderer/styles/ui-font-scale.test.ts` fails on a raw `px`
 `tokens.css`; its short allowlist names the few fixed-pixel controls that must not scale, and why.
 
 Chrome band tokens (not spacing, but reach for these before inventing heights):
-`--chrome-action-band-height`, `--browser-chrome-band-height`.
+`--chrome-action-band-height`, `--pane-header-band-height` (and its alias
+`--browser-chrome-band-height`).
 
 - There is no spacing token larger than `--spacing-xl` (24px). When you genuinely need more, compose
   with `calc()` from existing tokens (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`) rather than
@@ -406,15 +410,48 @@ Chrome band tokens (not spacing, but reach for these before inventing heights):
 ## One vertical rhythm for list rows
 
 Every scrollable list row uses `--list-row-padding-block` (8px) for its block padding: sidebar
-thread rows (`.chat-row`, `.chats-show-more`) and project rows (`.project-row`), and the shared
-`.git-change-row` primitive behind the Changes, PR, Memories, and Roadmap lists. The panels sit
-beside each other, so a per-pane padding reads as three different products — thread rows at 40px
-next to PR rows at 24px was the symptom. Group headers (`.git-changes-section-title`,
-`.roadmap-category-header`) share `--spacing-xs` for the same reason.
+thread rows (`.chat-row`, `.chats-show-more`), project rows (`.project-row`) and the project group
+rows interleaved with them (`.project-group-row`), the shared `.git-change-row` primitive behind
+the Changes, PR, Memories, and Roadmap lists, and the Terminal / Browser / Desktop rail rows
+(`.terminals-tab`, `.agent-task-tab`, `.supervised-task-row`, `.ports-row`, `.browser-tabs-tab`,
+`.vnc-tab`). The panels sit beside each other, so a per-pane padding reads as three different
+products — thread rows at 40px next to PR rows at 24px was the symptom. Group headers
+(`.git-changes-section-title`, `.roadmap-category-header`) share `--spacing-xs` for the same reason.
+
+In-pane group headers — tracked caps over a list section or card (`.pane-projects-header`,
+`.git-changes-section-title`, `.pr-files-header`, `.agent-tasks-section-header`,
+`.roadmap-category-header`, and the plugin / review / comparison card headers) — take one recipe:
+`--group-header-font-size` (`--font-size-xs`), `--group-header-letter-spacing` (0.04em) and
+`--group-header-font-weight` (600). Colour stays per surface (muted in lists, severity on review
+cards).
 
 A row that needs more air should change the token, not opt out locally. Rows may still differ in
 what they stack inside that padding (memories rows are two lines, roadmap rows one).
 Spec: [`tests/e2e/list-row-rhythm.e2e.ts`](../tests/e2e/list-row-rhythm.e2e.ts).
+
+## Pane headers share one band
+
+Every right-panel list pane (Explorer, Terminal, Changes, PRs, Memories, Roadmap, Browser, Desktop)
+opens with a `.pane-header` on `--pane-header-band-height` (37px at 1× scale), and titles it with
+`.pane-header-title`: sentence case, `--font-size-sm`, weight 600, `--text-secondary` — the
+treatment most panes already used. Switching panel modes must not move the header's bottom edge or
+restyle its label; three recipes (37px caps, 39px caps, 39px sentence case) was the symptom. The
+header uses `min-height`, so a pane that carries a toolbar in its header (Roadmap's search and
+actions) may wrap onto more rows; its title row still starts on the same line. The Browser Tabs
+header is held to exactly the band because it must meet the URL toolbar (see below). The header
+sits outside its list's scroll box (the Explorer's `.file-tree` scrolls, not `.file-tree-host`), so
+it stays put and its rule spans the full column instead of stopping a scrollbar's width short.
+
+Empty viewer chrome is hidden, not painted: a cleared block with padding and a rule reads as a
+blank strip under the header (`.pr-detail-sections:empty`, `.pr-viewer-meta:empty`,
+`.pr-viewer-files:empty`). Selected toolbar toggles such as the file viewer's Source / Changes use
+the selected-row fill (`--bg-selected`, `--text-primary`, weight unchanged), never the surface's
+own `--bg-base`. Terminal text is inset `--spacing-sm` from the pane edge like the agent-task
+output panel; the inset sits on the `.xterm` element because FitAddon subtracts that element's
+padding (padding on `.terminal-container` would clip the last column).
+Specs: [`tests/e2e/pane-loading.e2e.ts`](../tests/e2e/pane-loading.e2e.ts) (`pane-header-band.png`),
+[`tests/e2e/file-viewer-changes.e2e.ts`](../tests/e2e/file-viewer-changes.e2e.ts),
+[`tests/e2e/terminal-display.e2e.ts`](../tests/e2e/terminal-display.e2e.ts).
 
 ## Markdown tables in chat
 
@@ -1014,12 +1051,18 @@ is supplementary. Visual eval: `tests/e2e/agent-avatars.e2e.ts`.
 
 ## Transcript status callouts
 
-Review and comparison results should read as annotations in the transcript, not cards or pills. They
-are Copse annotating its own turn rather than part of the answer, so they take the **hatched plate**
-with `--sev` set to their state hue — `--text-secondary` for a normal review, `--accent` for a
-comparison, and `--danger` when either run failed. Mix the background at the component using
+Review and comparison results, and the Turn interrupted recovery offer, should read as annotations
+in the transcript, not cards or pills. They are Copse annotating its own turn rather than part of the
+answer, so they take the **hatched plate** with `--sev` set to their state hue — `--text-secondary`
+for a normal review, `--accent` for a comparison, `--warning` for turn recovery, and `--danger` when
+a review or comparison run failed. Mix the background at the component using
 `--callout-hatch-line`, `--callout-hatch-fill`, and `--callout-hatch-pitch` from `global/base.css`.
-No perimeter border, no elevation, no chips.
+No perimeter border, no elevation, no chips. The plate's title is caps in the `--sev` hue.
+
+A classified failure that ends a turn is written into the message stream, so it takes the flat plate
+instead: a `> [!CAUTION]` GitHub alert built by `agentErrorNotice` (`src/main/services/agent-errors.ts`),
+never bare answer prose behind an "An error occurred:" lead-in. Guidance that already carries its own
+alert (ACP sign-in, `> [!WARNING]`) keeps it.
 
 This used to be a thin status rail plus a horizontal wash that faded out to the right, and the rule
 here used to forbid a tinted block outright. The texture is what earns the block back: a flat wash
