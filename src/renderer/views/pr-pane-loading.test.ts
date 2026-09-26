@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GhCliStatus } from '@shared/types/git.ts'
 import { mountPrPane } from './pr-pane.ts'
@@ -29,12 +30,36 @@ const MONACO_STUB: GitDiffMonaco = {
   },
 }
 
-function mount(api: ApiClient): { listRoot: HTMLElement; viewerRoot: HTMLElement } {
+const MISSING: GhCliStatus = {
+  installed: false,
+  authenticated: false,
+  username: null,
+  message: null,
+}
+
+function apiWithStatus(status: GhCliStatus): ApiClient {
+  const base = createFakeApi()
+  return {
+    ...base,
+    gh: {
+      ...base['gh'],
+      status: async () => status,
+      agentPrLinks: async () => [],
+      onListsTick: noopUnsub,
+    },
+  }
+}
+
+function mount(
+  api: ApiClient,
+  threads: Thread[] = [],
+): { listRoot: HTMLElement; viewerRoot: HTMLElement } {
   const store = createStore({
     activeProjectId: 'project-1',
     activeThreadId: 'thread-1',
     filesPaneOpen: true,
     rightPanelMode: 'prs',
+    threads,
   })
   const listRoot = document.createElement('div')
   const viewerRoot = document.createElement('div')
@@ -77,26 +102,42 @@ describe('pr pane loading state', () => {
   })
 
   it('settles to the "install gh" copy once status says the CLI is missing', async () => {
-    const missing: GhCliStatus = {
-      installed: false,
-      authenticated: false,
-      username: null,
-      message: null,
-    }
-    const base = createFakeApi()
-    const api: ApiClient = {
-      ...base,
-      gh: {
-        ...base['gh'],
-        status: async () => missing,
-        agentPrLinks: async () => [],
-        onListsTick: noopUnsub,
-      },
-    }
-    const { listRoot } = mount(api)
+    const { listRoot } = mount(apiWithStatus(MISSING))
     await settle()
 
     assert.equal(listRoot.querySelector('.pane-loading'), null)
     assert.match(listText(listRoot), /Install GitHub CLI/)
+  })
+
+  // A chat-linked PR keeps the list from taking the "nothing to list" path that
+  // also repaints the viewer, which then kept its cold-start spinner.
+  it('settles the viewer too when chat-linked PRs are listed without gh', async () => {
+    const chatLink: Thread = {
+      id: 'thread-1',
+      title: 'Thread',
+      status: 'idle',
+      messages: [
+        {
+          id: 'm1',
+          role: 'user',
+          content: 'See https://github.com/acme/widgets/pull/42',
+          toolCalls: [],
+          createdAt: Date.now(),
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    const { listRoot, viewerRoot } = mount(apiWithStatus(MISSING), [chatLink])
+    await settle()
+
+    assert.deepEqual(
+      [...listRoot.querySelectorAll('.pr-list-number')].map((row) => row.textContent),
+      ['#42'],
+    )
+    const viewer = viewerRoot.querySelector('.panel-empty')
+    assert.equal(viewer?.textContent, 'GitHub CLI is not available')
+    assert.equal(viewerRoot.querySelectorAll('.ui-inline-status').length, 0)
   })
 })

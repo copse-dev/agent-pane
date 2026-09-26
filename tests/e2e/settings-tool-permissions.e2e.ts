@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { assertBadgeRecipe, readBadgeStyles } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { tokenColour } from './helpers/theme.ts'
@@ -78,6 +79,12 @@ describe('settings tool permissions', () => {
       geometry.centerOffsets.every((offset) => Math.abs(offset) <= 1),
       `MCP header controls must be vertically centred on the switch track, offsets ${geometry.centerOffsets.join(', ')}`,
     )
+
+    // The origin chip is the same sentence-case, --radius badge as every
+    // other Settings chip — not a shouted-caps pill.
+    const origins = await readBadgeStyles('#settings-dialog .mcp-origin-chip')
+    assert.ok(origins.length > 0, 'an MCP origin chip rendered')
+    for (const origin of origins) assertBadgeRecipe(origin)
 
     // The state is carried by the inline status alone: the name stays in the
     // row's own text colour and only the badge takes the status hue.
