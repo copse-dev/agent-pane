@@ -81,6 +81,37 @@ describe('onboarding: nothing detected → providers fallback', () => {
       { timeout: 30_000, timeoutMsg: 'onboarding did not close after finish' },
     )
 
+    // Closed means gone, and on the onboarding rule's own terms: lift the
+    // forms.css `dialog:not([open]) { display: none !important }` backstop and
+    // the closed overlay must still not paint (its flex is scoped to [open];
+    // docs/ui-taste.md → "Native <dialog> and display").
+    const closedDisplay = await browser.execute(() => {
+      const dialog = document.querySelector<HTMLDialogElement>('#onboarding-dialog')
+      if (!dialog) return { found: false, backstop: false, display: '' }
+      const lifted: { sheet: CSSStyleSheet; index: number; text: string }[] = []
+      for (const sheet of document.styleSheets) {
+        let rules: CSSRuleList
+        try {
+          rules = sheet.cssRules
+        } catch {
+          continue
+        }
+        for (let index = rules.length - 1; index >= 0; index--) {
+          const rule = rules[index]
+          if (rule instanceof CSSStyleRule && rule.selectorText === 'dialog:not([open])') {
+            lifted.push({ sheet, index, text: rule.cssText })
+            sheet.deleteRule(index)
+          }
+        }
+      }
+      const display = getComputedStyle(dialog).display
+      for (const { sheet, index, text } of lifted.reverse()) sheet.insertRule(text, index)
+      return { found: true, backstop: lifted.length > 0, display }
+    })
+    expect(closedDisplay.found).toBe(true)
+    expect(closedDisplay.backstop).toBe(true)
+    expect(closedDisplay.display).toBe('none')
+
     const settings = readSeededSettings()
     expect(settings['onboardingCompleted']).toBe(true)
     expect(settings['model']).toBe('auto:balanced')
