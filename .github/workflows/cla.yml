@@ -13,8 +13,12 @@ name: CLA
 #   - their GitHub user id is in .github/cla-signatures.json on the default
 #     branch;
 #   - they have commented the signing sentence on this pull request.
-# Bots, and the AI co-author trailers our own agents add, are not authors for
-# this purpose. A human Co-authored-by trailer must resolve to a signature by
+# Bots, and the AI agents our contributors run, are not authors for this
+# purpose: a Co-authored-by trailer with an agent email is skipped, and a
+# commit whose author email is an agent's (even when GitHub links that email
+# to an account, as it does for `Claude <noreply@anthropic.com>`) is
+# attributed to the person who opened the pull request, who must then be
+# signed. A human Co-authored-by trailer must resolve to a signature by
 # email, or by the id in a GitHub noreply address.
 #
 # A commit author or co-author whose email is not linked to any GitHub account
@@ -52,7 +56,9 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      # createComment on a pull request needs pull_requests=write as well as
+      # issues=write; with read it fails "Resource not accessible by integration".
+      pull-requests: write
       issues: write
       statuses: write
     steps:
@@ -63,8 +69,8 @@ jobs:
             const PHRASE = 'I have read the Copse CLA Document and I hereby sign the CLA';
             const MARKER = '<!-- copse-cla-check -->';
             const SIGNATURES_PATH = '.github/cla-signatures.json';
-            // Trailers our agents and release tooling add. They are tools, not
-            // copyright holders.
+            // Agents and release tooling, as commit authors or co-author
+            // trailers. They are tools, not copyright holders.
             const NON_AUTHOR_EMAIL =
               /@anthropic\.com$|@cursor\.com$|^noreply@copse\.dev$|\[bot\]@users\.noreply\.github\.com$/i;
             const NOREPLY_ID = /^(\d+)\+([^@]+)@users\.noreply\.github\.com$/i;
@@ -132,11 +138,17 @@ jobs:
             });
             for (const c of commits) {
               const sha = c.sha.slice(0, 9);
-              if (c.author) {
+              const authorEmail = (c.commit.author?.email ?? '').toLowerCase();
+              if (NON_AUTHOR_EMAIL.test(authorEmail)) {
+                // An agent-authored commit. GitHub may link the agent's email to
+                // a user account (noreply@anthropic.com is @claude), so c.author
+                // is no guide. Anyone can write that email, so the commit is
+                // attributed to whoever opened the pull request, not skipped.
+                await checkUser(pr.user, sha);
+              } else if (c.author) {
                 await checkUser(c.author, sha);
               } else if (!openedByMaintainer) {
-                const email = (c.commit.author?.email ?? '').toLowerCase();
-                if (!signedEmails.has(email)) unresolved.push(`${email || 'no email'} (${sha})`);
+                if (!signedEmails.has(authorEmail)) unresolved.push(`${authorEmail || 'no email'} (${sha})`);
               }
               for (const m of c.commit.message.matchAll(/^Co-authored-by:.*<([^>]+)>\s*$/gim)) {
                 const email = m[1].toLowerCase();

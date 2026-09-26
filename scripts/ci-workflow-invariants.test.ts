@@ -553,6 +553,36 @@ describe('close-orphaned-screenshot-reviews.yml workflow invariants', () => {
   })
 })
 
+describe('cla.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/cla.yml'), 'utf8')
+
+  it('reads the API only, with just enough permission to set the status and comment', () => {
+    assert.match(workflow, /^ {2}pull_request_target:$/m)
+    assert.doesNotMatch(workflow, /uses: actions\/checkout/)
+    assert.match(workflow, /^permissions: \{\}$/m)
+    // createComment on a pull request is refused with pull-requests: read.
+    assert.match(
+      workflow,
+      /^ {4}permissions:\n {6}contents: read\n(?: {6}#.*\n)* {6}pull-requests: write\n {6}issues: write\n {6}statuses: write$/m,
+    )
+  })
+
+  it('attributes agent-authored commits to the pull request opener before trusting c.author', () => {
+    const exemption = workflow.indexOf('if (NON_AUTHOR_EMAIL.test(authorEmail)) {')
+    const linkedAuthor = workflow.indexOf('await checkUser(c.author, sha);')
+    assert.ok(exemption >= 0, 'expected the commit-author agent-email branch')
+    assert.ok(
+      exemption < linkedAuthor,
+      'GitHub links noreply@anthropic.com to @claude, so the email must be tested first',
+    )
+    assert.match(
+      workflow,
+      /if \(NON_AUTHOR_EMAIL\.test\(authorEmail\)\) \{\n(?: {16}\/\/.*\n)* {16}await checkUser\(pr\.user, sha\);\n {14}\} else if \(c\.author\) \{/,
+      'an agent email is forgeable, so its commit must still be answered for by a signed person',
+    )
+  })
+})
+
 describe('promote-develop.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
 
