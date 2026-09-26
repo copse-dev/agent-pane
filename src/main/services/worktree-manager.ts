@@ -24,7 +24,7 @@ import {
   worktreeManagerSandboxOverlay,
   worktreeReadOnlySandboxOverlay,
 } from '../project-sandbox/worktree-config.ts'
-import { isMandatoryWriteDenyMountPath } from '../project-sandbox/config.ts'
+import { isMandatoryWriteDenyMountPath } from '../project-sandbox/mandatory-write-deny.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
