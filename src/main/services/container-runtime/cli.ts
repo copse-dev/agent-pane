@@ -76,19 +76,24 @@ function required(value: string | undefined, what: string): string {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2))
-  await assertThreadContainerEngine()
+  // One engine for the whole invocation; COPSE_CONTAINER_ENGINE picks it.
+  const engine = await assertThreadContainerEngine()
   if (cli.has('list')) {
-    for (const runtime of await listManagedRuntimes()) {
+    for (const runtime of await listManagedRuntimes(engine)) {
       console.log(`${runtime.runtimeId}\t${runtime.status}`)
     }
     return
   }
   if (cli.has('forget-store')) {
+    if (engine === 'apple') {
+      console.log('pnpm store: none (runs under Apple container do not share one)')
+      return
+    }
     console.log(`pnpm store: ${await forgetPnpmStoreVolume()}`)
     return
   }
   if (cli.has('sweep')) {
-    const sweep = await sweepOrphanedRuntimes()
+    const sweep = await sweepOrphanedRuntimes([engine])
     console.log(
       `removed ${String(sweep.removed.length)}, skipped ${String(sweep.skipped.length)} running, failed ${String(sweep.failed.length)}`,
     )
@@ -97,7 +102,7 @@ async function main(): Promise<void> {
   }
   const teardown = cli.one('teardown')
   if (teardown !== undefined) {
-    console.log(`${teardown}: ${await teardownRuntime(teardown)}`)
+    console.log(`${teardown}: ${await teardownRuntime(teardown, engine)}`)
     return
   }
 
@@ -107,6 +112,7 @@ async function main(): Promise<void> {
     const buildNetwork = cli.one('build-network') ?? process.env['COPSE_WORKER_BUILD_NETWORK']
     const workerBundle = cli.one('worker-bundle')
     await buildWorkerImage({
+      engine,
       image,
       ...(baseImage ? { baseImage } : {}),
       ...(buildNetwork ? { buildNetwork } : {}),
@@ -130,6 +136,7 @@ async function main(): Promise<void> {
   const maxSteps = cli.one('max-steps')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
   const record = await runThreadInContainer({
+    engine,
     workspace: cli.one('workspace') ?? process.cwd(),
     prompt: required(cli.one('prompt'), '--prompt'),
     model,

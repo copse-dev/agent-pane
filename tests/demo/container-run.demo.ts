@@ -237,6 +237,54 @@ describe('unattended container run (browser-hosted)', () => {
     await saveElementScreenshot('#container-run-dialog', 'container-run-failed-result.png')
   })
 
+  it('says an Apple container run was isolated by a VM of its own, not seccomp', async () => {
+    await browser.url('/?scenario=container-run')
+    await $('.container-run-banner').waitForDisplayed()
+    await $('.container-run-details').click()
+    await $('.container-run-again').click()
+
+    // The record as the runner writes it under Apple container, injected at
+    // the demo API boundary like the failed run above.
+    await browser.execute(async () => {
+      const run = await window.api.container.getRun('demo-container-thread')
+      if (!run?.record) throw new Error('Expected the container demo record')
+      const apple = {
+        ...run,
+        record: {
+          ...run.record,
+          attestation: {
+            ...run.record.attestation,
+            engine: 'apple' as const,
+            isolation: 'vm' as const,
+            securityProfiles: 'none' as const,
+            processLimit: 'rlimit-nproc' as const,
+            perCommandNetwork: 'token-gated' as const,
+          },
+        },
+      }
+      window.api.container.runThread = () => Promise.resolve(apple)
+    })
+    await $('.container-run-start').click()
+    await $('.container-run-details').click()
+    const dialog = await $('#container-run-dialog')
+    await expect(dialog.$('.container-run-status')).toHaveAttribute('data-phase', 'finished')
+    const summary = await dialog.$('.container-run-summary').getText()
+    expect(summary).toMatch(
+      /Containment\s*read-only rootfs, no capabilities, its own VM \(Apple container\), brokered egress, shell commands off the network/,
+    )
+    // No seccomp or AppArmor claim for a guest that has neither.
+    expect(summary).not.toContain('seccomp')
+    // The dialog opens scrolled to the log; bring the row under review into the shot.
+    await browser.execute(() => {
+      const label = [...document.querySelectorAll('#container-run-dialog dt')].find(
+        (dt) => dt.textContent === 'Containment',
+      )
+      if (!label) throw new Error('no Containment row')
+      label.scrollIntoView({ block: 'center' })
+    })
+    await saveElementScreenshot('#container-run-dialog', 'container-run-result-apple.png')
+  })
+
   it('offers the container as the follow-up target and continues the run from the composer', async () => {
     await browser.url('/?scenario=container-run')
     await $('.container-run-banner').waitForDisplayed()

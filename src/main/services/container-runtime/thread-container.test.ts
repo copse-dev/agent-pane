@@ -7,7 +7,19 @@ import { join } from 'node:path'
 import { containerAcpAgentSpecs } from '@shared/container-acp-agents.ts'
 import { WORKER_DOCKERFILE, WORKER_ENTRYPOINT_SH } from './worker-image-files.ts'
 import {
+  appleConfigShortfall,
+  appleContainerStarted,
+  appleCreateArgs,
+  appleImageDigest,
+  appleImageLabel,
+  appleVolumePrepareArgs,
   buildAttestation,
+  containerCreateArgs,
+  FINGERPRINT_LABEL,
+  MANAGED_LABEL,
+  parseAppleManagedRuntimes,
+  parseAppleManagedVolumes,
+  RUNTIME_LABEL,
   waitForContainer,
   workerBuildFingerprint,
   containerName,
@@ -22,12 +34,13 @@ import {
   secretCanaryCheck,
   WORKER_UID,
   writeCarryInBundle,
-  type DockerRunInput,
+  type ContainerRunInput,
 } from './thread-container.ts'
 import { containerAttestationShortfall } from '../security/runtime-containment.ts'
 
-function input(overrides: Partial<DockerRunInput> = {}): DockerRunInput {
+function input(overrides: Partial<ContainerRunInput> = {}): ContainerRunInput {
   return {
+    engine: 'docker',
     runtimeId: 'run-test',
     image: 'copse-worker:test',
     runDir: '/tmp/copse-runs/run-test',
@@ -167,6 +180,383 @@ describe('dockerRunArgs', () => {
     assert.equal(attestation.network, 'brokered')
     assert.deepEqual(attestation.egressAllowlist, ['model.copse.internal:8080'])
     assert.equal(buildAttestation(input({ egress: [] }), undefined).network, 'none')
+    assert.equal(attestation.engine, 'docker')
+    assert.equal(attestation.isolation, 'shared-kernel')
+    assert.equal(attestation.securityProfiles, 'default')
+    assert.equal(attestation.processLimit, 'cgroup-pids')
+  })
+
+  it('is the create argv for a Docker run', () => {
+    assert.deepEqual(containerCreateArgs(input()), dockerRunArgs(input()))
+    assert.throws(() => dockerRunArgs(input({ engine: 'apple' })), /called for apple/)
+  })
+})
+
+function appleInput(overrides: Partial<ContainerRunInput> = {}): ContainerRunInput {
+  return input({ engine: 'apple', ...overrides })
+}
+
+/** The value after `flag` in an argv, for flags Apple container takes as two words. */
+function after(args: readonly string[], flag: string): string[] {
+  return args.flatMap((arg, index) => (arg === flag ? [args[index + 1] ?? ''] : []))
+}
+
+describe('appleCreateArgs', () => {
+  it('is the exact argv Apple container is asked for', () => {
+    const args = appleCreateArgs(appleInput())
+    const hardening = args.slice(0, args.indexOf('--volume'))
+    assert.deepEqual(hardening, [
+      'create',
+      '--interactive',
+      '--name',
+      containerName('run-test'),
+      '--label',
+      `${MANAGED_LABEL}=1`,
+      '--label',
+      `${RUNTIME_LABEL}=run-test`,
+      '--init',
+      '--read-only',
+      '--cap-drop',
+      'ALL',
+      '--ulimit',
+      'nproc=512:512',
+      '--memory',
+      '4g',
+      '--cpus',
+      '2',
+      '--user',
+      `${String(WORKER_UID)}:${String(WORKER_UID)}`,
+      '--tmpfs',
+      '/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777',
+      '--mount',
+      `type=volume,source=${workspaceVolumeName('run-test')},target=/workspace`,
+      '--network',
+      'none',
+    ])
+    assert.deepEqual(containerCreateArgs(appleInput()), args)
+  })
+
+  it('shares the mounts, environment and image with the Docker argv', () => {
+    const apple = appleCreateArgs(appleInput({ apiKeyEnv: 'COPSE_RUN_KEY' }))
+    const docker = dockerRunArgs(input({ apiKeyEnv: 'COPSE_RUN_KEY' }))
+    assert.deepEqual(
+      apple.slice(apple.indexOf('--volume')),
+      docker.slice(docker.indexOf('--volume')),
+    )
+    assert.deepEqual(after(apple, '--volume'), [
+      '/tmp/copse-runs/run-test:/run/copse:ro',
+      '/tmp/copse-runs/run-test/state:/run/copse/state:rw',
+      '/tmp/copse-runs/run-test/out:/run/copse/out:rw',
+    ])
+    assert.equal(apple.at(-1), 'copse-worker:test')
+  })
+
+  it('asks for nothing Apple container would take as a host channel or a false claim', () => {
+    const args = appleCreateArgs(appleInput())
+    for (const flag of [
+      '--ssh',
+      '--publish',
+      '--publish-socket',
+      '--virtualization',
+      '--rosetta',
+    ]) {
+      assert.ok(!args.includes(flag), flag)
+    }
+    // No Docker-only spellings that Apple container would reject or ignore.
+    assert.ok(
+      !args.some((arg) => arg.startsWith('--security-opt') || arg.startsWith('--pids-limit')),
+    )
+    assert.ok(!args.some((arg) => arg.includes('seccomp') || arg.includes('apparmor')))
+  })
+
+  it('refuses the shared pnpm store, which an Apple volume cannot be', () => {
+    assert.throws(
+      () => appleCreateArgs(appleInput({ sharedStore: true })),
+      /cannot share the pnpm store/,
+    )
+    assert.throws(() => appleCreateArgs(input()), /called for docker/)
+  })
+
+  it('hands the fresh volume to the worker uid with nothing but CAP_CHOWN', () => {
+    assert.deepEqual(appleVolumePrepareArgs(appleInput()), [
+      'run',
+      '--rm',
+      '--network',
+      'none',
+      '--read-only',
+      '--cap-drop',
+      'ALL',
+      '--cap-add',
+      'CAP_CHOWN',
+      '--user',
+      '0:0',
+      '--mount',
+      `type=volume,source=${workspaceVolumeName('run-test')},target=/workspace`,
+      '--entrypoint',
+      'chown',
+      'copse-worker:test',
+      `${String(WORKER_UID)}:${String(WORKER_UID)}`,
+      '/workspace',
+    ])
+  })
+
+  it('attests a VM with no seccomp claim, an rlimit process cap, and meets the bar', () => {
+    const attestation = buildAttestation(appleInput(), 'sha256:abc')
+    assert.equal(attestation.engine, 'apple')
+    assert.equal(attestation.isolation, 'vm')
+    assert.equal(attestation.securityProfiles, 'none')
+    assert.equal(attestation.processLimit, 'rlimit-nproc')
+    assert.equal(attestation.noNewPrivileges, true)
+    assert.equal(attestation.pidsLimit, 512)
+    assert.equal(containerAttestationShortfall(attestation), null)
+  })
+})
+
+/**
+ * `container inspect` for a container made from {@link appleCreateArgs}, in
+ * the shape Apple container 1.4.1 reported it (environment and paths trimmed).
+ */
+function appleInspect(
+  mutate: (config: Record<string, unknown>) => void = () => undefined,
+  status: Record<string, unknown> = { networks: [], state: 'stopped' },
+): string {
+  const configuration: Record<string, unknown> = {
+    id: containerName('run-test'),
+    capAdd: [],
+    capDrop: ['ALL'],
+    readOnly: true,
+    networks: [],
+    useInit: true,
+    ssh: false,
+    virtualization: false,
+    rosetta: false,
+    publishedPorts: [],
+    publishedSockets: [],
+    sysctls: {},
+    labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-test' },
+    resources: { cpuOverhead: 1, cpus: 2, memoryInBytes: 4294967296 },
+    initProcess: {
+      executable: '/app/entrypoint.sh',
+      arguments: [],
+      rlimits: [{ hard: 512, limit: 'RLIMIT_NPROC', soft: 512 }],
+      user: { raw: { userString: '1001:1001' } },
+      workingDirectory: '/workspace',
+    },
+    mounts: [
+      {
+        destination: '/tmp',
+        options: ['rw', 'exec', 'nosuid', 'nodev', 'size=1g', 'mode=1777'],
+        source: 'tmpfs',
+        type: { tmpfs: {} },
+      },
+      {
+        destination: '/run/copse',
+        options: ['ro'],
+        source: '/tmp/copse-runs/run-test',
+        type: { virtiofs: {} },
+      },
+      {
+        destination: '/run/copse/state',
+        options: ['rw'],
+        source: '/tmp/copse-runs/run-test/state',
+        type: { virtiofs: {} },
+      },
+      {
+        destination: '/run/copse/out',
+        options: ['rw'],
+        source: '/tmp/copse-runs/run-test/out',
+        type: { virtiofs: {} },
+      },
+      {
+        destination: '/workspace',
+        options: [],
+        source: '/volumes/copse-ws-run-test/volume.img',
+        type: { volume: { format: 'ext4', name: workspaceVolumeName('run-test') } },
+      },
+    ],
+  }
+  mutate(configuration)
+  return JSON.stringify([{ id: containerName('run-test'), configuration, status }])
+}
+
+function mounts(config: Record<string, unknown>): Array<Record<string, unknown>> {
+  const value = config['mounts']
+  assert.ok(Array.isArray(value))
+  return value.filter((mount): mount is Record<string, unknown> => typeof mount === 'object')
+}
+
+describe('appleConfigShortfall', () => {
+  it('accepts the container the run asked for', () => {
+    assert.equal(appleConfigShortfall(appleInput(), appleInspect()), null)
+  })
+
+  it('refuses a container missing any hardening the attestation will claim', () => {
+    const set =
+      (key: string, value: unknown) =>
+      (config: Record<string, unknown>): void => {
+        config[key] = value
+      }
+    const cases: Array<[string, (config: Record<string, unknown>) => void, RegExp]> = [
+      ['caps kept', set('capDrop', []), /capabilities were not dropped/],
+      ['caps added', set('capAdd', ['CAP_SYS_ADMIN']), /added: CAP_SYS_ADMIN/],
+      ['writable root', set('readOnly', false), /root filesystem is writable/],
+      ['a network', set('networks', [{ network: 'default' }]), /attached to a network/],
+      [
+        'another user',
+        set('initProcess', { rlimits: [], user: { raw: { userString: '0:0' } } }),
+        /runs as 0:0/,
+      ],
+      [
+        'no process limit',
+        set('initProcess', { rlimits: [], user: { raw: { userString: '1001:1001' } } }),
+        /process limit was not applied/,
+      ],
+      ['less memory', set('resources', { cpus: 2, memoryInBytes: 1073741824 }), /memory limit/],
+      ['more cpus', set('resources', { cpus: 4, memoryInBytes: 4294967296 }), /CPU limit/],
+      ['the ssh agent', set('ssh', true), /SSH agent is forwarded/],
+      ['virtualization', set('virtualization', true), /nested virtualization/],
+      [
+        'a published socket',
+        set('publishedSockets', [{ host: '/tmp/x.sock' }]),
+        /port or socket is published/,
+      ],
+      ['no init', set('useInit', false), /init process is missing/],
+      ['unlabelled', set('labels', {}), /not labelled as this run/],
+      [
+        'a writable run directory',
+        (c): void => {
+          const run = mounts(c).find((m) => m['destination'] === '/run/copse')
+          if (run) run['options'] = ['rw']
+        },
+        /mount at \/run\/copse is not the one asked for/,
+      ],
+      [
+        'a host path mounted',
+        (c): void => {
+          c['mounts'] = [
+            ...mounts(c),
+            { destination: '/host', options: [], source: '/Users/me', type: { virtiofs: {} } },
+          ]
+        },
+        /unexpected mount at \/host/,
+      ],
+      [
+        'the workspace missing',
+        (c): void => {
+          c['mounts'] = mounts(c).filter((m) => m['destination'] !== '/workspace')
+        },
+        /mount at \/workspace is missing/,
+      ],
+      [
+        "another run's volume",
+        (c): void => {
+          const ws = mounts(c).find((m) => m['destination'] === '/workspace')
+          if (ws) ws['type'] = { volume: { name: 'copse-ws-other' } }
+        },
+        /mount at \/workspace is not the one asked for/,
+      ],
+    ]
+    for (const [label, mutate, reason] of cases) {
+      assert.match(appleConfigShortfall(appleInput(), appleInspect(mutate)) ?? '', reason, label)
+    }
+  })
+
+  it('fails closed on output it cannot read', () => {
+    assert.match(appleConfigShortfall(appleInput(), 'not json') ?? '', /did not describe/)
+    assert.match(
+      appleConfigShortfall(
+        appleInput(),
+        appleInspect((c) => {
+          delete c['capDrop']
+        }),
+      ) ?? '',
+      /did not describe/,
+    )
+    assert.match(appleConfigShortfall(appleInput(), '[]') ?? '', /did not describe/)
+  })
+
+  it('tells a created container from a started one', () => {
+    assert.equal(appleContainerStarted(appleInspect()), false)
+    assert.equal(
+      appleContainerStarted(appleInspect(undefined, { networks: [], state: 'running' })),
+      true,
+    )
+    // Exited before the first poll: stopped again, but it has a start date.
+    assert.equal(
+      appleContainerStarted(
+        appleInspect(undefined, { state: 'stopped', startedDate: '2026-09-26T15:10:48Z' }),
+      ),
+      true,
+    )
+    assert.equal(appleContainerStarted('garbage'), false)
+  })
+})
+
+describe('Apple container listings', () => {
+  it('finds the managed runtimes and volumes, and whether each is running', () => {
+    const list = JSON.stringify([
+      {
+        configuration: {
+          id: 'buildkit',
+          labels: { 'com.apple.container.resource.role': 'builder' },
+        },
+        status: { state: 'running' },
+      },
+      {
+        configuration: {
+          id: 'copse-run-a',
+          labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-a' },
+        },
+        status: { state: 'running', startedDate: '2026-09-26T14:00:00Z' },
+      },
+      {
+        configuration: {
+          id: 'copse-run-b',
+          labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-b' },
+        },
+        status: { state: 'stopped' },
+      },
+    ])
+    assert.deepEqual(parseAppleManagedRuntimes(list), [
+      { runtimeId: 'run-a', status: 'running', running: true },
+      { runtimeId: 'run-b', status: 'stopped', running: false },
+    ])
+    const volumes = JSON.stringify([
+      {
+        id: 'copse-ws-run-b',
+        configuration: {
+          name: 'copse-ws-run-b',
+          labels: { [MANAGED_LABEL]: '1', [RUNTIME_LABEL]: 'run-b' },
+        },
+      },
+      { id: 'other', configuration: { name: 'other', labels: {} } },
+    ])
+    assert.deepEqual(parseAppleManagedVolumes(volumes), ['run-b'])
+    assert.throws(() => parseAppleManagedRuntimes('{}'), /something other than a list/)
+  })
+
+  it('reads the worker fingerprint and digest from an image inspect', () => {
+    const inspect = JSON.stringify([
+      {
+        id: '1a33',
+        configuration: {
+          name: 'copse-worker:local',
+          descriptor: {
+            digest: 'sha256:1a33',
+            mediaType: 'application/vnd.oci.image.index.v1+json',
+          },
+        },
+        variants: [
+          {
+            config: { architecture: 'arm64', config: { Labels: { [FINGERPRINT_LABEL]: 'fp-1' } } },
+          },
+        ],
+      },
+    ])
+    assert.equal(appleImageLabel(inspect, FINGERPRINT_LABEL), 'fp-1')
+    assert.equal(appleImageLabel(inspect, 'missing'), null)
+    assert.equal(appleImageDigest(inspect), 'sha256:1a33')
+    assert.equal(appleImageLabel('[]', FINGERPRINT_LABEL), null)
   })
 })
 
@@ -527,6 +917,22 @@ describe('WORKER_DOCKERFILE', () => {
     // says why they are absent.
     assert.ok(!/^\s+(?:bubblewrap|socat) \\$/m.test(WORKER_DOCKERFILE))
     assert.ok(!WORKER_ENTRYPOINT_SH.includes('socat'))
+  })
+
+  it('starts the worker under no-new-privileges and ships no setuid binary', () => {
+    // Apple container has no no-new-privileges flag; the entrypoint sets it
+    // for both engines, and the worker checks it before declaring containment.
+    assert.match(WORKER_ENTRYPOINT_SH, /^exec setpriv --no-new-privs -- node \/app\/worker\.cjs$/m)
+    const lines = WORKER_DOCKERFILE.split('\n')
+    const strip = lines.findIndex((line) => line.startsWith('RUN command -v setpriv'))
+    const lastCopy = lines.findLastIndex((line) => line.startsWith('COPY '))
+    const user = lines.findIndex((line) => line.startsWith('USER '))
+    assert.ok(strip > lastCopy && strip < user, 'after everything is in the image, before USER')
+    assert.match(WORKER_DOCKERFILE, /find \/ -xdev -type f -perm \/6000 -exec chmod ug-s/)
+    // A builder that silently drops the context's nested files fails the build.
+    assert.ok(
+      lines.includes('RUN test -f /app/node_modules/@anthropic-ai/sandbox-runtime/package.json'),
+    )
   })
 })
 

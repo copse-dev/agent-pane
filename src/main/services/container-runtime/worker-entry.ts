@@ -23,6 +23,7 @@ import {
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
   declareContainerRuntime,
+  observeGuestContainment,
   parseContainerRuntimeAttestation,
 } from '../security/runtime-containment.ts'
 import { armUnattendedRun, disarmUnattendedRun } from '../security/unattended-run.ts'
@@ -406,7 +407,9 @@ async function main(): Promise<void> {
 
   let declineReason: string | null = null
   try {
-    declareContainerRuntime(attestation)
+    // The host's record, checked against what this process can see of its
+    // own confinement: an engine that dropped a flag is caught here.
+    declareContainerRuntime(attestation, observeGuestContainment())
   } catch (error) {
     declineReason = error instanceof Error ? error.message : String(error)
     say(`[worker] container containment NOT declared: ${declineReason}\n`)

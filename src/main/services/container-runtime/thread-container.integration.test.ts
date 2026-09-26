@@ -5,12 +5,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  appleContainerAvailable,
   buildWorkerImage,
   dockerAvailable,
   listManagedRuntimes,
   runThreadInContainer,
   teardownRuntime,
 } from './thread-container.ts'
+import type { ThreadContainerEngine } from './container-engine.ts'
 import { startScriptedModelServer } from './scripted-model-server.ts'
 import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-container-worker-bundle.mts'
 
@@ -22,11 +24,15 @@ import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-cont
  * destructive command ran, the work came back as commits, the host's secret
  * never entered the guest, and the container is gone afterwards.
  *
- * Opt-in (`COPSE_THREAD_CONTAINER_E2E=1`): it builds an image and needs a
- * Docker daemon, which the ordinary unit gate must not depend on.
+ * Opt-in: it builds an image and needs an engine, which the ordinary unit
+ * gate must not depend on. `COPSE_THREAD_CONTAINER_E2E=1` runs it on Docker;
+ * `COPSE_THREAD_CONTAINER_E2E=apple` runs the same scenario on Apple
+ * container (Apple silicon, `container system start`), where it also proves
+ * the guest declared containment under the VM attestation — no-new-privileges
+ * from the entrypoint, the rlimit process cap, no interface but loopback.
  */
 
-const ENABLED = process.env['COPSE_THREAD_CONTAINER_E2E'] === '1'
+const E2E = process.env['COPSE_THREAD_CONTAINER_E2E']
 const IMAGE = 'copse-worker:e2e'
 const MODEL_HOST = 'model.copse.internal'
 /**
@@ -55,137 +61,156 @@ function seedRepo(): string {
   return dir
 }
 
-describe('thread in a container (end to end)', { skip: !ENABLED }, () => {
+describe('thread in a container (end to end)', { skip: E2E !== '1' }, () => {
   it('runs a thread with no prompts, defers the outward effect, and brings the work back', async () => {
     assert.equal(await dockerAvailable(), true, 'docker daemon required')
-    const baseImage = process.env['COPSE_WORKER_BASE_IMAGE']
-    const buildNetwork = process.env['COPSE_WORKER_BUILD_NETWORK']
-    const workerBundle = await bundleThreadContainerWorker(
-      join(tmpdir(), 'copse-thread-container-worker.e2e.cjs'),
-    )
-    await buildWorkerImage({
-      image: IMAGE,
-      workerBundle,
-      ...(baseImage ? { baseImage } : {}),
-      ...(buildNetwork ? { buildNetwork } : {}),
-    })
-
-    const model = await startScriptedModelServer([
-      // In-guest destruction: the harm gate would prompt; the container tier allows.
-      { kind: 'shell', command: 'rm -rf build && mkdir build && echo built > build/out.txt' },
-      // Outward effect: must be deferred to the review queue, never run.
-      { kind: 'shell', command: 'git push origin HEAD' },
-      // Host escape: must be refused outright.
-      { kind: 'shell', command: 'docker ps' },
-      // Ordinary work, committed with the product's own git tool (which runs
-      // outside the per-command sandbox, as the agent is told to prefer).
-      // Explicit paths: `git add -A` inside a bubblewrap-contained process trips
-      // over the sandbox's materialised deny mounts (linux-sandbox-rollout-followups.md §0).
-      {
-        kind: 'shell',
-        command:
-          "printf 'edited by the agent\n' >> README.md && git add README.md build/out.txt && git commit -q -m 'agent: edit readme'",
-      },
-      { kind: 'text', text: 'Finished the task; the push is waiting for your review.' },
-    ])
-    const repo = seedRepo()
-    const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
-    const canary = 'copse-canary-e2e-0123456789abcdef'
-    const logs: string[] = []
-    try {
-      const record = await runThreadInContainer(
-        {
-          workspace: repo,
-          prompt: 'Build the project, push it, and tidy the README.',
-          model: 'scripted',
-          provider: {
-            kind: 'openai-compatible',
-            model: 'scripted',
-            apiKeySlug: 'scripted',
-            url: `http://${GUEST_MODEL_ORIGIN}/v1`,
-            label: 'the scripted model',
-            local: true,
-            includeUsage: true,
-            apiStyle: null,
-            extraBody: null,
-            params: {},
-          },
-          budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
-          egressAllowlist: [EGRESS_WILDCARD],
-          egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
-          image: IMAGE,
-          runtimesDir,
-          maxSteps: 8,
-        },
-        { canary, onLog: (line) => logs.push(line) },
-      )
-      const result = record.result
-      assert.ok(result, `no result written; guest log:\n${logs.join('\n')}`)
-      assert.equal(result.stopReason, 'completed', result.error ?? '')
-
-      // 1. Nobody was asked anything, and the record says Copse ran the loop.
-      assert.equal(result.promptsAttempted, 0)
-      assert.equal(result.harness, 'copse')
-      // 2. The container declared its containment and the gate used it.
-      assert.equal(result.containment.declared, true, result.containment.declineReason ?? '')
-      // 3. The outward effect is in the review queue, and only that.
-      assert.equal(result.deferrals.length, 1)
-      assert.match(result.deferrals[0]?.title ?? '', /Outward effect/)
-      // The refused host escape is in the record too, not only in the log.
-      assert.equal(result.denials.length, 1)
-      assert.match(result.denials[0]?.reasons.join(' ') ?? '', /docker|host/)
-      // 4. The work came back as commits the host can review; HEAD never moved.
-      assert.ok(result.commits.some((line) => line.includes('agent: edit readme')))
-      const carriedOutRef = record.carryOut.ref
-      assert.ok(carriedOutRef, record.carryOut.error ?? 'no carry-out ref')
-      assert.equal(record.carryOut.expected, true)
-      assert.equal(record.carryOut.error, null)
-      assert.match(git(repo, ['show', `${carriedOutRef}:README.md`]), /edited by the agent/)
-      assert.match(git(repo, ['show', `${carriedOutRef}:build/out.txt`]), /built/)
-      assert.match(git(repo, ['show', `${carriedOutRef}:notes.txt`]), /uncommitted/)
-      assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main')
-      // 5. The model was reached only through the broker, on the port the guest
-      //    was told, admitted by the wildcard rule; nothing else was asked for.
-      const connects = record.egress.filter((e) => e.event === 'connect')
-      assert.ok(connects.length > 0)
-      assert.ok(record.egress.every((e) => e.origin === GUEST_MODEL_ORIGIN))
-      assert.ok(connects.every((e) => e.detail === `rule ${EGRESS_WILDCARD}`))
-      assert.equal(record.egress.filter((e) => e.event === 'refused').length, 0)
-      assert.deepEqual(record.attestation.egressAllowlist, [EGRESS_WILDCARD])
-      assert.ok(model.requests >= 5)
-      // 6. The host's secret never entered the guest.
-      assert.equal(record.secretCanary.present, false, record.secretCanary.detail)
-      const written = readFileSync(
-        join(runtimesDir, record.runtimeId, 'out', 'result.json'),
-        'utf8',
-      )
-      // The guest reports the *names* of its environment; the host's canary
-      // variable must not be among them, and its value must not appear anywhere.
-      assert.ok(!written.includes('COPSE_SECRET_CANARY'))
-      assert.ok(!written.includes(canary))
-      // 7. The decision log and queue live in the run's own state, not the host profile.
-      assert.ok(
-        readFileSync(
-          join(
-            runtimesDir,
-            record.runtimeId,
-            'state',
-            'workspace',
-            `${record.runtimeId}-project`,
-            'deferred-approvals.jsonl',
-          ),
-          'utf8',
-        ).includes('shell-outward-effect'),
-      )
-      // 8. Teardown is idempotent and leaves nothing behind.
-      assert.equal(record.teardown, 'removed')
-      assert.equal(record.cleanupError, null)
-      assert.equal(await teardownRuntime(record.runtimeId), 'already-gone')
-      assert.ok(!(await listManagedRuntimes()).some((r) => r.runtimeId === record.runtimeId))
-    } finally {
-      await model.stop()
-      rmSync(repo, { recursive: true, force: true })
-      rmSync(runtimesDir, { recursive: true, force: true })
-    }
+    await endToEnd('docker')
   })
 })
+
+describe('thread in an Apple container (end to end)', { skip: E2E !== 'apple' }, () => {
+  it('runs the same thread in a VM of its own, contained, and brings the work back', async () => {
+    assert.equal(await appleContainerAvailable(), true, 'Apple container services required')
+    await endToEnd('apple')
+  })
+})
+
+async function endToEnd(engine: ThreadContainerEngine): Promise<void> {
+  const baseImage = process.env['COPSE_WORKER_BASE_IMAGE']
+  const buildNetwork = process.env['COPSE_WORKER_BUILD_NETWORK']
+  const workerBundle = await bundleThreadContainerWorker(
+    join(tmpdir(), 'copse-thread-container-worker.e2e.cjs'),
+  )
+  await buildWorkerImage({
+    engine,
+    image: IMAGE,
+    workerBundle,
+    ...(baseImage ? { baseImage } : {}),
+    ...(buildNetwork ? { buildNetwork } : {}),
+  })
+
+  const model = await startScriptedModelServer([
+    // In-guest destruction: the harm gate would prompt; the container tier allows.
+    { kind: 'shell', command: 'rm -rf build && mkdir build && echo built > build/out.txt' },
+    // Outward effect: must be deferred to the review queue, never run.
+    { kind: 'shell', command: 'git push origin HEAD' },
+    // Host escape: must be refused outright.
+    { kind: 'shell', command: 'docker ps' },
+    // Ordinary work, committed with the product's own git tool (which runs
+    // outside the per-command sandbox, as the agent is told to prefer).
+    // Explicit paths: `git add -A` inside a bubblewrap-contained process trips
+    // over the sandbox's materialised deny mounts (linux-sandbox-rollout-followups.md §0).
+    {
+      kind: 'shell',
+      command:
+        "printf 'edited by the agent\n' >> README.md && git add README.md build/out.txt && git commit -q -m 'agent: edit readme'",
+    },
+    { kind: 'text', text: 'Finished the task; the push is waiting for your review.' },
+  ])
+  const repo = seedRepo()
+  const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-tc-runtimes-'))
+  const canary = 'copse-canary-e2e-0123456789abcdef'
+  const logs: string[] = []
+  try {
+    const record = await runThreadInContainer(
+      {
+        engine,
+        workspace: repo,
+        prompt: 'Build the project, push it, and tidy the README.',
+        model: 'scripted',
+        provider: {
+          kind: 'openai-compatible',
+          model: 'scripted',
+          apiKeySlug: 'scripted',
+          url: `http://${GUEST_MODEL_ORIGIN}/v1`,
+          label: 'the scripted model',
+          local: true,
+          includeUsage: true,
+          apiStyle: null,
+          extraBody: null,
+          params: {},
+        },
+        budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
+        egressAllowlist: [EGRESS_WILDCARD],
+        egressResolve: { [MODEL_HOST]: `127.0.0.1:${String(model.port)}` },
+        image: IMAGE,
+        runtimesDir,
+        maxSteps: 8,
+      },
+      { canary, onLog: (line) => logs.push(line) },
+    )
+    const result = record.result
+    assert.ok(result, `no result written; guest log:\n${logs.join('\n')}`)
+    assert.equal(
+      result.stopReason,
+      'completed',
+      `${result.error ?? ''}\nguest log:\n${logs.join('\n')}`,
+    )
+
+    // 1. Nobody was asked anything, and the record says Copse ran the loop.
+    assert.equal(result.promptsAttempted, 0)
+    assert.equal(result.harness, 'copse')
+    // 2. The container declared its containment and the gate used it: the
+    //    host's attestation for this engine met the bar, and the guest's
+    //    own view of itself agreed with it.
+    assert.equal(result.containment.declared, true, result.containment.declineReason ?? '')
+    assert.equal(record.attestation.engine, engine)
+    assert.equal(record.attestation.isolation, engine === 'apple' ? 'vm' : 'shared-kernel')
+    assert.equal(record.attestation.securityProfiles, engine === 'apple' ? 'none' : 'default')
+    // 3. The outward effect is in the review queue, and only that.
+    assert.equal(result.deferrals.length, 1)
+    assert.match(result.deferrals[0]?.title ?? '', /Outward effect/)
+    // The refused host escape is in the record too, not only in the log.
+    assert.equal(result.denials.length, 1)
+    assert.match(result.denials[0]?.reasons.join(' ') ?? '', /docker|host/)
+    // 4. The work came back as commits the host can review; HEAD never moved.
+    assert.ok(result.commits.some((line) => line.includes('agent: edit readme')))
+    const carriedOutRef = record.carryOut.ref
+    assert.ok(carriedOutRef, record.carryOut.error ?? 'no carry-out ref')
+    assert.equal(record.carryOut.expected, true)
+    assert.equal(record.carryOut.error, null)
+    assert.match(git(repo, ['show', `${carriedOutRef}:README.md`]), /edited by the agent/)
+    assert.match(git(repo, ['show', `${carriedOutRef}:build/out.txt`]), /built/)
+    assert.match(git(repo, ['show', `${carriedOutRef}:notes.txt`]), /uncommitted/)
+    assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main')
+    // 5. The model was reached only through the broker, on the port the guest
+    //    was told, admitted by the wildcard rule; nothing else was asked for.
+    const connects = record.egress.filter((e) => e.event === 'connect')
+    assert.ok(connects.length > 0)
+    assert.ok(record.egress.every((e) => e.origin === GUEST_MODEL_ORIGIN))
+    assert.ok(connects.every((e) => e.detail === `rule ${EGRESS_WILDCARD}`))
+    assert.equal(record.egress.filter((e) => e.event === 'refused').length, 0)
+    assert.deepEqual(record.attestation.egressAllowlist, [EGRESS_WILDCARD])
+    assert.ok(model.requests >= 5)
+    // 6. The host's secret never entered the guest.
+    assert.equal(record.secretCanary.present, false, record.secretCanary.detail)
+    const written = readFileSync(join(runtimesDir, record.runtimeId, 'out', 'result.json'), 'utf8')
+    // The guest reports the *names* of its environment; the host's canary
+    // variable must not be among them, and its value must not appear anywhere.
+    assert.ok(!written.includes('COPSE_SECRET_CANARY'))
+    assert.ok(!written.includes(canary))
+    // 7. The decision log and queue live in the run's own state, not the host profile.
+    assert.ok(
+      readFileSync(
+        join(
+          runtimesDir,
+          record.runtimeId,
+          'state',
+          'workspace',
+          `${record.runtimeId}-project`,
+          'deferred-approvals.jsonl',
+        ),
+        'utf8',
+      ).includes('shell-outward-effect'),
+    )
+    // 8. Teardown is idempotent and leaves nothing behind.
+    assert.equal(record.teardown, 'removed')
+    assert.equal(record.cleanupError, null)
+    assert.equal(await teardownRuntime(record.runtimeId, engine), 'already-gone')
+    assert.ok(!(await listManagedRuntimes(engine)).some((r) => r.runtimeId === record.runtimeId))
+  } finally {
+    await model.stop()
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(runtimesDir, { recursive: true, force: true })
+  }
+}
