@@ -392,7 +392,15 @@ cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills',
 
 // Verify both sides of the test bridge are removed, along with the scenario runner.
 if (isRelease) {
-  const markers = ['test:setMockScenario', 'test:releaseMockScenario', 'Mock scenario']
+  const markers = [
+    'test:setMockScenario',
+    'test:releaseMockScenario',
+    'Mock scenario',
+    'COPSE_COORDINATION_DEMO',
+    'No host-authorized coordination demo run',
+    'Run the scripted coordination demo as the license collector.',
+    'Scripted coordination demo — completed',
+  ]
   for (const file of ['dist/main/index.js', 'dist/preload/index.js']) {
     const bundle = readFileSync(file, 'utf8')
     const leaked = markers.filter((marker) => bundle.includes(marker))

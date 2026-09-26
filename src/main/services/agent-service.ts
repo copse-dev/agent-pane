@@ -230,6 +230,7 @@ import { parsePluginModelSelection } from '@shared/plugin-model.ts'
 import { getPluginToolRuntimeController } from './plugins/plugin-tool-controller.ts'
 import { buildPluginModelTurn } from './plugins/plugin-model-turn.ts'
 import { perfMark, perfSpan } from './diagnostics/perf-trace.ts'
+import { startCoordinationDemoRun, type CoordinationDemoRun } from './coordination-demo.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -1567,7 +1568,17 @@ export async function runAgent(
     remaining: () => budgetLedger.remaining(turnTreeId),
   }
 
+  let coordinationDemo: CoordinationDemoRun | undefined
   try {
+    if (typeof __COPSE_TEST_SCENARIOS__ !== 'undefined' && __COPSE_TEST_SCENARIOS__) {
+      coordinationDemo = startCoordinationDemoRun(
+        threadId,
+        userPrompt,
+        getAgentProjectRoot(),
+        getAgentExecutionRoot(),
+        controller.signal,
+      )
+    }
     const invokedSkills = options?.invokedSkills ?? []
     const resolvePluginSetting =
       options?.resolvePluginSetting ??
@@ -1581,7 +1592,10 @@ export async function runAgent(
     const providerOptions = {
       ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
     }
-    const provider = options?.provider ?? (await buildProvider(model, threadId, providerOptions))
+    const provider =
+      coordinationDemo?.provider ??
+      options?.provider ??
+      (await buildProvider(model, threadId, providerOptions))
     // Stamp what this turn actually sends, not what the settings hold: the two
     // diverge once a value is sanitized away, a dial overrides it, or a role
     // caps it, and the settings can change afterwards. Silent for the common
@@ -2104,7 +2118,9 @@ export async function runAgent(
         ): Promise<ToolExecuteResult> => {
           const startedAt = Date.now()
           try {
-            const raw = await runParentTool(name, args, signal, toolCallId)
+            const raw = await (coordinationDemo
+              ? coordinationDemo.execute(() => runParentTool(name, args, signal, toolCallId))
+              : runParentTool(name, args, signal, toolCallId))
             // The agent just wrote, moved, or removed an AGENTS.md: the turn's
             // discovery memo no longer describes the tree, so the next file tool
             // call re-walks. `run_shell` writes are not seen here (documented).
@@ -2438,6 +2454,7 @@ export async function runAgent(
     })
     sendChunk(withHookHaltStopReason({ type: 'done' }, hookHaltStopReason))
   } finally {
+    coordinationDemo?.stop()
     // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
     // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
     // begins while this run's recording session is still open; being detached it

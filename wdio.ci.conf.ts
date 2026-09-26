@@ -64,8 +64,8 @@ export const config: Options.Testrunner = {
     ...baseConfig.mochaOpts,
     timeout: 90_000,
   },
-  beforeSession(config, capabilities) {
+  async beforeSession(config, capabilities, specs, cid) {
     process.env.COPSE_E2E_CI = '1'
-    baseConfig.beforeSession?.(config, capabilities)
+    await baseConfig.beforeSession?.(config, capabilities, specs, cid)
   },
 }

@@ -1,0 +1,12 @@
+{
+  "id": "agent-coordination",
+  "prompts": [
+    "Run the scripted coordination demo as the license collector.",
+    "Run the scripted coordination demo as the notices lint task."
+  ],
+  "expect": {
+    "requireTools": ["coordination_check", "coordination_note", "coordination_read"],
+    "forbidTools": ["run_shell", "write_file", "str_replace", "delegate_step"],
+    "maxExplore": 0
+  }
+}

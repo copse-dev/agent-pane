@@ -196,7 +196,7 @@ export const config: Options.Testrunner = {
       if (result?.passed) throw error
     }
   },
-  beforeSession(_config, capabilities) {
+  async beforeSession(_config, capabilities, specs) {
     delete process.env.ELECTRON_RUN_AS_NODE
     cleanupE2eUserDataDir?.()
     e2eUserDataDir = makeE2eScratchDir('.wdio-profile-')
@@ -276,6 +276,10 @@ export const config: Options.Testrunner = {
       args: [...new Set([...(chromeOptions.args ?? []), `--user-data-dir=${e2eUserDataDir}`])],
     }
     assignDebugPort(cap)
+    if (specs.some((spec) => spec.endsWith('agent-coordination.e2e.ts'))) {
+      const { seedCoordinationDemo } = await import('./tests/e2e/helpers/coordination-fixture.ts')
+      await seedCoordinationDemo()
+    }
   },
   async beforeCommand(commandName) {
     // beforeSession runs once per worker, but every spec calls
