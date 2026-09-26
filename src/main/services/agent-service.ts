@@ -35,6 +35,7 @@ import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import {
+  acpTurnInterruptionFor,
   acpTurnInterruptionMarker,
   classifyAcpAuthFailure,
   classifyAgentError,
@@ -1269,6 +1270,15 @@ export async function runAgent(
       const authFailure = aborted
         ? null
         : classifyAcpAuthFailure(err, { acpAgentId: acpRunAgentId })
+      // A helper that cannot nest a second seatbelt inside the agent's own dies
+      // the same way on every retry, so the marker must say that instead of the
+      // generic provider-error note (2026-09-23: Codex CUA node_repl under the
+      // codex-acp seatbelt). Chosen in the same order as `classifyAgentError`.
+      const interruption = acpTurnInterruptionFor(err, {
+        aborted,
+        authFailure,
+        acpAgentId: acpRunAgentId,
+      })
       const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       // A credentials failure is the one ACP error the user can't act on from
@@ -1309,11 +1319,7 @@ export async function runAgent(
       const cleanedPartial = partial?.assistantText
         ? stripInlineVisualizationReferences(stripCursorAcpTransportNoise(partial.assistantText))
         : undefined
-      const content = [
-        cleanedPartial,
-        msg,
-        acpTurnInterruptionMarker(aborted ? 'aborted' : (authFailure ?? 'error'), acpRunAgentId),
-      ]
+      const content = [cleanedPartial, msg, acpTurnInterruptionMarker(interruption, acpRunAgentId)]
         .filter(isNonEmptyString)
         .join('\n\n')
       return resultWithOutcome({
