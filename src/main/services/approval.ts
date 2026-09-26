@@ -238,6 +238,7 @@ export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T
 interface InflightApproval {
   /** Aborts the underlying handler prompt once every waiter has left. */
   controller: AbortController
+  request: ApprovalRequest
   waiters: Set<InflightWaiter>
 }
 
@@ -463,6 +464,24 @@ export function pendingApprovalCountForThread(threadId: string): number {
   return count
 }
 
+/** Read-only details of decisions currently waiting for a thread. */
+export function pendingApprovalRequestsForThread(
+  threadId: string,
+): Array<Pick<ApprovalRequest, 'title' | 'body' | 'bodyAdvice' | 'bodyFooter'>> {
+  const requests: Array<Pick<ApprovalRequest, 'title' | 'body' | 'bodyAdvice' | 'bodyFooter'>> = []
+  for (const entry of inflight.values()) {
+    if ([...entry.waiters].some((waiter) => waiter.threadId === threadId)) {
+      requests.push({
+        title: entry.request.title,
+        body: entry.request.body,
+        ...(entry.request.bodyAdvice === undefined ? {} : { bodyAdvice: entry.request.bodyAdvice }),
+        ...(entry.request.bodyFooter === undefined ? {} : { bodyFooter: entry.request.bodyFooter }),
+      })
+    }
+  }
+  return requests
+}
+
 /**
  * Ask the user (or registered handler) for approval. Identical in-flight requests
  * share one underlying prompt — the first call opens it; later duplicates wait on
@@ -622,7 +641,7 @@ function requestApprovalUnpaused(
     let entry = inflight.get(key)
     const isLeader = !entry
     if (!entry) {
-      entry = { controller: new AbortController(), waiters: new Set() }
+      entry = { controller: new AbortController(), request: req, waiters: new Set() }
       inflight.set(key, entry)
     }
     const active = entry

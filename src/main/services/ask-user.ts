@@ -42,6 +42,20 @@ export type AskUserHandler = (req: AskUserRequest, signal?: AbortSignal) => Prom
 
 let handler: AskUserHandler | null = null
 const scopedHandler = new AsyncLocalStorage<AskUserHandler>()
+const pendingQuestionThreads = new Map<string, { threadId: string; questions: AskUserQuestion[] }>()
+
+/** Read-only attention projection for the mobile session view. */
+export function pendingAskUserCountForThread(threadId: string): number {
+  let count = 0
+  for (const pending of pendingQuestionThreads.values()) if (pending.threadId === threadId) count++
+  return count
+}
+
+export function pendingAskUserQuestionsForThread(threadId: string): AskUserQuestion[] {
+  return [...pendingQuestionThreads.values()]
+    .filter((pending) => pending.threadId === threadId)
+    .flatMap((pending) => pending.questions)
+}
 
 export function runWithAskUserHandler<T>(next: AskUserHandler, fn: () => T): T {
   return scopedHandler.run(next, fn)
@@ -121,6 +135,7 @@ export function initAskUser(
     const resolve = pending.get(id)
     if (!resolve) return
     pending.delete(id)
+    pendingQuestionThreads.delete(id)
     resolve(result)
   }
 
@@ -142,6 +157,7 @@ export function initAskUser(
   win.on('closed', () => {
     for (const [id, resolve] of pending) {
       pending.delete(id)
+      pendingQuestionThreads.delete(id)
       resolve({ answers: [] })
     }
   })
@@ -151,8 +167,13 @@ export function initAskUser(
       send: (channel, payload) => {
         win.webContents.send(channel, payload)
       },
-      register: (id, resolve) => {
+      register: (id, resolve, context) => {
         pending.set(id, resolve)
+        if (context.threadId)
+          pendingQuestionThreads.set(id, {
+            threadId: context.threadId,
+            questions: context.questions,
+          })
       },
       settle,
       alertUser,
@@ -163,7 +184,11 @@ export function initAskUser(
 /** What the window-backed handler needs from `initAskUser`'s window and pending map. */
 export interface WindowAskUserDeps {
   send: (channel: 'agent:ask-user-request' | 'agent:ask-user-cancelled', payload: object) => void
-  register: (id: string, resolve: (result: AskUserResult) => void) => void
+  register: (
+    id: string,
+    resolve: (result: AskUserResult) => void,
+    context: { threadId: string | undefined; questions: AskUserQuestion[] },
+  ) => void
   settle: (id: string, result: AskUserResult) => void
   alertUser: UserAlertSender
 }
@@ -200,12 +225,16 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
         withdraw(blankAnswers(req))
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
-      deps.register(id, (result) => {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        stopAlert()
-        resolve(result)
-      })
+      deps.register(
+        id,
+        (result) => {
+          clearTimeout(timer)
+          signal?.removeEventListener('abort', onAbort)
+          stopAlert()
+          resolve(result)
+        },
+        { threadId, questions: req.questions },
+      )
       signal?.addEventListener('abort', onAbort, { once: true })
       deps.send('agent:ask-user-request', { id, threadId, questions: req.questions })
     })

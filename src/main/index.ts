@@ -47,6 +47,7 @@ import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { createKeyringCipher, createMigratingCipher } from './services/storage/keyring-cipher.ts'
 import { createOsKeyringStore } from './services/storage/os-keyring.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
+import { resumeMobileCompanion, stopMobileCompanion } from './windows/mobile-desktop.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import {
@@ -510,6 +511,7 @@ app
       },
       developerMode,
     )
+    void resumeMobileCompanion()
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win)
@@ -1125,6 +1127,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   perfDumpCounters('quit')
   flushPerfTrace()
   getAutomationService().stop()
+  await stopMobileCompanion()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined
   disposeTaskSupervisorEvents?.()

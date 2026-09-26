@@ -199,6 +199,7 @@ const nodeOpts = {
 }
 
 if (!isDemo) {
+  cpSync('src/mobile', 'dist/mobile', { recursive: true })
   const bundledCursorSkills = await assertBundledCursorSkillsSnapshot()
   console.log(
     `[build] bundled Cursor skills verified @ ${bundledCursorSkills.commit.slice(0, 12)} ` +

@@ -2,7 +2,11 @@
 
 Tracking: [#659](https://github.com/copse-dev/agent-pane/issues/659)
 
-**Status: Proposed.** Nothing here is implemented. The first slice serves a small,
+**Status: First read-only slice in progress.** Activity and saved transcript reads,
+desktop-approved pairing, an opt-in persistent HTTPS listener, per-device revocation,
+and a purpose-built phone page are implemented. Diff reading, full pending
+decision subjects, certificate installation UX, and physical-device validation
+remain before the L0 exit gate is met. The first slice serves a small,
 purpose-built web page from the running desktop app to one paired phone on the same
 network, showing which threads need you and what they did. It is a **second view of a
 running desktop session** — the laptop must be awake and Copse must be open — so it is
@@ -145,13 +149,17 @@ expensive is an axis this version simply does not have.
    run from a phone is trigger ingress, which [`background-supervisor.md`](background-supervisor.md)
    decision 10 already legislates for and gates behind authenticated trigger envelopes —
    out of scope here by ownership, not by timidity.
-6. **The listener is session-scoped and off by default, in the shape of
-   `guarded-yolo.ts`, not a settings boolean.** "Nothing is read from or written to
-   settings, so migrations, fallbacks, and app restarts can never enable the mode
-   accidentally" (`src/main/services/security/guarded-yolo.ts:8-11`). A settings key
-   survives restarts, rides along in a config backup, and can be flipped by `settings:set`.
-   Explicit user action to start, a visible indicator while live, idle + absolute expiry,
-   one-click stop, automatic stop on network change.
+6. **The listener is off by default and stays enabled until explicitly turned off.**
+   The user chose persistent availability on 26 September 2026: once enabled, Copse
+   starts the LAN server on every launch and does not disconnect it for inactivity,
+   an absolute session age, or failed authentication attempts. An explicit Turn off
+   action revokes the enabled state. The choice lives in `~/.copse/lan/service.json`,
+   outside `config.json` and `settings.json`, so renderer settings writes cannot flip it.
+   The menu shows whether the listener is live or waiting for a private LAN address.
+   If that address is absent at launch, Copse chooses another active private IPv4 address
+   or retries until one is available. The listener closes with the app process; its
+   enabled choice and paired devices survive that close. This supersedes the original
+   session-scoped and automatic-stop decision in this paragraph.
 7. **Bind one explicitly chosen private IPv4 address. Never `0.0.0.0`, never `::`.**
    "LAN-only" and `0.0.0.0` are not the same claim: the latter also binds `utun*` (a
    corporate VPN), `docker0` (a container the agent itself just started), and any hotspot
@@ -213,7 +221,7 @@ expensive is an axis this version simply does not have.
     session is authenticated. Store only `sha256(token)`, in `~/.copse/lan/devices.json`
     at 0600, never in `config.json` (which rides along in backups and is reachable via
     `storage:set` — decision 6's own argument). Per-device is not a later refinement: it is
-    what makes revocation, expiry, and "which device answered" possible at all, and
+    what makes revocation and "which device answered" possible at all, and
     retrofitting it after users have paired is a migration nobody will do.
 
 11. **Authority is gated on trust tier.** Reading (L0/L1) works in either tier. **Answering
@@ -358,6 +366,8 @@ address, serving the four screens' static bundle plus a handful of JSON read end
 that call the thread store's own read functions: project list and thread catalog, one
 thread's messages, `listRunningThreadIds()`, and `git.changeStats`. The client polls
 every 2–3s. No SSE, no fan-out registry, no `AgentHost` change, no IPC dispatch.
+It uses a stable port so a phone retains the same origin and paired token when Copse
+restarts on the same LAN address. Pairing remains valid until that device is revoked.
 
 The whole trust story lands **here**, not later, because it is what makes the phase
 shippable rather than polish on top of it: certificate generation and storage, the root
@@ -423,7 +433,7 @@ turn, with no second submission path.
 | Area                     | Tier                  | What it must prove                                                                               |
 | ------------------------ | --------------------- | ------------------------------------------------------------------------------------------------ |
 | Request filter           | unit                  | Peer address, `Host`, `Origin`, bearer, and header emission each fail closed, independently      |
-| Token lifecycle          | unit                  | Per-device issue, expiry, revoke; only `sha256(token)` persisted, never in `config.json`         |
+| Token lifecycle          | unit                  | Per-device issue, persistence, revoke; only `sha256(token)` persisted, never in `config.json`    |
 | Cert profile conformance | unit                  | iPAddress SAN present, DNS SAN absent, `serverAuth` EKU, validity ≤825 days, ECDSA P-256         |
 | Name constraints         | unit (negative)       | A leaf for `accounts.google.com` under this root is **rejected** by the platform verifier        |
 | Cert rotation            | unit                  | `setSecureContext()` on a DHCP move: same listener, same port, existing connections unaffected   |
@@ -523,8 +533,8 @@ Non-negotiable controls, all fail-closed, on every request and every SSE connect
 no-store`. Without these, an attacker page frames the decision screen and overlays a
   transparent button on Approve — one tap approves a shell command.
 - **401 before reading any body** (the one thing the ACP bridge gets exactly right), a
-  hard body-size cap, `server.maxConnections`, header and idle timeouts, and abandonment
-  of the listener after N failed auth attempts.
+  hard body-size cap, `server.maxConnections`, header and idle timeouts, and a temporary
+  per-peer cooldown after repeated failed auth attempts. The listener stays enabled.
 
 Never exposed over this transport, in v1 or without a redesign: `settings:set`,
 `storage:set`, `acp:probe-agent`, `acp:auto-setup`, `security:enable-guarded-yolo`,
@@ -604,8 +614,10 @@ by hand, on a device the app cannot reach.
   (`excluded;DNS:.` is a silent no-op), so this must be asserted by negative test per
   platform, not by review.
 - **The listener outliving its network.** A laptop that pairs at home and joins hotel wifi
-  is advertising a control plane to strangers. Stop on interface change; never silently
-  rebind.
+  still has Mobile Companion enabled. The listener stays bound to its selected private
+  IPv4 address while Copse runs, so it does not silently widen to another interface.
+  On the next launch, an unavailable preferred address may be replaced by another
+  private IPv4 address. The user can turn the service off from the menu and revoke phones.
 - **Chrome's Local Network Access is a live external dependency.** The design currently sits
   on two exemptions — "local → local is not a local network request", and top-level
   navigations are not gated. The explainer lists gating top-level navigation to local

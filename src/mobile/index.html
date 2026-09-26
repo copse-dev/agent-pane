@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101a17" />
+    <title>Copse · Activity</title>
+    <link rel="stylesheet" href="app.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">✳</span> Copse</div>
+        <span class="session-label">DESKTOP SESSION</span>
+      </header>
+      <section id="pair" class="pair" hidden>
+        <span class="eyebrow">MOBILE COMPANION</span>
+        <h1>See what needs you.</h1>
+        <p>
+          Your Mac must be awake with Copse open. Pair this phone from the desktop to read your
+          thread activity.
+        </p>
+        <label for="device-name">This phone’s name</label>
+        <input id="device-name" maxlength="64" autocomplete="off" value="My phone" />
+        <button id="pair-button" class="primary">Request pairing</button>
+        <div id="pair-code" class="pair-code" hidden></div>
+        <p id="pair-status" class="status" role="status"></p>
+      </section>
+      <section id="activity" hidden>
+        <div class="page-heading">
+          <span class="eyebrow">YOUR THREADS</span>
+          <h1>Activity</h1>
+          <p id="freshness">Checking desktop…</p>
+        </div>
+        <div id="groups"></div>
+      </section>
+      <section id="thread" hidden>
+        <button id="back" class="back">← Activity</button>
+        <span id="thread-project" class="eyebrow"></span>
+        <h1 id="thread-title"></h1>
+        <p class="read-only">Read only · Decisions still need the desktop</p>
+        <div id="attention"></div>
+        <div id="messages"></div>
+      </section>
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+  </body>
+</html>

@@ -26,6 +26,7 @@ cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/mate
 copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
 copyFileSync('src/renderer/theme-boot.js', 'dist/renderer/theme-boot.js')
 cpSync('assets', 'dist/assets', { recursive: true })
+cpSync('src/mobile', 'dist/mobile', { recursive: true })
 cpSync('src/main/services/simulator-desktop/native', 'dist/resources/apple-simulator', {
   recursive: true,
 })
