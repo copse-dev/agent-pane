@@ -23,7 +23,7 @@ import { describeToolArgError } from './tool-arg-error.ts'
 import { clampNumericRangeArgs, describeClampRepair } from './tool-arg-repair.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
-import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
+import { isExecutionRootWatched, watchExecutionRootSoon } from './search/execution-root-watcher.ts'
 import {
   CACHEABLE_TOOLS,
   getCachedToolResult,
@@ -237,15 +237,17 @@ export class ToolRegistry {
         // A tool that can mutate the workspace ran — this thread's cached
         // results may now be stale.
         invalidateThreadToolCache(identity.threadId)
-      } else if (
+      } else if (cacheable && !isActiveSshWorkspace()) {
         // Only cache what we can invalidate. SSH workspaces have no local
         // fs.watch, and a root we failed to watch would be stuck serving stale
-        // results for the rest of the thread.
-        cacheable &&
-        !isActiveSshWorkspace() &&
-        ensureExecutionRootWatched(identity.root)
-      ) {
-        setCachedToolResult(identity, name, parsed, result)
+        // results for the rest of the thread. Arming the watcher walks the whole
+        // checkout synchronously, so it happens after this call returns rather
+        // than inside it; this result goes uncached until then.
+        if (isExecutionRootWatched(identity.root)) {
+          setCachedToolResult(identity, name, parsed, result)
+        } else {
+          watchExecutionRootSoon(identity.root)
+        }
       }
     }
     // Provenance envelope (docs/plans/context-provenance.md): results whose
