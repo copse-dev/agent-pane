@@ -16,6 +16,11 @@ released — rather than copying every published entry.
   link opens the full history. Stable installations list stable releases only.
   If the release notes cannot be fetched, the prompt still offers the update.
 
+- A skipped post-turn review no longer renders a card in the transcript. Skips
+  carry no verdict — they only record that no review ran (an empty or
+  below-threshold diff, a declined spend prompt, a Stop press) — so the
+  transcript stays quiet; completed and failed reviews are unchanged.
+
 - Tool calls that miss a numeric bound no longer fail. A model that asks
   `find_files` for `max_results: 2000` against a schema capped at 200 — a
   repeated GPT-family failure — gets the call executed at the cap and a

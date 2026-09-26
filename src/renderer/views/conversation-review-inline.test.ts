@@ -69,6 +69,33 @@ describe('post-turn review renders inline in the transcript (component)', () => 
     )
   })
 
+  it('renders no card for a skipped review (status transition in or out)', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Edited one file.')
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    // A skip never gains a card: nothing ran, and the transcript already tells
+    // the user why (empty diff, declined spend, Stop).
+    setMessageReview(store, threadId, messageId, {
+      status: 'skipped',
+      summary: 'Nothing to review in the working diff.',
+    })
+    assert.equal(
+      document.querySelector('[data-review-card]'),
+      null,
+      'a skipped review must not render a card',
+    )
+
+    // A later real review on the same message replaces the skip cleanly.
+    setMessageReview(store, threadId, messageId, { status: 'done', summary: 'Looks correct.' })
+    const card = document.querySelector('[data-review-card]')
+    assert.ok(card, 'a done review following a skip renders normally')
+  })
+
   it('keeps a single card per message across status transitions', () => {
     const store = createStore()
     const threadId = createThread(store)

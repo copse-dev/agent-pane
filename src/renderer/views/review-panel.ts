@@ -12,6 +12,10 @@ function statusLabel(status: ThreadReview['status']): string {
       return 'Reviewing…'
     case 'error':
       return 'Review failed'
+    // Not reached from the transcript today: mountConversation renders no card
+    // for a skipped review. Kept so this label stays total over every status a
+    // ThreadReview can carry, rather than a skipped card silently reading as a
+    // finished "Review" if a caller ever renders one.
     case 'skipped':
       return 'Review skipped'
     default:
