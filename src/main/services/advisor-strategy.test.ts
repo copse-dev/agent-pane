@@ -7,7 +7,9 @@ import {
   advisorAddsLift,
   assessCloudAdvisorPair,
   attributeAdvice,
+  MAX_ADVISOR_TRANSCRIPT_CHARS,
   buildAdvisorTranscript,
+  capAdvisorTranscript,
   cloudAdvisorAddsLift,
   formatAdvisorModelLabel,
   isNativeAdvisorPair,
@@ -306,5 +308,77 @@ describe('buildAdvisorTranscript', () => {
   it('skips empty turns', () => {
     const messages: LLMMessage[] = [{ role: 'assistant', content: '   ' }]
     assert.equal(buildAdvisorTranscript(messages), '')
+  })
+})
+
+describe('advisor transcript cap', () => {
+  /** A long run: a big system prompt, the task, then many tool round-trips. */
+  function longRun(steps: number): LLMMessage[] {
+    const messages: LLMMessage[] = [
+      { role: 'system', content: 'S'.repeat(5_000) },
+      { role: 'user', content: 'Add graceful shutdown to the server.' },
+    ]
+    for (let i = 0; i < steps; i++) {
+      messages.push({
+        role: 'assistant',
+        content: [{ id: `t${String(i)}`, name: 'read_file', args: { path: `f${String(i)}.go` } }],
+      })
+      messages.push({
+        role: 'tool',
+        toolResults: [
+          { toolCallId: `t${String(i)}`, result: `result-${String(i)} ${'x'.repeat(900)}` },
+        ],
+      })
+    }
+    messages.push({ role: 'assistant', content: 'Latest plan: wire SIGTERM.' })
+    return messages
+  }
+
+  it('bounds the default transcript', () => {
+    const transcript = buildAdvisorTranscript(longRun(400))
+    assert.ok(transcript.length <= MAX_ADVISOR_TRANSCRIPT_CHARS)
+  })
+
+  it('leaves a transcript under budget untouched', () => {
+    const messages = longRun(2)
+    assert.equal(
+      buildAdvisorTranscript(messages, 1_000_000),
+      buildAdvisorTranscript(messages, Number.POSITIVE_INFINITY),
+    )
+    assert.ok(!buildAdvisorTranscript(messages, 1_000_000).includes('[Transcript truncated'))
+  })
+
+  it('keeps the most recent context, drops the oldest, and says so', () => {
+    const transcript = buildAdvisorTranscript(longRun(50), 12_000)
+    assert.ok(transcript.length <= 12_000)
+    assert.ok(transcript.startsWith('[Transcript truncated'))
+    assert.match(transcript, /earlier sections omitted/)
+    // Newest context survives; the oldest tool results and the system prompt do not.
+    assert.ok(transcript.includes('Latest plan: wire SIGTERM.'))
+    assert.ok(transcript.includes('result-49 '))
+    assert.ok(!transcript.includes('result-0 '))
+    assert.ok(!transcript.includes('SSSS'))
+  })
+
+  it('pins the original task above the recent tail', () => {
+    const transcript = buildAdvisorTranscript(longRun(50), 12_000)
+    const task = transcript.indexOf('## User\nAdd graceful shutdown to the server.')
+    assert.ok(task > 0)
+    assert.ok(task < transcript.indexOf('result-49 '))
+  })
+
+  it('keeps the tail of a single section that alone exceeds the budget', () => {
+    const transcript = capAdvisorTranscript([`## Tool results\n${'a'.repeat(5_000)}END`], 2_000)
+    assert.ok(transcript.length <= 2_000)
+    assert.ok(transcript.startsWith('[Transcript truncated'))
+    assert.ok(transcript.endsWith('END'))
+    assert.match(transcript, /the start of the most recent section omitted/)
+  })
+
+  it('does not repeat a pinned task that is also the newest section', () => {
+    const sections = [`## System\n${'S'.repeat(5_000)}`, '## User\nDo the thing.']
+    const transcript = capAdvisorTranscript(sections, 1_000, 1)
+    assert.equal(transcript.split('Do the thing.').length - 1, 1)
+    assert.ok(transcript.length <= 1_000)
   })
 })

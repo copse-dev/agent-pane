@@ -190,6 +190,15 @@ export interface BuildProviderOptions {
    * would arrive with nothing on screen to explain it.
    */
   maxReasoning?: ReasoningLevel
+  /**
+   * Ceiling on output tokens for this call only, for callers with a fixed output
+   * budget — the advisor consult is capped at `DEFAULT_ADVISOR_MAX_TOKENS`. Lowers
+   * the user's saved cap, never raises it. With no saved cap it stands in for the
+   * model card's recommended ceiling (`resolvedOutputCeiling` prefers an explicit
+   * cap), so it only lowers that ceiling while the card's is larger. Sent by the transports that carry an output cap (Anthropic, Chat
+   * Completions, OpenRouter, LM Studio); the Responses transports send none.
+   */
+  maxOutputTokens?: number
 }
 
 /**
@@ -210,7 +219,15 @@ export function resolveTurnParameters(
   const requested = opts.reasoning ?? saved.reasoning
   const reasoning =
     opts.maxReasoning === undefined ? requested : clampReasoning(requested, opts.maxReasoning)
-  return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
+  const maxOutputTokens =
+    opts.maxOutputTokens === undefined
+      ? saved.maxOutputTokens
+      : Math.min(opts.maxOutputTokens, saved.maxOutputTokens ?? opts.maxOutputTokens)
+  return {
+    ...saved,
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  }
 }
 
 /**
