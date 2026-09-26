@@ -508,9 +508,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0)
     if (extra.length === 0) return countLabel
     const shown = extra.slice(0, 2).join(' · ')
-    const more = orphan.threadCount > orphan.sampleTitles.length
-      ? ` · +${String(orphan.threadCount - orphan.sampleTitles.length)} more`
-      : ''
+    const more =
+      orphan.threadCount > orphan.sampleTitles.length
+        ? ` · +${String(orphan.threadCount - orphan.sampleTitles.length)} more`
+        : ''
     return `${countLabel} · ${shown}${more}`
   }
 
@@ -525,9 +526,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         lines.push(`• ${title}`)
       }
       if (orphan.threadCount > orphan.sampleTitles.length) {
-        lines.push(
-          `• …and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`,
-        )
+        lines.push(`• …and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`)
       }
     } else {
       lines.push('')

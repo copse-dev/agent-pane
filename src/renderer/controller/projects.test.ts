@@ -58,9 +58,7 @@ function makeApi(handlers: {
   settingsGet?: (key: string) => Promise<unknown>
   sshStates?: () => Promise<SshConnectionState[]>
   sshConnect?: (hostId: string) => Promise<void>
-  listOrphans?: () => Promise<
-    import('@shared/types').OrphanProjectStore[]
-  >
+  listOrphans?: () => Promise<import('@shared/types').OrphanProjectStore[]>
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -1212,7 +1210,6 @@ test('recoverOrphanProject skips the folder picker when confirm returns false', 
   assert.equal(opened, 0)
   assert.equal(store.getState().projects.length, 1)
 })
-
 
 test('paginateSidebarThreads hides Show more when all threads fit', () => {
   const threads = Array.from({ length: 8 }, (_, i) => thread(`t-${String(i)}`))

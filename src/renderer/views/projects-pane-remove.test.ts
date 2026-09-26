@@ -9,10 +9,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import {
-  clickActiveConfirmDialogConfirm,
-  mountConfirmDialog,
-} from './confirm-dialog.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 
 function thread(id: string, title: string): Thread {
   return {
@@ -281,6 +278,8 @@ describe('projects pane remove-from-sidebar (component)', () => {
     clickActiveConfirmDialogConfirm()
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(opened, 1)
-    assert.ok(store.getState().projects.some((p) => p.id === 'recover-me' && p.path === '/recovered'))
+    assert.ok(
+      store.getState().projects.some((p) => p.id === 'recover-me' && p.path === '/recovered'),
+    )
   })
 })
