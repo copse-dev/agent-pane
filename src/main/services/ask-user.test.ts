@@ -58,6 +58,22 @@ describe('requestUserAnswers pluggable transport', () => {
     assert.deepEqual(await pending, { answers: ['', ''], cancelled: true })
   })
 
+  it('keeps an answer that arrived in the same turn as the stop', async () => {
+    let fulfill: (answers: string[]) => void = () => {}
+    const answered = new Promise<string[]>((resolve) => {
+      fulfill = resolve
+    })
+    // An async handler adds promise hops between the answer and the result.
+    setAskUserHandler(async () => ({ answers: await answered }))
+    const controller = new AbortController()
+    const pending = requestUserAnswers(req, controller.signal)
+
+    fulfill(['Postgres', 'Yes'])
+    controller.abort()
+
+    assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
+  })
+
   it('reverts to blank answers once the handler is cleared', async () => {
     setAskUserHandler(async () => ({ answers: ['x', 'y'] }))
     assert.deepEqual((await requestUserAnswers(req)).answers, ['x', 'y'])

@@ -89,8 +89,13 @@ function requestUserAnswersUnpaused(
 ): Promise<AskUserResult> {
   if (!signal) return activeHandler(req)
   return new Promise<AskUserResult>((resolve, reject) => {
+    // Cancel only after pending promise reactions drain: an answer that settled
+    // in the same turn as the stop, even through an async handler's extra hops,
+    // resolves first and is kept. `resolve` ignores whichever call comes second.
     const onAbort = (): void => {
-      resolve(cancelledAnswers(req))
+      setImmediate(() => {
+        resolve(cancelledAnswers(req))
+      })
     }
     signal.addEventListener('abort', onAbort, { once: true })
     void activeHandler(req, signal).then(
