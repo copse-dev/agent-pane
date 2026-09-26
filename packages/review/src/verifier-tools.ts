@@ -24,6 +24,7 @@ import {
   reviewerTools,
   type ReviewerToolExecutor,
   type ReviewerToolHost,
+  type ReviewerToolOutput,
 } from './reviewer-tools.ts'
 
 export const REPRODUCER_DIR = '.copse-review'
@@ -235,7 +236,7 @@ export function createVerifierToolExecutor(host: VerifierToolHost): VerifierTool
 
   return {
     ...base,
-    async execute(name, args, signal, toolCallId): Promise<string> {
+    async execute(name, args, signal, toolCallId): Promise<ReviewerToolOutput> {
       try {
         if (name === 'verdict') {
           const input = verdictArgs(args)

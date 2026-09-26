@@ -77,13 +77,26 @@ shell's hand-offs (Phase 4).
   touched files.
 - **`lenses.ts`** — a lens is a scoped brief with a step budget: `correctness` (the default),
   `contracts`, `boundaries` (semantic fields, defaults and downstream fallbacks), `tests`,
-  `security`, `concurrency`; `--lenses all` runs every one. All stay inside B4. The system
-  prompt restates the quality bar as rules.
+  `security`, `concurrency`, `transitions`, and `visual` (rendering regressions seen in
+  images); `--lenses all` runs every one. All stay inside B4. `applicableLenses` drops
+  `visual` beside other lenses when there is no image to look at. The system prompt
+  restates the quality bar as rules.
+- **`pr-conversation.ts`** — Stage 1's pull-request half, behind `--read-pr`: the
+  description, discussion, reviews and inline review comments from GitHub or Forgejo,
+  skipping Copse Reviewer's own reviews, budgeted, and wrapped as external content. Every
+  image becomes a handle (`img-3`) in an index; one in a table row is labelled by its row
+  and column header, so any bot's before/after table reads as `settings.png — After`.
+- **`review-images.ts`** — what `view_image` may show and how it is fetched: magic-byte
+  checked PNG/JPEG/GIF/WebP up to 5 MB; conversation images only by id, over https, from
+  the forge's hosts or `--image-host`, every redirect re-checked; the forge token only to
+  its API (a same-repository GitHub link at a commit goes through the contents endpoint).
 - **`reviewer-tools.ts`** — the reviewer's tools, jailed to the head checkout:
   `read_file`, `list_dir`, `search_code` (without following checkout symlinks),
   `read_dependency_file` (a fixed data-only helper in the serialised secret-free cell that follows
   pnpm package links only when their canonical file remains inside the disposable `node_modules`), and
-  `git_diff` (complete per-file diffs paged by character offset); `run_command`, brokered into the
+  `git_diff` (complete per-file diffs paged by character offset); `view_image` (a changed image
+  file on head or base, or a conversation image by id, returned as a tool-result image; twelve
+  per role); `run_command`, brokered into the
   cell and gated by the run's permission profile, with its output wrapped as external
   content and secret-scrubbed. Its prompt directs reviewers to the smallest
   project-supported focused selector rather than repeating Stage 0's aggregate suite;
@@ -181,6 +194,8 @@ pnpm run review --allow-unisolated --provider lmstudio --model qwen3-coder
 pnpm run review --allow-unisolated --model claude-sonnet-5 --model gpt-5 --lenses all
 pnpm run review --allow-unisolated --model qwen3-coder --challenger claude-sonnet-5
 pnpm run review --allow-unisolated --json report.json --sarif report.sarif --events turns.jsonl
+pnpm run review --allow-unisolated --model claude-sonnet-5 --lenses correctness,visual \
+  --read-pr github --repo owner/name --pr 123                 # plus the PR's discussion and images
 pnpm run review --help
 ```
 
@@ -249,7 +264,9 @@ read-only-root, capability-free, network-disabled cell. The cell receives only t
 allowlisted environment, never provider, Scaleway, workflow, or GitHub App credentials.
 `--backend ephemeral-runner` is rejected with imported Stage 0, so the secret-bearing host
 cannot be mislabeled as the cell. The run posts one advisory review
-(`--post-review github --repo owner/name --pr n`).
+(`--post-review github --repo owner/name --pr n`), having read the pull request's
+description, discussion, reviews and images first (`--read-pr github`); the default lenses
+are `correctness,visual`, and `visual` runs only when there is an image to look at.
 The posted review carries material `finish_review.couldNotVerify` limits from every completed
 reviewer. It says plain “No findings” only when those structured attestations declare nothing
 material unverified; a bounded read-only review is never presented as broader assurance than it was.
@@ -276,7 +293,8 @@ through Scaleway. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
 `COPSE_REVIEW_API_KEY`; `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`,
 `COPSE_REVIEW_BASE_URL`, `COPSE_REVIEW_LENSES`, `COPSE_REVIEW_MAX_STEPS` and
 `COPSE_REVIEW_MAX_VERIFY` repository variables override the pinned profile. The default is
-one correctness lens, at most 12 tool-using steps and at most three challenged findings.
+the correctness lens, plus the visual lens when the change or its conversation has an image,
+at most 12 tool-using steps and at most three challenged findings.
 Review context is secret-redacted before it leaves the runner, but it does leave GitHub for
 the configured model endpoint.
 

@@ -440,6 +440,11 @@ Changing one of these requires updating this document in the same change — the
    `contract`, `security`, `concurrency`, `resource` and `api-compat` classes. No PR
    summaries, no style, and the `docs` class and lens are deferred until precision is
    measured on the narrow set. Recorded 2026-09-04; answers Q4.
+   _Amended 2026-09-26:_ `visual` joins the list: a user-visible rendering regression the
+   change causes (clipped, overlapping, missing or unreadable), seen in an image a reviewer
+   looked at and anchored at the code that causes it. Taste — a colour or spacing a reviewer
+   would have chosen differently — stays out, as style does. See §Pull request conversation
+   and images.
 5. **B5 — TypeScript with pnpm is the only ecosystem for now.** Stage 0's build and test
    detection targets TypeScript/pnpm repositories only; other ecosystems are unscheduled
    until there is a consumer for them. Recorded 2026-09-04; answers Q16.
@@ -912,7 +917,8 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   (Forgejo: `FORGEJO_TOKEN` too); a review that could not be posted is exit 1.
 - **Copse dogfoods the shell, still as an adviser.** _Added 2026-09-22; Luna rollout 2026-09-24._
   Label-triggered reviews and nightly samples default to `openai/gpt-6-luna` through OpenRouter,
-  the correctness lens, at most 12 tool-using steps and at most three challenged findings.
+  the correctness lens (plus `visual` when there is an image, from 2026-09-26), at most 12
+  tool-using steps and at most three challenged findings.
   `COPSE_REVIEW_PR_PROFILE=configured` rolls both paths back to the retained
   `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`, and `COPSE_REVIEW_BASE_URL` variables
   (the Scaleway `qwen3.8-27b` route). The benchmark profile remains separately selectable.
@@ -1385,3 +1391,71 @@ Posted model prose preserves only complete code spans on one line and escapes ot
 backticks, backslashes, HTML and mentions. Multiline or unmatched delimiters cannot expose
 an HTML comment or start a fence that consumes the rest of a finding. This deliberately
 normalizes malformed/multiline code formatting while retaining ordinary inline code.
+
+### Pull request conversation and images (2026-09-26)
+
+Stage 1 always meant to include "where a PR exists — its description and review history";
+it now does, and images come with it. The motivating case is automation that posts
+screenshots to a pull request — this repository's before/after table of changed reference
+screenshots — which nobody reviewed unless a human opened each pair. The design keeps
+nothing specific to one repository or one bot.
+
+- **Reading.** `--read-pr github|forgejo` (with `--repo` and `--pr`) reads the description,
+  the discussion, submitted reviews with their state, and inline review comments with their
+  file and line, through the forge's REST API (`pr-conversation.ts`). Copse Reviewer's own
+  reviews, current or superseded, and their inline comments are skipped so it never
+  corroborates itself. Bots are labelled but not filtered: automation is often the author
+  of the most useful evidence. Entries are capped individually and in total, dropping the
+  oldest discussion first and never the description. A public repository needs no token.
+  A failure to read leaves the review running on the diff alone and says so.
+- **Images are addressed, not inlined.** Every markdown or HTML image in the conversation
+  is replaced by a handle (`[image img-3]`) and listed in an index with a label. An image in
+  a table row is labelled by that row's text and its column header, which is how
+  before/after tables read whoever posts them (`settings.png — After`); elsewhere the alt
+  text or file name labels it. The same URL keeps one handle.
+- **`view_image`** is a reviewer tool, so the challenger and reproducer inherit it. It shows
+  a conversation image by id, or an image file the change adds or modifies by path on head
+  (the frozen snapshot, like `read_file`) or base (the merge-base blob from the object
+  database, which executed code cannot rewrite). It accepts PNG, JPEG, GIF and WebP by
+  magic bytes, up to 5 MB, and at most twelve images per role, since each is resent with
+  every later model call. Results travel as the agent loop's existing `ToolResultImage`,
+  so no provider changed.
+- **Fetching is the security-relevant part (P7).** The model names an id, never a URL, so
+  it cannot direct a fetch anywhere the conversation did not already point. Fetches are
+  https only, from the forge's own hosts (plus `*.githubusercontent.com` on GitHub) or hosts
+  the caller passes with `--image-host`, and every redirect hop is re-checked. The forge
+  token goes only to the forge's API: a same-repository GitHub raw or blob link at a commit
+  is read through the contents endpoint, which also serves a private repository; everything
+  else is fetched without credentials. On Forgejo the token accompanies same-origin
+  requests only. The conversation text is wrapped as external content, and the prompt says
+  a claim made there is not evidence.
+- **The `visual` lens** looks only at what users see: changed image files compared base to
+  head, and conversation images. It anchors a regression at the style, markup or
+  component lines that cause it, or, failing that, at the test or story line that captures
+  the image. Pixel noise, font hinting and changes the description asks for are not
+  findings. Beside other lenses it is skipped when there is no image at all, in the CLI
+  and in the app, so enabling it costs a turn only on changes with something to look at.
+  `visual` findings are not in `REPRODUCIBLE_CLASSES`; Stage 4 challenges them, and the
+  challenger's brief lists the same images.
+- **In CI** both review workflows pass `--read-pr github`, and the default lenses become
+  `correctness,visual` (`COPSE_REVIEW_LENSES` still overrides). This repository's
+  screenshot comment links `github.com/<repo>/raw/<sha>/…`, which resolves through the
+  contents API with no extra host. When an OpenAI-compatible server refuses images, the
+  provider retries with a placeholder in their place (`dropImageContent`), so a text-only
+  model is told it could not see them rather than failing the turn.
+
+Not done here, deliberately:
+
+- **Trigger on the screenshot comment.** A review runs when a pull request opens or is
+  labelled; the screenshot comment arrives after CI. Re-adding `copse-review` picks it up.
+  Dispatching a review from `publish-screenshot-candidates.yml` would re-post the whole
+  review, and a visual-only run would supersede the earlier correctness review's comments
+  (`supersedeEarlierReviews` keys on identity, not lens). That needs a per-lens review
+  marker first.
+- **Image evidence on a finding.** A visual finding names the images it compared in its
+  reason. An `image` evidence kind, rendered inline in the forge comment and the findings
+  card, would change the persisted findings-card contract and the card's DOM, so it is a
+  separate change with its own visual evidence.
+- **Pulling a pull request's conversation into the app.** The app reviews a thread's
+  checkout and knows no pull request number; its GitHub backend reads comments for the PR
+  panel but is not wired to the reviewer.

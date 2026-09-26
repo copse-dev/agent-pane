@@ -33,11 +33,18 @@ import {
   postForgeReview,
   FORGES,
   type FetchLike,
+  type Forge,
   type ForgeTarget,
 } from './forge-review.ts'
 import { createEphemeralRunnerBackend, createHostProcessBackend } from './host-process-backend.ts'
 import type { DiffOrigin, IsolationBackend } from './isolation.ts'
-import { resolveLenses } from './lenses.ts'
+import { applicableLenses, resolveLenses } from './lenses.ts'
+import { readPullRequestConversation, type PullRequestRef } from './pr-conversation.ts'
+import {
+  createRemoteImageFetcher,
+  type BinaryFetchLike,
+  type RemoteImageFetcher,
+} from './review-images.ts'
 import { serializeCell } from './isolation.ts'
 import {
   envValue,
@@ -97,7 +104,9 @@ never the exit code.
                           mounted read-only in the cell (for trusted CI workflow policy)
   --provider <kind>       ${PROVIDER_KINDS.join(' | ')} (default: inferred from --model)
   --model <id>            model id for the reviewer (repeat, or comma-separate, to fan out)
-  --lenses <ids|all>      lenses to run: correctness (default), contracts, tests, security, concurrency
+  --lenses <ids|all>      lenses to run: correctness (default), contracts, boundaries, tests,
+                          security, concurrency, transitions, visual (skipped beside others
+                          when there is no image to look at)
   --challenger <id>       model that challenges and writes reproducers (default: the first --model)
   --no-verify             skip Stage 4 (no reproducers, no challenge)
   --max-verify <n>        findings to verify, most promising first (default 10)
@@ -114,6 +123,10 @@ never the exit code.
   --pr <n>                the pull request number
   --forge-url <url>       the forge's API base (GitHub: GITHUB_API_URL, else api.github.com;
                           Forgejo: the instance URL, else GITHUB_SERVER_URL)
+  --read-pr <forge>       read the pull request's description, comments, reviews and images
+                          as review context: ${FORGES.join(' | ')}; needs --repo and --pr
+  --image-host <host>     also fetch conversation images from this host (repeatable); the
+                          forge's own hosts are always allowed
   --budget-chars <n>      diff budget handed to the model (default 60000)
   --max-steps <n>         tool-using steps the reviewer may take
   --store <dir>           pnpm store to mount read-only (default: host standard store)
@@ -141,8 +154,10 @@ export interface CliIo {
   /** A backend the caller built; `--backend` overrides it. */
   readonly backend?: IsolationBackend
   readonly signal?: AbortSignal
-  /** The HTTP client `--post-review` uses; default the global `fetch`. */
+  /** The HTTP client `--post-review` and `--read-pr` use; default the global `fetch`. */
   readonly fetch?: FetchLike
+  /** The HTTP client `view_image` fetches conversation images with; default `fetch`. */
+  readonly fetchBinary?: BinaryFetchLike
 }
 
 function refExists(ref: string, cwd: string): boolean {
@@ -201,9 +216,61 @@ export function reviewPermissionProfile(executionAllowed: boolean): HeadlessPerm
 
 interface ForgeFlags {
   readonly 'post-review'?: string | undefined
+  readonly 'read-pr'?: string | undefined
   readonly repo?: string | undefined
   readonly pr?: string | undefined
   readonly 'forge-url'?: string | undefined
+}
+
+function forgeToken(
+  forge: Forge,
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  return (
+    envValue(env, 'COPSE_REVIEW_FORGE_TOKEN') ??
+    (forge === 'forgejo' ? envValue(env, 'FORGEJO_TOKEN') : undefined) ??
+    envValue(env, 'GITHUB_TOKEN')
+  )
+}
+
+/** The pull request a forge flag names: owner, repository, number and API base. */
+function resolvePullRequest(
+  flag: string,
+  forge: string,
+  flags: ForgeFlags,
+  env: Readonly<Record<string, string | undefined>>,
+): Omit<PullRequestRef, 'token'> {
+  if (!isForge(forge)) throw new Error(`${flag} must be one of ${FORGES.join(', ')}`)
+  const repo = flags.repo
+  const match = repo === undefined ? null : /^([^/\s]+)\/([^/\s]+)$/.exec(repo)
+  if (match === null) throw new Error(`${flag} needs --repo <owner/name>`)
+  const number = integer(flags.pr, '--pr')
+  if (number === undefined) throw new Error(`${flag} needs --pr <n>`)
+  const apiBase =
+    flags['forge-url'] ??
+    (forge === 'github'
+      ? (env['GITHUB_API_URL'] ?? 'https://api.github.com')
+      : env['GITHUB_SERVER_URL'])
+  if (apiBase === undefined || apiBase.length === 0) {
+    throw new Error(`${flag} forgejo needs --forge-url <instance url>`)
+  }
+  const [, owner = '', name = ''] = match
+  return { forge, apiBase, owner, repo: name, number }
+}
+
+/**
+ * The pull request whose conversation to read, from `--read-pr`. A token is
+ * used when there is one; a public repository reads without.
+ */
+export function resolvePullRequestRef(
+  flags: ForgeFlags,
+  env: Readonly<Record<string, string | undefined>>,
+): PullRequestRef | null {
+  const forge = flags['read-pr']
+  if (forge === undefined) return null
+  const ref = resolvePullRequest('--read-pr', forge, flags, env)
+  const token = forgeToken(ref.forge, env)
+  return token === undefined ? ref : { ...ref, token }
 }
 
 /**
@@ -217,29 +284,12 @@ export function resolveForgeTarget(
 ): Omit<ForgeTarget, 'headCommit'> | null {
   const forge = flags['post-review']
   if (forge === undefined) return null
-  if (!isForge(forge)) throw new Error(`--post-review must be one of ${FORGES.join(', ')}`)
-  const repo = flags.repo
-  const match = repo === undefined ? null : /^([^/\s]+)\/([^/\s]+)$/.exec(repo)
-  if (match === null) throw new Error('--post-review needs --repo <owner/name>')
-  const number = integer(flags.pr, '--pr')
-  if (number === undefined) throw new Error('--post-review needs --pr <n>')
-  const token =
-    envValue(env, 'COPSE_REVIEW_FORGE_TOKEN') ??
-    (forge === 'forgejo' ? envValue(env, 'FORGEJO_TOKEN') : undefined) ??
-    envValue(env, 'GITHUB_TOKEN')
+  const ref = resolvePullRequest('--post-review', forge, flags, env)
+  const token = forgeToken(ref.forge, env)
   if (token === undefined) {
     throw new Error('--post-review needs a token in COPSE_REVIEW_FORGE_TOKEN or GITHUB_TOKEN')
   }
-  const apiBase =
-    flags['forge-url'] ??
-    (forge === 'github'
-      ? (env['GITHUB_API_URL'] ?? 'https://api.github.com')
-      : env['GITHUB_SERVER_URL'])
-  if (apiBase === undefined || apiBase.length === 0) {
-    throw new Error('--post-review forgejo needs --forge-url <instance url>')
-  }
-  const [, owner = '', name = ''] = match
-  return { forge, apiBase, owner, repo: name, number, token }
+  return { ...ref, token }
 }
 
 async function importStage0(path: string): Promise<Stage0Report> {
@@ -278,6 +328,8 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         sarif: { type: 'string' },
         events: { type: 'string' },
         'post-review': { type: 'string' },
+        'read-pr': { type: 'string' },
+        'image-host': { type: 'string', multiple: true },
         repo: { type: 'string' },
         pr: { type: 'string' },
         'forge-url': { type: 'string' },
@@ -324,6 +376,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   let scratchParent: string | undefined
   let lenses
   let forgeTarget: Omit<ForgeTarget, 'headCommit'> | null
+  let pullRequest: PullRequestRef | null
   let importedStage0: Stage0Report | null = null
   let trustedPreparation: TrustedPreparation | undefined
   try {
@@ -347,6 +400,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     }
     lenses = resolveLenses(values.lenses)
     forgeTarget = resolveForgeTarget(values, io.env)
+    pullRequest = resolvePullRequestRef(values, io.env)
     if (values['stage0-json'] !== undefined)
       importedStage0 = await importStage0(values['stage0-json'])
     if (values['trusted-prepare'] !== undefined) {
@@ -499,6 +553,31 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
           checkouts: ground.checkouts,
           ...(budgetChars !== undefined ? { budgetChars } : {}),
         })
+        let fetchRemoteImage: RemoteImageFetcher | undefined
+        if (pullRequest !== null) {
+          // The conversation is context, not a precondition: a forge hiccup
+          // leaves the review running on the diff alone, and says so.
+          try {
+            context = {
+              ...context,
+              conversation: await readPullRequestConversation(pullRequest, {
+                ...(io.fetch === undefined ? {} : { fetch: io.fetch }),
+              }),
+            }
+            fetchRemoteImage = createRemoteImageFetcher(pullRequest, {
+              extraHosts: values['image-host'] ?? [],
+              ...(io.fetchBinary === undefined ? {} : { fetch: io.fetchBinary }),
+            })
+          } catch (err) {
+            io.stderr(
+              `copse-review: could not read the pull request conversation: ${errorMessage(err)}\n`,
+            )
+          }
+        }
+        const { lenses: reviewLenses, skipped } = applicableLenses(lenses, context)
+        if (skipped.length > 0) {
+          io.stderr('copse-review: no image to look at; the visual lens did not run\n')
+        }
         const eventLines: string[] = []
         const onEvent = (event: Parameters<typeof serializeHeadlessEvent>[0]): void => {
           const line = serializeHeadlessEvent(event)
@@ -514,6 +593,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
           cell,
           shellDecision,
           scrub: (text: string): string => ground.scrub(text),
+          fetchRemoteImage,
         }
         reviews = await runReviewers({
           ...host,
@@ -522,7 +602,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             model: selection.model,
             providerFor: (lens): LLMProvider => selection.providerFor(`review:${lens.id}`),
           })),
-          lenses,
+          lenses: reviewLenses,
           threadId,
           turnPrefix,
           concurrency,

@@ -4,7 +4,9 @@
 // lens stays inside B4 — bugs and regressions only; the `docs` lens the plan
 // sketches is deferred with the `docs` class.
 import { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
+import type { ReviewContext } from './context.ts'
 import { FINDING_CLASSES, type FindingClass } from './finding.ts'
+import { describeReviewImages } from './review-images.ts'
 
 export interface Lens {
   readonly id: string
@@ -126,6 +128,28 @@ export const TRANSITIONS_LENS: Lens = {
   maxSteps: 20,
 }
 
+export const VISUAL_LENS: Lens = {
+  id: 'visual',
+  title: 'Visual regressions',
+  brief: [
+    'Look only at what users will see. Images are your evidence: reference screenshots or other',
+    'image files the change adds or modifies (compare base and head with view_image), and images',
+    'posted in the pull request conversation, such as a before/after table from automation or a',
+    'screenshot from a reviewer. Report a regression the change causes and its description does',
+    'not intend: text clipped, truncated or overlapping; an element missing, duplicated or',
+    'misplaced; content that no longer fits its container; unreadable contrast; the wrong theme,',
+    'state or data rendered; a screenshot that does not show what the description claims. Anchor',
+    'each finding at the style, markup or component lines that cause it; when you cannot find',
+    'the cause, anchor at the test or story line that captures that image (search_code for its',
+    'file name) and say so in the reason. Name the image ids or paths you compared in the reason.',
+    'Pixel noise, anti-aliasing and font hinting differences, and changes the description asks',
+    'for, are not findings. Do not report taste: a colour or spacing you would have chosen',
+    `differently is not a regression. ${NOT_STYLE}`,
+  ].join(' '),
+  classes: ['visual'],
+  maxSteps: 20,
+}
+
 export const LENSES: readonly Lens[] = [
   CORRECTNESS_LENS,
   CONTRACTS_LENS,
@@ -134,6 +158,7 @@ export const LENSES: readonly Lens[] = [
   SECURITY_LENS,
   CONCURRENCY_LENS,
   TRANSITIONS_LENS,
+  VISUAL_LENS,
 ]
 
 export const DEFAULT_LENS_IDS: readonly string[] = [CORRECTNESS_LENS.id]
@@ -162,6 +187,25 @@ export function resolveLenses(spec: string | undefined): Lens[] {
   return lenses
 }
 
+/**
+ * The lenses worth a model turn for this change. The visual lens has nothing
+ * to stand on without an image — a changed image file or one in the pull
+ * request conversation — so beside other lenses it is dropped; asked for
+ * alone, it runs and attests that there was nothing to see.
+ */
+export function applicableLenses(
+  lenses: readonly Lens[],
+  context: ReviewContext,
+): { readonly lenses: Lens[]; readonly skipped: Lens[] } {
+  if (lenses.length < 2 || describeReviewImages(context).length > 0) {
+    return { lenses: [...lenses], skipped: [] }
+  }
+  return {
+    lenses: lenses.filter((lens) => lens !== VISUAL_LENS),
+    skipped: lenses.filter((lens) => lens === VISUAL_LENS),
+  }
+}
+
 export interface LensPromptOptions {
   /** Whether `run_command` will work: the cell exists and shell is allowed. */
   readonly canRun: boolean
@@ -181,7 +225,7 @@ export function lensSystemPrompt(lens: Lens, options: LensPromptOptions): string
     '',
     `Lens: ${lens.title}. ${lens.brief}`,
     '',
-    'Tools: read_file, list_dir, search_code and git_diff read the change and the code around it. read_dependency_file reads an installed package path such as jsdom/lib/api.js through the isolated cell when pnpm symlinks make read_file refuse it. Read every changed file that matters before judging it; the diff alone is not enough.',
+    'Tools: read_file, list_dir, search_code and git_diff read the change and the code around it. read_dependency_file reads an installed package path such as jsdom/lib/api.js through the isolated cell when pnpm symlinks make read_file refuse it. view_image shows an image the change adds or modifies, or one listed in the pull request conversation. Read every changed file that matters before judging it; the diff alone is not enough.',
     running,
     '',
     'Report each defect with the report_finding tool, one call per defect, anchored at the exact file and lines where the bug is. Every finding needs a falsifiable one-sentence claim and the specific reason it is wrong. If a command you ran demonstrates it, pass that call id as evidence.',

@@ -50,6 +50,11 @@ function oversizedFileError(path: string, size?: number): Error {
 }
 
 export function readCheckoutFile(root: string, path: string): string {
+  return readCheckoutBytes(root, path).toString('utf8')
+}
+
+/** {@link readCheckoutFile}'s bytes, for a binary file such as a reference screenshot. */
+export function readCheckoutBytes(root: string, path: string): Buffer {
   const file = jailPath(root, path)
   const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try {
@@ -71,7 +76,7 @@ export function readCheckoutFile(root: string, path: string): string {
       total += bytesRead
     }
     if (total > MAX_CHECKOUT_FILE_BYTES) throw oversizedFileError(path)
-    return Buffer.concat(chunks, total).toString('utf8')
+    return Buffer.concat(chunks, total)
   } finally {
     closeSync(fd)
   }

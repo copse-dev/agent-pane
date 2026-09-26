@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { ReviewContext } from './context.ts'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, type ExecutionCell } from './isolation.ts'
-import { createTestRepo, type TestRepo } from './test-repo.ts'
+import { createTestRepo, toolText, type TestRepo } from './test-repo.ts'
 import {
   createReviewerToolExecutor,
   jailPath,
@@ -116,11 +116,11 @@ describe('reviewer tools', () => {
       '2: const secret = 1\n3: line three',
     )
     assert.match(
-      await executor.execute('read_file', { path: 'missing.ts' }, signal, 't2'),
+      toolText(await executor.execute('read_file', { path: 'missing.ts' }, signal, 't2')),
       /^Error: Cannot read/,
     )
     assert.match(
-      await executor.execute('read_file', { path: '../x' }, signal, 't3'),
+      toolText(await executor.execute('read_file', { path: '../x' }, signal, 't3')),
       /^Error: .*Path is outside/,
     )
     assert.equal(
@@ -153,12 +153,12 @@ describe('reviewer tools', () => {
     try {
       const executor = createReviewerToolExecutor(host)
       assert.match(
-        await executor.execute(
+        toolText(await executor.execute(
           'read_file',
           { path: 'node_modules/linked-dep/index.js' },
           signal,
           'dependency-host-read',
-        ),
+        )),
         /use read_dependency_file/,
       )
       assert.equal(
@@ -171,31 +171,31 @@ describe('reviewer tools', () => {
         '2: const linked = true\n3: last line',
       )
       assert.match(
-        await executor.execute(
+        toolText(await executor.execute(
           'read_dependency_file',
           { path: 'node_modules/escaped-dep/canary.js' },
           signal,
           'dependency-escape',
-        ),
+        )),
         /resolves outside the disposable node_modules tree/,
       )
       assert.match(
-        await executor.execute(
+        toolText(await executor.execute(
           'read_dependency_file',
           { path: 'node_modules/../src/a.ts' },
           signal,
           'dependency-traversal',
-        ),
+        )),
         /must name a package file/,
       )
       const unavailable = createReviewerToolExecutor({ ...host, cell: null })
       assert.match(
-        await unavailable.execute(
+        toolText(await unavailable.execute(
           'read_dependency_file',
           { path: 'node_modules/linked-dep/index.js' },
           signal,
           'dependency-no-cell',
-        ),
+        )),
         /unavailable without an execution cell/,
       )
     } finally {
@@ -238,12 +238,12 @@ describe('reviewer tools', () => {
         scrub: (text: string): string => text,
       })
       assert.match(
-        await executor.execute(
+        toolText(await executor.execute(
           'read_dependency_file',
           { path: 'node_modules/canary.js' },
           signal,
           'dependency-root-escape',
-        ),
+        )),
         /node_modules resolves outside the disposable checkout/,
       )
     } finally {
@@ -274,15 +274,15 @@ describe('reviewer tools', () => {
   it('serves the original per-file diff even when omitted from context', async () => {
     const executor = createReviewerToolExecutor(host)
     assert.match(
-      await executor.execute('git_diff', { path: 'src/a.ts' }, signal, 't1'),
+      toolText(await executor.execute('git_diff', { path: 'src/a.ts' }, signal, 't1')),
       /\+const secret = 1/,
     )
     assert.match(
-      await executor.execute('git_diff', { path: 'pnpm-lock.yaml' }, signal, 't2'),
+      toolText(await executor.execute('git_diff', { path: 'pnpm-lock.yaml' }, signal, 't2')),
       /\+new lock/,
     )
     assert.match(
-      await executor.execute('git_diff', { path: 'nope.ts' }, signal, 't3'),
+      toolText(await executor.execute('git_diff', { path: 'nope.ts' }, signal, 't3')),
       /^Error: .*not a changed file/,
     )
   })
@@ -296,7 +296,7 @@ describe('reviewer tools', () => {
       'call-9',
     )
     assert.match(
-      result,
+      toolText(result),
       /^exit 3 \(\d+ ms\)\ncommandCallId: "call-9"\n<external_content source="run_command">\n\[SCRUBBED\] hello/,
     )
     assert.equal(executor.commandRuns().get('call-9')?.exitCode, 3)
@@ -308,7 +308,7 @@ describe('reviewer tools', () => {
       signal,
       'call-encoded',
     )
-    assert.match(encoded, /\[SCRUBBED\] encoded/)
+    assert.match(toolText(encoded), /\[SCRUBBED\] encoded/)
     assert.equal(executor.commandRuns().get('call-encoded')?.exitCode, 3)
 
     const multilineArgv = JSON.stringify([
@@ -322,7 +322,7 @@ describe('reviewer tools', () => {
       signal,
       'call-encoded-multiline',
     )
-    assert.match(multiline, /\[SCRUBBED\] encoded line one\nencoded line two/)
+    assert.match(toolText(multiline), /\[SCRUBBED\] encoded line one\nencoded line two/)
     assert.equal(executor.commandRuns().get('call-encoded-multiline')?.exitCode, 3)
 
     const malformed = await executor.execute(
@@ -331,15 +331,15 @@ describe('reviewer tools', () => {
       signal,
       'call-encoded-malformed',
     )
-    assert.match(malformed, /^Error: run_command needs/)
+    assert.match(toolText(malformed), /^Error: run_command needs/)
     assert.equal(executor.commandRuns().has('call-encoded-malformed'), false)
   })
 
   it('refuses run_command when the profile denies shell or there is no cell', async () => {
     const denied = createReviewerToolExecutor({ ...host, shellDecision: 'deny' })
-    assert.match(await denied.execute('run_command', { argv: ['true'] }, signal, 't1'), /denied/)
+    assert.match(toolText(await denied.execute('run_command', { argv: ['true'] }, signal, 't1')), /denied/)
     const noCell = createReviewerToolExecutor({ ...host, cell: null })
-    assert.match(await noCell.execute('run_command', { argv: ['true'] }, signal, 't2'), /denied/)
+    assert.match(toolText(await noCell.execute('run_command', { argv: ['true'] }, signal, 't2')), /denied/)
     assert.equal(denied.commandRuns().size, 0)
   })
 
@@ -351,7 +351,7 @@ describe('reviewer tools', () => {
       signal,
       'call_provider_generated_47',
     )
-    const evidenceId = /^commandCallId: "([^"]+)"$/m.exec(output)?.[1]
+    const evidenceId = /^commandCallId: "([^"]+)"$/m.exec(toolText(output))?.[1]
     assert.ok(evidenceId, 'opaque transport ids must be available in the model-visible result')
     const finding = {
       path: 'src/a.ts',
@@ -370,12 +370,12 @@ describe('reviewer tools', () => {
     assert.equal(executor.reported()[0]?.candidate.commandCallIds?.[0], evidenceId)
     assert.equal(executor.commandRuns().get(evidenceId)?.output.trim(), '[SCRUBBED] evidence')
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'report_finding',
         { ...finding, commandCallIds: ['run_command'] },
         signal,
         'finding-2',
-      ),
+      )),
       /^Error: No run_command call with id run_command/,
     )
     assert.equal(executor.reported().length, 1)
@@ -399,15 +399,15 @@ describe('reviewer tools', () => {
     assert.equal(executor.reported()[0]?.anchoredText, 'const secret = 1')
     assert.equal(executor.reported()[0]?.toolCallId, 'f1')
     assert.match(
-      await executor.execute('report_finding', { ...good, class: 'style' }, signal, 'f2'),
+      toolText(await executor.execute('report_finding', { ...good, class: 'style' }, signal, 'f2')),
       /^Error: report_finding needs/,
     )
     assert.match(
-      await executor.execute('report_finding', { ...good, startLine: 99 }, signal, 'f3'),
+      toolText(await executor.execute('report_finding', { ...good, startLine: 99 }, signal, 'f3')),
       /out of range/,
     )
     assert.match(
-      await executor.execute('report_finding', { ...good, commandCallIds: ['nope'] }, signal, 'f4'),
+      toolText(await executor.execute('report_finding', { ...good, commandCallIds: ['nope'] }, signal, 'f4')),
       /No run_command call/,
     )
     assert.equal(executor.reported().length, 1)
@@ -420,7 +420,7 @@ describe('reviewer tools', () => {
       startLine: 2,
       claim: 'The new literal may disclose a secret.',
     }
-    assert.match(await executor.execute('record_suspicion', suspicion, signal, 's1'), /suspicion-1/)
+    assert.match(toolText(await executor.execute('record_suspicion', suspicion, signal, 's1')), /suspicion-1/)
     const closure = {
       checked: 'The changed source and its direct callers.',
       couldNotVerify: 'Nothing',
@@ -433,7 +433,7 @@ describe('reviewer tools', () => {
       reason: 'The literal credential is returned to callers.',
     }
     assert.match(
-      await executor.execute('finish_review', { ...closure, findings: [finding] }, signal, 'c1'),
+      toolText(await executor.execute('finish_review', { ...closure, findings: [finding] }, signal, 'c1')),
       /Missing dispositions/,
     )
     assert.equal(executor.reported().length, 0)
@@ -445,26 +445,26 @@ describe('reviewer tools', () => {
       findingIndex: 1,
     }
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         { ...closure, dispositions: [reported] },
         signal,
         'c2',
-      ),
+      )),
       /existing findingIndex/,
     )
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         { ...closure, findings: [finding], dispositions: [reported, reported] },
         signal,
         'c3',
-      ),
+      )),
       /duplicate suspicion/,
     )
     assert.equal(executor.reported().length, 0)
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         {
           ...closure,
@@ -478,16 +478,16 @@ describe('reviewer tools', () => {
         },
         signal,
         'c4',
-      ),
+      )),
       /Include unresolved suspicion-1/,
     )
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         { ...closure, findings: [finding], dispositions: [reported] },
         signal,
         'c5',
-      ),
+      )),
       /completion recorded/,
     )
     assert.equal(executor.reported().length, 1)
@@ -522,13 +522,13 @@ describe('reviewer tools', () => {
       })),
     }
     assert.match(
-      await executor.execute('finish_review', closure, signal, 'bad'),
+      toolText(await executor.execute('finish_review', closure, signal, 'bad')),
       /already resolves/,
     )
     assert.equal(executor.reported().length, 0)
     assert.equal(executor.completion(), null)
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         {
           ...closure,
@@ -536,7 +536,7 @@ describe('reviewer tools', () => {
         },
         signal,
         'fixed',
-      ),
+      )),
       /completion recorded/,
     )
     assert.equal(executor.reported().length, 2)
@@ -568,12 +568,12 @@ describe('reviewer tools', () => {
       dispositions: [duplicate, { ...duplicate, id: 'suspicion-1' }],
     }
     assert.match(
-      await executor.execute('finish_review', closure, signal, 'bad'),
+      toolText(await executor.execute('finish_review', closure, signal, 'bad')),
       /resolved by a reported suspicion/,
     )
     assert.equal(executor.reported().length, 0)
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         {
           ...closure,
@@ -589,7 +589,7 @@ describe('reviewer tools', () => {
         },
         signal,
         'fixed',
-      ),
+      )),
       /completion recorded/,
     )
     assert.equal(executor.reported().length, 1)
@@ -641,13 +641,13 @@ describe('reviewer tools', () => {
       ],
     }
     assert.match(
-      await executor.execute('finish_review', closure, signal, 'unclear'),
+      toolText(await executor.execute('finish_review', closure, signal, 'unclear')),
       /Include unresolved suspicion-4/,
     )
     assert.equal(executor.completion(), null)
     assert.equal(executor.reported().length, 1)
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         {
           ...closure,
@@ -658,7 +658,7 @@ describe('reviewer tools', () => {
         },
         signal,
         'done',
-      ),
+      )),
       /completion recorded/,
     )
     assert.equal(executor.reported().length, 1)
@@ -677,7 +677,7 @@ describe('reviewer tools', () => {
       const couldNotVerify =
         status === 'unresolved' ? 'suspicion-1: the downstream caller is unavailable.' : 'Nothing'
       assert.match(
-        await executor.execute(
+        toolText(await executor.execute(
           'finish_review',
           {
             checked: 'The changed source and its direct callers.',
@@ -695,7 +695,7 @@ describe('reviewer tools', () => {
           },
           signal,
           'done',
-        ),
+        )),
         /completion recorded/,
       )
       assert.equal(executor.reported().length, 0)
@@ -708,12 +708,12 @@ describe('reviewer tools', () => {
     assert.equal(executor.completion(), null)
     assert.equal(executor.completionError(), null)
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         { checked: 'The changed source and its direct callers.', couldNotVerify: 'Nothing' },
         signal,
         'done-1',
-      ),
+      )),
       /completion recorded/i,
     )
     assert.deepEqual(executor.completion(), {
@@ -722,27 +722,27 @@ describe('reviewer tools', () => {
     })
     assert.equal(executor.completionError(), null)
     assert.match(
-      await executor.execute('read_file', { path: 'src/a.ts' }, signal, 'late-1'),
+      toolText(await executor.execute('read_file', { path: 'src/a.ts' }, signal, 'late-1')),
       /already finished/,
     )
     const invalid = createReviewerToolExecutor(host)
     assert.match(
-      await invalid.execute(
+      toolText(await invalid.execute(
         'finish_review',
         { checked: 'short', couldNotVerify: 'Nothing' },
         signal,
         'bad-1',
-      ),
+      )),
       /^Error: finish_review needs.*checked:.*8/,
     )
     assert.match(invalid.completionError() ?? '', /^checked:.*8/)
     assert.match(
-      await invalid.execute(
+      toolText(await invalid.execute(
         'finish_review',
         { checked: 'The changed source and its direct callers.', couldNotVerify: 'Nothing' },
         signal,
         'done-after-bad',
-      ),
+      )),
       /completion recorded/i,
     )
     assert.equal(invalid.completionError(), null)
@@ -760,7 +760,7 @@ describe('reviewer tools', () => {
       reason: 'Line 2 assigns a literal credential.',
     }
     assert.match(
-      await executor.execute(
+      toolText(await executor.execute(
         'finish_review',
         {
           checked: 'The changed source and its direct callers.',
@@ -769,7 +769,7 @@ describe('reviewer tools', () => {
         },
         signal,
         'done-with-findings',
-      ),
+      )),
       /completion recorded/i,
     )
     assert.equal(executor.reported().length, 1)
@@ -782,7 +782,7 @@ describe('reviewer tools', () => {
 
     const invalid = createReviewerToolExecutor(host)
     assert.match(
-      await invalid.execute(
+      toolText(await invalid.execute(
         'finish_review',
         {
           checked: 'The changed source and its direct callers.',
@@ -791,7 +791,7 @@ describe('reviewer tools', () => {
         },
         signal,
         'bad-closure',
-      ),
+      )),
       /out of range/,
     )
     assert.equal(invalid.reported().length, 0)
@@ -823,15 +823,15 @@ describe('reviewer tools', () => {
       await symlink(outside, join(root, 'linked'), 'junction')
       const executor = createReviewerToolExecutor({ ...host, cell: null, shellDecision: 'deny' })
       assert.match(
-        await executor.execute('read_file', { path: 'linked/canary.txt' }, signal, 's1'),
+        toolText(await executor.execute('read_file', { path: 'linked/canary.txt' }, signal, 's1')),
         /Error: .*Symlink/,
       )
       assert.match(
-        await executor.execute('list_dir', { path: 'linked' }, signal, 's2'),
+        toolText(await executor.execute('list_dir', { path: 'linked' }, signal, 's2')),
         /Error: .*Symlink/,
       )
       assert.match(
-        await executor.execute('search_code', { path: 'linked', pattern: 'CANARY' }, signal, 's3'),
+        toolText(await executor.execute('search_code', { path: 'linked', pattern: 'CANARY' }, signal, 's3')),
         /Error: .*Symlink/,
       )
       assert.equal(
@@ -870,8 +870,8 @@ describe('reviewer tools', () => {
         ),
       })
       const first = await executor.execute('git_diff', { path: 'deleted.ts' }, signal, 'd1')
-      assert.doesNotMatch(first, /DELETED_CHECK/)
-      assert.match(first, /offset 16000/)
+      assert.doesNotMatch(toolText(first), /DELETED_CHECK/)
+      assert.match(toolText(first), /offset 16000/)
       const second = await executor.execute(
         'git_diff',
         { path: 'deleted.ts', offset: 16000 },
@@ -884,7 +884,7 @@ describe('reviewer tools', () => {
         signal,
         'd3',
       )
-      assert.match(second + third, /DELETED_CHECK/)
+      assert.match(toolText(second) + toolText(third), /DELETED_CHECK/)
     } finally {
       await deleted.remove()
     }

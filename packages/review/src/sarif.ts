@@ -19,6 +19,7 @@ const RULE_DESCRIPTIONS: Record<(typeof FINDING_CLASSES)[number], string> = {
   concurrency: 'The change introduces a race, deadlock or ordering hazard.',
   resource: 'The change leaks or mishandles a resource.',
   'api-compat': 'The change is incompatible with an API its consumers rely on.',
+  visual: 'The change visibly breaks what users see: clipped, overlapping, missing or unreadable.',
 }
 
 const LEVEL: Record<FindingSeverity, 'note' | 'warning' | 'error'> = {

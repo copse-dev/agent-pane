@@ -45,7 +45,7 @@ import { discoverPnpmStore, reviewPermissionProfile } from '@copse/review/cli.ts
 import type { Finding } from '@copse/review/finding.ts'
 import { createHostProcessBackend } from '@copse/review/host-process-backend.ts'
 import { serializeCell, type IsolationBackend } from '@copse/review/isolation.ts'
-import { resolveLenses } from '@copse/review/lenses.ts'
+import { applicableLenses, resolveLenses } from '@copse/review/lenses.ts'
 import { renderReviewReport } from '@copse/review/report-text.ts'
 import {
   openReviewGround,
@@ -538,7 +538,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
         ...host,
         validation: stage0,
         reviewers: [{ model: models.reviewer, providerFor: (): LLMProvider => reviewerProvider }],
-        lenses,
+        lenses: applicableLenses(lenses, context).lenses,
         threadId: threadKey,
         turnPrefix,
         concurrency: 2,

@@ -127,6 +127,12 @@ export function renderReviewReport(report: ReviewReport): string {
     }
     if (context.truncated.length > 0)
       notes.push(`${String(context.truncated.length)} file diff(s) truncated`)
+    if (context.conversation !== undefined) {
+      const { entries, omittedEntries, images } = context.conversation
+      notes.push(
+        `read ${String(entries)} pull request conversation entr${entries === 1 ? 'y' : 'ies'}${omittedEntries > 0 ? ` (${String(omittedEntries)} older omitted)` : ''} listing ${String(images)} image(s)`,
+      )
+    }
     if (notes.length > 0) lines.push(`context: ${notes.join('; ')}`)
   }
   lines.push('')

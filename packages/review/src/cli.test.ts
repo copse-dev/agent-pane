@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import { main, resolveForgeTarget, reviewPermissionProfile } from './cli.ts'
+import { main, resolveForgeTarget, resolvePullRequestRef, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -774,6 +774,147 @@ describe('copse-review CLI', () => {
         pr,
       )
     }
+  })
+
+  it('reads the pull request conversation and lets a reviewer look at its images', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify([
+        { type: 'tool_call', name: 'view_image', args: { image: 'img-1' } },
+        finishReviewStep('The screenshot bot’s after image of the toolbar.'),
+        { type: 'text', text: 'Done.' },
+      ]),
+    )
+    const events = join(dir, 'events.jsonl')
+    const requested: string[] = []
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7])
+    const api: Record<string, unknown> = {
+      '/repos/acme/app/pulls/7': {
+        title: 'Tidy the toolbar',
+        body: 'Moves the save button.',
+        user: { login: 'alice', type: 'User' },
+        created_at: '2026-09-01T00:00:00Z',
+      },
+      '/repos/acme/app/issues/7/comments': [
+        {
+          body: '| Shot | After |\n| --- | --- |\n| toolbar.png | <img src="https://shots.example/toolbar.png"> |',
+          user: { login: 'shot-bot[bot]', type: 'Bot' },
+          created_at: '2026-09-02T00:00:00Z',
+        },
+      ],
+      '/repos/acme/app/pulls/7/reviews': [],
+      '/repos/acme/app/pulls/7/comments': [],
+    }
+    let out = ''
+    let err = ''
+    const code = await main(
+      [
+        '--base',
+        'main',
+        '--allow-unisolated',
+        '--provider',
+        'mock',
+        '--mock-script',
+        script,
+        '--events',
+        events,
+        '--no-verify',
+        '--read-pr',
+        'github',
+        '--repo',
+        'acme/app',
+        '--pr',
+        '7',
+        '--image-host',
+        'shots.example',
+      ],
+      {
+        stdout: (text) => {
+          out += text
+        },
+        stderr: (text) => {
+          err += text
+        },
+        env: { PATH: process.env['PATH'] },
+        cwd: repo.root,
+        fetch: (url) => {
+          requested.push(url)
+          const body = api[new URL(url).pathname]
+          return Promise.resolve({
+            status: body === undefined ? 404 : 200,
+            text: () => Promise.resolve(JSON.stringify(body ?? {})),
+          })
+        },
+        fetchBinary: (url) => {
+          requested.push(url)
+          return Promise.resolve({
+            status: 200,
+            headers: { get: () => null },
+            arrayBuffer: () => Promise.resolve(png.slice().buffer),
+          })
+        },
+      },
+    )
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    assert.match(out, /read 2 pull request conversation entries listing 1 image\(s\)/)
+    assert.ok(requested.includes('https://shots.example/toolbar.png'))
+    const toolResults = (await readFile(events, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => headlessEventSchema.parse(JSON.parse(line)))
+      .filter((event) => event.type === 'tool_result')
+    assert.match(
+      JSON.stringify(toolResults),
+      /img-1 \(comment by shot-bot\[bot\] \(bot\)\): toolbar\.png — After/,
+    )
+  })
+
+  it('skips the visual lens beside others when there is nothing to look at', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const script = join(dir, 'script.json')
+    await writeFile(script, JSON.stringify([finishReviewStep('src/math.ts.')]))
+    const result = await run(repo, [
+      '--base',
+      'main',
+      '--allow-unisolated',
+      '--provider',
+      'mock',
+      '--mock-script',
+      script,
+      '--lenses',
+      'correctness,visual',
+      '--no-verify',
+    ])
+    assert.equal(result.code, HEADLESS_EXIT.SUCCESS, result.err)
+    assert.match(result.err, /no image to look at; the visual lens did not run/)
+    assert.doesNotMatch(result.out, /under visual/)
+  })
+
+  it('reads a public pull request without a token but refuses a bad --read-pr', () => {
+    const flags = { 'read-pr': 'github', repo: 'acme/app', pr: '7' }
+    assert.deepEqual(resolvePullRequestRef(flags, {}), {
+      forge: 'github',
+      apiBase: 'https://api.github.com',
+      owner: 'acme',
+      repo: 'app',
+      number: 7,
+    })
+    assert.equal(resolvePullRequestRef(flags, { GITHUB_TOKEN: 'ghs_x' })?.token, 'ghs_x')
+    assert.equal(resolvePullRequestRef({ repo: 'acme/app', pr: '7' }, {}), null)
+    assert.throws(
+      () => resolvePullRequestRef({ ...flags, 'read-pr': 'gitlab' }, {}),
+      /--read-pr must be one of github, forgejo/,
+    )
+    assert.throws(
+      () => resolvePullRequestRef({ ...flags, 'read-pr': 'forgejo' }, {}),
+      /--read-pr forgejo needs --forge-url/,
+    )
   })
 
   it('cancels Stage 0 without running the next check', { timeout: 15000 }, async () => {

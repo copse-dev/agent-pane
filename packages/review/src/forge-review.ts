@@ -424,6 +424,16 @@ export interface PostedReview {
 
 /** Every posted review carries it; a superseded one no longer does. */
 const REVIEW_MARKER = /<!-- copse-review:[0-9a-f]{40} -->/
+const SUPERSEDED_PREFIX = '### Copse Reviewer\n\nSuperseded by '
+
+/**
+ * Whether a review body is one Copse Reviewer posted, current or superseded.
+ * Reading a pull request's conversation skips these: a reviewer re-reading its
+ * own earlier findings would only corroborate itself.
+ */
+export function isCopseReviewBody(body: string): boolean {
+  return REVIEW_MARKER.test(body) || body.startsWith(SUPERSEDED_PREFIX)
+}
 const postedReviewSchema = z.object({
   id: z.number(),
   html_url: z.string(),
@@ -493,7 +503,7 @@ async function supersedeEarlierReviews(
   }
   for (const id of earlier) {
     await request('PUT', `${url}/${String(id)}`, {
-      body: `### Copse Reviewer\n\nSuperseded by [a newer review](${posted.html_url})${target.headCommit === null ? '' : ` of \`${target.headCommit.slice(0, 12)}\``}.`,
+      body: `${SUPERSEDED_PREFIX}[a newer review](${posted.html_url})${target.headCommit === null ? '' : ` of \`${target.headCommit.slice(0, 12)}\``}.`,
     })
     const comments = safeJsonParse(
       await request('GET', `${url}/${String(id)}/comments?per_page=100`),
