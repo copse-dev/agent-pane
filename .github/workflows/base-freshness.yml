@@ -1,0 +1,128 @@
+name: Base freshness
+
+# Publishes the `Base Current` check run: how many commits on its base does an
+# open pull request's branch not contain? Zero is the only answer that proves
+# the merge result CI tested is the one that would land; a positive count is
+# reported as just that, without claiming which base CI merged (the base a
+# `pull_request` run merged is not recoverable afterwards).
+#
+# `CI Passed` is pinned to a head SHA and says nothing about which base the run
+# merged. Once the base branch advances, an untouched pull request keeps a green
+# `CI Passed` for a merge result that no longer exists — the base-advancement
+# half of #2520 that #2722 (cancellation) and the retarget trigger left open.
+# scripts/base-freshness.mts explains the decision; docs/plans/ci-base-freshness.md
+# records the acceptance and why this cannot be the enforcement.
+#
+# Deliberately its OWN workflow rather than a job in ci.yml, for the reason a
+# job cannot do this at all: the staleness appears AFTER a run finishes, so no
+# job inside that run can observe it. This has to be re-triggered by the base
+# moving, which only a separate `push` workflow sees.
+#
+# Also deliberately additive. It creates a new check context and changes nothing
+# about `CI Passed`, so no existing branch rule or consumer changes meaning and
+# no merge window that was closed can open.
+#
+# `Base Current` REPORTS and must never be made a required check. Withdrawing an
+# already-published `success` means successfully posting a newer check run to
+# that head, and check runs have no expiry and no atomic bulk invalidation — so
+# any failed or undispatched fan-out leaves authorizing successes on every head
+# it did not reach, with the run's own red attached to the base commit instead.
+# Sound enforcement of the same property is the branch-protection setting
+# "Require branches to be up to date before merging", or a merge queue, both of
+# which GitHub evaluates at merge time and neither of which needs a revocation
+# push. scripts/base-freshness.mts and docs/plans/ci-base-freshness.md carry the
+# full reasoning.
+
+on:
+  # The base moved. Every mergeable pull request targeting it is now, by
+  # definition, describing an older merge result than the one that would land.
+  push:
+    branches: [main, release]
+  # The pull request moved. `edited` is what catches a base retarget, which
+  # changes the merge result without touching the head (the job filters out
+  # every other edit, such as a title or body change); `ready_for_review` picks
+  # up the drafts the push path skips.
+  #
+  # `pull_request_target` — not `pull_request` — for the same two reasons as
+  # review-trigger.yml: it resolves this workflow from the default branch, and
+  # its token can write a check run where a fork's `pull_request` token cannot.
+  # As there, this workflow NEVER checks out or executes pull request code. Its
+  # only privileged operation is publishing a check run whose entire content is
+  # derived from GitHub's own comparison API.
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Base branch to re-evaluate every open pull request against
+        required: true
+        default: main
+
+permissions: {}
+
+jobs:
+  evaluate:
+    name: Evaluate base freshness
+    # Only a base change makes an `edited` event relevant, and fork pull requests
+    # are outside this check (the script also drops them from the push fan-out).
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'edited' || github.event.changes.base != null))
+    # Job-level so a filtered-out edit never cancels a real evaluation.
+    #
+    # Collapse a burst of merges into one evaluation of the base: the last push
+    # wins and its answer is the current one. Keyed by the BASE being evaluated
+    # (the dispatch input, else the pushed branch), so a manual `release`
+    # re-evaluation run from `main` does not share, and cancel, main's group.
+    # Per pull request on the PR path so a rapid re-push supersedes its own older
+    # evaluation, never another's. The two paths can still overlap; the script's
+    # single-PR path re-validates its verdict after posting (evaluateSettled).
+    concurrency:
+      group: >-
+        base-freshness-${{ github.event.pull_request.number
+        && format('pr-{0}', github.event.pull_request.number)
+        || format('base-{0}', inputs.base || github.ref_name) }}
+      cancel-in-progress: true
+    # Fixed GitHub-hosted capacity, never SELF_HOSTED_CHECKS — the same rule
+    # ci-passed follows. A report on whether a candidate is current must not
+    # queue behind the fleet it is reporting on (#1669).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Exactly what publishing the verdict needs, and nothing that could change
+      # the code, the pull request, or the rules.
+      checks: write
+      pull-requests: read
+    steps:
+      # Trusted code only. Under `pull_request_target` this checks out the base
+      # repository's default branch at its current tip (on `push` and dispatch,
+      # the triggering ref), never the pull request's head, and no step below
+      # builds or executes anything from it. No credentials are left behind in
+      # .git/config: nothing here pushes or fetches.
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # Node only — NOT ./.github/actions/setup, and no install of any kind.
+      # scripts/base-freshness.mts is written against node builtins alone so
+      # this stays a seconds-long job that cannot fail for want of a dependency
+      # restore. If it ever grows an import, this has to become the setup action.
+      - uses: actions/setup-node@v7
+        with: { node-version-file: '.nvmrc' }
+
+      - run: |
+          corepack enable
+          corepack prepare --activate
+        shell: bash
+
+      - name: Publish the Base Current check run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # One pull request when the pull request itself moved; the whole open
+          # set for a base when the base moved. PR_NUMBER is set only under
+          # `pull_request_target` (where BASE_REF is also set, to the base
+          # branch) and always wins; BASE_REF is used only when it is empty.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ inputs.base || github.ref_name }}
+        run: pnpm run ci:base-freshness
