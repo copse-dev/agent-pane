@@ -5,6 +5,7 @@ import {
   PROTOCOL_VERSION,
   type ClientConnection,
   type ContentBlock,
+  type LoadSessionResponse,
   type AvailableCommand,
   type McpCapabilities,
   type McpServer,
@@ -49,6 +50,14 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import {
+  acpReattachMethods,
+  noReattachMethodFailure,
+  splitLoadReplay,
+  type AcpCarryOverFailure,
+  type AcpReattachMethod,
+  type AcpSessionCarryOver,
+} from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
@@ -569,10 +578,10 @@ export interface AcpTurnStop {
   usage?: Usage | null
 }
 
-/** The session state returned by either `session/new` or `session/resume`. */
+/** The session state returned by `session/new`, `session/resume`, or `session/load`. */
 export interface ManagedAcpSession {
   sessionId: string
-  response: NewSessionResponse | ResumeSessionResponse
+  response: NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 }
 
 /**
@@ -638,6 +647,8 @@ export interface OpenAcpSession {
   mcpCapabilities: McpCapabilities | undefined
   /** Whether this agent advertised the optional `session/resume` capability. */
   canResume: boolean
+  /** Whether this agent advertised `loadSession`. */
+  canLoad: boolean
   /**
    * Whether this agent advertised `promptCapabilities.image` — when true,
    * Copse forwards attached images as ACP image content blocks (issue #831).
@@ -649,6 +660,18 @@ export interface OpenAcpSession {
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
   resumed: boolean
+  /** How a prior session was restored, when one was. */
+  restoredBy: AcpReattachMethod | null
+  /**
+   * Why a carry-over this connection was asked for did not happen; null when
+   * none was asked for or it succeeded.
+   */
+  carryOverFailure: AcpCarryOverFailure | null
+  /**
+   * Whether this session holds conversation the agent would lose by being
+   * replaced: it was restored from one that did, or has been prompted.
+   */
+  hasHistory: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
   appliedModel: string | undefined
   /**
@@ -929,7 +952,7 @@ export async function openAcpSession(
   config: AcpAgentSpawnConfig,
   handlers: MutableAcpHandlers,
   createTransport: AcpTransportFactory = spawnTransport,
-  resumeSessionId?: string,
+  carryOver?: AcpSessionCarryOver,
   trace: AcpWireSink | null = null,
   signal?: AbortSignal,
 ): Promise<OpenAcpSession> {
@@ -1048,23 +1071,68 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
+    const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
-    let resumed = false
-    if (resumeSessionId && canResume) {
-      try {
-        const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
-          connection.agent.request(methods.agent.session.resume, {
-            sessionId: resumeSessionId,
-            cwd: config.cwd,
-            mcpServers,
-          }),
-        )
-        session = { sessionId: resumeSessionId, response }
-        resumed = true
-      } catch {
-        // A session can expire while its client is disconnected. Fall back to a
-        // fresh session below; the pool will replay Copse's transcript once.
+    let restoredBy: AcpReattachMethod | null = null
+    let carryOverFailure: AcpCarryOverFailure | null = null
+    if (carryOver) {
+      const caps = { resume: canResume, load: canLoad }
+      const moved = carryOver.cwd !== config.cwd
+      const attempts = acpReattachMethods(caps, moved)
+      if (attempts.length === 0) carryOverFailure = noReattachMethodFailure(caps, moved)
+      for (const method of attempts) {
+        const sessionId = carryOver.sessionId
+        try {
+          if (method === 'resume') {
+            const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
+              connection.agent.request(methods.agent.session.resume, {
+                sessionId,
+                cwd: config.cwd,
+                mcpServers,
+              }),
+            )
+            session = { sessionId, response }
+          } else {
+            const response: LoadSessionResponse = await perfSpan('ttft:acp-session-load', () =>
+              connection.agent.request(methods.agent.session.load, {
+                sessionId,
+                cwd: config.cwd,
+                mcpServers,
+              }),
+            )
+            // The agent replays the conversation before answering. Copse's own
+            // transcript already shows it, so drop the replay rather than let
+            // the update pump render the thread a second time — but only after
+            // it proved the agent found the conversation it was asked for.
+            const replay = splitLoadReplay(pendingUpdates.get(sessionId) ?? [])
+            pendingUpdates.set(sessionId, replay.keep)
+            if (carryOver.hasHistory && !replay.foundConversation) {
+              carryOverFailure = 'history-missing'
+              continue
+            }
+            session = { sessionId, response }
+          }
+          restoredBy = method
+          carryOverFailure = null
+          break
+        } catch (err) {
+          // A session can expire while its client is disconnected. Try the next
+          // method, then fall back to a fresh session below; the caller replays
+          // Copse's transcript into it once.
+          // The agent's message usually names the session; session IDs stay
+          // out of logs (docs/plans/acp-session-continuity.md).
+          carryOverFailure = 'rejected'
+          const reason = (err instanceof Error ? err.message : String(err)).replaceAll(
+            sessionId,
+            '<session>',
+          )
+          console.warn(
+            `[acp] session/${method} was refused; ${attempts.at(-1) === method ? 'starting a new session' : 'trying the next method'}: ${reason}`,
+          )
+        }
       }
+      // A failed load may have queued a replay nobody will read.
+      if (!session) pendingUpdates.delete(carryOver.sessionId)
     }
     if (!session) {
       const response = await perfSpan('ttft:acp-session-new', () =>
@@ -1101,10 +1169,14 @@ export async function openAcpSession(
       handlers,
       mcpCapabilities,
       canResume,
+      canLoad,
       promptImage,
       availableCommands: [],
       sessionInfo: {},
-      resumed,
+      resumed: restoredBy !== null,
+      restoredBy,
+      carryOverFailure,
+      hasHistory: restoredBy !== null && carryOver?.hasHistory === true,
       appliedModel: undefined,
       desiredConfigOptions: config.configOptions,
       appliedConfigOptions,
@@ -1251,6 +1323,7 @@ export async function runAcpSessionPrompt(
       )
     }
 
+    open.hasHistory = true
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,

@@ -40,6 +40,7 @@ import {
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -535,7 +536,7 @@ export async function runAcpAgentFromSettings(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
-    const { entry, fresh } = await perfSpan(
+    const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
         acquireAcpSession({
@@ -547,6 +548,14 @@ export async function runAcpAgentFromSettings(
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )
+    if (handover) {
+      // The agent's previous session (its tool results, file reads, reasoning)
+      // did not survive the restart; the transcript preamble below restores only
+      // the conversation text. Say so in the thread — straight to the caller's
+      // sink, not `onChunk`, so the note neither joins the assistant history
+      // replayed into later turns nor counts as progress that blocks a retry.
+      options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
+    }
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)

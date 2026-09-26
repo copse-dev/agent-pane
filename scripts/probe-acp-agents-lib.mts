@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { hostname, platform, release } from 'node:os'
-import { dirname, resolve } from 'node:path'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { hostname, platform, release, tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '../src/shared/acp-known-agents.ts'
@@ -13,6 +13,7 @@ import {
   buildMatrixJson,
   renderMatrixMarkdown,
 } from '../src/main/services/acp/acp-support-matrix.ts'
+import { probeAgentContinuity } from '../src/main/services/acp/acp-continuity-probe.ts'
 
 /**
  * Tier-1 ACP eval runner (`npm run probe:acp`): probe the installed known ACP
@@ -29,6 +30,13 @@ import {
  *   --settle <ms>  Post-connect update drain window (default 750).
  *   --protocol <n> Protocol version to request in initialize (default: SDK's v1).
  *                  The forward hook for ACP v2 — see docs/acp-v2-readiness.md.
+ *   --continuity   Also run the Tier-2 session-continuity trials (restart the
+ *                  agent, reattach with session/load and session/resume, in the
+ *                  same and in a different cwd). SPENDS MODEL TOKENS — a few
+ *                  short prompts per trial. See acp-continuity-probe.ts.
+ *   --model <id>=<substring>
+ *                  Run that agent's continuity trials on the model whose name
+ *                  contains <substring> (repeatable), instead of its default.
  */
 
 const run = promisify(execFile)
@@ -40,6 +48,8 @@ interface Args {
   write: boolean
   settleMs: number
   protocolVersion: number | undefined
+  continuity: boolean
+  models: Map<string, string>
 }
 
 function parseArgs(argv: string[]): Args {
@@ -50,6 +60,8 @@ function parseArgs(argv: string[]): Args {
     write: true,
     settleMs: 750,
     protocolVersion: undefined,
+    continuity: false,
+    models: new Map(),
   }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]
@@ -59,6 +71,11 @@ function parseArgs(argv: string[]): Args {
     else if (flag === '--out') args.out = argv[++i] ?? args.out
     else if (flag === '--settle') args.settleMs = Number(argv[++i] ?? args.settleMs)
     else if (flag === '--protocol') args.protocolVersion = Number(argv[++i])
+    else if (flag === '--continuity') args.continuity = true
+    else if (flag === '--model') {
+      const [id, model] = (argv[++i] ?? '').split('=', 2)
+      if (id && model) args.models.set(id, model)
+    }
   }
   args.agents = args.agents.filter(Boolean)
   return args
@@ -148,8 +165,43 @@ async function main(): Promise<void> {
         ...(args.protocolVersion !== undefined ? { protocolVersion: args.protocolVersion } : {}),
       },
     )
-    reports.push(report)
     console.log(report.ok ? 'ok' : `failed (${report.error ?? 'unknown'})`)
+    if (args.continuity && report.ok) {
+      process.stdout.write(`  ${agent.title} continuity trials … `)
+      // Two throwaway directories: the session is created in the first and
+      // reattached from the second, as a thread moving into a worktree would.
+      const base = await mkdtemp(join(tmpdir(), 'copse-acp-continuity-'))
+      const originCwd = join(base, 'origin')
+      const otherCwd = join(base, 'worktree')
+      await mkdir(originCwd)
+      await mkdir(otherCwd)
+      try {
+        const model = args.models.get(agent.id)
+        const continuity = await probeAgentContinuity(
+          {
+            agentId: agent.id,
+            title: agent.title,
+            command: agent.command,
+            args: agent.args,
+            ...(env ? { env } : {}),
+            originCwd,
+            otherCwd,
+          },
+          model ? { model } : {},
+        )
+        report.continuity = continuity.ok ? continuity.snapshot : { error: continuity.error }
+        console.log(
+          continuity.ok
+            ? continuity.snapshot.trials
+                .map((trial) => `${trial.method}/${trial.cwd}=${trial.outcome}`)
+                .join(' ')
+            : `failed (${continuity.error})`,
+        )
+      } finally {
+        await rm(base, { recursive: true, force: true })
+      }
+    }
+    reports.push(report)
   }
 
   const meta = {
