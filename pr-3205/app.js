@@ -75499,6 +75499,48 @@ var init_tool_error_format = __esm({
   }
 });
 
+// packages/agent/src/hooks/inject-context.ts
+var SYSTEM_REMINDER_TAG;
+var init_inject_context = __esm({
+  "packages/agent/src/hooks/inject-context.ts"() {
+    init_nullish();
+    SYSTEM_REMINDER_TAG = "system-reminder";
+  }
+});
+
+// src/renderer/views/tool-result-reminders.ts
+function splitAppendedReminders(result, lengths) {
+  const raw = { output: result, reminders: [] };
+  if (lengths === void 0 || lengths.length === 0) return raw;
+  let end = result.length;
+  const reminders = [];
+  for (let index = lengths.length - 1; index >= 0; index -= 1) {
+    const length = lengths[index];
+    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
+    const start = end - length;
+    if (start < SEPARATOR.length) return raw;
+    const block = result.slice(start, end);
+    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
+      return raw;
+    }
+    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
+    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
+    end = start - SEPARATOR.length;
+  }
+  return { output: result.slice(0, end), reminders };
+}
+var OPEN, CLOSE, SEPARATOR;
+var init_tool_result_reminders = __esm({
+  "src/renderer/views/tool-result-reminders.ts"() {
+    init_inject_context();
+    OPEN = `<${SYSTEM_REMINDER_TAG}>
+`;
+    CLOSE = `
+</${SYSTEM_REMINDER_TAG}>`;
+    SEPARATOR = "\n\n";
+  }
+});
+
 // src/renderer/controller/thread-proposals.ts
 async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
   const projectId = store2.getState().activeProjectId;
@@ -76409,26 +76451,35 @@ function createToolArgsSection(args) {
     el("pre", {}, rendered)
   );
 }
-function createToolResultSection(result, status, format, showEmptyState = false) {
+function createToolResultSection(result, status, format, showEmptyState = false, appendedReminderLengths) {
   if (!result) {
     return showEmptyState ? el("div", { class: "tool-result tool-result-empty" }, "No tool details were provided.") : el("div", { class: "tool-result" });
   }
-  const errorMessage2 = status === "error" ? mcpErrorMessage(result) : null;
+  const { output: output2, reminders } = splitAppendedReminders(result, appendedReminderLengths);
+  const notes = reminders.map((reminder) => el("p", { class: "tool-result-note" }, reminder));
+  const errorMessage2 = status === "error" ? mcpErrorMessage(output2) : null;
   if (errorMessage2) {
     const paragraphs = errorMessage2.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
     return el(
       "div",
       { class: "tool-result tool-result-error-message" },
-      ...paragraphs.map((line) => el("p", {}, line))
+      ...paragraphs.map((line) => el("p", {}, line)),
+      ...notes
     );
   }
   if (format === "markdown") {
     const wrap = el("div", { class: "tool-result tool-result-markdown message-text" });
-    wrap.innerHTML = renderMarkdown(result);
+    wrap.innerHTML = renderMarkdown(output2);
     attachCodeBlockCopyButtons(wrap);
+    wrap.append(...notes);
     return wrap;
   }
-  return el("div", { class: "tool-result" }, el("pre", {}, renderToolArgs(result)));
+  return el(
+    "div",
+    { class: "tool-result" },
+    ...output2.length > 0 || notes.length === 0 ? [el("pre", {}, renderToolArgs(output2))] : [],
+    ...notes
+  );
 }
 function createToolLocationsSection(locations) {
   if (!locations?.length) return null;
@@ -76517,7 +76568,8 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
         tc2.result,
         tc2.status,
         tc2.resultFormat,
-        argsSection === null && tc2.status !== "running"
+        argsSection === null && tc2.status !== "running",
+        tc2.appendedReminderLengths
       ),
       ...appendIfPresent(createToolLocationsSection(tc2.locations))
     );
@@ -79524,6 +79576,7 @@ var init_conversation = __esm({
     init_review_actions();
     init_tool_args_format();
     init_tool_error_format();
+    init_tool_result_reminders();
     init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
@@ -112865,6 +112918,28 @@ var init_roadmap_pane = __esm({
   }
 });
 
+// src/shared/canvas/guest-surface.ts
+function canvasGuestTextCss(color) {
+  if (!COMPUTED_COLOR_RE.test(color.trim())) return null;
+  return `:where(:root) { color: ${color.trim()}; }`;
+}
+var CANVAS_TRANSPARENT_ROOT_PROBE, COMPUTED_COLOR_RE;
+var init_guest_surface = __esm({
+  "src/shared/canvas/guest-surface.ts"() {
+    CANVAS_TRANSPARENT_ROOT_PROBE = `(() => {
+  const paints = (element) => {
+    if (!element) return false
+    const style = getComputedStyle(element)
+    if (style.backgroundImage !== 'none') return true
+    const alpha = /^rgba\\((?:[^,]+,){3}\\s*([\\d.]+)\\s*\\)$/.exec(style.backgroundColor)
+    return alpha ? Number(alpha[1]) > 0 : style.backgroundColor !== 'transparent'
+  }
+  return !paints(document.documentElement) && !paints(document.body)
+})()`;
+    COMPUTED_COLOR_RE = /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/;
+  }
+});
+
 // src/shared/types/main-window.ts
 var MAX_RESTORED_BROWSER_TABS;
 var init_main_window = __esm({
@@ -113358,6 +113433,13 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       syncWebviewSize2(tab);
     });
   }
+  function applyCanvasGuestText(tab, webview) {
+    if (!tab.artefactTitle || !webview.getURL().startsWith("data:text/html")) return;
+    const css2 = canvasGuestTextCss(getComputedStyle(tab.webviewHost).color);
+    if (!css2 || !webview.executeJavaScript || !webview.insertCSS) return;
+    const insertCSS = webview.insertCSS.bind(webview);
+    void webview.executeJavaScript(CANVAS_TRANSPARENT_ROOT_PROBE).then((transparent) => transparent === true ? insertCSS(css2) : void 0).catch(() => void 0);
+  }
   function ensureWebview(tab) {
     if (tab.webview) return tab.webview;
     const webview = createWebview(tab.partition, resolveWorkspacePreview);
@@ -113383,6 +113465,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
         tab.pendingUrl = null;
@@ -114213,6 +114296,7 @@ var init_browser_pane = __esm({
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
+    init_guest_surface();
     init_browser_session();
     init_unknown_value3();
     init_panels();
@@ -133673,6 +133757,7 @@ function startAgentController(store2, api2) {
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
+            ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           if (chunk.toolCallId && !chunk.isError) {
@@ -133787,6 +133872,7 @@ function startAgentController(store2, api2) {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
+            ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
         }
