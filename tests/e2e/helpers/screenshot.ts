@@ -101,6 +101,16 @@ export async function saveThreePaneScreenshot(
   await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
+/**
+ * Move the pointer to the window's top-left corner, clear of the transcript.
+ * WebDriver leaves the pointer wherever the last click landed, so a capture
+ * taken after a click can catch a hover-only affordance (a message's Copy
+ * button fading in) on one run and not the next.
+ */
+export async function parkPointer(): Promise<void> {
+  await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+}
+
 /** Capture the app shell at the fixed viewport (excludes OS chrome). */
 export async function saveAppScreenshot(
   filename: string,
