@@ -90,6 +90,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { mountProcessManagerDialog } from './views/process-manager-dialog.ts'
+import { mountActivityPanel, openActivityPanel } from './views/activity-panel.ts'
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
@@ -137,6 +138,7 @@ import {
   matchFindInChatShortcut,
   matchUiScaleShortcut,
   matchCommandPaletteShortcut,
+  matchActivityPanelShortcut,
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
@@ -250,8 +252,8 @@ async function boot(): Promise<void> {
   installTooltips()
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
-  mountApprovalDialog(api, store)
-  mountAskUserDialog(api, store)
+  const approvalRequests = mountApprovalDialog(api, store)
+  const askUserRequests = mountAskUserDialog(api, store)
   mountSshPromptDialog(api)
   mountUpdatePromptDialog(api)
   mountConfirmDialog()
@@ -262,6 +264,9 @@ async function boot(): Promise<void> {
   mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
   openProcessManager = mountProcessManagerDialog(api, store)
+  // Lists every pending request the two dialogs above hold, and answers
+  // approvals back through the approval dialog's own queue.
+  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests })
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -669,6 +674,11 @@ function registerKeyboardShortcuts(): void {
     if (meta && e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault()
       openProcessManager?.()
+    }
+    // Cmd/Ctrl+Shift+A opens the Activity panel: what needs you, what is working.
+    if (matchActivityPanelShortcut(e)) {
+      e.preventDefault()
+      openActivityPanel()
     }
     // Cmd/Ctrl+P opens the file quick-open palette (needs a workspace to search).
     if (meta && !e.shiftKey && e.key.toLowerCase() === 'p') {

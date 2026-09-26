@@ -56,6 +56,16 @@ export function matchCommandPaletteShortcut(e: KeyboardShortcutEvent): boolean {
   return e.key === 'k' || e.key === 'K'
 }
 
+/**
+ * Cmd/Ctrl+Shift+A opens the Activity panel — which threads need you, which are
+ * working. Fires from the composer too: it is a place to look, not an edit.
+ */
+export function matchActivityPanelShortcut(e: KeyboardShortcutEvent): boolean {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || !e.shiftKey) return false
+  return e.key === 'a' || e.key === 'A'
+}
+
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
 
 export function matchPanelShortcut(e: KeyboardShortcutEvent): PanelShortcutAction | null {

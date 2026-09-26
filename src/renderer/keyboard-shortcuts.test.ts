@@ -7,6 +7,7 @@ import {
   matchFindInChatShortcut,
   matchUiScaleShortcut,
   matchCommandPaletteShortcut,
+  matchActivityPanelShortcut,
 } from './keyboard-shortcuts.ts'
 
 function keyEvent(
@@ -104,6 +105,26 @@ describe('keyboard-shortcuts', () => {
     assert.equal(matchUiScaleShortcut(keyEvent({ key: '=' })), null)
     assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: '=' })), null)
     assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, key: 'f' })), null)
+  })
+
+  it('matchActivityPanelShortcut matches Cmd/Ctrl+Shift+A only', () => {
+    assert.equal(
+      matchActivityPanelShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'A' })),
+      true,
+    )
+    assert.equal(
+      matchActivityPanelShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'a' })),
+      true,
+    )
+    // Plain Cmd/Ctrl+A is select-all; Alt chords and bare keys are not the panel.
+    assert.equal(matchActivityPanelShortcut(keyEvent({ ctrlKey: true, key: 'a' })), false)
+    assert.equal(
+      matchActivityPanelShortcut(
+        keyEvent({ ctrlKey: true, shiftKey: true, altKey: true, key: 'A' }),
+      ),
+      false,
+    )
+    assert.equal(matchActivityPanelShortcut(keyEvent({ shiftKey: true, key: 'A' })), false)
   })
 
   it('matchCommandPaletteShortcut matches Cmd/Ctrl+Shift+K', () => {

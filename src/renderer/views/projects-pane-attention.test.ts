@@ -12,6 +12,9 @@ import type { Thread } from '@shared/types'
 import { mountProjectsPane } from './projects-pane.ts'
 import { setAttentionThreads, resetAttention } from '../controller/attention.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import { mountActivityPanel } from './activity-panel.ts'
+import type { ApprovalRequests } from './approval-dialog.ts'
+import type { AskUserRequests } from './ask-user-dialog.ts'
 
 function thread(id: string, title: string): Thread {
   return {
@@ -126,5 +129,58 @@ describe('projects pane attention bell (component)', () => {
 
     setAttentionThreads(store, 'ask', [])
     assert.equal(document.querySelectorAll('.chat-attention-bell').length, 0)
+  })
+})
+
+describe('projects pane Activity entry (component)', () => {
+  it('counts waiting threads on the header bell and opens the Activity panel', () => {
+    Object.defineProperties(window.HTMLDialogElement.prototype, {
+      showModal: {
+        configurable: true,
+        value(this: HTMLDialogElement): void {
+          this.open = true
+        },
+      },
+      close: {
+        configurable: true,
+        value(this: HTMLDialogElement): void {
+          this.open = false
+          this.dispatchEvent(new window.Event('close'))
+        },
+      },
+    })
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [thread('focused', 'Focused'), thread('a', 'A'), thread('b', 'B')],
+      activeThreadId: 'focused',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, apiStub)
+    const button = host.querySelector<HTMLButtonElement>('.projects-activity-btn')
+    assert.ok(button)
+    assert.equal(button.getAttribute('aria-label'), 'Activity')
+    assert.equal(button.classList.contains('has-attention'), false)
+
+    setAttentionThreads(store, 'approval', ['a'])
+    setAttentionThreads(store, 'ask', ['b'])
+    assert.equal(button.getAttribute('aria-label'), 'Activity: 2 threads need you')
+    assert.equal(button.querySelector('.projects-activity-count')?.textContent, '2')
+    assert.equal(button.classList.contains('has-attention'), true)
+
+    const approvals: ApprovalRequests = {
+      pending: () => [],
+      answerOnce: () => false,
+      onChange: () => () => {},
+    }
+    const questions: AskUserRequests = { pending: () => [], onChange: () => () => {} }
+    const panel = mountActivityPanel(apiStub, store, { approvals, questions })
+    button.click()
+    assert.equal(panel.isOpen(), true)
+    // Closing stops the panel's age tick, which would otherwise keep this file alive.
+    panel.close()
   })
 })

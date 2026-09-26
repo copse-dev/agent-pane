@@ -9,6 +9,7 @@ import { createNewProject } from '../controller/projects.ts'
 import { openRightPanelWithWorkspace } from '../controller/panels.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { openKeyboardShortcutsDialog } from './keyboard-shortcuts-dialog.ts'
+import { openActivityPanel } from './activity-panel.ts'
 import { openFileSearchDialog } from './file-search-dialog.ts'
 import { openConversationSearch } from './conversation-search.ts'
 import {
@@ -181,6 +182,13 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
         },
       })
     }
+    commands.push({
+      kind: 'command',
+      label: 'Activity',
+      run: () => {
+        openActivityPanel()
+      },
+    })
     commands.push({
       kind: 'command',
       label: 'Settings',
