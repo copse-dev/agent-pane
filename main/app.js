@@ -29016,7 +29016,9 @@ function createDemoApi(scenario, options = {}) {
       list: emptyArray,
       save: unsupported,
       remove: unsupported,
-      test: unsupported
+      test: unsupported,
+      screening: () => resolved(null),
+      setScreening: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -47253,9 +47255,12 @@ var init_providers_section = __esm({
 // packages/llm/src/classifiers/presets.ts
 function classifierCredentialId(id) {
   if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
-  return `classifier-${id}`;
+  return `${CLASSIFIER_CREDENTIAL_PREFIX}${id}`;
 }
-var CLASSIFIER_PRESETS;
+function classifierEndpointKey(baseUrl) {
+  return new URL(baseUrl).href.replace(/\/+$/, "");
+}
+var CLASSIFIER_PRESETS, CLASSIFIER_CREDENTIAL_PREFIX;
 var init_presets = __esm({
   "packages/llm/src/classifiers/presets.ts"() {
     CLASSIFIER_PRESETS = [
@@ -47312,6 +47317,7 @@ var init_presets = __esm({
         }
       }
     ];
+    CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
   }
 });
 
@@ -47343,6 +47349,7 @@ function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
+  const screening = el("select", { name: "classifierScreening" });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -47350,13 +47357,25 @@ function createClassifiersSection(api2) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Connect local or hosted classifiers for evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+      "Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+    ),
+    el(
+      "label",
+      { class: "classifier-screening" },
+      "Safety screening",
+      screening,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
+      )
     ),
     chips,
     formHost,
     status
   );
   let profiles = [];
+  let screeningId = null;
   let selectedId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
@@ -47401,7 +47420,43 @@ function createClassifiersSection(api2) {
     });
     chips.append(add2);
   }
+  function renderScreening() {
+    clear(screening);
+    screening.append(el("option", { value: "" }, "Instruct / safety model"));
+    for (const { profile } of profiles) {
+      if (profile.connection.type !== "http") continue;
+      screening.append(el("option", { value: profile.id }, profile.label));
+    }
+    screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
+  }
+  screening.addEventListener("change", () => {
+    const id = screening.value || null;
+    if (busy) {
+      renderScreening();
+      return;
+    }
+    busy = true;
+    root.disabled = true;
+    void (async () => {
+      try {
+        screeningId = await api2.classifiers.setScreening(id);
+        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label;
+        setInlineStatus(
+          status,
+          "ok",
+          chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
+        );
+      } catch (error62) {
+        setInlineStatus(status, "error", classifierErrorMessage(error62));
+      } finally {
+        busy = false;
+        root.disabled = false;
+        renderScreening();
+      }
+    })();
+  });
   function render() {
+    renderScreening();
     renderChips();
     clear(formHost);
     clear(status);
@@ -47486,7 +47541,7 @@ function createClassifiersSection(api2) {
     if (profile.connection.type === "http") {
       let normalizedUrl = function(value) {
         try {
-          return new URL(value).href.replace(/\/+$/, "");
+          return classifierEndpointKey(value);
         } catch {
           return value.trim().replace(/\/+$/, "");
         }
@@ -47725,7 +47780,10 @@ function createClassifiersSection(api2) {
     });
     remove.addEventListener("click", () => {
       void run2(async () => {
-        if (saved) profiles = await api2.classifiers.remove(profile.id);
+        if (saved) {
+          profiles = await api2.classifiers.remove(profile.id);
+          screeningId = await api2.classifiers.screening();
+        }
         pending.delete(profile.id);
         selectedId = profiles[0]?.profile.id ?? null;
         drafts.delete(profile.id);
@@ -47742,7 +47800,11 @@ function createClassifiersSection(api2) {
     if (busy) return;
     captureDraft?.();
     try {
-      profiles = await api2.classifiers.list();
+      ;
+      [profiles, screeningId] = await Promise.all([
+        api2.classifiers.list(),
+        api2.classifiers.screening()
+      ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
@@ -56370,7 +56432,7 @@ function createModelRoutingSection(api2, options = {}) {
       routingField(
         "Instruct / safety model",
         safetyModel,
-        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider."
+        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider. A classifier chosen under Classifiers \u2192 Safety screening replaces it."
       ),
       routingField("Post-turn review model", reviewModel, "Reviews the diff after an editing turn")
     )
@@ -61843,8 +61905,8 @@ function mountSettingsDialog(store2, api2) {
           <section class="settings-section" data-section="classifiers">
             <h3>Classifiers</h3>
             <p class="settings-section-desc">
-              Connections for classification evals and explicit calls. Copse's built-in classifiers
-              and chat model choices are configured separately.
+              Connections for safety screening, classification evals and explicit calls. Chat model
+              choices are configured separately.
             </p>
             <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
