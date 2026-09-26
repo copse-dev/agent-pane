@@ -135,7 +135,6 @@ h3 {
 
 :is(
   .welcome-new-btn,
-  .welcome-open-btn,
   .submit-btn,
   .settings-buttons button[type='submit'],
   .onboarding-primary,
@@ -150,7 +149,6 @@ h3 {
 
 :is(
   .welcome-new-btn,
-  .welcome-open-btn,
   .submit-btn,
   .settings-buttons button[type='submit'],
   .onboarding-primary,
