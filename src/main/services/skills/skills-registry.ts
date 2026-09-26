@@ -2,8 +2,16 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
-import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
+import {
+  discoverCursorPluginRoots,
+  readCursorPluginName,
+  resolvePluginSkillsDir,
+} from './cursor-plugins.ts'
+import {
+  BUNDLED_CURSOR_SKILLS_SETTING,
+  isBundledSkillPluginEnabled,
+  listBundledCursorPluginRoots,
+} from './bundled-cursor-skills.ts'
 import { getBuiltinSkillsRoot } from './builtin-skills.ts'
 import { pathExists, walkForContainerRoots, walkForFiles } from '../discovery/container-scan.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -22,7 +30,7 @@ import type {
 } from '@shared/types/skills.ts'
 import { READ_FILE_LIMITS_CEILING } from '@copse/agent/read-file-limits.ts'
 import { extractExternalLinkHosts } from '@shared/skills/extract-skill-links.ts'
-import { extractSkillFileReferences } from '@shared/skills/extract-skill-references.ts'
+import { extractSkillFileReferences } from '@shared/skills/extract-skill-references.mts'
 import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getPluginService } from '../plugins/plugin-service.ts'
@@ -71,10 +79,13 @@ export interface SkillLoadFailure {
 
 let cachedSkills: SkillMetadata[] = []
 let cachedSkillLoadFailures: SkillLoadFailure[] = []
+let cachedSwitchedOffPlugins: string[] = []
 let refreshPromise: Promise<void> | null = null
 interface SkillRegistrySnapshot {
   readonly skills: readonly SkillMetadata[]
   readonly failures: readonly SkillLoadFailure[]
+  /** Bundled plugins left out because their own switch is off. */
+  readonly switchedOffPlugins: readonly string[]
 }
 const scopedSkills = new AsyncLocalStorage<SkillRegistrySnapshot>()
 
@@ -84,6 +95,10 @@ function activeSkills(): readonly SkillMetadata[] {
 
 function activeSkillLoadFailures(): readonly SkillLoadFailure[] {
   return scopedSkills.getStore()?.failures ?? cachedSkillLoadFailures
+}
+
+function activeSwitchedOffPlugins(): readonly string[] {
+  return scopedSkills.getStore()?.switchedOffPlugins ?? cachedSwitchedOffPlugins
 }
 
 function skillsEnabled(): boolean {
@@ -148,6 +163,7 @@ async function loadSkillFromFile(
   source: SkillSource,
   skills: Map<string, SkillMetadata>,
   failures: SkillLoadFailure[],
+  plugin?: string,
 ): Promise<void> {
   let raw: string
   try {
@@ -220,33 +236,39 @@ async function loadSkillFromFile(
 
   skills.set(
     parsed.name,
-    toSkillMetadata(parsed, skillPath, source, externalLinks, missingReferences),
+    toSkillMetadata(parsed, skillPath, source, externalLinks, missingReferences, plugin),
   )
 }
 
-type SkillDiscoveryTarget =
-  | {
-      readonly kind: 'root'
-      readonly path: string
-      readonly source: SkillSource
-    }
-  | {
-      readonly kind: 'file'
-      readonly path: string
-      readonly source: SkillSource
-    }
+interface SkillDiscoveryTarget {
+  readonly kind: 'root' | 'file'
+  readonly path: string
+  readonly source: SkillSource
+  /** Plugin that ships the skills under this target, when there is one. */
+  readonly plugin?: string
+}
 
-async function collectDiscoveryTargets(): Promise<SkillDiscoveryTarget[]> {
+async function collectDiscoveryTargets(): Promise<{
+  targets: SkillDiscoveryTarget[]
+  switchedOffPlugins: string[]
+}> {
   const targets: SkillDiscoveryTarget[] = []
+  const switchedOffPlugins: string[] = []
 
   for (const root of userSkillRoots()) {
     if (await pathExists(root)) targets.push({ kind: 'root', path: root, source: 'user' })
   }
 
-  if (getSetting<boolean>('bundledCursorSkillsEnabled', true)) {
+  if (getSetting<boolean>(BUNDLED_CURSOR_SKILLS_SETTING, true)) {
     for (const pluginRoot of await listBundledCursorPluginRoots()) {
       const skillsDir = await resolvePluginSkillsDir(pluginRoot)
-      if (skillsDir) targets.push({ kind: 'root', path: skillsDir, source: 'bundled' })
+      if (!skillsDir) continue
+      const plugin = await readCursorPluginName(pluginRoot)
+      if (!isBundledSkillPluginEnabled(plugin)) {
+        switchedOffPlugins.push(plugin)
+        continue
+      }
+      targets.push({ kind: 'root', path: skillsDir, source: 'bundled', plugin })
     }
   }
 
@@ -271,13 +293,21 @@ async function collectDiscoveryTargets(): Promise<SkillDiscoveryTarget[]> {
   // portable `skills/` directory to Copse's recursive legacy scanner.
   for (const plugin of getPluginService().enabledUserPlugins()) {
     for (const skillPath of plugin.skillFiles) {
-      targets.push({ kind: 'file', path: skillPath, source: 'plugin' })
+      targets.push({
+        kind: 'file',
+        path: skillPath,
+        source: 'plugin',
+        plugin: plugin.manifest.name,
+      })
     }
   }
 
   for (const pluginRoot of await discoverCursorPluginRoots()) {
     const skillsDir = await resolvePluginSkillsDir(pluginRoot)
-    if (skillsDir) targets.push({ kind: 'root', path: skillsDir, source: 'plugin' })
+    if (skillsDir) {
+      const plugin = await readCursorPluginName(pluginRoot)
+      targets.push({ kind: 'root', path: skillsDir, source: 'plugin', plugin })
+    }
   }
 
   const pluginPaths = getSetting<string[]>('skillPluginPaths', [])
@@ -287,7 +317,10 @@ async function collectDiscoveryTargets(): Promise<SkillDiscoveryTarget[]> {
     const manifest = join(resolved, '.cursor-plugin', 'plugin.json')
     if (await pathExists(manifest)) {
       const skillsDir = await resolvePluginSkillsDir(resolved)
-      if (skillsDir) targets.push({ kind: 'root', path: skillsDir, source: 'plugin-path' })
+      if (skillsDir) {
+        const plugin = await readCursorPluginName(resolved)
+        targets.push({ kind: 'root', path: skillsDir, source: 'plugin-path', plugin })
+      }
       continue
     }
     targets.push({ kind: 'root', path: resolved, source: 'plugin-path' })
@@ -301,28 +334,28 @@ async function collectDiscoveryTargets(): Promise<SkillDiscoveryTarget[]> {
     targets.push({ kind: 'root', path: builtinRoot, source: 'bundled' })
   }
 
-  return targets
+  return { targets, switchedOffPlugins }
 }
 
 async function discoverSkillsRegistry(): Promise<SkillRegistrySnapshot> {
   if (!skillsEnabled()) {
-    return { skills: [], failures: [] }
+    return { skills: [], failures: [], switchedOffPlugins: [] }
   }
 
   const skills = new Map<string, SkillMetadata>()
   const failures: SkillLoadFailure[] = []
-  const discoveryTargets = await collectDiscoveryTargets()
+  const { targets: discoveryTargets, switchedOffPlugins } = await collectDiscoveryTargets()
 
   for (const target of discoveryTargets) {
     if (target.kind === 'file') {
-      await loadSkillFromFile(target.path, target.source, skills, failures)
+      await loadSkillFromFile(target.path, target.source, skills, failures, target.plugin)
       continue
     }
     await walkForFiles(
       target.path,
       (fileName) => fileName === 'SKILL.md',
       async (skillPath) => {
-        await loadSkillFromFile(skillPath, target.source, skills, failures)
+        await loadSkillFromFile(skillPath, target.source, skills, failures, target.plugin)
       },
     )
   }
@@ -330,6 +363,7 @@ async function discoverSkillsRegistry(): Promise<SkillRegistrySnapshot> {
   return {
     skills: [...skills.values()].sort((a, b) => a.name.localeCompare(b.name)),
     failures,
+    switchedOffPlugins,
   }
 }
 
@@ -337,6 +371,7 @@ export async function refreshSkillsRegistry(): Promise<void> {
   const snapshot = await discoverSkillsRegistry()
   cachedSkills = [...snapshot.skills]
   cachedSkillLoadFailures = [...snapshot.failures]
+  cachedSwitchedOffPlugins = [...snapshot.switchedOffPlugins]
 }
 
 export async function initSkillsRegistry(): Promise<void> {
@@ -375,20 +410,48 @@ export function listSkills(): SkillSummary[] {
  * invocation still work) but are never advertised to the model, so it cannot
  * pick them up on its own.
  */
-export function listModelInvocableSkills(): SkillSummary[] {
+export function listModelInvocableSkills(): SkillCatalogEntry[] {
   return activeSkills()
     .filter((skill) => !skill.disableModelInvocation)
-    .map(({ name, description, source, skillPath, externalLinks }) => ({
+    .map(({ name, description, source, skillPath, externalLinks, plugin }) => ({
       name,
       description,
       source,
       skillPath,
       externalLinks,
+      ...(plugin ? { plugin } : {}),
     }))
 }
 
+/** A skill as the system-prompt catalog advertises it. */
+export type SkillCatalogEntry = SkillSummary & Pick<SkillMetadata, 'plugin'>
+
+/**
+ * Split a plugin-qualified request — `pstack/how` or `pstack:how` — into its
+ * plugin and skill parts. `null` for a bare name.
+ */
+function splitQualifiedSkillName(name: string): { plugin: string; skill: string } | null {
+  const separator = Math.max(name.lastIndexOf('/'), name.lastIndexOf(':'))
+  if (separator <= 0 || separator === name.length - 1) return null
+  return { plugin: name.slice(0, separator), skill: name.slice(separator + 1) }
+}
+
+/**
+ * Look up a skill by its frontmatter name, or by `plugin/skill` (also
+ * `plugin:skill`) when the named plugin is the one that ships it. Models see
+ * plugin skills under a `.../plugins/<plugin>/skills/<skill>/` path and
+ * sometimes ask for them qualified that way.
+ */
 export function getSkill(name: string): SkillMetadata | null {
-  return activeSkills().find((skill) => skill.name === name) ?? null
+  const skills = activeSkills()
+  const exact = skills.find((skill) => skill.name === name)
+  if (exact) return exact
+  const qualified = splitQualifiedSkillName(name)
+  if (!qualified) return null
+  return (
+    skills.find((skill) => skill.name === qualified.skill && skill.plugin === qualified.plugin) ??
+    null
+  )
 }
 
 /** How many available skill names `unknownSkillError` lists before summarizing the rest. */
@@ -451,9 +514,8 @@ function closestSkillName(name: string, available: readonly string[]): string | 
   return best?.name ?? null
 }
 
-/** Sorted, deduplicated, length-capped rendering of the available skill names. */
-function formatAvailableSkills(available: readonly string[]): string {
-  if (available.length === 0) return 'No skills are currently available.'
+/** Sorted, deduplicated, length-capped, comma-separated skill names. */
+function formatSkillNames(available: readonly string[]): string {
   const names = [...new Set(available)].sort((a, b) => a.localeCompare(b))
   const shown: string[] = []
   let listedChars = 0
@@ -465,7 +527,47 @@ function formatAvailableSkills(available: readonly string[]): string {
   }
   const remaining = names.length - shown.length
   const more = remaining > 0 ? ` (+${String(remaining)} more; see the Skills catalog)` : ''
-  return `Available skills: ${shown.join(', ')}${more}.`
+  return `${shown.join(', ')}${more}`
+}
+
+function formatAvailableSkills(available: readonly string[]): string {
+  if (available.length === 0) return 'No skills are currently available.'
+  return `Available skills: ${formatSkillNames(available)}.`
+}
+
+/**
+ * A bare plugin name (`pstack`) is a set of skills, not one skill. Name the
+ * skills the model may read instead of reporting "unknown skill" and leaving it
+ * to guess — the most common failed read_skill call in real threads.
+ */
+function pluginNameError(name: string): Error | null {
+  const plugin = splitQualifiedSkillName(name)?.plugin ?? name
+  if (activeSwitchedOffPlugins().includes(plugin)) {
+    return new Error(
+      `"${plugin}" is a bundled plugin that is switched off, so its skills are not loaded. ` +
+        'The user can turn it on in Settings → Customise → Plugins; continue without it.',
+    )
+  }
+  const pluginSkills = activeSkills().filter((skill) => skill.plugin === name)
+  if (pluginSkills.length === 0) return null
+  const readable = pluginSkills.filter((skill) => !skill.disableModelInvocation)
+  const userOnly = pluginSkills.length - readable.length
+  const userOnlyNote =
+    userOnly > 0
+      ? ` ${String(userOnly)} more ${userOnly === 1 ? 'is' : 'are'} user-invoked only (/name).`
+      : ''
+  if (readable.length === 0) {
+    return new Error(
+      `"${name}" is a plugin, not a skill, and none of its skills are offered to the agent.` +
+        userOnlyNote,
+    )
+  }
+  const first = readable[0]?.name ?? ''
+  return new Error(
+    `"${name}" is a plugin, not a skill. Read one of its skills by name ` +
+      `(e.g. read_skill name "${first}"): ${formatSkillNames(readable.map((skill) => skill.name))}.` +
+      userOnlyNote,
+  )
 }
 
 function unknownSkillError(name: string): Error {
@@ -484,8 +586,11 @@ function unknownSkillError(name: string): Error {
     )
   }
 
+  const pluginError = pluginNameError(name)
+  if (pluginError) return pluginError
+
   const available = activeSkills().map((skill) => skill.name)
-  const hint = closestSkillName(name, available)
+  const hint = closestSkillName(splitQualifiedSkillName(name)?.skill ?? name, available)
   const didYouMean = hint ? ` Did you mean "${hint}"?` : ''
   return new Error(`Unknown skill "${name}". ${formatAvailableSkills(available)}${didYouMean}`)
 }
@@ -550,4 +655,5 @@ export async function readSkill(name: string, relativePath = 'SKILL.md'): Promis
 export function setSkillsForTest(skills: SkillMetadata[]): void {
   cachedSkills = skills
   cachedSkillLoadFailures = []
+  cachedSwitchedOffPlugins = []
 }

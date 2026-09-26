@@ -16,7 +16,10 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { AgentsListResult } from '@shared/types/agents.ts'
-import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
+import type {
+  BundledSkillPluginSummary,
+  CursorPluginSummary,
+} from '@shared/types/cursor-plugins.ts'
 import type {
   HooksListResult,
   HookRunDetail,
@@ -1052,6 +1055,13 @@ export interface ApiClient {
    */
   cursorPlugins: {
     list: () => Promise<CursorPluginSummary[]>
+  }
+  /**
+   * Cursor plugins whose skills ship inside Copse. Each has its own switch,
+   * saved with `settings.set('bundledSkillPluginOverrides', …)`.
+   */
+  bundledSkillPlugins: {
+    list: () => Promise<BundledSkillPluginSummary[]>
   }
   hooks: {
     list: () => Promise<HooksListResult>

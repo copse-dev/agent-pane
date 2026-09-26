@@ -30,6 +30,7 @@ function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): Api
     'skills.list': () => Promise.resolve([]),
     'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
     'cursorPlugins.list': () => Promise.resolve([]),
+    'bundledSkillPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve(hooksResult),
     'hooks.test': (req: unknown) => {
       lastTestRequest = req

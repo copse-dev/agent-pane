@@ -380,6 +380,109 @@ description: Project override checkup
     await rm(builtinRoot, { recursive: true, force: true })
   })
 
+  describe('plugin-qualified names', () => {
+    async function seedBundledPlugin(
+      overrides: Record<string, boolean> = { pstack: true },
+    ): Promise<string> {
+      const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-plugin-names-'))
+      const pluginRoot = join(bundledRoot, 'plugins', 'pstack-folder')
+      await mkdir(join(pluginRoot, '.cursor-plugin'), { recursive: true })
+      await writeFile(
+        join(pluginRoot, '.cursor-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'pstack', skills: './skills/' }),
+        'utf8',
+      )
+      const skills = [
+        { name: 'how', userOnly: false },
+        { name: 'why', userOnly: false },
+        { name: 'poteto-mode', userOnly: true },
+      ]
+      for (const { name, userOnly } of skills) {
+        await mkdir(join(pluginRoot, 'skills', name), { recursive: true })
+        await writeFile(
+          join(pluginRoot, 'skills', name, 'SKILL.md'),
+          `---\nname: ${name}\ndescription: ${name} skill\n` +
+            `${userOnly ? 'disable-model-invocation: true\n' : ''}---\n\n# ${name}`,
+          'utf8',
+        )
+      }
+      setSetting('bundledCursorSkillsEnabled', true)
+      setSetting('bundledSkillPluginOverrides', overrides)
+      setBundledCursorSkillsRootForTest(bundledRoot)
+      await refreshSkillsRegistry()
+      return bundledRoot
+    }
+
+    afterEach(() => {
+      setSetting('bundledSkillPluginOverrides', {})
+    })
+
+    it('leaves pstack out until the user switches it on', async () => {
+      const bundledRoot = await seedBundledPlugin({})
+      try {
+        assert.equal(getSkill('how'), null, 'pstack ships switched off')
+        await assert.rejects(
+          () => readSkill('pstack'),
+          /"pstack" is a bundled plugin that is switched off.*Settings → Customise → Plugins/,
+        )
+        await assert.rejects(() => readSkill('pstack/how'), /switched off/)
+      } finally {
+        await rm(bundledRoot, { recursive: true, force: true })
+      }
+    })
+
+    it('records the manifest name of the plugin that ships each skill', async () => {
+      const bundledRoot = await seedBundledPlugin()
+      try {
+        assert.equal(getSkill('how')?.plugin, 'pstack', 'manifest name, not the folder name')
+        assert.equal(getSkill('demo-skill')?.plugin, undefined, 'a plain project skill has none')
+        assert.equal(listModelInvocableSkills().find((s) => s.name === 'how')?.plugin, 'pstack')
+      } finally {
+        await rm(bundledRoot, { recursive: true, force: true })
+      }
+    })
+
+    it('reads a plugin skill by plugin/skill or plugin:skill', async () => {
+      const bundledRoot = await seedBundledPlugin()
+      try {
+        assert.equal((await readSkill('pstack/how')).name, 'how')
+        assert.equal((await readSkill('pstack:why')).name, 'why')
+        await assert.rejects(() => readSkill('other/how'), /Unknown skill "other\/how"/)
+      } finally {
+        await rm(bundledRoot, { recursive: true, force: true })
+      }
+    })
+
+    it('answers a bare plugin name with the skills it offers the agent', async () => {
+      const bundledRoot = await seedBundledPlugin()
+      try {
+        await assert.rejects(
+          () => readSkill('pstack'),
+          (error) => {
+            assert.ok(error instanceof Error)
+            assert.equal(
+              error.message,
+              '"pstack" is a plugin, not a skill. Read one of its skills by name ' +
+                '(e.g. read_skill name "how"): how, why. 1 more is user-invoked only (/name).',
+            )
+            return true
+          },
+        )
+      } finally {
+        await rm(bundledRoot, { recursive: true, force: true })
+      }
+    })
+
+    it('suggests the skill part of an unknown qualified name', async () => {
+      const bundledRoot = await seedBundledPlugin()
+      try {
+        await assert.rejects(() => readSkill('pstack/hw'), /Did you mean "how"\?/)
+      } finally {
+        await rm(bundledRoot, { recursive: true, force: true })
+      }
+    })
+  })
+
   it('omits bundled skills when bundledCursorSkillsEnabled is false', async () => {
     const bundledRoot = await mkdtemp(join(tmpdir(), 'copse-bundled-disabled-'))
     const pluginRoot = join(bundledRoot, 'plugins', 'demo-plugin')

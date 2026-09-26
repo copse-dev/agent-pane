@@ -2255,6 +2255,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   cursor: default;
   opacity: 0.55;
 }
+/* Why a bundled plugin ships switched off. Plain hint colour, not a warning:
+   the plugin is safe to turn on, the note only sets expectations. */
+.plugin-default-off-note {
+  margin: 0;
+  font-size: var(--font-size-xs);
+}
 /* Why a credential-gated plugin's toggle is inert (or on-but-inactive). Warning
    tinted: the plugin cannot contribute its tool in this state. */
 .plugin-credential-gate {

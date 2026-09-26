@@ -292,7 +292,8 @@ describe('settings styling', function () {
 
   it('renders plugins as cards with a publisher eyebrow and a labelled toggle', async () => {
     await $('.settings-nav-btn[data-section="customise"]').click()
-    await $('.plugin-row').waitForDisplayed({ timeout: 30_000 })
+    // Registry plugins carry no origin; Cursor and bundled-skill rows sort in beside them.
+    await $('.plugin-row:not([data-plugin-origin])').waitForDisplayed({ timeout: 30_000 })
     // The scrollport is shared between sections, so start this one at the top.
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
@@ -301,7 +302,7 @@ describe('settings styling', function () {
 
     const plugins = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>('#plugins-list')
-      const row = list?.querySelector<HTMLElement>('.plugin-row')
+      const row = list?.querySelector<HTMLElement>('.plugin-row:not([data-plugin-origin])')
       const name = row?.querySelector<HTMLElement>('.plugin-name')
       const eyebrow = row?.querySelector<HTMLElement>(
         '.plugin-badge-first-party, .plugin-badge-user',
@@ -424,7 +425,9 @@ describe('settings styling', function () {
     assert.equal(plugins.experimental.radius, 6, 'the stability badge takes --radius, not a pill')
 
     await browser.execute(() => {
-      document.querySelector<HTMLElement>('.plugin-row')?.scrollIntoView({ block: 'center' })
+      document
+        .querySelector<HTMLElement>('.plugin-row:not([data-plugin-origin])')
+        ?.scrollIntoView({ block: 'center' })
     })
     await saveElementScreenshot('#settings-dialog', 'settings-styling-plugins.png')
   })
