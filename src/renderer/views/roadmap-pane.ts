@@ -260,7 +260,7 @@ export function mountRoadmapPane(
   const autoSaveToken = new Map<string, number>()
 
   // --- list column ----------------------------------------------------------
-  const listHeader = el('div', { class: 'git-changes-header roadmap-list-header' })
+  const listHeader = el('div', { class: 'pane-header roadmap-list-header' })
   const filter = el('div', { class: 'roadmap-filter' })
   const searchInput = el('input', {
     type: 'search',
@@ -356,7 +356,7 @@ export function mountRoadmapPane(
   })
   actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn)
   listHeader.append(
-    el('span', { class: 'git-changes-title' }, 'Roadmap'),
+    el('span', { class: 'pane-header-title' }, 'Roadmap'),
     panePopoutButton(store, api, 'roadmap', 'roadmap'),
     paneMaximizeButton(store, 'roadmap'),
     filter,
