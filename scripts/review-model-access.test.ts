@@ -138,11 +138,12 @@ async function authorize(
 }
 
 describe('paid PR reviewer access', () => {
-  for (const [workflow, gate] of [
-    ['review-findings', 'authorize'],
-    ['review-nightly', 'select'],
+  for (const [workflow, gate, model] of [
+    ['review-findings', 'authorize', 'findings'],
+    ['review-nightly', 'select', 'findings'],
+    ['review-summary', 'authorize', 'summary'],
   ]) {
-    assert.ok(workflow && gate)
+    assert.ok(workflow && gate && model)
     it(`${workflow} rejects external actors, reruns, repositories and workflow refs`, () => {
       const trusted = {
         authorized: 'true',
@@ -154,7 +155,7 @@ describe('paid PR reviewer access', () => {
         triggering_actor: 'jonathanKingston',
       }
       // Exercise the model job separately with a cached successful preflight.
-      for (const name of [gate, 'findings']) {
+      for (const name of [gate, model]) {
         const expression = z.string().parse(job(workflow, name).if).trim()
         assert.equal(allows(expression, trusted), true)
         assert.equal(
@@ -178,7 +179,7 @@ describe('paid PR reviewer access', () => {
         }
         assert.equal(allows(expression, {}), false)
       }
-      assert.equal(job(workflow, 'findings').environment, 'copse-review-models')
+      assert.equal(job(workflow, model).environment, 'copse-review-models')
       assert.equal(job(workflow, gate).environment, undefined)
     })
 
@@ -227,6 +228,25 @@ describe('paid PR reviewer access', () => {
     }
   })
 
+  it('summarises only the exact ready-or-labelled head before entering the protected job', async () => {
+    assert.equal(job('review-summary', 'summary').needs, 'authorize')
+    for (const accepted of [
+      pull({ labels: [] }),
+      pull({ labels: ['copse-review'], draft: true }),
+    ]) {
+      const result = await authorize('review-summary', 'authorize', accepted)
+      assert.equal(result.outputs.get('authorized'), 'true')
+    }
+    for (const rejected of [
+      pull({ labels: [], draft: true }),
+      pull({ labels: ['copse-review-skip'] }),
+      { ...pull(), head: { ...pull().head, sha: 'b'.repeat(40) } },
+      { ...pull(), base: { ...pull().base, ref: 'other' } },
+    ]) {
+      assert.equal((await authorize('review-summary', 'authorize', rejected)).outputs.size, 0)
+    }
+  })
+
   it('filters external authors from scheduled samples and honors explicit opt-outs', async () => {
     const result = await authorize('review-nightly', 'select', pull(), {
       requested: '',
@@ -250,9 +270,14 @@ describe('paid PR reviewer access', () => {
     )
   })
 
-  for (const workflow of ['review-findings', 'review-nightly']) {
+  for (const [workflow, model, stepName] of [
+    ['review-findings', 'findings', 'Review with focused validation and post the findings'],
+    ['review-nightly', 'findings', 'Review with focused validation and post the findings'],
+    ['review-summary', 'summary', 'Summarise the pull request and update its description'],
+  ]) {
+    assert.ok(workflow && model && stepName)
     it(`${workflow} selects Luna with only its dedicated key and fails closed on bad configuration`, () => {
-      const findings = job(workflow, 'findings')
+      const findings = job(workflow, model)
       assert.equal(
         findings.env?.['REVIEW_PROFILE'],
         "${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}",
@@ -261,9 +286,7 @@ describe('paid PR reviewer access', () => {
         findings.env['COPSE_REVIEW_OPENROUTER_PROVIDER'],
         "${{ vars.COPSE_REVIEW_OPENROUTER_PROVIDER || 'openai' }}",
       )
-      const script = findings.steps.find(
-        (step) => step.name === 'Review with focused validation and post the findings',
-      )?.run
+      const script = findings.steps.find((step) => step.name === stepName)?.run
       assert.ok(script)
       const profile = script.slice(0, script.indexOf('review_base_url='))
       assert.ok(profile.includes('esac'))
