@@ -134,6 +134,7 @@ export function dependencyFingerprint(
     'pnpm-workspace.yaml',
     'patches',
     ...NATIVE_PREPARATION_INPUTS,
+    'scripts/lib/electron-headers.mts',
     ...packageManifests(root),
   ])
   const hash = createHash('sha256')
@@ -218,6 +219,25 @@ export function dependenciesAreCurrent(root: string, expected: string): boolean 
     readFingerprint(root, DEV_STATE.dependencies) === expected &&
     sentinelsExist(root, DEPENDENCY_SENTINELS)
   )
+}
+
+/**
+ * Record an install that `make` did not run itself. pnpm runs the root
+ * `postinstall` (`scripts/prepare-native-artifacts.mts`) only after every
+ * dependency build script has succeeded, and that script finishes the native
+ * preparation — everything `sync-dev.mts` would have done. Without this record,
+ * `pnpm install && make run` finds no fingerprint, moves the fresh tree aside,
+ * and repeats the whole install and its downloads (#2441).
+ *
+ * Only the lifecycle run counts: `pnpm run prepare:native` or worktree
+ * preparation after an `--ignore-scripts` install proves nothing about the
+ * dependency build scripts.
+ */
+export function recordLifecycleInstall(root: string, env: NodeJS.ProcessEnv): boolean {
+  if (env['npm_lifecycle_event'] !== 'postinstall') return false
+  if (!sentinelsExist(root, DEPENDENCY_SENTINELS)) return false
+  writeFingerprint(root, DEV_STATE.dependencies, dependencyFingerprint(root))
+  return true
 }
 
 export function buildOutputsFingerprint(root: string): string {

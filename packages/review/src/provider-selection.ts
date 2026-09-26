@@ -13,6 +13,7 @@ import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import type { LLMProvider } from '@copse/llm/wire-types.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import { droppedHostSecrets } from './isolation.ts'
+import { withProviderBackoff } from './provider-backoff.ts'
 import { ScriptedProvider, stepsForRole, type MockScript } from './scripted-provider.ts'
 
 export const PROVIDER_KINDS = [
@@ -59,6 +60,20 @@ export function inferProviderKind(model: string | undefined): ProviderKind {
   return 'lmstudio'
 }
 
+/** A set, non-blank environment value, trimmed; blank counts as unset (CI expands a missing secret to ""). */
+export function envValue(
+  env: Readonly<Record<string, string | undefined>>,
+  name: string,
+): string | undefined {
+  const value = env[name]?.trim()
+  return value === undefined || value.length === 0 ? undefined : value
+}
+
+/** Whether an OpenAI-compatible endpoint is this machine, so requests to it need no redaction. */
+function isLoopbackUrl(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(url)
+}
+
 function required(env: Readonly<Record<string, string | undefined>>, name: string): string {
   const specific = env[name]?.trim() ?? ''
   const value = specific.length > 0 ? specific : env['COPSE_REVIEW_API_KEY']?.trim()
@@ -73,7 +88,15 @@ export function selectProvider(
   const kind = selection.kind ?? inferProviderKind(selection.model)
   const secrets = droppedHostSecrets(env)
   const shared = (model: string, provider: LLMProvider, isRemote: boolean): SelectedProvider => {
-    const wrapped = isRemote ? withSecretRedaction(provider, secrets) : provider
+    const backedOff = withProviderBackoff(provider, {
+      onRetry: (attempt, delayMs) => {
+        // stderr: stdout may carry the JSON report or the event stream.
+        console.warn(
+          `[review] ${model}: provider retries exhausted; replaying in ${String(Math.round(delayMs / 1000))}s (backoff ${String(attempt)})`,
+        )
+      },
+    })
+    const wrapped = isRemote ? withSecretRedaction(backedOff, secrets) : backedOff
     return { kind, model, provider: wrapped, remote: isRemote, providerFor: () => wrapped }
   }
   const remote = (model: string, provider: LLMProvider): SelectedProvider =>
@@ -115,24 +138,28 @@ export function selectProvider(
         model,
         createOpenRouterProvider(model, required(env, 'OPENROUTER_API_KEY'), undefined, {
           ...(preferredProvider ? { preferredProvider } : {}),
+          // Review replies contain bounded tool calls and findings, not a large
+          // deliverable. Cap Luna's per-response output (including hidden
+          // reasoning) instead of inheriting its much larger server default.
+          ...(model === 'openai/gpt-6-luna' ? { params: { maxOutputTokens: 8_192 } } : {}),
         }),
       )
     }
     case 'lmstudio': {
-      const model = selection.model ?? env['LM_STUDIO_MODEL']?.trim()
+      const model = selection.model ?? envValue(env, 'LM_STUDIO_MODEL')
       if (!model) throw new Error('--model (or LM_STUDIO_MODEL) is required for lmstudio')
-      const url = selection.baseUrl ?? env['LM_STUDIO_URL']?.trim() ?? DEFAULT_LOCAL_BASE_URL
-      const key = env['LM_STUDIO_API_KEY']?.trim() ?? env['LM_API_TOKEN']?.trim() ?? 'lm-studio'
-      return shared(model, createLMStudioProvider(url, model, key), false)
+      const url = selection.baseUrl ?? envValue(env, 'LM_STUDIO_URL') ?? DEFAULT_LOCAL_BASE_URL
+      const key = envValue(env, 'LM_STUDIO_API_KEY') ?? envValue(env, 'LM_API_TOKEN') ?? 'lm-studio'
+      // LM Studio on another host is still a remote endpoint: redact what leaves.
+      return shared(model, createLMStudioProvider(url, model, key), !isLoopbackUrl(url))
     }
     case 'openai-compatible': {
       const model = selection.model
       if (model === undefined) throw new Error('--model is required for openai-compatible')
       const url = selection.baseUrl ?? DEFAULT_LOCAL_BASE_URL
-      const key = env['COPSE_REVIEW_API_KEY']?.trim() ?? 'lm-studio'
-      const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(url)
+      const key = envValue(env, 'COPSE_REVIEW_API_KEY') ?? 'lm-studio'
       const provider = createLocalOpenAIProvider(url, model, key)
-      return shared(model, provider, !local)
+      return shared(model, provider, !isLoopbackUrl(url))
     }
   }
 }

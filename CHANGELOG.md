@@ -1,12 +1,18 @@
 # Changelog and release notes
 
 The canonical changelog is the set of
-[GitHub Releases](https://github.com/copse-dev/agent-pane/releases). Published
-release notes are owned and maintained with the GitHub Release; this file records
-the release-note process and the current unreleased summary rather than copying
-every published entry.
+[GitHub Releases](https://github.com/copse-dev/copse-releases/releases). Published
+release notes are owned and maintained with the GitHub Release; this file holds
+only the notes in flight — `Unreleased`, and the section for the version being
+released — rather than copying every published entry.
 
 ## Unreleased
+
+- The update prompt now lists what changed in every release since the one you
+  are running, newest first, instead of only naming the new version. Skipping a
+  few weekly betas no longer means missing their notes; an "All release notes"
+  link opens the full history. Stable installations list stable releases only.
+  If the release notes cannot be fetched, the prompt still offers the update.
 
 - Tool calls that miss a numeric bound no longer fail. A model that asks
   `find_files` for `max_results: 2000` against a schema capped at 200 — a
@@ -719,20 +725,21 @@ every published entry.
 
 ## Release-note process
 
-For every release:
-
-1. Draft the GitHub Release from the matching `v<version>` tag.
-2. Turn merged changes into user-facing notes, grouped into features, fixes,
-   security/privacy changes, and developer changes as applicable.
-3. State the supported OS and architectures, known issues, data migrations, and
-   recovery implications. Copse supports forward fixes only; do not recommend a
-   downgrade.
+1. Add a user-facing entry under `Unreleased` in the PR that makes the change.
+2. The version bump ([`scripts/release-bump.mts`](scripts/release-bump.mts), run
+   weekly by `release-bump.yml`) renames `Unreleased` to `## <version>`, opens a
+   new empty `Unreleased`, and drops the previous version's section, which its
+   published GitHub Release already records. Do not rename these headings by
+   hand.
+3. The GitHub Release body is generated from the `## <version>` section with the
+   supported OS, architectures, and update channel added
+   ([`scripts/release-notes.mts`](scripts/release-notes.mts)). Before announcing
+   the release, add known issues, data migrations, and recovery implications to
+   it. Copse supports forward fixes only; do not recommend a downgrade. The
+   in-app update prompt shows each skipped version's notes from below the
+   body's `<!-- copse:changelog -->` marker, so keep that line when editing.
 4. Link issues or pull requests that provide important detail without exposing
    confidential security-report information.
-5. Review the notes with the artifacts, then publish them as part of the GitHub
-   Release.
-6. Reset the `Unreleased` section here after publication. Do not mirror the
-   published notes into a second historical list in this file.
 
 The complete shipping procedure is in
 [docs/release-checklist.md](docs/release-checklist.md).

@@ -54,6 +54,21 @@ describe('provider selection', () => {
     assert.equal(compatibleRemote.remote, true)
   })
 
+  it('redacts for an LM Studio endpoint on another host and ignores blank settings', () => {
+    const remoteStudio = selectProvider(
+      { kind: 'lmstudio', model: 'qwen' },
+      { LM_STUDIO_URL: 'https://gpu.example:1234/v1' },
+    )
+    assert.equal(remoteStudio.remote, true)
+    const blankUrl = selectProvider({ model: 'qwen3-coder' }, { LM_STUDIO_URL: '' })
+    assert.equal(blankUrl.kind, 'lmstudio')
+    assert.equal(blankUrl.remote, false, 'a blank URL falls back to the local default')
+    assert.throws(
+      () => selectProvider({ kind: 'lmstudio' }, { LM_STUDIO_MODEL: ' ' }),
+      /--model \(or LM_STUDIO_MODEL\)/,
+    )
+  })
+
   it('accepts the CI model key for each hosted provider', () => {
     const env = { COPSE_REVIEW_API_KEY: 'offline-ci-key' }
     for (const model of ['claude-sonnet-5', 'gpt-5', 'anthropic/claude-sonnet-5']) {
@@ -97,7 +112,7 @@ describe('provider selection', () => {
     )
   })
 
-  it('carries the host preference through redaction to every review role', async (t) => {
+  it('carries Luna’s output budget and private host routing to every review role', async (t) => {
     const requests: unknown[] = []
     t.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
       assert.equal(typeof init?.body, 'string')
@@ -123,6 +138,8 @@ describe('provider selection', () => {
     assert.equal(requests.length, 3)
     for (const request of requests) {
       assert.ok(request !== null && typeof request === 'object')
+      assert.equal(Reflect.get(request, 'max_tokens'), 8_192)
+      assert.equal(Reflect.get(request, 'reasoning'), undefined)
       assert.deepEqual(Reflect.get(request, 'provider'), {
         require_parameters: true,
         order: ['openai'],
@@ -131,5 +148,16 @@ describe('provider selection', () => {
         data_collection: 'deny',
       })
     }
+    // The review-specific Luna budget must not change other models' settings.
+    const other = selectProvider(
+      { kind: 'openrouter', model: 'fixture/other-model' },
+      { OPENROUTER_API_KEY: 'fixture-key' },
+    )
+    for await (const _ of other.provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Capture the same real transport for a model with no preset ceiling.
+    }
+    const otherRequest = requests[3]
+    assert.ok(otherRequest !== null && typeof otherRequest === 'object')
+    assert.equal(Reflect.get(otherRequest, 'max_tokens'), undefined)
   })
 })

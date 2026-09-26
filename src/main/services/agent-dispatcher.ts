@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import type { ReasoningLevel } from '@copse/llm/model-parameters.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { TurnOutcome } from '@shared/types/turn-outcome.ts'
+import { AgentTurnBusyError } from '@shared/agent-turn-busy.ts'
 import { runAgent, type RunAgentOptions } from './agent-service.ts'
 import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
@@ -441,7 +442,7 @@ export class AgentDispatcher {
     this.assertDispatchable(request.projectId, request.threadId)
     const existing = this.active.get(key)
     if (existing) {
-      throw new Error(`An agent turn is already running for thread "${request.threadId}"`)
+      throw new AgentTurnBusyError(request.threadId)
     }
 
     let terminalOutcome: Extract<StreamChunk, { type: 'turn_outcome' }> | undefined

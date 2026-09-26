@@ -9,6 +9,7 @@ import {
   prepareE2eScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 
 describe('settings usage panel', function () {
   this.timeout(60_000)
@@ -148,6 +149,27 @@ describe('settings usage panel', function () {
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(2) tbody tr')).toBeDisplayed()
 
+    const periodWidths = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>('.usage-period-btn')].map(
+        (button) => button.getBoundingClientRect().width,
+      ),
+    )
+    assert.equal(periodWidths.length, 4)
+    const monthButton = $('.usage-period-btn[data-period="month"]')
+    await monthButton.click()
+    await expect(monthButton).toHaveAttribute('aria-selected', 'true')
+    assert.deepEqual(
+      await browser.execute(() =>
+        [...document.querySelectorAll<HTMLElement>('.usage-period-btn')].map(
+          (button) => button.getBoundingClientRect().width,
+        ),
+      ),
+      periodWidths,
+      'selecting a usage period must not change any pill width',
+    )
+    await saveElementScreenshot('.usage-period-tabs', 'settings-usage-period-tabs.png')
+    await $('.usage-period-btn[data-period="day"]').click()
+
     const cloudRows = await browser.execute(() =>
       [...document.querySelectorAll('.usage-model-group:nth-of-type(1) tbody tr')].map(
         (row) => row.textContent ?? '',
@@ -167,6 +189,20 @@ describe('settings usage panel', function () {
       cloudRows.some((row) => row.includes('gpt-4o') && row.includes('(standard rate)')),
       'a missing tier catalog rate should say that the standard rate was used',
     )
+
+    // Only the section's own <h3> is the display masthead; the plan and ledger
+    // titles nested under it keep their Pliant recipe (docs/ui-taste.md).
+    const masthead = await readHeadingStyle('.settings-section.active > h3')
+    assert.ok(masthead, 'Usage section masthead should render')
+    assert.ok(isDisplayFace(masthead.family), `masthead family: ${masthead.family}`)
+    for (const selector of ['.usage-plan-heading', '.usage-ledger-heading']) {
+      const heading = await readHeadingStyle(selector)
+      assert.ok(heading, `${selector} should render`)
+      assert.equal(heading.tag, 'H4', `${selector} is below the display tier`)
+      assert.ok(!isDisplayFace(heading.family), `${selector} family: ${heading.family}`)
+      assert.equal(heading.weight, '600', `${selector} weight`)
+      assert.ok(heading.size < masthead.size, `${selector} ${String(heading.size)}px < masthead`)
+    }
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')
@@ -221,6 +257,32 @@ describe('settings usage panel', function () {
     await expect(fieldset).toBeDisplayed()
     await fieldset.scrollIntoView({ block: 'start', inline: 'nearest' })
     await prepareE2eScreenshot()
+
+    // The value map is a top-level group like every other in Settings: flat
+    // (no card fill or inset) under a display-face legend, even though Usage
+    // mounts it one wrapper deeper (#3065).
+    const groupStyle = await browser.execute(() => {
+      const read = (selector: string) => {
+        const group = document.querySelector<HTMLElement>(selector)
+        const legend = group?.querySelector<HTMLElement>(':scope > legend')
+        if (!group || !legend) return null
+        const groupCss = getComputedStyle(group)
+        const legendCss = getComputedStyle(legend)
+        return {
+          background: groupCss.backgroundColor,
+          padding: groupCss.padding,
+          legendFamily: legendCss.fontFamily,
+          legendSize: legendCss.fontSize,
+          legendWeight: legendCss.fontWeight,
+        }
+      }
+      return {
+        valueMap: read('.frontier-fieldset'),
+        sibling: read('.settings-section[data-section="general"] > fieldset'),
+      }
+    })
+    assert.ok(groupStyle.valueMap && groupStyle.sibling, 'expected both top-level groups')
+    assert.deepEqual(groupStyle.valueMap, groupStyle.sibling, 'top-level groups look alike')
 
     const discover = fieldset.$('button.frontier-discover')
     await discover.waitForClickable({ timeout: 20_000 })

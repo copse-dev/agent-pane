@@ -54,6 +54,7 @@ export function bindBrowserLinkClicks(
     if (!link || !root.contains(link)) return
     if (link.dataset['fileReferencePath']) return
     if (link.dataset['workspaceLink']) return
+    if (link.dataset['workspaceResourcePath']) return
 
     const href = linkHttpHref(link)
     if (!href) return

@@ -1,3 +1,42 @@
+/* Back-link to the roadmap item a thread was started from (#2501). Quiet
+   chrome above the transcript, mirroring `.roadmap-thread-chip`'s muted
+   icon-first treatment in the reverse direction (roadmap.css). Hidden by
+   default via [hidden]; thread-roadmap-origin.ts only reveals it for a
+   thread with a tracked roadmap origin. */
+.thread-roadmap-origin {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  /* Line the chip up with the centred transcript column (`.msg` caps at
+     --chat-content-max inside the list's --spacing-xl gutter) and its text
+     inset, so on a wide pane it sits above the text rather than at the
+     pane edge. */
+  max-width: var(--chat-composer-width);
+  margin: var(--spacing-sm) 0 0 max(var(--spacing-xl), calc((100% - var(--chat-content-max)) / 2));
+  padding: 0 var(--spacing-md);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.thread-roadmap-origin:hover {
+  color: var(--accent);
+}
+.thread-roadmap-origin-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.thread-roadmap-origin-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .messages-list {
   flex: 1;
   overflow-y: auto;
@@ -161,6 +200,29 @@
 }
 .agent-activity[hidden] {
   display: none;
+  height: 0;
+  min-height: 0;
+  padding-block: 0;
+  /* Cancel the .messages-list gap in front of the row as well, so nothing is
+     left to jump when display:none finally lands. */
+  margin-block-start: calc(-1 * var(--spacing-sm));
+  opacity: 0;
+  overflow: clip;
+}
+/* The row goes away when a turn ends, under a transcript pinned to its bottom.
+   Collapse it rather than drop it, so the answer eases down instead of jumping
+   by the row's height. Showing stays instant: a row leaving display:none has
+   no before-change style to transition from. */
+@media (prefers-reduced-motion: no-preference) {
+  .agent-activity {
+    interpolate-size: allow-keywords;
+    transition:
+      height 0.2s ease,
+      padding-block 0.2s ease,
+      margin-block-start 0.2s ease,
+      opacity 0.15s ease,
+      display 0.2s allow-discrete;
+  }
 }
 .reasoning-activity-icon {
   width: var(--font-size-lg);
@@ -433,7 +495,7 @@
   top: 0;
   right: 0;
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -474,7 +536,7 @@
   opacity: 1;
 }
 .msg-action {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -537,7 +599,7 @@
   align-items: center;
   gap: 4px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.25;
   color: var(--text-secondary);
   background: transparent;
@@ -608,12 +670,38 @@
 .msg-assistant {
   background: transparent;
 }
+.agent-avatar {
+  display: block;
+  width: calc(var(--spacing-xl) + var(--spacing-xs));
+  height: calc(var(--spacing-xl) + var(--spacing-xs));
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.message-agent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.message-agent-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 /* Primary-chat model chrome — only present when the thread used more than one
    picker model. Mirrors the subagent card's muted model line. */
 .message-model {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-bottom: var(--spacing-xs);
+}
+.message-agent .message-model {
+  margin-bottom: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 /* A text-only response is the readable outcome of a run. Give it more breathing
    room than the execution trace without inventing a new completion state. */
@@ -724,6 +812,29 @@
   margin-top: var(--spacing-xs);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+.acp-resource-link[hidden],
+.acp-resource-image[hidden] {
+  display: none;
+}
+.acp-referenced-image {
+  display: block;
+  margin: var(--spacing-sm) 0;
+}
+.acp-referenced-image .tool-result-preview-caption,
+.acp-resource-image .acp-resource-description,
+.acp-resource-image .acp-resource-meta {
+  display: block;
+}
+.acp-resource-image-link {
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
+.acp-referenced-image-path {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* Assistant-owned proof is intentionally distinct from transient tool output:
@@ -879,7 +990,7 @@
 .visual-evidence-source-url {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -899,6 +1010,11 @@
 }
 .tool-result-content {
   margin-bottom: var(--spacing-sm);
+}
+/* Every resource here is cited by a later reply, which shows it instead. */
+.acp-content-blocks:not(:has(> :not([hidden]))),
+.tool-result-content:not(:has(> :not([hidden]))) {
+  display: none;
 }
 .acp-content-image {
   justify-self: start;
@@ -948,8 +1064,7 @@ span.acp-resource-title {
   color: var(--text-primary);
   font-weight: 600;
 }
-.acp-resource-text,
-.acp-tool-diff-text {
+.acp-resource-text {
   margin: var(--spacing-xs) 0 0;
   max-height: 240px;
   overflow: auto;
@@ -961,6 +1076,104 @@ span.acp-resource-title {
 .acp-tool-diff > .acp-content-label {
   display: block;
   margin-top: var(--spacing-sm);
+}
+/* The summary is one line: label, left-elided path (leaf stays visible, full
+   path on hover), then the +/- counts pinned to the end. */
+.acp-tool-diff > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  list-style: none;
+}
+.acp-tool-diff > summary::-webkit-details-marker {
+  display: none;
+}
+.acp-tool-diff > summary::before {
+  content: '›';
+  flex: none;
+  display: inline-block;
+  width: 0.6em;
+  transition: transform 120ms ease;
+}
+.acp-tool-diff[open] > summary::before {
+  transform: rotate(90deg);
+}
+.acp-tool-diff-label {
+  flex: none;
+}
+.acp-tool-diff-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.acp-tool-diff > summary .tool-stat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.acp-tool-diff > summary .tool-stat-add {
+  margin-left: auto;
+}
+/* Lines never wrap: rows grow to the longest line so their tint spans the
+   scrolled width, and the list scrolls in both directions. */
+.acp-tool-diff-lines {
+  display: grid;
+  grid-auto-rows: min-content;
+  margin-top: var(--spacing-sm);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.acp-diff-line {
+  display: flex;
+  min-width: max-content;
+  padding-right: var(--spacing-md);
+  white-space: pre;
+  color: var(--text-secondary);
+}
+.acp-diff-sign {
+  flex: none;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+}
+.acp-diff-add {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-add > .acp-diff-sign {
+  color: var(--success);
+}
+.acp-diff-del {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--text-primary);
+}
+.acp-diff-del > .acp-diff-sign {
+  color: var(--danger);
+}
+.acp-diff-gap {
+  padding-left: 2ch;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+}
+.acp-diff-eof {
+  padding-left: 2ch;
+  color: var(--text-muted);
+  font-style: italic;
 }
 .message-text .remote-artifact-image {
   display: block;
@@ -987,7 +1200,7 @@ span.acp-resource-title {
 .code-block-copy,
 .code-block-run {
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1031,6 +1244,11 @@ span.acp-resource-title {
   position: relative;
   margin: var(--spacing-sm) 0;
 }
+/* A table streams bare and is wrapped in .table-copy-shell by the final render.
+   Give it the shell's margin meanwhile, so completion doesn't shift the answer. */
+.message-text table:not(.table-copy-scroll > table) {
+  margin-block: var(--spacing-sm);
+}
 /* A table too wide to fit (e.g. an unbroken URL) scrolls within its own box
    rather than adding a horizontal scrollbar to the whole conversation. */
 .message-text .table-copy-scroll {
@@ -1048,7 +1266,7 @@ span.acp-resource-title {
   top: var(--spacing-xs);
   right: var(--spacing-xs);
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1121,7 +1339,7 @@ span.acp-resource-title {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg-elevated, var(--bg));
+  background: var(--bg-elevated);
 }
 .canvas-preview-image {
   display: block;
@@ -1131,7 +1349,7 @@ span.acp-resource-title {
   max-height: 260px;
   object-fit: cover;
   object-position: top center;
-  background: var(--bg);
+  background: var(--bg-base);
 }
 .canvas-preview-footer {
   display: flex;
@@ -1146,7 +1364,7 @@ span.acp-resource-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted, var(--text));
 }
 
@@ -1211,7 +1429,7 @@ span.acp-resource-title {
   gap: 2px;
 }
 .canvas-inline-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .canvas-preview-open {

@@ -154,9 +154,11 @@ describe('ACP rich content', () => {
     await expect(rich.$$('.tool-result-image')).toBeElementsArrayOfSize(1)
     await expect(rich.$$('audio')).toBeElementsArrayOfSize(1)
     await expect(rich.$('.acp-resource-title')).toHaveText('Generated report')
-    await expect(rich.$('.acp-tool-diff summary')).toHaveText(
-      'Diff · src/renderer/views/conversation.ts',
-    )
+    const diff = rich.$('.acp-tool-diff')
+    await expect(diff.$('.acp-tool-diff-label')).toHaveText('Diff')
+    await expect(diff.$('.acp-tool-diff-path')).toHaveText('src/renderer/views/conversation.ts')
+    await expect(diff.$('.tool-stat-add')).toHaveText('+1')
+    await expect(diff.$('.tool-stat-del')).toHaveText('-1')
     await expect(rich.$('.acp-terminal-reference code')).toHaveText('terminal-inspection-1')
     await expect($(`[data-message-id="${ANSWER_MESSAGE_ID}"] .acp-resource-title`)).toHaveText(
       'Final report',

@@ -101,7 +101,8 @@ shell's hand-offs (Phase 4).
   onto the headless contract's `turn_start … turn_end` event envelope; `runReviewers` fans
   out every model over every lens, a few at a time, over one serialised cell. Each role's
   report includes wall time in tools and outside tools. The latter includes model calls,
-  API retries and orchestration; it is not a pure inference measurement.
+  API retries and orchestration; it is not a pure inference measurement. Every role's system
+  prompt states today's (UTC) date, so a past timestamp is not reasoned about as a future one.
 - **`cluster.ts`** — Stage 3: two candidates are one finding when their anchors overlap
   (with a few lines of slack) and their claims share enough content words. The first keeps
   its identity; the rest corroborate it. Thresholds are exported for `bench:review` to tune.
@@ -139,6 +140,10 @@ shell's hand-offs (Phase 4).
   OpenRouter's reported hosting provider travels with each response's usage;
   per-turn JSON summaries and collapsed review details list the observed hosts.
   Missing metadata stays unknown rather than being inferred from a model ID.
+  When a provider's own retries are exhausted on a retryable failure (an upstream rate
+  limit, say) before anything but progress has streamed, `provider-backoff.ts` replays the
+  request after about one and then two minutes, so many reviews started together degrade to
+  slower rather than to "Review stopped early".
   Parallel pass durations overlap and must not be summed; tool time includes
   waiting for the shared execution lane.
 - **`report-text.ts`** — the terminal projection. "Clean." is a complete answer only when
@@ -148,7 +153,15 @@ shell's hand-offs (Phase 4).
   shape (findings included) before a field of it reaches a model or a comment.
 - **`forge-review.ts`** — the pull-request projection: one review (`COMMENT`, never a
   request for changes), each surfaced finding with a line an inline comment on the head
-  commit, the rest in the body. GitHub and Forgejo; a line the forge refuses is folded
+  commit, the rest in the body. On GitHub a re-run marks the same identity's earlier Copse
+  reviews superseded (a submitted review cannot be deleted: its body becomes a link to the new
+  one and its inline comments are hidden as outdated, keeping replies); a failure there leaves
+  them as they were and does not fail the run. The CLI posts only when there is a finding to
+  raise: a complete review with none marks earlier Copse reviews resolved instead, and an
+  incomplete one leaves them. On GitHub it also leaves out a finding a bot comment on another
+  open pull request already raises (same path and class, and a claim Stage 3 would cluster),
+  naming that pull request; stacked branches otherwise received the same finding each. If that
+  lookup fails, every finding is kept. GitHub and Forgejo; a line the forge refuses is folded
   into the body rather than lost. The claim and confirmation status stay visible;
   supporting reasoning and evidence use a collapsed `details` section. Run metadata and
   per-role timing live under `Review details`. Incomplete reviews and missing checks keep
@@ -204,15 +217,20 @@ and the challenger over the checkouts, no `run_command`) and says so with exit `
 ## In CI
 
 The plan's job A and job B (`.github/workflows/review-ground.yml` and
-`review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) are opt-in by the
-`copse-review` label on a pull request. On GitHub, `review-trigger.yml` receives the
-`pull_request_target:labeled` event so an older pull request still selects trusted default-branch
-workflow code. That target-context job has PR-read and Actions-dispatch permission, but it checks
+`review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) review every ready (non-draft)
+owner pull request from this repository when it is opened, reopened or marked ready for review.
+The `copse-review` label reviews a draft or re-reviews a newer head, and `copse-review-skip` opts a
+pull request out; pushes alone do not re-review. On GitHub,
+`review-trigger.yml` receives those `pull_request_target` events so an older pull request still
+selects trusted default-branch workflow code. That target-context job has PR-read and Actions-dispatch permission, but it checks
 out and executes nothing; it resolves current PR metadata and dispatches the separate ground
 workflow. Job A has `permissions: {}` and no secrets, runs Stage 0 on the head with the runner as
 the cell (`--backend ephemeral-runner`), and uploads the report. It uses the reviewed CLI from the
 default branch, so an older PR need not contain `@copse/review`; pull-request code is fetched only
-after checkout credentials have been removed. Before entering the cell, the secret-free job copies
+after checkout credentials have been removed. Pull-request code runs as a dedicated user with no
+sudo and no access to the runner's home (`ci/ground-as-cell-user.sh`), so it cannot rewrite the
+actions and command files that later steps execute with the job's Actions runtime token, a token
+`permissions: {}` does not remove. Before entering the cell, the secret-free job copies
 only the exact head's `pnpm-lock.yaml` and patch data into runner scratch and runs `pnpm fetch`;
 that primes Stage 0's read-only offline store without loading a contributor manifest or lifecycle
 script on the host.
@@ -221,8 +239,9 @@ explicitly dispatches the findings workflow after grounding succeeds. This uses 
 `workflow_dispatch` exception because GitHub suppresses an implicit `workflow_run` event after a
 run started with `GITHUB_TOKEN`. The secret-bearing findings job verifies the successful ground
 run and resolves the current contributor commit and base from GitHub's Pull Request API, rather
-than trusting the artefact or a dynamic run association. Remove and re-add the label to review a
-newer head.
+than trusting the artefact or a dynamic run association; it rechecks that the pull request is ready
+or labelled and not `copse-review-skip`. Add (or remove and re-add) the label to review a newer
+head.
 Repeated PR reviews first look for clean grounding from the previous 24 hours. Reuse
 requires the same PR head and merge-base, all four checks completed successfully, and
 unchanged trusted runner code and dependencies. Producer identity comes from GitHub's
@@ -272,8 +291,9 @@ Review context is secret-redacted before it leaves the runner, but it does leave
 the configured model endpoint.
 
 `.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
-each night, including drafts because that is where most active Copse work lives
-(already-labelled PRs, generated screenshot-review PRs and `copse-review-skip` are excluded),
+each night from its drafts, because that is where most active Copse work lives and ready pull
+requests are already reviewed (already-labelled PRs, generated screenshot-review PRs and
+`copse-review-skip` are excluded),
 using the same secret-free Stage 0 / container-backed focused-validation split. It can also be dispatched for a
 specific same-repository PR, draft or otherwise. Both paths remain advisory and retain the full
 findings JSON and SARIF for 30 days so latency, token use and human adjudication can be collected

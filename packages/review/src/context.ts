@@ -93,9 +93,50 @@ interface RawFileDiff {
   readonly text: string
 }
 
+const C_ESCAPES: ReadonlyMap<string, number> = new Map([
+  ['a', 7],
+  ['b', 8],
+  ['t', 9],
+  ['n', 10],
+  ['v', 11],
+  ['f', 12],
+  ['r', 13],
+  ['"', 34],
+  ['\\', 92],
+])
+
+/**
+ * A path from a diff header. Git C-quotes one holding a control character, a
+ * quote, a backslash or (under the default `core.quotePath`) any non-ASCII
+ * byte, writing the bytes as octal escapes: `"a/caf\303\251.ts"`.
+ */
 function unquote(path: string): string {
-  return path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path
+  if (!(path.length >= 2 && path.startsWith('"') && path.endsWith('"'))) return path
+  const bytes: number[] = []
+  const body = path.slice(1, -1)
+  for (let index = 0; index < body.length; index++) {
+    const char = body[index] ?? ''
+    if (char !== '\\') {
+      bytes.push(...Buffer.from(char, 'utf8'))
+      continue
+    }
+    const octal = /^[0-7]{3}/.exec(body.slice(index + 1))
+    if (octal) {
+      bytes.push(Number.parseInt(octal[0], 8))
+      index += 3
+      continue
+    }
+    const escaped = body[index + 1] ?? ''
+    bytes.push(C_ESCAPES.get(escaped) ?? escaped.charCodeAt(0))
+    index += 1
+  }
+  return Buffer.from(bytes).toString('utf8')
 }
+
+/** One side of a `diff --git` header: `a/path` or `"a/quoted path"`. */
+const HEADER_SIDE = (prefix: string): string =>
+  `(?:"${prefix}/((?:[^"\\\\]|\\\\.)*)"|${prefix}/(.+?))`
+const DIFF_HEADER = new RegExp(`^diff --git ${HEADER_SIDE('a')} ${HEADER_SIDE('b')}$`)
 
 /** Split a unified diff into per-file entries. Pure; tolerant of what it does not recognise. */
 export function splitDiff(diff: string): RawFileDiff[] {
@@ -103,9 +144,11 @@ export function splitDiff(diff: string): RawFileDiff[] {
   const blocks = diff.split(/^(?=diff --git )/m).filter((block) => block.startsWith('diff --git '))
   for (const block of blocks) {
     const header = block.split('\n', 1)[0] ?? ''
-    const names = /^diff --git a\/(.+?) b\/(.+)$/.exec(header)
-    const oldName = unquote(names?.[1] ?? '')
-    const newName = unquote(names?.[2] ?? oldName)
+    const names = DIFF_HEADER.exec(header)
+    const quotedOld = names?.[1]
+    const quotedNew = names?.[3]
+    const oldName = quotedOld === undefined ? (names?.[2] ?? '') : unquote(`"${quotedOld}"`)
+    const newName = quotedNew === undefined ? (names?.[4] ?? oldName) : unquote(`"${quotedNew}"`)
     let status: FileDiffStatus = 'modified'
     if (/^new file mode/m.test(block)) status = 'added'
     else if (/^deleted file mode/m.test(block)) status = 'deleted'
@@ -302,6 +345,29 @@ function readInstructions(headCheckout: string): RepositoryInstructions[] {
   return out
 }
 
+/**
+ * A diff over the head checkout, which the cell may have written. No external
+ * diff or textconv driver, and no recursion into submodules: for each gitlink
+ * a worktree diff would otherwise run `git status` inside `head/<submodule>/`,
+ * where the cell-writable `.git` can name filter drivers that then run on the
+ * host. The flag, unlike `diff.ignoreSubmodules`, also outranks an `ignore`
+ * setting in the checkout's `.gitmodules`. Submodule pointer changes are not
+ * shown as a result.
+ */
+const WORKTREE_DIFF_ARGS = [
+  'diff',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--ignore-submodules=all',
+  '--find-renames',
+  // The repository's own diff.noprefix / diff.mnemonicPrefix / diff.relative
+  // would otherwise change the headers splitDiff reads.
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+  '--no-relative',
+] as const
+
 export interface BuildContextOptions {
   readonly checkouts: MaterialisedCheckouts
   readonly budgetChars?: number
@@ -326,15 +392,7 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
       throw new Error(`Cannot stage untracked context: ${added.stderr.trim()}`)
     }
   }
-  const result = await gitInWorktree(git, head, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--find-renames',
-    checkouts.mergeBase,
-    '--',
-  ])
+  const result = await gitInWorktree(git, head, [...WORKTREE_DIFF_ARGS, checkouts.mergeBase, '--'])
   if (result.code !== 0) {
     throw new Error(`Cannot diff head against the merge-base: ${result.stderr.trim()}`)
   }
@@ -342,7 +400,7 @@ export async function headDiff(checkouts: MaterialisedCheckouts, git: GitRunner)
 }
 
 function pinnedHead(checkouts: MaterialisedCheckouts): PinnedWorktree {
-  return { gitDir: checkouts.headGitDir, workTree: checkouts.head }
+  return { gitDir: checkouts.headGitDir, workTree: checkouts.reviewHead }
 }
 
 export async function buildReviewContext(options: BuildContextOptions): Promise<ReviewContext> {
@@ -355,8 +413,8 @@ export async function buildReviewContext(options: BuildContextOptions): Promise<
     head: pinnedHead(options.checkouts),
     dirtyWorkingTree: options.checkouts.dirty,
     files,
-    instructions: readInstructions(options.checkouts.head),
-    testMap: await buildTestMap(options.checkouts.head, files),
+    instructions: readInstructions(options.checkouts.reviewHead),
+    testMap: await buildTestMap(options.checkouts.reviewHead, files),
     budgetChars,
     usedChars: files.reduce((sum, file) => sum + file.text.length, 0),
   }
@@ -409,22 +467,26 @@ export function renderReviewContext(context: ReviewContext): string {
   return lines.join('\n')
 }
 
-/** Retrieve the full diff; pin `headCommit` when placing comments on a forge. */
+export interface ReadFileDiffOptions {
+  /** Pin the head side to this commit, as when placing comments on a forge. */
+  readonly headCommit?: string | undefined
+  /** A renamed file's old path; without it rename detection sees an added file. */
+  readonly oldPath?: string | undefined
+}
+
+/** Retrieve one file's full diff. */
 export async function readFileDiff(
   head: PinnedWorktree,
   mergeBase: string,
   path: string,
-  headCommit?: string,
+  options: ReadFileDiffOptions = {},
 ): Promise<string> {
   const result = await gitInWorktree(runGit, head, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--find-renames',
+    ...WORKTREE_DIFF_ARGS,
     mergeBase,
-    ...(headCommit === undefined ? [] : [headCommit]),
+    ...(options.headCommit === undefined ? [] : [options.headCommit]),
     '--',
+    ...(options.oldPath === undefined ? [] : [`:(literal)${options.oldPath}`]),
     `:(literal)${path}`,
   ])
   if (result.code !== 0) throw new Error(`Cannot read diff: ${result.stderr.trim()}`)

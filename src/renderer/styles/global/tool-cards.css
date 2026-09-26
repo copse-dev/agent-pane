@@ -153,10 +153,10 @@
   text-decoration: underline;
 }
 .tool-stat-add {
-  color: #3dd68c;
+  color: var(--change-added);
 }
 .tool-stat-del {
-  color: #f07178;
+  color: var(--change-deleted);
 }
 
 /* Turn rollup: italic muted summary — click to expand the flat tool list. */
@@ -301,6 +301,13 @@
 .tool-group-item[data-status='error'] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
+.tool-interruption-note {
+  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.tool-rollup-body > .tool-interruption-note {
+  margin: var(--spacing-xs) 0;
+}
 .tool-result {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
@@ -329,6 +336,16 @@
 .tool-result-markdown > :last-child {
   margin-bottom: 0;
 }
+.tool-result-error-message {
+  font-family: inherit;
+  max-height: 320px;
+}
+.tool-result-error-message p {
+  margin: 0;
+}
+.tool-result-error-message p + p {
+  margin-top: var(--spacing-sm);
+}
 .tool-locations {
   display: flex;
   flex-wrap: wrap;
@@ -340,13 +357,30 @@
   color: var(--link);
   overflow-wrap: anywhere;
 }
-.tool-args details summary {
+/* `details.tool-args` is the disclosure itself (conversation.ts), so its summary
+   is a direct child. Same handle as the hook card's nested inspect disclosure
+   (`.hook-card-raw-summary`): no UA triangle, a text chevron that flips open. */
+.tool-args > summary {
   cursor: pointer;
+  list-style: none;
   color: var(--text-muted);
+  width: fit-content;
+}
+.tool-args > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-args > summary::before {
+  content: '▸ ';
+}
+.tool-args[open] > summary::before {
+  content: '▾ ';
+}
+.tool-args > summary:hover {
+  color: var(--text-primary);
 }
 .tool-args pre {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   margin-top: var(--spacing-xs);
   white-space: pre-wrap;
@@ -354,6 +388,20 @@
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
+}
+/* A subagent's row otherwise reads exactly like a parent tool row ("Explored
+   files", "Ran security-reviewer") — this leading glyph is the only thing that
+   marks it as delegated work once it settles collapsed, which is the state
+   most subagent rows are ever seen in (#2452). Lives in the `<summary>` itself,
+   never a separate element, so it survives collapse. */
+.tool-subagent-marker {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.tool-card-subagent > .tool-card-header:hover .tool-subagent-marker {
+  color: var(--text-secondary);
 }
 .tool-card-subagent .subagent-summary-preview {
   font-size: var(--font-size-sm);
@@ -364,7 +412,7 @@
   display: none;
 }
 .tool-card-subagent .subagent-model {
-  font-size: var(--font-size-xs, 11px);
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary, var(--text-secondary));
   margin-top: var(--spacing-xs);
 }

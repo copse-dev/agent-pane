@@ -12,6 +12,7 @@ import {
   dependenciesAreCurrent,
   dependencyFingerprint,
   fingerprintPaths,
+  recordLifecycleInstall,
   type DependencyContextFingerprint,
   writeFingerprint,
 } from './dev-sync.mts'
@@ -122,5 +123,31 @@ describe('buildIsCurrent', () => {
 
     write('dist/resources/helper', 'version two')
     assert.notEqual(buildOutputsFingerprint(root), before)
+  })
+})
+
+describe('recordLifecycleInstall', () => {
+  it('records a completed pnpm postinstall as a current dependency install', () => {
+    write('package.json', '{}')
+    for (const sentinel of DEPENDENCY_SENTINELS) write(sentinel, 'installed')
+
+    assert.equal(recordLifecycleInstall(root, { npm_lifecycle_event: 'postinstall' }), true)
+    assert.equal(dependenciesAreCurrent(root, dependencyFingerprint(root)), true)
+  })
+
+  it('does not vouch for a direct run of the preparation script', () => {
+    write('package.json', '{}')
+    for (const sentinel of DEPENDENCY_SENTINELS) write(sentinel, 'installed')
+
+    assert.equal(recordLifecycleInstall(root, {}), false)
+    assert.equal(recordLifecycleInstall(root, { npm_lifecycle_event: 'prepare:native' }), false)
+    assert.equal(dependenciesAreCurrent(root, dependencyFingerprint(root)), false)
+  })
+
+  it('does not record an install that is missing its sentinels', () => {
+    write('package.json', '{}')
+
+    assert.equal(recordLifecycleInstall(root, { npm_lifecycle_event: 'postinstall' }), false)
+    assert.equal(dependenciesAreCurrent(root, dependencyFingerprint(root)), false)
   })
 })

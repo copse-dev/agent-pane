@@ -1087,6 +1087,7 @@ describe('browser pane requested URLs', () => {
       attachTextBlock: (content, label) => {
         attachedText.push({ content, label: label ?? '' })
       },
+      quoteText: () => {},
       attachImage: (dataUrl, mimeType) => {
         assert.equal(mimeType, 'image/png')
         attachedImages.push({ dataUrl, mimeType: 'image/png' })

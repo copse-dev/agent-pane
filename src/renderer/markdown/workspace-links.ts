@@ -19,6 +19,24 @@ export function bindWorkspaceLinkClicks(
   const onClick = (event: MouseEvent): void => {
     const target = event.target
     if (!(target instanceof Element)) return
+    const resourceLink = target.closest<HTMLAnchorElement>('a[data-workspace-resource-path]')
+    if (resourceLink && root.contains(resourceLink)) {
+      const path = resourceLink.dataset['workspaceResourcePath']
+      if (!path) return
+      const owner = getActiveThreadOwner(store)
+      event.preventDefault()
+      event.stopPropagation()
+      void activateWorkspaceReference(store, api, path, 'file').catch((error: unknown) => {
+        const currentOwner = getActiveThreadOwner(store)
+        if (
+          currentOwner?.projectId !== owner?.projectId ||
+          currentOwner?.threadId !== owner?.threadId
+        )
+          return
+        showErrorToast(`Failed to open ${path}`, error)
+      })
+      return
+    }
     const link = target.closest<HTMLAnchorElement>('a[data-workspace-link]')
     if (!link || !root.contains(link)) return
     if (link.dataset['fileReferencePath']) return

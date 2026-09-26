@@ -13,10 +13,13 @@ export function roadmapWriteHarness(): {
   notes: Map<string, KnowledgeNote>
   stamps: string[]
   deleted: string[]
+  /** One entry per `notifyRoadmapChanged` broadcast. */
+  changes: string[]
 } {
   const notes = new Map<string, KnowledgeNote>()
   const stamps: string[] = []
   const deleted: string[] = []
+  const changes: string[] = []
   let nextId = 0
   const deps: RoadmapWriteDependencies = {
     addKnowledgeNote(input) {
@@ -51,6 +54,8 @@ export function roadmapWriteHarness(): {
       notes.set(id, note)
       return note
     },
+    deleteKnowledgeNote: (id) => notes.delete(id),
+    loadKnowledgeNotes: (type) => [...notes.values()].filter((n) => !type || n.type === type),
     saveKnowledgeAttachments: (_id, adds) =>
       adds.map((add): KnowledgeAttachment => ({
         id: `attachment-${String(++nextId)}`,
@@ -73,7 +78,9 @@ export function roadmapWriteHarness(): {
     stampRoadmapTitle: async () => {
       stamps.push('title')
     },
-    notifyRoadmapChanged: () => {},
+    notifyRoadmapChanged: () => {
+      changes.push('roadmap:changed')
+    },
   }
-  return { handlers: createRoadmapWriteHandlers(deps), deps, notes, stamps, deleted }
+  return { handlers: createRoadmapWriteHandlers(deps), deps, notes, stamps, deleted, changes }
 }

@@ -1,0 +1,169 @@
+{
+  "laya": {
+    "candidate": "laya",
+    "createdAt": "2026-09-22T12:55:06.934Z",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "devInputHash": "42fd4096de4d1a699608812c431be2a9a78afa9e2cd2f882ba3db939e0bd278d",
+    "preferredVariant": "original",
+    "policies": {
+      "original": {
+        "probabilistic": true,
+        "temperature": 20,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      },
+      "explicit": {
+        "probabilistic": true,
+        "temperature": 20,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      }
+    },
+    "selectionRule": "Same temperature/threshold grid and zero observed accepted error criterion as SemIf. Prefer greater development coverage, then development correct count, then original. Categorical-only models: no calibrated acceptance policy; prompt selected by development accuracy.",
+    "temperatures": [0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12, 20],
+    "thresholds": [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999, 1],
+    "originalFileHash": "dbb54b9a630107da46ea5a565e78dc03b0e508bb84784988c4ee4a883735ff29",
+    "originalMtime": "2026-09-22T12:55:06.937Z"
+  },
+  "laya-base": {
+    "candidate": "laya-base",
+    "createdAt": "2026-09-22T13:20:45.146Z",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "devInputHash": "42fd4096de4d1a699608812c431be2a9a78afa9e2cd2f882ba3db939e0bd278d",
+    "preferredVariant": "original",
+    "policies": {
+      "original": {
+        "probabilistic": true,
+        "temperature": 20,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      },
+      "explicit": {
+        "probabilistic": false,
+        "temperature": null,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      }
+    },
+    "selectionRule": "Same temperature/threshold grid and zero observed accepted error criterion as SemIf. Prefer greater development coverage, then development correct count, then original. Categorical-only models: no calibrated acceptance policy; prompt selected by development accuracy.",
+    "temperatures": [0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12, 20],
+    "thresholds": [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999, 1],
+    "originalFileHash": "242ea7b671ca6a49be82d196c156b8f766586166fe39d5c90a6cee9322d31089",
+    "originalMtime": "2026-09-22T13:20:45.149Z"
+  },
+  "kev": {
+    "candidate": "kev",
+    "createdAt": "2026-09-22T13:10:45.427Z",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "devInputHash": "42fd4096de4d1a699608812c431be2a9a78afa9e2cd2f882ba3db939e0bd278d",
+    "preferredVariant": "explicit",
+    "policies": {
+      "original": {
+        "probabilistic": true,
+        "temperature": 0.5,
+        "threshold": 0.975,
+        "developmentAccepted": 1,
+        "developmentCoverage": 0.01
+      },
+      "explicit": {
+        "probabilistic": true,
+        "temperature": 2,
+        "threshold": 0.7,
+        "developmentAccepted": 6,
+        "developmentCoverage": 0.06
+      }
+    },
+    "selectionRule": "Same temperature/threshold grid and zero observed accepted error criterion as SemIf. Prefer greater development coverage, then development correct count, then original. Categorical-only models: no calibrated acceptance policy; prompt selected by development accuracy.",
+    "temperatures": [0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12, 20],
+    "thresholds": [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999, 1],
+    "originalFileHash": "148f7150a3a3918c98a1595ea276eedf29b0d8a0598cf27a5395118c75669760",
+    "originalMtime": "2026-09-22T13:10:45.430Z"
+  },
+  "acp": {
+    "candidate": "acp",
+    "createdAt": "2026-09-22T13:10:21.703Z",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "devInputHash": "42fd4096de4d1a699608812c431be2a9a78afa9e2cd2f882ba3db939e0bd278d",
+    "preferredVariant": "original",
+    "policies": {
+      "original": {
+        "probabilistic": false,
+        "temperature": null,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      },
+      "explicit": {
+        "probabilistic": false,
+        "temperature": null,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      }
+    },
+    "selectionRule": "Same temperature/threshold grid and zero observed accepted error criterion as SemIf. Prefer greater development coverage, then development correct count, then original. Categorical-only models: no calibrated acceptance policy; prompt selected by development accuracy.",
+    "temperatures": [0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12, 20],
+    "thresholds": [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999, 1],
+    "originalFileHash": "d09b952f8b7fbcece00570427874a4e2d454442db6beec4d46532789740cf19a",
+    "originalMtime": "2026-09-22T13:10:21.706Z"
+  },
+  "openjev": {
+    "candidate": "openjev",
+    "createdAt": "2026-09-22T13:52:54.093Z",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "devInputHash": "42fd4096de4d1a699608812c431be2a9a78afa9e2cd2f882ba3db939e0bd278d",
+    "preferredVariant": "explicit",
+    "policies": {
+      "original": {
+        "probabilistic": false,
+        "temperature": null,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      },
+      "explicit": {
+        "probabilistic": false,
+        "temperature": null,
+        "threshold": null,
+        "developmentAccepted": 0,
+        "developmentCoverage": 0
+      }
+    },
+    "selectionRule": "Same temperature/threshold grid and zero observed accepted error criterion as SemIf. Prefer greater development coverage, then development correct count, then original. Categorical-only models: no calibrated acceptance policy; prompt selected by development accuracy.",
+    "temperatures": [0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12, 20],
+    "thresholds": [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999, 1],
+    "originalFileHash": "8566479afb92fedafddc70518281729f1659b01431c0cf5349becd6990b553f1",
+    "originalMtime": "2026-09-22T13:52:54.095Z"
+  },
+  "semif": {
+    "createdAt": "2026-09-22T12:05:54.362Z",
+    "datasetHash": "56552dee976f013b9e4df57ca923f285e9ecfdbf00d7bafeb54c9f25ed507d57",
+    "devInputHash": "42fd4096de4d1a699608812c431be2a9a78afa9e2cd2f882ba3db939e0bd278d",
+    "policies": {
+      "original": {
+        "temperature": 20,
+        "threshold": null,
+        "developmentCoverage": 0,
+        "developmentAccepted": 0,
+        "developmentWrongAccepted": 0
+      },
+      "explicit": {
+        "temperature": 1.5,
+        "threshold": 0.99,
+        "developmentCoverage": 0.02,
+        "developmentAccepted": 2,
+        "developmentWrongAccepted": 0
+      }
+    },
+    "preferredVariant": "explicit",
+    "selectionRule": "Fit temperature by development NLL on a fixed grid; maximize development coverage with zero observed accepted errors. Zero eligible coverage means defer all. This is not a safety guarantee.",
+    "temperatures": [0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12, 20],
+    "thresholds": [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999, 1],
+    "originalFileHash": "946f1d0f65601d008ded5a35e6e310034ec3f43b6dddc4839b843779a7d1b116",
+    "originalMtime": "2026-09-22T12:05:54.369Z"
+  }
+}
