@@ -14003,19 +14003,22 @@ dialog.process-manager-overlay {
 }
 .roadmap-row .memories-row-main {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 2px var(--spacing-xs);
 }
 .roadmap-row-title {
-  flex: 1 1 auto;
+  flex: 1 1 8em;
   min-width: 0;
 }
 .roadmap-row-meta {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--spacing-xs);
   align-items: center;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
 }
 .roadmap-status-badge {
