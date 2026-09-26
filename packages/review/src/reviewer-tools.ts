@@ -530,7 +530,9 @@ export function createReviewerToolExecutor(host: ReviewerToolHost): ReviewerTool
         throw new ToolInputError('Conversation images cannot be fetched in this review')
       }
       bytes = await host.fetchRemoteImage(image.url, signal)
-      name = `${image.id}: ${image.label}`
+      // The label is author-supplied text; the provider sends an image's name
+      // outside the external-content envelope, so it carries only the id.
+      name = image.id
       about = `${image.id} (${image.postedIn}): ${image.label}`
     } else {
       const side = input.side ?? 'head'

@@ -119,7 +119,9 @@ describe('view_image', () => {
     const tools = executor(fetched)
     const shown = await tools.execute('view_image', { image: 'img-1' }, signal, 'c1')
     assert.ok(typeof shown !== 'string')
-    assert.equal(shown.images[0]?.name, 'img-1: after')
+    // The author-supplied label stays inside the wrapped result, never the unwrapped image name.
+    assert.equal(shown.images[0]?.name, 'img-1')
+    assert.match(shown.result, /<external_content source="view_image">\nimg-1 \(.*\): after\n/)
     assert.deepEqual(fetched, ['https://shots.example/toolbar-after.png'])
     assert.match(
       toolText(

@@ -8,7 +8,7 @@ import {
   renderPullRequestConversation,
   type PullRequestRef,
 } from './pr-conversation.ts'
-import type { FetchLike } from './forge-review.ts'
+import { isCopseReviewBody, type FetchLike } from './forge-review.ts'
 
 const SHA_BEFORE = 'd5b006fa3ff06fa2c0b6e0cb0969ffbf10166dfd'
 const SHA_AFTER = 'a517e0011776800309f93024f51aba3feb75ccb4'
@@ -289,5 +289,17 @@ describe('readPullRequestConversation', () => {
       readPullRequestConversation({ ...GITHUB, token: undefined }, { fetch }),
       /github returned 404/,
     )
+  })
+
+  it('recognises every body Copse Reviewer leaves on a review, and nothing a person writes', () => {
+    const sha = 'd'.repeat(40)
+    assert.ok(isCopseReviewBody(`### Copse Reviewer\n\nOne finding.\n<!-- copse-review:${sha} -->`))
+    assert.ok(isCopseReviewBody('### Copse Reviewer\n\nSuperseded by [a newer review](https://x).'))
+    assert.ok(
+      isCopseReviewBody(
+        '### Copse Reviewer\n\nResolved: a newer review of `abc` raised no new issues.',
+      ),
+    )
+    assert.ok(!isCopseReviewBody('The Copse Reviewer finding above is wrong: see line 3.'))
   })
 })

@@ -72,7 +72,7 @@ export const MAX_ENTRY_CHARS = 3_000
 export const MAX_CONVERSATION_CHARS = 20_000
 /** Images listed in the index the reviewer sees. */
 export const MAX_INDEXED_IMAGES = 120
-/** Pages of 100 read per list endpoint; a longer thread keeps its newest pages' worth. */
+/** Pages read per list endpoint. Forges list oldest first, so a longer thread loses its newest entries. */
 const MAX_PAGES = 5
 const PAGE_SIZE = 100
 const FORGEJO_PAGE_SIZE = 50
