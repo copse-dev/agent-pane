@@ -30,6 +30,7 @@ import {
   type ThreadContainerRequest,
 } from './thread-container.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
+import type { ThreadContainerEngine } from './container-engine.ts'
 
 /**
  * One unattended container run per thread, driven from the UI
@@ -49,14 +50,20 @@ const LOG_TAIL = 60
 
 interface RunDependencies {
   run: typeof runThreadInContainer
-  ensureImage: () => Promise<void>
+  /** Build the worker image on `engine` unless the one there is this build's. */
+  ensureImage: (engine: ThreadContainerEngine) => Promise<void>
   /**
-   * Reachable Docker daemon for this product path. Injected so tests can
-   * refuse a start without spawning docker; production uses
-   * {@link assertThreadContainerEngine}.
+   * The engine a run will use (Docker, or Apple container on Apple silicon),
+   * or a readable refusal. Asked once per run; the answer is passed on, never
+   * asked again mid-run. Injected so tests can refuse a start without spawning
+   * an engine CLI; production uses {@link assertThreadContainerEngine}.
    */
-  assertEngine: () => void | Promise<void>
-  /** Force-remove a live run's container; the runner's wait then settles. */
+  assertEngine: () => Promise<ThreadContainerEngine>
+  /**
+   * Force-remove a live run's container; the runner's wait then settles.
+   * Without an engine (a run this session did not start) every engine that is
+   * up is asked.
+   */
   stop: typeof teardownRuntime
   /**
    * The checkout this thread actually works in. Injected like the supervisor's
@@ -84,10 +91,10 @@ const productionDependencies: RunDependencies = {
   // Rebuild whenever the shipped worker differs from the one the existing
   // image was built from. Reusing on tag alone would keep an app upgrade
   // running the previous guest — and its previous security behaviour.
-  ensureImage: async (): Promise<void> => {
+  ensureImage: async (engine): Promise<void> => {
     const wanted = workerBuildFingerprint()
-    if ((await workerImageFingerprint(WORKER_IMAGE)) === wanted) return
-    await buildWorkerImage({ image: WORKER_IMAGE })
+    if ((await workerImageFingerprint(WORKER_IMAGE, engine)) === wanted) return
+    await buildWorkerImage({ image: WORKER_IMAGE, engine })
   },
   resolveContext: resolveThreadExecutionContext,
 }
@@ -125,6 +132,8 @@ export class ContainerRunService {
   >()
   /** One per live run: aborted on stop, so the runner can refuse to create the container. */
   private readonly stopSignals = new Map<string, AbortController>()
+  /** The engine each run this session started is on, by runtime id, for its stop. */
+  private readonly engines = new Map<string, ThreadContainerEngine>()
   private supervisor: TaskSupervisor | null = null
   private readonly deps: RunDependencies
 
@@ -140,7 +149,7 @@ export class ContainerRunService {
       if (progress?.runtimeId === task.processHandleId) {
         await this.stopRuntime(task.threadId)
       } else if (task.processHandleId) {
-        await this.deps.stop(task.processHandleId)
+        await this.deps.stop(task.processHandleId, this.engines.get(task.processHandleId))
       }
     })
     this.supervisor = supervisor
@@ -240,7 +249,7 @@ export class ContainerRunService {
       log: [...progress.log, '[thread-container] stop requested by the user'].slice(-LOG_TAIL),
     })
     if (progress.runtimeId !== null && progress.phase !== 'building-image') {
-      const outcome = await this.deps.stop(progress.runtimeId)
+      const outcome = await this.deps.stop(progress.runtimeId, this.engines.get(progress.runtimeId))
       if (outcome === 'failed') {
         this.update(progress, {
           log: [...progress.log, '[thread-container] the container could not be removed'].slice(
@@ -346,9 +355,10 @@ export class ContainerRunService {
         ...(request.extraEgress ?? []),
       ]),
     ]
-    // Decided before Docker is touched: a down daemon (or Apple-only host) must
+    // Decided before any engine is touched: a host with neither engine up must
     // fail here with a recovery path, not mid-build as a raw socket error.
-    await this.deps.assertEngine()
+    // The answer is the engine for the whole run.
+    const engine = await this.deps.assertEngine()
 
     const progress: ContainerRunProgress = {
       threadId: request.threadId,
@@ -427,7 +437,7 @@ export class ContainerRunService {
     // A copy taken before the drive starts: the run mutates its own object as
     // it advances, and the caller wants the state it asked for.
     const first = snapshot(progress)
-    void this.drive(request, plan, checkout.root, progress, continuation, stopSignal)
+    void this.drive(request, plan, engine, checkout.root, progress, continuation, stopSignal)
     return first
   }
 
@@ -474,12 +484,14 @@ export class ContainerRunService {
   private async drive(
     request: ContainerRunRequest,
     plan: Awaited<ReturnType<typeof resolveContainerProvider>>,
+    engine: ThreadContainerEngine,
     workspace: string,
     progress: ContainerRunProgress,
     continuation: RunContinuation | null,
     stopSignal: AbortController,
   ): Promise<void> {
     const runtimeId = newRuntimeId()
+    this.engines.set(runtimeId, engine)
     // The key travels as an environment variable the runner names on the
     // `docker run` command line, so neither the value nor a host variable name
     // appears in argv or in the run's files; it is removed once the container
@@ -524,7 +536,7 @@ export class ContainerRunService {
         taskId = task.taskId
       }
       if (stoppedByUser()) throw new Error('Stopped by you before the container started')
-      await this.deps.ensureImage()
+      await this.deps.ensureImage(engine)
       if (stoppedByUser()) {
         throw new Error('Stopped by you before the container started')
       }
@@ -552,6 +564,7 @@ export class ContainerRunService {
         ...(request.installDependencies === true ? { installDependencies: true } : {}),
         egressAllowlist: progress.egressAllowlist,
         image: WORKER_IMAGE,
+        engine,
       }
       const record = await this.deps.run(runRequest, {
         runtimeId,

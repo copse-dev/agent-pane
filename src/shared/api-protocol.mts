@@ -47,4 +47,6 @@
 // v20 conservatively versions the optional appended system-reminder lengths on tool
 // results (`tool_result` chunks and thread tool calls). v18 and v19 are claimed by
 // open PRs, so this skips them to avoid a collision whichever lands first.
-export const API_PROTOCOL_VERSION = 20 as const
+// v22 versions the Apple container attestation (engine, isolation, process limit, and the
+// `none` security profile) on container runs.
+export const API_PROTOCOL_VERSION = 22 as const

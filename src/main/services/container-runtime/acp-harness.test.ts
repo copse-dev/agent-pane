@@ -13,6 +13,7 @@ import { clearDeferralModesForTests } from '../security/deferral-mode.ts'
 import {
   clearRuntimeContainmentForTests,
   declareContainerRuntime,
+  type GuestContainmentObservation,
 } from '../security/runtime-containment.ts'
 import {
   armUnattendedRun,
@@ -56,6 +57,18 @@ function attestation(): ContainerRuntimeAttestation {
     network: 'none',
     egressAllowlist: [],
     hostMounts: ['/run/copse'],
+    securityProfiles: 'default',
+  }
+}
+
+/** What a guest started with that attestation sees of itself. */
+function containedGuest(): GuestContainmentObservation {
+  return {
+    uid: 1001,
+    capabilitySets: { inheritable: 0n, permitted: 0n, effective: 0n, bounding: 0n, ambient: 0n },
+    noNewPrivileges: true,
+    upNetworkInterfaces: ['lo'],
+    rootMountOptions: ['ro', 'relatime'],
   }
 }
 
@@ -79,7 +92,7 @@ describe('a thread under an ACP agent, contained', () => {
 
       storageSet('activeProjectId', PROJECT)
       storageSet('projects', [{ id: PROJECT, path: workspace }])
-      declareContainerRuntime(attestation())
+      declareContainerRuntime(attestation(), containedGuest())
       armUnattendedRun(THREAD, {
         runtimeId: 'rt-acp-harness',
         budgets: { wallClockMs: 60_000, tokenCeiling: 1_000_000 },

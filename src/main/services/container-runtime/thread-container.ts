@@ -1,8 +1,17 @@
 import type { ThreadContainerRunSpec } from './run-spec.ts'
-import { dockerDaemonReachable, requireDockerForThreadContainer } from './container-engine.ts'
+import {
+  containerBuildCommand,
+  dockerDaemonReachable,
+  engineCommand,
+  reachableThreadContainerEngines,
+  resolveThreadContainerEngine,
+  type ThreadContainerEngine,
+} from './container-engine.ts'
 /**
- * Run one Copse thread inside a disposable, hardened local Docker container
- * (`docs/plans/thread-in-container.md`).
+ * Run one Copse thread inside a disposable, hardened local container
+ * (`docs/plans/thread-in-container.md`), under Docker or — on Apple silicon —
+ * Apple container. The engine is chosen once per run and every lifecycle call
+ * of that run goes to it.
  *
  * The host side owns everything that must not be in the guest: the workspace
  * snapshot going in, the run record coming out, the only network the guest can
@@ -40,6 +49,8 @@ import type {
 } from '@shared/types/unattended-run.ts'
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
 import { decodeWorkerPhase, type WorkerPhase } from './worker-events.ts'
 import { EgressBroker } from './egress-broker.ts'
 import {
@@ -140,6 +151,12 @@ export interface ThreadContainerRequest {
    */
   egressResolve?: Record<string, string>
   image?: string
+  /**
+   * The engine the caller resolved for this run ({@link assertThreadContainerEngine});
+   * resolved here when absent. It is the engine for the whole run: the image
+   * it was built on, the container, and the teardown.
+   */
+  engine?: ThreadContainerEngine
   /** Where run directories live; defaults to `<COPSE_DIR>/runtimes`. */
   runtimesDir?: string
   maxSteps?: number
@@ -193,7 +210,9 @@ export function providerOrigin(url: string): ProviderOrigin {
   return { host: parsed.hostname, port }
 }
 
-export interface DockerRunInput {
+export interface ContainerRunInput {
+  /** The engine this run was resolved to; every flag below is spelled for it. */
+  engine: ThreadContainerEngine
   runtimeId: string
   image: string
   runDir: string
@@ -204,7 +223,11 @@ export interface DockerRunInput {
    * shell children by the worker. Null when there is no egress at all.
    */
   egressToken: string | null
-  /** Mount the host's shared pnpm store for the install step (decision A12). */
+  /**
+   * Mount the host's shared pnpm store for the install step (decision A12).
+   * Docker only: an Apple container volume attaches to one container at a
+   * time, so a store shared by concurrent runs cannot exist there.
+   */
   sharedStore: boolean
   apiKeyEnv: string | null
   memoryLimit: string
@@ -213,11 +236,12 @@ export interface DockerRunInput {
 }
 
 /**
- * The `docker run` argv for one run. Every hardening flag the attestation
+ * The `docker create` argv for one run. Every hardening flag the attestation
  * later claims is set here and nowhere else, so the two cannot drift.
  */
-export function dockerRunArgs(input: DockerRunInput): string[] {
-  const args = [
+export function dockerRunArgs(input: ContainerRunInput): string[] {
+  if (input.engine !== 'docker') throw new Error(`dockerRunArgs called for ${input.engine}`)
+  return [
     // Created now, started attached (`docker start --attach --interactive`):
     // the container's stdin and stdout are the egress link (`egress-link.ts`),
     // its stderr the run's log, and none of it needs a socket in a bind
@@ -264,8 +288,110 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
       : []),
     '--network=none',
     '--stop-timeout=30',
+    ...guestRunArgs(input),
   ]
-  args.push(
+}
+
+/**
+ * The `container create` argv for one run under Apple container. The same
+ * guest as {@link dockerRunArgs}, hardened with the flags Apple container has;
+ * where it has none, the property is enforced another way and the attestation
+ * says which (`docs/plans/thread-in-container.md`, "Apple container as the
+ * host engine"):
+ *
+ * - no-new-privileges: no flag, so the image's entrypoint sets it (setpriv)
+ *   and the image carries no setuid binary; the worker checks it is on.
+ * - pids limit: no cgroup flag, so `RLIMIT_NPROC` on the worker uid, the only
+ *   uid running in the guest's own kernel.
+ * - seccomp/AppArmor: none — the boundary is the per-container VM.
+ * - volume ownership: a fresh volume is root-owned and does not inherit the
+ *   image's `/workspace`, so {@link appleVolumePrepareArgs} hands it to the
+ *   worker uid first.
+ *
+ * Everything else is the same flag in Apple's spelling, and all of it is read
+ * back from `container inspect` before the run starts ({@link appleConfigShortfall}).
+ */
+export function appleCreateArgs(input: ContainerRunInput): string[] {
+  if (input.engine !== 'apple') throw new Error(`appleCreateArgs called for ${input.engine}`)
+  if (input.sharedStore) {
+    throw new Error('Apple container cannot share the pnpm store volume between runs')
+  }
+  const pids = String(input.pidsLimit)
+  return [
+    // Created now, started attached, exactly as under Docker: the container's
+    // stdin and stdout are the egress link, its stderr the run's log.
+    'create',
+    '--interactive',
+    '--name',
+    containerName(input.runtimeId),
+    '--label',
+    `${MANAGED_LABEL}=1`,
+    '--label',
+    `${RUNTIME_LABEL}=${input.runtimeId}`,
+    '--init',
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--ulimit',
+    `nproc=${pids}:${pids}`,
+    '--memory',
+    input.memoryLimit,
+    '--cpus',
+    String(input.cpus),
+    '--user',
+    `${String(WORKER_UID)}:${String(WORKER_UID)}`,
+    '--tmpfs',
+    '/tmp:rw,exec,nosuid,nodev,size=1g,mode=1777',
+    '--mount',
+    `type=volume,source=${workspaceVolumeName(input.runtimeId)},target=/workspace`,
+    // No interface but loopback. Measured: the gateway, the host and the
+    // internet are all ENETUNREACH and DNS fails, where the default network
+    // reaches all three.
+    '--network',
+    'none',
+    ...guestRunArgs(input),
+  ]
+}
+
+/** The create argv for the run's engine. */
+export function containerCreateArgs(input: ContainerRunInput): string[] {
+  return input.engine === 'apple' ? appleCreateArgs(input) : dockerRunArgs(input)
+}
+
+/**
+ * Hand a fresh Apple container volume to the worker uid. Apple formats each
+ * volume as an empty, root-owned ext4 image (and ignores `--opt uid=`), so
+ * without this the worker could not write its own workspace. A throwaway
+ * container does it: root, but with every capability dropped except
+ * `CAP_CHOWN`, no network, a read-only root, and nothing mounted but the new
+ * volume.
+ */
+export function appleVolumePrepareArgs(input: ContainerRunInput): string[] {
+  return [
+    'run',
+    '--rm',
+    '--network',
+    'none',
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--cap-add',
+    'CAP_CHOWN',
+    '--user',
+    '0:0',
+    '--mount',
+    `type=volume,source=${workspaceVolumeName(input.runtimeId)},target=/workspace`,
+    '--entrypoint',
+    'chown',
+    input.image,
+    `${String(WORKER_UID)}:${String(WORKER_UID)}`,
+    '/workspace',
+  ]
+}
+
+/** Mounts, environment and image: the part of the create argv both engines share. */
+function guestRunArgs(input: ContainerRunInput): string[] {
+  const args = [
     '--volume',
     `${input.runDir}:${GUEST_RUN_DIR}:ro`,
     '--volume',
@@ -291,7 +417,7 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     'PUPPETEER_SKIP_DOWNLOAD=1',
     '--env',
     'CYPRESS_INSTALL_BINARY=0',
-  )
+  ]
   if (input.egress.length > 0) {
     // One link to the host over the container's stdio, and a loopback proxy
     // in the guest that opens a stream on it per request. Every client in the
@@ -360,9 +486,12 @@ export function workspaceVolumeName(runtimeId: string): string {
 export const PNPM_STORE_VOLUME = 'copse-pnpm-store'
 export const STORE_ROLE_LABEL = 'dev.copse.role'
 
-/** Create the shared store if it does not exist; creating an existing volume is a no-op. */
+/**
+ * Create the shared store if it does not exist; creating an existing volume
+ * is a no-op. Docker only (see {@link ContainerRunInput.sharedStore}).
+ */
 export async function ensurePnpmStoreVolume(): Promise<void> {
-  await runDocker([
+  await runEngine('docker', [
     'volume',
     'create',
     '--label',
@@ -374,19 +503,19 @@ export async function ensurePnpmStoreVolume(): Promise<void> {
 /** Remove the shared store; the next installing run starts it again from nothing. */
 export async function forgetPnpmStoreVolume(): Promise<'removed' | 'already-gone'> {
   try {
-    await runDocker(['volume', 'inspect', PNPM_STORE_VOLUME])
+    await runEngine('docker', ['volume', 'inspect', PNPM_STORE_VOLUME])
   } catch {
     return 'already-gone'
   }
-  await runDocker(['volume', 'rm', PNPM_STORE_VOLUME])
+  await runEngine('docker', ['volume', 'rm', PNPM_STORE_VOLUME])
   return 'removed'
 }
 
 export function buildAttestation(
-  input: DockerRunInput,
+  input: ContainerRunInput,
   imageDigest: string | undefined,
 ): ContainerRuntimeAttestation {
-  return {
+  const common = {
     runtimeId: input.runtimeId,
     image: input.image,
     ...(imageDigest !== undefined ? { imageDigest } : {}),
@@ -397,11 +526,27 @@ export function buildAttestation(
     pidsLimit: input.pidsLimit,
     memoryLimit: input.memoryLimit,
     network: input.egress.length > 0 ? 'brokered' : 'none',
-    securityProfiles: 'default',
     perCommandNetwork: input.egressToken !== null ? 'token-gated' : 'none',
     egressAllowlist: input.egress.map(formatEgressRule),
     hostMounts: [GUEST_RUN_DIR, `${GUEST_RUN_DIR}/state`, `${GUEST_RUN_DIR}/out`],
-  }
+  } satisfies Omit<ContainerRuntimeAttestation, 'engine' | 'isolation' | 'processLimit'>
+  // What differs is how the engine isolates, never what the guest is allowed:
+  // see ENGINE_BAR in `security/runtime-containment.ts`.
+  return input.engine === 'apple'
+    ? {
+        ...common,
+        engine: 'apple',
+        isolation: 'vm',
+        securityProfiles: 'none',
+        processLimit: 'rlimit-nproc',
+      }
+    : {
+        ...common,
+        engine: 'docker',
+        isolation: 'shared-kernel',
+        securityProfiles: 'default',
+        processLimit: 'cgroup-pids',
+      }
 }
 
 // ---------------------------------------------------------------------------
@@ -643,9 +788,18 @@ export function workerBuildFingerprint(options: BuildImageOptions = {}): string 
 }
 
 /** The worker build an existing image was made from, or null when it has none. */
-export async function workerImageFingerprint(image: string): Promise<string | null> {
+export async function workerImageFingerprint(
+  image: string,
+  engine: ThreadContainerEngine = 'docker',
+): Promise<string | null> {
   try {
-    const label = await runDocker([
+    if (engine === 'apple') {
+      return appleImageLabel(
+        await runEngine('apple', ['image', 'inspect', image]),
+        FINGERPRINT_LABEL,
+      )
+    }
+    const label = await runEngine('docker', [
       'image',
       'inspect',
       '--format',
@@ -658,10 +812,49 @@ export async function workerImageFingerprint(image: string): Promise<string | nu
   }
 }
 
+/**
+ * `container image inspect`: an index whose digest identifies the image, with
+ * one variant per platform carrying the image config (labels included).
+ */
+const appleImageInspectSchema = z
+  .array(
+    z.object({
+      configuration: z.object({ descriptor: z.object({ digest: z.string().min(1) }) }),
+      variants: z.array(
+        z.object({
+          config: z
+            .object({
+              config: z.object({ Labels: z.record(z.string(), z.string()).nullish() }).nullish(),
+            })
+            .nullish(),
+        }),
+      ),
+    }),
+  )
+  .min(1)
+
+/** A label on any platform variant of an inspected Apple container image, or null. */
+export function appleImageLabel(inspectJson: string, label: string): string | null {
+  const images = safeJsonParse(inspectJson, decodeWithSchema(appleImageInspectSchema))
+  for (const variant of images?.[0]?.variants ?? []) {
+    const value = variant.config?.config?.Labels?.[label]
+    if (value !== undefined && value.length > 0) return value
+  }
+  return null
+}
+
+/** The digest of an inspected Apple container image, or undefined. */
+export function appleImageDigest(inspectJson: string): string | undefined {
+  const images = safeJsonParse(inspectJson, decodeWithSchema(appleImageInspectSchema))
+  return images?.[0]?.configuration.descriptor.digest
+}
+
 export interface BuildImageOptions {
+  /** The engine to build with; resolved when absent. Images are per engine. */
+  engine?: ThreadContainerEngine
   image?: string
   baseImage?: string
-  /** Docker build `--network`; some sandboxes need `host` for apt. */
+  /** Docker build `--network`; some sandboxes need `host` for apt. Apple container has none. */
   buildNetwork?: string
   /**
    * `package@version` specs of the ACP agents to bake in. Defaults to the
@@ -745,12 +938,26 @@ export function stageSandboxRuntime(contextDir: string, fromDir = __dirname): st
 }
 
 /**
+ * Where the image context is staged. Apple container 1.4.1's build drops every
+ * file below the top level of a context under `/private` — the resolved
+ * `os.tmpdir()` (`/private/var/folders/…`) and `/private/tmp` alike — while
+ * the same context under the home directory builds whole (measured from an
+ * unsandboxed shell). The image then lacked the staged sandbox runtime and
+ * the worker died at load, so Apple builds stage under the profile instead.
+ */
+function defaultBuildContextDir(engine: ThreadContainerEngine): string {
+  return engine === 'apple'
+    ? join(copseDataRoot(), 'cache', 'worker-context')
+    : join(tmpdir(), 'copse-worker-context')
+}
+
+/**
  * Assemble the build context and build the worker image. The context carries
  * only the bundled worker, the sandbox runtime, and the entrypoint — never the
  * repository, never the app's node_modules, never a credential.
  */
 export async function buildWorkerImage(options: BuildImageOptions = {}): Promise<string> {
-  await assertThreadContainerEngine()
+  const engine = options.engine ?? (await assertThreadContainerEngine())
   const image = options.image ?? WORKER_IMAGE
   const workerBundle = options.workerBundle ?? defaultWorkerBundlePath()
   if (!existsSync(workerBundle)) {
@@ -759,7 +966,7 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
     )
   }
   const fingerprint = workerBuildFingerprint({ ...options, workerBundle })
-  const contextDir = resolve(options.contextDir ?? join(tmpdir(), 'copse-worker-context'))
+  const contextDir = resolve(options.contextDir ?? defaultBuildContextDir(engine))
   rmSync(contextDir, { recursive: true, force: true })
   mkdirSync(contextDir, { recursive: true })
   cpSync(workerBundle, join(contextDir, 'worker.cjs'))
@@ -770,16 +977,20 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
     `${JSON.stringify({ name: 'copse-worker-runtime', private: true }, null, 2)}\n`,
   )
   stageSandboxRuntime(contextDir)
-  const args = ['build', '--tag', image, '--label', `${FINGERPRINT_LABEL}=${fingerprint}`]
-  if (options.buildNetwork) args.push('--network', options.buildNetwork)
-  args.push('--build-arg', `BASE_IMAGE=${options.baseImage ?? WORKER_BASE_IMAGE}`)
-  args.push(
-    '--build-arg',
-    `ACP_AGENTS=${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}`,
-  )
-  args.push('--build-arg', `PNPM_VERSION=${options.pnpmVersion ?? WORKER_PNPM_VERSION}`)
-  args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
-  await runDocker(args)
+  const build = containerBuildCommand(engine, {
+    file: join(contextDir, 'Dockerfile'),
+    tag: image,
+    context: contextDir,
+    labels: { [FINGERPRINT_LABEL]: fingerprint },
+    ...(options.buildNetwork ? { network: options.buildNetwork } : {}),
+    buildArgs: {
+      BASE_IMAGE: options.baseImage ?? WORKER_BASE_IMAGE,
+      ACP_AGENTS: (options.acpAgents ?? containerAcpAgentSpecs()).join(' '),
+      PNPM_VERSION: options.pnpmVersion ?? WORKER_PNPM_VERSION,
+      WORKER_UID: String(WORKER_UID),
+    },
+  })
+  await runEngine(engine, build.args)
   return image
 }
 
@@ -787,8 +998,10 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-async function runDocker(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('docker', args, { maxBuffer: 64 * 1024 * 1024 })
+async function runEngine(engine: ThreadContainerEngine, args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync(engineCommand(engine), args, {
+    maxBuffer: 64 * 1024 * 1024,
+  })
   return stdout.trim()
 }
 
@@ -796,21 +1009,46 @@ export function dockerAvailable(): Promise<boolean> {
   return dockerDaemonReachable()
 }
 
-/**
- * Fail closed before build/run when Docker is down. Surfaces Apple container
- * when it is ready but not yet a supported engine for this product path.
- */
-export async function assertThreadContainerEngine(): Promise<void> {
-  await requireDockerForThreadContainer()
+/** Whether Apple container's services answer; the Apple twin of {@link dockerAvailable}. */
+export async function appleContainerAvailable(): Promise<boolean> {
+  return (await reachableThreadContainerEngines()).includes('apple')
 }
 
-async function imageDigest(image: string): Promise<string | undefined> {
+/**
+ * The engine this run will use, or a readable refusal before anything is
+ * built: Docker when its daemon answers, else Apple container on Apple
+ * silicon, unless `COPSE_CONTAINER_ENGINE` names one (see
+ * {@link resolveThreadContainerEngine}). Called once per run; the answer is
+ * passed to every later step instead of being asked again.
+ */
+export function assertThreadContainerEngine(): Promise<ThreadContainerEngine> {
+  return resolveThreadContainerEngine()
+}
+
+async function imageDigest(
+  image: string,
+  engine: ThreadContainerEngine,
+): Promise<string | undefined> {
   try {
-    const out = await runDocker(['image', 'inspect', '--format', '{{.Id}}', image])
+    if (engine === 'apple') {
+      return appleImageDigest(await runEngine('apple', ['image', 'inspect', image]))
+    }
+    const out = await runEngine('docker', ['image', 'inspect', '--format', '{{.Id}}', image])
     return out || undefined
   } catch {
     return undefined
   }
+}
+
+/** The engine's answer for a container or volume that does not exist. */
+function isNotFound(engine: ThreadContainerEngine, error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const text = [Reflect.get(error, 'stderr'), Reflect.get(error, 'message')]
+    .filter((part) => typeof part === 'string')
+    .join('\n')
+  return engine === 'apple'
+    ? /not found/i.test(text)
+    : /no such (?:container|object|volume)/i.test(text)
 }
 
 /**
@@ -820,18 +1058,34 @@ async function imageDigest(image: string): Promise<string | undefined> {
  */
 export async function teardownRuntime(
   runtimeId: string,
+  engine?: ThreadContainerEngine,
+): Promise<'removed' | 'already-gone' | 'failed'> {
+  // A run this session did not start (a supervisor task from an earlier one)
+  // may be on either engine; ask every engine that is up.
+  if (engine === undefined) {
+    const engines = await reachableThreadContainerEngines()
+    if (engines.length === 0) return 'failed'
+    const outcomes = await Promise.all(engines.map((each) => teardownRuntime(runtimeId, each)))
+    if (outcomes.includes('failed')) return 'failed'
+    return outcomes.includes('removed') ? 'removed' : 'already-gone'
+  }
+  return engine === 'apple' ? teardownAppleRuntime(runtimeId) : teardownDockerRuntime(runtimeId)
+}
+
+async function teardownDockerRuntime(
+  runtimeId: string,
 ): Promise<'removed' | 'already-gone' | 'failed'> {
   const name = containerName(runtimeId)
   let container: 'removed' | 'already-gone' | 'failed'
   try {
-    await runDocker(['container', 'inspect', '--format', '{{.Id}}', name])
+    await runEngine('docker', ['container', 'inspect', '--format', '{{.Id}}', name])
     container = 'removed'
   } catch {
     container = 'already-gone'
   }
   if (container === 'removed') {
     try {
-      await runDocker(['rm', '--force', name])
+      await runEngine('docker', ['rm', '--force', name])
     } catch {
       container = 'failed'
     }
@@ -839,16 +1093,102 @@ export async function teardownRuntime(
   // The workspace volume goes with the container; a volume that is not there
   // is fine, one that cannot be removed is not.
   try {
-    await runDocker(['volume', 'rm', '--force', workspaceVolumeName(runtimeId)])
+    await runEngine('docker', ['volume', 'rm', '--force', workspaceVolumeName(runtimeId)])
   } catch {
     return 'failed'
   }
   return container
 }
 
-/** Every container this host started and has not torn down — the orphan sweep. */
-export async function listManagedRuntimes(): Promise<Array<{ runtimeId: string; status: string }>> {
-  const out = await runDocker([
+/**
+ * Apple container reports a missing container or volume as an error on both
+ * delete and inspect, so existence is asked first. Only "not found" means
+ * gone: an inspect that failed for another reason says nothing about the
+ * container, so the forced delete still runs and decides the outcome.
+ */
+async function teardownAppleRuntime(
+  runtimeId: string,
+): Promise<'removed' | 'already-gone' | 'failed'> {
+  const name = containerName(runtimeId)
+  let container: 'removed' | 'already-gone' | 'failed' = 'removed'
+  try {
+    await runEngine('apple', ['inspect', name])
+  } catch (error) {
+    if (isNotFound('apple', error)) container = 'already-gone'
+  }
+  if (container === 'removed') {
+    try {
+      await runEngine('apple', ['delete', '--force', name])
+    } catch {
+      container = 'failed'
+    }
+  }
+  const volume = workspaceVolumeName(runtimeId)
+  try {
+    await runEngine('apple', ['volume', 'inspect', volume])
+  } catch (error) {
+    if (isNotFound('apple', error)) return container
+  }
+  try {
+    await runEngine('apple', ['volume', 'delete', volume])
+  } catch {
+    return 'failed'
+  }
+  return container
+}
+
+export interface ManagedRuntime {
+  runtimeId: string
+  /** The engine's own words for the state (`Up 3 minutes`, `running`, …). */
+  status: string
+  running: boolean
+}
+
+const appleLabelsSchema = z.record(z.string(), z.string()).nullish()
+const appleContainerListSchema = z.array(
+  z.object({
+    configuration: z.object({ labels: appleLabelsSchema }),
+    status: z.object({ state: z.string() }),
+  }),
+)
+const appleVolumeListSchema = z.array(
+  z.object({ configuration: z.object({ labels: appleLabelsSchema }) }),
+)
+
+/** The managed runtimes in `container list --all --format json` output. */
+export function parseAppleManagedRuntimes(listJson: string): ManagedRuntime[] {
+  const containers = safeJsonParse(listJson, decodeWithSchema(appleContainerListSchema))
+  if (containers === null) throw new Error('container list returned something other than a list')
+  return containers
+    .filter((entry) => entry.configuration.labels?.[MANAGED_LABEL] === '1')
+    .map((entry) => ({
+      runtimeId: entry.configuration.labels?.[RUNTIME_LABEL] ?? '',
+      status: entry.status.state,
+      running: entry.status.state === 'running',
+    }))
+}
+
+/** The runtime ids on the managed volumes in `container volume list --format json` output. */
+export function parseAppleManagedVolumes(listJson: string): string[] {
+  const volumes = safeJsonParse(listJson, decodeWithSchema(appleVolumeListSchema))
+  if (volumes === null)
+    throw new Error('container volume list returned something other than a list')
+  return volumes
+    .filter((entry) => entry.configuration.labels?.[MANAGED_LABEL] === '1')
+    .map((entry) => entry.configuration.labels?.[RUNTIME_LABEL] ?? '')
+    .filter((id) => id.length > 0)
+}
+
+/** Every container this host started on `engine` and has not torn down — the orphan sweep. */
+export async function listManagedRuntimes(
+  engine: ThreadContainerEngine = 'docker',
+): Promise<ManagedRuntime[]> {
+  if (engine === 'apple') {
+    return parseAppleManagedRuntimes(
+      await runEngine('apple', ['list', '--all', '--format', 'json']),
+    )
+  }
+  const out = await runEngine('docker', [
     'ps',
     '--all',
     '--filter',
@@ -861,13 +1201,20 @@ export async function listManagedRuntimes(): Promise<Array<{ runtimeId: string; 
     .filter((line) => line.trim().length > 0)
     .map((line) => {
       const [runtimeId = '', status = ''] = line.split('\t')
-      return { runtimeId, status }
+      return { runtimeId, status, running: status.startsWith('Up') }
     })
 }
 
-/** Every workspace volume this host created, by the runtime id on its label. */
-export async function listManagedVolumes(): Promise<string[]> {
-  const out = await runDocker([
+/** Every workspace volume this host created on `engine`, by the runtime id on its label. */
+export async function listManagedVolumes(
+  engine: ThreadContainerEngine = 'docker',
+): Promise<string[]> {
+  if (engine === 'apple') {
+    return parseAppleManagedVolumes(
+      await runEngine('apple', ['volume', 'list', '--format', 'json']),
+    )
+  }
+  const out = await runEngine('docker', [
     'volume',
     'ls',
     '--filter',
@@ -893,23 +1240,28 @@ export interface OrphanSweep {
  * A running container is left alone — it may belong to another instance of
  * the app sharing this daemon, and one this host abandoned stops on its own
  * once its link closed (decision A8) — and is swept on a later start.
+ * Every engine that is up is swept: a run is on whichever engine it was
+ * resolved to, and the previous session may have used the other one.
  */
-export async function sweepOrphanedRuntimes(): Promise<OrphanSweep> {
-  const containers = await listManagedRuntimes()
-  const volumes = await listManagedVolumes()
-  const running = new Set(
-    containers.filter((c) => c.status.startsWith('Up')).map((c) => c.runtimeId),
-  )
-  const candidates = new Set(
-    [...containers.map((c) => c.runtimeId), ...volumes].filter(
-      (id) => id.length > 0 && !running.has(id),
-    ),
-  )
-  const sweep: OrphanSweep = { removed: [], skipped: [...running], failed: [] }
-  for (const runtimeId of candidates) {
-    const outcome = await teardownRuntime(runtimeId)
-    if (outcome === 'failed') sweep.failed.push(runtimeId)
-    else sweep.removed.push(runtimeId)
+export async function sweepOrphanedRuntimes(
+  engines?: readonly ThreadContainerEngine[],
+): Promise<OrphanSweep> {
+  const sweep: OrphanSweep = { removed: [], skipped: [], failed: [] }
+  for (const engine of engines ?? (await reachableThreadContainerEngines())) {
+    const containers = await listManagedRuntimes(engine)
+    const volumes = await listManagedVolumes(engine)
+    const running = new Set(containers.filter((c) => c.running).map((c) => c.runtimeId))
+    const candidates = new Set(
+      [...containers.map((c) => c.runtimeId), ...volumes].filter(
+        (id) => id.length > 0 && !running.has(id),
+      ),
+    )
+    sweep.skipped.push(...running)
+    for (const runtimeId of candidates) {
+      const outcome = await teardownRuntime(runtimeId, engine)
+      if (outcome === 'failed') sweep.failed.push(runtimeId)
+      else sweep.removed.push(runtimeId)
+    }
   }
   return sweep
 }
@@ -941,6 +1293,7 @@ export interface ContainerWaitOutcome {
  * is only ever empty.
  */
 function attachContainer(
+  engine: ThreadContainerEngine,
   name: string,
   options: {
     broker: EgressBroker | null
@@ -948,7 +1301,7 @@ function attachContainer(
     onPhase?: ((phase: WorkerPhase) => void) | undefined
   },
 ): ChildProcess {
-  const child = spawn('docker', ['start', '--attach', '--interactive', name], {
+  const child = spawn(engineCommand(engine), ['start', '--attach', '--interactive', name], {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   if (options.broker) options.broker.attach(child.stdout, child.stdin)
@@ -965,7 +1318,7 @@ function attachContainer(
     options.onLog(line)
   })
   child.on('error', (error) => {
-    options.onLog(`[thread-container] docker start failed: ${error.message}`)
+    options.onLog(`[thread-container] ${engineCommand(engine)} start failed: ${error.message}`)
   })
   return child
 }
@@ -975,19 +1328,34 @@ function attachContainer(
  * wait must not begin until the daemon has started it. Polls until the state
  * has moved on, or the attached start has died without moving it.
  */
-async function untilStarted(name: string, attached: ChildProcess): Promise<void> {
+async function untilStarted(
+  engine: ThreadContainerEngine,
+  name: string,
+  attached: ChildProcess,
+): Promise<void> {
   const deadline = Date.now() + START_TIMEOUT_MS
   for (;;) {
-    let status = ''
+    let started = false
     try {
-      status = await runDocker(['container', 'inspect', '--format', '{{.State.Status}}', name])
+      started =
+        engine === 'apple'
+          ? appleContainerStarted(await runEngine('apple', ['inspect', name]))
+          : !['', 'created'].includes(
+              await runEngine('docker', [
+                'container',
+                'inspect',
+                '--format',
+                '{{.State.Status}}',
+                name,
+              ]),
+            )
     } catch {
       // Not inspectable yet; the loop's deadline bounds this.
     }
-    if (status !== '' && status !== 'created') return
+    if (started) return
     if (attached.exitCode !== null) {
       throw new Error(
-        `the container did not start (docker start exited ${String(attached.exitCode)})`,
+        `the container did not start (${engineCommand(engine)} start exited ${String(attached.exitCode)})`,
       )
     }
     if (Date.now() > deadline) throw new Error('the container did not start in time')
@@ -1022,7 +1390,7 @@ export interface WaitForContainerDependencies {
   settleAfterStopMs?: number
 }
 
-const productionWaitDependencies: WaitForContainerDependencies = {
+const dockerWaitDependencies: WaitForContainerDependencies = {
   wait: (name) => {
     const child = spawn('docker', ['wait', name], { stdio: ['ignore', 'pipe', 'ignore'] })
     let out = ''
@@ -1047,6 +1415,33 @@ const productionWaitDependencies: WaitForContainerDependencies = {
 }
 
 /**
+ * Apple container has no `wait`, and its inspect records no exit status. The
+ * attached `container start` is the wait: it exits when the guest does, with
+ * the guest's own code (measured: 7 for `exit 7`, 143 after a stop's SIGTERM,
+ * 137 once the stop's grace ran out).
+ */
+function appleWaitDependencies(attached: ChildProcess): WaitForContainerDependencies {
+  return {
+    wait: () => ({
+      output: new Promise<string>((resolveOutput) => {
+        const report = (): void => {
+          resolveOutput(attached.exitCode === null ? '' : String(attached.exitCode))
+        }
+        if (attached.exitCode !== null || attached.signalCode !== null) report()
+        else attached.once('exit', report)
+      }),
+      // The attached start is detached in the runner's cleanup, not here.
+      cancel: (): void => {},
+    }),
+    stop: async (name): Promise<void> => {
+      await execFileAsync('container', ['stop', '--time', '30', name], {
+        timeout: STOP_TIMEOUT_MS,
+      })
+    },
+  }
+}
+
+/**
  * Wait for the container, bounded by the run's wall-clock budget.
  *
  * `docker wait` closing is the happy path. At the deadline the daemon is asked
@@ -1060,7 +1455,7 @@ const productionWaitDependencies: WaitForContainerDependencies = {
 export function waitForContainer(
   name: string,
   wallClockMs: number,
-  dependencies: WaitForContainerDependencies = productionWaitDependencies,
+  dependencies: WaitForContainerDependencies = dockerWaitDependencies,
 ): Promise<ContainerWaitOutcome> {
   const settleAfterStopMs = dependencies.settleAfterStopMs ?? SETTLE_AFTER_STOP_MS
   return new Promise((resolveWait) => {
@@ -1109,6 +1504,134 @@ export function waitForContainer(
       },
     )
   })
+}
+
+/**
+ * `container inspect` for one container: the configuration it was created
+ * with, as Apple container recorded it, and its state. Only the fields the
+ * run's hardening depends on are decoded; an engine that stops reporting one
+ * fails the decode, and so the run, rather than passing unverified.
+ */
+const appleContainerInspectSchema = z
+  .array(
+    z.object({
+      configuration: z.object({
+        capAdd: z.array(z.string()),
+        capDrop: z.array(z.string()),
+        readOnly: z.boolean(),
+        networks: z.array(z.unknown()),
+        useInit: z.boolean(),
+        ssh: z.boolean(),
+        virtualization: z.boolean(),
+        publishedPorts: z.array(z.unknown()),
+        publishedSockets: z.array(z.unknown()),
+        labels: z.record(z.string(), z.string()),
+        resources: z.object({ cpus: z.number(), memoryInBytes: z.number() }),
+        initProcess: z.object({
+          user: z.object({ raw: z.object({ userString: z.string() }) }),
+          rlimits: z.array(z.object({ limit: z.string(), soft: z.number(), hard: z.number() })),
+        }),
+        mounts: z.array(
+          z.object({
+            destination: z.string(),
+            options: z.array(z.string()),
+            type: z.record(z.string(), z.unknown()),
+          }),
+        ),
+      }),
+      status: z.object({ state: z.string(), startedDate: z.string().optional() }),
+    }),
+  )
+  .length(1)
+
+type AppleContainerInspect = z.infer<typeof appleContainerInspectSchema>[number]
+
+function decodeAppleInspect(inspectJson: string): AppleContainerInspect | null {
+  return safeJsonParse(inspectJson, decodeWithSchema(appleContainerInspectSchema))?.[0] ?? null
+}
+
+/**
+ * A created Apple container reads `stopped` until it starts (there is no
+ * `created` state); one that has started carries a start date whatever its
+ * state now.
+ */
+export function appleContainerStarted(inspectJson: string): boolean {
+  const container = decodeAppleInspect(inspectJson)
+  if (container === null) return false
+  return container.status.state === 'running' || container.status.startedDate !== undefined
+}
+
+/** `4g` → bytes, as Apple container records `--memory`. */
+function memoryBytes(limit: string): number | null {
+  const match = /^(\d+)([kmgt]?)$/i.exec(limit)
+  if (!match) return null
+  const exponent = ['', 'k', 'm', 'g', 't'].indexOf((match[2] ?? '').toLowerCase())
+  return Number(match[1]) * 1024 ** exponent
+}
+
+/**
+ * Why the container Apple container created is not the one the run asked
+ * for, or null when every hardening flag is in its recorded configuration.
+ * Apple container accepts options it then does not apply (a volume's
+ * `--opt uid=` is one), so the attestation is only written for what the
+ * engine reports back — anything missing, and anything extra, refuses the run.
+ */
+export function appleConfigShortfall(input: ContainerRunInput, inspectJson: string): string | null {
+  const container = decodeAppleInspect(inspectJson)
+  if (container === null) return 'container inspect did not describe the container'
+  const config = container.configuration
+  const uid = String(WORKER_UID)
+  if (!config.capDrop.some((cap) => cap.toUpperCase() === 'ALL')) {
+    return 'capabilities were not dropped'
+  }
+  if (config.capAdd.length > 0) return `capabilities were added: ${config.capAdd.join(', ')}`
+  if (!config.readOnly) return 'the root filesystem is writable'
+  if (config.networks.length > 0) return 'the container is attached to a network'
+  if (config.initProcess.user.raw.userString !== `${uid}:${uid}`) {
+    return `the worker runs as ${config.initProcess.user.raw.userString}`
+  }
+  const nproc = config.initProcess.rlimits.find((limit) => limit.limit === 'RLIMIT_NPROC')
+  if (nproc?.soft !== input.pidsLimit || nproc.hard !== input.pidsLimit) {
+    return 'the process limit was not applied'
+  }
+  if (config.resources.cpus !== input.cpus) return 'the CPU limit was not applied'
+  if (config.resources.memoryInBytes !== memoryBytes(input.memoryLimit)) {
+    return 'the memory limit was not applied'
+  }
+  if (config.ssh) return 'the host SSH agent is forwarded'
+  if (config.virtualization) return 'nested virtualization is exposed'
+  if (config.publishedPorts.length > 0 || config.publishedSockets.length > 0) {
+    return 'a port or socket is published to the host'
+  }
+  if (!config.useInit) return 'the init process is missing'
+  if (config.labels[MANAGED_LABEL] !== '1' || config.labels[RUNTIME_LABEL] !== input.runtimeId) {
+    return 'the container is not labelled as this run'
+  }
+  const expected: Record<
+    string,
+    (mount: AppleContainerInspect['configuration']['mounts'][number]) => boolean
+  > = {
+    '/tmp': (mount): boolean => Object.hasOwn(mount.type, 'tmpfs'),
+    '/workspace': (mount): boolean => {
+      const volume = mount.type['volume']
+      return isRecord(volume) && volume['name'] === workspaceVolumeName(input.runtimeId)
+    },
+    [GUEST_RUN_DIR]: (mount): boolean => mount.options.includes('ro'),
+    [`${GUEST_RUN_DIR}/state`]: (mount): boolean => !mount.options.includes('ro'),
+    [`${GUEST_RUN_DIR}/out`]: (mount): boolean => !mount.options.includes('ro'),
+  }
+  const seen = new Set<string>()
+  for (const mount of config.mounts) {
+    const check = Object.hasOwn(expected, mount.destination)
+      ? expected[mount.destination]
+      : undefined
+    if (check === undefined) return `unexpected mount at ${mount.destination}`
+    if (!check(mount)) return `the mount at ${mount.destination} is not the one asked for`
+    seen.add(mount.destination)
+  }
+  const missing = Object.keys(expected).find((destination) => !seen.has(destination))
+  if (missing !== undefined) return `the mount at ${missing} is missing`
+  return null
 }
 
 function readJsonFile<T>(path: string, decode: (value: unknown) => T | null): T | null {
@@ -1199,7 +1722,8 @@ export async function runThreadInContainer(
   }
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
   process.env['COPSE_SECRET_CANARY'] = canary
-  await assertThreadContainerEngine()
+  const engine = request.engine ?? (await assertThreadContainerEngine())
+  log(`[thread-container] engine: ${engine === 'apple' ? 'Apple container' : 'Docker'}`)
 
   for (const sub of ['', 'state', 'out']) {
     mkdirSync(join(runDir, sub), { recursive: true })
@@ -1248,19 +1772,26 @@ export async function runThreadInContainer(
     originUrl: sanitizedOriginUrl(await originUrlOf(workspace)),
     maxSteps: request.maxSteps ?? null,
   }
-  const runInput: DockerRunInput = {
+  const installs = request.installDependencies === true
+  if (installs && engine === 'apple') {
+    log(
+      '[thread-container] no shared pnpm store under Apple container (a volume attaches to one container at a time); the install fetches every package',
+    )
+  }
+  const runInput: ContainerRunInput = {
+    engine,
     runtimeId,
     image,
     runDir,
     egress,
     egressToken: egress.length > 0 ? randomBytes(16).toString('hex') : null,
-    sharedStore: request.installDependencies === true,
+    sharedStore: installs && engine === 'docker',
     apiKeyEnv,
     memoryLimit: '4g',
     pidsLimit: 512,
     cpus: 2,
   }
-  const digest = await imageDigest(image)
+  const digest = await imageDigest(image, engine)
   const attestation = buildAttestation(runInput, digest)
   writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(spec, null, 2)}\n`)
   writeFileSync(join(runDir, 'attestation.json'), `${JSON.stringify(attestation, null, 2)}\n`)
@@ -1278,7 +1809,7 @@ export async function runThreadInContainer(
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     options.onPhase?.('running')
     log(`[thread-container] starting ${containerName(runtimeId)} from ${image}`)
-    await runDocker([
+    await runEngine(engine, [
       'volume',
       'create',
       '--label',
@@ -1287,28 +1818,46 @@ export async function runThreadInContainer(
       `${RUNTIME_LABEL}=${runtimeId}`,
       workspaceVolumeName(runtimeId),
     ])
+    if (engine === 'apple') await runEngine('apple', appleVolumePrepareArgs(runInput))
     if (runInput.sharedStore) await ensurePnpmStoreVolume()
-    await runDocker(dockerRunArgs(runInput))
+    await runEngine(engine, containerCreateArgs(runInput))
+    if (engine === 'apple') {
+      // The attestation is already written; refuse to start a guest it
+      // would misdescribe. The `finally` below removes the container.
+      const shortfall = appleConfigShortfall(
+        runInput,
+        await runEngine('apple', ['inspect', containerName(runtimeId)]),
+      )
+      if (shortfall !== null) {
+        throw new Error(
+          `Apple container did not apply the hardening this run requires (${shortfall}); refusing to start it`,
+        )
+      }
+    }
     // The container exists now; a stop that landed while it was being made
     // has nothing to remove yet, so the `finally` below is the removal.
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
-    attached = attachContainer(containerName(runtimeId), {
+    attached = attachContainer(engine, containerName(runtimeId), {
       broker: egress.length > 0 ? broker : null,
       onPhase: options.onPhase,
       onLog: (line) => {
         log(`[guest] ${line}`)
       },
     })
-    await untilStarted(containerName(runtimeId), attached)
+    await untilStarted(engine, containerName(runtimeId), attached)
     options.onStarted?.()
-    const waited = await waitForContainer(containerName(runtimeId), request.budgets.wallClockMs)
+    const waited = await waitForContainer(
+      containerName(runtimeId),
+      request.budgets.wallClockMs,
+      engine === 'apple' ? appleWaitDependencies(attached) : dockerWaitDependencies,
+    )
     containerExit = waited.exit
     cleanupError = waited.cleanupError
     if (waited.timedOut) log('[thread-container] wall-clock budget reached; container stopped')
     if (cleanupError !== null) log(`[thread-container] cleanup problem: ${cleanupError}`)
   } finally {
     options.onPhase?.('collecting')
-    teardown = await teardownRuntime(runtimeId)
+    teardown = await teardownRuntime(runtimeId, engine)
     if (teardown === 'failed') {
       const failure = `the container ${containerName(runtimeId)} could not be removed`
       cleanupError = cleanupError === null ? failure : `${cleanupError}; ${failure}`

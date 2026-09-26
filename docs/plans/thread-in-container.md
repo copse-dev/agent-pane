@@ -1,13 +1,14 @@
 # Running a thread inside a container
 
 **Status: Active (experimental implementation on `main`, reviewed at `a2880354f`).** A thread can be run unattended inside a
-disposable, hardened local Docker container with no user prompts (Apple container is not yet
-a supported engine for this path; see below): the product's own headless
+disposable, hardened local container with no user prompts — under Docker, or under Apple
+container on Apple silicon (decision A18, [Apple container as the host
+engine](#apple-container-as-the-host-engine)): the product's own headless
 agent loop runs in the guest, contained effects run without asking, outward effects are queued
 for review, and the result comes back to the host as commits under `refs/copse/runs/<id>`.
 The prototype is exercised end to end by
 `src/main/services/container-runtime/thread-container.integration.test.ts` (opt-in, needs
-Docker), driven by `pnpm run thread:container`, and started from the app through the composer
+Docker or Apple container), driven by `pnpm run thread:container`, and started from the app through the composer
 footer ("Run unattended in a container…") after enabling the experimental
 `containerRunsEnabled` setting, which defaults to off. Main enforces that setting,
 not just the renderer. The supervisor tracks progress and cancellation without
@@ -50,7 +51,7 @@ sandbox have contained this?".
 ## Design
 
 ```text
-host                                                 guest (docker, --network none)
+host                                                 guest (docker or Apple container, --network none)
 ────────────────────────────────────────────────     ──────────────────────────────────────────
 run dir  ~/.copse/runtimes/<id>/                     /run/copse (ro)
   run.json, attestation.json  ──────────────────▶      read by the worker
@@ -70,11 +71,17 @@ git fetch carry-out → refs/copse/runs/<id>               + declareContainerRun
   and calls `runHeadlessAgent` with a fail-closed approval handler that counts every prompt
   it sees. The count is part of the result and the end-to-end test asserts it is zero.
 - **The host attests; the guest declares.** A guest cannot verify its own boundary. The host
-  writes `attestation.json` from the same `dockerRunArgs` it starts the container with
-  (`src/main/services/container-runtime/thread-container.ts`), and `declareContainerRuntime`
+  writes `attestation.json` from the same run input it builds the engine's create argv from
+  (`dockerRunArgs` / `appleCreateArgs` in
+  `src/main/services/container-runtime/thread-container.ts`), and `declareContainerRuntime`
   (`security/runtime-containment.ts`) refuses anything short of the bar: unprivileged uid,
   read-only rootfs, `cap-drop=ALL`, `no-new-privileges`, no network beyond the broker, no
-  host mount outside `/run/copse`. A refused declaration leaves the worker on the desktop
+  host mount outside `/run/copse` — plus what the engine's own isolation needs (A18: the
+  default seccomp/AppArmor profiles on Docker's shared kernel; a VM of its own, and no
+  profile claim, under Apple container). Before declaring, the worker checks what it can
+  see of itself against the record — uid, all five capability sets, `NoNewPrivs`, no
+  network interface up but `lo`, a read-only root mount — so an engine that dropped a flag is
+  caught from the inside. A refused declaration leaves the worker on the desktop
   rules, which prompt — and, in deferral mode, queue — so the failure is loss of
   productivity, never loss of containment.
 - **The gate answers by blast radius.** `ensureShellCommandPermitted` takes one new branch
@@ -238,18 +245,113 @@ dispatch, gate, deferral queue and carry-out):
 - **U0's measurement.** Whether a container actually removes most prompts on real long runs
   is still the empirical question `unattended-runs.md` asks first. This prototype makes the
   experiment runnable; it does not answer it.
-- **Apple container as the host engine.** Development and eval scripts already choose
-  Docker or Apple container via `COPSE_CONTAINER_ENGINE` (`scripts/lib/container-engine.mts`,
-  `docs/agent-development.md`). Unattended thread runs do **not**: the guest attestation
-  claims `--network none`, pids limits, and default seccomp/AppArmor, and the host drives
-  `create` then `start --attach` for the stdio egress link. Apple container does not expose
-  those the same way (including the open host-only network issue). When Docker is down and
-  Apple container is ready, the app fails **before** `docker build` with an explicit message
-  rather than a missing `docker.sock` error; it does not silently run under Apple container.
+- **Apple container on a real model.** A18's end-to-end runs used a scripted model and a
+  scripted ACP agent, as the Docker ones do; a real provider behind the broker under Apple
+  container has not been run.
+- **A loopback model server in the guest.** A14 names it `http://model.copse.internal`,
+  which the guest's provider refuses as plain http to a non-loopback host, on either engine
+  (see [Apple container as the host engine](#apple-container-as-the-host-engine)); the
+  Copse-loop end-to-end test fails on it until that is decided.
+
+## Apple container as the host engine
+
+**Status: landed (A18).** Until A18 only the development and eval scripts could use Apple
+container (`scripts/lib/container-engine.mts`); unattended runs refused it because the
+attestation described Docker's flags, and nobody had measured which of them Apple container
+can enforce. They were measured on Apple container 1.4.1 (macOS 26.6, M1 Max, kata kernel
+6.18) with a probe image run under the product's flags, from inside the guest as the worker
+uid:
+
+| Property                 | Apple container 1.4.1                                                                                                                                  | How the run gets it                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Read-only root           | `--read-only`: `/` is `ext4 ro`, writes fail `EROFS`                                                                                                   | same flag                                                                                               |
+| Capabilities             | `--cap-drop ALL`: CapInh/Prm/Eff/Bnd/Amb all zero                                                                                                      | same flag                                                                                               |
+| No-new-privileges        | **no flag**; `NoNewPrivs: 0`, and a setuid-root helper ran with euid 0 (the base image ships 11 setuid-root binaries: `su`, `mount`, `passwd`, …)      | entrypoint `setpriv --no-new-privs`; setuid/setgid bits stripped at build; the worker checks it is on   |
+| Unprivileged uid         | `--user 1001:1001`                                                                                                                                     | same flag                                                                                               |
+| Process limit            | **no `--pids-limit`**; cgroup `pids.max` is `max`                                                                                                      | `--ulimit nproc=512:512`: 510 forks then `EAGAIN` (2000 without), and the guest cannot raise it         |
+| Memory / CPU             | `memory.max` 4 GiB, `cpu.max` 2 CPUs                                                                                                                   | same flags                                                                                              |
+| seccomp / AppArmor       | none (`Seccomp: 0`)                                                                                                                                    | not claimed: the boundary is the VM, `securityProfiles: 'none'`                                         |
+| tmpfs, executable        | Docker's option syntax accepted (`rw,exec,nosuid,nodev,size=1g,mode=1777`)                                                                             | same flag                                                                                               |
+| Per-run volume           | an ext4 image, **root-owned `0755` with `lost+found`**; does not inherit the image's `/workspace`; `--opt uid=` accepted and ignored                   | a throwaway container (root, only `CAP_CHOWN`, no network) hands it to the worker uid                   |
+| Shared volume            | **a volume attaches to one container at a time**, even a created one                                                                                   | no shared pnpm store (A12 is Docker-only); an installing run fetches every package                      |
+| No network               | `--network none`: only `lo`; gateway, host and internet `ENETUNREACH`, DNS fails (the default network reaches all three)                               | same flag                                                                                               |
+| Host over vsock          | from the worker uid, all 65 535 ports on the host (CID 2) and CID 1 refused during an attached run, also with `--ssh`; `/dev/vsock` is root-only       | nothing to do; see residuals                                                                            |
+| stdio as the egress link | `create --interactive` + `start --attach --interactive`: byte-exact, stderr separate, EOF propagates, 64 MiB each way in ~0.4 s                        | same as Docker (A8)                                                                                     |
+| Exit status              | **no `wait`**, and `inspect` records no exit code                                                                                                      | the attached `start` is the wait: it exits with the guest's code (7; 143 after SIGTERM; 137 after kill) |
+| Stop / delete / labels   | `stop --time N` (SIGTERM then KILL); `delete --force`; labels and state in `inspect` / `list --format json`; missing objects are an error, "not found" | teardown asks first, and only "not found" means gone                                                    |
+
+- **The attestation names the engine and how it isolates.** `engine: 'docker' | 'apple'`,
+  `isolation: 'shared-kernel' | 'vm'`, `processLimit: 'cgroup-pids' | 'rlimit-nproc'`, and
+  `securityProfiles` gains `none`. The bar is per engine (`ENGINE_BAR` in
+  `runtime-containment.ts`): Docker must attest its default profiles; Apple container must
+  attest `vm`, `none` and `rlimit-nproc` — a seccomp claim from Apple container is refused as
+  false, and none of its fields may be left unsaid. The common bar is unchanged.
+- **The host reads the container back before starting it.** Apple container accepts some
+  options it then does not apply, so after `create` the runner decodes `container inspect`
+  and refuses the run unless every flag is there: `capDrop` ALL and nothing added, read-only,
+  no network, the worker uid, `RLIMIT_NPROC`, CPU and memory, no SSH forwarding, no nested
+  virtualization, no published port or socket, init, the run's labels, and exactly the five
+  expected mounts (the run directory read-only). A field the engine stops reporting fails
+  the decode, and so the run.
+- **Engine selection.** Docker when its daemon answers, else Apple container on
+  darwin/arm64 when `container system status` does; `COPSE_CONTAINER_ENGINE=docker|apple`
+  forces one and fails rather than falling back. Decided once, before the image is built,
+  and passed to every later step of the run — image, volume, create, attach, wait, stop,
+  teardown; the record's attestation names it. The start-up sweep asks every engine that is
+  up, since the previous session may have used the other one.
+
+**End to end** (2026-09-26, same host, Docker Desktop alongside): the ACP scenario
+(`acp-container.integration.test.ts`) passes on both engines (`COPSE_THREAD_CONTAINER_E2E=1`
+and `=apple`). Under Apple container the
+guest declared containment under the `vm` attestation (so its own check saw no-new-privileges
+from the entrypoint, no capabilities and only `lo`), the push and the escape were refused,
+the key reached only the agent, the work came back as a commit, and teardown was clean and
+idempotent. The Copse-loop scenario (`thread-container.integration.test.ts`) reaches the
+guest's model client and stops there, on either engine (reproduced on both): the host-local alias
+`http://model.copse.internal` that A14 gives a loopback server is refused by the provider's
+credential-URL rule (plain http to a non-loopback name), a pre-existing break that nothing
+ran into because nothing runs this test. With that one check relaxed locally for the alias,
+the whole scenario passed under Apple container — zero prompts, the push deferred, the
+escape refused, the commits back, egress only through the broker — and the relaxation is
+not part of A18; it is tracked separately.
+
+**Residuals, recorded rather than fixed:**
+
+- **The vsock scan has no positive control.** No port accepted a connection, but no
+  guest-dialable host listener could be constructed to show the scanner would have seen one
+  (the guest's own CID returns `ENODEV`; `--ssh` exposes nothing dialable). It is evidence
+  that nothing listens for an unprivileged guest, not a proof that nothing can.
+- **Apple's attach relay couples the two directions.** A guest that stops reading stdin
+  while its own stdout write is blocked stalls the relay once ~1 MiB is in flight each way;
+  Docker's relay does not. The worker is Node, whose stdout writes on a pipe do not block
+  its event loop, so it keeps reading (measured: a 16 MiB window passes byte-exact). The
+  link does pause stdin on purpose while a slow in-guest reader drains; a client that
+  refuses to read a large response until it has finished a large upload on the same stream
+  could therefore stall the link under Apple container. The wall-clock budget bounds it.
+- **The volume is 512 GB sparse by default** on the host's disk under
+  `~/Library/Application Support/com.apple.container/volumes/`, removed with the run.
 
 ## Known implementation traps
 
 Recorded because each cost time and will again.
+
+- **Apple container fails in ways Docker does not.** A created container reads `stopped`,
+  not `created` (started means `running` or a `startedDate`). There is no `container wait`
+  and no exit code in `inspect`. A fresh volume is root-owned and ignores `--opt uid=`.
+  Deleting or inspecting something missing is an error, not a no-op. And a quiet build
+  (`container build -q`) hung with no output on the first try; the runner never asks for one.
+- **Docker Desktop's guests have network devices under `--network none`.** Its kernel gives
+  every namespace the tunnel drivers' fallback devices (`erspan0`, `gre0`, `sit0`, `tunl0`,
+  …) and a `bonding_masters` control file in `/sys/class/net`, all down and with no route.
+  The guest's self-check first read them as interfaces and refused containment on Docker;
+  it counts devices that are up (`IFF_UP`) instead, and an unreadable one as up.
+- **Apple container's build drops nested files from a context under `/private`.** The first
+  Apple run built an image whose `/app/node_modules` was empty and whose worker died on
+  `Cannot find module '@anthropic-ai/sandbox-runtime'`: with the context in `os.tmpdir()`
+  (`/private/var/folders/…`), or in `/private/tmp`, every file below the top level was
+  silently left out; the same context under the home directory built whole (reproduced from
+  an unsandboxed shell). Apple builds stage the context under `<COPSE_DIR>/cache/`, and the
+  Dockerfile now fails the build if the sandbox runtime did not arrive.
 
 - **bubblewrap inside Docker needs `seccomp=unconfined`.** Docker's default profile refuses
   `unshare`, so ASRT's Linux backend fails to initialise with the misleading "kernel does
@@ -652,6 +754,19 @@ guarantee, and the record must say so.
   `runSerialized` rather than a mutex of its own; and `runHeadlessAgent` returns the
   turn's own `turnOutcome`, so the worker reports a failed turn from the loop's verdict
   instead of reconstructing one from the chunks.
+- **A18 — Apple container is a second engine, with its own attestation.** Asked by the
+  author: run unattended threads on Apple silicon without Docker Desktop, without shipping a
+  weaker mode. Measured first (the table under [Apple container as the host
+  engine](#apple-container-as-the-host-engine)); network isolation was the condition, and
+  `--network none` gives a guest with no interface but loopback, while the stdio link works
+  as it does under Docker. Each property Apple container lacks a flag for is enforced
+  another way and named honestly: no-new-privileges by the image's entrypoint (for both
+  engines — the image also carries no setuid binary), the process limit by `RLIMIT_NPROC`,
+  and seccomp/AppArmor not at all, because each container is its own VM. The attestation
+  names the engine and its isolation, the bar is per engine, the host verifies the created
+  container against the argv before starting it, and the guest checks what it can see of
+  itself before declaring. The engine is chosen once per run (Docker first). The shared
+  pnpm store stays Docker-only, because an Apple volume attaches to one container at a time.
 - **A6 — scope is the key-capable agents.** `claude-acp` / `claude-code-acp`
   (`ANTHROPIC_API_KEY`), `codex-acp` (`CODEX_API_KEY`), `gemini` (`GEMINI_API_KEY`).
   Anything without a documented key path stays greyed out, and the reason is per agent:
@@ -774,7 +889,11 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Thread checkout        | unit (git)  | A thread worktree with its own commits and edits is carried in, not the project checkout                                                                | `container-runtime/container-run-service.test.ts`                                                                                      |
 | Docker argv and record | unit        | The flags the attestation claims are the flags used; only the run dir is mounted; key passed by name                                                    | `container-runtime/thread-container.test.ts`                                                                                           |
 | Carry-in / carry-out   | unit (git)  | Dirty tree snapshots without moving HEAD; guest commits round-trip to `refs/copse/runs/<id>`                                                            | `container-runtime/thread-container.test.ts`                                                                                           |
-| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1`                                                     | `container-runtime/thread-container.integration.test.ts`                                                                               |
+| End to end             | integration | The eight properties listed above, against a real daemon, opt-in via `COPSE_THREAD_CONTAINER_E2E=1` (Docker) or `=apple` (Apple container, A18)         | `container-runtime/thread-container.integration.test.ts`                                                                               |
+| Engine selection       | unit        | Docker first, Apple container on Apple silicon only, an explicit preference never falls back, one resolution per run reaches image, run and stop        | `container-runtime/container-engine.test.ts`, `container-run-service.test.ts` (A18)                                                    |
+| Attestation per engine | unit        | Each Apple container property missing or misstated (a seccomp claim, a shared kernel, a cgroup pids limit) refuses; Docker must attest its profiles     | `security/runtime-containment.test.ts` (A18)                                                                                           |
+| Guest self-check       | unit        | Root, another uid, any capability set, no-new-privileges off, a writable root or a network device refuses the declaration on either engine              | `security/runtime-containment.test.ts` (A18)                                                                                           |
+| Apple argv and inspect | unit        | The exact create and volume-prepare argv; the read-back refuses every missing flag, an extra mount or a writable run dir, and output it cannot decode   | `container-runtime/thread-container.test.ts` (A18)                                                                                     |
 | Provider plan          | unit        | Model id → endpoint, key and the one egress origin; cloud models without a key are refused before Docker                                                | `providers/container-provider.test.ts`                                                                                                 |
 | Run service            | unit        | Provider resolved, key passed by env var and blanked once the guest holds it, phases published, refusals                                                | `container-runtime/container-run-service.test.ts`                                                                                      |
 | UI (browser tier)      | demo        | Footer action, arming form with the draft prefilled, banner and review record for a finished run                                                        | `tests/demo/container-run.demo.ts`                                                                                                     |

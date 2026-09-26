@@ -108,11 +108,18 @@ the runtime's [host-only network issue](https://github.com/apple/container/issue
 remains open. These development/eval workloads retain the same network access their
 Docker versions had.
 
-Unattended **thread-in-container** runs from the app (`containerRunsEnabled`) still require
-a reachable Docker daemon. They preflight with the same style of engine probe and name a
-ready Apple container when Docker is down, but they do not switch engines: the guest
-attestation and stdio egress link are Docker-shaped today
-(`docs/plans/thread-in-container.md`).
+Unattended **thread-in-container** runs from the app (`containerRunsEnabled`) run on either
+engine, chosen once per run before the worker image is built. The same variable picks one
+(`docker` or `apple`, never falling back); with `auto` the app prefers **Docker** when its
+daemon answers — the reverse of the scripts' order — and otherwise a ready Apple container
+on Apple silicon. Under Apple container the run does not use `--internal` networks: the
+guest gets `--network none` (loopback only) and its only way out is the stdio egress link.
+The attestation names the engine and its isolation (a VM per container), and the run is
+refused if Apple container did not apply every hardening flag it was asked for. What each
+engine enforces, and how, is in
+[`thread-in-container.md`](plans/thread-in-container.md#apple-container-as-the-host-engine).
+The opt-in end-to-end test runs on Apple container with
+`COPSE_THREAD_CONTAINER_E2E=apple` (and on Docker with `=1`).
 
 The shared CI runner image can also run on Apple container without Compose. See
 [`ci-runners/README.md`](../ci-runners/README.md#apple-container--apple-silicon-macs)

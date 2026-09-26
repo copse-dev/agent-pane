@@ -1,30 +1,24 @@
 import { spawnSync } from 'node:child_process'
+import {
+  appleHostError,
+  parseContainerEnginePreference,
+  type ContainerEngine,
+} from '../../src/main/services/container-runtime/container-engine.ts'
 
-export const CONTAINER_ENGINE_PREFERENCES = ['auto', 'docker', 'apple'] as const
-
-export type ContainerEngine = 'docker' | 'apple'
-export type ContainerEnginePreference = (typeof CONTAINER_ENGINE_PREFERENCES)[number]
-export type ContainerArchitecture = 'amd64' | 'arm64'
-
-export interface ContainerCommand {
-  command: 'docker' | 'container'
-  args: string[]
-}
-
-export interface ContainerBuildSpec {
-  file: string
-  tag: string
-  context: string
-  architecture?: ContainerArchitecture
-  pull?: boolean
-  cpus?: number
-  memory?: string
-  buildArgs?: Readonly<Record<string, string>>
-  secrets?: readonly {
-    id: string
-    env: string
-  }[]
-}
+// The engine vocabulary and image-build argv are the product's, so the eval
+// scripts and unattended thread runs cannot drift apart on either.
+export {
+  CONTAINER_ENGINE_PREFERENCES,
+  containerBuildCommand,
+  containerHostName,
+  containerImageInspectCommand,
+  parseContainerEnginePreference,
+  type ContainerArchitecture,
+  type ContainerBuildSpec,
+  type ContainerCommand,
+  type ContainerEngine,
+  type ContainerEnginePreference,
+} from '../../src/main/services/container-runtime/container-engine.ts'
 
 interface CommandProbeResult {
   ok: boolean
@@ -59,18 +53,6 @@ function defaultProbe(command: string, args: readonly string[]): CommandProbeRes
 
 const DEFAULT_PROBE: ContainerEngineProbe = { probe: defaultProbe }
 
-export function parseContainerEnginePreference(
-  value: string | undefined,
-): ContainerEnginePreference {
-  const normalized = value?.trim().toLowerCase() ?? 'auto'
-  for (const candidate of CONTAINER_ENGINE_PREFERENCES) {
-    if (candidate === normalized) return candidate
-  }
-  throw new Error(
-    `Unsupported COPSE_CONTAINER_ENGINE=${JSON.stringify(value)}; use auto, docker, or apple.`,
-  )
-}
-
 function probeDocker(probe: ContainerEngineProbe): CommandProbeResult {
   return probe.probe('docker', ['info', '--format', '{{.ServerVersion}}'])
 }
@@ -79,12 +61,6 @@ function probeAppleContainer(probe: ContainerEngineProbe): CommandProbeResult {
   const version = probe.probe('container', ['--version'])
   if (!version.ok) return version
   return probe.probe('container', ['system', 'status'])
-}
-
-function appleHostError(platform: NodeJS.Platform, architecture: string): string | undefined {
-  if (platform !== 'darwin') return 'Apple container requires macOS.'
-  if (architecture !== 'arm64') return 'Apple container requires Apple silicon.'
-  return undefined
 }
 
 export function resolveContainerEngine(
@@ -127,55 +103,4 @@ export function resolveContainerEngine(
     `No usable container engine was found (${failures.join('; ')}). ` +
       'Install Apple container or Docker, or set COPSE_CONTAINER_ENGINE explicitly.',
   )
-}
-
-function architectureArgs(
-  engine: ContainerEngine,
-  architecture: ContainerArchitecture | undefined,
-): string[] {
-  if (architecture === undefined) return []
-  return engine === 'apple' ? ['--arch', architecture] : ['--platform', `linux/${architecture}`]
-}
-
-export function containerBuildCommand(
-  engine: ContainerEngine,
-  spec: ContainerBuildSpec,
-): ContainerCommand {
-  const args = [
-    'build',
-    '--file',
-    spec.file,
-    '--tag',
-    spec.tag,
-    ...(spec.pull === true ? ['--pull'] : []),
-    ...architectureArgs(engine, spec.architecture),
-  ]
-
-  if (engine === 'apple') {
-    if (spec.cpus !== undefined) args.push('--cpus', String(spec.cpus))
-    if (spec.memory !== undefined) args.push('--memory', spec.memory)
-  }
-  for (const [name, value] of Object.entries(spec.buildArgs ?? {})) {
-    args.push('--build-arg', `${name}=${value}`)
-  }
-  for (const secret of spec.secrets ?? []) {
-    args.push('--secret', `id=${secret.id},env=${secret.env}`)
-  }
-  args.push(spec.context)
-
-  return { command: engine === 'apple' ? 'container' : 'docker', args }
-}
-
-export function containerImageInspectCommand(
-  engine: ContainerEngine,
-  image: string,
-): ContainerCommand {
-  return {
-    command: engine === 'apple' ? 'container' : 'docker',
-    args: ['image', 'inspect', image],
-  }
-}
-
-export function containerHostName(engine: ContainerEngine): string {
-  return engine === 'apple' ? 'host.container.internal' : 'host.docker.internal'
 }

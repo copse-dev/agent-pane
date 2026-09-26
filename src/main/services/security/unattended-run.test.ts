@@ -21,6 +21,7 @@ import {
   declareContainerRuntime,
   parseContainerRuntimeAttestation,
   runtimeContainmentTier,
+  type GuestContainmentObservation,
 } from './runtime-containment.ts'
 import {
   armUnattendedRun,
@@ -48,7 +49,19 @@ function attestation(
     network: 'brokered',
     egressAllowlist: ['model.copse.internal:8080'],
     hostMounts: ['/run/copse'],
+    securityProfiles: 'default',
     ...overrides,
+  }
+}
+
+/** What a guest started with that attestation sees of itself. */
+function containedGuest(): GuestContainmentObservation {
+  return {
+    uid: 1000,
+    capabilitySets: { inheritable: 0n, permitted: 0n, effective: 0n, bounding: 0n, ambient: 0n },
+    noNewPrivileges: true,
+    upNetworkInterfaces: ['lo'],
+    rootMountOptions: ['ro', 'relatime'],
   }
 }
 
@@ -122,7 +135,7 @@ async function gate(command: string): Promise<Outcome> {
 describe('runtime containment declaration', () => {
   it('reports the desktop tier until a container is declared', () => {
     assert.notEqual(runtimeContainmentTier(), 'container')
-    declareContainerRuntime(attestation())
+    declareContainerRuntime(attestation(), containedGuest())
     assert.equal(runtimeContainmentTier(), 'container')
   })
 
@@ -138,7 +151,7 @@ describe('runtime containment declaration', () => {
     ]) {
       assert.notEqual(containerAttestationShortfall(bad), null)
       assert.throws(() => {
-        declareContainerRuntime(bad)
+        declareContainerRuntime(bad, containedGuest())
       })
       assert.notEqual(runtimeContainmentTier(), 'container')
     }
@@ -207,7 +220,7 @@ describe('unattended-run ledger', () => {
       // the contained-effect rules are not offered.
       assert.equal(currentRunIsUnattendedContainer(THREAD), false)
     })
-    declareContainerRuntime(attestation())
+    declareContainerRuntime(attestation(), containedGuest())
     await asRun(async () => {
       assert.equal(currentRunIsUnattendedContainer(THREAD), true)
     })
@@ -223,7 +236,7 @@ describe('shell gate matrix: command class × containment tier × unattended', (
   const escape = 'docker ps'
 
   it('unattended on a container: contained runs, outward defers, escape is blocked', async () => {
-    declareContainerRuntime(attestation())
+    declareContainerRuntime(attestation(), containedGuest())
     armUnattendedRun(THREAD, { runtimeId: 'rt', budgets: BUDGETS })
 
     assert.equal(await gate(contained), 'allowed')
@@ -239,7 +252,7 @@ describe('shell gate matrix: command class × containment tier × unattended', (
   it('refuses and records an outward effect instead of deferring when asked to', async () => {
     // An external agent's own command (decision A3): Copse could not replay
     // it from the host, so a deferral would be a promise nobody can keep.
-    declareContainerRuntime(attestation())
+    declareContainerRuntime(attestation(), containedGuest())
     armUnattendedRun(THREAD, { runtimeId: 'rt', budgets: BUDGETS })
     const restore = setWorkspaceRootForTest(root)
     try {
@@ -279,13 +292,13 @@ describe('shell gate matrix: command class × containment tier × unattended', (
   })
 
   it('a container without an armed run prompts exactly as today', async () => {
-    declareContainerRuntime(attestation())
+    declareContainerRuntime(attestation(), containedGuest())
     assert.equal(await gate(contained), 'prompted')
     assert.equal(await gate(outward), 'prompted')
   })
 
   it('a hard harm-gate deny stays a deny inside the container', async () => {
-    declareContainerRuntime(attestation())
+    declareContainerRuntime(attestation(), containedGuest())
     armUnattendedRun(THREAD, { runtimeId: 'rt', budgets: BUDGETS })
     assert.equal(await gate(':(){ :|:& };:'), 'blocked')
     assert.equal(await gate('rm -rf /'), 'blocked')

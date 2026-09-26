@@ -672,9 +672,14 @@ export function mountContainerRunControl(
           'Containment',
           [
             'read-only rootfs, no capabilities',
-            run.record.attestation.securityProfiles === 'default'
-              ? 'default seccomp and AppArmor'
-              : null,
+            // What separates the guest from this machine: a VM of its own
+            // under Apple container, the default syscall profiles on
+            // Docker's shared kernel.
+            run.record.attestation.isolation === 'vm'
+              ? 'its own VM (Apple container)'
+              : run.record.attestation.securityProfiles === 'default'
+                ? 'default seccomp and AppArmor'
+                : null,
             run.record.attestation.network === 'brokered' ? 'brokered egress' : 'no network',
             run.record.attestation.perCommandNetwork === 'token-gated'
               ? 'shell commands off the network'
