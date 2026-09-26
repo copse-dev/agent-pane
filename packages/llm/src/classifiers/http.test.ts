@@ -108,6 +108,30 @@ describe('classifier HTTP adapters', () => {
     }
   })
 
+  it('keeps a derived score on the scale when the distribution rounds above 1', async () => {
+    const result = await classifyHttp(
+      profile(),
+      {
+        state: 'x',
+        questions: {
+          level: { type: 'score', instructions: 'Level?', levels: ['low', 'mid', 'high'] },
+        },
+      },
+      {
+        fetchImpl: async () =>
+          Response.json({
+            answers: {
+              level: { type: 'score', probabilities: { '0': 0, '1': 0.01, '2': 1 } },
+            },
+          }),
+      },
+    )
+    const level = result.answers['level']
+    assert.equal(level?.type, 'score')
+    assert.ok(Math.abs(level.score - 2.01 / 1.01) < 1e-9, 'score is normalized by the total')
+    assert.ok(level.score <= 2)
+  })
+
   it('encodes named questions and preserves confidence separately from probabilities', async () => {
     let attempts = 0
     const result = await classifyHttp(profile('typesafe'), CLASSIFIER_TEST_REQUEST, {
