@@ -219,7 +219,8 @@ jobs:
                   echo "::error::Invalid screenshot candidate path: $relative"
                   exit 1
                 fi
-                size="$(stat -c '%s' "$path")"
+                # wc -c, not GNU stat -c, so the step's unit test also runs on macOS.
+                size="$(wc -c < "$path" | tr -d ' ')"
                 signature="$(head -c 8 "$path" | od -An -t x1 | tr -d ' \n')"
                 if [ "$signature" != '89504e470d0a1a0a' ]; then
                   echo "::error::Candidate is not a PNG: $relative"

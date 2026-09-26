@@ -47,7 +47,7 @@
   margin-top: 0;
 }
 .onboarding-body h3 {
-  font-size: 18px;
+  font-size: calc(18px * var(--ui-scale));
   font-weight: 600;
   margin: 0 0 var(--spacing-xs);
 }
@@ -238,7 +238,7 @@
   line-height: var(--line-height-base);
 }
 .preferred-model-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .preferred-model-status.ok {
@@ -253,6 +253,6 @@
   font-size: var(--font-size-sm);
 }
 .download-progress {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
