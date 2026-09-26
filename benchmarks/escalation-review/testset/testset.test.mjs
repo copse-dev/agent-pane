@@ -4,6 +4,7 @@ import { TIERS } from '../scripts/score.mjs'
 import { build, family, jsonl, relocateShellScope } from './build.mjs'
 import { SNAPSHOT, analyzeTestset, drift, loadTestset, violations } from './gates.mjs'
 import { parseCsv, shuffle } from './sample-hf.mjs'
+import { anonymise, leakReason } from './import-history.mjs'
 import { accuracy, predicted } from './score-models.mjs'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -77,4 +78,32 @@ test('helpers: family, relocation, CSV and the seeded shuffle', () => {
   )
   assert.deepEqual(parseCsv('a,b\n"x, ""y""",2\n'), [{ a: 'x, "y"', b: '2' }])
   assert.deepEqual(shuffle([1, 2, 3, 4]), shuffle([1, 2, 3, 4]))
+})
+
+test('history slices are anonymised, leak-checked and held out', () => {
+  const context = {
+    realHome: '/Users/alice',
+    workspace: '/Users/alice/.copse/worktrees/aa/bb',
+    project: '/Users/alice/code/app',
+    user: 'alice',
+  }
+  const cases = [
+    ['cd /Users/alice/code/app && git status', 'cd /Users/dev/project && git status'],
+    ['cat ~/code/secret/notes.md ~/.zshrc', 'cat ~/other-1/notes.md ~/.zshrc'],
+    ['ls $HOME/code/app/src', 'ls /Users/dev/project/src'],
+    ['gh repo view alice/private-thing', 'gh repo view o/r'],
+    ['git clone git@github.com:alice/app.git', 'git clone git@github.com:o/r.git'],
+    ['curl http://192.168.0.229:8080', 'curl http://192.0.2.10:8080'],
+  ]
+  for (const [raw, expected] of cases) assert.equal(anonymise(raw, context), expected, raw)
+  assert.equal(leakReason('echo ghp_abcdefghijklmnopqrstuvwxyz0123', { user: 'alice' }), 'a token')
+  assert.equal(leakReason('cat /Users/bob/x', { user: 'alice' }), 'another home directory')
+  assert.equal(
+    leakReason('cd secret-proj', { user: 'alice', denied: ['secret-proj'] }),
+    'an excluded project name',
+  )
+  assert.equal(leakReason('git clone git@github.com:o/r.git', { user: 'alice' }), null)
+  for (const c of loadTestset().filter((c) => c.source.startsWith('history:'))) {
+    assert.equal(c.split, 'holdout', `${c.id} is a history row and must stay held out`)
+  }
 })

@@ -10,12 +10,14 @@
 //   anonymised machine, keeping its reviewed sandbox/external label and dev/holdout split;
 // - authored: sources/authored.jsonl, written for this set;
 // - hf: sources/hf-*.jsonl, sampled by sample-hf.mjs.
+// - history: sources/history-*.jsonl, anonymised slices of real history from
+//   import-history.mjs, always in the holdout split.
 //
 // labels.jsonl holds the reference tier for every row (rubric.md). The build writes
 // cases.jsonl and fixtures/tier-{dev,holdout}.jsonl for `pnpm run eval:classifier`. With
 // --check it only verifies those files are current. --batches writes blind labelling rows.
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { TIER_QUESTION } from '../scripts/prepare.mjs'
@@ -105,6 +107,16 @@ export function collect() {
   }
   for (const name of ['hf-shell-safety-v2.jsonl', 'hf-nl2sh-alfa.jsonl']) {
     for (const c of jsonl(join(TESTSET, 'sources', name))) rows.push({ ...c, workspace: WORKSPACE })
+  }
+  // Anonymised slices of real history join the holdout only, in the order they were taken,
+  // so no prompt, threshold or gate rule is ever chosen on them before they are scored.
+  const history = readdirSync(join(TESTSET, 'sources'))
+    .filter((name) => /^history-[\w.-]+\.jsonl$/.test(name))
+    .sort()
+  for (const name of history) {
+    for (const c of jsonl(join(TESTSET, 'sources', name))) {
+      rows.push({ ...c, workspace: WORKSPACE, split: 'holdout' })
+    }
   }
   return rows.map((row) => ({ ...row, split: row.split ?? splitFor(family(row.command)) }))
 }
