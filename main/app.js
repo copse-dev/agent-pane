@@ -112802,6 +112802,28 @@ var init_roadmap_pane = __esm({
   }
 });
 
+// src/shared/canvas/guest-surface.ts
+function canvasGuestTextCss(color) {
+  if (!COMPUTED_COLOR_RE.test(color.trim())) return null;
+  return `:where(:root) { color: ${color.trim()}; }`;
+}
+var CANVAS_TRANSPARENT_ROOT_PROBE, COMPUTED_COLOR_RE;
+var init_guest_surface = __esm({
+  "src/shared/canvas/guest-surface.ts"() {
+    CANVAS_TRANSPARENT_ROOT_PROBE = `(() => {
+  const paints = (element) => {
+    if (!element) return false
+    const style = getComputedStyle(element)
+    if (style.backgroundImage !== 'none') return true
+    const alpha = /^rgba\\((?:[^,]+,){3}\\s*([\\d.]+)\\s*\\)$/.exec(style.backgroundColor)
+    return alpha ? Number(alpha[1]) > 0 : style.backgroundColor !== 'transparent'
+  }
+  return !paints(document.documentElement) && !paints(document.body)
+})()`;
+    COMPUTED_COLOR_RE = /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/;
+  }
+});
+
 // src/shared/types/main-window.ts
 var MAX_RESTORED_BROWSER_TABS;
 var init_main_window = __esm({
@@ -113295,6 +113317,13 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       syncWebviewSize2(tab);
     });
   }
+  function applyCanvasGuestText(tab, webview) {
+    if (!tab.artefactTitle || !webview.getURL().startsWith("data:text/html")) return;
+    const css2 = canvasGuestTextCss(getComputedStyle(tab.webviewHost).color);
+    if (!css2 || !webview.executeJavaScript || !webview.insertCSS) return;
+    const insertCSS = webview.insertCSS.bind(webview);
+    void webview.executeJavaScript(CANVAS_TRANSPARENT_ROOT_PROBE).then((transparent) => transparent === true ? insertCSS(css2) : void 0).catch(() => void 0);
+  }
   function ensureWebview(tab) {
     if (tab.webview) return tab.webview;
     const webview = createWebview(tab.partition, resolveWorkspacePreview);
@@ -113320,6 +113349,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
         tab.pendingUrl = null;
@@ -114150,6 +114180,7 @@ var init_browser_pane = __esm({
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
+    init_guest_surface();
     init_browser_session();
     init_unknown_value3();
     init_panels();
