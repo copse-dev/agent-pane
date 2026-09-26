@@ -110,6 +110,22 @@ describe('kit buttons replace bespoke button stacks (#3065)', () => {
     )
   })
 
+  it('fades a paused automation row by its copy, never over its filled Delete', () => {
+    // Opacity on the row or its action group composites the danger fill and its
+    // label together toward the card, dropping the label to ~3:1 on its fill.
+    const rowOrActions = /\.automation-row(?:-paused|-actions)?$/
+    const offenders = all
+      .filter((rule) => rule.selector.split(',').some((part) => rowOrActions.test(part.trim())))
+      .filter((rule) => /(?:^|[;\s])(?:opacity|filter)\s*:/.test(rule.body))
+      .map((rule) => `${rule.file}: ${rule.selector}`)
+    assert.deepEqual(offenders, [], 'fade the paused row copy, not the row holding the buttons')
+    const pausedCopy = all.find(
+      (rule) => rule.selector === '.automation-row-paused .automation-row-copy',
+    )
+    assert.ok(pausedCopy, 'a paused schedule still reads as paused')
+    assert.match(pausedCopy.body, /opacity:/)
+  })
+
   it('keeps adjacent text buttons on the --spacing-md gap', () => {
     for (const [file, selector] of [
       ['memories.css', '.memories-actions'],

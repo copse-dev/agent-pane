@@ -197,6 +197,24 @@ describe('settings automations plugin', function () {
       ),
       ['ui-btn-secondary', 'ui-btn-secondary', 'ui-btn-danger'],
     )
+    // The seeded schedule is paused. Paused fades the row's copy only: fading
+    // the whole row composited the filled Delete and its label toward the card
+    // (a grey label at ~3:1). The label colour itself is .ui-btn-danger's.
+    const fade = await browser.execute(() => {
+      const opacity = (selector: string): number | null => {
+        let node = document.querySelector<HTMLElement>(selector)
+        if (!node) return null
+        let product = 1
+        for (; node; node = node.parentElement) product *= Number(getComputedStyle(node).opacity)
+        return product
+      }
+      return {
+        copy: opacity('.automation-row-paused .automation-row-copy'),
+        remove: opacity('.automation-row-paused .automation-remove-btn'),
+      }
+    })
+    assert.ok(fade.copy !== null && fade.copy < 1, 'a paused schedule still reads as paused')
+    assert.equal(fade.remove, 1, 'the paused row does not fade its Delete button')
     await saveElementScreenshot('.automation-plugin-settings', 'settings-automations.png')
 
     // Hovered "Run now" keeps a readable label. The bespoke button it replaced

@@ -2318,7 +2318,9 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-sm);
   background: var(--bg-base);
 }
-.automation-row-paused {
+/* A paused schedule dims its copy only. Its Edit / Run now / Delete stay live,
+   and fading them too dropped the filled Delete label to ~3:1 on its fill. */
+.automation-row-paused .automation-row-copy {
   opacity: 0.7;
 }
 .automation-row-copy {
