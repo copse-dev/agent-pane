@@ -206,7 +206,11 @@ describe('subagent display (component)', () => {
     assert.ok(header)
     const marker = header.querySelector('.tool-subagent-marker')
     assert.ok(marker, 'expected a distinguishing marker on the collapsed subagent row')
+    // Accessible name, not just the attribute: a label on a role-less span is
+    // ignored, so the row would be announced as a plain "Explored files".
+    assert.equal(marker.getAttribute('role'), 'img')
     assert.equal(marker.getAttribute('aria-label'), 'Subagent')
+    assert.equal(marker.querySelector('svg')?.getAttribute('aria-hidden'), 'true')
     // Leading: ahead of the label, not trailing after it.
     const name = header.querySelector('.tool-name')
     assert.ok(name)

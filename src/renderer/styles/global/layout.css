@@ -42,7 +42,16 @@
 .pane-projects {
   --projects-action-size: 24px;
   --projects-action-inset: var(--spacing-xs);
-  --projects-disclosure-size: 12px;
+  /* Follows the interface scale like the sidebar text it sits beside. */
+  --projects-disclosure-size: var(--font-size-sm);
+  /* Where a thread row's title starts: the gutter holds the running and unread
+     marks. Every row one level under a disclosure heading (project threads,
+     automation runs, schedule headings) starts here. */
+  --projects-thread-indent: 28px;
+  /* A second-level heading's title: its disclosure starts at the thread indent. */
+  --projects-nested-title-indent: calc(
+    var(--projects-thread-indent) + var(--projects-disclosure-size) + var(--spacing-xs)
+  );
 
   width: var(--projects-width, 240px);
   flex-shrink: 0;
@@ -401,9 +410,6 @@
   flex-shrink: 0;
   color: var(--accent);
 }
-.automation-thread-rows .chat-row {
-  padding-left: calc(28px + var(--spacing-sm));
-}
 .automation-schedule-group {
   display: flex;
   flex-direction: column;
@@ -414,7 +420,7 @@
   gap: var(--spacing-xs);
   flex: 1;
   min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) calc(28px + var(--spacing-sm));
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) var(--projects-thread-indent);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   text-align: left;
@@ -449,7 +455,7 @@
   margin-left: 0;
 }
 .automation-schedule-runs .chat-row {
-  padding-left: calc(42px + var(--spacing-md));
+  padding-left: var(--projects-nested-title-indent);
   color: var(--text-muted);
 }
 .chat-row {
@@ -461,10 +467,11 @@
   margin-inline: 0;
   border-radius: 0;
   text-align: left;
-  /* Left 28px keeps the running-status gutter; the shared list rhythm keeps
-     dense thread lists legible while actions use the shared trailing inset. */
+  /* The left thread indent keeps the running-status gutter; the shared list
+     rhythm keeps dense thread lists legible while actions use the shared
+     trailing inset. */
   padding: var(--list-row-padding-block) var(--projects-action-inset) var(--list-row-padding-block)
-    28px;
+    var(--projects-thread-indent);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -613,7 +620,8 @@
   width: auto;
   margin-inline: 0;
   text-align: left;
-  padding: var(--list-row-padding-block) var(--spacing-md) var(--list-row-padding-block) 28px;
+  padding: var(--list-row-padding-block) var(--spacing-md) var(--list-row-padding-block)
+    var(--projects-thread-indent);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
@@ -635,7 +643,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 6px var(--spacing-sm) var(--spacing-sm) 28px;
+  padding: 6px var(--spacing-sm) var(--spacing-sm) var(--projects-thread-indent);
 }
 .project-missing-text {
   font-size: var(--font-size-sm);

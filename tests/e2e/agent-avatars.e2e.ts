@@ -133,18 +133,38 @@ function seedAgentAvatars(live = false): void {
   })
 }
 
-async function loadedAvatarSources(): Promise<string[]> {
+async function loadedAvatarSources(count = 2): Promise<string[]> {
   await $('.message-agent .agent-avatar').waitForExist()
   await browser.waitUntil(
     () =>
-      browser.execute(() => {
+      browser.execute((expected) => {
         const images = [...document.querySelectorAll<HTMLImageElement>('.agent-avatar')]
-        return images.length === 2 && images.every((img) => img.complete && img.naturalWidth > 0)
-      }),
+        return (
+          images.length === expected && images.every((img) => img.complete && img.naturalWidth > 0)
+        )
+      }, count),
     { timeout: 15_000, timeoutMsg: 'Riso SVG images did not decode' },
   )
   return browser.execute(() =>
     [...document.querySelectorAll<HTMLImageElement>('.agent-avatar')].map((img) => img.src),
+  )
+}
+
+/** The id of the latest assistant reply that carries an agent marker. */
+async function latestMarkedReplyId(): Promise<string> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const replies = [...document.querySelectorAll<HTMLElement>('.msg-assistant')]
+        return replies.at(-1)?.querySelector('.message-agent .agent-avatar') != null
+      }),
+    { timeout: 15_000, timeoutMsg: 'Expected the latest reply to carry an agent marker' },
+  )
+  return browser.execute(
+    () =>
+      [...document.querySelectorAll<HTMLElement>('.msg-assistant')]
+        .at(-1)
+        ?.getAttribute('data-message-id') ?? '',
   )
 }
 
@@ -229,7 +249,14 @@ describe('riso avatars in agent chat', () => {
     await expect($('.messages-list')).toHaveText(
       expect.stringContaining('I’m reviewing the next section.'),
     )
-    const active = await $('[data-message-id="named-first"] .agent-avatar')
+    // A user turn ends Maple's stretch, so the new reply carries its own
+    // marker and that one — not named-first, far above — is the one that moves.
+    const activeId = await latestMarkedReplyId()
+    expect(activeId).not.toBe('named-first')
+    const active = await $(`[data-message-id="${activeId}"] .agent-avatar`)
+    await expect($('[data-message-id="named-first"] .agent-avatar')).not.toHaveAttribute(
+      'data-avatar-active',
+    )
     const remote = await $('[data-message-id="remote-first"] .agent-avatar')
     await expect(active).toHaveAttribute('data-avatar-animating')
     await expect(remote).not.toHaveAttribute('data-avatar-active')
@@ -275,7 +302,7 @@ describe('riso avatars in agent chat', () => {
     await saveElementScreenshot('#settings-dialog', 'agent-avatars-appearance.png')
     await saveMotionSettings()
     await expect(active).not.toHaveAttribute('data-avatar-animating')
-    expect((await loadedAvatarSources()).length).toBe(2)
+    expect((await loadedAvatarSources(3)).length).toBe(3)
     await openMotionSettings()
     await expect($('input[name="animateAgentAvatars"]')).not.toBeChecked()
     await $('input[name="animateAgentAvatars"]').click()
@@ -292,8 +319,11 @@ describe('riso avatars in agent chat', () => {
     await openMotionSettings()
     await $('input[name="animateAgentAvatars"]').click()
     await saveMotionSettings()
+    const avatarsBefore = await browser.execute(
+      () => document.querySelectorAll('.agent-avatar').length,
+    )
     await browser.reloadSession()
-    await loadedAvatarSources()
+    await loadedAvatarSources(avatarsBefore)
     await openMotionSettings()
     await expect($('input[name="animateAgentAvatars"]')).not.toBeChecked()
     await $('#settings-close').click()
@@ -310,9 +340,11 @@ describe('riso avatars in agent chat', () => {
         previousReplies,
       { timeout: 15_000, timeoutMsg: 'Expected the named agent to start a second reply' },
     )
-    const avatar = await $('[data-message-id="named-first"] .agent-avatar')
+    const avatar = await $(`[data-message-id="${await latestMarkedReplyId()}"] .agent-avatar`)
     await expect(avatar).not.toHaveAttribute('data-avatar-animating')
-    expect((await loadedAvatarSources()).length).toBe(2)
+    expect(
+      await browser.execute(() => document.querySelectorAll('[data-avatar-animating]').length),
+    ).toBe(0)
     await saveAppScreenshot('agent-avatars-motion-disabled.png')
     await $('.stop-btn').click()
     await waitForAgentIdle(15_000)

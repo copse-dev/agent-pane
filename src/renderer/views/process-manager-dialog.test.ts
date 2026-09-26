@@ -241,3 +241,64 @@ test('activity refresh preserves keyboard focus and hands it back when a run fin
   )
   document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
 })
+
+test('a chip menu never stops a run other than the one it was opened on', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] })
+  const store = createStore({
+    projects: [{ id: 'project-a', path: '/a', name: 'A' }],
+    activeProjectId: 'project-a',
+    threads: [thread('thread-a')],
+  })
+  let activeRunThreadIds = ['thread-a']
+  const aborted: string[] = []
+  const base = createFakeApi()
+  const api: ApiClient = {
+    ...base,
+    agent: {
+      ...base.agent,
+      abort: async (threadId) => {
+        aborted.push(threadId)
+      },
+    },
+    processManager: {
+      ...base.processManager,
+      snapshot: async () => ({ sampledAt: Date.now(), activeRunThreadIds, processes: [] }),
+    },
+  }
+  mountProcessManagerDialog(api, store)()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const openChipMenu = (): void => {
+    document
+      .querySelector('.process-manager-activity-item')
+      ?.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  }
+  const refresh = async (): Promise<void> => {
+    t.mock.timers.tick(1_000)
+    await Promise.resolve()
+  }
+
+  // The run finishes while its menu is open.
+  openChipMenu()
+  activeRunThreadIds = []
+  await refresh()
+  menuItem('Stop agent run').click()
+  assert.deepEqual(aborted, [])
+
+  // The run finishes and a new one starts in the same thread.
+  activeRunThreadIds = ['thread-a']
+  await refresh()
+  openChipMenu()
+  activeRunThreadIds = []
+  await refresh()
+  activeRunThreadIds = ['thread-a']
+  await refresh()
+  menuItem('Stop agent run').click()
+  assert.deepEqual(aborted, [])
+
+  // The run the menu was opened on is still going.
+  openChipMenu()
+  await refresh()
+  menuItem('Stop agent run').click()
+  assert.deepEqual(aborted, ['thread-a'])
+  document.querySelector<HTMLDialogElement>('#process-manager-dialog')?.close()
+})

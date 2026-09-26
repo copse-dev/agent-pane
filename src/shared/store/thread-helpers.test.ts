@@ -455,6 +455,76 @@ describe('blank thread reuse', () => {
     })
   })
 
+  it('addUsageDelta records the subagent share only from folded subagent usage', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 1000,
+      outputTokens: 50,
+    })
+    let usage = getThreadById(store, threadId)?.usage
+    assert.equal(usage?.subagentInputTokens, 0)
+    assert.equal(usage.subagentOutputTokens, 0)
+
+    addUsageDelta(store, threadId, {
+      model: 'lmstudio:qwen',
+      inputTokens: 800,
+      outputTokens: 15,
+      subagentUsage: true,
+    })
+    usage = getThreadById(store, threadId)?.usage
+    assert.equal(usage?.inputTokens, 1800)
+    assert.equal(usage.subagentInputTokens, 800)
+    assert.equal(usage.subagentOutputTokens, 15)
+    assert.deepEqual(usage.byModel?.['lmstudio:qwen'], { inputTokens: 800, outputTokens: 15 })
+  })
+
+  it('addUsageDelta seeds the subagent share of older usage from its finished sessions', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) =>
+        thread.id !== threadId
+          ? thread
+          : {
+              ...thread,
+              usage: { inputTokens: 5000, outputTokens: 100 },
+              messages: [
+                {
+                  id: 'a1',
+                  role: 'assistant',
+                  content: '',
+                  createdAt: 1,
+                  toolCalls: [
+                    {
+                      id: 't1',
+                      name: 'explore',
+                      args: {},
+                      status: 'done',
+                      result: 'done',
+                      subagent: {
+                        id: 'sub-1',
+                        kind: 'explore',
+                        status: 'done',
+                        prompt: 'q',
+                        summary: null,
+                        messages: [],
+                        usage: { inputTokens: 3000, outputTokens: 40 },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+      ),
+    })
+    addUsageDelta(store, threadId, { model: 'claude-opus-4-8', inputTokens: 10, outputTokens: 1 })
+    const usage = getThreadById(store, threadId)?.usage
+    assert.equal(usage?.subagentInputTokens, 3000)
+    assert.equal(usage.subagentOutputTokens, 40)
+  })
+
   it('addUsageDelta omits cache fields when the provider reports none', () => {
     const store = createStore()
     const threadId = createThread(store)

@@ -42,6 +42,29 @@ export function hasModelPricing(model: string, pricing?: ModelPricingMap): boole
   return pricingForModel(model, pricing) !== null
 }
 
+/**
+ * Whether a cloud model's listed rate is explicitly zero (a `:free` route, for
+ * example) — priced, unlike an unlisted model, but billed at nothing.
+ */
+export function hasZeroModelPricing(model: string, pricing?: ModelPricingMap): boolean {
+  const info = pricingForModel(model, pricing)
+  if (!info) return false
+  return (
+    info.inputPricePerMTok === 0 &&
+    info.outputPricePerMTok === 0 &&
+    (info.cacheReadPricePerMTok ?? 0) === 0 &&
+    (info.cacheCreationPricePerMTok ?? 0) === 0
+  )
+}
+
+export interface UsageCostOptions {
+  /**
+   * The caller already explains local-model usage as free, so the cost line
+   * leaves off its "(+ local free)" suffix instead of saying it twice.
+   */
+  localFreeExplained?: boolean
+}
+
 /** USD estimate for a single model's token usage (cache-aware when breakdown is present). */
 function costForUsage(usage: TokenUsage, info: ModelPricing | null): number {
   if (!info) return 0
@@ -108,6 +131,7 @@ export function costForModelUsage(
 export function estimateUsageCost(
   byModel: Record<string, ModelUsage>,
   pricing?: ModelPricingMap,
+  options: UsageCostOptions = {},
 ): string {
   const entries = Object.entries(byModel).filter(([, u]) => u.inputTokens > 0 || u.outputTokens > 0)
   if (entries.length === 0) return ''
@@ -141,7 +165,9 @@ export function estimateUsageCost(
   const tierQualifiedCost = hasTierPricingFallback
     ? `${qualifiedCost} (standard tier fallback)`
     : qualifiedCost
-  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost
+  return hasLocal && !options.localFreeExplained
+    ? `${tierQualifiedCost} (+ local free)`
+    : tierQualifiedCost
 }
 
 /** Cost line for the footer; falls back to chat model when usage has no per-model breakdown. */
@@ -149,9 +175,10 @@ export function formatThreadUsageCost(
   usage: ThreadUsage,
   fallbackChatModel: string,
   pricing?: ModelPricingMap,
+  options: UsageCostOptions = {},
 ): string {
   if (usage.byModel && Object.keys(usage.byModel).length > 0) {
-    return estimateUsageCost(usage.byModel, pricing)
+    return estimateUsageCost(usage.byModel, pricing, options)
   }
   if (!usage.inputTokens && !usage.outputTokens) return ''
   return estimateUsageCost(
@@ -159,5 +186,6 @@ export function formatThreadUsageCost(
       [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
     },
     pricing,
+    options,
   )
 }

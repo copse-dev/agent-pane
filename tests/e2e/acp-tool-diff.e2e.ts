@@ -136,14 +136,17 @@ describe('ACP tool diff', () => {
     assert.notEqual(background('acp-diff-add'), background('acp-diff-del'))
     assert.notEqual(background('acp-diff-add'), background('acp-diff-context'))
     assert.ok(rows.every((row) => row.whiteSpace === 'pre'))
-    await expect(diff.$('.acp-diff-add')).toHaveAttribute(
-      'aria-label',
-      expect.stringMatching(/^Added line:/),
+    // The +/- sign is aria-hidden; each changed row names itself in text that
+    // is read aloud but takes no visible space.
+    await expect(diff.$('.acp-diff-add .acp-diff-sr')).toHaveElementProperty(
+      'textContent',
+      'Added: ',
     )
-    await expect(diff.$('.acp-diff-del')).toHaveAttribute(
-      'aria-label',
-      expect.stringMatching(/^Deleted line:/),
+    await expect(diff.$('.acp-diff-del .acp-diff-sr')).toHaveElementProperty(
+      'textContent',
+      'Deleted: ',
     )
+    expect((await diff.$('.acp-diff-add .acp-diff-sr').getSize()).width).toBeLessThanOrEqual(1)
 
     await diff.scrollIntoView()
     await saveAppScreenshot('acp-tool-diff.png')

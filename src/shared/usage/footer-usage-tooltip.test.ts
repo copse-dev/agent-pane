@@ -79,7 +79,8 @@ describe('buildFooterUsageTooltip', () => {
     )
 
     assert.equal(value(tooltip.threadRows, 'Cost'), undefined)
-    assert.equal(tooltip.note, 'No pricing for this model')
+    assert.equal(tooltip.note, 'No listed price for this model')
+    assert.equal(tooltip.freeNote, null)
   })
 
   it('labels a published zero-rate route as free rather than unpriced', () => {
@@ -117,7 +118,7 @@ describe('buildFooterUsageTooltip', () => {
     )
 
     assert.equal(value(tooltip.threadRows, 'Cost'), '~$3.00 (partial)')
-    assert.equal(tooltip.note, 'Cost excludes models without pricing')
+    assert.equal(tooltip.note, 'Cost excludes models with no listed price')
     assert.equal(
       value(tooltip.modelRows, 'openrouter:vendor/unknown'),
       '1.0M in / 0 out · unpriced',
@@ -192,7 +193,7 @@ describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
     assert.equal(tooltip.freeNote, 'Free: local model')
   })
 
-  it('names an unpriced route rather than leaving it unexplained', () => {
+  it('never calls an unpriced route free', () => {
     const tooltip = buildFooterUsageTooltip(
       { inputTokens: 1200, outputTokens: 80, estimated: false },
       {
@@ -202,7 +203,9 @@ describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
       },
     )
 
-    assert.equal(tooltip.freeNote, 'Free: openrouter:vendor/unknown has no listed price')
+    // A paid model missing from the pricing map is unknown, not free (#2464).
+    assert.equal(tooltip.freeNote, null)
+    assert.equal(tooltip.note, 'No listed price for this model')
   })
 
   it('says nothing when every model has a real (even paid) rate', () => {
@@ -218,8 +221,7 @@ describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
     assert.equal(tooltip.freeNote, null)
   })
 
-  it('does not explain a deliberately published zero-rate route as "free"', () => {
-    // A real (if zero) rate is not ambiguous the way an unlisted one is.
+  it('explains a deliberately published zero-rate route', () => {
     const tooltip = buildFooterUsageTooltip(
       { inputTokens: 1200, outputTokens: 80, estimated: false },
       {
@@ -232,7 +234,8 @@ describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
       },
     )
 
-    assert.equal(tooltip.freeNote, null)
+    assert.equal(value(tooltip.threadRows, 'Cost'), 'free')
+    assert.equal(tooltip.freeNote, 'Free: openrouter:vendor/free is listed at a zero rate')
   })
 
   it("names the exploring subagent's local model even though the parent model is paid", () => {
@@ -255,6 +258,9 @@ describe('buildFooterUsageTooltip free-usage explanation (#2464)', () => {
     )
 
     assert.equal(tooltip.freeNote, 'Free: local model')
+    // Said once: the cost line does not repeat it as "(+ local free)".
+    assert.match(value(tooltip.threadRows, 'Cost') ?? '', /^~\$\d/)
+    assert.doesNotMatch(value(tooltip.threadRows, 'Cost') ?? '', /local/)
   })
 
   it('suppresses the free explanation on an estimate, which has no model attribution yet', () => {

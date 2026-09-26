@@ -36,5 +36,12 @@ export interface TurnOutcome {
     endedOn?: 'text' | 'reasoning' | 'tool'
   }
   error?: TurnErrorDetail
+  /**
+   * How a user cancellation (`status: 'cancelled'`, `source: 'user'`) was
+   * requested, recorded by the renderer at the point it aborted the run:
+   * `send_now` when a queued prompt interrupted the turn, `stop` for an
+   * explicit Stop. Absent on turns cancelled before this was recorded.
+   */
+  userAbort?: 'stop' | 'send_now'
   endedAt: number
 }

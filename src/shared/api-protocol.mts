@@ -47,4 +47,6 @@
 // v20 conservatively versions the optional appended system-reminder lengths on tool
 // results (`tool_result` chunks and thread tool calls). v18 and v19 are claimed by
 // open PRs, so this skips them to avoid a collision whichever lands first.
-export const API_PROTOCOL_VERSION = 20 as const
+// v24 conservatively versions the optional subagent-usage share on usage chunks and
+// thread usage, and the optional user-abort cause on turn outcomes.
+export const API_PROTOCOL_VERSION = 24 as const

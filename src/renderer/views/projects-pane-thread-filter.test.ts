@@ -98,7 +98,9 @@ describe('projects pane thread filter (component)', () => {
     mount()
     must('.projects-search-btn').click()
     setFilter('zzz-nothing')
-    assert.equal(must('.thread-filter-status').textContent, 'Searching user requests…')
+    // Nothing flashes while the query is still debouncing.
+    assert.equal(document.querySelector('.thread-filter-status'), null)
+    assert.equal(document.querySelector('.chats-list .sidebar-empty'), null)
     await delay(250)
     assert.deepEqual(titles(), [])
     const empty = document.querySelector('.chats-list .sidebar-empty')
@@ -170,5 +172,21 @@ describe('projects pane thread filter (component)', () => {
     const row = must('.projects-search-row')
     assert.equal(row.hidden, true)
     assert.equal(titles().length, 3)
+  })
+
+  it('keeps the filter open when another project changes the workspace', () => {
+    const store = mount()
+    must('.projects-search-btn').click()
+    setFilter('login')
+    store.setState({
+      projects: [...store.getState().projects, { id: 'p2', path: '/other', name: 'Other' }],
+    })
+    store.emit('workspace_changed')
+    assert.equal(must('.projects-search-row').hidden, false)
+    assert.deepEqual(titles(), ['Fix login bug', 'Login rate limiting'])
+
+    store.setState({ activeProjectId: 'p2', expandedProjectId: 'p2' })
+    store.emit('workspace_changed')
+    assert.equal(must('.projects-search-row').hidden, true)
   })
 })
