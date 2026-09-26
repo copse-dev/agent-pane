@@ -22989,9 +22989,13 @@ var init_persistence = __esm({
 function casedWord(word, leading) {
   const canonical = CANONICAL_WORDS.get(word);
   if (canonical !== void 0) return canonical;
-  const hyphenated = word.split("-");
-  if (hyphenated.length > 1) {
-    return hyphenated.map((part, index) => casedWord(part, leading && index === 0)).join("-");
+  const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
+  if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
+  for (const separator of ["-", ":"]) {
+    const parts = word.split(separator);
+    if (parts.length > 1) {
+      return parts.map((part, index) => casedWord(part, leading && index === 0)).join(separator);
+    }
   }
   return leading ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
