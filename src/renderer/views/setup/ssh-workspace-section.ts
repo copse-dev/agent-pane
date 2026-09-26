@@ -41,18 +41,49 @@ export function createSshWorkspaceSection(
   const draft: SshHostDraft = emptySshHostDraft()
   let idTouched = false
 
-  const idInput = el('input', { name: 'sshHostId', placeholder: 'my-server' })
-  const labelInput = el('input', { name: 'sshHostLabel', placeholder: 'Production' })
+  // Every field names its type so it takes the Settings field recipe (width cap,
+  // target height), which is keyed on `input[type=…]`. Port stays `text` with a
+  // numeric keypad hint: `type="number"` would hand back '' for "22garbage" and
+  // the parser could no longer tell a typo from an empty field.
+  const idInput = el('input', { type: 'text', name: 'sshHostId', placeholder: 'my-server' })
+  const labelInput = el('input', { type: 'text', name: 'sshHostLabel', placeholder: 'Production' })
   const hostInput = el('input', {
+    type: 'text',
     name: 'sshHostHost',
     placeholder: 'example.com or ~/.ssh/config alias',
   })
-  const userInput = el('input', { name: 'sshHostUser', placeholder: 'ubuntu' })
-  const portInput = el('input', { name: 'sshHostPort', placeholder: '22', inputmode: 'numeric' })
+  const userInput = el('input', { type: 'text', name: 'sshHostUser', placeholder: 'ubuntu' })
+  const portInput = el('input', {
+    type: 'text',
+    name: 'sshHostPort',
+    placeholder: '22',
+    inputmode: 'numeric',
+  })
   const identityInput = el('input', {
+    type: 'text',
     name: 'sshHostIdentity',
     placeholder: '~/.ssh/id_ed25519',
   })
+  const draftInputs: Partial<Record<keyof SshHostDraft, HTMLInputElement>> = {
+    id: idInput,
+    label: labelInput,
+    host: hostInput,
+    user: userInput,
+    port: portInput,
+    identityFile: identityInput,
+  }
+  /** Mark exactly the fields a failed save was about; editing one clears its mark. */
+  function markInvalid(fields: readonly (keyof SshHostDraft)[]): void {
+    for (const [field, input] of Object.entries(draftInputs)) {
+      if (fields.some((name) => name === field)) input.setAttribute('aria-invalid', 'true')
+      else input.removeAttribute('aria-invalid')
+    }
+  }
+  for (const input of Object.values(draftInputs)) {
+    input.addEventListener('input', () => {
+      input.removeAttribute('aria-invalid')
+    })
+  }
   const forwardInput = el('input', { type: 'checkbox', name: 'sshHostForwardAgent' })
 
   const form = el(
@@ -81,6 +112,7 @@ export function createSshWorkspaceSection(
 
   function clearDraft(): void {
     Object.assign(draft, emptySshHostDraft())
+    markInvalid([])
     idTouched = false
     idInput.value = ''
     labelInput.value = ''
@@ -93,6 +125,7 @@ export function createSshWorkspaceSection(
   }
 
   function fillDraft(host: SshWorkspaceHost): void {
+    markInvalid([])
     draft.id = host.id
     draft.label = host.label
     draft.host = host.host
@@ -203,9 +236,11 @@ export function createSshWorkspaceSection(
     void (async (): Promise<void> => {
       const parsed = parseSshHostDraft(draft)
       if (!parsed.ok) {
+        markInvalid(parsed.fields)
         setInlineStatus(status, 'error', parsed.error)
         return
       }
+      markInvalid([])
       const raw = await api.settings.get('sshWorkspaceHosts')
       const existing = parseSshWorkspaceHosts(raw)
       await persistHosts(upsertHost(existing, parsed.host))
