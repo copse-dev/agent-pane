@@ -934,6 +934,36 @@ describe('collapsed tool card bodies render lazily', () => {
     assert.match(resultEl.textContent, /# Copse/)
   })
 
+  it('shows an appended system-reminder as a note, not as raw tags', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      ...doneCall,
+      name: 'find_files',
+      args: { pattern: '__no_such_file__', max_results: 200 },
+      // What the tool registry returns after clamping `max_results`.
+      result:
+        'No files match: __no_such_file__\n\n<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = host.querySelector<HTMLDetailsElement>('[data-tool-id="tc-done-1"]')
+    assert.ok(card)
+    card.querySelector('.tool-card-header')?.dispatchEvent(new MouseEvent('click'))
+
+    const resultEl = card.querySelector('.tool-result')
+    assert.ok(resultEl)
+    assert.doesNotMatch(resultEl.textContent, /system-reminder/)
+    assert.equal(resultEl.querySelector('pre')?.textContent, 'No files match: __no_such_file__')
+    assert.equal(
+      resultEl.querySelector('.tool-result-note')?.textContent,
+      'Arguments were clamped to schema bounds: max_results — clamped to 200.',
+    )
+  })
+
   it('builds the body when a running card reveals after the delay', async () => {
     const store = createStore()
     const threadId = createThread(store)
