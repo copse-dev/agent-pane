@@ -18,7 +18,7 @@
   width: 100%;
   min-width: 0;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   background: none;
