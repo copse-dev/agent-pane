@@ -120,6 +120,36 @@ describe('runSubagent', () => {
     assert.ok(subagentChunks.some((c) => c.type === 'subagent_tool_result'))
   })
 
+  it('forwards the lengths of appended reminder blocks with an inner tool result', async () => {
+    const note = '<system-reminder>\nArguments were clamped.\n</system-reminder>'
+    const subagentChunks: AgentStreamChunk[] = []
+    await runSubagent({
+      provider: mockProvider([
+        [
+          {
+            type: 'tool_call',
+            toolCall: { id: 'inner-1', name: 'read_file', args: { path: 'a.ts' } },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'text', text: 'Summary of a.ts' }, { type: 'done' }],
+      ]),
+      prompt: 'Read a.ts',
+      parentGoal: 'Review a.ts',
+      tools: [{ name: 'read_file', description: '', parameters: {} }],
+      parentToolCallId: 'parent-reminder',
+      onSubagentChunk: (c) => subagentChunks.push(c),
+      executeTool: async () => ({
+        result: `file contents\n\n${note}`,
+        appendedReminderLengths: [note.length],
+      }),
+    })
+
+    const forwarded = subagentChunks.find((c) => c.type === 'subagent_tool_result')
+    assert.ok(forwarded?.type === 'subagent_tool_result')
+    assert.deepEqual(forwarded.appendedReminderLengths, [note.length])
+  })
+
   it('accumulates usage across inner agent steps', async () => {
     let call = 0
     const usages = [

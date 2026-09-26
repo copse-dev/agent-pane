@@ -12,6 +12,7 @@ async function readProseMetrics(selector: string) {
     const first = paragraphs[0]?.getBoundingClientRect()
     const second = paragraphs[1]?.getBoundingClientRect()
     const code = prose.querySelector('pre')
+    const codeStyle = code ? getComputedStyle(code) : null
     const nested = prose.querySelector('ul ul')
     return {
       width: prose.getBoundingClientRect().width,
@@ -20,6 +21,8 @@ async function readProseMetrics(selector: string) {
       paragraphGap: first && second ? second.top - first.bottom : 0,
       overflow: prose.scrollWidth - prose.clientWidth,
       codeScrolls: code ? code.scrollWidth > code.clientWidth : false,
+      codeFontSize: codeStyle ? parseFloat(codeStyle.fontSize) : 0,
+      codeLineHeight: codeStyle ? parseFloat(codeStyle.lineHeight) : 0,
       nestedIndent: nested
         ? nested.getBoundingClientRect().left - prose.getBoundingClientRect().left
         : 0,
@@ -69,11 +72,17 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(metrics.paragraphGap).toBeGreaterThanOrEqual(15)
     expect(metrics.overflow).toBeLessThanOrEqual(1)
     expect(metrics.codeScrolls).toBe(true)
+    // Fenced code keeps tool-output density instead of the 16px/1.65 prose
+    // line box: 12px code on the shared 22px line, not ~26px.
+    expect(metrics.codeFontSize).toBe(12)
+    expect(metrics.codeLineHeight).toBeCloseTo(22, 1)
     expect(metrics.nestedIndent).toBeGreaterThan(20)
     expect(await $$(`${PROSE} table tbody tr`).length).toBe(3)
     await saveAppScreenshot('chat-reading-layout-dark.png')
     await $(`${PROSE} table`).scrollIntoView({ block: 'center', inline: 'nearest' })
     await saveElementScreenshot(`${PROSE} table`, 'chat-reading-layout-table.png')
+    await $(`${PROSE} pre`).scrollIntoView({ block: 'center', inline: 'nearest' })
+    await saveElementScreenshot(`${PROSE} pre`, 'chat-reading-layout-code.png')
     await scrollToStart()
   })
 
@@ -115,6 +124,8 @@ describe('assistant Reading layout in the real renderer', () => {
     const metrics = await readProseMetrics(PROSE)
     expect(metrics.fontSize).toBe(20)
     expect(metrics.lineHeight).toBeCloseTo(33, 1)
+    expect(metrics.codeFontSize).toBe(15)
+    expect(metrics.codeLineHeight).toBeCloseTo(27.5, 1)
     expect(metrics.paragraphGap).toBeGreaterThanOrEqual(19)
     expect(metrics.overflow).toBeLessThanOrEqual(1)
     await scrollToStart()
