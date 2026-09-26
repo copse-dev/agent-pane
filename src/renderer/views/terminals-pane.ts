@@ -157,9 +157,14 @@ export function mountTerminalsPane(
     const tab = [...tabs.values()].find((t) => t.sessionId === id)
     if (!tab) return
     tab.sessionId = null
-    tab.term.writeln(`\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`, () => {
-      finishCodeBlockRun(tab, code)
-    })
+    tab.term.writeln(
+      code === -1
+        ? '\r\n\x1b[90m[Terminal stopped]\x1b[0m'
+        : `\r\n\x1b[90m[Process exited with code ${String(code)}]\x1b[0m`,
+      () => {
+        finishCodeBlockRun(tab, code)
+      },
+    )
   })
 
   function createXterm(): { term: Terminal; fitAddon: FitAddon } {

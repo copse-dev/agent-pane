@@ -319,6 +319,8 @@ export interface BackgroundProcessPid {
   id: string
   command: string
   pid: number
+  threadId: string
+  projectId: string
 }
 
 /**
@@ -332,7 +334,13 @@ export function listBackgroundProcessPids(): BackgroundProcessPid[] {
   for (const entry of processes.values()) {
     const pid = entry.proc.pid
     if (entry.exited || pid === undefined || pid <= 0) continue
-    out.push({ id: entry.id, command: entry.command, pid })
+    out.push({
+      id: entry.id,
+      command: entry.command,
+      pid,
+      threadId: entry.owner.threadId,
+      projectId: entry.owner.projectId,
+    })
   }
   return out
 }

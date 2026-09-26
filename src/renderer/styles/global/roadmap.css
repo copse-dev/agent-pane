@@ -1,14 +1,5 @@
-/* Keep the dropdown's stacking context above the scrolling list. */
-.roadmap-list-header {
-  position: relative;
-  z-index: 30;
-  overflow: visible;
-}
-
 /* Search and facet filters share one compact header control. */
 .roadmap-filter {
-  position: relative;
-  z-index: 30;
   display: flex;
   flex: 1;
   min-width: 120px;
@@ -28,24 +19,28 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+/* The filter panel (issue #2467) is a sticky footer docked below the list,
+   not a dropdown floating over the rows under the toggle button — it used to
+   cover the top rows until dismissed, which made them hard to click. Rows
+   keep their own scroll and stay clickable the whole time the footer is
+   open, the same relationship #input-bar has to the transcript above it
+   (titlebar.css). `listRoot.append` in roadmap-pane.ts puts this element
+   after `.roadmap-list` so it never overlaps that column's own scrollport. */
 .roadmap-filter-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 190px;
-  max-height: min(420px, 70vh);
+  flex-shrink: 0;
+  max-height: min(280px, 45vh);
   overflow-y: auto;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-composer);
 }
 .roadmap-filter-heading {
   margin: var(--spacing-xs) 0 2px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -69,7 +64,6 @@
   height: auto;
   margin: 0;
   padding: 0;
-  accent-color: var(--accent);
 }
 
 /* Every category group is an accordion, one row or many, so a collapsed group
@@ -90,7 +84,7 @@
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: left;
@@ -113,6 +107,17 @@
 .roadmap-category-items {
   display: flex;
   flex-direction: column;
+}
+/* A row's title should line up with the group header's *label*, not with the
+   header's chevron — mirroring .project-group-children's indent in
+   layout.css. The header's label sits at padding (--spacing-sm, 8px) +
+   chevron (10px) + header gap (4px) = 22px from the row edge; a row's own
+   base padding is --spacing-sm alone, so the extra indent needed is
+   10px + --spacing-md (12px), which lands on the same 22px total. Without
+   this, every row's text starts flush with the chevron above it while the
+   header's own text sits well to the right of it (#2518). */
+.roadmap-category-items .roadmap-row {
+  padding-left: calc(10px + var(--spacing-md));
 }
 /* Right-align the action buttons group. */
 .roadmap-action-buttons {
@@ -150,7 +155,7 @@
 /* Exceptional statuses only (`blocked` / `conflicts` / `archived`). Default
    `ready` is silent; `done` is strikethrough on the title. */
 .roadmap-status-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -219,7 +224,7 @@
   margin-left: 0;
 }
 .roadmap-issue-chip {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -247,7 +252,7 @@
 
 /* Category is independent from complexity: what kind of work this is. */
 .roadmap-category-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -266,7 +271,7 @@
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
 .roadmap-complexity-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -282,7 +287,7 @@
 
 /* Fit verdict — on-demand model judgement against the pinned issue. */
 .roadmap-fit-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -380,7 +385,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   color: var(--text-muted);
 }
@@ -391,7 +396,7 @@
 
 /* Review verdict — on-demand resolution judgement across the backlog. */
 .roadmap-review-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -410,6 +415,29 @@
 .roadmap-review-badge.is-open {
   color: var(--text-muted);
 }
+
+/* Header button affordance for a review session that is live but tucked away
+   behind another view (issue #2438) — see syncReviewButtonAffordance(). */
+.roadmap-review-btn-live {
+  position: relative;
+  color: var(--accent-fill, var(--text-primary));
+}
+.roadmap-review-live-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-3xs);
+  line-height: 1;
+}
 .roadmap-review-result {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -422,7 +450,7 @@
 }
 .roadmap-review-result-meta {
   color: var(--text-muted);
-  font-size: var(--font-size-xs, 11px);
+  font-size: var(--font-size-xs);
   text-transform: lowercase;
 }
 /* A check that failed carries no verdict — mark the label so the box does not
@@ -468,7 +496,7 @@
   align-items: center;
 }
 .roadmap-review-applied-badge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -522,7 +550,6 @@
   margin: 0;
   flex: none;
   align-self: center;
-  accent-color: var(--accent);
   background: transparent;
   border: none;
   border-radius: 0;
@@ -545,6 +572,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }

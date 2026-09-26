@@ -39,11 +39,23 @@ export function createFooterUsagePopover(): FooterUsagePopover {
         return
       }
       root.append(el('div', { class: 'footer-usage-popover-header' }, model.header))
+      if (model.conversationLabel) {
+        root.append(el('div', { class: 'footer-usage-popover-section' }, model.conversationLabel))
+      }
       for (const entry of model.rows) root.append(row(entry, 'footer-usage-popover-row'))
-      // Subagent and per-model rows describe the same totals from a different
-      // angle, so they share one section below the divider.
-      if (model.subagentRow || model.modelRows.length > 0) {
+      // Once subagents exist, cache/cost remain provider-reported whole-thread
+      // figures. Keep them with the subagent and per-model accounting below an
+      // explicit scope label instead of presenting them as part of the
+      // subagent-excluded headline above.
+      if (model.threadLabel) {
         root.append(el('div', { class: 'footer-usage-popover-divider' }))
+        root.append(el('div', { class: 'footer-usage-popover-section' }, model.threadLabel))
+        for (const entry of model.threadRows) root.append(row(entry, 'footer-usage-popover-row'))
+      } else {
+        for (const entry of model.threadRows) root.append(row(entry, 'footer-usage-popover-row'))
+        if (model.subagentRow || model.modelRows.length > 0) {
+          root.append(el('div', { class: 'footer-usage-popover-divider' }))
+        }
       }
       if (model.subagentRow) {
         root.append(row(model.subagentRow, 'footer-usage-popover-row is-subagents'))
@@ -52,6 +64,9 @@ export function createFooterUsagePopover(): FooterUsagePopover {
         root.append(row(entry, 'footer-usage-popover-row is-model'))
       }
       if (model.note) root.append(el('div', { class: 'footer-usage-popover-note' }, model.note))
+      if (model.freeNote) {
+        root.append(el('div', { class: 'footer-usage-popover-note' }, model.freeNote))
+      }
     },
     show(): void {
       if (hasContent) root.hidden = false

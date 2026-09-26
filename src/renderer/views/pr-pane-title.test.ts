@@ -39,19 +39,22 @@ function makeThread(id: string, message: string): Thread {
   }
 }
 
-const LINKED_PR: GhPrSummary = {
-  owner: 'acme',
-  repo: 'widgets',
-  number: 42,
-  title: 'Improve documentation',
-  url: 'https://github.com/acme/widgets/pull/42',
-  state: 'OPEN',
-  headRefName: 'docs-update',
-  authorLogin: 'bob',
+function linkedPr(number: number): GhPrSummary {
+  return {
+    owner: 'acme',
+    repo: 'widgets',
+    number,
+    title: 'Improve documentation',
+    url: `https://github.com/acme/widgets/pull/${String(number)}`,
+    state: 'OPEN',
+    headRefName: 'docs-update',
+    authorLogin: 'bob',
+  }
 }
 
 function mount(
   prDetails: (owner: string, repo: string, number: number) => Promise<GhPrDetails | null>,
+  number: number,
 ): {
   listRoot: HTMLElement
   unmount: () => void
@@ -61,7 +64,7 @@ function mount(
     activeThreadId: 'thread-1',
     filesPaneOpen: true,
     rightPanelMode: 'prs',
-    threads: [makeThread('thread-1', 'See https://github.com/acme/widgets/pull/42')],
+    threads: [makeThread('thread-1', `See https://github.com/acme/widgets/pull/${String(number)}`)],
   })
   const base = createFakeApi()
   const api: ApiClient = {
@@ -115,12 +118,16 @@ afterEach(() => {
 
 describe('pr pane titles for unenriched chat-linked rows', () => {
   it('fills the real title into a placeholder row via details lookup', async () => {
-    const { listRoot, unmount } = mount(async () => ({
-      ...LINKED_PR,
-      title: 'Anchor annotations to the page',
-      body: '',
-      files: [],
-    }))
+    const number = 42
+    const { listRoot, unmount } = mount(
+      async () => ({
+        ...linkedPr(number),
+        title: 'Anchor annotations to the page',
+        body: '',
+        files: [],
+      }),
+      number,
+    )
     try {
       await settle()
       assert.deepEqual(rowTitles(listRoot), ['Anchor annotations to the page'])
@@ -130,9 +137,10 @@ describe('pr pane titles for unenriched chat-linked rows', () => {
   })
 
   it('keeps the repo fallback when the details lookup fails', async () => {
+    const number = 43
     const { listRoot, unmount } = mount(async () => {
       throw new Error('rate limited')
-    })
+    }, number)
     try {
       await settle()
       assert.deepEqual(rowTitles(listRoot), ['acme/widgets'])
@@ -142,11 +150,17 @@ describe('pr pane titles for unenriched chat-linked rows', () => {
   })
 
   it('does not re-request titles once the row is enriched', async () => {
+    const number = 44
     let calls = 0
     const { listRoot, unmount } = mount(async () => {
       calls += 1
-      return { ...LINKED_PR, title: 'Anchor annotations to the page', body: '', files: [] }
-    })
+      return {
+        ...linkedPr(number),
+        title: 'Anchor annotations to the page',
+        body: '',
+        files: [],
+      }
+    }, number)
     try {
       await settle()
       // Title enrichment and the auto-selected details load both call prDetails

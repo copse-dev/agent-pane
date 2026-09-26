@@ -1,30 +1,44 @@
 name: Copse review trigger
 
+# Every ready (non-draft) pull request is reviewed when it is opened, reopened
+# or marked ready for review; the `copse-review` label reviews a draft or asks
+# for a fresh review of a newer head, and `copse-review-skip` opts a pull
+# request out. Pushes do not re-review; a re-review supersedes the earlier one.
+#
+# The description summary is cheaper and follows the head: the `summary` job
+# dispatches review-summary.yml on every push to a pull request the review
+# would accept, and when one is opened or becomes ready, so the summary lands
+# in minutes rather than after the full review.
+#
 # A label event on an older pull request must still select trusted workflow code.
 # `pull_request_target` provides that default-branch context, but this workflow
 # deliberately never checks out or executes repository code. Its only privileged
-# operation is dispatching the separate, permissionless ground workflow with PR
-# metadata resolved from GitHub's API.
+# operation is dispatching the separate, permissionless ground workflow, or the
+# summary workflow, with PR metadata resolved from GitHub's API.
 
 on:
   pull_request_target:
-    types: [labeled]
+    types: [opened, reopened, ready_for_review, labeled, synchronize]
 
 permissions: {}
 
+# Pushes cancel each other's dispatch, never a review's.
 concurrency:
-  group: copse-review-trigger-${{ github.event.pull_request.number }}
+  group: copse-review-trigger-${{ github.event.pull_request.number }}-${{ github.event.action == 'synchronize' && 'push' || 'review' }}
   cancel-in-progress: true
 
 jobs:
   dispatch:
-    name: Resolve and dispatch the labelled pull request
+    name: Resolve and dispatch the ready or labelled pull request
     if: >-
-      github.event.label.name == 'copse-review' &&
       github.repository_id == '1274237362' &&
       github.actor_id == '338988' &&
       github.event.pull_request.user.id == 338988 &&
-      github.event.pull_request.head.repo.id == 1274237362
+      github.event.pull_request.head.repo.id == 1274237362 &&
+      github.event.action != 'synchronize' &&
+      !contains(github.event.pull_request.labels.*.name, 'copse-review-skip') &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'copse-review') ||
+      (github.event.action != 'labeled' && !github.event.pull_request.draft))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -39,12 +53,71 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          IFS=$'\t' read -r head base state labelled < <(
+          IFS=$'\t' read -r head base state draft labelled skipped < <(
             gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-              --jq '[.head.sha, .base.ref, .state, ([.labels[].name] | index("copse-review") != null)] | @tsv'
+              --jq '[.head.sha, .base.ref, .state, .draft,
+                ([.labels[].name] | index("copse-review") != null),
+                ([.labels[].name] | index("copse-review-skip") != null)] | @tsv'
           )
-          test -n "$head" && test -n "$base" && test "$state" = "open" && test "$labelled" = "true"
+          test -n "$head" && test -n "$base" && test "$state" = "open"
+          # Re-resolved now: the event payload may be stale by the time this runs.
+          if [ "$skipped" = "true" ]; then
+            echo "::notice::copse-review-skip is set; not reviewing"
+            exit 0
+          fi
+          if [ "$draft" = "true" ] && [ "$labelled" != "true" ]; then
+            echo "::notice::a draft is reviewed only with the copse-review label"
+            exit 0
+          fi
           gh workflow run review-ground.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$DEFAULT_BRANCH" \
+            -f "pr=${PR_NUMBER}" \
+            -f "head=${head}" \
+            -f "base=${base}"
+
+  summary:
+    name: Dispatch the description summary for the current head
+    # The review's own rule, plus pushes: ready, or a draft with the label.
+    if: >-
+      github.repository_id == '1274237362' &&
+      github.actor_id == '338988' &&
+      github.event.pull_request.user.id == 338988 &&
+      github.event.pull_request.head.repo.id == 1274237362 &&
+      !contains(github.event.pull_request.labels.*.name, 'copse-review-skip') &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'copse-review') ||
+      (github.event.action != 'labeled' && (!github.event.pull_request.draft ||
+      contains(github.event.pull_request.labels.*.name, 'copse-review'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Resolve the current pull request and dispatch its summary
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r head base state draft labelled skipped < <(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '[.head.sha, .base.ref, .state, .draft,
+                ([.labels[].name] | index("copse-review") != null),
+                ([.labels[].name] | index("copse-review-skip") != null)] | @tsv'
+          )
+          test -n "$head" && test -n "$base" && test "$state" = "open"
+          if [ "$skipped" = "true" ]; then
+            echo "::notice::copse-review-skip is set; not summarising"
+            exit 0
+          fi
+          if [ "$draft" = "true" ] && [ "$labelled" != "true" ]; then
+            echo "::notice::a draft is summarised only with the copse-review label"
+            exit 0
+          fi
+          gh workflow run review-summary.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "$DEFAULT_BRANCH" \
             -f "pr=${PR_NUMBER}" \

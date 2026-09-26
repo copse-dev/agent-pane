@@ -75,11 +75,14 @@ describe('Codex MCP startup failures', () => {
     const rollup = $('.tool-card-rollup')
     await rollup.waitForExist({ timeout: 30_000 })
     await expect(rollup).toHaveAttribute('data-status', 'error')
-    await expect(rollup).toHaveAttribute('open')
+    // The activity summary stays quiet; the failures themselves sit beside it.
+    await expect(rollup).not.toHaveAttribute('open')
     await expect(rollup.$('.tool-name')).toHaveText('Used 2 tools · 2 failed')
 
-    const docs = $('[data-tool-id="startup-docs"]')
-    const tracker = $('[data-tool-id="startup-issue-tracker"]')
+    const docs = $('[data-message-id="startup-assistant"] > [data-tool-id="startup-docs"]')
+    const tracker = $(
+      '[data-message-id="startup-assistant"] > [data-tool-id="startup-issue-tracker"]',
+    )
     await expect(docs.$('.tool-name')).toHaveText('docs startup')
     await expect(tracker.$('.tool-name')).toHaveText('issue_tracker startup')
     await expect(docs).toHaveAttribute('data-status', 'error')

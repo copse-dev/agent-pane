@@ -12,6 +12,7 @@ import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target
 
 export const searchCodeTool = defineTool({
   name: 'search_code',
+  clampNumericRangeArgs: true,
   description:
     'Search for a text pattern or regex in the workspace. Uses a local content index when available (ig/trigrep), otherwise ripgrep (respects .gitignore). Without ripgrep, a bounded workspace walk applies .gitignore, glob, and case options. Returns matching lines with file:line format.',
   parameters: z.object({
@@ -75,6 +76,7 @@ export const searchCodeTool = defineTool({
 
 export const findFilesTool = defineTool({
   name: 'find_files',
+  clampNumericRangeArgs: true,
   description: 'Find files in the workspace by name or glob pattern. Fast — uses pre-built index.',
   parameters: z.object({
     pattern: z

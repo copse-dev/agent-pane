@@ -57,6 +57,7 @@ describe('supported reproducer runner', () => {
       context: {
         mergeBase: 'a'.repeat(40),
         headCommit: 'b'.repeat(40),
+        head: { gitDir: join(head, '.git'), workTree: head },
         dirtyWorkingTree: false,
         files: [],
         instructions: [],

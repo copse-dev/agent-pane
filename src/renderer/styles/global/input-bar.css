@@ -21,7 +21,7 @@
 .new-thread-btn {
   padding: 4px 8px;
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 .prompt-input {
   width: 100%;
@@ -39,13 +39,28 @@
   cursor: text;
   /* A contenteditable grows with its content natively; min-height carries a
      compact 2-row resting floor; max-height + overflow cap the growth so a long
-     draft scrolls internally rather than eating the chat. */
+     draft scrolls internally rather than eating the chat. `flex` (see
+     `.input-row` below) lets this cap yield further, down to min-height, when
+     the outer card's own hard cap (#input-bar in titlebar.css) leaves less
+     room than 40vh — e.g. a short window. */
   min-height: calc(2lh + 2 * var(--spacing-md));
   max-height: 40vh;
+  flex: 1 1 auto;
   overflow-y: auto;
+  /* #2489: keep the box scrollable (arrow keys / Home / wheel still reach
+     earlier lines) without drawing a scrollbar over the draft — the reporter's
+     ask was "sticky but off screen", not a visible bar. `scrollbar-width` is
+     the standard property (Firefox, and future Chromium); the pseudo-element
+     covers today's Electron/Chromium. Neither removes scroll behavior, only
+     the thumb/track paint. */
+  scrollbar-width: none;
   /* Typed newlines are text nodes, not <br>s — render them. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.prompt-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 /* Placeholder for the contenteditable composer (a div has no ::placeholder). */
 .prompt-input:empty::before {
@@ -67,6 +82,23 @@
 }
 .input-row {
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+/* Scoped with the `#input-bar >` parent (not just `.input-row`) so this beats
+   `#input-bar > *`'s default `flex-shrink: 0` (titlebar.css) on specificity —
+   an id-qualified selector always outranks a class one regardless of source
+   order, so a plain `.input-row { flex: 1 1 auto }` here would silently lose
+   to that default and never actually shrink. This is the one child of
+   #input-bar allowed to shrink toward the card's cap. `min-height: 0` is
+   required for a flex item to shrink past its content size at all —
+   otherwise `.prompt-input`'s own min-height floor would be treated as this
+   row's floor too and the cap would be ignored. Column + flex on
+   `.prompt-input` below carries the shrink down to the actual scrollable
+   element. */
+#input-bar > .input-row {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 /* The topmost visible advisory strip gets the card's rounded top edge, so its
    fill (the danger wash behind the Guarded YOLO banner especially) runs into the
@@ -102,7 +134,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   overflow: hidden;
 }
 .guarded-yolo-banner {
@@ -158,7 +190,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-image-warning[hidden] {
   display: none;
@@ -264,7 +296,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-context-warning.is-over {
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-base));
@@ -320,7 +352,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-checkout-error[hidden] {
   display: none;
@@ -366,7 +398,7 @@
   padding: 4px 10px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-align: center;
   white-space: nowrap;
 }
@@ -384,7 +416,7 @@
   padding: 4px 10px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-align: center;
   white-space: nowrap;
 }
@@ -406,7 +438,7 @@
   padding: 8px var(--spacing-md);
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .composer-dirty-warning[hidden] {
   display: none;
@@ -491,11 +523,11 @@
 /* Where the message goes when the thread has a container run (A14). */
 .composer-target {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-lg);
   padding: 4px 6px;
 }
 .stop-btn {
@@ -519,12 +551,12 @@
   padding: 6px 16px;
 }
 .footer-queue {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
 .footer-indexing {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;
   padding-right: var(--spacing-sm);
@@ -542,7 +574,7 @@
   margin-bottom: var(--spacing-xs);
   padding: 1px 6px;
   border-radius: var(--radius);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -589,7 +621,7 @@
    under-drawing it. See docs/ui-taste.md → "An outlined chip needs an edge you
    can find". */
 .queued-action {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: var(--bg-hover);
   border: 1px solid var(--border-strong);
@@ -638,7 +670,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   /* See .prompt-input — keep the frosted shell visible through the footer. */
   background: transparent;
@@ -679,6 +711,10 @@
 }
 #app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar {
   bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
+  /* The card's bottom offset grows to clear the portrait mode-switch strip, so
+     its hard height cap (titlebar.css) has to shrink by the same amount or the
+     card could still reach past the pane's top edge. */
+  max-height: calc(100% - var(--chrome-action-band-height) - 2 * var(--spacing-md));
 }
 #app.is-portrait-chrome .pane-chat:not(.composer-centered) .conversation {
   padding-bottom: calc(
@@ -848,7 +884,7 @@
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: transparent;
   border: none;
@@ -918,7 +954,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 4px 8px;
   outline: 2px solid transparent;
   outline-offset: 1px;
@@ -936,7 +972,7 @@
   align-items: center;
   width: 100%;
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   background: transparent;
   border: none;
@@ -954,7 +990,7 @@
 }
 .branch-picker-action {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .branch-picker-option-label {
   flex: 1;
@@ -965,7 +1001,7 @@
 }
 .branch-picker-default-badge {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -977,7 +1013,7 @@
 }
 .branch-picker-empty {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .footer-overflow {
@@ -1011,7 +1047,7 @@
   width: 100%;
   max-width: 100%;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   background: transparent;
   border: none;
@@ -1043,7 +1079,7 @@
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   box-shadow: var(--shadow-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   pointer-events: none;
 }
@@ -1203,7 +1239,7 @@
   transition: stroke-dasharray 0.2s ease;
 }
 .context-wheel-label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   min-width: 2.5ch;
 }
@@ -1220,7 +1256,7 @@
   color: var(--text-secondary);
 }
 .footer-usage {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-decoration: underline dotted;
   text-underline-offset: 2px;
@@ -1239,7 +1275,7 @@
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   box-shadow: var(--shadow-md);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-primary);
   pointer-events: none;
 }
@@ -1250,6 +1286,11 @@
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+.footer-usage-popover-section {
+  color: var(--text-muted);
+  margin-bottom: 2px;
   white-space: nowrap;
 }
 .footer-usage-popover-row {
@@ -1280,7 +1321,7 @@
   white-space: nowrap;
 }
 .footer-model-select {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: transparent;
   border: none;
@@ -1365,7 +1406,7 @@
   font-size: var(--font-size-sm);
 }
 .lmstudio-test-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .lmstudio-test-status.ok {

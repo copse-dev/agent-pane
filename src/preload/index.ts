@@ -558,6 +558,8 @@ const api: ApiClient = {
         id: string
         message: string
         detail?: string
+        changelog?: { version: string; notes: string }[]
+        changelogUrl?: string
         buttons: string[]
         defaultIndex?: number
         cancelIndex?: number
@@ -569,6 +571,8 @@ const api: ApiClient = {
           id: string
           message: string
           detail?: string
+          changelog?: { version: string; notes: string }[]
+          changelogUrl?: string
           buttons: string[]
           defaultIndex?: number
           cancelIndex?: number
@@ -826,7 +830,21 @@ const api: ApiClient = {
     bestValueDefault: () => ipcRenderer.invoke('models:best-value-default'),
     resolveDynamic: (value: string) => ipcRenderer.invoke('models:resolve-dynamic', value),
   },
+  processManager: {
+    snapshot: () => ipcRenderer.invoke('process-manager:snapshot'),
+    stopBackground: (id: string, projectId: string, threadId: string) =>
+      ipcRenderer.invoke('process-manager:stop-background', id, projectId, threadId),
+  },
   menu: {
+    onProcessManager: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:process-manager', listener)
+      return (): void => {
+        ipcRenderer.off('menu:process-manager', listener)
+      }
+    },
     onSettings: (handler: () => void) => {
       const listener = (): void => {
         handler()
@@ -958,6 +976,8 @@ const api: ApiClient = {
     save: (profile: ClassifierProfile) => ipcRenderer.invoke('classifiers:save', profile),
     remove: (id: string) => ipcRenderer.invoke('classifiers:remove', id),
     test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
+    screening: () => ipcRenderer.invoke('classifiers:screening'),
+    setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
@@ -1219,6 +1239,7 @@ const api: ApiClient = {
     },
     setThread: (id: string, threadId: string) =>
       ipcRenderer.invoke('roadmap:set-thread', id, threadId),
+    findByThread: (threadId: string) => ipcRenderer.invoke('roadmap:find-by-thread', threadId),
   },
   supervisor: {
     list: (projectId: string) => ipcRenderer.invoke('supervisor:list', projectId),

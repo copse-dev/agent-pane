@@ -8,7 +8,7 @@
   background: var(--bg-elevated);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
   line-height: var(--line-height-base);
 }
 .ssh-status-banner.ssh-status-warn {
@@ -31,9 +31,9 @@
   padding: 4px 10px;
   border-radius: var(--radius, 4px);
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-base);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   cursor: pointer;
 }
 .ssh-status-action:hover {
@@ -42,7 +42,7 @@
 
 .workspace-ssh-target {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary, var(--text-primary));
   opacity: 0.9;
 }
@@ -91,7 +91,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
 }
 .remote-folder-toolbar {
   display: flex;
@@ -107,7 +107,7 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-elevated, var(--bg));
+  background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   cursor: pointer;
@@ -166,12 +166,12 @@
   cursor: pointer;
 }
 .remote-folder-entry:hover {
-  background: var(--bg-hover, var(--bg));
+  background: var(--bg-hover);
 }
 .remote-folder-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin-top: var(--spacing-md);
 }
 .ssh-host-list {
@@ -226,11 +226,6 @@
   display: grid;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
-}
-.ssh-host-form label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
 }
 .ssh-import-config {
   margin: var(--spacing-sm) 0;

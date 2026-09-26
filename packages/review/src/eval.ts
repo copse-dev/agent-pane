@@ -13,7 +13,7 @@
 // a Stage 0 finding of that kind is a hit.
 import { z } from 'zod'
 import { decodeWithSchema } from '@copse/std/safe-json.ts'
-import { ANCHOR_SLACK_LINES, claimTokens, sameFinding } from './cluster.ts'
+import { ANCHOR_SLACK_LINES, anchorsOverlap, claimTokens, sameFinding } from './cluster.ts'
 import { FINDING_CLASSES, type Finding, type FindingClass } from './finding.ts'
 import type { ReviewReport } from './stage5.ts'
 
@@ -70,18 +70,6 @@ export interface DefectMatch {
 
 function normalisePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '')
-}
-
-/** Line ranges overlap within `slack`; a range without lines covers the whole file. */
-export function anchorsOverlap(
-  a: { readonly startLine?: number | undefined; readonly endLine?: number | undefined },
-  b: { readonly startLine?: number | undefined; readonly endLine?: number | undefined },
-  slack = ANCHOR_SLACK_LINES,
-): boolean {
-  if (a.startLine === undefined || b.startLine === undefined) return true
-  const aEnd = a.endLine ?? a.startLine
-  const bEnd = b.endLine ?? b.startLine
-  return a.startLine <= bEnd + slack && b.startLine <= aEnd + slack
 }
 
 function splitIdentifierWords(value: string): string {

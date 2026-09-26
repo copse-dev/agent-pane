@@ -1,6 +1,6 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readCheckoutFile, writeCheckoutFile } from './checkout-fs.ts'
@@ -28,5 +28,19 @@ it('reads and writes nested checkout files without following file or directory l
     assert.equal(await readFile(canary, 'utf8'), 'OUTSIDE_CANARY')
   } finally {
     await rm(scratch, { recursive: true, force: true })
+  }
+})
+
+it('refuses to buffer an oversized checkout file', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'review-safe-fs-big-'))
+  try {
+    await writeFile(join(root, 'big'), '')
+    // Sparse: executed code can do this in one call to exhaust the orchestrator.
+    await truncate(join(root, 'big'), 64 * 1024 * 1024)
+    assert.throws(() => readCheckoutFile(root, 'big'), /too large to read/)
+    await writeFile(join(root, 'small'), 'ok')
+    assert.equal(readCheckoutFile(root, 'small'), 'ok')
+  } finally {
+    await rm(root, { recursive: true, force: true })
   }
 })

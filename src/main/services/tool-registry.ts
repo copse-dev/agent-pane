@@ -8,6 +8,7 @@ import type {
 } from '@shared/types'
 import { normalizeToolExecuteResult, type ToolResultImage } from '@shared/types'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
+import { formatSystemReminder } from '@copse/agent/hooks/inject-context.ts'
 import { markTurnExternalIngestion } from './security/turn-taint.ts'
 import {
   getReadonlyToolBlockReason,
@@ -17,7 +18,9 @@ import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { describeToolArgError } from './tool-arg-error.ts'
+import { clampNumericRangeArgs, describeClampRepair } from './tool-arg-repair.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
 import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
@@ -39,6 +42,7 @@ interface RegisteredTool {
   parse: (rawArgs: unknown) => unknown
   execute: (args: unknown, signal: AbortSignal) => ToolExecuteResult | Promise<ToolExecuteResult>
   provenance: ToolProvenance
+  clampNumericRangeArgs: boolean
 }
 
 export interface ToolCatalogDescriptor {
@@ -91,6 +95,7 @@ export class ToolRegistry {
       parse: (rawArgs) => tool.parameters.parse(rawArgs),
       execute: (args, signal) => tool.execute(tool.parameters.parse(args), signal),
       provenance: tool.provenance ?? 'workspace',
+      clampNumericRangeArgs: tool.clampNumericRangeArgs ?? false,
     })
   }
 
@@ -140,13 +145,16 @@ export class ToolRegistry {
     return tools
   }
 
-  /** Validate/coerce recovered text-tool-call args; returns null when unknown or invalid. */
+  /** Coerce recovered text-tool-call args, leaving invalid known calls for execute to explain. */
   tryCoerceArgs(name: string, rawArgs: unknown): Record<string, unknown> | null {
     const tool = this.tools.get(name)
     if (!tool) return null
     const parsed = tool.parameters.safeParse(rawArgs)
-    if (!parsed.success) return null
-    return expectRecord(parsed.data)
+    if (parsed.success) return expectRecord(parsed.data)
+    // Keep invalid known calls in the tool channel. execute either clamps a
+    // numeric range miss and reports the adjustment, or returns its readable
+    // schema error to the model. Returning null here silently drops the call.
+    return isRecord(rawArgs) ? rawArgs : null
   }
 
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {
@@ -157,11 +165,36 @@ export class ToolRegistry {
     // wrong prints a JSON dump at the user instead of a sentence, and reads a
     // payload back instead of an instruction. Restate it before it escapes.
     let parsed: unknown
+    let parseSucceeded = false
+    let executeArgs = rawArgs
+    let clampedNotes: string[] = []
     try {
       parsed = tool.parse(rawArgs)
+      parseSucceeded = true
     } catch (err) {
-      const described = describeToolArgError(name, err)
-      throw described ? new Error(described) : err
+      // Pure numeric-range misses (GPT calling find_files with max_results
+      // 2000) keep their intent under clamping, so repair and run rather than
+      // bounce; anything else keeps the plain schema error.
+      const argsRecord = isRecord(rawArgs) ? rawArgs : null
+      if (tool.clampNumericRangeArgs && err instanceof z.ZodError && argsRecord) {
+        const repaired = clampNumericRangeArgs(err, argsRecord)
+        if (repaired) {
+          try {
+            parsed = tool.parse(repaired.args)
+            parseSucceeded = true
+            executeArgs = repaired.args
+            clampedNotes = repaired.notes
+          } catch {
+            // Unreachable today (the repair only rewrites values the schema's
+            // own bounds name); fall through to the described error rather
+            // than masking it.
+          }
+        }
+      }
+      if (!parseSucceeded) {
+        const described = describeToolArgError(name, err)
+        throw described ? new Error(described) : err
+      }
     }
     const mcpAnnotations = name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined
     if (isAgentRunReadonly()) {
@@ -188,7 +221,10 @@ export class ToolRegistry {
     if (cached !== undefined) {
       result = cached
     } else {
-      result = await tool.execute(rawArgs, signal)
+      // The registered execute wrapper parses again. Pass the same input used
+      // for the first parse so schema transforms are applied exactly once to
+      // the value each consumer sees.
+      result = await tool.execute(executeArgs, signal)
       if (identity && !isToolAllowedInReadonlyMode(name, { mcpAnnotations })) {
         // A tool that can mutate the workspace ran — this thread's cached
         // results may now be stale.
@@ -217,11 +253,18 @@ export class ToolRegistry {
     }
     // H2: a `toolGate` hook injected context into the current turn. Append the
     // pre-built system-reminder block (10k-capped) to this call's textual
-    // result so the model reads it right after the tool output.
+    // result so the model reads it right after the tool output. The numeric-
+    // range repair's clamp note rides the same channel: it is Copse-authored
+    // context about the call, not tool output, and the model must read it.
+    const injected =
+      clampedNotes.length > 0 ? formatSystemReminder(describeClampRepair(clampedNotes)) : undefined
     if (check.injectContext !== undefined && check.injectContext.length > 0) {
-      return appendInjectedContext(result, check.injectContext)
+      return appendInjectedContext(
+        result,
+        injected ? `${injected}\n\n${check.injectContext}` : check.injectContext,
+      )
     }
-    return result
+    return injected ? appendInjectedContext(result, injected) : result
   }
 
   /** Execute and unwrap structured tool results (e.g. file-edit line stats). */

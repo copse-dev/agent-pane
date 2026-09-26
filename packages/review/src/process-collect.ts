@@ -2,6 +2,7 @@
 // backend: the host-process backend spawns directly, the app's OS-sandbox
 // backend spawns through the seatbelt wrapper, and both hand the child here.
 import type { ChildProcess } from 'node:child_process'
+import { signalProcessTree } from '@copse/std/process-tree.ts'
 import type { CellCommand, CellCommandResult } from './isolation.ts'
 
 /** Append `chunk` to `current`, keeping at most `maxBytes` of the TAIL. */
@@ -23,17 +24,16 @@ export function appendTailCapped(
 
 /** Kill the child's whole process group when it was spawned detached, else the child. */
 export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid === undefined) return
-  try {
-    process.kill(-child.pid, signal)
-  } catch {
-    try {
-      child.kill(signal)
-    } catch {
-      // Already gone.
-    }
-  }
+  signalProcessTree(child, signal)
 }
+
+/**
+ * How long output may keep draining after the leader exits. A grandchild that
+ * left the process group (`setsid`, a detached spawn) can hold the pipes open
+ * forever; `close` would never fire, and neither the timeout nor an abort
+ * could end the command. After this grace the pipes are closed from our end.
+ */
+const EXIT_DRAIN_GRACE_MS = 500
 
 export interface CollectOptions {
   readonly now?: () => number
@@ -83,14 +83,26 @@ export function collectProcess(
     }
     command.signal?.addEventListener('abort', onAbort, { once: true })
     if (command.signal?.aborted) onAbort()
+    let exited = false
+    let drain: NodeJS.Timeout | null = null
     // The leader can exit while grandchildren still hold pipes or run with
-    // ignored stdio. End the whole command lifetime at the leader's exit.
+    // ignored stdio. End the whole command lifetime at the leader's exit, and
+    // stop waiting on pipes that something outside the group still holds.
     child.once('exit', () => {
+      exited = true
       kill(child)
+      drain = setTimeout(() => {
+        child.stdout?.destroy()
+        child.stderr?.destroy()
+      }, EXIT_DRAIN_GRACE_MS)
+      drain.unref()
     })
     const timer =
       command.timeoutMs > 0
         ? setTimeout(() => {
+            // Only the leader outrunning the deadline is a timeout; output
+            // still draining after a normal exit is not.
+            if (exited) return
             timedOut = true
             kill(child)
           }, command.timeoutMs)
@@ -102,6 +114,7 @@ export function collectProcess(
     })
     child.once('close', (code, signal) => {
       if (timer) clearTimeout(timer)
+      if (drain) clearTimeout(drain)
       command.signal?.removeEventListener('abort', onAbort)
       if (command.signal?.aborted) {
         reject(

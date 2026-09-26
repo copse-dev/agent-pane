@@ -872,7 +872,28 @@ export function setThreadReviewReport(
     else delete next.reviewReport
     return next
   })
-  store.emit('review_report_changed', threadId)
+  store.emit('review_report_changed', threadId, null)
+}
+
+/** Keep each new Copse Reviewer report beside the turn it reviewed. */
+export function setMessageReviewReport(
+  store: AppStore,
+  threadId: string,
+  messageId: string,
+  report: ThreadReviewReport | null,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    updatedAt: Date.now(),
+    messages: thread.messages.map((message) => {
+      if (message.id !== messageId) return message
+      const next = { ...message }
+      if (report) next.reviewReport = report
+      else delete next.reviewReport
+      return next
+    }),
+  }))
+  store.emit('review_report_changed', threadId, messageId)
 }
 
 /**
@@ -885,8 +906,27 @@ export function setReviewFindingDismissed(
   threadId: string,
   findingId: string,
   dismissed: boolean,
+  messageId: string | null = null,
 ): void {
   patchThreadAnywhere(store, threadId, (t) => {
+    if (messageId !== null) {
+      return {
+        ...t,
+        updatedAt: Date.now(),
+        messages: t.messages.map((message) => {
+          if (message.id !== messageId || !message.reviewReport) return message
+          return {
+            ...message,
+            reviewReport: {
+              ...message.reviewReport,
+              findings: message.reviewReport.findings.map((finding) =>
+                finding.id === findingId ? { ...finding, dismissed } : finding,
+              ),
+            },
+          }
+        }),
+      }
+    }
     if (!t.reviewReport) return t
     return {
       ...t,
@@ -899,7 +939,7 @@ export function setReviewFindingDismissed(
       },
     }
   })
-  store.emit('review_report_changed', threadId)
+  store.emit('review_report_changed', threadId, messageId)
 }
 
 /** Suspend/resume FIFO draining of a thread's queued messages (e.g. while editing). */

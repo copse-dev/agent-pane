@@ -3,6 +3,7 @@ import { outlineIcon } from '../dom/outline-icon.ts'
 import { closeIcon } from '../dom/icons.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { formatMarkdownQuote } from '../dom/markdown-quote.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
@@ -387,8 +388,10 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  // Token usage — always shown once a thread has used tokens; hover (or focus)
-  // for the in/out breakdown and cost, like the context wheel next to it.
+  // Token usage — always shown once a thread has used tokens; recorded subagent
+  // runs are folded out (see `resolveFooterUsage`). Hover (or focus) for the
+  // explicit usage scopes, subagent total, and cost, like the context wheel
+  // next to it.
   const usageBtn = el('span', {
     class: 'footer-usage',
     tabindex: '0',
@@ -2143,18 +2146,15 @@ export function mountInputBar(
     recordThreadVideos(store, id, attachedVideos)
     recordThreadArchives(store, id, attachedArchives)
 
+    const queued = { messageId, payload, createdAt: Date.now() }
     if (getThreadById(store, id)?.status === 'running') {
-      enqueueUserMessage(store, id, {
-        messageId,
-        payload,
-        createdAt: Date.now(),
-      })
+      enqueueUserMessage(store, id, queued)
     } else {
       // A typed prompt at idle starts a fresh turn tree (decision 16): late async
       // hooks from an earlier turn now carry a stale epoch and are held, not
       // auto-submitted, into this new turn.
       startHumanTurnTree(store, id)
-      dispatchAgentRun(store, api, id, payload)
+      dispatchAgentRun(store, api, id, payload, queued)
     }
     // Consume only the submitted draft. A different thread's composer, or a
     // newer edit made while checkout was pending, must survive completion.
@@ -2414,6 +2414,16 @@ export function mountInputBar(
     // the reference sits inside the sentence the user is writing.
     attachTextBlock: (content: string, label?: string): void => {
       composer.insertPasteChip(content, label)
+    },
+    // Unlike attachTextBlock, a quote lands as literal editable text so the
+    // user can trim or edit it inline before sending, matching how a reply
+    // quote behaves everywhere else.
+    quoteText: (content: string): void => {
+      const quote = formatMarkdownQuote(content)
+      const caret = composer.selectionStart
+      const prevChar = caret > 0 ? composer.value[caret - 1] : undefined
+      const needsLeadingBreak = prevChar !== undefined && prevChar !== '\n'
+      composer.insertText(`${needsLeadingBreak ? '\n\n' : ''}${quote}\n\n`)
     },
     attachImage: addImageChip,
     attachVideo: addVideoChip,

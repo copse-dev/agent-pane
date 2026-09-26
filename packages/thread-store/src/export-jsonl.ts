@@ -72,6 +72,7 @@ export function threadToJsonl(thread: Thread): string {
         ...(msg.parameters !== undefined ? { parameters: msg.parameters } : {}),
         ...(msg.turnOutcome !== undefined ? { turnOutcome: msg.turnOutcome } : {}),
         ...(msg.review !== undefined ? { review: msg.review } : {}),
+        ...(msg.reviewReport !== undefined ? { reviewReport: msg.reviewReport } : {}),
         ...(msg.origin !== undefined ? { origin: msg.origin } : {}),
         ...(msg.editedByUser !== undefined ? { editedByUser: msg.editedByUser } : {}),
         toolCalls: msg.toolCalls,

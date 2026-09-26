@@ -14,7 +14,7 @@ export interface LineDiffStats {
 const MAX_DIFF_STEPS = 100_000_000
 
 /** Split file text into logical lines (git treats '' as zero lines, not one empty line). */
-function splitIntoLines(text: string): string[] {
+export function splitIntoLines(text: string): string[] {
   if (text === '') return []
   const lines = text.split('\n')
   if (text.endsWith('\n')) lines.pop()

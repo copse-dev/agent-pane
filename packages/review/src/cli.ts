@@ -36,14 +36,17 @@ import {
   type ForgeTarget,
 } from './forge-review.ts'
 import { createEphemeralRunnerBackend, createHostProcessBackend } from './host-process-backend.ts'
+import { applyEvidenceFloor, postSummary, renderSummaryBlock, writeSummary } from './pr-summary.ts'
 import type { DiffOrigin, IsolationBackend } from './isolation.ts'
 import { resolveLenses } from './lenses.ts'
 import { serializeCell } from './isolation.ts'
 import {
+  envValue,
   isProviderKind,
   selectProvider,
   PROVIDER_KINDS,
   type ProviderKind,
+  type SelectedProvider,
 } from './provider-selection.ts'
 import { renderReviewReport } from './report-text.ts'
 import { toSarif } from './sarif.ts'
@@ -60,8 +63,9 @@ import { decodeStage0Report } from './stage0-report.ts'
 import { DEFAULT_PREPARE_TIMEOUT_MS } from './project-commands.ts'
 import { runReviewers, type Stage2Result } from './stage2.ts'
 import { verifyFindings, type Stage4Result } from './stage4.ts'
-import { assembleReviewReport, canonicalFindings } from './stage5.ts'
+import { assembleReviewReport, canonicalFindings, type ReviewReport } from './stage5.ts'
 import type { Finding } from './finding.ts'
+import type { ReviewContext } from './context.ts'
 
 export const CLI_VERSION = '0.1.0'
 
@@ -104,11 +108,15 @@ never the exit code.
   --concurrency <n>       reviewers running at once (default 2)
   --base-url <url>        endpoint for lmstudio / openai-compatible
   --mock-script <path>    scripted steps for --provider mock (a list, or {roles:{...}})
-  --json [<path>]         write the full report as JSON (path, or - for stdout)
+  --json <path|->         write the full report as JSON (a path, or - for stdout)
   --sarif <path>          write the surfaced findings as SARIF 2.1.0
   --events <path>         write the model turn's headless events as JSONL (- for stdout)
   --post-review <forge>   post the findings as one review on the pull request:
                           ${FORGES.join(' | ')}; needs --repo and --pr
+  --post-summary <forge>  also keep a risk-and-overview summary at the bottom of the pull
+                          request's description, replaced in place on every run
+  --summary-only          write the summary and nothing else: no Stage 0, no review, nothing
+                          executed; prints the block, and posts it with --post-summary
   --repo <owner/name>     the repository on the forge
   --pr <n>                the pull request number
   --forge-url <url>       the forge's API base (GitHub: GITHUB_API_URL, else api.github.com;
@@ -183,8 +191,9 @@ export async function discoverPnpmStore(
 
 function integer(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`)
+  // parseInt alone would read `3x` as 3 and `1.5` as 1.
+  const parsed = /^[1-9]\d*$/.test(value) ? Number(value) : Number.NaN
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be a positive integer`)
   return parsed
 }
 
@@ -199,6 +208,7 @@ export function reviewPermissionProfile(executionAllowed: boolean): HeadlessPerm
 
 interface ForgeFlags {
   readonly 'post-review'?: string | undefined
+  readonly 'post-summary'?: string | undefined
   readonly repo?: string | undefined
   readonly pr?: string | undefined
   readonly 'forge-url'?: string | undefined
@@ -207,26 +217,33 @@ interface ForgeFlags {
 /**
  * The review's destination from the flags and the environment, resolved
  * before any model is paid for: a review that could not be posted at the
- * end is the expensive way to learn a token was missing.
+ * end is the expensive way to learn a token was missing. `--post-review` and
+ * `--post-summary` share it, so when both are given they must name one forge.
  */
 export function resolveForgeTarget(
   flags: ForgeFlags,
   env: Readonly<Record<string, string | undefined>>,
 ): Omit<ForgeTarget, 'headCommit'> | null {
-  const forge = flags['post-review']
+  const review = flags['post-review']
+  const summary = flags['post-summary']
+  if (review !== undefined && summary !== undefined && review !== summary) {
+    throw new Error('--post-review and --post-summary must name the same forge')
+  }
+  const forge = review ?? summary
   if (forge === undefined) return null
-  if (!isForge(forge)) throw new Error(`--post-review must be one of ${FORGES.join(', ')}`)
+  const flag = review === undefined ? '--post-summary' : '--post-review'
+  if (!isForge(forge)) throw new Error(`${flag} must be one of ${FORGES.join(', ')}`)
   const repo = flags.repo
   const match = repo === undefined ? null : /^([^/\s]+)\/([^/\s]+)$/.exec(repo)
-  if (match === null) throw new Error('--post-review needs --repo <owner/name>')
+  if (match === null) throw new Error(`${flag} needs --repo <owner/name>`)
   const number = integer(flags.pr, '--pr')
-  if (number === undefined) throw new Error('--post-review needs --pr <n>')
+  if (number === undefined) throw new Error(`${flag} needs --pr <n>`)
   const token =
-    env['COPSE_REVIEW_FORGE_TOKEN'] ??
-    (forge === 'forgejo' ? env['FORGEJO_TOKEN'] : undefined) ??
-    env['GITHUB_TOKEN']
-  if (token === undefined || token.length === 0) {
-    throw new Error('--post-review needs a token in COPSE_REVIEW_FORGE_TOKEN or GITHUB_TOKEN')
+    envValue(env, 'COPSE_REVIEW_FORGE_TOKEN') ??
+    (forge === 'forgejo' ? envValue(env, 'FORGEJO_TOKEN') : undefined) ??
+    envValue(env, 'GITHUB_TOKEN')
+  if (token === undefined) {
+    throw new Error(`${flag} needs a token in COPSE_REVIEW_FORGE_TOKEN or GITHUB_TOKEN`)
   }
   const apiBase =
     flags['forge-url'] ??
@@ -234,10 +251,130 @@ export function resolveForgeTarget(
       ? (env['GITHUB_API_URL'] ?? 'https://api.github.com')
       : env['GITHUB_SERVER_URL'])
   if (apiBase === undefined || apiBase.length === 0) {
-    throw new Error('--post-review forgejo needs --forge-url <instance url>')
+    throw new Error(`${flag} forgejo needs --forge-url <instance url>`)
   }
   const [, owner = '', name = ''] = match
   return { forge, apiBase, owner, repo: name, number, token }
+}
+
+async function loadMockScript(path: string | undefined): Promise<MockScript | undefined> {
+  if (path === undefined) return undefined
+  const script = safeJsonParse(await readFile(path, 'utf8'), decodeMockScript)
+  if (script === null) throw new Error(`${path} is not a valid mock script`)
+  return script
+}
+
+/** `--model` entries, repeated or comma-separated, trimmed and non-empty. */
+function modelIds(entries: readonly string[] | undefined): string[] {
+  return (entries ?? [])
+    .flatMap((entry) => entry.split(','))
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0)
+}
+
+interface SummaryRun {
+  readonly io: CliIo
+  readonly selection: SelectedProvider
+  readonly context: ReviewContext
+  /** The review this summary accompanies; null for `--summary-only`. */
+  readonly report: ReviewReport | null
+  readonly target: Omit<ForgeTarget, 'headCommit'> | null
+  readonly print: boolean
+}
+
+/**
+ * Write the summary, print it, and keep it in the pull request's description
+ * when there is a target. Returns why it could not, or null.
+ */
+async function summarise(run: SummaryRun): Promise<string | null> {
+  const { io, context } = run
+  const { summary, turn } = await writeSummary({
+    provider: run.selection.providerFor('summary'),
+    model: run.selection.model,
+    context,
+    threadId: `copse-review:summary:${context.headCommit}`,
+    turnId: `summary-${context.headCommit.slice(0, 10)}`,
+    signal: io.signal,
+  })
+  if (summary === null) return `the summary did not complete: ${turn.error ?? turn.stopReason}`
+  const headCommit = context.dirtyWorkingTree ? null : context.headCommit
+  const block = renderSummaryBlock(applyEvidenceFloor(summary, run.report), {
+    headCommit,
+    toolVersion: CLI_VERSION,
+    report: run.report,
+  })
+  if (run.print) io.stdout(`${block}\n`)
+  if (run.target === null) return null
+  const posted = await postSummary({ ...run.target, headCommit }, block, {
+    ...(io.fetch ? { fetch: io.fetch } : {}),
+  })
+  const where = `${run.target.owner}/${run.target.repo}#${String(run.target.number)}`
+  io.stderr(
+    posted.updated
+      ? `copse-review: updated the summary in the description of ${where}\n`
+      : `copse-review: left the description of ${where} as it was: ${posted.reason}\n`,
+  )
+  return null
+}
+
+/**
+ * `--summary-only`: read-only checkouts and one model turn. Nothing from the
+ * change is executed, whatever its origin, so this is safe to run on every
+ * push with the model key present.
+ */
+async function summaryOnly(options: {
+  readonly io: CliIo
+  readonly baseRef: string
+  readonly headRef: string | undefined
+  readonly diffOrigin: DiffOrigin
+  readonly selection: SelectedProvider
+  readonly budgetChars: number | undefined
+  readonly scratchParent: string | undefined
+  readonly target: Omit<ForgeTarget, 'headCommit'> | null
+  readonly quiet: boolean
+}): Promise<HeadlessExitCode> {
+  const { io } = options
+  const ground = await openReviewGround({
+    repoRoot: io.cwd,
+    baseRef: options.baseRef,
+    ...(options.headRef === undefined ? {} : { headRef: options.headRef }),
+    backend: createHostProcessBackend(),
+    diffOrigin: options.diffOrigin,
+    unisolatedConsent: false,
+    readOnlyCheckouts: true,
+    hostEnv: io.env,
+    ...(options.scratchParent === undefined ? {} : { scratchParent: options.scratchParent }),
+  })
+  try {
+    if (ground.checkouts === null) {
+      io.stderr('copse-review: no checkouts were materialised for the summary\n')
+      return HEADLESS_EXIT.FAILURE
+    }
+    const context = await buildReviewContext({
+      checkouts: ground.checkouts,
+      ...(options.budgetChars === undefined ? {} : { budgetChars: options.budgetChars }),
+    })
+    const error = await summarise({
+      io,
+      selection: options.selection,
+      context,
+      report: null,
+      target: options.target,
+      print: !options.quiet,
+    })
+    if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
+    if (error !== null) {
+      io.stderr(`copse-review: ${error}\n`)
+      return HEADLESS_EXIT.FAILURE
+    }
+    return HEADLESS_EXIT.SUCCESS
+  } catch (err) {
+    if (io.signal?.aborted) return HEADLESS_EXIT.CANCELLED
+    io.stderr(`copse-review: the summary could not be written: ${errorMessage(err)}\n`)
+    return HEADLESS_EXIT.FAILURE
+  } finally {
+    await ground.close()
+  }
 }
 
 async function importStage0(path: string): Promise<Stage0Report> {
@@ -276,6 +413,8 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         sarif: { type: 'string' },
         events: { type: 'string' },
         'post-review': { type: 'string' },
+        'post-summary': { type: 'string' },
+        'summary-only': { type: 'boolean', default: false },
         repo: { type: 'string' },
         pr: { type: 'string' },
         'forge-url': { type: 'string' },
@@ -344,6 +483,13 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
       }
     }
     lenses = resolveLenses(values.lenses)
+    if (values['summary-only']) {
+      const conflict = (['post-review', 'stage0-json', 'no-model'] as const).find(
+        (flag) => values[flag] !== undefined && values[flag] !== false,
+      )
+      if (conflict !== undefined)
+        throw new Error(`--summary-only cannot be used with --${conflict}`)
+    }
     forgeTarget = resolveForgeTarget(values, io.env)
     if (values['stage0-json'] !== undefined)
       importedStage0 = await importStage0(values['stage0-json'])
@@ -365,6 +511,35 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
   const baseRef = values.base ?? (refExists('origin/main', io.cwd) ? 'origin/main' : 'main')
   const diffOrigin: DiffOrigin = values.foreign ? 'foreign' : 'own'
   const image = values.image ?? DEFAULT_CONTAINER_IMAGE
+
+  if (values['summary-only']) {
+    let selection: SelectedProvider
+    try {
+      selection = selectProvider(
+        {
+          kind: providerKind,
+          model: modelIds(values.model)[0],
+          baseUrl: values['base-url'],
+          script: await loadMockScript(values['mock-script']),
+        },
+        io.env,
+      )
+    } catch (err) {
+      io.stderr(`copse-review: ${errorMessage(err)}\n`)
+      return HEADLESS_EXIT.USAGE
+    }
+    return await summaryOnly({
+      io,
+      baseRef,
+      headRef: values.head,
+      diffOrigin,
+      selection,
+      budgetChars,
+      scratchParent,
+      target: forgeTarget,
+      quiet: values.quiet,
+    })
+  }
 
   // The backend. Imported Stage 0 stays read-only unless the caller explicitly
   // supplies a real container. It may never reuse the secret-bearing runner as
@@ -451,29 +626,17 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     let reviews: Stage2Result[] = []
     let verification: Stage4Result | null = null
     let findings: Finding[] = stage0.findings.slice()
-    let context = null
+    let context: ReviewContext | null = null
+    let summarySelection: SelectedProvider | undefined
     let modelError: string | null = null
     if (!values['no-model'] && ground.checkouts !== null) {
       try {
         if (importedStage0 !== null && ground.cell !== null) {
           await prepareReviewHead(ground, io.signal)
         }
-        let script: MockScript | undefined
-        if (values['mock-script'] !== undefined) {
-          const parsedScript = safeJsonParse(
-            await readFile(values['mock-script'], 'utf8'),
-            decodeMockScript,
-          )
-          if (parsedScript === null) {
-            throw new Error(`${values['mock-script']} is not a valid mock script`)
-          }
-          script = parsedScript
-        }
-        const modelIds = (values.model ?? [])
-          .flatMap((entry) => entry.split(','))
-          .map((id) => id.trim())
-          .filter((id) => id.length > 0)
-        const selections = (modelIds.length === 0 ? [undefined] : modelIds).map((model) =>
+        const script = await loadMockScript(values['mock-script'])
+        const ids = modelIds(values.model)
+        const selections = (ids.length === 0 ? [undefined] : ids).map((model) =>
           selectProvider(
             { kind: providerKind, model, baseUrl: values['base-url'], script },
             io.env,
@@ -481,6 +644,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
         )
         const first = selections[0]
         if (first === undefined) throw new Error('no model selected')
+        summarySelection = first
         const challengerSelection =
           values.challenger === undefined
             ? first
@@ -593,7 +757,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     if (modelError !== null) io.stderr(`copse-review: model review did not run: ${modelError}\n`)
 
     let postError: string | null = null
-    if (forgeTarget !== null && !io.signal?.aborted) {
+    if (values['post-review'] !== undefined && forgeTarget !== null && !io.signal?.aborted) {
       try {
         const { checkouts } = ground
         const { mergeBase, headCommit, dirtyWorkingTree } = stage0
@@ -607,16 +771,67 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
             // files touched by verification. Working-tree findings stay in the body.
             diffForPath: async (path) =>
               checkouts !== null && mergeBase !== null && headCommit !== null && !dirtyWorkingTree
-                ? readFileDiff(checkouts.head, mergeBase, path, headCommit)
+                ? readFileDiff(
+                    { gitDir: checkouts.headGitDir, workTree: checkouts.head },
+                    mergeBase,
+                    path,
+                    { headCommit },
+                  )
                 : '',
+            // A pull request gets a review only when there is something to raise,
+            // and not a finding its stacked sibling already carries.
+            skipWhenEmpty: true,
+            skipRaisedElsewhere: true,
           },
         )
+        const where = `${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)}`
+        const repeated = posted.repeatedElsewhere
+          ? `; ${String(posted.repeatedElsewhere)} finding(s) already raised on another open pull request`
+          : ''
+        const superseded = posted.superseded
+          ? `; ${String(posted.superseded)} earlier review(s) ${posted.notPosted ? 'marked resolved' : 'superseded'}`
+          : ''
         io.stderr(
-          `copse-review: posted the review on ${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''})\n`,
+          posted.notPosted
+            ? `copse-review: nothing to raise on ${where}, so no review was posted${repeated}${superseded}\n`
+            : `copse-review: posted the review on ${where} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''}${repeated}${superseded})\n`,
         )
+        if (posted.repeatLookupError !== undefined) {
+          io.stderr(
+            `copse-review: could not check other open pull requests, so every finding was kept: ${posted.repeatLookupError}\n`,
+          )
+        }
+        if (posted.supersedeError !== undefined) {
+          io.stderr(
+            `copse-review: earlier reviews were left as they were: ${posted.supersedeError}\n`,
+          )
+        }
       } catch (err) {
         postError = errorMessage(err)
         io.stderr(`copse-review: the review could not be posted: ${postError}\n`)
+      }
+    }
+
+    // After the review, so a summary that fails never costs the findings.
+    let summaryError: string | null = null
+    if (values['post-summary'] !== undefined && forgeTarget !== null && !io.signal?.aborted) {
+      try {
+        summaryError =
+          summarySelection === undefined || context === null
+            ? 'no model read the change'
+            : await summarise({
+                io,
+                selection: summarySelection,
+                context,
+                report,
+                target: forgeTarget,
+                print: false,
+              })
+      } catch (err) {
+        summaryError = errorMessage(err)
+      }
+      if (summaryError !== null) {
+        io.stderr(`copse-review: the pull request summary was not updated: ${summaryError}\n`)
       }
     }
 
@@ -626,6 +841,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
     if (
       modelError !== null ||
       postError !== null ||
+      summaryError !== null ||
       reviews.some((review) => review.outcome === 'failed')
     ) {
       return HEADLESS_EXIT.FAILURE

@@ -9,6 +9,8 @@ import {
   setKnowledgeNoteStatus,
   type KnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+import { stampRoadmapTitle } from '../services/roadmap-title.ts'
+import { notifyRoadmapChanged } from '../services/roadmap-events.ts'
 
 /**
  * Experimental roadmap-plans feature (issue #556). A roadmap is a backlog of
@@ -23,26 +25,13 @@ import {
  * feature is fully inert until the user opts in via Settings → Plugins.
  */
 
-/** Knowledge-note type used for roadmap items. */
-export const ROADMAP_TYPE = 'Roadmap'
-
-/**
- * Roadmap items keep the full prompt in the note body; the title is a derived
- * preview of it. Shared with the Roadmap pane's create/update path so both
- * surfaces produce identically-shaped notes.
- */
-export function roadmapTitleFromPrompt(prompt: string): string {
-  return prompt.slice(0, 80)
-}
-
-/**
- * Where a roadmap item sits relative to in-flight work. `ready` means nothing
- * blocks it; `blocked` / `conflicts` are set once starting it now would collide
- * with an open PR. `done` and `archived` are terminal.
- */
-export const ROADMAP_STATUSES = ['ready', 'blocked', 'conflicts', 'done', 'archived'] as const
-
-export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number]
+import { ROADMAP_TYPE, ROADMAP_STATUSES, roadmapTitleFromPrompt } from '@shared/roadmap/note.ts'
+export {
+  ROADMAP_TYPE,
+  ROADMAP_STATUSES,
+  roadmapTitleFromPrompt,
+  type RoadmapStatus,
+} from '@shared/roadmap/note.ts'
 
 function formatItem(note: KnowledgeNote): string {
   const issue = note.fields['issue'] ? ` [${note.fields['issue']}]` : ''
@@ -53,6 +42,40 @@ function formatItem(note: KnowledgeNote): string {
   const attachments =
     attached.length > 0 ? `\n  attachments: ${attached.map((a) => a.name).join(', ')}` : ''
   return `- [${note.id}] (${note.status ?? 'ready'})${issue} ${note.body}${notes}${attachments}`
+}
+
+/**
+ * Record a new roadmap item for `prompt`. Recording is immediate — the note
+ * persists under the plain truncation title (roadmapTitleFromPrompt) — and a
+ * short AI-generated name (issue #2472) replaces it in the background, same as
+ * the pane's own create path (register-handlers.ts `roadmap:create`), via
+ * `stampRoadmapTitle`.
+ *
+ * Split out of the tool's `execute` (rather than inlined there) so tests can
+ * drive it directly with a stub `generate`, the same injectable shape
+ * `stampRoadmapTitle` and `importIssuesAsRoadmapItems` already use elsewhere —
+ * exercising the real path would otherwise pay for an actual small-tasks model
+ * round-trip (or its offline retry/backoff) on every test run.
+ */
+export function addRoadmapItem(
+  prompt: string,
+  notes: string | undefined,
+  issueRef: string | null,
+  onStamped?: () => void,
+  generate?: (prompt: string) => Promise<string | null>,
+): KnowledgeNote {
+  const note = addKnowledgeNote({
+    type: ROADMAP_TYPE,
+    title: roadmapTitleFromPrompt(prompt),
+    body: prompt,
+    status: 'ready',
+    fields: {
+      ...(notes ? { notes } : {}),
+      ...(issueRef ? { issue: issueRef } : {}),
+    },
+  })
+  void stampRoadmapTitle(note.id, prompt, note.title, onStamped, generate)
+  return note
 }
 
 export const roadmapPlanTool = defineTool({
@@ -85,16 +108,7 @@ export const roadmapPlanTool = defineTool({
       if (issue?.trim() && !issueRef) {
         return `Unrecognized issue reference "${issue}". Use #123, owner/repo#123, or a GitHub issue URL.`
       }
-      const note = addKnowledgeNote({
-        type: ROADMAP_TYPE,
-        title: roadmapTitleFromPrompt(trimmed),
-        body: trimmed,
-        status: 'ready',
-        fields: {
-          ...(notes?.trim() ? { notes: notes.trim() } : {}),
-          ...(issueRef ? { issue: issueRef } : {}),
-        },
-      })
+      const note = addRoadmapItem(trimmed, notes?.trim(), issueRef, notifyRoadmapChanged)
       return `Added roadmap item ${note.id}.\n${formatItem(note)}`
     }
     if (action === 'set_status') {

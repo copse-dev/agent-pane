@@ -1,13 +1,14 @@
 // The projects sidebar has a per-project thread filter: a search toggle in the
 // header reveals an input that narrows the expanded project's thread list by
-// title, showing every match (pagination suppressed) or a "No matching threads"
-// note when none match. This is the local sibling to the Cmd/Ctrl+Shift+K
+// title, then by human requests in saved transcripts. Pagination is suppressed,
+// with a "No matching threads" note only after the scan finishes. This is the local sibling to the Cmd/Ctrl+Shift+K
 // command palette, which jumps across every project at once.
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { createStore } from '@shared/store/store.ts'
-import type { Thread } from '@shared/types'
+import type { Message, Thread } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 
@@ -36,27 +37,34 @@ function must(selector: string): HTMLElement {
   return found
 }
 
+let dispose: (() => void) | undefined
+
 afterEach(() => {
+  dispose?.()
   document.body.replaceChildren()
 })
 
 describe('projects pane thread filter (component)', () => {
-  function mount(): void {
+  function mount(
+    threads: Thread[] = [
+      thread('a', 'Fix login bug'),
+      thread('b', 'Refactor sidebar'),
+      thread('c', 'Login rate limiting'),
+    ],
+    api = apiStub,
+  ): ReturnType<typeof createStore> {
     const store = createStore({
       projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
       activeProjectId: 'p1',
       expandedProjectId: 'p1',
       workspaceRoot: '/proj',
-      threads: [
-        thread('a', 'Fix login bug'),
-        thread('b', 'Refactor sidebar'),
-        thread('c', 'Login rate limiting'),
-      ],
+      threads,
       activeThreadId: 'a',
     })
     const host = document.createElement('div')
     document.body.append(host)
-    mountProjectsPane(host, store, apiStub)
+    dispose = mountProjectsPane(host, store, api)
+    return store
   }
 
   function titles(): string[] {
@@ -86,13 +94,70 @@ describe('projects pane thread filter (component)', () => {
     assert.deepEqual(titles(), ['Fix login bug', 'Login rate limiting'])
   })
 
-  it('shows a no-matches note when nothing matches', () => {
+  it('shows a no-matches note only after searching user requests', async () => {
     mount()
     must('.projects-search-btn').click()
     setFilter('zzz-nothing')
+    assert.equal(must('.thread-filter-status').textContent, 'Searching user requests…')
+    await delay(250)
     assert.deepEqual(titles(), [])
     const empty = document.querySelector('.chats-list .sidebar-empty')
     assert.equal(empty?.textContent, 'No matching threads')
+  })
+
+  it('keeps scan progress during streaming and shows newly submitted requests immediately', async () => {
+    const api = createFakeApi()
+    let finishRead = (_messages: Message[]): void => {
+      throw new Error('Read not started')
+    }
+    const waiting = new Promise<Message[]>((resolve) => {
+      finishRead = resolve
+    })
+    const reads: string[] = []
+    api.threads.loadMessages = async (_project, id): Promise<Message[]> => {
+      reads.push(id)
+      return id === 'old'
+        ? waiting
+        : [{ id: 'stored', role: 'user', content: 'needle', toolCalls: [], createdAt: 3 }]
+    }
+    const store = mount(
+      [
+        { ...thread('old', 'Older work'), messagesLoaded: false },
+        { ...thread('new', 'Stored match'), createdAt: 3, messagesLoaded: false },
+        { ...thread('live', 'Live request'), createdAt: 2 },
+      ],
+      api,
+    )
+    must('.projects-search-btn').click()
+    setFilter('needle')
+    await delay(250)
+    assert.deepEqual(reads, ['new', 'old'])
+    assert.deepEqual(titles(), ['Stored match'])
+    store.setState({
+      threads: store.getState().threads.map((t) =>
+        t.id === 'live'
+          ? {
+              ...t,
+              messages: [
+                {
+                  id: 'live-prompt',
+                  role: 'user',
+                  content: 'needle',
+                  toolCalls: [],
+                  createdAt: 2,
+                },
+              ],
+            }
+          : { ...t, updatedAt: 99 },
+      ),
+    })
+    store.emit('threads_changed')
+    assert.deepEqual(titles(), ['Stored match', 'Live request'])
+    await delay(250)
+    assert.deepEqual(reads, ['new', 'old'])
+    finishRead([])
+    await delay(0)
+    assert.equal(document.querySelector('.thread-filter-status'), null)
   })
 
   it('clicking the toggle again clears and hides the filter', () => {

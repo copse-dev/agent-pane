@@ -5,6 +5,7 @@ import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 import { expectString } from '@shared/unknown-value.ts'
 import { imageMimeType, isRasterImagePath } from '@shared/fs/image-path.ts'
+import { workspaceRelativePath } from '@shared/fs/workspace-path.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
@@ -36,16 +37,6 @@ function readAsDataUrl(blob: Blob): Promise<string> {
   })
 }
 
-function relativeWorkspacePath(absPath: string, workspaceRoot: string | null): string {
-  if (!workspaceRoot) return absPath
-  const root = workspaceRoot.replace(/\/+$/, '')
-  const normalized = absPath.replace(/\\/g, '/')
-  const prefix = root.replace(/\\/g, '/')
-  if (normalized === prefix) return ''
-  if (normalized.startsWith(`${prefix}/`)) return normalized.slice(prefix.length + 1)
-  return absPath
-}
-
 async function attachWorkspacePath(
   path: string,
   handlers: PromptAttachmentHandlers,
@@ -75,7 +66,12 @@ async function attachWorkspacePath(
       return
     }
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
-    handlers.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content })
+    const relativePath = workspaceRoot ? workspaceRelativePath(path, workspaceRoot) : null
+    // The root itself is '' — keep the absolute path rather than an empty one.
+    handlers.attachFile({
+      path: relativePath === null || relativePath === '' ? path : relativePath,
+      content,
+    })
   } catch {
     /* ignore read errors */
   }

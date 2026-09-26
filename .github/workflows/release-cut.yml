@@ -7,7 +7,8 @@ name: Cut release tag
 # `v<version>` at that exact commit and hand it to `Release (macOS)`.
 #
 # Promotions that do not change the version — most of them — are no-ops, so the
-# release cadence is driven entirely by bumping `package.json` on `main`. A
+# release cadence is driven entirely by bumping `package.json` on `main`, which
+# `release-bump.yml` does weekly (and `scripts/release-bump.mts` does by hand). A
 # version is cut exactly once: if its release run fails, bump to the next version
 # rather than re-cutting the same one. Releases are forward-fix only
 # (docs/recovery.md), and the publisher refuses to replace an existing release.
@@ -58,6 +59,9 @@ jobs:
 
       - id: version
         name: Read and classify the promoted version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
@@ -66,9 +70,16 @@ jobs:
           channel="$(node scripts/release-channel.mts --channel "$version")"
           echo "Promoted version $version targets the $channel channel"
           # Fail here rather than after signing and notarization: the publisher
-          # generates the GitHub Release body from CHANGELOG.md's Unreleased
-          # section, and `gh release create` cannot run without one.
-          node scripts/release-notes.mts "$version" > /dev/null
+          # generates the GitHub Release body from CHANGELOG.md's `## <version>`
+          # section, and `gh release create` cannot run without one. A version
+          # already tagged at an older commit is the ordinary no-op below and is
+          # not re-validated: versions released before notes were kept per
+          # version have no section. Any lookup failure falls through to the
+          # check, which fails closed.
+          existing="$(gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" --jq .object.sha 2>/dev/null || true)"
+          if [ -z "$existing" ] || [ "$existing" = "$RELEASE_SHA" ]; then
+            node scripts/release-notes.mts "$version" > /dev/null
+          fi
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
       - name: Tag the commit and start Release (macOS)

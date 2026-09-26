@@ -9,6 +9,7 @@
 // This is the starting proposal the plan names, tuned by hand on the tests
 // below rather than on the corpus P2 asks for; the thresholds are exported so
 // `bench:review` can move them with evidence.
+import { createHash } from 'node:crypto'
 import { normalizeClaim, type Finding, type ReviewerRef } from './finding.ts'
 
 /** Lines of slack either side of an anchor when testing overlap. */
@@ -114,23 +115,49 @@ export function claimContainment(a: string, b: string): number {
   return shared / Math.min(ta.size, tb.size)
 }
 
-function anchorsOverlap(a: Finding, b: Finding): boolean {
-  if (a.anchor.path !== b.anchor.path) return false
-  const aStart = (a.anchor.startLine ?? 0) - ANCHOR_SLACK_LINES
-  const aEnd = (a.anchor.endLine ?? a.anchor.startLine ?? 0) + ANCHOR_SLACK_LINES
-  const bStart = b.anchor.startLine ?? 0
-  const bEnd = b.anchor.endLine ?? bStart
-  return aStart <= bEnd && bStart <= aEnd
+/**
+ * Line ranges overlap within `slack`; a range without lines covers the whole
+ * file. Shared with `eval.ts`, which matches a finding to a known defect the
+ * same way Stage 3 clusters.
+ */
+export function anchorsOverlap(
+  a: { readonly startLine?: number | undefined; readonly endLine?: number | undefined },
+  b: { readonly startLine?: number | undefined; readonly endLine?: number | undefined },
+  slack = ANCHOR_SLACK_LINES,
+): boolean {
+  if (a.startLine === undefined || b.startLine === undefined) return true
+  const aEnd = a.endLine ?? a.startLine
+  const bEnd = b.endLine ?? b.startLine
+  return a.startLine <= bEnd + slack && b.startLine <= aEnd + slack
 }
 
-/** Whether two findings are one finding. Exported so the rule is testable on its own. */
+/**
+ * Whether two findings are one finding. Exported so the rule is testable on its own.
+ *
+ * An equal id means equal class, path, anchored text and claim — but not equal
+ * lines: the id deliberately omits them, so the same diagnostic on two identical
+ * lines of one file shares an id. The anchors must still overlap.
+ */
 export function sameFinding(a: Finding, b: Finding): boolean {
+  if (a.anchor.path !== b.anchor.path || !anchorsOverlap(a.anchor, b.anchor)) return false
   if (a.id === b.id) return true
-  if (a.class !== b.class || !anchorsOverlap(a, b)) return false
+  if (a.class !== b.class) return false
   return (
     claimSimilarity(a.claim, b.claim) >= CLAIM_SIMILARITY_THRESHOLD ||
     claimContainment(a.claim, b.claim) >= CLAIM_CONTAINMENT_THRESHOLD
   )
+}
+
+/**
+ * A distinct id for the `occurrence`th separate finding that minted `id`, so
+ * everything keyed by id downstream (Stage 4's verdicts, SARIF fingerprints)
+ * keeps the two apart. Deterministic in input order.
+ */
+function occurrenceId(id: string, occurrence: number): string {
+  return createHash('sha256')
+    .update(`${id}\n\u0000${String(occurrence)}`)
+    .digest('hex')
+    .slice(0, 16)
 }
 
 function refKey(ref: ReviewerRef): string {
@@ -150,7 +177,11 @@ export function clusterFindings(findings: readonly Finding[]): Finding[] {
   for (const finding of findings) {
     const index = clusters.findIndex((canonical) => sameFinding(canonical, finding))
     if (index === -1) {
-      clusters.push(finding)
+      let id = finding.id
+      for (let occurrence = 1; clusters.some((canonical) => canonical.id === id); occurrence++) {
+        id = occurrenceId(finding.id, occurrence)
+      }
+      clusters.push(id === finding.id ? finding : { ...finding, id })
       continue
     }
     const canonical = clusters[index]
@@ -167,9 +198,12 @@ export function clusterFindings(findings: readonly Finding[]): Finding[] {
         ? canonical.anchor.startLine
         : Math.min(canonical.anchor.startLine, finding.anchor.startLine)
     const endLine =
-      canonical.anchor.endLine === undefined || finding.anchor.endLine === undefined
+      canonical.anchor.startLine === undefined || finding.anchor.startLine === undefined
         ? canonical.anchor.endLine
-        : Math.max(canonical.anchor.endLine, finding.anchor.endLine)
+        : Math.max(
+            canonical.anchor.endLine ?? canonical.anchor.startLine,
+            finding.anchor.endLine ?? finding.anchor.startLine,
+          )
     clusters[index] = {
       ...canonical,
       anchor: {

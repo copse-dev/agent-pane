@@ -676,7 +676,19 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     updatePrompt: {
       respond: resolvedVoid,
-      onRequest: subscribe,
+      onRequest: (handler) => {
+        for (const { changelog, buttons, ...rest } of scenario.updatePromptRequests ?? []) {
+          const request = {
+            ...structuredClone(rest),
+            buttons: [...buttons],
+            ...(changelog ? { changelog: changelog.map((entry) => ({ ...entry })) } : {}),
+          }
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onDevNotice: subscribe,
     },
     closeConfirm: {
@@ -882,7 +894,12 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           failed: [],
         }),
     },
+    processManager: {
+      snapshot: () => resolved({ sampledAt: Date.now(), processes: [], activeRunThreadIds: [] }),
+      stopBackground: () => resolved(false),
+    },
     menu: {
+      onProcessManager: subscribe,
       onSettings: subscribe,
       onNewThread: subscribe,
       onTogglePanel: subscribe,
@@ -901,6 +918,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       save: unsupported,
       remove: unsupported,
       test: unsupported,
+      screening: () => resolved(null),
+      setScreening: unsupported,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),
@@ -1012,10 +1031,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       discover: () => resolved([...(scenario.vncDiscoveredPorts ?? [])]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
-      getUsername: () => resolved(null),
+      getUsername: () => resolved(scenario.vncSavedLogin?.username ?? null),
       getPassword: () => resolved(null),
-      hasPassword: () => resolved(false),
-      canStoreCredentials: () => resolved(false),
+      hasPassword: () => resolved(scenario.vncSavedLogin !== undefined),
+      canStoreCredentials: () => resolved(scenario.vncSavedLogin !== undefined),
       rememberUsername: () => resolved(false),
       rememberPassword: () => resolved(false),
       forgetPassword: resolvedVoid,
@@ -1069,6 +1088,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       abortReview: () => resolved(false),
       onChanged: subscribe,
       setThread: () => resolved(null),
+      findByThread: () => resolved(null),
     },
     supervisor: {
       list: () => resolved({ tasks: [] }),

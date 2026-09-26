@@ -107,8 +107,8 @@ jobs:
             exit 1
           fi
           # `gh release create` has no TTY here and refuses to publish without a
-          # body. Generate it from CHANGELOG.md now so a missing or emptied
-          # Unreleased section fails in seconds rather than after notarization.
+          # body. Generate it from CHANGELOG.md now so a missing or empty
+          # `## <version>` section fails in seconds rather than after notarization.
           node scripts/release-notes.mts "$version" > /dev/null
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "release_type=$release_type" >> "$GITHUB_OUTPUT"

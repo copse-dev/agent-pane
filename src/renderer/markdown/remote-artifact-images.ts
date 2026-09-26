@@ -16,7 +16,18 @@ export function hydrateRemoteArtifactImages(
   container: HTMLElement,
   api: { remoteAgent: Pick<ApiClient['remoteAgent'], 'artifactImageDataUrl'> },
 ): void {
-  const agentIdFromThread = threadAgentId(container)
+  // The thread-wide fallback scans every link in the conversation, and this runs
+  // once per rendered message — resolve it only for an image that needs it, so a
+  // long history does not pay a whole-list scan per message.
+  let agentIdFromThread: string | null = null
+  let threadScanned = false
+  const fallbackAgentId = (): string | null => {
+    if (!threadScanned) {
+      agentIdFromThread = threadAgentId(container)
+      threadScanned = true
+    }
+    return agentIdFromThread
+  }
   for (const img of container.querySelectorAll<HTMLImageElement>(
     'img[data-remote-artifact-path]',
   )) {
@@ -27,7 +38,7 @@ export function hydrateRemoteArtifactImages(
       continue
     }
     const path = img.dataset['remoteArtifactPath']
-    const agentId = img.dataset['remoteArtifactAgentId'] ?? agentIdFromThread
+    const agentId = img.dataset['remoteArtifactAgentId'] ?? fallbackAgentId()
     if (!path || !agentId) {
       img.dataset['remoteArtifactState'] = 'missing-agent'
       continue

@@ -281,6 +281,37 @@ describe('tool-display', () => {
     assert.equal(items[1]?.type, 'individual')
     assert.equal(items[1].toolCall.id, '2')
   })
+  it('keeps user-interrupted calls inside the rollup and only failures beside it', () => {
+    const done = tc('1', 'read_file')
+    const interrupted = tc('2', 'read_file', 'error')
+    const failed = tc('3', 'list_dir', 'error')
+    const isInterrupted = (call: ToolCall): boolean => call === interrupted
+    const items = buildToolCallDisplayItems([done, interrupted, failed], { isInterrupted })
+    assert.equal(items.length, 2)
+    assert.deepEqual(
+      rollupChildren(items).map((child) => child.type === 'individual' && child.toolCall.id),
+      ['1', '2'],
+    )
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, '3')
+
+    // A cross-message run applies the same split to its flat rollup.
+    const run = deriveToolRuns([
+      { id: 'a', role: 'assistant', content: '', toolCalls: [done, interrupted] },
+      { id: 'b', role: 'assistant', content: '', toolCalls: [failed] },
+    ])[0]
+    assert.ok(run)
+    assert.equal(run.steps.length, 2)
+    const runItems = buildToolRunDisplayItems(run, { isInterrupted })
+    assert.equal(runItems[0]?.type, 'rollup')
+    assert.equal(runItems[0].key, RUN_ROLLUP_KEY)
+    assert.deepEqual(
+      runItems[0].children.map((child) => child.type === 'individual' && child.toolCall.id),
+      ['1', '2'],
+    )
+    assert.equal(runItems[1]?.type, 'individual')
+    assert.equal(runItems[1].toolCall.id, '3')
+  })
   it('groups repeated failures outside the quiet activity', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__mdn__get_compat', 'error'),

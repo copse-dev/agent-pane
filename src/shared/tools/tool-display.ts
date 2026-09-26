@@ -456,6 +456,21 @@ export function summarizeToolTurn(toolCalls: ToolCall[], items: ToolCallDisplayI
   return base
 }
 
+export interface ToolDisplayOptions {
+  /**
+   * Wrap even a single regular tool so a co-located reasoning trail can nest
+   * inside the italic summary (rather than floating above it).
+   */
+  forceRollup?: boolean
+  /**
+   * Calls the user interrupted. The host records them as errors so the next
+   * model never assumes they completed, but they are not failures to surface:
+   * they stay inside the rollup rather than beside it. Only the renderer knows
+   * the turn outcome that makes this call.
+   */
+  isInterrupted?: (toolCall: ToolCall) => boolean
+}
+
 /**
  * Build the cards for a message's tool calls. Subagent runs stay as top-level
  * cards (they have their own timeline). Everything else collapses into one
@@ -467,9 +482,11 @@ export function summarizeToolTurn(toolCalls: ToolCall[], items: ToolCallDisplayI
  */
 export function buildToolCallDisplayItems(
   toolCalls: ToolCall[],
-  opts?: { forceRollup?: boolean },
+  opts?: ToolDisplayOptions,
 ): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
+  const isVisibleFailure = (tc: ToolCall): boolean =>
+    tc.status === 'error' && opts?.isInterrupted?.(tc) !== true
 
   const subagents: ToolCall[] = []
   const proposals: ToolCall[] = []
@@ -491,13 +508,14 @@ export function buildToolCallDisplayItems(
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
       // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
       // Individual children keep the expanded list flat from its first tool.
       children: regular
-        .filter((tc) => tc.status !== 'error')
+        .filter((tc) => !isVisibleFailure(tc))
         .map((tc) => ({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })),
       toolCalls: regular,
     })
-    result.push(...buildGroupedDisplayItems(regular.filter((tc) => tc.status === 'error')))
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)))
   } else {
     result.push(...grouped)
   }
@@ -546,10 +564,10 @@ export function summarizeToolRun(run: ToolRun): string {
  */
 export function buildToolRunDisplayItems(
   run: ToolRun,
-  opts?: { forceRollup?: boolean },
+  opts?: ToolDisplayOptions,
 ): ToolCallDisplayItem[] {
   if (run.steps.length < 2) return buildToolCallDisplayItems(run.toolCalls, opts)
-  return buildToolCallDisplayItems(run.toolCalls, { forceRollup: true }).map((item) =>
+  return buildToolCallDisplayItems(run.toolCalls, { ...opts, forceRollup: true }).map((item) =>
     item.type === 'rollup' ? { ...item, key: RUN_ROLLUP_KEY, label: summarizeToolRun(run) } : item,
   )
 }

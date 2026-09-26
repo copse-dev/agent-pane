@@ -60,6 +60,17 @@
       "markers": ["wdio.ci.conf.ts: exclude"]
     },
     {
+      "spec": "tests/e2e/git-commit-approval.e2e.ts",
+      "category": "platform",
+      "reason": "The SSH signing advice case requires the macOS project sandbox; the commit approval case still runs on other platforms.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Git and security maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-24",
+      "reviewBy": "2026-10-01",
+      "coverage": "The matcher has cross-platform unit coverage. The visual failed-commit path requires a macOS Electron run.",
+      "markers": ["this.skip"]
+    },
+    {
       "spec": "tests/e2e/git-signing-helper-approval.e2e.ts",
       "category": "platform",
       "reason": "Test drives the macOS scoped SSH signing helper approval flow and skips other platforms.",

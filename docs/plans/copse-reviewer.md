@@ -12,8 +12,8 @@ adversarial challenge, the ranked report, SARIF export and the headless event en
 In the app, the `copse.review` plugin has replaced `copse.model-comparison`: "Review" in
 the Changes view, the "Review changes" bubble and the `review_changes` tool run the same
 pipeline over the thread's checkout and render a findings card, with dismissals persisted
-to the knowledge store (see §What Phase 3 delivered). In CI, the `copse-review` label on a
-pull request runs Stage 0 on a secret-free runner and posts the findings as one review
+to the knowledge store (see §What Phase 3 delivered). In CI, every ready owner pull request
+(and a draft given the `copse-review` label) runs Stage 0 on a secret-free runner and posts the findings as one review
 from a second job whose model process brokers focused validation into a secret-free
 container (see §What Phase 4 delivered). `pnpm run bench:review` scores
 the pipeline for precision on surfaced findings over a corpus of cases with known defects,
@@ -380,6 +380,13 @@ scope.
   no secrets; it fetches the exact resolved head, runs Stage 0, and uploads
   results as an artefact. A fresh handoff job, which checks out and consumes nothing, gets
   only Actions-dispatch permission after Job A succeeds and explicitly dispatches **Job B**.
+  Repeated reviews may reuse a clean Job A report less than 24 hours old for the identical
+  head and merge-base. A separate trusted read-only lookup verifies GitHub producer identity,
+  successful completion, complete check coverage, and unchanged trusted runner/dependency
+  inputs. The source checkout is pinned to the producer's workflow SHA. Lookup failures or
+  uncertain reports fall back to a fresh Job A; `fresh=true` forces it. The handoff names the
+  original producer run, and Job B still validates its metadata and the current PR. Ordinary
+  merge-commit CI results are not treated as exact-head grounding.
   Job B runs on the base ref. Before receiving model or App credentials it builds a trusted
   validation image and primes a read-only dependency store from the exact head lockfile. Its
   trusted model process holds the credentials; brokered focused commands and reproducers run
@@ -432,7 +439,11 @@ Changing one of these requires updating this document in the same change — the
 4. **B4 — Bugs and regressions first.** Findings are limited to the `build`, `type`, `test`,
    `contract`, `security`, `concurrency`, `resource` and `api-compat` classes. No PR
    summaries, no style, and the `docs` class and lens are deferred until precision is
-   measured on the narrow set. Recorded 2026-09-04; answers Q4.
+   measured on the narrow set. Recorded 2026-09-04; answers Q4. _Amended 2026-09-26:_ a
+   description summary (a risk level and a short overview, §PR description summary) is
+   allowed. It is not a finding: it never enters the findings list, the ranking, SARIF or
+   B8's precision measurement, and no lens produces it. Findings stay limited to the classes
+   above; style and the `docs` class stay deferred.
 5. **B5 — TypeScript with pnpm is the only ecosystem for now.** Stage 0's build and test
    detection targets TypeScript/pnpm repositories only; other ecosystems are unscheduled
    until there is a consumer for them. Recorded 2026-09-04; answers Q16.
@@ -609,6 +620,15 @@ base failure inventory. Missing/ambiguous inventories or other doubly-failing ch
 downgraded the same way. Renamed tests can appear as new failures; the report preserves
 both command outputs for inspection. This is failure identity comparison, not proof of causal blame.
 
+Before comparing a failed test command with base, Stage 0 repeats that command once on head,
+inside the same cell and without redoing preparation. Passing or timed-out confirmation leaves
+the result unverified, with both head attempts retained. Where either attempt supplies a complete
+failure inventory, both must supply the same nonempty set of failing identities; changed or
+missing inventories also remain unverified. Stable failures then run on base as before, with the
+confirmation included in finding evidence. Passing head commands never repeat. This reduces
+one-off process failures becoming confirmed regressions; two repeated failures still do not prove
+causal blame. A genuinely failing test command costs one additional head run.
+
 The reporter executes only where the test command already executes (inside the cell for foreign
 reviews). No repository output or test names are promoted into trusted system instructions.
 
@@ -762,9 +782,11 @@ the app-side review service (`src/main/services/review/review-service.ts`, with
 - **The typed chunk (decision 15).** `review_report` carries `ThreadReviewReport` — the
   package report projected for a card: findings flattened with their anchored source, the
   Stage 0 checks and coverage notes, the execution decision, reviewer turns, verification
-  counts, cost — as a running placeholder, then the report or an error. It is persisted on
-  the thread as `reviewReport` (metadata, like the retired `comparison`) and rendered from
-  that data alone, so a report keeps rendering after the plugin is disabled (decision 17).
+  counts, cost — as a running placeholder, then the report or an error. New reports are
+  persisted on the assistant message for the reviewed turn, so separate turns retain
+  separate cards in transcript order. Threads with no assistant message keep the report
+  on thread metadata; earlier thread-level reports remain readable there. Both forms
+  render from saved data after the plugin is disabled (decision 17).
   No review starts a machine turn, so decision 5's budget is untouched.
 - **The findings card.** Ranked rows — severity, class, `path:line`, the claim, the
   verdict ("confirmed by reproducer", "survived challenge", "unverified") — each a
@@ -834,10 +856,17 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   run, holding no secrets, discarded after. It is an assertion the caller makes about
   where it runs, never a detection, and the conformance test holds it to what it
   guarantees inside the process (a scrubbed environment, `HOME` and `TMPDIR` in the cell).
+  "Holding no secrets" is not the whole of it: the job still carries an Actions runtime
+  token (which `permissions: {}` does not remove) into the later steps the runner user
+  executes, and that user owns those actions and has sudo. The CI shell therefore runs the
+  CLI as a separate unprivileged user that cannot reach the runner's home
+  (`packages/review/ci/ground-as-cell-user.sh`), and kills everything that user owns before
+  the upload step.
 - **The CI shell, in two privilege domains.** `review-ground.yml` uses
   a separate `workflow_dispatch` from `review-trigger.yml`. The trigger uses
-  `pull_request_target:labeled`, only for the `copse-review` label, so its definition comes from
-  the trusted default branch even when the pull request predates it. (`issues:labeled` does not
+  `pull_request_target` (`opened`, `reopened` and `ready_for_review` for a non-draft pull request;
+  `labeled` for the `copse-review` label; never for one labelled `copse-review-skip`), so its
+  definition comes from the trusted default branch even when the pull request predates it. (`issues:labeled` does not
   fire for pull requests, while `pull_request:labeled` selects the pull request revision.) The
   target context is deliberately confined to resolving current PR metadata and dispatching the
   ground workflow: it checks out and executes no repository content. Grounding gets the PR
@@ -891,8 +920,9 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   `COPSE_REVIEW_PR_PROFILE=configured` rolls both paths back to the retained
   `COPSE_REVIEW_PROVIDER`, `COPSE_REVIEW_MODEL`, and `COPSE_REVIEW_BASE_URL` variables
   (the Scaleway `qwen3.8-27b` route). The benchmark profile remains separately selectable.
-  A separate schedule samples no more than one recent, unlabelled same-repository pull
-  request per night, including drafts; `copse-review-skip` is the opt-out. Both paths run the trusted default-branch CLI,
+  A separate schedule samples no more than one recent, unlabelled same-repository draft pull
+  request per night (ready ones are reviewed when they become ready); `copse-review-skip` is the
+  opt-out. Both paths run the trusted default-branch CLI,
   preserve the secret-free Stage 0 / container-backed focused-validation boundary, post `COMMENT` reviews
   only, and retain JSON plus SARIF for 30 days. This is explicit remote processing: the
   secret-redacted diff and file context leave the GitHub runner for the selected provider. Human
@@ -900,6 +930,14 @@ CI shell needs (`stage0-report.ts`, `forge-review.ts`) and the workflows
   rollout; making the reviewer required needs a separate decision backed by that record.
   Dogfood acceptance is operational evidence, not the Martian offline measurement B8
   requires for the public 85% precision claim.
+- **Bound Luna's reply size.** _Added 2026-09-25._ The OpenRouter Luna reviewer requests
+  an 8,192-token output ceiling per response, covering hidden reasoning as well as tool
+  calls and text. A small live PR consumed 68,153 output tokens before an upstream 429
+  ended the review; the step budget alone cannot bound a provider's hidden reasoning.
+  Discovery, challenge and reproduction share this ceiling, while reasoning effort,
+  privacy routing and other models retain their existing settings. This is a response
+  budget, not a whole-review spending limit. Completion validation still prevents an
+  unfinished review from being called clean, and provider throttling can still fail a run.
 - **Streamed rate limits need time to clear.** _Added 2026-09-24 after the Luna rollout._
   Two live attempts exhausted HTTP-200 SSE 429 retries in roughly ten seconds. Recognized
   statusless SDK 429 errors now use 10/20/40-second fallback delays plus up to 10% jitter,
@@ -1148,7 +1186,7 @@ that setting; it does not transfer to the offline track. Price floor for context
 free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic managed review
 in the tens of dollars.
 
-**Where this design is weaker.** Table stakes it lacks: PR summaries, inline suggested
+**Where this design is weaker.** Table stakes it lacks: inline suggested
 changes, one-click fix, learnings, four-forge support, two-click install. Cost, because
 verification is the expensive stage. Latency, because ninety seconds is unreachable if the
 suite runs. Codebase context, where Greptile's graph is a real advantage on large repos. And
@@ -1335,3 +1373,62 @@ model calls/waiting, including 135.4s of scheduled waits after ten streamed 429s
 which is an overlap opportunity, not a promised saving under increased load.
 Compare the subsequent protected live run's elapsed time, per-turn overlap,
 provider metadata, retry count and proof quality before claiming a speedup.
+
+### Freeze review source before execution (September 2026)
+
+Materialisation now copies the head, including intentional tracked and untracked author
+changes, to a separate input directory before any preparation or checks run. The directory
+is a sibling of the execution scratch directory and is never mounted writable into the
+cell. Context, instructions, test discovery, model source/search/diff reads and finding
+anchors use that snapshot; commands and reproducers retain the writable execution copies.
+Cleanup removes the snapshot with the review. This prevents a formatter, test or hostile
+check from rewriting what the later reviewer sees. It does not turn the explicitly
+unisolated host backend into a security boundary.
+
+Posted model prose preserves only complete code spans on one line and escapes other
+backticks, backslashes, HTML and mentions. Multiline or unmatched delimiters cannot expose
+an HTML comment or start a fence that consumes the rest of a finding. This deliberately
+normalizes malformed/multiline code formatting while retaining ordinary inline code.
+
+### PR description summary (2026-09-26)
+
+Bugbot and similar reviewers keep a short summary at the bottom of the pull request's
+description: a risk level with one sentence of reasoning, an overview of what the change does,
+and a footer naming the commit, between HTML-comment markers so each run replaces it in place.
+Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as amended.
+
+- **Shape.** `packages/review/src/pr-summary.ts` renders a `> [!NOTE]` block between
+  `<!-- copse-review-summary -->` and `<!-- /copse-review-summary -->`: **Low**, **Medium**
+  or **High risk** and the reason, **Overview** as up to five points, and a footer naming the
+  commit and, when a review accompanies it, how many issues that review reported.
+- **Ownership.** Only the block the tool wrote is replaced: the last start marker whose next
+  marker is the end marker, each a whole line outside fenced code, with exactly the rendered
+  shape between them and a hidden digest line that still matches that text. A marker quoted
+  in prose or a code fence, a marker pair the author wrote, or a block the author edited,
+  even one reworded sentence, is the author's text and is kept, and a new block is appended
+  at the bottom. Nothing else in the description changes.
+- **Generation.** One tool-free model turn over the Stage 1 context that must end in
+  `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
+  describe, not review. It reuses the review's model route; it adds no new trust boundary.
+- **Grounding.** The model proposes the level; evidence can only raise it. A surfaced high or
+  critical finding makes it High, any surfaced finding makes Low into Medium, and the block
+  says why. Stage 0's regressions are findings, so they count.
+- **Inertness.** Every model-written line goes through the same `inertMarkdown` as review
+  comments and is flattened to one quoted line. `<` becomes `&lt;`, so a diff that steers
+  the model cannot forge the end marker, hide the author's text or mention anyone.
+- **Freshness.** The review runs when a pull request opens or becomes ready. The summary runs
+  on every push too, through `review-summary.yml` (`--summary-only`: read-only checkouts, no
+  Stage 0, nothing executed). The findings job also passes `--post-summary`, so a finished
+  review rewrites the summary with its evidence. Every write first reads the pull request and
+  skips when its head is no longer the summarised commit, so a slow review cannot overwrite
+  a newer push's summary. A summary-only run also skips when a full review has already
+  summarised the same commit, so a push-time summary that finishes late cannot discard the
+  review's evidence.
+- **Limits.** The forge has no conditional update for a description, so an author's edit
+  landing between the read and the write is lost, as is the earlier of two runs that write
+  within the same round trip. A tool that
+  replaces the whole description (`gh pr edit --body-file`) deletes the block until the next
+  push. The trigger acts only on the owner's own pushes, so after a bot or another identity
+  pushes, the summary names the older commit until the owner pushes again. When Stage 1
+  starts reading the description (§Pipeline), it must strip this block first, or the
+  reviewer will read its own summary as the author's intent.

@@ -14,7 +14,19 @@ const MARK: Record<CheckOutcome['verdict'], string> = {
   'not-run': '–',
 }
 
-export function renderStage0Report(report: Stage0Report): string {
+export interface Stage0RenderOptions {
+  /**
+   * Stage 0 as one section of a full review. "Clean." is a verdict on the
+   * whole review, which Stage 0 alone cannot give while reviewers are still
+   * to be reported, so the section states only its own result.
+   */
+  readonly withinReview?: boolean
+}
+
+export function renderStage0Report(
+  report: Stage0Report,
+  options: Stage0RenderOptions = {},
+): string {
   const lines: string[] = []
   const { decision } = report.execution
   lines.push(
@@ -36,9 +48,9 @@ export function renderStage0Report(report: Stage0Report): string {
   }
 
   if (report.findings.length === 0 && report.coverage.notChecked.length === 0) {
-    lines.push('Clean.')
+    lines.push(options.withinReview ? 'Stage 0: no regressions.' : 'Clean.')
   } else if (report.findings.length === 0) {
-    lines.push('No findings.')
+    lines.push(options.withinReview ? 'Stage 0: no findings.' : 'No findings.')
   } else {
     lines.push(`${String(report.findings.length)} finding(s):`)
     report.findings.forEach((finding, index) => {
@@ -88,7 +100,7 @@ function findingLines(finding: Finding, index: number): string[] {
 
 /** The terminal projection of a full review: Stage 0, the reviewers, verification, the ranked list. */
 export function renderReviewReport(report: ReviewReport): string {
-  const lines: string[] = [renderStage0Report(report.stage0)]
+  const lines: string[] = [renderStage0Report(report.stage0, { withinReview: true })]
   const incompleteReviews = report.reviews.filter((review) => review.outcome !== 'completed')
   const limitations = reviewerLimitations(report.reviews)
   for (const review of report.reviews) {

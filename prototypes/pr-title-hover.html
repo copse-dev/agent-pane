@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse · PR title hover</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #1e201e;
+        --sidebar: #202321;
+        --surface: #292b29;
+        --surface-hover: #303330;
+        --border: #424643;
+        --text: #e0dfdf;
+        --secondary: #aaaead;
+        --muted: #838987;
+        --accent: #ff9fcf;
+        --link: #e9b8d0;
+        --shadow: 0 14px 40px rgba(0, 0, 0, 0.42), 0 3px 10px rgba(0, 0, 0, 0.2);
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg: #fafaf7;
+        --sidebar: #f2f4f0;
+        --surface: #fffefa;
+        --surface-hover: #f4f2f0;
+        --border: #d9ddd7;
+        --text: #252b27;
+        --secondary: #5e6661;
+        --muted: #79827b;
+        --accent: #9c3369;
+        --link: #963b68;
+        --shadow: 0 14px 40px rgba(36, 48, 36, 0.15), 0 3px 10px rgba(36, 48, 36, 0.09);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        font: inherit;
+      }
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 224px minmax(0, 1fr);
+      }
+      .sidebar {
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        padding: 18px 12px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 10px 23px;
+        font-weight: 730;
+        font-size: 18px;
+        letter-spacing: -0.035em;
+      }
+      .mark {
+        width: 19px;
+        height: 19px;
+        border: 5px solid #ff9fc5;
+        border-left-color: transparent;
+        transform: rotate(-45deg);
+        border-radius: 4px 8px 4px 8px;
+      }
+      .nav-label {
+        padding: 14px 12px 7px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .nav-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 6px;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .nav-row.active {
+        background: var(--surface-hover);
+        color: var(--text);
+        font-weight: 620;
+      }
+      .nav-ico {
+        width: 14px;
+        text-align: center;
+        font-size: 14px;
+        opacity: 0.75;
+      }
+      .nav-spacer {
+        height: 17px;
+      }
+      .thread-row {
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--secondary);
+        line-height: 1.35;
+      }
+      .thread-row.active {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+      .thread-meta {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .main {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .topbar {
+        height: 51px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+        padding: 0 28px;
+      }
+      .crumb {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .crumb strong {
+        color: var(--text);
+        font-weight: 650;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .theme {
+        color: var(--secondary);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 9px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .theme:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+      .conversation {
+        width: min(100%, 820px);
+        margin: 0 auto;
+        padding: 38px 42px 80px;
+      }
+      .user-message {
+        margin: 0 0 34px auto;
+        padding: 12px 16px;
+        width: fit-content;
+        max-width: 72%;
+        background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+        border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+        border-radius: 10px;
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .reasoned {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background:
+          repeating-linear-gradient(
+            135deg,
+            transparent 0 15px,
+            color-mix(in srgb, var(--accent) 17%, transparent) 15px 16px
+          ),
+          var(--surface);
+        padding: 16px 21px 18px;
+        margin-bottom: 43px;
+        min-height: 112px;
+      }
+      .reasoned-label {
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 650;
+      }
+      .triangle {
+        font-size: 10px;
+        transform: rotate(90deg);
+      }
+      .reasoned-text {
+        margin: 17px 0 0;
+        color: var(--secondary);
+        font-size: 14px;
+        font-weight: 650;
+      }
+      .tools {
+        margin: 0 0 28px;
+        color: var(--secondary);
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .response {
+        font-size: 17px;
+        line-height: 1.63;
+        letter-spacing: -0.018em;
+        max-width: 720px;
+      }
+      .response p {
+        margin: 0 0 15px;
+      }
+      .pr-link {
+        color: var(--link);
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+        cursor: pointer;
+        border-radius: 2px;
+      }
+      .pr-link:hover {
+        color: var(--accent);
+      }
+      .pr-link:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 4px;
+      }
+      .muted-paragraph {
+        color: var(--secondary);
+        font-size: 14px;
+        line-height: 1.6;
+        margin-top: 29px !important;
+      }
+      .preview {
+        position: fixed;
+        z-index: 20;
+        width: min(340px, calc(100vw - 28px));
+        padding: 12px 14px 13px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        box-shadow: var(--shadow);
+        opacity: 0;
+        transform: translateY(4px);
+        pointer-events: none;
+        transition:
+          opacity 0.12s ease,
+          transform 0.12s ease;
+      }
+      .preview.open {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+      .preview-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--secondary);
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      .pr-icon {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        color: var(--secondary);
+      }
+      .preview-kind {
+        flex: 1;
+        min-width: 0;
+      }
+      .draft {
+        color: var(--secondary);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 1px 6px;
+        font-size: 10px;
+      }
+      .preview-title {
+        font-size: 14px;
+        line-height: 1.38;
+        font-weight: 650;
+        margin: 8px 0 7px;
+        overflow-wrap: anywhere;
+      }
+      .preview-title.loading {
+        color: var(--secondary);
+        font-weight: 500;
+      }
+      .preview-foot {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .hint {
+        margin-top: 56px;
+        border-top: 1px solid var(--border);
+        padding-top: 18px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .hint strong {
+        color: var(--secondary);
+        font-weight: 600;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .preview {
+          transition: none;
+        }
+      }
+      @media (max-width: 760px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          display: none;
+        }
+        .topbar {
+          padding: 0 18px;
+        }
+        .conversation {
+          padding: 27px 20px 60px;
+        }
+        .response {
+          font-size: 16px;
+        }
+        .reasoned {
+          margin-bottom: 31px;
+        }
+        .hint {
+          margin-top: 43px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" aria-label="Workspace navigation">
+        <div class="brand"><span class="mark" aria-hidden="true"></span>Copse</div>
+        <div class="nav-label">Workspace</div>
+        <div class="nav-row"><span class="nav-ico">⌕</span> Search</div>
+        <div class="nav-row"><span class="nav-ico">◇</span> Files</div>
+        <div class="nav-row active"><span class="nav-ico">◧</span> Conversations</div>
+        <div class="nav-row"><span class="nav-ico">⑂</span> Pull requests</div>
+        <div class="nav-spacer"></div>
+        <div class="nav-label">Recent threads</div>
+        <div class="thread-row active">
+          Chat prompt interruption<span class="thread-meta">copse-panel · just now</span>
+        </div>
+        <div class="thread-row">
+          Markdown preview sizing<span class="thread-meta">copse-panel · yesterday</span>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div class="crumb">
+            <span>copse-panel</span><span>›</span><strong>Chat prompt interruption</strong>
+          </div>
+          <button class="theme" id="theme" type="button" aria-label="Toggle light and dark theme">
+            Switch theme
+          </button>
+        </header>
+        <section class="conversation" aria-label="Conversation">
+          <div class="user-message">
+            Finish the chat-prompt interruption change and open a draft PR.
+          </div>
+          <div class="reasoned">
+            <div class="reasoned-label"><span class="triangle">▶</span> Reasoned</div>
+            <p class="reasoned-text">Waiting for approval</p>
+          </div>
+          <div class="tools">Used 6 tools · 5 steps</div>
+          <div class="response">
+            <p>
+              I opened
+              <a
+                class="pr-link"
+                href="https://github.com/copse-app/copse-panel/pull/3040"
+                data-pr="3040"
+                aria-describedby="pr-preview"
+                >draft PR #3040</a
+              >
+              for the chat-prompt interruption change. The branch is rebased and the commit is
+              signed.
+            </p>
+            <p class="muted-paragraph">
+              The focused checks passed. I also linked
+              <a
+                class="pr-link"
+                href="https://github.com/copse-app/copse-panel/pull/3038"
+                data-pr="3038"
+                aria-describedby="pr-preview"
+                >PR #3038</a
+              >
+              in the follow-up notes.
+            </p>
+          </div>
+          <div class="hint">
+            <strong>Try it:</strong> Hover or focus either PR link. #3040 has a title ready; #3038
+            loads once, then uses the cached title on later hovers. Tap a link on narrow screens.
+          </div>
+        </section>
+      </main>
+    </div>
+    <div id="pr-preview" class="preview" role="tooltip" aria-hidden="true">
+      <div class="preview-head">
+        <svg class="pr-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="4" cy="3" r="1.5" stroke="currentColor" stroke-width="1.3" />
+          <circle cx="4" cy="13" r="1.5" stroke="currentColor" stroke-width="1.3" />
+          <circle cx="12" cy="13" r="1.5" stroke="currentColor" stroke-width="1.3" />
+          <path
+            d="M4 4.5v7M12 11.5V8.8a3 3 0 0 0-3-3H8M8 3.8 6 5.8l2 2"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span class="preview-kind" id="preview-kind">Pull request #3040</span>
+        <span class="draft" id="draft">Draft</span>
+      </div>
+      <div class="preview-title" id="preview-title"></div>
+      <div class="preview-foot">copse-app / copse-panel</div>
+    </div>
+    <script>
+      ;(() => {
+        const preview = document.getElementById('pr-preview')
+        const previewTitle = document.getElementById('preview-title')
+        const previewKind = document.getElementById('preview-kind')
+        const draft = document.getElementById('draft')
+        const links = [...document.querySelectorAll('.pr-link')]
+        const titles = new Map([['3040', 'Preserve chat prompts when approval interrupts a turn']])
+        const remoteTitles = { 3038: 'Improve Markdown preview sizing in conversation' }
+        let active = null
+        let hideTimer = 0
+        let requestToken = 0
+
+        function position() {
+          if (!active) return
+          const box = active.getBoundingClientRect()
+          const width = preview.offsetWidth
+          const height = preview.offsetHeight
+          let left = Math.max(14, Math.min(box.left, innerWidth - width - 14))
+          let top = box.bottom + 11
+          if (top + height > innerHeight - 12 && box.top > height + 14) top = box.top - height - 11
+          preview.style.left = left + 'px'
+          preview.style.top = Math.max(12, top) + 'px'
+        }
+        function show(link) {
+          clearTimeout(hideTimer)
+          active = link
+          const number = link.dataset.pr
+          const token = ++requestToken
+          previewKind.textContent = 'Pull request #' + number
+          draft.hidden = number !== '3040'
+          if (titles.has(number)) {
+            previewTitle.textContent = titles.get(number)
+            previewTitle.classList.remove('loading')
+          } else {
+            previewTitle.textContent = 'Loading title…'
+            previewTitle.classList.add('loading')
+            setTimeout(() => {
+              titles.set(number, remoteTitles[number])
+              if (token === requestToken && active === link) {
+                previewTitle.textContent = titles.get(number)
+                previewTitle.classList.remove('loading')
+                position()
+              }
+            }, 650)
+          }
+          preview.classList.add('open')
+          preview.setAttribute('aria-hidden', 'false')
+          requestAnimationFrame(position)
+        }
+        function scheduleHide() {
+          clearTimeout(hideTimer)
+          hideTimer = setTimeout(() => {
+            active = null
+            ++requestToken
+            preview.classList.remove('open')
+            preview.setAttribute('aria-hidden', 'true')
+          }, 150)
+        }
+        links.forEach((link) => {
+          link.addEventListener('mouseenter', () => show(link))
+          link.addEventListener('focus', () => show(link))
+          link.addEventListener('mouseleave', scheduleHide)
+          link.addEventListener('blur', scheduleHide)
+          link.addEventListener('click', (event) => {
+            event.preventDefault()
+            if (active === link && preview.classList.contains('open')) scheduleHide()
+            else show(link)
+          })
+        })
+        preview.addEventListener('mouseenter', () => clearTimeout(hideTimer))
+        preview.addEventListener('mouseleave', scheduleHide)
+        document.addEventListener('pointerdown', (event) => {
+          if (!event.target.closest('.pr-link, .preview')) scheduleHide()
+        })
+        addEventListener('resize', position)
+        addEventListener('scroll', position, true)
+        document.getElementById('theme').addEventListener('click', () => {
+          const root = document.documentElement
+          root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light'
+          position()
+        })
+        setTimeout(() => show(links[0]), 180)
+      })()
+    </script>
+  </body>
+</html>

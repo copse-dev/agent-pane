@@ -1,9 +1,12 @@
 import { el, clear } from '../dom/helpers.ts'
+import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
+import { chatAgentIdentity, customAgentId, namedAgentTitles } from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
   checkIcon,
   closeIcon,
+  gitBranchIcon,
   moreHorizontalIcon,
   warningIcon,
   zapIcon,
@@ -49,6 +52,8 @@ import { attachTableCopyButtons } from '../markdown/table-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { renderMermaidIn } from '../markdown/mermaid.ts'
 import { StreamingMarkdownRenderer } from '@copse/streaming-markdown'
+import { createInputSmoother, type InputSmoother } from '@copse/streaming-markdown/smoothing'
+import { createFrameLoop } from './frame-loop.ts'
 import { annotateFileReferences, bindFileReferenceClicks } from '../markdown/file-links.ts'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -73,13 +78,21 @@ import {
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
+import {
+  acpWorkspaceRoot,
+  hydrateAcpResourceImages,
+  replaceAcpResourceBlock,
+  syncAcpResourceReferences,
+  workspaceDisplayPath,
+  workspaceResourceFilePath,
+} from './acp-resource-previews.ts'
+import { computeLineDiff, foldLineDiff } from '@shared/diff/line-diff.ts'
 import { attachTextExpand } from '../attachments/text-expand.ts'
 import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
 import {
-  aggregateToolStatus,
   buildSubagentDisplayItems,
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
@@ -90,7 +103,9 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { toolRunForMessage, type ToolRun } from '@shared/tools/tool-runs.ts'
+import { isHostInterruptedToolCall } from '@shared/tools/tool-interruption.ts'
 import { navigateToChange } from '../controller/panels.ts'
+import { mountThreadRoadmapOrigin } from './thread-roadmap-origin.ts'
 import { hydrationFailed, needsHydration } from '../controller/thread-hydration.ts'
 import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
@@ -109,6 +124,7 @@ import {
   startReview,
 } from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
+import { mcpErrorMessage } from './tool-error-format.ts'
 import {
   createThreadProposalToolCard,
   isThreadProposalCall,
@@ -132,8 +148,79 @@ import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
+import { trimSelectionText } from '../dom/markdown-quote.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 
-function statusIcon(status: ToolCall['status']): SVGSVGElement {
+type ToolCardStatus = ToolCall['status'] | 'interrupted'
+type InterruptionCause = 'message' | 'user'
+
+// The host records cancelled ACP calls as errors so the next model does not
+// assume they completed. Their transcript presentation can still distinguish a
+// user interruption from a tool failure using the turn outcome.
+const userInterruptedCalls = new WeakMap<ToolCall, InterruptionCause>()
+
+function markUserInterruptedCalls(thread: Thread | undefined): void {
+  if (!thread) return
+  let turnCalls: ToolCall[] = []
+  for (const [index, message] of thread.messages.entries()) {
+    if (message.role !== 'assistant') turnCalls = []
+    else turnCalls.push(...message.toolCalls)
+    if (!message.turnOutcome) continue
+    const next = thread.messages[index + 1]
+    // Send-now queues the human bubble before the abort settles. A prompt sent
+    // after an explicit Stop is also adjacent in the saved transcript, but its
+    // timestamp is later and must not be blamed for the earlier interruption.
+    const humanPrompt =
+      next?.role === 'user' &&
+      next.origin === undefined &&
+      next.createdAt <= message.turnOutcome.endedAt
+    for (const call of turnCalls) {
+      if (!isHostInterruptedToolCall(call)) continue
+      if (
+        message.turnOutcome.status === 'cancelled' &&
+        message.turnOutcome.source === 'user' &&
+        !(next?.role === 'user' && next.origin !== undefined)
+      ) {
+        userInterruptedCalls.set(call, humanPrompt ? 'message' : 'user')
+      } else {
+        userInterruptedCalls.delete(call)
+      }
+    }
+    turnCalls = []
+  }
+}
+
+function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
+  if (toolCalls.some((call) => call.status === 'running')) return 'running'
+  if (toolCalls.some((call) => call.status === 'error' && !userInterruptedCalls.has(call))) {
+    return 'error'
+  }
+  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return 'interrupted'
+  return 'done'
+}
+
+function interruptionLabel(call: ToolCall): string {
+  return userInterruptedCalls.get(call) === 'message'
+    ? 'Interrupted when you sent a new message.'
+    : 'Interrupted by you.'
+}
+
+function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[]): void {
+  const interrupted = calls.find((call) => userInterruptedCalls.has(call))
+  const current = body.querySelector<HTMLElement>(':scope > .tool-interruption-note')
+  if (!interrupted) {
+    current?.remove()
+    return
+  }
+  const label = interruptionLabel(interrupted)
+  if (current) current.textContent = label
+  else body.prepend(el('div', { class: 'tool-interruption-note' }, label))
+}
+
+function statusIcon(status: ToolCardStatus): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
   if (status === 'error') return closeIcon('ui-icon ui-icon-sm')
   return moreHorizontalIcon('ui-icon ui-icon-sm')
@@ -155,6 +242,7 @@ function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
 
 function createToolResultSection(
   result: string | null,
+  status: ToolCall['status'],
   format?: 'markdown',
   showEmptyState = false,
 ): HTMLElement {
@@ -162,6 +250,18 @@ function createToolResultSection(
     return showEmptyState
       ? el('div', { class: 'tool-result tool-result-empty' }, 'No tool details were provided.')
       : el('div', { class: 'tool-result' })
+  }
+  const errorMessage = status === 'error' ? mcpErrorMessage(result) : null
+  if (errorMessage) {
+    const paragraphs = errorMessage
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    return el(
+      'div',
+      { class: 'tool-result tool-result-error-message' },
+      ...paragraphs.map((line) => el('p', {}, line)),
+    )
   }
   // ACP tool output is agent-authored Markdown — render it through the same
   // pipeline as assistant messages so fenced code, lists and prose display
@@ -191,7 +291,7 @@ function createToolLocationsSection(locations: ToolCall['locations']): HTMLEleme
 
 function createToolHeader(
   label: string,
-  status: ToolCall['status'],
+  status: ToolCardStatus,
   summaryClass: string,
   count?: number,
   editStats?: ToolCall['editStats'],
@@ -292,7 +392,7 @@ function appendStandardToolSections(
 ): void {
   const header = createToolHeader(
     label,
-    tc.status,
+    cardStatus([tc]),
     summaryClass,
     count,
     tc.editStats,
@@ -303,8 +403,12 @@ function appendStandardToolSections(
     const argsSection = createToolArgsSection(tc.args)
     card.append(
       ...appendIfPresent(argsSection),
+      ...(userInterruptedCalls.has(tc)
+        ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
+        : []),
       createToolResultSection(
         tc.result,
+        tc.status,
         tc.resultFormat,
         argsSection === null && tc.status !== 'running',
       ),
@@ -371,7 +475,11 @@ function createCanvasPreviewSection(tc: ToolCall, threadId: string): HTMLElement
 const toolResultContentSignatures = new WeakMap<HTMLElement, string>()
 
 /** Keep rich tool output beside the collapsed card that represents it. */
-function syncToolResultContent(msgEl: HTMLElement, toolCalls: readonly ToolCall[]): void {
+function syncToolResultContent(
+  msgEl: HTMLElement,
+  toolCalls: readonly ToolCall[],
+  workspaceRoot: string | null,
+): void {
   const previewImageDataUrls = new Set(
     toolCalls.flatMap((toolCall) =>
       (toolCall.images ?? [])
@@ -401,12 +509,13 @@ function syncToolResultContent(msgEl: HTMLElement, toolCalls: readonly ToolCall[
   const signature = renderSignature({
     content: visible,
     previewImageDataUrls: [...previewImageDataUrls],
+    workspaceRoot,
   })
   let rendered = current
   if (!rendered || toolResultContentSignatures.get(rendered) !== signature) {
-    rendered = createToolResultContent(visible, previewImageDataUrls)
+    rendered = createToolResultContent(visible, previewImageDataUrls, workspaceRoot)
     toolResultContentSignatures.set(rendered, signature)
-    if (current) current.replaceWith(rendered)
+    if (current) replaceAcpResourceBlock(current, rendered)
     else msgEl.append(rendered)
   }
 
@@ -492,7 +601,7 @@ function createIndividualToolCard(
   const card = el('details', {
     class: 'tool-card',
     'data-tool-id': tc.id,
-    'data-status': tc.status,
+    'data-status': cardStatus([tc]),
   })
   appendStandardToolSections(card, tc, label, 'tool-card-header')
   onToolCardBodyBuilt(card, () => {
@@ -521,7 +630,7 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
   const entry = el('details', {
     class: 'tool-group-item subagent-inner-tool',
     'data-tool-id': tc.id,
-    'data-status': tc.status,
+    'data-status': cardStatus([tc]),
   })
   appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
   // File paths in the result become clickable links, but that pass needs the
@@ -536,6 +645,14 @@ function createInnerToolCard(tc: ToolCall, api: ApiClient): HTMLDetailsElement {
 // `.message-text` element so re-entrant token events reuse the same DOM regions
 // instead of rebuilding the whole message innerHTML each token (O(n²)).
 const streamingRenderers = new WeakMap<HTMLElement, StreamingMarkdownRenderer>()
+// Streamed text reaches `.message-text` through the package's input smoother,
+// one frame at a time, so the transcript learns about each paint and the
+// deferred final render through these events rather than at the call site.
+const streamSmoothers = new WeakMap<HTMLElement, InputSmoother>()
+/** A paced frame of streamed text landed in this `.message-text`. Bubbles. */
+const STREAM_PAINT_EVENT = 'copse:stream-paint'
+/** A paced stream finished revealing and took its final render. Bubbles. */
+const STREAM_SETTLED_EVENT = 'copse:stream-settled'
 
 /**
  * Cursor ACP may append a trailing `Error: RetriableError: …` transport line
@@ -584,6 +701,36 @@ function flushPendingAcpTransportNoise(messageTextEl: HTMLElement): void {
   syncAcpTransportNoiseDisclosure(messageTextEl, pending)
 }
 
+function paintStreamingMarkdown(el: HTMLElement, display: string): void {
+  let renderer = streamingRenderers.get(el)
+  if (!renderer) {
+    renderer = new StreamingMarkdownRenderer(el)
+    streamingRenderers.set(el, renderer)
+  }
+  renderer.update(display)
+  attachCodeBlockCopyButtons(el, { runCommands: true })
+}
+
+function streamSmootherFor(el: HTMLElement, display: string): InputSmoother {
+  const existing = streamSmoothers.get(el)
+  if (existing) return existing
+  // Text already on screen — a message rebuilt mid-stream — stays put; only
+  // what arrives from now on is paced. A fresh bubble paces from its start.
+  const shown = el.hasChildNodes() ? display : ''
+  if (shown) paintStreamingMarkdown(el, shown)
+  const smoother = createInputSmoother({
+    update: (text) => {
+      paintStreamingMarkdown(el, text)
+      el.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }))
+    },
+    // Follow the provider's own rate: a steady reveal a little behind it.
+    cadence: 'adaptive',
+    initial: shown,
+  })
+  streamSmoothers.set(el, smoother)
+  return smoother
+}
+
 function setAssistantMarkdown(
   el: HTMLElement,
   content: string,
@@ -593,15 +740,23 @@ function setAssistantMarkdown(
   const { body: display, transportNoise } = assistantDisplayParts(content)
   if (streaming) {
     el.classList.add('is-streaming')
-    let renderer = streamingRenderers.get(el)
-    if (!renderer) {
-      renderer = new StreamingMarkdownRenderer(el)
-      streamingRenderers.set(el, renderer)
-    }
-    renderer.update(display)
-    attachCodeBlockCopyButtons(el, { runCommands: true })
+    streamSmootherFor(el, display).push(display)
     // Demote as soon as the trailing line is complete; keep collapsed while live.
     syncAcpTransportNoiseDisclosure(el, transportNoise)
+    return
+  }
+  const smoother = streamSmoothers.get(el)
+  if (smoother) {
+    // Let the reveal catch up before the final render replaces the scaffold,
+    // so the end of the answer doesn't arrive in one pop. A later call pushes
+    // again, which voids this settle in favour of its own content.
+    smoother.push(display)
+    smoother.finish(() => {
+      smoother.dispose()
+      streamSmoothers.delete(el)
+      setAssistantMarkdown(el, content, false, api)
+      el.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }))
+    })
     return
   }
   // Final render: replace the incremental scaffold with the finished markdown.
@@ -704,6 +859,19 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
   if (tc.status === 'running' || session.status === 'running') return 'running'
   if (session.status === 'error' || tc.status === 'error') return 'error'
   return 'done'
+}
+
+// Marks a subagent card's own row as delegated work, not the parent's — the
+// same glyph `thread-proposal-card.ts` uses for a proposal's own checkout
+// (git-branch: "splits off and runs beside this thread"). Lives in the
+// `<summary>` itself so the mark survives collapse, which is the only state
+// most subagent rows are ever seen in (#2452).
+function subagentHeaderMarker(): HTMLElement {
+  return el(
+    'span',
+    { class: 'tool-subagent-marker', 'aria-label': 'Subagent', 'data-tooltip': 'Subagent' },
+    gitBranchIcon('ui-icon ui-icon-sm'),
+  )
 }
 
 // Which model ran this subagent — the whole point of local routing is invisible
@@ -882,7 +1050,9 @@ function populateSubagentCard(
     if (node !== timeline) node.remove()
   }
 
-  card.append(createToolHeader(label, status, 'tool-card-header'))
+  const header = createToolHeader(label, status, 'tool-card-header')
+  header.querySelector('.tool-name')?.before(subagentHeaderMarker())
+  card.append(header)
 
   const badge = subagentModelBadge(session)
   if (badge) card.append(badge)
@@ -962,7 +1132,7 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
 function createGroupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'group' }>,
 ): HTMLDetailsElement {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-group',
     'data-group-key': item.key,
@@ -977,10 +1147,10 @@ function createGroupToolCard(
     const entry = el('details', {
       class: 'tool-group-item',
       'data-tool-id': tc.id,
-      'data-status': tc.status,
+      'data-status': cardStatus([tc]),
     })
     appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
-    toolGroupItemSignatures.set(entry, renderSignature(tc))
+    toolGroupItemSignatures.set(entry, toolCallSignature(tc))
     groupItems.append(entry)
   }
 
@@ -997,7 +1167,7 @@ function createRollupToolCard(
   threadId: string,
   store?: AppStore,
 ): HTMLDetailsElement {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-rollup',
     'data-rollup-key': item.key,
@@ -1015,6 +1185,7 @@ function createRollupToolCard(
     toolCardSignatures.set(childCard, toolCardSignature(child))
     body.append(childCard)
   }
+  syncRollupInterruptionNote(body, item.toolCalls)
   card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
   return card
 }
@@ -1049,8 +1220,16 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // calls are plain JSON, so a stringify captures args/result/status/subagent —
 // digested rather than kept, or the cache would pin a second copy of every tool
 // result for as long as its card is on screen (see {@link renderSignature}).
+function toolCallSignature(call: ToolCall): string {
+  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null })
+}
+
 function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
-  const base = renderSignature(item)
+  const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
+  const base = renderSignature({
+    item,
+    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null),
+  })
   return extra === undefined ? base : `${base}|${extra}`
 }
 
@@ -1070,7 +1249,7 @@ function populateRegularToolCard(
 ): void {
   const wasOpen = card.open
   lazyToolCardBodies.delete(card)
-  card.dataset['status'] = tc.status
+  card.dataset['status'] = cardStatus([tc])
   card.replaceChildren()
   card.open = wasOpen
   appendStandardToolSections(card, tc, label, 'tool-card-header')
@@ -1084,19 +1263,19 @@ function populateRegularToolCard(
 function populateGroupItem(entry: HTMLDetailsElement, tc: ToolCall): void {
   const wasOpen = entry.open
   lazyToolCardBodies.delete(entry)
-  entry.dataset['status'] = tc.status
+  entry.dataset['status'] = cardStatus([tc])
   entry.replaceChildren()
   entry.open = wasOpen
   appendStandardToolSections(entry, tc, getToolCallLabel(tc), 'tool-group-item-header')
   if (wasOpen) ensureToolCardBodyRendered(entry)
-  toolGroupItemSignatures.set(entry, renderSignature(tc))
+  toolGroupItemSignatures.set(entry, toolCallSignature(tc))
 }
 
 function reconcileGroupCard(
   card: HTMLDetailsElement,
   item: Extract<ToolCallDisplayItem, { type: 'group' }>,
 ): void {
-  const status = aggregateToolStatus(item.toolCalls)
+  const status = cardStatus(item.toolCalls)
   card.dataset['status'] = status
   replaceDirectToolHeader(
     card,
@@ -1125,10 +1304,10 @@ function reconcileGroupCard(
       entry = el('details', {
         class: 'tool-group-item',
         'data-tool-id': tc.id,
-        'data-status': tc.status,
+        'data-status': cardStatus([tc]),
       })
       populateGroupItem(entry, tc)
-    } else if (toolGroupItemSignatures.get(entry) !== renderSignature(tc)) {
+    } else if (toolGroupItemSignatures.get(entry) !== toolCallSignature(tc)) {
       populateGroupItem(entry, tc)
     }
     desired.push(entry)
@@ -1185,7 +1364,7 @@ function reconcileToolCard(
   store?: AppStore,
 ): void {
   if (item.type === 'rollup') {
-    const status = aggregateToolStatus(item.toolCalls)
+    const status = cardStatus(item.toolCalls)
     card.dataset['status'] = status
     card.dataset['toolCount'] = String(item.toolCalls.length)
     card.dataset['rollupKey'] = item.key
@@ -1202,6 +1381,7 @@ function reconcileToolCard(
       body = el('div', { class: 'tool-rollup-body' })
       card.append(body)
     }
+    syncRollupInterruptionNote(body, item.toolCalls)
     reconcileNestedToolCards(body, item.children, api, threadId, store)
   } else if (item.type === 'group') {
     reconcileGroupCard(card, item)
@@ -1243,6 +1423,7 @@ function acpResourceLabel(uri: string, title?: string): string {
 function createAcpContentBlock(
   block: AcpContentBlock,
   context: 'message' | 'reasoning' | 'tool',
+  workspaceRoot: string | null,
   previewImageDataUrls?: ReadonlySet<string>,
 ): HTMLElement | null {
   if (block.type === 'text') return null
@@ -1282,22 +1463,41 @@ function createAcpContentBlock(
   }
   if (block.type === 'resource_link') {
     const label = block.title ?? block.name
+    const displayLabel = workspaceDisplayPath(label, workspaceRoot)
+    const displayUri = workspaceDisplayPath(block.uri, workspaceRoot)
+    const filePath = workspaceResourceFilePath(block.uri, workspaceRoot)
     const description = block.description
       ? el('span', { class: 'acp-resource-description' }, block.description)
       : null
     const metadata = [block.mimeType, block.size !== undefined ? `${String(block.size)} B` : null]
       .filter(Boolean)
       .join(' · ')
-    const labelNode = /^https?:\/\//i.test(block.uri)
-      ? el('a', { class: 'acp-resource-title', href: block.uri }, label)
-      : el('span', { class: 'acp-resource-title' }, label)
+    const labelNode = filePath
+      ? el(
+          'a',
+          {
+            class: 'acp-resource-title',
+            href: block.uri,
+            'data-workspace-resource-path': filePath,
+          },
+          displayLabel,
+        )
+      : /^https?:\/\//i.test(block.uri)
+        ? el('a', { class: 'acp-resource-title', href: block.uri }, displayLabel)
+        : el('span', { class: 'acp-resource-title' }, displayLabel)
     return el(
       'div',
-      { class: 'acp-resource-content acp-resource-link' },
+      {
+        class: 'acp-resource-content acp-resource-link',
+        ...(displayLabel !== label || displayUri !== block.uri ? { title: block.uri } : {}),
+        ...(filePath
+          ? { 'data-workspace-resource-path': filePath, 'data-acp-resource-uri': block.uri }
+          : {}),
+      },
       labelNode,
       ...(description ? [description] : []),
       ...(metadata ? [el('span', { class: 'acp-resource-meta' }, metadata)] : []),
-      el('code', { class: 'acp-resource-uri' }, block.uri),
+      el('code', { class: 'acp-resource-uri' }, displayUri),
     )
   }
 
@@ -1323,18 +1523,99 @@ function createAcpContentBlock(
 function createAcpContentBlocks(
   blocks: readonly AcpContentBlock[],
   context: 'message' | 'reasoning',
+  workspaceRoot: string | null,
 ): HTMLElement | null {
   const nodes = blocks.flatMap((block) => {
-    const node = createAcpContentBlock(block, context)
+    const node = createAcpContentBlock(block, context, workspaceRoot)
     return node ? [node] : []
   })
   if (nodes.length === 0) return null
   return el('div', { class: `acp-content-blocks acp-${context}-content` }, ...nodes)
 }
 
+const acpDiffLineSigns = { context: ' ', add: '+', del: '-' } as const
+
+/**
+ * An ACP edit as a unified line diff: the workspace-relative path and +/- counts
+ * in the summary, and only the changed lines (with a little context) in the body.
+ */
+function createAcpToolDiff(
+  item: Extract<AcpToolCallContent, { type: 'diff' }>,
+  workspaceRoot: string | null,
+): HTMLElement {
+  const displayPath = workspaceDisplayPath(item.path, workspaceRoot)
+  const lines = computeLineDiff(item.oldText ?? '', item.newText)
+  const additions = lines.filter((line) => line.kind === 'add').length
+  const deletions = lines.filter((line) => line.kind === 'del').length
+  const hasChanges = additions > 0 || deletions > 0
+  const body = hasChanges
+    ? el('div', { class: 'acp-tool-diff-lines' })
+    : el('div', { class: 'acp-content-label' }, 'No changes')
+  const details = el(
+    'details',
+    { class: 'acp-tool-diff' },
+    el(
+      'summary',
+      {},
+      el(
+        'span',
+        { class: 'acp-tool-diff-label' },
+        item.oldText === undefined ? 'New file' : 'Diff',
+      ),
+      el(
+        'code',
+        {
+          class: 'acp-tool-diff-path',
+          ...(displayPath !== item.path ? { title: item.path } : {}),
+        },
+        // Isolated so the rtl elision trick cannot move a leading `.` to the end.
+        el('bdi', {}, displayPath),
+      ),
+      el('span', { class: 'tool-stat tool-stat-add' }, `+${String(additions)}`),
+      el('span', { class: 'tool-stat tool-stat-del' }, `-${String(deletions)}`),
+    ),
+    body,
+  )
+  if (!hasChanges) return details
+
+  const buildRows = (): void => {
+    if (!details.open || body.childElementCount > 0) return
+    const rows = foldLineDiff(lines).flatMap((line) => {
+      if (line.kind === 'gap') {
+        return [
+          el(
+            'div',
+            { class: 'acp-diff-line acp-diff-gap' },
+            `⋯ ${String(line.count)} unchanged ${line.count === 1 ? 'line' : 'lines'}`,
+          ),
+        ]
+      }
+      const accessibility =
+        line.kind === 'add'
+          ? { 'aria-label': `Added line: ${line.text}` }
+          : line.kind === 'del'
+            ? { 'aria-label': `Deleted line: ${line.text}` }
+            : {}
+      const row = el(
+        'div',
+        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        el('span', { class: 'acp-diff-sign', 'aria-hidden': 'true' }, acpDiffLineSigns[line.kind]),
+        el('span', { class: 'acp-diff-text' }, line.text),
+      )
+      return line.noNewlineAtEnd
+        ? [row, el('div', { class: 'acp-diff-line acp-diff-eof' }, '\\ No newline at end of file')]
+        : [row]
+    })
+    body.append(...rows)
+  }
+  details.addEventListener('toggle', buildRows)
+  return details
+}
+
 function createToolResultContent(
   content: readonly AcpToolCallContent[],
   previewImageDataUrls: ReadonlySet<string>,
+  workspaceRoot: string | null,
 ): HTMLElement {
   const imageCount = content.filter(
     (item) => item.type === 'content' && item.content.type === 'image',
@@ -1345,23 +1626,10 @@ function createToolResultContent(
   })
   for (const item of content) {
     if (item.type === 'content') {
-      const node = createAcpContentBlock(item.content, 'tool', previewImageDataUrls)
+      const node = createAcpContentBlock(item.content, 'tool', workspaceRoot, previewImageDataUrls)
       if (node) wrap.append(node)
     } else if (item.type === 'diff') {
-      const diff = el(
-        'details',
-        { class: 'acp-tool-diff' },
-        el('summary', {}, `Diff · ${item.path}`),
-        ...(item.oldText !== undefined
-          ? [
-              el('div', { class: 'acp-content-label' }, 'Before'),
-              el('pre', { class: 'acp-tool-diff-text' }, item.oldText),
-            ]
-          : []),
-        el('div', { class: 'acp-content-label' }, 'After'),
-        el('pre', { class: 'acp-tool-diff-text' }, item.newText),
-      )
-      wrap.append(diff)
+      wrap.append(createAcpToolDiff(item, workspaceRoot))
     } else {
       wrap.append(
         el(
@@ -1673,6 +1941,7 @@ function appendMessageContent(
     attachments?: TranscriptAttachment[]
   },
   api: ApiClient,
+  workspaceRoot: string | null,
   opts?: { nestReasoningInTools?: boolean },
 ): void {
   if (msg.role === 'user' && msg.images?.length) {
@@ -1686,7 +1955,7 @@ function appendMessageContent(
     (msg.reasoning?.trim() || msg.reasoningBlocks?.length) &&
     opts?.nestReasoningInTools !== true
   ) {
-    body.append(buildReasoningEl(msg.reasoning ?? '', false, msg.reasoningBlocks))
+    body.append(buildReasoningEl(msg.reasoning ?? '', false, msg.reasoningBlocks, workspaceRoot))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   // Attach before markdown so ACP transport-noise disclosure can find a parent
@@ -1702,21 +1971,25 @@ function appendMessageContent(
     textEl.textContent = msg.content
   }
   if (msg.role === 'assistant' && msg.contentBlocks?.length) {
-    const richContent = createAcpContentBlocks(msg.contentBlocks, 'message')
+    const richContent = createAcpContentBlocks(msg.contentBlocks, 'message', workspaceRoot)
     if (richContent) body.append(richContent)
   }
 }
 
-function syncAcpMessageContent(msgEl: HTMLElement, blocks: readonly AcpContentBlock[]): void {
+function syncAcpMessageContent(
+  msgEl: HTMLElement,
+  blocks: readonly AcpContentBlock[],
+  workspaceRoot: string | null,
+): void {
   const body = msgEl.querySelector<HTMLElement>(':scope > .message-body')
   if (!body) return
   const current = body.querySelector<HTMLElement>(':scope > .acp-message-content')
-  const replacement = createAcpContentBlocks(blocks, 'message')
+  const replacement = createAcpContentBlocks(blocks, 'message', workspaceRoot)
   if (!replacement) {
     current?.remove()
     return
   }
-  if (current) current.replaceWith(replacement)
+  if (current) replaceAcpResourceBlock(current, replacement)
   else body.append(replacement)
 }
 
@@ -1776,7 +2049,9 @@ function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean)
   if (!live) {
     for (const textEl of details.querySelectorAll<HTMLElement>('.message-reasoning-text')) {
       const state = reasoningRenders.get(textEl)
-      if (state?.live) renderReasoningText(textEl, state.text, false, state.blocks)
+      if (state?.live) {
+        renderReasoningText(textEl, state.text, false, state.blocks, state.workspaceRoot)
+      }
     }
   }
 }
@@ -1897,6 +2172,7 @@ function buildReasoningEl(
   reasoning: string,
   live: boolean,
   blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
+  workspaceRoot: string | null = null,
 ): HTMLDetailsElement {
   const details = el('details', {
     class: `message-reasoning${live ? ' message-reasoning-live' : ''}`,
@@ -1912,7 +2188,7 @@ function buildReasoningEl(
     el('span', { class: 'message-reasoning-title' }, reasoningDisclosureTitle(live)),
   )
   const text = el('div', { class: 'message-reasoning-text' })
-  renderReasoningText(text, reasoning, live, blocks)
+  renderReasoningText(text, reasoning, live, blocks, workspaceRoot)
   summary.addEventListener('click', () => {
     details.dataset['userToggled'] = '1'
   })
@@ -1930,6 +2206,7 @@ const reasoningRenders = new WeakMap<
     live: boolean
     renderer: StreamingMarkdownRenderer | null
     richContent: HTMLElement | null
+    workspaceRoot: string | null
   }
 >()
 
@@ -1939,11 +2216,12 @@ function renderReasoningText(
   text: string,
   live: boolean,
   blocks: readonly AcpContentBlock[] = emptyReasoningBlocks,
+  workspaceRoot: string | null = null,
 ): void {
   const previous = reasoningRenders.get(el)
   const markdownChanged = previous?.text !== text || previous.live !== live
   // Store updates replace ACP block arrays; text-only chunks retain their identity.
-  const blocksChanged = previous?.blocks !== blocks
+  const blocksChanged = previous?.blocks !== blocks || previous.workspaceRoot !== workspaceRoot
   if (!markdownChanged && !blocksChanged) return
 
   let renderer = previous?.renderer ?? null
@@ -1960,12 +2238,12 @@ function renderReasoningText(
   let richContent = previous?.richContent ?? null
   if (blocksChanged) {
     richContent?.remove()
-    richContent = createAcpContentBlocks(blocks, 'reasoning')
+    richContent = createAcpContentBlocks(blocks, 'reasoning', workspaceRoot)
   }
   // The incremental scaffold (or final render) can replace the host's children.
   // Keep rich blocks after the markdown and restore the same nodes when needed.
   if (richContent && richContent.parentElement !== el) el.append(richContent)
-  reasoningRenders.set(el, { text, blocks, live, renderer, richContent })
+  reasoningRenders.set(el, { text, blocks, live, renderer, richContent, workspaceRoot })
 }
 
 /**
@@ -1978,6 +2256,7 @@ function syncReasoningEl(
   msgEl: HTMLElement,
   msg: { content: string; reasoning?: string; reasoningBlocks?: AcpContentBlock[] },
   live: boolean,
+  workspaceRoot: string | null,
 ): void {
   const body = msgEl.querySelector('.message-body')
   if (!body) return
@@ -1991,12 +2270,13 @@ function syncReasoningEl(
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? '', live, msg.reasoningBlocks)
+    details = buildReasoningEl(msg.reasoning ?? '', live, msg.reasoningBlocks, workspaceRoot)
     host.prepend(details)
   } else {
     if (details.parentElement !== host) host.prepend(details)
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
-    if (textEl) renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks)
+    if (textEl)
+      renderReasoningText(textEl, msg.reasoning ?? '', live, msg.reasoningBlocks, workspaceRoot)
     setReasoningDisclosureTitle(details, live)
   }
 }
@@ -2011,6 +2291,7 @@ function syncNestedRollupReasoning(
   reasoning: string | undefined,
   reasoningBlocks: readonly AcpContentBlock[] | undefined,
   live: boolean,
+  workspaceRoot: string | null,
 ): void {
   const rollupBody = card.querySelector<HTMLElement>(':scope > .tool-rollup-body')
   if (!rollupBody) return
@@ -2023,11 +2304,11 @@ function syncNestedRollupReasoning(
     return
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? '', live, reasoningBlocks)
+    details = buildReasoningEl(reasoning ?? '', live, reasoningBlocks, workspaceRoot)
   } else {
     const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
     if (textEl) {
-      renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks)
+      renderReasoningText(textEl, reasoning ?? '', live, reasoningBlocks, workspaceRoot)
       delete textEl.dataset['reasoningMessageId']
     }
     for (const extra of details.querySelectorAll('.message-reasoning-text')) {
@@ -2047,7 +2328,12 @@ function syncNestedRollupReasoning(
  * One reasoning disclosure for the run, with independently updated message
  * bodies so new chunks never rebuild previously rendered reasoning.
  */
-function syncRunReasoning(card: HTMLElement, run: ToolRun, liveStepId: string | null): void {
+function syncRunReasoning(
+  card: HTMLElement,
+  run: ToolRun,
+  liveStepId: string | null,
+  workspaceRoot: string | null,
+): void {
   const body = card.querySelector<HTMLElement>(':scope > .tool-rollup-body')
   if (!body) return
   const steps = run.steps.filter(
@@ -2084,6 +2370,7 @@ function syncRunReasoning(card: HTMLElement, run: ToolRun, liveStepId: string | 
       step.reasoning ?? '',
       step.messageId === liveStepId,
       step.reasoningBlocks,
+      workspaceRoot,
     )
   }
   existing.forEach((text) => {
@@ -2133,6 +2420,8 @@ function hydrationFailureEl(): HTMLElement {
 const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
+/** Time constant of the glide that keeps streamed text in view. */
+const STREAM_FOLLOW_EASE_MS = 90
 /** Fast operations should finish without flashing their detail open. */
 const TOOL_AUTO_REVEAL_DELAY_MS = 300
 /** Once shown, live detail remains visible long enough to be read. */
@@ -2153,6 +2442,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const appleDevelopmentHost = createAppleDevelopmentPanel(store, api, { allowEnrollment: false })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
+  let agentNames: ReadonlyMap<string, string> = new Map()
+  let agentNamesRequested = false
+  let agentNamesRevision = 0
+  let disposed = false
+  const avatarMotion = createAgentAvatarMotion()
   const scrollToBottomBtn = el(
     'button',
     {
@@ -2187,7 +2481,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // visible at the bottom of the screen instead of getting buried under the
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
-  root.append(scrollArea, queuedHost)
+  const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
+  root.append(roadmapOrigin.element, scrollArea, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
@@ -2209,6 +2504,74 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     e.preventDefault()
     e.stopPropagation()
     navigateToChange(store, path)
+  })
+
+  // Right-click in the transcript: a non-empty text selection offers quoting
+  // it into the reply, filing it on the roadmap, or searching the thread for
+  // it; with no selection, right-clicking a message still offers to copy its
+  // text. Anywhere else in the transcript (blank space, before any message, or
+  // a message with no text to copy) falls through to the platform's own menu.
+  list.addEventListener('contextmenu', (e) => {
+    // An inner element (an image, a link, a code block) that already handled
+    // this right-click keeps its own menu.
+    if (e.defaultPrevented) return
+    const targetEl = e.target instanceof Element ? e.target : null
+    const msgEl = targetEl?.closest<HTMLElement>('.msg[data-message-id]') ?? null
+    const selection = document.getSelection()
+    const selectionIsInsideTranscript =
+      selection !== null &&
+      !selection.isCollapsed &&
+      list.contains(selection.anchorNode) &&
+      list.contains(selection.focusNode)
+    const selectedText = selectionIsInsideTranscript ? trimSelectionText(selection.toString()) : ''
+
+    if (selectedText) {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Quote in reply',
+          onSelect: (): void => {
+            quoteTranscriptSelection(selectedText)
+          },
+        },
+        {
+          label: 'Add to roadmap',
+          onSelect: (): void => {
+            void addTranscriptSelectionToRoadmap(api, selectedText)
+          },
+        },
+        {
+          label: 'Search',
+          onSelect: (): void => {
+            // The find bar is one line: a multi-line selection is searched
+            // with its whitespace collapsed, as the matcher compares text.
+            openConversationSearch(normalizeSearchText(selectedText))
+          },
+        },
+        {
+          label: 'Copy',
+          onSelect: (): void => {
+            void navigator.clipboard.writeText(selectedText)
+          },
+        },
+      ])
+      return
+    }
+
+    const msgId = msgEl?.dataset['messageId']
+    const messageText = msgId ? messageContentById(store, msgId) : undefined
+    if (!messageText) return
+    e.preventDefault()
+    e.stopPropagation()
+    showContextMenu(e.clientX, e.clientY, [
+      {
+        label: 'Copy message',
+        onSelect: (): void => {
+          void navigator.clipboard.writeText(messageText)
+        },
+      },
+    ])
   })
 
   // Inline-edit state for a queued message. Preserved across re-renders so a
@@ -2409,7 +2772,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (editing) {
       body.append(buildQueuedEditor(msg.id))
     } else {
-      appendMessageContent(body, msg, api)
+      appendMessageContent(body, msg, api, acpWorkspaceRoot(store))
       body.append(held ? buildHeldActions(msg.id) : buildQueuedActions(msg.id))
     }
     item.append(body)
@@ -2631,6 +2994,33 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom(true)
   })
 
+  // Streamed prose grows a line at a time. Snapping to the bottom on every
+  // paint jerks the whole transcript up a line-height at once; glide there
+  // instead, closing a fixed fraction of the distance each frame.
+  const streamFollow = createFrameLoop((dt) => {
+    if (!shouldAutoScroll()) return false
+    const gap = list.scrollHeight - list.clientHeight - list.scrollTop
+    if (gap <= 1 || dt === Infinity) {
+      scrollToBottom()
+      return false
+    }
+    setScrollTopProgrammatically(
+      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt / STREAM_FOLLOW_EASE_MS))),
+    )
+    // Still following: the view is pinned, only a few pixels short mid-glide.
+    scrollToBottomBtn.hidden = true
+    return true
+  })
+  list.addEventListener(STREAM_PAINT_EVENT, () => {
+    if (shouldAutoScroll()) streamFollow.start()
+  })
+  list.addEventListener(STREAM_SETTLED_EVENT, () => {
+    // The final render ran after message_done had already synced the list.
+    hydrateRemoteArtifactImages(list, api)
+    syncAcpResourceReferences(list, api, store)
+    scrollToBottom()
+  })
+
   function setActivity(label: string | null): void {
     if (!label) {
       activityBar.hidden = true
@@ -2640,6 +3030,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // identical, and the row is aria-live, so an unconditional write re-announces
     // the same label. Emitters outside the agent controller (message queue,
     // retry/review) do not share its dedupe key, so guard here too.
+    // The same label also re-arrives with every streamed chunk; only a row that
+    // appears or changes can move the transcript's bottom edge.
+    const changed = activityBar.hidden || activityLabel.textContent !== label
     if (activityLabel.textContent !== label) activityLabel.textContent = label
     // Once reasoning tokens exist, the disclosure title is the activity row.
     // Keep the standalone row for the initial wait before the first token, but
@@ -2660,7 +3053,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       !!list.querySelector('.msg-assistant .message-reasoning'),
     )
     activityBar.hidden = false
-    scrollToBottom()
+    // Snapping on an unchanged row would cut short the streamed text's glide.
+    if (changed) scrollToBottom()
   }
 
   function syncFromStore(): void {
@@ -2716,6 +3110,44 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     updateScrollButton()
   }
 
+  /**
+   * scrollToBottom(true) flushes the transcript's bottom edge against the
+   * viewport, which is right for a short prompt but hides the start of one
+   * taller than the visible list: the reader only ever sees its tail (#2457).
+   * Nudge the scroll position, on top of scrollToBottom's, just enough to
+   * bring the whole row into view — or, when it can't fit, to show its top
+   * rather than its bottom, mirroring `scrollIntoView({ block: 'nearest' })`.
+   * Computed from rects (like captureReadingAnchor/restoreReadingAnchor above)
+   * and applied through setScrollTopProgrammatically so the programmatic-echo
+   * bookkeeping stays consistent with every other scroll in this module.
+   *
+   * When a correction was needed, this also un-pins autoscroll: otherwise the
+   * very next unforced scrollToBottom() (e.g. the reply's first token, which a
+   * mock model can emit before this function returns) would hug the tail
+   * again and immediately undo the correction. A pane wide enough to keep the
+   * prompt sticky-to-top never takes this branch, so this only affects the
+   * narrow layout where CSS stops anchoring it (`@container chat-pane
+   * (max-width: 360px)`) — the same layout the fold's own hand-off already
+   * treats as ordinary, unpinned transcript content.
+   */
+  function scrollUserPromptIntoView(msgEl: HTMLElement): void {
+    const listRect = list.getBoundingClientRect()
+    const msgRect = msgEl.getBoundingClientRect()
+    let delta = 0
+    if (msgRect.top < listRect.top) {
+      delta = msgRect.top - listRect.top
+    } else if (msgRect.bottom > listRect.bottom) {
+      delta =
+        msgRect.height > listRect.height
+          ? msgRect.top - listRect.top
+          : msgRect.bottom - listRect.bottom
+    }
+    if (delta === 0) return
+    setScrollTopProgrammatically(list.scrollTop + delta)
+    pinnedToBottom = false
+    updateScrollButton()
+  }
+
   function applyRollupSummaries(
     item: ToolCallDisplayItem,
     opts: { commandSummary?: string; toolSummary?: string },
@@ -2727,6 +3159,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (!summary) return
     const failed = item.toolCalls.filter((tc) => tc.status === 'error').length
     item.label = failed > 0 ? `${summary} · ${String(failed)} failed` : summary
+  }
+
+  function labelUserInterruptions(item: ToolCallDisplayItem): void {
+    const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
+    if (calls.some((call) => userInterruptedCalls.has(call))) {
+      const failed = calls.filter(
+        (call) => call.status === 'error' && !userInterruptedCalls.has(call),
+      ).length
+      const base = item.label.replace(/ · \d+ failed$/, '')
+      item.label = `${base}${failed ? ` · ${String(failed)} failed` : ''} · Interrupted`
+    }
+    if (item.type === 'rollup') {
+      for (const child of item.children) labelUserInterruptions(child)
+    }
   }
 
   function applyToolCardOpenState(
@@ -2743,7 +3189,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Keep dataset.status aligned with the live tool status so compaction can
     // leave failed cards open (it only inspects this attribute).
     const itemStatus =
-      item.type === 'individual' ? item.toolCall.status : aggregateToolStatus(item.toolCalls)
+      item.type === 'individual' ? cardStatus([item.toolCall]) : cardStatus(item.toolCalls)
     card.dataset['status'] = itemStatus
     disclosureElements.set(key, card)
     wireDisclosurePreference(card, key)
@@ -2753,6 +3199,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         ? item.toolCall.status === 'running' || item.toolCall.subagent?.status === 'running'
         : itemStatus === 'running'
     const failed = itemStatus === 'error'
+    if (itemStatus === 'interrupted') {
+      autoOpenedDisclosures.delete(key)
+      autoOpenedAt.delete(key)
+    }
 
     if (running) runningDisclosures.add(key)
     else {
@@ -2841,6 +3291,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msgId = msgEl.dataset['messageId'] ?? ''
     const messageKey = threadId && msgId ? `${threadId}:${msgId}` : null
     const activeThread = getActiveThread(store)
+    markUserInterruptedCalls(activeThread)
     if (
       messageKey &&
       activeThread?.status === 'running' &&
@@ -2871,11 +3322,17 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       run === undefined &&
       (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) &&
       shouldNestReasoningInTools(toolCalls)
+    // User-interrupted calls fold into the rollup; genuine failures sit beside it.
+    const isInterrupted = (call: ToolCall): boolean => userInterruptedCalls.has(call)
     const items = run
       ? isRunMember
         ? buildSubagentDisplayItems(toolCalls)
-        : [...buildToolRunDisplayItems(run), ...buildSubagentDisplayItems(toolCalls)]
+        : [
+            ...buildToolRunDisplayItems(run, { isInterrupted }),
+            ...buildSubagentDisplayItems(toolCalls),
+          ]
       : buildToolCallDisplayItems(toolCalls, {
+          isInterrupted,
           ...(nestReasoning || (messageKey !== null && liveRollupMessages.has(messageKey))
             ? { forceRollup: true }
             : {}),
@@ -2883,6 +3340,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Run rollups carry their own composed label (polish + counts + steps), so
     // the per-message summary only applies on the single-message path.
     if (!run) for (const item of items) applyRollupSummaries(item, opts)
+    for (const item of items) labelUserInterruptions(item)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
     // are reused wholesale instead of torn down and rebuilt on every tick — the
@@ -2937,10 +3395,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           opts.reasoning,
           opts.reasoningBlocks,
           opts.reasoningLive === true,
+          acpWorkspaceRoot(store),
         )
       }
       if (item.type === 'rollup' && run && item.key === RUN_ROLLUP_KEY) {
-        syncRunReasoning(card, run, opts.liveStepId ?? null)
+        syncRunReasoning(card, run, opts.liveStepId ?? null, acpWorkspaceRoot(store))
       }
       desired.push(card)
     }
@@ -2980,7 +3439,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
       }
     }
-    syncToolResultContent(msgEl, run ? (isRunMember ? [] : run.toolCalls) : toolCalls)
+    syncToolResultContent(
+      msgEl,
+      run ? (isRunMember ? [] : run.toolCalls) : toolCalls,
+      acpWorkspaceRoot(store),
+    )
+    hydrateAcpResourceImages(msgEl, api, store)
     registerReasoningDisclosures(msgEl)
     syncToolRunMemberVisibility(msgEl)
   }
@@ -3060,7 +3524,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const msg = thread?.messages.find((m) => m.id === msgId)
     const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl || multiStepRunFor(thread, msgId)) return
-    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+    syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg), acpWorkspaceRoot(store))
   }
 
   /**
@@ -3082,7 +3546,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       renderRunAnchor(thread, run)
       return
     }
-    syncRunReasoning(runCard, run, liveStepMessageId(thread))
+    syncRunReasoning(runCard, run, liveStepMessageId(thread), acpWorkspaceRoot(store))
+    hydrateAcpResourceImages(runCard, api, store)
   }
 
   /**
@@ -3123,7 +3588,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
       shouldNestReasoningInTools(msg.toolCalls ?? []) ||
       multiStepRunFor(thread, msgId) !== undefined
-    appendMessageContent(body, msg, api, {
+    appendMessageContent(body, msg, api, acpWorkspaceRoot(store), {
       ...(nestReasoning ? { nestReasoningInTools: true } : {}),
     })
     msgEl.append(body)
@@ -3165,6 +3630,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (run) syncRunLayout(thread, run, msgId)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
+    if (msg.reviewReport) renderMessageReviewReport(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
     renderMessageTurnRecovery(threadId, msgId)
@@ -3216,7 +3682,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // show in the footer picker.)
     syncModelLabels()
     syncUserActions()
+    syncAcpResourceReferences(list, api, store)
     scrollToBottom(msg.role === 'user')
+    // Correct for a prompt taller than the viewport: scrollToBottom above
+    // hugs the transcript's tail, which can scroll the top of a long prompt
+    // out of view the moment it's submitted (#2457).
+    if (msg.role === 'user') scrollUserPromptIntoView(msgEl)
   }
 
   /**
@@ -3332,6 +3803,26 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function syncModelLabels(): void {
     const thread = getActiveThread(store)
     if (!thread) return
+    if (
+      !agentNamesRequested &&
+      thread.messages.some((msg) => {
+        const model = msg.model ?? msg.requestedModel
+        return msg.role === 'assistant' && model && customAgentId(model)
+      })
+    ) {
+      agentNamesRequested = true
+      const revision = ++agentNamesRevision
+      void api.settings
+        .get('registeredAcpAgents')
+        .then((value) => {
+          if (disposed || revision !== agentNamesRevision) return
+          agentNames = namedAgentTitles(value)
+          syncModelLabels()
+        })
+        .catch((error: unknown) => {
+          console.warn('[conversation] Could not load named agent identities', error)
+        })
+    }
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
     // A segment starts where the model *or* the parameters change, so dialling
     // effort up mid-thread marks the turn it took effect on.
@@ -3347,6 +3838,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (id !== null && !rendered.has(id)) rendered.set(id, node)
     })
     let prevLabel: string | undefined
+    let prevAgentKey: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
       const msgEl = rendered.get(msg.id)
@@ -3354,16 +3846,63 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
       const model = msg.model
       const text = model ? formatPrimaryChatModelLabel(model, msg.parameters) : undefined
-      if (show && text && text !== prevLabel) {
+      const identity = chatAgentIdentity(thread.id, msg, agentNames)
+      let header = msgEl.querySelector<HTMLElement>('.message-agent')
+      if (identity && identity.key !== prevAgentKey) {
+        if (header?.dataset['agentKey'] !== identity.key) {
+          header?.remove()
+          header = el(
+            'div',
+            { class: 'message-agent', 'data-agent-key': identity.key },
+            createAgentAvatar(identity.key, identity.style),
+            el('span', { class: 'message-agent-name' }, identity.label),
+          )
+          msgEl.prepend(header)
+        } else {
+          const name = header.querySelector('.message-agent-name')
+          if (name) name.textContent = identity.label
+        }
+      } else {
+        header?.remove()
+        header = null
+      }
+      // The identity marker already names bare agent selections. Keep model and
+      // parameter boundaries for native replies and explicit agent model choices.
+      if (show && model && text && text !== prevLabel && (!identity || model.includes('#'))) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = text
-        if (!existing) msgEl.prepend(label)
+        label.textContent = identity
+          ? formatPrimaryChatModelLabel(model.slice(model.indexOf('#') + 1), msg.parameters)
+          : text
+        if (header) {
+          if (label.parentElement !== header) header.append(label)
+        } else if (label.parentElement !== msgEl) msgEl.prepend(label)
       } else {
         existing?.remove()
       }
       syncToolRunMemberVisibility(msgEl)
       prevLabel = text
+      prevAgentKey = identity?.key
     }
+    syncAvatarMotion()
+  }
+
+  function syncAvatarMotion(): void {
+    const thread = getActiveThread(store)
+    if (!thread || thread.status !== 'running' || !store.getState().animateAgentAvatars) {
+      avatarMotion.setActive(null)
+      return
+    }
+    // Queued follow-ups belong to a future run, not the current speaker.
+    const pending = queuedMessageIds(thread)
+    const latest = [...thread.messages].reverse().find((msg) => !pending.has(msg.id))
+    const identity =
+      latest?.role === 'assistant' ? chatAgentIdentity(thread.id, latest, agentNames) : null
+    const header = identity
+      ? [...list.querySelectorAll<HTMLElement>('.message-agent')]
+          .reverse()
+          .find((element) => element.dataset['agentKey'] === identity.key)
+      : undefined
+    avatarMotion.setActive(header?.querySelector<HTMLImageElement>('.agent-avatar') ?? null)
   }
 
   function syncTodoPanel(): void {
@@ -3429,6 +3968,32 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.after(card)
   }
 
+  function renderMessageReviewReport(threadId: string, messageId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    list.querySelector(`[data-review-report-card][data-review-report-for="${messageId}"]`)?.remove()
+    const msg = getActiveThread(store)?.messages.find((message) => message.id === messageId)
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    if (!msg?.reviewReport || !msgEl) return
+    const card = createReviewFindingsCardEl(msg.reviewReport, {
+      onRetry: () => {
+        startReview(store, api, threadId, messageId)
+      },
+      onDismissCard: () => {
+        dismissReviewReport(store, threadId, messageId)
+      },
+      onDismissFinding: (finding) => {
+        dismissReviewFinding(store, api, threadId, finding, messageId)
+      },
+      onRestoreFinding: (finding) => {
+        restoreReviewFinding(store, api, threadId, finding.id, messageId)
+      },
+    })
+    card.setAttribute('data-review-report-card', '')
+    card.setAttribute('data-review-report-for', messageId)
+    const postTurnCard = list.querySelector(`[data-review-card][data-review-for="${messageId}"]`)
+    ;(postTurnCard ?? msgEl).after(card)
+  }
+
   function renderMessageTurnRecovery(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     list.querySelector(`[data-turn-recovery-for="${messageId}"]`)?.remove()
@@ -3458,7 +4023,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   /** The first of the trailing cards, which sit after every message. */
   function firstTrailingCard(): Element | null {
-    return list.querySelector('[data-review-report-card], [data-comparison-card]')
+    return list.querySelector(
+      '[data-review-report-card]:not([data-review-report-for]), [data-comparison-card]',
+    )
   }
 
   function syncComparisonPanel(): void {
@@ -3481,7 +4048,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // The Copse Reviewer findings card renders inline as a trailing child of
     // the message list, after the post-turn review cards, so it joins the
     // transcript flow. Replaced on every sync (status transitions, dismissals).
-    list.querySelector('[data-review-report-card]')?.remove()
+    list.querySelector('[data-review-report-card]:not([data-review-report-for])')?.remove()
     const thread = getActiveThread(store)
     if (!thread?.reviewReport) return
     const threadId = thread.id
@@ -3566,6 +4133,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // runResend resends the thread's *latest* prompt, not the one beside the
     // button, so clicking a stray one silently repeats the wrong message.
     syncUserActions()
+    // A chunk can hold resources that the replies already on screen cite.
+    syncAcpResourceReferences(list, api, store)
     updateScrollButton()
     if (chunkStart > 0) {
       requestAnimationFrame(() => {
@@ -3586,6 +4155,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     disclosureElements.clear()
     disposeInlineArtefacts(list)
+    avatarMotion.setActive(null)
     clear(list)
     backfillGeneration++
     renderedThreadId = thread?.id ?? null
@@ -3624,6 +4194,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // the view lands at the bottom before the chrome is inserted around it.
     syncModelLabels()
     syncUserActions()
+    syncAcpResourceReferences(list, api, store)
     if (preservedScrollTop === null) {
       scrollToBottom(true)
     } else {
@@ -3689,6 +4260,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     })
     // This message's tools may belong to a rollup anchored on another bubble.
     if (run) syncRunLayout(thread, run, msgId)
+    syncAcpResourceReferences(list, api, store)
     if (wasPinned) {
       scrollToBottom()
     } else restoreReadingAnchor(readingAnchor, prevScrollTop)
@@ -3697,6 +4269,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unsubs = [
     store.on('code_block_run_finished', (result) => {
       setCodeBlockRunOutcome(list, result.id, result.exitCode)
+    }),
+    store.on('settings_changed', () => {
+      agentNamesRequested = false
+      agentNamesRevision++
+      syncModelLabels()
     }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
@@ -3726,9 +4303,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           const absorbed =
             (msg.toolCalls.some((tc) => !tc.subagent) && !msgEl.querySelector('.tool-card')) ||
             (Boolean(msg.reasoning?.trim()) && trails.length === 0)
-          if (absorbed) resyncRunMembership(thread, mid)
+          if (absorbed) {
+            resyncRunMembership(thread, mid)
+            scrollToBottom()
+          }
         }
-        scrollToBottom()
+        // The text itself lands a frame later, through the input smoother; its
+        // STREAM_PAINT_EVENT keeps the transcript following it.
       }
     }),
     store.on('message_canvas_artefacts_changed', (mid) => {
@@ -3754,11 +4335,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       const msg = thread?.messages.find((message) => message.id === mid)
       const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (msg?.role === 'assistant' && msgEl) {
-        syncAcpMessageContent(msgEl, msg.contentBlocks ?? [])
+        syncAcpMessageContent(msgEl, msg.contentBlocks ?? [], acpWorkspaceRoot(store))
         const run = multiStepRunFor(thread, mid)
         if (run) syncRunStepTrail(thread, run)
-        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+        else
+          syncReasoningEl(
+            msgEl,
+            msg,
+            isReasoningDisclosureLive(thread, msg),
+            acpWorkspaceRoot(store),
+          )
         registerReasoningDisclosures(msgEl)
+        // Rebuilt content blocks start visible and unloaded; re-cite them.
+        syncAcpResourceReferences(list, api, store)
         syncToolRunMemberVisibility(msgEl)
         scrollToBottom()
       }
@@ -3772,8 +4361,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         // the anchor's rollup, not to its own bubble.
         const run = multiStepRunFor(thread, mid)
         if (run) syncRunStepTrail(thread, run)
-        else syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
+        else
+          syncReasoningEl(
+            msgEl,
+            msg,
+            isReasoningDisclosureLive(thread, msg),
+            acpWorkspaceRoot(store),
+          )
         registerReasoningDisclosures(msgEl)
+        hydrateAcpResourceImages(msgEl, api, store)
         activityBar.classList.add('agent-activity-clickable')
         setActivity(activityLabel.textContent)
         scrollToBottom()
@@ -3787,6 +4383,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl, msg.content, false, api)
         hydrateRemoteArtifactImages(list, api)
+        syncAcpResourceReferences(list, api, store)
       }
       if (msg?.role === 'assistant' && msgEl) {
         msgEl.classList.toggle(
@@ -3838,8 +4435,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       syncComparisonPanel()
       scrollToBottom()
     }),
-    store.on('review_report_changed', () => {
-      syncReviewReportCard()
+    store.on('review_report_changed', (tid, mid) => {
+      if (mid) renderMessageReviewReport(tid, mid)
+      else syncReviewReportCard()
       scrollToBottom()
     }),
     store.on('settings_changed', () => {
@@ -3872,6 +4470,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const last = getThreadById(store, tid)?.messages.at(-1)
         if (last?.role === 'assistant') renderMessageTurnRecovery(tid, last.id)
       }
+      syncAvatarMotion()
     }),
     store.on('agent_activity', (tid, label) => {
       if (tid !== store.getState().activeThreadId) return
@@ -3892,6 +4491,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   rebuildForThread()
   syncFromStore()
   return () => {
+    disposed = true
+    avatarMotion.dispose()
     // Invalidate any backfillOlderMessages step still queued via
     // requestAnimationFrame so it no-ops instead of touching a torn-down list.
     backfillGeneration++
@@ -3909,8 +4510,42 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
+    roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()
+    })
+  }
+}
+
+/** A message's raw text by id, searched across all threads (mirrors {@link attachCopyButton}). */
+function messageContentById(store: AppStore, msgId: string): string | undefined {
+  return store
+    .getState()
+    .threads.flatMap((t) => t.messages)
+    .find((m) => m.id === msgId)?.content
+}
+
+/** "Quote in reply": insert the transcript selection into the composer as a blockquote. */
+function quoteTranscriptSelection(text: string): void {
+  const handlers = getPromptAttachmentHandlers()
+  if (!handlers) return
+  handlers.quoteText(text)
+  handlers.focusComposer?.()
+}
+
+/**
+ * "Add to roadmap": file the transcript selection as a new roadmap item. The
+ * item's `thread` field is deliberately left alone — it means "the thread
+ * started from this item" (the origin back-link and Reopen), which a thread
+ * the item was merely quoted from is not.
+ */
+async function addTranscriptSelectionToRoadmap(api: ApiClient, text: string): Promise<void> {
+  try {
+    await api.roadmap.create(text)
+    showToast('Added to roadmap')
+  } catch (err) {
+    showToast(`Could not add to roadmap: ${ipcErrorMessage(err, 'unknown error')}`, {
+      variant: 'error',
     })
   }
 }

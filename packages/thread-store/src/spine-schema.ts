@@ -11,6 +11,7 @@ import type {
   SubagentSession,
   Thread,
   ThreadReview,
+  ThreadReviewReport,
   TranscriptAttachment,
 } from './thread-types.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
@@ -171,6 +172,8 @@ export interface SpineMessageLine {
   turnOutcome?: TurnOutcome
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
+  /** Copse Reviewer findings anchored to this message. */
+  reviewReport?: ThreadReviewReport
   /**
    * Hook provenance when this turn was started by a hook follow-up (decision
    * 10). Persisted so the transcript can mark a hook-originated turn after a

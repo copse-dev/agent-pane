@@ -1,6 +1,8 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { materialiseCheckouts, type MaterialisedCheckouts } from './checkouts.ts'
@@ -61,6 +63,29 @@ describe('splitDiff', () => {
       ],
     )
     assert.ok(files[0]?.text.startsWith('diff --git a/src/a.ts'))
+  })
+
+  it('decodes C-quoted paths, including octal UTF-8 and escapes', () => {
+    const quoted = [
+      'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"',
+      'new file mode 100644',
+      '+x',
+      'diff --git "a/tab\\tq.ts" "b/tab\\tq.ts"',
+      'new file mode 100644',
+      '+y',
+      'diff --git a/plain.ts "b/moved \\"q\\".ts"',
+      'rename from plain.ts',
+      'rename to moved "q".ts',
+      '',
+    ].join('\n')
+    assert.deepEqual(
+      splitDiff(quoted).map((file) => [file.path, file.status, file.oldPath]),
+      [
+        ['café.ts', 'added', undefined],
+        ['tab\tq.ts', 'added', undefined],
+        ['moved "q".ts', 'renamed', 'plain.ts'],
+      ],
+    )
   })
 })
 
@@ -187,11 +212,181 @@ describe('buildReviewContext', () => {
 
   it('pins forge diffs to committed head and keeps literal paths outside the prompt budget', async () => {
     const diff = (path: string): Promise<string> =>
-      readFileDiff(checkouts.head, checkouts.mergeBase, path, checkouts.headCommit)
+      readFileDiff(
+        { gitDir: checkouts.headGitDir, workTree: checkouts.head },
+        checkouts.mergeBase,
+        path,
+        { headCommit: checkouts.headCommit },
+      )
     assert.match(await diff('src/math.ts'), /\+export const add.*a - b/)
     assert.match(await diff('pnpm-lock.yaml'), /\+lockfileVersion: 10/)
     assert.equal(await diff('src/math.test.ts'), '', 'uncommitted edits are excluded')
     assert.equal(await diff('src/new.ts'), '', 'untracked files are excluded')
     assert.equal(await diff('src/*.ts'), '', 'pathspec characters are literal')
+  })
+})
+
+describe('host-side git over a checkout the cell has written', () => {
+  it('ignores a rewritten .git that points at a hostile git directory', async () => {
+    const repo = await createTestRepo({ 'src/a.ts': 'export const a = 1\n' })
+    const scratch = await mkdtemp(join(tmpdir(), 'review-context-hijack-'))
+    try {
+      repo.git('checkout', '-q', '-b', 'feature')
+      await repo.write({ 'src/a.ts': 'export const a = 2\n' })
+      repo.commit('change a')
+      const checkouts = await materialiseCheckouts({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        scratchDir: scratch,
+        includeWorkingTree: false,
+      })
+      try {
+        // What code executing in the cell can do: the checkout is writable.
+        const marker = join(scratch, 'fsmonitor-ran')
+        const hostile = join(checkouts.head, 'hostile-git')
+        await mkdir(join(hostile, 'objects', 'info'), { recursive: true })
+        await mkdir(join(hostile, 'refs'), { recursive: true })
+        await writeFile(
+          join(hostile, 'objects', 'info', 'alternates'),
+          `${join(checkouts.gitCommonDir, 'objects')}\n`,
+        )
+        await writeFile(join(hostile, 'HEAD'), `${checkouts.mergeBase}\n`)
+        await writeFile(
+          join(hostile, 'config'),
+          `[core]\n\trepositoryformatversion = 0\n\tfsmonitor = "touch '${marker}'; false"\n`,
+        )
+        await writeFile(join(checkouts.head, '.git'), `gitdir: ${hostile}\n`)
+
+        const context = await buildReviewContext({ checkouts })
+        assert.deepEqual(
+          context.files.map((file) => file.path),
+          ['src/a.ts'],
+        )
+        const diff = await readFileDiff(context.head, context.mergeBase, 'src/a.ts')
+        assert.match(diff, /\+export const a = 2/)
+        assert.equal(existsSync(marker), false, 'the hostile fsmonitor must not run on the host')
+      } finally {
+        await checkouts.cleanup()
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+      await repo.remove()
+    }
+  })
+
+  it('does not recurse into a submodule whose .git the cell has replaced', async () => {
+    const repo = await createTestRepo({ 'src/a.ts': 'export const a = 1\n' })
+    const nested = await createTestRepo({ '.gitattributes': 'f filter=evil\n', f: 'clean\n' })
+    const scratch = await mkdtemp(join(tmpdir(), 'review-context-submodule-'))
+    try {
+      // An unchanged gitlink is enough: git visits every populated submodule.
+      // `ignore = none` is checkout-writable and outranks diff.ignoreSubmodules.
+      repo.git(
+        'update-index',
+        '--add',
+        '--cacheinfo',
+        `160000,${repo.git('rev-parse', 'HEAD')},vendor/lib`,
+      )
+      await repo.write({
+        '.gitmodules': '[submodule "lib"]\n\tpath = vendor/lib\n\turl = ./lib\n\tignore = none\n',
+      })
+      repo.git('add', '.gitmodules')
+      repo.git('commit', '-q', '-m', 'add submodule')
+      repo.git('checkout', '-q', '-b', 'feature')
+      await repo.write({ 'src/a.ts': 'export const a = 2\n' })
+      repo.git('commit', '-q', '-m', 'change a', '--', 'src/a.ts')
+      const checkouts = await materialiseCheckouts({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        scratchDir: scratch,
+        includeWorkingTree: false,
+      })
+      try {
+        // What code executing in the cell can do: populate the submodule path
+        // with a repository whose config defines a clean filter, then dirty a
+        // file that selects it so a status inside the submodule must run it.
+        const marker = join(scratch, 'filter-ran')
+        nested.git('config', 'filter.evil.clean', `touch '${marker}'; cat`)
+        const submodule = join(checkouts.head, 'vendor', 'lib')
+        await mkdir(submodule, { recursive: true })
+        await cp(join(nested.root, '.git'), join(submodule, '.git'), { recursive: true })
+        await writeFile(join(submodule, '.gitattributes'), 'f filter=evil\n')
+        await writeFile(join(submodule, 'f'), 'dirty\n')
+
+        const context = await buildReviewContext({ checkouts })
+        const diff = await readFileDiff(context.head, context.mergeBase, 'src/a.ts')
+        assert.equal(existsSync(marker), false, 'the submodule filter must not run on the host')
+        assert.deepEqual(
+          context.files.map((file) => file.path),
+          ['src/a.ts'],
+        )
+        assert.match(diff, /\+export const a = 2/)
+
+        // The fixture is live: the same diff without the guards runs the filter.
+        execFileSync(
+          'git',
+          [
+            `--git-dir=${checkouts.headGitDir}`,
+            `--work-tree=${checkouts.head}`,
+            'diff',
+            '--no-ext-diff',
+            '--no-textconv',
+            checkouts.mergeBase,
+            '--',
+          ],
+          { cwd: checkouts.head, stdio: 'ignore' },
+        )
+        assert.equal(existsSync(marker), true, 'control: an unguarded diff runs the filter')
+      } finally {
+        await checkouts.cleanup()
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+      await nested.remove()
+      await repo.remove()
+    }
+  })
+})
+
+describe("diffs under the author's own git settings", () => {
+  it('keeps paths, renames and non-ASCII names intact for the context and git_diff', async () => {
+    const repo = await createTestRepo({ 'old-name.txt': 'line\n'.repeat(50) })
+    const scratch = await mkdtemp(join(tmpdir(), 'review-context-config-'))
+    try {
+      repo.git('checkout', '-q', '-b', 'feature')
+      repo.git('mv', 'old-name.txt', 'new-name.txt')
+      await repo.write({ 'new-name.txt': 'line\n'.repeat(50) + 'added\n', 'café.ts': 'x\n' })
+      repo.commit('rename and add')
+      // Each of these used to break the headers splitDiff reads.
+      repo.git('config', 'diff.noprefix', 'true')
+      repo.git('config', 'diff.mnemonicPrefix', 'true')
+      const checkouts = await materialiseCheckouts({
+        repoRoot: repo.root,
+        baseRef: 'main',
+        scratchDir: scratch,
+        includeWorkingTree: false,
+      })
+      try {
+        const context = await buildReviewContext({ checkouts })
+        assert.deepEqual(
+          context.files.map((file) => [file.path, file.status, file.oldPath]).sort(),
+          [
+            ['café.ts', 'added', undefined],
+            ['new-name.txt', 'renamed', 'old-name.txt'],
+          ],
+        )
+        const renamed = await readFileDiff(context.head, context.mergeBase, 'new-name.txt', {
+          oldPath: 'old-name.txt',
+        })
+        assert.match(renamed, /^rename from old-name\.txt$/m)
+        assert.match(renamed, /^\+added$/m)
+        assert.doesNotMatch(renamed, /^new file mode/m, 'not a whole-file addition')
+      } finally {
+        await checkouts.cleanup()
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+      await repo.remove()
+    }
   })
 })

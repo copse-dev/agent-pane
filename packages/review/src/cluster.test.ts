@@ -104,11 +104,29 @@ describe('sameFinding', () => {
     assert.equal(sameFinding(base, otherClass), false)
   })
 
-  it('treats an identical id as the same finding whatever else differs', () => {
+  it('treats an identical id on overlapping lines as the same finding whatever the claim', () => {
     assert.equal(
-      sameFinding(base, { ...base, claim: 'something else entirely', anchor: { path: 'x' } }),
+      sameFinding(base, {
+        ...base,
+        claim: 'something else entirely',
+        anchor: { path: 'src/math.ts', startLine: 13 },
+      }),
       true,
     )
+  })
+
+  it('keeps an identical id on distant lines apart', () => {
+    // The id omits line numbers: the same diagnostic on two identical lines shares one.
+    const far = { ...base, anchor: { path: 'src/math.ts', startLine: 400, endLine: 400 } }
+    assert.equal(sameFinding(base, far), false)
+  })
+
+  it('treats an anchor without lines as covering the whole file', () => {
+    const wholeFile = finding('7777777777777777', base.claim, { path: 'src/math.ts' })
+    const far = { ...base, anchor: { path: 'src/math.ts', startLine: 400 } }
+    assert.equal(sameFinding(wholeFile, far), true)
+    assert.equal(sameFinding(far, wholeFile), true)
+    assert.equal(sameFinding(wholeFile, { ...far, anchor: { path: 'src/other.ts' } }), false)
   })
 
   it('merges the concise and detailed forms of the same anchored defect', () => {
@@ -190,5 +208,40 @@ describe('clusterFindings', () => {
     }
     const [merged] = clusterFindings([a, b])
     assert.deepEqual(merged?.provenance.corroboratedBy, [])
+  })
+
+  it('widens an anchor with only a start line to still cover it', () => {
+    const a = finding('1111111111111111', 'add returns the difference instead of the sum', {
+      path: 'src/math.ts',
+      startLine: 10,
+    })
+    const b = finding('2222222222222222', 'add returns the difference, not the sum', {
+      path: 'src/math.ts',
+      startLine: 8,
+    })
+    const [merged] = clusterFindings([a, b])
+    assert.deepEqual(merged?.anchor, { path: 'src/math.ts', startLine: 8, endLine: 10 })
+  })
+
+  it('keeps two same-id findings on distant lines as two findings with distinct ids', () => {
+    const claim = 'TS2554: Expected 2 arguments, but got 1.'
+    const first = finding('1111111111111111', claim, { path: 'a.ts', startLine: 10, endLine: 10 })
+    const second = finding('1111111111111111', claim, {
+      path: 'a.ts',
+      startLine: 400,
+      endLine: 400,
+    })
+    const third = { ...second, anchor: { path: 'a.ts', startLine: 800, endLine: 800 } }
+    const clusters = clusterFindings([first, second, third])
+    assert.deepEqual(
+      clusters.map((cluster) => cluster.anchor.startLine),
+      [10, 400, 800],
+    )
+    assert.equal(clusters[0]?.id, first.id)
+    assert.equal(new Set(clusters.map((cluster) => cluster.id)).size, 3)
+    assert.deepEqual(
+      clusterFindings([first, second, third]).map((cluster) => cluster.id),
+      clusters.map((cluster) => cluster.id),
+    )
   })
 })

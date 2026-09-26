@@ -48,6 +48,9 @@ describe('Open remote folder — path breadcrumbs', () => {
     assert.doesNotMatch(crumbText.replace(/\s+/g, ' '), /\/\s*\/\s+\S/)
 
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-breadcrumbs.png')
+    // The action row is UI-kit chrome, not bare text (#3065).
+    await expect(dialog.$('.remote-folder-open')).toHaveElementClass('ui-btn-primary')
+    await expect(dialog.$('.remote-folder-cancel')).toHaveElementClass('ui-btn-secondary')
     await dialog.$('.remote-folder-cancel').click()
     await expect(dialog).not.toBeDisplayed()
   })

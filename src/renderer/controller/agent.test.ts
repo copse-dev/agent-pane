@@ -5,10 +5,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { startAgentController } from './agent.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import { getThreadById } from '@shared/store/thread-helpers.ts'
-import type { Message, Thread, StreamChunk } from '@shared/types'
+import { getThreadById, setMessageReviewReport } from '@shared/store/thread-helpers.ts'
+import type { Message, Thread, StreamChunk, ThreadReviewReport } from '@shared/types'
 import { createFakeApi } from '../fake-api.test-support.ts'
 import { markQuietRun } from './quiet-runs.ts'
+import { getReviewReportTarget, setReviewReportTarget } from './review-report-target.ts'
 import { sessionUpdateToStreamChunks } from '../../main/services/acp/session-update-adapter.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
@@ -970,4 +971,147 @@ test('prompt progress dedupes on the label but re-emits after another activity',
     'Reviewing changes…',
     'Processing prompt… 47%',
   ])
+})
+
+test('review report chunks stay on the assistant message of each turn', () => {
+  const report: ThreadReviewReport = {
+    status: 'done',
+    startedAt: 1,
+    models: { reviewer: 'gpt-5', challenger: null },
+    lenses: [],
+    baseRef: 'main',
+    headCommit: 'abc',
+    dirtyWorkingTree: false,
+    execution: { backend: '', strength: 'none', executed: false, reason: 'unavailable' },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 1,
+  }
+  const { send, store } = setup()
+  send({ type: 'text', text: 'First answer' })
+  send({ type: 'review_report', report })
+  send({ type: 'done' })
+  send({ type: 'text', text: 'Second answer' })
+  send({ type: 'review_report', report: { ...report, startedAt: 2 } })
+
+  const current = requireThread(store, 't1')
+  const assistants = current.messages.filter((message) => message.role === 'assistant')
+  assert.equal(assistants.length, 2)
+  assert.equal(assistants[0]?.reviewReport?.startedAt, 1)
+  assert.equal(assistants[1]?.reviewReport?.startedAt, 2)
+  assert.equal(current.reviewReport, undefined)
+
+  send({ type: 'done' })
+  setMessageReviewReport(store, 't1', assistants[0].id, {
+    ...report,
+    status: 'running',
+    startedAt: 3,
+  })
+  setReviewReportTarget(store, 't1', assistants[0].id)
+  send({ type: 'review_report', report: { ...report, startedAt: 3 } })
+  const retried = requireThread(store, 't1').messages
+  assert.equal(
+    retried.find((message) => message.id === assistants[0]?.id)?.reviewReport?.startedAt,
+    3,
+  )
+  assert.equal(
+    retried.find((message) => message.id === assistants[1]?.id)?.reviewReport?.startedAt,
+    2,
+  )
+})
+
+test('a standalone review uses its registered message instead of a stale running card', () => {
+  const stale = thread('t1', [
+    {
+      id: 'old',
+      role: 'assistant',
+      content: 'Old turn',
+      toolCalls: [],
+      createdAt: 1,
+      reviewReport: {
+        status: 'running',
+        startedAt: 1,
+        models: { reviewer: 'gpt-5', challenger: null },
+        lenses: [],
+        baseRef: '',
+        headCommit: null,
+        dirtyWorkingTree: false,
+        execution: { backend: '', strength: 'none', executed: false, reason: '' },
+        checks: [],
+        notChecked: [],
+        findings: [],
+        appendix: 0,
+        refuted: 0,
+        reviewers: [],
+        verification: null,
+        durationMs: 0,
+      },
+    },
+    {
+      id: 'target',
+      role: 'assistant',
+      content: 'Review this turn',
+      toolCalls: [],
+      createdAt: 2,
+    },
+  ])
+  const { send, store } = setup([stale])
+  const staleReport = stale.messages[0]?.reviewReport
+  assert.ok(staleReport)
+  const completed: ThreadReviewReport = { ...staleReport, status: 'done', startedAt: 2 }
+  setReviewReportTarget(store, 't1', 'target')
+  send({ type: 'review_report', report: completed })
+
+  const current = requireThread(store, 't1')
+  assert.equal(current.messages[0]?.reviewReport?.status, 'running')
+  assert.equal(current.messages[1]?.reviewReport?.startedAt, 2)
+  assert.equal(getReviewReportTarget(store, 't1'), undefined)
+})
+
+test('a standalone review that ends without a report settles its card as an error', () => {
+  const running: ThreadReviewReport = {
+    status: 'running',
+    startedAt: 1,
+    models: { reviewer: 'gpt-5', challenger: null },
+    lenses: [],
+    baseRef: '',
+    headCommit: null,
+    dirtyWorkingTree: false,
+    execution: { backend: '', strength: 'none', executed: false, reason: '' },
+    checks: [],
+    notChecked: [],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 0,
+  }
+  const { send, store } = setup([
+    thread('t1', [
+      {
+        id: 'target',
+        role: 'assistant',
+        content: 'Review this turn',
+        toolCalls: [],
+        createdAt: 1,
+        reviewReport: running,
+      },
+    ]),
+  ])
+  setReviewReportTarget(store, 't1', 'target')
+  // Main could not resolve the thread's checkout: it streams the error text
+  // and `done`, never a final `review_report`.
+  send({ type: 'text', text: 'Worktree is missing' })
+  send({ type: 'done' })
+
+  const settled = requireThread(store, 't1').messages.find((m) => m.id === 'target')
+  assert.equal(settled?.reviewReport?.status, 'error')
+  assert.equal(settled.reviewReport.error, 'The review ended before it produced a report.')
+  assert.equal(getReviewReportTarget(store, 't1'), undefined)
 })

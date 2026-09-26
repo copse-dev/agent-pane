@@ -43,6 +43,7 @@
     "packages/plugin-sdk/src/**/*",
     "packages/procwatch/src/**/*",
     "packages/review/src/**/*",
+    "packages/review/ci/**/*",
     "packages/shell-guard/src/**/*",
     "packages/std/src/**/*",
     "packages/store-kit/src/**/*",

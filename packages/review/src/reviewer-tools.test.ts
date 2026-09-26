@@ -17,10 +17,15 @@ import {
 
 const signal = new AbortController().signal
 
-function contextFor(files: ReviewContext['files'], mergeBase = 'a'.repeat(40)): ReviewContext {
+function contextFor(
+  root: string,
+  files: ReviewContext['files'],
+  mergeBase = 'a'.repeat(40),
+): ReviewContext {
   return {
     mergeBase,
     headCommit: 'b'.repeat(40),
+    head: { gitDir: join(root, '.git'), workTree: root },
     dirtyWorkingTree: false,
     files,
     instructions: [],
@@ -59,6 +64,7 @@ describe('reviewer tools', () => {
     host = {
       headCheckout: root,
       context: contextFor(
+        root,
         [
           {
             path: 'src/a.ts',
@@ -226,7 +232,7 @@ describe('reviewer tools', () => {
     try {
       const executor = createReviewerToolExecutor({
         headCheckout: checkout,
-        context: contextFor([]),
+        context: contextFor(checkout, []),
         cell: redirectedCell,
         shellDecision: 'allow',
         scrub: (text: string): string => text,
@@ -849,6 +855,7 @@ describe('reviewer tools', () => {
         ...host,
         headCheckout: deleted.root,
         context: contextFor(
+          deleted.root,
           [
             {
               path: 'deleted.ts',
