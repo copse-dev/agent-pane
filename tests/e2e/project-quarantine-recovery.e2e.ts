@@ -69,9 +69,37 @@ describe('project quarantine and orphan recovery', () => {
     const orphanSection = await $('.orphans-section')
     await orphanSection.waitForDisplayed({ timeout: 15_000 })
     await expect(orphanSection.$('.orphans-heading')).toHaveText('Recoverable threads')
-    await expect(orphanSection.$('.orphan-name')).toHaveText('1 thread')
+    await expect(orphanSection.$('.orphan-name')).toHaveText('Recovered planning notes')
+    await expect(orphanSection.$('.orphan-meta')).toHaveText('1 thread')
     await expect(orphanSection.$('.orphan-recover-btn')).toHaveText('Recover…')
+    await expect(orphanSection.$('.orphan-dismiss-btn')).toHaveText('Dismiss')
+
+    await orphanSection.$('.orphan-recover-btn').click()
+    const confirm = await $('#confirm-dialog')
+    await confirm.waitForDisplayed({ timeout: 10_000 })
+    await expect(confirm.$('.confirm-dialog-message')).toHaveText(
+      'Recover “Recovered planning notes”?',
+    )
+    assert.match(
+      (await confirm.$('.confirm-dialog-detail').getText()) ?? '',
+      /Recovered planning notes/,
+    )
+    await expect(confirm.$('.confirm-dialog-confirm')).toHaveText('Choose folder…')
+    await confirm.$('.confirm-dialog-cancel').click()
+    await browser.waitUntil(async () => !(await confirm.isDisplayed()), { timeout: 5_000 })
 
     await saveElementScreenshot('#pane-projects', 'project-quarantine-recovery.png')
+  })
+
+  it('dismisses a recoverable orphan row from the sidebar', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 30_000 })
+    const orphanSection = await $('.orphans-section')
+    await orphanSection.waitForDisplayed({ timeout: 15_000 })
+    await orphanSection.$('.orphan-dismiss-btn').click()
+    await browser.waitUntil(async () => !(await orphanSection.isExisting()), {
+      timeout: 10_000,
+      timeoutMsg: 'orphans section should leave after dismiss',
+    })
+    await saveElementScreenshot('#pane-projects', 'project-quarantine-recovery-dismissed.png')
   })
 })

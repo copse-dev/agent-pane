@@ -27,6 +27,7 @@ describe('assertStorageKey', () => {
     // failure here instead of a silently narrower allowlist.
     assert.deepEqual([...RENDERER_STORAGE_KEYS].sort(), [
       'activeProjectId',
+      'dismissedOrphanStores',
       'projectGroups',
       'projects',
     ])

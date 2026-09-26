@@ -8,7 +8,8 @@ import {
   setThreadDraftPrompt,
   switchThread,
 } from '@shared/store/thread-helpers.ts'
-import { loadThreads, flushProjectThreads, saveProjects } from './persistence.ts'
+import { loadThreads, flushProjectThreads, saveProjects, serializedSet } from './persistence.ts'
+import type { RendererStorageKey } from '@shared/storage-keys.ts'
 import { resumePendingQueues } from './message-queue.ts'
 import {
   captureProjectViewState,
@@ -898,9 +899,40 @@ export async function relocateProject(
   return true
 }
 
-/** Store dirs with threads but no project entry — orphans to re-attach (#997). */
-export function listOrphanProjects(api: ApiClient): Promise<OrphanProjectStore[]> {
-  return api.threads.listOrphans()
+const KEY_DISMISSED_ORPHAN_STORES: RendererStorageKey = 'dismissedOrphanStores'
+
+/** Parse the dismissed-orphan list from config; ignore anything that is not string ids. */
+export function parseDismissedOrphanStores(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'string' || item.length === 0 || seen.has(item)) continue
+    seen.add(item)
+    ids.push(item)
+  }
+  return ids
+}
+
+/**
+ * Store dirs with threads but no project entry — orphans to re-attach (#997).
+ * Ids the user dismissed stay on disk but are filtered out of the sidebar list.
+ */
+export async function listOrphanProjects(api: ApiClient): Promise<OrphanProjectStore[]> {
+  const [orphans, dismissedRaw] = await Promise.all([
+    api.threads.listOrphans(),
+    api.storage.get(KEY_DISMISSED_ORPHAN_STORES),
+  ])
+  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw))
+  if (dismissed.size === 0) return orphans
+  return orphans.filter((orphan) => !dismissed.has(orphan.id))
+}
+
+/** Hide an orphan store from the Recoverable threads list without deleting it. */
+export async function dismissOrphanProject(api: ApiClient, storeId: string): Promise<void> {
+  const current = parseDismissedOrphanStores(await api.storage.get(KEY_DISMISSED_ORPHAN_STORES))
+  if (current.includes(storeId)) return
+  await serializedSet(api, KEY_DISMISSED_ORPHAN_STORES, [...current, storeId])
 }
 
 /**
@@ -908,13 +940,18 @@ export function listOrphanProjects(api: ApiClient): Promise<OrphanProjectStore[]
  * entry that reuses the orphan's store id, so the existing thread directories
  * become visible again (issue #997). Returns false if cancelled or already
  * attached.
+ *
+ * `confirm` is the pre-picker gate that shows what will be recovered; when it
+ * returns false the folder picker never opens.
  */
 export async function recoverOrphanProject(
   store: AppStore,
   api: ApiClient,
   storeId: string,
+  confirm?: () => Promise<boolean>,
 ): Promise<boolean> {
   if (store.getState().projects.some((p) => p.id === storeId)) return false
+  if (confirm && !(await confirm())) return false
   const path = await api.workspace.open()
   if (!path) return false
   if (store.getState().projects.some((p) => p.id === storeId)) return false
@@ -922,6 +959,15 @@ export async function recoverOrphanProject(
     projects: [...store.getState().projects, { id: storeId, path, name: basename(path) }],
   })
   store.emit('projects_changed')
+  // A recovered store should not stay on the dismissed list if the user brings it back later.
+  const dismissed = parseDismissedOrphanStores(await api.storage.get(KEY_DISMISSED_ORPHAN_STORES))
+  if (dismissed.includes(storeId)) {
+    await serializedSet(
+      api,
+      KEY_DISMISSED_ORPHAN_STORES,
+      dismissed.filter((id) => id !== storeId),
+    )
+  }
   await activateAndWait(store, api, storeId, path)
   return true
 }

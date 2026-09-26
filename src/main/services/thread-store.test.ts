@@ -120,6 +120,8 @@ describe('thread-store', () => {
     assert.ok(first)
     assert.equal(first.id, 'orphan')
     assert.equal(first.threadCount, 2)
+    assert.ok(first.sampleTitles.includes('lost'))
+    assert.equal(typeof first.updatedAt, 'number')
   })
 
   it('reports no orphans when every store has a project entry (#997)', async () => {
