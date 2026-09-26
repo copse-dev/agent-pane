@@ -32,7 +32,10 @@ import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import { MCP_UI_CANVAS_CAPABILITY } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
+import {
+  MCP_UI_CANVAS_CAPABILITY,
+  MCP_UI_CANVAS_PLUGIN_ID,
+} from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../exec/subprocess-output-cap.ts'
@@ -753,6 +756,49 @@ export async function reloadMcpServers(registry: ToolRegistry): Promise<McpServe
   await teardown(registry)
   await loadMcpServers(registry)
   return getMcpServerStatuses()
+}
+
+/**
+ * Reconnect only Copse's bundled in-process servers so they match the current
+ * plugin state. Configured (user/project) clients, their tools, their statuses
+ * and any calls in flight to them are left alone — a full
+ * {@link reloadMcpServers} would close and reconnect every one of them.
+ */
+async function resyncBundledServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
+  const bundled = activeServers.filter((server) => server.config.transport === 'in-process')
+  const bundledNames = new Set(bundled.map((server) => server.config.name))
+  for (const [toolName, meta] of toolMeta) {
+    if (meta.bundled !== true || !bundledNames.has(meta.server)) continue
+    registry.unregister(toolName)
+    toolMeta.delete(toolName)
+  }
+  await Promise.allSettled(bundled.map((server) => server.client.close()))
+  const configured = activeServers.filter((server) => server.config.transport !== 'in-process')
+  activeServers.length = 0
+  activeServers.push(...configured)
+  const configuredStatuses = serverStatuses.filter((status) => status.transport !== 'in-process')
+  const bundledStatuses = await connectBundledServers(registry, loadGeneration)
+  serverStatuses = [...bundledStatuses, ...configuredStatuses]
+  return getMcpServerStatuses()
+}
+
+/**
+ * Follow a live toggle of a first-party plugin that gates a bundled in-process
+ * server, so the server's tools track the toggle without a restart. Returns the
+ * new statuses, or `null` (and does nothing) for any other plugin.
+ *
+ * `copse.mcp-ui-canvas` is the one today: {@link connectBundledServers} reads its
+ * capability. Without this, disabling it would leave `render_html_artefact`
+ * registered while tool results stop being summarised — so the raw HTML body
+ * would reach the model — and enabling it would offer no tool until restart.
+ * Only the bundled servers are reconnected; configured servers stay connected.
+ */
+export async function reloadMcpServersForPluginToggle(
+  registry: ToolRegistry,
+  pluginId: string,
+): Promise<McpServerStatus[] | null> {
+  if (pluginId !== MCP_UI_CANVAS_PLUGIN_ID) return null
+  return resyncBundledServers(registry)
 }
 
 export async function shutdownMcpServers(): Promise<void> {

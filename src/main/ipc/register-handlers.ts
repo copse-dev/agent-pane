@@ -347,6 +347,7 @@ import { createPrForThread } from '../services/github/pr-create-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
+  reloadMcpServersForPluginToggle,
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
@@ -2192,6 +2193,11 @@ export function registerAllHandlers(
     if (id === DARK_FACTORY_PLUGIN_ID) {
       syncDarkFactorySensor()
     }
+    // The `copse.mcp-ui-canvas` plugin gates the bundled canvas server, so its
+    // `render_html_artefact` tool must connect or disconnect with the toggle —
+    // the same live reload the Apple Development toggle does below.
+    const bundledMcpStatuses = await reloadMcpServersForPluginToggle(registry, id)
+    if (bundledMcpStatuses) win.webContents.send('mcp:status-changed', bundledMcpStatuses)
     if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
