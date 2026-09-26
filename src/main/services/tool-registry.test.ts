@@ -12,6 +12,7 @@ import { clearAllToolResultCachesForTest } from './search/tool-result-cache.ts'
 import {
   setExecutionRootWatchForTest,
   stopAllExecutionRootWatchers,
+  watchedExecutionRootsForTest,
 } from './search/execution-root-watcher.ts'
 import { turnIngestedExternalContent } from './security/turn-taint.ts'
 import { z } from 'zod'
@@ -77,7 +78,12 @@ describe('ToolRegistry', () => {
       execute: async ({ msg }) => msg,
     })
     const result = await reg.execute('echo', { msg: 'output' }, new AbortController().signal)
-    assert.equal(result, 'output\n\n<system-reminder>\nremember this\n</system-reminder>')
+    // The model reads the same text as before; the block's length rides along
+    // so the transcript can show exactly this block as a Copse note.
+    assert.deepEqual(result, {
+      result: 'output\n\n<system-reminder>\nremember this\n</system-reminder>',
+      appendedReminderLengths: ['<system-reminder>\nremember this\n</system-reminder>'.length],
+    })
     setPermissionGateForTests(null)
   })
 
@@ -97,6 +103,7 @@ describe('ToolRegistry', () => {
     assert.deepEqual(result, {
       result: 'edited\n\n<system-reminder>\nnote\n</system-reminder>',
       editStats: { additions: 2, deletions: 1 },
+      appendedReminderLengths: ['<system-reminder>\nnote\n</system-reminder>'.length],
     })
     setPermissionGateForTests(null)
   })
@@ -150,10 +157,12 @@ describe('ToolRegistry', () => {
       assert.equal(seenArgs.max_results, 200, 'executes with the clamped value')
       // The note reaches the model in the same system-reminder shape hooks use,
       // so it reads as out-of-band Copse context rather than tool output.
-      assert.equal(
-        result,
-        'found\n\n<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>',
-      )
+      const note =
+        '<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>'
+      assert.deepEqual(result, {
+        result: `found\n\n${note}`,
+        appendedReminderLengths: [note.length],
+      })
     })
 
     it('passes repaired input through a transforming schema only once per parse', async () => {
@@ -171,14 +180,13 @@ describe('ToolRegistry', () => {
         }),
         execute: async ({ max_results }) => `value=${String(max_results)}`,
       })
-      const result = await reg.execute(
+      const result = await reg.executeNormalized(
         'bounded_transform',
         { max_results: 2000 },
         new AbortController().signal,
       )
-      assert.equal(typeof result, 'string')
-      assert.match(typeof result === 'string' ? result : '', /^value=201/)
-      assert.match(typeof result === 'string' ? result : '', /max_results — clamped to 200/)
+      assert.match(result.result, /^value=201/)
+      assert.match(result.result, /max_results — clamped to 200/)
     })
 
     it('clamps a below-the-floor number without changing the error path', async () => {
@@ -191,14 +199,13 @@ describe('ToolRegistry', () => {
         parameters: z.object({ context_lines: z.number().int().min(0).max(20) }),
         execute: async ({ context_lines }) => `lines=${String(context_lines)}`,
       })
-      const result = await reg.execute(
+      const result = await reg.executeNormalized(
         'search_code',
         { context_lines: -1 },
         new AbortController().signal,
       )
-      assert.equal(typeof result, 'string')
-      assert.match(typeof result === 'string' ? result : '', /^lines=0/)
-      assert.match(typeof result === 'string' ? result : '', /context_lines — clamped to 0/)
+      assert.match(result.result, /^lines=0/)
+      assert.match(result.result, /context_lines — clamped to 0/)
     })
 
     it('still rejects a call with a non-range problem, naming the field', async () => {
@@ -244,10 +251,9 @@ describe('ToolRegistry', () => {
       assert.equal(recovered.toolCalls.length, 1)
       const call = recovered.toolCalls[0]
       assert.ok(call)
-      const result = await reg.execute(call.name, call.args, new AbortController().signal)
-      assert.equal(typeof result, 'string')
-      assert.match(typeof result === 'string' ? result : '', /^found 200/)
-      assert.match(typeof result === 'string' ? result : '', /max_results — clamped to 200/)
+      const result = await reg.executeNormalized(call.name, call.args, new AbortController().signal)
+      assert.match(result.result, /^found 200/)
+      assert.match(result.result, /max_results — clamped to 200/)
     })
 
     it('returns a readable schema error for an invalid recovered text call', async () => {
@@ -295,10 +301,13 @@ describe('ToolRegistry', () => {
         { max_results: 2000 },
         new AbortController().signal,
       )
-      assert.equal(
-        result,
-        'found\n\n<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>\n\n<system-reminder>\nhook note\n</system-reminder>',
-      )
+      const clamp =
+        '<system-reminder>\nArguments were clamped to schema bounds: max_results — clamped to 200.\n</system-reminder>'
+      const hook = '<system-reminder>\nhook note\n</system-reminder>'
+      assert.deepEqual(result, {
+        result: `found\n\n${clamp}\n\n${hook}`,
+        appendedReminderLengths: [clamp.length, hook.length],
+      })
     })
 
     it('does not append a clamp note when the arguments were valid', async () => {
@@ -443,6 +452,24 @@ describe('ToolRegistry', () => {
       assert.equal(searchCalls, 2)
     })
 
+    // Node's recursive watch walks the whole checkout synchronously. Armed inside
+    // the call, it held a millisecond find_files in `running` past the
+    // transcript's 300 ms auto-reveal, so the card flashed open and collapsed.
+    it('arms the root watcher after the first cacheable call returns, not inside it', async () => {
+      setExecutionRootWatchForTest(null)
+      const reg = registryWithSearchAndWrite()
+      const signal = new AbortController().signal
+      await inThread('t1', () => reg.execute('search_code', { pattern: 'foo' }, signal))
+      assert.deepEqual(watchedExecutionRootsForTest(), [])
+      await new Promise((resolve) => setImmediate(resolve))
+      assert.deepEqual(watchedExecutionRootsForTest(), [root])
+      await inThread('t1', async () => {
+        await reg.execute('search_code', { pattern: 'foo' }, signal)
+        await reg.execute('search_code', { pattern: 'foo' }, signal)
+      })
+      assert.equal(searchCalls, 2, 'only the result produced before the watch armed is uncached')
+    })
+
     it('does not share cached results across threads', async () => {
       const reg = registryWithSearchAndWrite()
       const signal = new AbortController().signal
@@ -531,11 +558,12 @@ describe('ToolRegistry', () => {
         execute: async () => 'body',
       })
       const result = await reg.execute('fake_fetch', {}, new AbortController().signal)
-      assert.equal(
-        result,
-        '<external_content source="fake_fetch">\nbody\n</external_content>\n\n' +
+      assert.deepEqual(result, {
+        result:
+          '<external_content source="fake_fetch">\nbody\n</external_content>\n\n' +
           '<system-reminder>note</system-reminder>',
-      )
+        appendedReminderLengths: ['<system-reminder>note</system-reminder>'.length],
+      })
       setPermissionGateForTests(null)
     })
 

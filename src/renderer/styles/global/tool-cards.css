@@ -322,6 +322,16 @@
   word-break: break-word;
   overflow-wrap: anywhere;
 }
+/* A Copse note appended to the result for the model (clamped arguments, hook
+   context): prose, set apart from the tool's own output. */
+.tool-result-note {
+  margin: var(--spacing-sm) 0 0;
+  font-family: var(--font-family);
+  color: var(--text-muted);
+}
+.tool-result-note:first-child {
+  margin-top: 0;
+}
 /* ACP tool output rendered as Markdown: prose font (not mono) so it matches
    the assistant-message body, while fenced code blocks keep their own styling.
    Roomier scroll cap than the plain `<pre>` variant since rendered output is

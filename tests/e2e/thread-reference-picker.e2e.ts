@@ -9,7 +9,7 @@ import {
 import { setComposerValue } from './helpers/composer.ts'
 import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-import { waitForAgentIdle } from './helpers.ts'
+import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 
 describe('@-reference past threads (#644)', () => {
   before(async () => {
@@ -109,6 +109,18 @@ describe('@-reference past threads (#644)', () => {
       )
     }
 
+    // The kit radius, like every other attachment/reference chip.
+    const radius = await browser.execute(() => {
+      const inlineChip = document.querySelector('.prompt-input .inline-thread-chip')
+      if (!(inlineChip instanceof HTMLElement)) return null
+      return {
+        chip: getComputedStyle(inlineChip).borderTopLeftRadius,
+        token: getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(),
+      }
+    })
+    assert.ok(radius, 'expected the inline thread chip')
+    assert.equal(radius.chip, radius.token)
+
     await saveAppScreenshot('thread-reference-chip.png')
 
     await browser.execute(() => {
@@ -147,6 +159,13 @@ describe('@-reference past threads (#644)', () => {
     await expectAssistantReply(reply)
     await waitForAgentIdle()
     await scenario.assertComplete()
+    // The inline chip is a U+FFFC placeholder in the stored prompt, and the mock
+    // title model does not match it, so this is the word-slice fallback title:
+    // the prompt's own words, without the placeholder glyph.
+    await waitForActiveThreadTitle()
+    await expect($('.chat-row.selected .chat-title')).toHaveText(
+      'From can you compare the proposal?',
+    )
     await saveAppScreenshot('thread-reference-sent-inline.png')
   })
 })

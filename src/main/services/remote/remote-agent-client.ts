@@ -1185,7 +1185,7 @@ export async function runRemoteAgentFromSettings(
   } catch (err) {
     // User Stop / Send now: cancel the remote run, wait for that POST to finish,
     // then emit a clean `done` so the queue can drain a follow-up without treating
-    // the abort as a provider error ("An error occurred: …").
+    // the abort as a provider error.
     if (options.signal.aborted) {
       if (cancelPromise) await cancelPromise
       // A cancelled run has typically already billed real tokens on Cursor's
