@@ -501,8 +501,13 @@ jobs:
   # finds no diff and pushes nothing. Falls back to github.token when the App
   # credentials are unset (commit lands, just no CI re-trigger — the behaviour
   # before any push identity was configured).
+  #
+  # Never on a promotion into `release`: its head, `promote/main`
+  # (promote-develop.yml), must hold only commits already on `main`, and a
+  # format commit pushed there would reach `release` without ever landing on
+  # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release'
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}

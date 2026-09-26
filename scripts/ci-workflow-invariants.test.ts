@@ -343,6 +343,11 @@ describe('ci.yml workflow invariants', () => {
     assert.match(aggregate, /needs: \[[^\]]*review-cell[^\]]*\]/)
   })
 
+  it('never pushes a format commit to a promotion into release', () => {
+    // The promotion head, promote/main, must hold only commits already on main.
+    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release'$/m)
+  })
+
   it('decides autofix has work to do before paying for the dependency install', () => {
     // The install is minutes; the autofix is seconds. Ordering them the other
     // way round means a diff with no formattable file pays the whole install to
@@ -448,7 +453,7 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /candidates\.length !== 1/)
     assert.match(workflow, /parent\.state !== 'open'/)
     assert.match(workflow, /parent\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
-    assert.match(workflow, /parent\.head\.ref === 'main' \|\| parent\.head\.ref === 'release'/)
+    assert.match(workflow, /\['main', 'promote\/main', 'release'\]\.includes\(parent\.head\.ref\)/)
     assert.match(workflow, /parent\.head\.sha !== runHeadSha/)
     assert.match(workflow, /artifact\.name === artifactName && !artifact\.expired/)
     assert.match(workflow, /ref: \$\{\{ steps\.discover\.outputs\.head-sha \}\}/)
@@ -559,12 +564,20 @@ describe('promote-develop.yml workflow invariants', () => {
   it('runs daily and only opens a PR when trunk has commits to promote', () => {
     assert.match(workflow, /- cron: '[^']+ \* \* \*'/)
     assert.match(workflow, /const base = 'release'/)
-    assert.match(workflow, /const head = 'main'/)
+    assert.match(workflow, /const source = 'main'/)
+    assert.match(workflow, /const head = 'promote\/main'/)
 
     const noChangesExit = workflow.indexOf('comparison.data.ahead_by === 0')
+    const pin = workflow.indexOf('github.rest.git.createRef')
     const pullRequestLookup = workflow.indexOf('github.paginate')
     assert.match(workflow, /compare\/\{basehead\}/)
+    assert.match(
+      workflow,
+      /basehead: `\$\{base\}\.\.\.\$\{sha\}`/,
+      'compare the commit being pinned',
+    )
     assert.ok(noChangesExit >= 0, 'expected an explicit no-unpromoted-commits exit')
+    assert.ok(noChangesExit < pin, 'the no-changes exit must run before pinning promote/main')
     assert.ok(
       noChangesExit < pullRequestLookup,
       'the no-changes exit must run before looking up or creating a promotion PR',
@@ -574,6 +587,17 @@ describe('promote-develop.yml workflow invariants', () => {
       /commit\.tree\.sha/,
       'tree equality must not hide commits discarded by a squash merge',
     )
+  })
+
+  it('pins the promotion head by fast-forward only', () => {
+    // A pinned head stops trunk merges cancelling the promotion's CI. It must
+    // only ever hold `main` commits: forcing it could carry a commit pushed to
+    // the branch by hand into `release`.
+    assert.match(
+      workflow,
+      /updateRef\(\{ owner, repo, ref: `heads\/\$\{head\}`, sha, force: false \}\)/,
+    )
+    assert.doesNotMatch(workflow, /force: true/)
   })
 
   it('enables merge-commit auto-merge through the existing required CI gate', () => {
