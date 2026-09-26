@@ -99,8 +99,11 @@ describe('renderSummaryBlock', () => {
       toolVersion: '0.1.0',
       report: null,
     })
+    const lines = block.split('\n')
+    // A hidden digest of the rendered text sits just before the end marker.
+    assert.match(lines.at(-2) ?? '', /^<!-- copse-review-summary-digest:[0-9a-f]{16} -->$/)
     assert.equal(
-      block,
+      [...lines.slice(0, -2), ...lines.slice(-1)].join('\n'),
       [
         '<!-- copse-review-summary -->',
         '---',
@@ -154,7 +157,7 @@ describe('renderSummaryBlock', () => {
     )
     // A leading bullet is not doubled, and a code span is kept as written.
     assert.match(block, /^> - Rewrites `login\(\)` &lt;script&gt;alert\(1\)&lt;\/script&gt;$/m)
-    for (const line of block.split('\n').slice(3, -1)) assert.match(line, /^>/)
+    for (const line of block.split('\n').slice(3, -2)) assert.match(line, /^>/)
   })
 })
 
@@ -225,6 +228,13 @@ describe('upsertSummaryBlock', () => {
   it('keeps an author-edited block and the text between two start markers', () => {
     const edited = older.replace('> **Overview**', '> My note inside the block.\n>\n> **Overview**')
     assert.equal(upsertSummaryBlock(`Text.\n\n${edited}`, block), `Text.\n\n${edited}\n\n${block}`)
+    // Rewording a line keeps the layout but not the digest, so it is kept too.
+    const reworded = older.replace(summary.overview[0] ?? '', 'My own wording.')
+    assert.notEqual(reworded, older)
+    assert.equal(
+      upsertSummaryBlock(`Text.\n\n${reworded}`, block),
+      `Text.\n\n${reworded}\n\n${block}`,
+    )
     const stray = `Text.\n${START}\nMine.\n\n${older}`
     assert.equal(upsertSummaryBlock(stray, block), `Text.\n${START}\nMine.\n\n${block}`)
   })

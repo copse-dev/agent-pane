@@ -1403,9 +1403,10 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   commit and, when a review accompanies it, how many issues that review reported.
 - **Ownership.** Only the block the tool wrote is replaced: the last start marker whose next
   marker is the end marker, each a whole line outside fenced code, with exactly the rendered
-  shape between them. A marker quoted in prose or a code fence, a marker pair the author
-  wrote, or a block the author edited is the author's text and is kept, and a new block is
-  appended at the bottom. Nothing else in the description changes.
+  shape between them and a hidden digest line that still matches that text. A marker quoted
+  in prose or a code fence, a marker pair the author wrote, or a block the author edited,
+  even one reworded sentence, is the author's text and is kept, and a new block is appended
+  at the bottom. Nothing else in the description changes.
 - **Generation.** One tool-free model turn over the Stage 1 context that must end in
   `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
   describe, not review. It reuses the review's model route; it adds no new trust boundary.

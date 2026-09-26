@@ -10,6 +10,7 @@
 // a model that read an untrusted diff and is written under the App's identity,
 // so every model-written line goes through the same inert-markdown escaping as
 // review comments; that also keeps a crafted diff from forging the end marker.
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
 import { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
@@ -230,8 +231,19 @@ export function renderSummaryBlock(summary: PrSummary, options: SummaryBlockOpti
     )
   }
   footer.push(`copse-review ${options.toolVersion}`)
-  lines.push('>', `> <sup>${footer.join(' ')}</sup>`, END_MARKER)
+  lines.push('>', `> <sup>${footer.join(' ')}</sup>`)
+  lines.push(digestLine(lines.slice(1).map(bareLine)), END_MARKER)
   return lines.join('\n')
+}
+
+/**
+ * A hidden line stamping the rendered text between the start marker and itself.
+ * An author's edit to any of that text, even one that keeps the layout, changes
+ * the digest, so the block becomes theirs.
+ */
+function digestLine(body: readonly string[]): string {
+  const digest = createHash('sha256').update(body.join('\n')).digest('hex').slice(0, 16)
+  return `<!-- copse-review-summary-digest:${digest} -->`
 }
 
 /** A line without the carriage return and trailing blanks a web editor leaves. */
@@ -286,11 +298,14 @@ function fencedLines(lines: readonly string[]): ReadonlySet<number> {
 
 /**
  * Whether lines `start`..`end` are, line for line, the shape
- * `renderSummaryBlock` writes. Anything else between the markers, such as a
- * note the author added, makes the block theirs.
+ * `renderSummaryBlock` writes, with the text its digest line stamped. Anything
+ * else between the markers, such as a note the author added or a sentence they
+ * reworded, makes the block theirs.
  */
 function isBotBlock(lines: readonly string[], start: number, end: number): boolean {
   const inner = lines.slice(start + 1, end).map(bareLine)
+  const stamp = inner.pop()
+  if (stamp !== digestLine(inner)) return false
   const expect = (at: number, line: RegExp): boolean => line.test(inner[at] ?? '')
   if (!expect(0, /^---$/) || !expect(1, /^$/) || !expect(2, /^> \[!NOTE\]$/)) return false
   if (!expect(3, /^> \*\*(Low|Medium|High) risk\*\*$/) || !expect(4, /^> \S/)) return false
