@@ -6,6 +6,7 @@ import { getCopseUserDataDir } from './helpers.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
   prepareE2eScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -205,7 +206,15 @@ describe('settings usage panel', function () {
     }
 
     await prepareE2eScreenshot()
+    // The ledger note names when tracking started: the earliest event, which
+    // has to be "now" for the day window to count it. Pin only that time.
+    const restoreTrackedSince = await pinTextForCapture(
+      '#settings-dialog',
+      /\(since [^)]+\)/,
+      '(since 1/1/2026, 12:00:00 AM)',
+    )
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')
+    await restoreTrackedSince()
 
     const cloudGroup = $('.usage-model-group:nth-of-type(1)')
     await prepareE2eScreenshot()

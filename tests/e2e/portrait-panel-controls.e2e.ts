@@ -339,6 +339,15 @@ describe('portrait panel controls row', () => {
     expect(Math.abs(stacked.barHeight - stacked.settingsHeight)).toBeLessThanOrEqual(1)
     expect(stacked.seamHitTargetId).toBe('resizer-files')
 
+    // The pane opens on "Loading changes…" until its first git status lands;
+    // capture the loaded list, not whichever side of that race this run hit.
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => !document.getElementById('pane-files')?.textContent?.includes('Loading changes'),
+        ),
+      { timeout: 15_000, timeoutMsg: 'the Changes pane never finished loading' },
+    )
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-with-panel.png'))
   })

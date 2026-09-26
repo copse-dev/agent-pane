@@ -115,6 +115,10 @@ export const config: Options.Testrunner = {
           // outcome on Linux and the persisted one on macOS. Giving the runner
           // a fake secret store would only have made it lie to the test.
           '--password-store=basic',
+          // Dates and times in reference PNGs format in the app locale. Pin it,
+          // with `TZ` in beforeSession, so a capture renders the same text on a
+          // developer's machine as on CI (docs/testing-strategy.md).
+          '--lang=en-US',
         ],
       },
     },
@@ -218,6 +222,9 @@ export const config: Options.Testrunner = {
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
+      // Seeded timestamps render in local time; pin the zone so a reference
+      // shows the same clock time on every host. `--lang` pins the format.
+      TZ: 'UTC',
       // Shells tabs spawn `$SHELL`. Point it at a wrapper that runs bash with no
       // rc files and a fixed `$ ` prompt, so terminal captures never carry the
       // runner's `user@host:~/path` prompt (a new hostname on every CI run).
