@@ -188,8 +188,8 @@ own.
   plugin ids — go through `humanizeIdentifier`
   ([`humanize-identifier.ts`](../src/shared/humanize-identifier.ts)): sentence case, acronyms and
   product names in their canonical spelling ("Launch GUI app", "GitHub PR create"), prose compounds
-  hyphenated ("Post-turn review"), and a Markdown-file slug as the file ("AGENTS.md"). Extend its
-  word lists rather than special-casing a label at one call site.
+  hyphenated ("Post-turn review"), and a listed instruction-file slug as the file ("AGENTS.md").
+  Extend its word lists rather than special-casing a label at one call site.
 - Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
   provider/ACP wording in a visually subordinate technical-details block so it remains copyable
   without competing with the fix.

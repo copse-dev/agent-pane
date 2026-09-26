@@ -27,11 +27,14 @@ describe('humanizeIdentifier', () => {
     assert.equal(humanizeIdentifier('dark-factory'), 'Dark factory')
   })
 
-  it('reads a trailing md as the Markdown file it names', () => {
+  it('reads an instruction-file stem and md as the Markdown file it names', () => {
     assert.equal(humanizeIdentifier('agents-md'), 'AGENTS.md')
     assert.equal(humanizeIdentifier('claude-md'), 'CLAUDE.md')
     assert.equal(humanizeIdentifier('read_agents_md'), 'Read AGENTS.md')
     assert.equal(humanizeIdentifier('md'), 'Md')
+    // Any other word before md is an ordinary word, not a file name.
+    assert.equal(humanizeIdentifier('get_md'), 'Get md')
+    assert.equal(humanizeIdentifier('render_md_preview'), 'Render md preview')
   })
 
   it('returns an identifier with no words unchanged', () => {

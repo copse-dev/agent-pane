@@ -49,6 +49,13 @@ const HYPHENATED_COMPOUNDS: ReadonlySet<string> = new Set([
   'sign-in',
 ])
 
+/**
+ * Stems of the Markdown instruction files an identifier can name, which are
+ * conventionally upper case (`agents-md` → "AGENTS.md"). Only these merge with a
+ * following `md`, so an ordinary word before it (`get_md`) stays a word.
+ */
+const MARKDOWN_FILE_STEMS: ReadonlySet<string> = new Set(['agents', 'claude'])
+
 function casedWord(word: string, leading: boolean): string {
   const canonical = CANONICAL_WORDS.get(word)
   if (canonical !== undefined) return canonical
@@ -64,8 +71,8 @@ function casedWord(word: string, leading: boolean): string {
  * `copse.post-turn-review` minus its namespace, `getFileContents`) into a
  * sentence-case label: only the first word capitalised, known acronyms and
  * product names in their canonical spelling ("Launch GUI app", "GitHub PR
- * create"), and a trailing `md` read as the Markdown file it names
- * (`agents-md` → "AGENTS.md").
+ * create"), and a known instruction-file stem followed by `md` read as the
+ * Markdown file it names (`agents-md` → "AGENTS.md").
  */
 export function humanizeIdentifier(identifier: string): string {
   const words = identifier
@@ -80,8 +87,7 @@ export function humanizeIdentifier(identifier: string): string {
     const previous = merged.at(-1)
     if (previous !== undefined && HYPHENATED_COMPOUNDS.has(`${previous}-${word}`)) {
       merged[merged.length - 1] = `${previous}-${word}`
-    } else if (previous !== undefined && word === 'md') {
-      // Markdown instruction files are conventionally upper case: AGENTS.md, CLAUDE.md.
+    } else if (previous !== undefined && word === 'md' && MARKDOWN_FILE_STEMS.has(previous)) {
       merged[merged.length - 1] = `${previous.toUpperCase()}.md`
     } else {
       merged.push(word)
