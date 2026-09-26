@@ -1908,7 +1908,8 @@ jobs:
               echo
               echo "A trusted follow-up workflow links this evidence from the same-repository parent PR,"
               echo "including a view-only compare view of the PNGs in GitHub's image diff."
-              echo 'Accept them by committing the PNGs to the PR branch (the comment gives a cherry-pick command).'
+              echo 'Its `Screenshot review` check stays pending until a maintainer adds `accept-screenshots`'
+              echo '(fast-forwards the PR branch onto the candidates) or `decline-screenshots` (commits nothing).'
               echo "The artifact remains the immutable record and the manual fallback for forks."
               echo
               printf -- '- `%s`\n' "${files[@]#candidates/}"

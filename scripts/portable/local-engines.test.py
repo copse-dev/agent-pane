@@ -52,6 +52,10 @@ def port_closed(port, timeout=15):
             socket.create_connection(("127.0.0.1", port), timeout=1).close()
         except ConnectionRefusedError:
             return True
+        except (ConnectionResetError, ConnectionAbortedError, TimeoutError):
+            # An engine that is shutting down can accept and then reset the
+            # connection; the port is not closed yet, so keep polling.
+            pass
         time.sleep(0.1)
     return False
 

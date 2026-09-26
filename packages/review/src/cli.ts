@@ -616,11 +616,29 @@ export async function main(argv: readonly string[], io: CliIo): Promise<Headless
                     { headCommit },
                   )
                 : '',
+            // A pull request gets a review only when there is something to raise,
+            // and not a finding its stacked sibling already carries.
+            skipWhenEmpty: true,
+            skipRaisedElsewhere: true,
           },
         )
+        const where = `${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)}`
+        const repeated = posted.repeatedElsewhere
+          ? `; ${String(posted.repeatedElsewhere)} finding(s) already raised on another open pull request`
+          : ''
+        const superseded = posted.superseded
+          ? `; ${String(posted.superseded)} earlier review(s) ${posted.notPosted ? 'marked resolved' : 'superseded'}`
+          : ''
         io.stderr(
-          `copse-review: posted the review on ${forgeTarget.owner}/${forgeTarget.repo}#${String(forgeTarget.number)} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''}${posted.superseded ? `; superseded ${String(posted.superseded)} earlier review(s)` : ''})\n`,
+          posted.notPosted
+            ? `copse-review: nothing to raise on ${where}, so no review was posted${repeated}${superseded}\n`
+            : `copse-review: posted the review on ${where} (${String(posted.inline)} inline comment(s)${posted.folded > 0 ? `, ${String(posted.folded)} folded into the body` : ''}${repeated}${superseded})\n`,
         )
+        if (posted.repeatLookupError !== undefined) {
+          io.stderr(
+            `copse-review: could not check other open pull requests, so every finding was kept: ${posted.repeatLookupError}\n`,
+          )
+        }
         if (posted.supersedeError !== undefined) {
           io.stderr(
             `copse-review: earlier reviews were left as they were: ${posted.supersedeError}\n`,
