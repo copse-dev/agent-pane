@@ -4,8 +4,10 @@
 //
 //   node benchmarks/shell-scope/scripts/combine-classifier-eval.mjs <dev.jsonl> <holdout.jsonl>
 //
-// The deterministic verdict projects `ambiguous` to external, which reproduces the
-// recorded baseline (holdout 87 correct, 3 wrong sandbox, 10 wrong external).
+// The deterministic-alone and filter strategies project `ambiguous` to external, which
+// reproduces the recorded baseline (holdout 87 correct, 3 wrong sandbox, 10 wrong
+// external). The sum strategies score `ambiguous` 0.5 instead, so the model's
+// probability decides those cases and can relax them to sandbox.
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'

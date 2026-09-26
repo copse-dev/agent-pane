@@ -188,6 +188,19 @@ test('combinations: an equal-weight sum with a binary deterministic verdict is t
   )
   assert.deepEqual([warned.correct, warned.wrongSandbox, warned.wrongExternal], [3, 0, 1])
   assert.equal(deterministicProbability('ambiguous'), 0.5)
+  // Only a sum lets the model decide an ambiguous verdict: below 0.5 it relaxes to
+  // sandbox, where the deterministic-alone and filter strategies keep it external.
+  const equal = STRATEGIES['sum: equal weights, external at ≥ 0.5']()
+  assert.equal(equal('ambiguous', 0.49), 'sandbox')
+  assert.equal(equal('ambiguous', 0.5), 'external')
+  assert.equal(STRATEGIES['deterministic alone']()('ambiguous', 0.49), 'external')
+  assert.equal(
+    STRATEGIES['filter: deterministic external final, model can add external (P ≥ 0.5)']()(
+      'ambiguous',
+      0.01,
+    ),
+    'external',
+  )
   // Fitting reads only the rows it is given.
   assert.equal(typeof fit(rows).upgrade, 'number')
 })
