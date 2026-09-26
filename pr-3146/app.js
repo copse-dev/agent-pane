@@ -3386,7 +3386,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -3407,11 +3407,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f4]) => f4.l && f4.r).map(([k2]) => k2);
@@ -61402,6 +61402,43 @@ var init_command_routing = __esm({
   }
 });
 
+// packages/shell-guard/src/trusted-ssh-hosts.ts
+function normalizeSshHost(host) {
+  return host.trim().toLowerCase().replace(/\.$/, "");
+}
+function collect(entries2) {
+  const out = [];
+  for (const entry of entries2) {
+    if (typeof entry !== "string") continue;
+    const host = normalizeSshHost(entry);
+    if (!host || out.includes(host) || !VALID_HOST.test(host)) continue;
+    out.push(host);
+  }
+  return out;
+}
+function parseTrustedSshHosts(text2) {
+  return collect(
+    text2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeTrustedSshHosts(value) {
+  return Array.isArray(value) ? collect(value) : [];
+}
+var TRUSTED_SSH_HOSTS_SETTING, VALID_HOST;
+var init_trusted_ssh_hosts = __esm({
+  "packages/shell-guard/src/trusted-ssh-hosts.ts"() {
+    TRUSTED_SSH_HOSTS_SETTING = "trustedSshHosts";
+    VALID_HOST = /^[a-z0-9._:-]+$/;
+  }
+});
+
+// src/shared/trusted-ssh-hosts.ts
+var init_trusted_ssh_hosts2 = __esm({
+  "src/shared/trusted-ssh-hosts.ts"() {
+    init_trusted_ssh_hosts();
+  }
+});
+
 // src/shared/developer-mode.ts
 var DEVELOPER_MODE_SETTING;
 var init_developer_mode = __esm({
@@ -61977,6 +62014,21 @@ function mountSettingsDialog(store2, api2) {
                   project folder (for example <code>xcodebuild</code>). These run with no prompt.
                   A line that also does something destructive or reaches the network still asks.
                   Only applies in a project you trust and while the first option above is on.
+                </span>
+              </label>
+              <label>
+                Trusted SSH hosts
+                <textarea
+                  name="trustedSshHosts"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="build-box.local"
+                ></textarea>
+                <span class="field-hint">
+                  One host name or <code>~/.ssh/config</code> alias per line. In Guarded YOLO,
+                  <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
+                  without asking; any other host asks first. A destructive remote command still
+                  asks.
                 </span>
               </label>
             </fieldset>
@@ -64829,6 +64881,9 @@ function mountSettingsDialog(store2, api2) {
         textareaControl(form, "trustedShellCommands").value = formatTrustedCommands(
           sanitizeTrustedCommands(await api2.settings.get(TRUSTED_COMMANDS_SETTING))
         );
+        textareaControl(form, "trustedSshHosts").value = sanitizeTrustedSshHosts(
+          await api2.settings.get(TRUSTED_SSH_HOSTS_SETTING)
+        ).join("\n");
         selectControl(form, "shellAutoApprovalLevel").value = sanitizeAutoApprovalLevel(
           await api2.settings.get(AUTO_APPROVAL_LEVEL_SETTING)
         );
@@ -65031,6 +65086,14 @@ function mountSettingsDialog(store2, api2) {
           })
         );
       }
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api2.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING))
+          )
+        );
+      }
       await Promise.all(writes);
       store2.setState({
         theme,
@@ -65108,6 +65171,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
+    init_trusted_ssh_hosts2();
     init_unknown_value3();
     init_developer_mode();
     init_terminal_history();
