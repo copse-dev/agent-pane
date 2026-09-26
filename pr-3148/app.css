@@ -2799,6 +2799,7 @@ copse-ui-field input[type=password],
   min-height: 0;
   overflow: hidden;
   background: var(--bg-base);
+  color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
 }
@@ -3669,7 +3670,7 @@ label {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--spacing-sm);
-  border: 1px solid color-mix(in srgb, var(--sev) 45%, var(--border));
+  border: 0;
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   background:
@@ -3688,9 +3689,11 @@ label {
   min-width: 0;
 }
 .turn-recovery-title {
-  color: var(--text-primary);
+  color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .turn-recovery-detail,
 .turn-recovery-model-note {
@@ -4231,6 +4234,10 @@ label {
   max-width: 720px;
   font-size: var(--font-size-lg);
   line-height: var(--sm-line-height);
+}
+.msg-assistant > .message-body > .message-text pre {
+  font-size: var(--sm-font-size-sm);
+  line-height: var(--line-height-base);
 }
 .msg-assistant > .message-body > .message-text :is(li + li) {
   margin-top: var(--spacing-xs);
@@ -5461,6 +5468,14 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+.tool-result-note {
+  margin: var(--spacing-sm) 0 0;
+  font-family: var(--font-family);
+  color: var(--text-muted);
+}
+.tool-result-note:first-child {
+  margin-top: 0;
 }
 .tool-result-markdown {
   font-family: inherit;
