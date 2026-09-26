@@ -1,8 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
+import {
+  APPLE_DEVELOPMENT_PLUGIN_ID,
+  APPLE_DEVELOPMENT_SUGGEST_SETTING_ID,
+} from '@copse/agent/plugins/apple-development-plugin.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import {
+  APPLE_SUGGESTION_ANSWERS,
   appleOperationSchema,
   appleSelectionSchema,
   type AppleConfigureInput,
@@ -12,7 +16,9 @@ import {
   type AppleOperationLogPage,
   type AppleProjectDetection,
   type AppleProjectState,
+  type AppleProjectSuggestion,
   type AppleSelection,
+  type AppleSuggestionAnswer,
 } from '@shared/types/apple-development.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
@@ -29,6 +35,7 @@ import {
   type AppleDriverPlan,
 } from './apple-driver.ts'
 import { showSimulatorDesktop } from '../simulator-desktop/simulator-desktop-panel.ts'
+import { getPluginService } from '../plugins/plugin-service.ts'
 import { getProjectRoot } from '../workspace.ts'
 
 const STORE_KEY = 'plugin.copse.apple-development.state'
@@ -52,6 +59,8 @@ const storedThreadSchema = z.object({
 const storedProjectSchema = z.object({
   enrolled: z.boolean(),
   threads: z.record(z.string(), storedThreadSchema),
+  /** Answer to the open-time suggestion; absent until the user answers. */
+  suggestion: z.enum(APPLE_SUGGESTION_ANSWERS).optional(),
 })
 
 const appleStoreSchema = z.object({
@@ -80,6 +89,7 @@ export interface AppleDevelopmentServiceDependencies {
   presentSimulator?: (udid: string) => void
   resolveProjectRoot?: typeof getProjectRoot
   detectProject?: typeof detectAppleProject
+  suggestionsEnabled?: () => boolean
 }
 
 function readStore(): AppleStore {
@@ -158,6 +168,7 @@ export class AppleDevelopmentService {
   private readonly presentSimulator: (udid: string) => void
   private readonly resolveProjectRoot: typeof getProjectRoot
   private readonly detectProjectRoot: typeof detectAppleProject
+  private readonly suggestionsEnabled: () => boolean
   private readonly discoveries = new Map<string, Map<string, AppleDriverDiscovery>>()
   private readonly destinationCache = new Map<string, Map<string, AppleDestination[]>>()
   private readonly leases = new Map<string, Promise<void>>()
@@ -173,6 +184,14 @@ export class AppleDevelopmentService {
     this.presentSimulator = dependencies.presentSimulator ?? showSimulatorDesktop
     this.resolveProjectRoot = dependencies.resolveProjectRoot ?? getProjectRoot
     this.detectProjectRoot = dependencies.detectProject ?? detectAppleProject
+    // The setting is read raw; an unset value means the default, which is on.
+    this.suggestionsEnabled =
+      dependencies.suggestionsEnabled ??
+      ((): boolean =>
+        getPluginService().getSetting(
+          APPLE_DEVELOPMENT_PLUGIN_ID,
+          APPLE_DEVELOPMENT_SUGGEST_SETTING_ID,
+        ) !== false)
     this.supervisor.registerHandler(
       APPLE_HANDLER,
       (task, context) => this.handleOperation(task, context.signal),
@@ -285,11 +304,16 @@ export class AppleDevelopmentService {
     const context = await this.resolveContext(projectId, threadId)
     await this.updateStore((store) => {
       const current = store.projects[projectId] ?? { enrolled: false, threads: {} }
+      // Removing a project is a deliberate answer, so it is never suggested again.
+      const { suggestion: _previousAnswer, ...rest } = current
+      const dismissed: AppleSuggestionAnswer = 'dismissed'
       return {
         ...store,
         projects: {
           ...store.projects,
-          [projectId]: { ...current, enrolled },
+          [projectId]: enrolled
+            ? { ...rest, enrolled }
+            : { ...rest, enrolled, suggestion: dismissed },
         },
       }
     })
@@ -323,6 +347,31 @@ export class AppleDevelopmentService {
       enrolled,
       supportedHost,
     }
+  }
+
+  /**
+   * Decide what to offer when a project becomes active. Detection runs whether
+   * or not the plugin is on, so the first Apple project can turn it on.
+   */
+  async projectSuggestion(projectId: string): Promise<AppleProjectSuggestion> {
+    const pluginEnabled = this.pluginEnabled()
+    const none: AppleProjectSuggestion = { offer: 'none', pluginEnabled }
+    if (!this.suggestionsEnabled()) return none
+    const stored = readStore().projects[projectId]
+    if (stored?.enrolled === true || stored?.suggestion === 'dismissed') return none
+    const detection = await this.detectProject(projectId)
+    if (!detection.detected) return none
+    return { offer: stored?.suggestion === 'snoozed' ? 'reminder' : 'dialog', pluginEnabled }
+  }
+
+  async answerSuggestion(projectId: string, answer: AppleSuggestionAnswer): Promise<void> {
+    await this.updateStore((store) => {
+      const current = store.projects[projectId] ?? { enrolled: false, threads: {} }
+      return {
+        ...store,
+        projects: { ...store.projects, [projectId]: { ...current, suggestion: answer } },
+      }
+    })
   }
 
   getState(owner: ThreadExecutionOwner): AppleProjectState {

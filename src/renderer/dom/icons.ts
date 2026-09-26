@@ -218,6 +218,17 @@ export function imageIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+/** Sparkle — marks a suggestion Copse offers, such as a plugin for this project. */
+export function sparkleIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'sparkle',
+    [
+      'M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z',
+    ],
+    className,
+  )
+}
+
 /** Lightning/zap — marks the hook-card family (a hook fired / triggered). */
 export function zapIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(

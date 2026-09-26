@@ -24,6 +24,17 @@
       "markers": ["describe.skip"]
     },
     {
+      "spec": "tests/e2e/apple-project-suggestion.e2e.ts",
+      "category": "platform",
+      "reason": "Apple project detection only runs for local projects on macOS.",
+      "tracker": "https://github.com/copse-dev/agent-pane/issues/2719",
+      "ownerRole": "Apple development maintainer (person assignment pending in #2719)",
+      "recordedOn": "2026-09-26",
+      "reviewBy": "2026-10-03",
+      "coverage": "Unit tests cover the suggestion decision (main) and the dialog/reminder flow (renderer); this macOS spec adds the visual evidence.",
+      "markers": ["describe.skip"]
+    },
+    {
       "spec": "tests/e2e/context-wheel.e2e.ts",
       "category": "quarantine",
       "reason": "Both suites skip in CI; source comments report historical runner memory/session failure with the heavy seeded fixture.",

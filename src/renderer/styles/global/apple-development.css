@@ -253,3 +253,61 @@
     justify-content: flex-end;
   }
 }
+
+/* Open-time suggestion. The dialog reuses the Settings → Plugins card so the
+   plugin reads as the same object in both places. */
+#apple-suggestion-dialog {
+  max-width: min(560px, calc(100vw - 64px));
+}
+#apple-suggestion-dialog h2 {
+  margin: 0 0 var(--spacing-sm);
+}
+.apple-suggestion-lede {
+  margin: 0 0 var(--spacing-lg);
+  color: var(--text-secondary);
+  line-height: var(--line-height-base);
+}
+.apple-suggestion-actions {
+  margin-top: var(--spacing-lg);
+}
+.apple-suggestion-spacer {
+  flex: 1;
+}
+
+/* The one-time reminder after "Not now": one quiet line in the thread-notice
+   geometry (.conversation-hydrating), with inline text actions. */
+.apple-suggestion-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  width: min(100%, var(--chat-content-max));
+  margin-inline: auto;
+  padding: var(--spacing-lg) var(--spacing-md) 0;
+  box-sizing: border-box;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.apple-suggestion-notice[hidden] {
+  display: none;
+}
+.apple-suggestion-notice > .ui-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.apple-suggestion-notice button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.apple-suggestion-notice button:hover {
+  text-decoration: underline;
+}
+.apple-suggestion-notice .apple-suggestion-notice-dismiss {
+  color: var(--text-muted);
+}

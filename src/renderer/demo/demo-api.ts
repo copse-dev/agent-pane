@@ -1168,6 +1168,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           supportedHost: state.supportedHost,
         })
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) =>
+        resolved({
+          offer: 'none',
+          pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled,
+        }),
+      answerSuggestion: () => resolved(undefined),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId)
         const state: AppleProjectState = {

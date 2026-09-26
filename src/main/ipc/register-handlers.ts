@@ -256,6 +256,7 @@ import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-senso
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
 import {
+  APPLE_SUGGESTION_ANSWERS,
   appleConfigureInputSchema,
   appleExecuteInputSchema,
   appleOperationInputSchema,
@@ -2298,6 +2299,22 @@ export function registerAllHandlers(
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     return getAppleDevelopmentService().detectProject(projectId)
   })
+  ipcMain.handle('apple-development:suggestion', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAppleDevelopmentService().projectSuggestion(projectId)
+  })
+  ipcMain.handle(
+    'apple-development:answer-suggestion',
+    async (event, rawProjectId: unknown, rawAnswer: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, answer] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(APPLE_SUGGESTION_ANSWERS)]),
+        [rawProjectId, rawAnswer],
+      )
+      await getAppleDevelopmentService().answerSuggestion(projectId, answer)
+    },
+  )
   ipcMain.handle(
     'apple-development:set-enrolled',
     async (event, rawProjectId: unknown, rawThreadId: unknown, rawEnrolled: unknown) => {

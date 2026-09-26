@@ -3,6 +3,8 @@ import { definePlugin, type RegisteredPlugin } from './plugin-manifest.ts'
 export const APPLE_DEVELOPMENT_PLUGIN_ID = 'copse.apple-development'
 export const APPLE_DEVELOPMENT_PANEL_ID = 'apple-development'
 export const APPLE_DEVELOPMENT_TOOL_NAMES = ['open_simulator_desktop'] as const
+/** Offer Apple development when an Apple project opens; on unless the user opts out. */
+export const APPLE_DEVELOPMENT_SUGGEST_SETTING_ID = 'suggest-projects'
 
 /**
  * Apple Development is a first-party plugin because its typed host driver and
@@ -37,6 +39,15 @@ export const appleDevelopmentPlugin: RegisteredPlugin = definePlugin(
         title: 'Apple Development setup',
       },
     ],
+    settings: {
+      [APPLE_DEVELOPMENT_SUGGEST_SETTING_ID]: {
+        kind: 'boolean',
+        title: 'Suggest for Apple projects',
+        description:
+          'When you open a project with an Xcode project or workspace, offer to turn on Apple development for it. This works while the plugin is off.',
+        default: true,
+      },
+    },
     storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID },
   },
   {
