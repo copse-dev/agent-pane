@@ -475,7 +475,8 @@ export interface ToolDisplayOptions {
  * Build the cards for a message's tool calls. Subagent runs stay as top-level
  * cards (they have their own timeline). Everything else collapses into one
  * quiet turn rollup when there are two or more calls — including Cursor cloud /
- * ACP titles that never map onto a built-in group.
+ * ACP titles that never map onto a built-in group — unless every call failed:
+ * failures stay visible beside the rollup, so it would be empty.
  *
  * `forceRollup` wraps even a single regular tool so a co-located reasoning trail
  * can nest inside the italic summary (rather than floating above it).
@@ -502,7 +503,14 @@ export function buildToolCallDisplayItems(
 
   const result: ToolCallDisplayItem[] = []
   const grouped = buildGroupedDisplayItems(regular)
-  if (regular.length >= 2 || (opts?.forceRollup === true && regular.length >= 1)) {
+  // When every call failed, nothing would sit inside the rollup: it would only
+  // repeat the failure count above the cards that already show it. A forced
+  // rollup is kept because it hosts nested reasoning even with no calls inside.
+  const hasQuietCall = regular.some((tc) => !isVisibleFailure(tc))
+  if (
+    (hasQuietCall && regular.length >= 2) ||
+    (opts?.forceRollup === true && regular.length >= 1)
+  ) {
     result.push({
       type: 'rollup',
       key: TURN_ROLLUP_KEY,

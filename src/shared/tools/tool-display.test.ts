@@ -312,16 +312,49 @@ describe('tool-display', () => {
     assert.equal(runItems[1]?.type, 'individual')
     assert.equal(runItems[1].toolCall.id, '3')
   })
-  it('groups repeated failures outside the quiet activity', () => {
+  it('groups repeated failures with no empty rollup above them when every call failed', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'mcp__mdn__get_compat', 'error'),
       tc('2', 'mcp__mdn__get_compat', 'error'),
       tc('3', 'mcp__mdn__get_compat', 'error'),
     ])
-    assert.equal(items[0]?.label, 'mdn · 3 failed')
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'group')
+    assert.equal(items[0].toolCalls.length, 3)
+    assert.equal(aggregateToolStatus(items[0].toolCalls), 'error')
+  })
+  it('shows distinct failures as their own cards when every call failed', () => {
+    const items = buildToolCallDisplayItems([
+      tc('1', 'mcp__docs__startup', 'error'),
+      tc('2', 'mcp__issue_tracker__startup', 'error'),
+    ])
+    assert.deepEqual(
+      items.map((item) => item.type),
+      ['individual', 'individual'],
+    )
+  })
+  it('keeps a forced rollup for nested reasoning even when every call failed', () => {
+    const items = buildToolCallDisplayItems(
+      [tc('1', 'read_file', 'error'), tc('2', 'list_dir', 'error')],
+      { forceRollup: true },
+    )
+    assert.equal(items[0]?.type, 'rollup')
+    assert.equal(rollupChildren(items).length, 0)
+    assert.equal(items.length, 2)
     assert.equal(items[1]?.type, 'group')
-    assert.equal(items[1].toolCalls.length, 3)
-    assert.equal(aggregateToolStatus(items[1].toolCalls), 'error')
+    assert.equal(items[1].toolCalls.length, 2)
+  })
+  it('keeps the rollup when the only quiet call is one the user interrupted', () => {
+    const interrupted = tc('1', 'read_file', 'error')
+    const failed = tc('2', 'list_dir', 'error')
+    const items = buildToolCallDisplayItems([interrupted, failed], {
+      isInterrupted: (call) => call === interrupted,
+    })
+    assert.equal(items[0]?.type, 'rollup')
+    assert.deepEqual(
+      rollupChildren(items).map((child) => child.type === 'individual' && child.toolCall.id),
+      ['1'],
+    )
   })
   it('keeps failures visible while another tool is running', () => {
     const items = buildToolCallDisplayItems([
