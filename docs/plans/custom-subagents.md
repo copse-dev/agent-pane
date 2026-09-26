@@ -324,14 +324,6 @@ Local subagent routing (`buildSubagentRoute`, `localSubagentsEnabled`) applies o
 `defaultMaxLlmCallsForSteps` ceiling so a definition cannot buy unbounded spend. Usage
 folds into `addSubagentUsage` like every other subagent.
 
-As shipped, the aliases in `CUSTOM_AGENT_MODEL_ALIASES` (`custom-agent-strategy.ts`) point at
-older models: `opus` → `claude-opus-4-8`, `sonnet` → `claude-sonnet-4-6`, `fable` →
-`claude-fable-5`. The provider catalog already includes `claude-opus-5` and `claude-sonnet-5`.
-Claude Code resolves the same alias to its current model, so one definition runs on two
-different models depending on which product runs it. The aliases should resolve through
-the provider catalog's current mapping, not a literal table that needs hand edits
-(gap G-11).
-
 ### 8. Untrusted at project scope
 
 An agent definition is a system prompt plus a tool list; a cloned repo shipping
@@ -472,10 +464,10 @@ Ranked by user impact:
 | G-08 | `/agents` creates, edits, and model-drafts definitions.                                                                         | Settings → Sources → Agents is read-only.                                                                                                                                                                                                                                          | P8                                                   |
 | G-09 | `@agent-name` mention; `claude --agent <name>` runs a whole session as an agent; `--agents <json>` defines session-only agents. | `/name` only (a deliberate decision 2 choice). No way to run a whole thread as an agent, which is why `initialPrompt` is ignored.                                                                                                                                                  | #1573 (named agent profile)                          |
 | G-10 | Plugin-supplied `agents/`; Codex reads `.codex/agents/*.toml`.                                                                  | Neither.                                                                                                                                                                                                                                                                           | P5, P3                                               |
-| G-11 | `opus` / `sonnet` / `fable` resolve to the current model.                                                                       | They resolve to older model ids (see decision 7).                                                                                                                                                                                                                                  | Fix in place                                         |
+| G-11 | `opus` / `sonnet` / `fable` resolve to the current model.                                                                       | Fixed: aliases resolve to the newest catalog model of their family (decision 7).                                                                                                                                                                                                   | Done (#3174)                                         |
 | G-12 | Agent teams with a shared task list, and scripted multi-agent workflows.                                                        | Only `delegate_step` orchestration. Fan-out/fan-in is planned as a campaign primitive, not built.                                                                                                                                                                                  | [background-supervisor.md](background-supervisor.md) |
 
-Suggested order: G-11 (a mechanical fix) → G-01 (P4 is what makes definitions behave like
+Suggested order: G-01 (P4 is what makes definitions behave like
 they do in Claude Code; run the eval the plan already requires, because the P2 eval showed
 a small local model declining to delegate) → G-04 and G-05 (cheap: per-thread worktrees
 exist, and the cap is two constants) → G-06 `skills` → G-02/G-03 on the supervisor → the rest.
