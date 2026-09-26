@@ -180,7 +180,7 @@ describe('memories pane', () => {
       assert.equal(body?.value, 'Run npm build')
       assert.equal(viewer.querySelector('.memories-meta')?.textContent, 'Updated 2026-07-04')
       // Delete is offered for an existing note.
-      assert.equal(viewer.querySelector<HTMLButtonElement>('.memories-btn-danger')?.hidden, false)
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.memories-delete-btn')?.hidden, false)
     } finally {
       unmount()
     }
@@ -199,7 +199,7 @@ describe('memories pane', () => {
       const body = viewer.querySelector<HTMLTextAreaElement>('.memories-body-input')
       assert.ok(title && tags && body)
       // A blank new-note form offers no Delete.
-      assert.equal(viewer.querySelector<HTMLButtonElement>('.memories-btn-danger')?.hidden, true)
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.memories-delete-btn')?.hidden, true)
       title.value = 'New fact'
       tags.value = 'a, b'
       body.value = 'Body text'
@@ -246,7 +246,7 @@ describe('memories pane', () => {
     try {
       await flush()
       list.querySelector<HTMLButtonElement>('.memories-row')?.click()
-      viewer.querySelector<HTMLButtonElement>('.memories-btn-danger')?.click()
+      viewer.querySelector<HTMLButtonElement>('.memories-delete-btn')?.click()
       await flush()
       clickActiveConfirmDialogConfirm()
       await flush()

@@ -36,16 +36,12 @@ function bodyOf(css: string, selector: string): string | null {
  * is a deliberate exception, not a backlog:
  *  - markdown.css: the light syntax-highlighting palette, measured to AA by
  *    light-contrast.test.ts, which has no token equivalent.
- *  - ui.css / conversation.css: white glyph text on a filled danger button and on
- *    the accent scroll-to-bottom disc, until a `--text-on-danger` tier exists.
  *  - video-expand.css: the black letterbox behind a video.
  *  - settings.css: two `#000` stops in a `mask-image` gradient, where only the
  *    alpha channel is read, so no hue is being chosen.
  */
 const ALLOWED_RAW_HEX: Record<string, number> = {
   'markdown.css': 8,
-  'ui.css': 2,
-  'conversation.css': 1,
   'video-expand.css': 1,
   'settings.css': 2,
 }

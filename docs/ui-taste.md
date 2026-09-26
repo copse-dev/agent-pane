@@ -60,6 +60,11 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
   - That includes the small stuff (see "Change marks and status dots" below for which token each
     mark takes). `status-colors.test.ts` keeps raw hex out of component stylesheets, with a
     shrink-only allowlist for the measured light syntax palette and a few glyph colours (#3065).
+  - A destructive action (`showConfirmDialog({ danger: true })`, `.ui-btn-danger`) is the one
+    button that fills with `--danger`; it keeps the danger fill, never the accent, and takes the
+    same pill geometry as its Cancel. Its label is `--text-on-danger` (dark text on dark's light
+    red, white on light's deep red), not hard-coded white — both are pinned at AA in
+    `src/renderer/styles/light-contrast.test.ts`. Visual eval: `tests/e2e/ui-kit-confirm.e2e.ts`.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
 
@@ -73,6 +78,13 @@ choice load-bearing rather than stylistic:
   the eye reads as "the accent, with text on it" — takes `--accent-fill` (and `--accent-fill-hover`).
   `.ui-btn-primary` in `global/ui.css` is the reference recipe. Painting `--text-on-accent` onto
   `--accent` gives 1.24:1 in light with the shipped accent: dark text on a dark fill (#2488).
+- **Never hard-code white on a fill.** The label tier follows the fill: `--text-on-accent` on
+  `--accent-fill` (recomputed for a custom accent by `accentTextColor()` in `settings-dialog.ts`),
+  `--text-on-warning` on `--warning` (dark text in dark, white in light — no single colour clears AA
+  on both). A hover keeps that label: the queued `Send now` / `Release` chips once flipped it to
+  white on hover and measured 1.86:1. Where a filled chip's hover must hold AA for text, lift it
+  with `filter: brightness()`; light's `--accent-fill-hover` darkens the fill and leaves the default
+  label at 3.49:1, which is fine for a glyph (3:1) but not for words.
 - **Native checkboxes, radios, and range sliders** are fills too: a checked box is the accent with a
   mark on it, and Chromium picks the mark's colour from the fill. Their `accent-color` is
   `--accent-fill` (see "Accent colour versus interface tint").
@@ -160,10 +172,39 @@ When building dialogs, settings forms, or labelled controls, prefer the shared k
 [`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
 [`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
 classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+A class with no rule of its own (`primary`, `foo-save`) is not a button style: the global
+`button` reset in `forms.css` strips border and fill, so such a control renders as a bare word.
+Kit buttons never wrap their label and never shrink in a flex row; a long sibling (an inline
+status, an error) wraps instead. Inline status lines (`setInlineStatus`) paint `error` / `ok` /
+`warn` in `--error` / `--success` / `--warning` themselves; show IPC failures through
+`ipcErrorMessage` so Electron's `Error invoking remote method '…'` wrapping never reaches copy.
 Only add a new kit primitive once **two product call sites** need it and it does more than
 class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
+
+Dense surfaces — pane rows (Ports), list editors (Memories, Roadmap), card headers (review
+Retry / ×), PR lifecycle actions, inline row actions (automation Edit / Run now / Delete) — add
+the one size modifier, **`.ui-btn-compact`**, to the same variant classes:
+`ui-btn ui-btn-secondary ui-btn-compact`. It shrinks the box (24px min-height,
+`--spacing-sm` inline padding, `--font-size-xs`) and keeps the kit radius and border; an
+icon-only compact button with an `aria-label` becomes a 24px square. Do not give a surface its
+own `padding: 2px 8px; font-size: 11px` button to be "smaller" — that is how `.memories-btn`,
+`.ports-btn`, `.pr-action-btn` and `.card-retry-button` each grew a private stack. A screen hook
+class (`.ports-kill-btn`) may stay for JS/tests and for placement (`margin-left: auto`), but must
+not restate background, radius or padding; `src/renderer/styles/kit-buttons.test.ts` enforces
+that for the migrated hooks.
+
+### Chips and composer strips share one box each
+
+- Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
+  transcript attachment chips, roadmap attachments, thread-proposal chips — take `--radius`. They
+  are data, not calls to action, and pill geometry is reserved for primary CTAs.
+- Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
+  context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
+  `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,
+  `.composer-banner-danger` for danger) colours its wash, icon, and action borders; add a new strip
+  by composing those classes, not by re-declaring the button.
 
 ### An outlined chip needs an edge you can find
 
@@ -196,6 +237,48 @@ Guarded at two levels, because a stylesheet assertion alone is not visual eviden
 contrast against the surface behind the row and capture `.message-queued-actions` on its
 own.
 
+### Badges are labels
+
+A badge is a label on the thing, not a shouted status. Settings used to set four different
+chips side by side — shouted caps (`BUILT-IN`, `PROJECT`, `YOUR CONFIG`) next to sentence
+case (`Zero data retention`, `Stable`), full pills next to `--radius` corners, at 10px and
+11px, regular and semibold — and to colour them as a code nobody could read: every
+project-scope row in `--warning` beside a neutral `user`, the agent container in the accent,
+`Stable` in `--success`.
+
+- **One recipe.** `.ui-badge` in [`ui.css`](../src/renderer/styles/global/ui.css), built from
+  the `--badge-*` tokens in `tokens.css`: `--font-size-xs`, weight 500, normal tracking,
+  `--radius` corners, a 1px `--border` outline, muted text. A chip class
+  (`.sources-badge`, `.provider-form-tag`, `.provider-privacy-badge`, `.mcp-origin-chip`,
+  `.plugin-badge-stable` / `-experimental`) adds a colour or a width bound, never its own
+  size, case, or corner.
+- **Sentence case.** Author labels in sentence case. Most badge text is a data value that
+  arrives lowercase (`project`, `stable`, `in use`), so the recipe supplies the capital with
+  `::first-letter` — `capitalize` would title-case `In Use`. A literal (a directory name
+  such as `.cursor`, a plugin id) adds `.ui-badge-literal`: monospace, shown exactly as
+  written.
+- **A `--radius` corner, not a pill.** Full rounding (`--action-radius`) is the action
+  recipe; a badge that looks like a button invites a click it cannot answer.
+- **Neutral unless it reports a status.** `--warning` / `--error` / `--success` /
+  `--danger` mean how the thing is doing (warning, not loaded, orphaned, outside sandbox,
+  data policy); the accent means interaction emphasis (a nested instruction file active
+  this turn) plus the "experimental" exception above. A scope, kind, category, owner, or
+  the default state (`Stable`) stays neutral, even when it would be convenient to tell
+  categories apart by hue.
+- **Eyebrows are not badges.** The plugin publisher line over a name is a wide-tracked caps
+  caption without a frame, in text colours.
+
+Roadmap row chips (status, category, complexity) keep their own lowercase, filled shape —
+see "Roadmap list rows" — but the colour rule is the same: the category chip is neutral so
+`project` cannot be mistaken for the `blocked` status beside it.
+
+Guarded by [`badge-colour.test.ts`](../src/renderer/styles/badge-colour.test.ts), which
+allowlists every badge rule allowed a status or accent token (with the reason) and forbids
+a chip class from restating the recipe's shape. Visual eval: `settings-sources-agents`,
+`settings-worktree-actions`, `settings-plugins`, `settings-zdr-provider-presets`,
+`settings-tool-permissions`, and `roadmap-category-filter` in `tests/e2e/` measure the
+rendered colour, case, and corner.
+
 ### Agent-authored dialog copy and secrets
 
 - Agent-authored prose in a dialog follows the same sanitized Markdown contract as transcript
@@ -203,6 +286,18 @@ own.
   Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
   strong text); block or interactive Markdown remains literal because buttons are controls, not
   document containers.
+- The same applies to system copy that names commands, paths, or environment variables in
+  backticks (plan-usage sign-in hints, known ACP agent notes, tool descriptions in Tool
+  permissions, key-storage errors): render it with `setInlineMarkdown`
+  ([`inline-markdown.ts`](../src/renderer/markdown/inline-markdown.ts)) so `code` becomes `<code>`,
+  rather than assigning it to `textContent`. Native `title` tooltips cannot hold markup, so write
+  their text without delimiters.
+- Machine identifiers shown as labels — tool names without a curated display name, first-party
+  plugin ids — go through `humanizeIdentifier`
+  ([`humanize-identifier.ts`](../src/shared/humanize-identifier.ts)): sentence case, acronyms and
+  product names in their canonical spelling ("Launch GUI app", "GitHub PR create"), prose compounds
+  hyphenated ("Post-turn review"), and a listed instruction-file slug as the file ("AGENTS.md").
+  Extend its word lists rather than special-casing a label at one call site.
 - Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
   provider/ACP wording in a visually subordinate technical-details block so it remains copyable
   without competing with the fix.
@@ -225,8 +320,14 @@ install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action:
   Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
 - Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
   one-line PR target does not look like a `<pre>` of JSON.
+- Reasons are sentences (capitalised, one concern each) and render as a real list: the main
+  process sends them as `• ` lines and the dialog turns each run into `ul.approval-reasons`.
 
-Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
+The same rule covers the staged-diff Accept / Reject bar in the Changes pane (Accept = primary,
+Reject = secondary, `uiActions` gap).
+
+Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`,
+`tests/e2e/staged-diff-ui.e2e.ts`.
 
 ### Offers are not approvals
 
@@ -847,7 +948,7 @@ Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.
 
 ## Sources lists: origin on hover, not in the resting row
 
-Settings → Customise rows already carry a coarse source badge (`bundled`, `project`, …). When the
+Settings → Customise rows already carry a coarse, neutral source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
 `.sources-row-hover-detail` inside `.sources-row-primary` (the title slot between name and badge),
 revealed on `:hover` / `:focus-within` without growing the row or widening the settings column.
@@ -966,6 +1067,16 @@ control: three local copies were all that kept the accent on, and every other ch
 Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
 declaration to `base.css`.
 
+Canvas-painted surfaces follow the same rule. xterm and Monaco take their colours from a JS theme,
+not from the cascade, so hard-coded VS Code greys left a grey slab in a teal pane under Strong + the
+Copse tint (#3065). Both now build their theme from the resolved tokens (`--bg-base`, `--bg-elevated`,
+`--text-primary`, the borders, `--selection-bg` / `--selection-text`) in
+[`dom/editor-theme.ts`](../src/renderer/dom/editor-theme.ts), which re-resolves them whenever the
+theme, tint or accent changes on `<html>`. Monaco keeps its base theme's syntax and selection colours. Do not
+pass `vs` / `vs-dark` or a literal xterm palette to a new editor or terminal. Create editors with
+`COPSE_MONACO_THEME` and terminals with `xtermThemeFromTokens`. Specs: `terminal-display.e2e.ts`,
+`file-viewer-changes.e2e.ts`.
+
 ## Roadmap list rows
 
 Roadmap backlog rows (`.roadmap-row` in
@@ -974,7 +1085,10 @@ Roadmap backlog rows (`.roadmap-row` in
 sidebar taste as thread rows and PR status icons:
 
 - **Title first, one line.** Title on the left; trailing indicators on the right.
-  No second meta row of chips under every title.
+  No second meta row of chips under every title. The title keeps a readable
+  minimum (an `8em` flex basis): when a narrow pane cannot fit that plus the
+  row's chips, the chips wrap under the title for that row only, rather than
+  squeezing the title to one letter.
 - **Hide the default state.** `ready` items show no status badge — the title is
   the signal. `done` is strikethrough on the title only (`.roadmap-row.is-done`),
   not a "done" pill. Only exceptional statuses (`blocked`, `conflicts`,
@@ -983,6 +1097,10 @@ sidebar taste as thread rows and PR status icons:
   `aria-label` carries the thread title); attachments are a muted paperclip +
   count with no pill wash. Mark-done / reopen are check / refresh icons, hidden
   until row hover or focus (same idea as `.chat-delete`).
+- **Status colours mean status.** Only the status chip is coloured (`blocked` in
+  `--warning`, `conflicts` in `--danger`). The category chip (`bug`, `feature`,
+  `project`) is a neutral label: tinting categories with status hues made `project`
+  read as `blocked` in the same row (see "Badges are labels").
 - **Palette matches.** Cmd/Ctrl+P roadmap hits follow the same hide-ready rule.
 
 Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.ts).

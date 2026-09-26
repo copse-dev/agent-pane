@@ -273,7 +273,7 @@ export function createSshWorkspaceSection(
 
   const importBtn = el(
     'button',
-    { type: 'button', class: 'ui-btn ui-btn-ghost ssh-import-config' },
+    { type: 'button', class: 'ui-btn ui-btn-secondary ssh-import-config' },
     'Import from ~/.ssh/config',
   )
   importBtn.addEventListener('click', () => {
