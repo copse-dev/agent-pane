@@ -102,11 +102,11 @@
   max-width: 240px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 2px 8px;
   font-size: var(--font-size-sm);
 }
-/* A long label ellipsizes inside the pill instead of overflowing its border;
+/* A long label ellipsizes inside the chip instead of overflowing its border;
    min-width lets the flex item actually shrink below its content size. */
 .attachment-chip-label {
   min-width: 0;
@@ -121,7 +121,7 @@
 /* Image fidelity is chosen per image from the chip's right-click menu. Only a
    non-default choice is marked: `auto` is what every attachment has always
    sent, so badging it would put a label on every chip and say nothing. The
-   badge sits over the thumbnail corner rather than widening the pill, so a row
+   badge sits over the thumbnail corner rather than widening the chip, so a row
    of images keeps its layout whatever is chosen. */
 .image-chip {
   position: relative;
@@ -159,7 +159,10 @@
   padding: 0 2px;
 }
 /* Pasted-text chip rendered inline with the composer text (composer-editor.ts).
-   Mirrors .attachment-chip's pill look, but sized to sit in a line of text. */
+   Mirrors .attachment-chip's look, but sized to sit in a line of text. Every
+   attachment/reference chip — composer, transcript, roadmap, thread proposal —
+   takes the kit's --radius: they are data, not calls to action, and pill
+   geometry is reserved for primary CTAs (docs/ui-taste.md). */
 .inline-paste-chip {
   display: inline-flex;
   align-items: center;
@@ -169,7 +172,7 @@
   padding: 0 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: var(--font-size-sm);
   vertical-align: baseline;
   user-select: none;
@@ -190,7 +193,7 @@
   color: inherit;
 }
 /* @thread uses the sent transcript chip's exact outline geometry. The label is
-   the baseline participant, so the leading thread SVG cannot lift the pill. */
+   the baseline participant, so the leading thread SVG cannot lift the chip. */
 .inline-thread-chip {
   display: inline-flex;
   align-items: center;
@@ -200,7 +203,7 @@
   padding: 1px 7px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: var(--font-size-sm);
   vertical-align: baseline;
   user-select: none;

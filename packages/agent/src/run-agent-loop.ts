@@ -1012,7 +1012,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
             )
           }
         }
-        const { result, editStats, resultFormat, images, visualEvidence } =
+        const { result, editStats, resultFormat, images, visualEvidence, appendedReminderLengths } =
           normalizeToolExecuteResult(raw)
         recentToolProgress.push(duplicate ? null : fp)
         if (recentToolProgress.length > RECENT_FINGERPRINT_WINDOW) {
@@ -1041,6 +1041,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           isError: false,
           ...(editStats ? { editStats } : {}),
           ...(resultFormat ? { resultFormat } : {}),
+          ...(appendedReminderLengths ? { appendedReminderLengths } : {}),
           ...(images && images.length > 0 ? { images } : {}),
         })
       } catch (err) {

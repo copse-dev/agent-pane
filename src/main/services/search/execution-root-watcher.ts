@@ -20,6 +20,9 @@ import { cachedExecutionRoots, invalidateToolResultCacheForChange } from './tool
 
 const watchers = new Map<string, fs.FSWatcher>()
 
+/** Roots whose watcher {@link watchExecutionRootSoon} has queued but not yet armed. */
+const pendingWatches = new Map<string, NodeJS.Immediate>()
+
 /**
  * Ceiling on concurrently watched roots. The cache holds at most 8 thread
  * buckets, so at most 8 roots are ever live — but roots change as threads come
@@ -119,11 +122,15 @@ export function handleExecutionRootWatchFailure(root: string): void {
  * established — the caller must then treat the root as uncacheable rather than
  * cache results it can never invalidate.
  *
- * Note this only reports whether the watch could be *created*. Node defers the
- * underlying recursive setup, so a constrained container can hand back a
- * watcher that never fires; that degrades to serving a result for the rest of
- * the thread, which is why the identity checks (root, branch) and the
- * mutating-tool invalidation are not allowed to depend on it.
+ * Note this only reports whether the watch could be *created*. A constrained
+ * container can hand back a watcher that never fires; that degrades to serving
+ * a result for the rest of the thread, which is why the identity checks (root,
+ * branch) and the mutating-tool invalidation are not allowed to depend on it.
+ *
+ * Creating one is expensive and synchronous: on Linux, Node's recursive watch
+ * walks the whole tree, stat()ing and adding a watch for every file and
+ * directory before it returns. Callers on a latency-sensitive path use
+ * {@link watchExecutionRootSoon} instead.
  */
 export function ensureExecutionRootWatched(root: string): boolean {
   if (watchOverride) return watchOverride(root)
@@ -160,12 +167,54 @@ export function ensureExecutionRootWatched(root: string): boolean {
   }
 }
 
+/**
+ * Whether results for `root` can be cached right now: a watcher is already
+ * armed to invalidate them. Never arms one itself.
+ */
+export function isExecutionRootWatched(root: string): boolean {
+  if (watchOverride) return watchOverride(root)
+  return watchers.has(root)
+}
+
+/**
+ * Arm the watcher for `root` once the current tool call has returned.
+ *
+ * The tool-result cache used to arm it inside the first cacheable call. The
+ * synchronous walk (see {@link ensureExecutionRootWatched}) then took 0.1–0.8 s
+ * on this repository, so an index lookup that answers in milliseconds held its
+ * tool card in `running` past the transcript's 300 ms auto-reveal: the first
+ * `find_files` or `search_code` of a thread flashed open, then collapsed again
+ * when the turn ended. Deferring to the next macrotask lets the result reach the
+ * renderer first. That result goes uncached; later calls cache as before.
+ */
+export function watchExecutionRootSoon(root: string): void {
+  if (watchers.has(root) || pendingWatches.has(root)) return
+  pendingWatches.set(
+    root,
+    setImmediate(() => {
+      pendingWatches.delete(root)
+      ensureExecutionRootWatched(root)
+    }),
+  )
+}
+
+function cancelPendingWatch(root: string): void {
+  const pending = pendingWatches.get(root)
+  if (pending === undefined) return
+  clearImmediate(pending)
+  pendingWatches.delete(root)
+}
+
 export function stopWatchingExecutionRoot(root: string): void {
+  // A retired worktree must not be re-armed by a watch queued before it retired.
+  cancelPendingWatch(root)
   watchers.get(root)?.close()
   watchers.delete(root)
 }
 
 export function stopAllExecutionRootWatchers(): void {
+  for (const pending of pendingWatches.values()) clearImmediate(pending)
+  pendingWatches.clear()
   for (const watcher of watchers.values()) watcher.close()
   watchers.clear()
 }
