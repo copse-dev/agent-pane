@@ -304,7 +304,7 @@ const SED_SCRIPT_ACTIVE_LETTERS = /[wWrRe]/
  * Refusal only ever means the command prompts, which was the status quo; the
  * read-outside-project grant still keeps its own head list and stays unchanged.
  */
-function isReadOnlySedCommand(argv: readonly string[]): boolean {
+export function isReadOnlySedCommand(argv: readonly string[]): boolean {
   const scripts: string[] = []
   const positional: string[] = []
   let expressionSeen = false
