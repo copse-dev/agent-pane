@@ -33,6 +33,7 @@ import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
+import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
   activeSandboxNetworkScopeLabels,
@@ -194,6 +195,22 @@ export interface TerminalPermissionOptions {
 }
 
 /**
+ * Whether a shell command authorized for `executionRoot` runs inside the local
+ * project sandbox. `reported` is the caller's view of local containment (this
+ * session's sandbox by default, or an ACP agent's own seatbelt); it says
+ * nothing about a command the spawn sends to an SSH host, which runs there with
+ * no sandbox at all. Such a command is judged exactly as on a platform without
+ * one — ambiguity and opaque scripts prompt, auto-approval and replay leases
+ * stay off — whatever `reported` claims.
+ */
+function commandRunsSandboxed(
+  executionRoot: string | null,
+  reported = isProjectSandboxEnabled(),
+): boolean {
+  return reported && !spawnRunsOnSshTarget(executionRoot)
+}
+
+/**
  * Offer "always allow `<binary>` in trusted projects" on an escalation to run a
  * command outside the sandbox, when a single eligible binary is resolvable (see
  * offerableTrustedCommand). Ticking it appends that basename to the trusted
@@ -219,7 +236,7 @@ function autoApproveShell(
   command: string,
   scope: 'sandbox' | 'external',
   executionRoot?: string | null,
-  sandboxEnabled = isProjectSandboxEnabled(),
+  sandboxEnabled = commandRunsSandboxed(executionRoot ?? getAgentExecutionRoot()),
 ): boolean {
   const decision = resolveAutoApproval(command, executionRoot, sandboxEnabled)
   if (decision.action !== 'auto-approve') return false
@@ -1132,7 +1149,8 @@ export async function ensureShellCommandPermitted(
         ? false
         : (opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true))
   const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
-  const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
+  // False on an SSH workspace whatever the local sandbox or caller reports.
+  const sandboxEnabled = commandRunsSandboxed(workspaceRoot, opts.sandboxEnabled)
   const classification = sandboxEnabled || guardedYolo ? null : await classifyShellScope(command)
   if (classification) {
     recordDecision({
