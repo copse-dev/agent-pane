@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { assertBadgeRecipe, readBadgeStyles } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { tokenColour } from './helpers/theme.ts'
 
 const SERVER_NAME = 'copse-canvas'
-const TOOL_NAME = 'Render Html Artefact'
+const TOOL_NAME = 'Render HTML artefact'
 
 async function openMcpSettings() {
   await $('[aria-label="Settings"]').click()
@@ -79,6 +80,12 @@ describe('settings tool permissions', () => {
       `MCP header controls must be vertically centred on the switch track, offsets ${geometry.centerOffsets.join(', ')}`,
     )
 
+    // The origin chip is the same sentence-case, --radius badge as every
+    // other Settings chip — not a shouted-caps pill.
+    const origins = await readBadgeStyles('#settings-dialog .mcp-origin-chip')
+    assert.ok(origins.length > 0, 'an MCP origin chip rendered')
+    for (const origin of origins) assertBadgeRecipe(origin)
+
     // The state is carried by the inline status alone: the name stays in the
     // row's own text colour and only the badge takes the status hue.
     const serverRow = mcp.$(
@@ -126,6 +133,14 @@ describe('settings tool permissions', () => {
     await guiLaunchRow.waitForExist({ timeout: 15_000 })
     await guiLaunchRow.scrollIntoView({ block: 'center' })
     assert.equal(await guiLaunchRow.getAttribute('data-policy'), 'ask')
+    // The machine name reads as a sentence-case label with its acronym intact,
+    // and the model-facing description shows commands as code, not backticks.
+    await expect(guiLaunchRow.$('.tool-permission-name')).toHaveText(
+      expect.stringContaining('Launch GUI app'),
+    )
+    const guiDescription = guiLaunchRow.$('.tool-permission-description')
+    await expect(guiDescription.$('code=run_shell')).toBeExisting()
+    assert.doesNotMatch(await guiDescription.getText(), /`/)
     const allowGuiLaunch = guiLaunchRow.$('[data-policy="allow"]')
     assert.equal(await allowGuiLaunch.isEnabled(), false)
     assert.match(
@@ -168,6 +183,6 @@ describe('settings tool permissions', () => {
       await reopenedCopseGroup.$('summary').click()
     }
     await reopenedCanvasGroup.scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('#settings-dialog', 'settings-tool-permissions.png')
+    await saveElementScreenshot('#settings-dialog', 'settings-mcp-permission-group-blocked.png')
   })
 })

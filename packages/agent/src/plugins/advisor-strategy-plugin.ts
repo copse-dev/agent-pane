@@ -69,7 +69,7 @@ export const advisorStrategyPlugin: RegisteredPlugin = definePlugin(
   {
     name: ADVISOR_STRATEGY_PLUGIN_ID,
     description:
-      'Advisor strategy — consult a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.',
+      'Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
