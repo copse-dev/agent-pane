@@ -868,9 +868,15 @@
   overflow: hidden;
   background: var(--bg-elevated);
 }
+/* A column, so the .pane-header stays pinned and .file-tree is the scroller.
+   Scrolling the host itself put the header inside the scroll box: it scrolled
+   away with the tree and lost a scrollbar's width, so its rule stopped short
+   of the pane edge (docs/ui-taste.md "Pane headers share one band"). */
 .file-tree-host {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg-elevated);
   min-height: 0;
 }
@@ -2195,9 +2201,6 @@
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
 }
-.sidebar-header-compact {
-  justify-content: flex-end;
-}
 .sidebar-refresh {
   display: inline-flex;
   align-items: center;
@@ -2206,6 +2209,7 @@
 }
 .file-tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--spacing-xs) 0;
 }

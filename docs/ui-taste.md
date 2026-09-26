@@ -294,7 +294,9 @@ treatment most panes already used. Switching panel modes must not move the heade
 restyle its label; three recipes (37px caps, 39px caps, 39px sentence case) was the symptom. The
 header uses `min-height`, so a pane that carries a toolbar in its header (Roadmap's search and
 actions) may wrap onto more rows; its title row still starts on the same line. The Browser Tabs
-header is held to exactly the band because it must meet the URL toolbar (see below).
+header is held to exactly the band because it must meet the URL toolbar (see below). The header
+sits outside its list's scroll box (the Explorer's `.file-tree` scrolls, not `.file-tree-host`), so
+it stays put and its rule spans the full column instead of stopping a scrollbar's width short.
 
 Empty viewer chrome is hidden, not painted: a cleared block with padding and a rule reads as a
 blank strip under the header (`.pr-detail-sections:empty`, `.pr-viewer-meta:empty`,

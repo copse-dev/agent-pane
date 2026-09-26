@@ -169,6 +169,24 @@ describe('list row rhythm', () => {
     const roadmapRow = await blockPadding('.roadmap-row')
     assert.deepEqual(roadmapRow, { top: rhythm, bottom: rhythm })
 
+    // Only one inline inset: a row's title starts under its category label
+    // (roadmap.css `.roadmap-category-items .roadmap-row`, #2750), not further
+    // right as it would if a second padding stacked on it.
+    const inset = await browser.execute(() => {
+      const label = document.querySelector('.roadmap-category-header-label')
+      const title = document.querySelector('.roadmap-category-items .roadmap-row-title')
+      if (!label || !title) return null
+      return {
+        label: label.getBoundingClientRect().left,
+        title: title.getBoundingClientRect().left,
+      }
+    })
+    assert.ok(inset, 'expected a categorized roadmap row and its category label')
+    assert.ok(
+      Math.abs(inset.title - inset.label) < 1,
+      `roadmap row title should align with its category label: ${JSON.stringify(inset)}`,
+    )
+
     await saveElementScreenshot('.roadmap-list', 'list-row-rhythm-roadmap.png')
   })
 

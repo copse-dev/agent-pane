@@ -52,7 +52,7 @@ const HEADER_PANES: HeaderPane[] = [
     mode: 'explorer',
     button: 'Toggle right panel',
     header: '#file-tree-host .pane-header',
-    title: null,
+    title: 'Explorer',
   },
   {
     mode: 'terminal',
@@ -207,7 +207,15 @@ interface HeaderMetrics {
   top: number
   bottom: number
   height: number
+  /** Horizontal edges relative to `#right-sidebar`, the list column's own box. */
+  left: number
+  right: number
+  columnWidth: number
+  /** The header paints its own bottom rule (not an inner element's). */
+  borderBottomWidth: string
   title: string | null
+  /** The title has a box and its text is not clipped. */
+  titleVisible: boolean
   titleStyle: TitleStyle | null
 }
 
@@ -218,6 +226,7 @@ async function paneHeaderMetrics(selector: string): Promise<HeaderMetrics | null
     const header = pane?.querySelector<HTMLElement>(sel)
     if (!pane || !header || header.getClientRects().length === 0) return null
     const paneTop = pane.getBoundingClientRect().top
+    const column = pane.querySelector<HTMLElement>('#right-sidebar')?.getBoundingClientRect()
     const rect = header.getBoundingClientRect()
     const title = header.querySelector<HTMLElement>('.pane-header-title')
     const style = title ? getComputedStyle(title) : null
@@ -225,7 +234,16 @@ async function paneHeaderMetrics(selector: string): Promise<HeaderMetrics | null
       top: rect.top - paneTop,
       bottom: rect.bottom - paneTop,
       height: rect.height,
+      left: rect.left - (column?.left ?? 0),
+      right: rect.right - (column?.left ?? 0),
+      columnWidth: column?.width ?? 0,
+      borderBottomWidth: getComputedStyle(header).borderBottomWidth,
       title: title?.textContent ?? null,
+      titleVisible:
+        title !== null &&
+        title.getBoundingClientRect().width > 0 &&
+        style?.visibility === 'visible' &&
+        title.scrollWidth <= title.clientWidth,
       titleStyle: style
         ? {
             fontSize: style.fontSize,
@@ -359,6 +377,13 @@ describe('async pane loading states', () => {
     assert.ok(changes?.titleStyle)
     for (const { mode, header } of measured) {
       assert.equal(header.top, changes.top, `${mode} header top`)
+      // Every header is titled and its rule runs the full list column: the
+      // Explorer header once sat inside the tree's scroll box, untitled and a
+      // scrollbar's width short of the pane edge.
+      assert.ok(header.titleVisible, `${mode} header title visible`)
+      assert.equal(header.borderBottomWidth, '1px', `${mode} header rule`)
+      assert.equal(header.left, 0, `${mode} header left edge`)
+      assert.equal(header.right, header.columnWidth, `${mode} header right edge`)
       if (pane(mode).wraps) continue
       assert.equal(header.height, band, `${mode} header height`)
       assert.equal(header.bottom, changes.bottom, `${mode} header bottom`)

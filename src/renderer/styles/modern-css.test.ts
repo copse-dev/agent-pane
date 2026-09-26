@@ -331,7 +331,17 @@ describe('modern CSS adoptions', () => {
     assert.match(tokens, /--browser-chrome-band-height:\s*var\(--pane-header-band-height\)/)
     assert.ok(ownRule(layout, '.pane-header', /min-height:\s*var\(--pane-header-band-height\)/))
     assert.ok(ownRule(layout, '.pane-header-title', /font-size:\s*var\(--font-size-sm\)/))
-    for (const retired of ['.git-changes-title', '.terminals-list-header', '.sidebar-header']) {
+    // The Explorer header sits outside the tree's scroll box: the host is a
+    // column that does not scroll, and .file-tree scrolls beneath the header.
+    assert.ok(ownRule(layout, '.file-tree-host', /overflow:\s*hidden/))
+    assert.ok(ownRule(layout, '.file-tree-host', /flex-direction:\s*column/))
+    assert.ok(ownRule(layout, '.file-tree', /overflow-y:\s*auto/))
+    for (const retired of [
+      '.git-changes-title',
+      '.terminals-list-header',
+      '.sidebar-header',
+      '.sidebar-header-compact',
+    ]) {
       assert.ok(
         !ownRule(layout, retired, /\{/),
         `${retired} must not reintroduce its own header recipe; use .pane-header`,
