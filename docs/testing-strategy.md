@@ -450,8 +450,11 @@ CI never writes rendered PNGs back to a PR branch. Successful e2e shards upload
 their changed shots, and `screenshot-artifacts` combines them into the immutable
 `reference-screenshot-candidates-<run-id>` artifact. For a same-repository PR,
 the parent's screenshot comment links a view-only GitHub compare page of those
-PNGs against the rendered head, so reviewing them needs no download. To accept
-them, cherry-pick the compare commit with the command the comment gives, or
+PNGs against the rendered head, so reviewing them needs no download. The
+review blocks merging: a required `Screenshot review` status stays pending until
+a maintainer adds `accept-screenshots` (the bot fast-forwards the PR branch to
+the compare commit) or `decline-screenshots` (nothing is committed). To accept
+them by hand, cherry-pick the compare commit with the command the comment gives, or
 download that artifact, copy its `tests/e2e/screenshots/` contents into the
 checkout, and commit only the intentional updates. `pnpm run filter:screenshots`
 is available locally after copying the candidates to discard known render noise
@@ -502,10 +505,13 @@ Two consequences of running e2e on those PRs, both intended:
   push starts no workflows, so that branch runs no CI. It is never merged. A
   newer successful head deletes it, and so does closing the parent. No run
   opens a PR for screenshots. Accepting references means committing them to
-  the PR branch, for example by cherry-picking the compare commit with the
-  command the comment gives, so no write credential ever reaches the job that
-  executed PR code. Artifacts expire after 14 days; they are evidence to
-  review, not automatic acceptance. Forks and promotion PRs sourced from an
+  the PR branch, so no write credential ever reaches the job that executed PR
+  code. The publisher sets a `Screenshot review` status on the head that stays
+  pending until a maintainer decides with `accept-screenshots` or
+  `decline-screenshots`. Accept fast-forwards the branch to the compare commit
+  from a separate label-triggered job; cherry-picking it by hand, with the
+  command the comment gives, works too. Artifacts expire after 14 days; they
+  are evidence to review, not automatic acceptance. Forks and promotion PRs sourced from an
   integration branch get no compare branch and keep the
   downloadable-artifact/manual path.
 

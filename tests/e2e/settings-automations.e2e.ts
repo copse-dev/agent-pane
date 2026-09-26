@@ -10,6 +10,7 @@ import {
   saveElementScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 import { tokenColour } from './helpers/theme.ts'
@@ -268,6 +269,15 @@ describe('settings automations plugin', function () {
     )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
     await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()
+    // The form's title is a nested card title: it keeps its own Pliant recipe
+    // rather than inheriting the section masthead's 28px display face.
+    const formTitle = await readHeadingStyle('.automation-form-title')
+    const masthead = await readHeadingStyle('.settings-section.active > h3')
+    assert.ok(formTitle && masthead)
+    assert.equal(formTitle.tag, 'H4')
+    assert.ok(!isDisplayFace(formTitle.family), `form title family: ${formTitle.family}`)
+    assert.equal(formTitle.weight, '600')
+    assert.ok(formTitle.size < masthead.size)
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
     // Save schedule is the form's kit primary; Cancel the kit secondary.
     const formActions = assertKitButtonRow(

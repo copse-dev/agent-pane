@@ -306,7 +306,10 @@ gate, read-only enforcement, staged-edit approval, sandbox — exactly as `explo
 
 `model` defaults to `inherit` → the parent turn's provider and model, which is what
 `explore` does when no subagent route is configured. An alias (`sonnet`, `opus`, `haiku`,
-`fable`) maps to its concrete Claude model, while a full model id resolves through
+`fable`) resolves to the newest model of that family in the model catalog (`TRACKED_MODELS`,
+compared by version number), as Claude Code resolves it to that family's current model; a
+literal id table went stale and ran the same definition on older models than Claude Code
+did. A full model id resolves through
 `buildProvider` with that model's context window and tool-schema reserve. If the chosen
 provider cannot run, the invocation fails visibly through the existing custom-agent error
 result instead of silently using a different model. Cursor's
