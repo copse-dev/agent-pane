@@ -42,6 +42,11 @@ export function getFocusedMainWindow(): BrowserWindow | null {
   )
 }
 
+/** The full main window that owns `webContents`, or null (a pop-out or unknown sender). */
+export function getMainWindowForWebContents(webContents: WebContents): BrowserWindow | null {
+  return mainWindowRegistry.fromWebContents(webContents)?.window ?? null
+}
+
 export function isPrimaryMainWindow(webContents: Electron.WebContents): boolean {
   return mainWindowRegistry.isPrimary(webContents)
 }
