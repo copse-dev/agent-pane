@@ -2,7 +2,12 @@ import { el, clear, on } from '../dom/helpers.ts'
 import { chevronDownIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { GitBranchInfo, GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
+import type {
+  GitBranchInfo,
+  GitBranchStatus,
+  GitOpenPr,
+  ThreadWorktreeAttachment,
+} from '@shared/types/git.ts'
 import type { Thread } from '@shared/types'
 import {
   threadGitBranchMismatch,
@@ -11,11 +16,19 @@ import {
 import { showErrorToast, showToast } from './toast.ts'
 import { getThreadById, isBlankThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl } from '../controller/panels.ts'
-import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { getActiveThreadOwner, type ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 const COPIED_BRANCH_TOAST = 'Copied branch name'
 const COPY_FEEDBACK_MS = 1600
 let nextPickerId = 0
+
+type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
+
+function detachedTitle(detached: DetachedAttachment): string {
+  return detached.recovery
+    ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} is still in progress. Finish or abort it in the thread terminal, then reattach.`
+    : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`
+}
 
 /**
  * Branch lookups fail for a legitimately broken worktree, so they never toast —
@@ -74,6 +87,11 @@ export function mountFooterBranchStatus(
     chevronDownIcon('ui-icon ui-icon-sm'),
   )
   trigger.append(label, chevron)
+  const reattachButton = el(
+    'button',
+    { type: 'button', class: 'branch-reattach-button', hidden: '' },
+    'Reattach',
+  )
   const menu = el('div', { class: 'branch-picker-menu', hidden: '' })
   const filterInput = el('input', {
     type: 'search',
@@ -93,10 +111,13 @@ export function mountFooterBranchStatus(
     'aria-label': 'Branches',
   })
   menu.append(filterInput, list)
-  wrap.append(trigger, menu)
+  wrap.append(trigger, reattachButton, menu)
   host.append(wrap)
 
   let status: GitBranchStatus | null = null
+  /** Set when branch status failed because the thread's own checkout lost its branch. */
+  let detached: (DetachedAttachment & { threadId: string }) | null = null
+  let reattaching = false
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let branchToCopy: string | null = null
   let branches: GitBranchInfo[] = []
@@ -185,6 +206,7 @@ export function mountFooterBranchStatus(
       wrap.hidden = true
       branchToCopy = null
       setOpen(false)
+      renderReattach()
       return
     }
 
@@ -242,6 +264,64 @@ export function mountFooterBranchStatus(
           mismatch ? `${mismatchMessage} Copy branch name.` : `Copy branch name: ${displayBranch}`,
         )
       }
+    }
+    renderReattach()
+  }
+
+  /**
+   * A detached thread checkout blocks every agent turn, so the footer offers the
+   * repair next to the branch it names. The trigger keeps its copy action.
+   */
+  function renderReattach(): void {
+    const current = activeDetached()
+    const shown = current !== null && !isPickerMode() && !wrap.hidden
+    reattachButton.hidden = !shown
+    trigger.classList.toggle('is-detached', shown)
+    if (!shown) return
+    const title = detachedTitle(current)
+    trigger.title = title
+    reattachButton.title = title
+    reattachButton.disabled = reattaching || current.recovery !== null
+    reattachButton.setAttribute('aria-label', `Reattach checkout to ${current.branch}`)
+    reattachButton.textContent = reattaching ? 'Reattaching…' : 'Reattach'
+  }
+
+  /** The detached state, only while it still describes the active thread. */
+  function activeDetached(): DetachedAttachment | null {
+    return detached?.threadId === store.getState().activeThreadId ? detached : null
+  }
+
+  async function readDetachedAttachment(
+    owner: ActiveThreadOwner,
+  ): Promise<DetachedAttachment | null> {
+    try {
+      const attachment = await api.git.worktreeAttachment(owner.projectId, owner.threadId)
+      return attachment.state === 'detached' ? attachment : null
+    } catch (error) {
+      reportBranchFailure('inspect worktree attachment', error)
+      return null
+    }
+  }
+
+  async function reattach(): Promise<void> {
+    const owner = getActiveThreadOwner(store)
+    const current = activeDetached()
+    if (!owner || !current || current.recovery || reattaching) return
+    reattaching = true
+    renderReattach()
+    try {
+      const result = await api.git.reattachWorktree(owner.projectId, owner.threadId)
+      showToast(
+        result.backupBranch
+          ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.`
+          : `Reattached to ${result.branch}`,
+      )
+      store.emit('git_branch_changed')
+    } catch (error) {
+      showErrorToast('Could not reattach the checkout', error)
+    } finally {
+      reattaching = false
+      refreshNow()
     }
   }
 
@@ -434,6 +514,7 @@ export function mountFooterBranchStatus(
     const threadBranch = getActiveThreadBranch()
     branches = []
     defaultBranch = null
+    let nextDetached: (DetachedAttachment & { threadId: string }) | null = null
     try {
       const nextStatus = await api.git.branchStatus(owner.projectId, owner.threadId, threadBranch)
       if (token !== refreshToken) return
@@ -445,7 +526,11 @@ export function mountFooterBranchStatus(
       // the thread must stay selectable so the user can inspect and recover it.
       reportBranchFailure('read branch status', error)
       status = null
+      const attachment = await readDetachedAttachment(owner)
+      if (token !== refreshToken) return
+      nextDetached = attachment ? { ...attachment, threadId: owner.threadId } : null
     }
+    detached = nextDetached
     if (isPickerMode()) {
       try {
         await loadBranches(token)
@@ -504,6 +589,10 @@ export function mountFooterBranchStatus(
         showErrorToast('Failed to copy branch name', error)
       })
   }
+
+  reattachButton.addEventListener('click', () => {
+    void reattach()
+  })
 
   trigger.addEventListener('click', () => {
     if (!isPickerMode()) {

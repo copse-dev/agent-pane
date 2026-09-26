@@ -815,6 +815,13 @@
           2
         ]
       },
+      "git:reattach-worktree": {
+        "api": "git.reattachWorktree",
+        "args": [
+          2,
+          2
+        ]
+      },
       "git:restore-backup": {
         "api": "git.restoreBackup",
         "args": [
@@ -841,6 +848,13 @@
         "args": [
           3,
           3
+        ]
+      },
+      "git:worktree-attachment": {
+        "api": "git.worktreeAttachment",
+        "args": [
+          2,
+          2
         ]
       },
       "hooks:list": {

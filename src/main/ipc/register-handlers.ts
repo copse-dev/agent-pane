@@ -75,7 +75,11 @@ import {
   zPrComposerCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
-import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import {
+  inspectThreadCheckoutAttachment,
+  reattachThreadCheckout,
+  resolveThreadExecutionContext,
+} from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
@@ -2558,6 +2562,16 @@ export function registerAllHandlers(
     )
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
+  })
+  ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return inspectThreadCheckoutAttachment(projectId, threadId)
+  })
+  ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return reattachThreadCheckout(projectId, threadId)
   })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)

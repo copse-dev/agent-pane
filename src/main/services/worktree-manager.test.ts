@@ -1,6 +1,8 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { promises as fsPromises, type PathLike } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import {
   chmod,
   lstat,
@@ -15,7 +17,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
@@ -26,12 +28,14 @@ import {
 import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
+  inspectThreadWorktreeAttachment,
   isSandboxMountArtifact,
   listProjectWorktrees,
   managedThreadIdForPath,
   parkThreadWorktree,
   parseWorktreePorcelain,
   pruneSafeOrphans,
+  reattachThreadWorktree,
   readThreadWorktreeRecoveryMetadata,
   removeRegisteredWorktreeCheckout,
   renameThreadWorktreeBranch,
@@ -743,6 +747,164 @@ describe('worktree manager', () => {
     const records = await listProjectWorktrees(repo)
     assert.ok(records.some((record) => record.path === first.path))
     assert.ok(records.some((record) => record.path === second.path))
+  })
+
+  describe('reattaching a detached checkout', () => {
+    async function detachedWorktree(): Promise<{
+      input: Parameters<typeof reattachThreadWorktree>[0]
+      path: string
+      branch: string
+    }> {
+      const { repo } = await setup()
+      const worktree = await allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        prompt: 'Reattach',
+        baseBranch: 'main',
+      })
+      const input = { projectId: 'project-1', threadId: 'thread-1', projectRoot: repo, worktree }
+      return { input, path: worktree.path, branch: worktree.branch }
+    }
+
+    async function commitFile(path: string, name: string): Promise<string> {
+      await writeFile(join(path, name), `${name}\n`)
+      git(path, ['add', name])
+      git(path, ['commit', '-q', '-m', name])
+      return git(path, ['rev-parse', 'HEAD']).trim()
+    }
+
+    const headBranch = (path: string): string =>
+      git(path, ['symbolic-ref', '--short', 'HEAD']).trim()
+    const tipOf = (path: string, branch: string): string =>
+      git(path, ['rev-parse', `refs/heads/${branch}`]).trim()
+
+    it('reports attachment and refuses while a rebase is in progress', async () => {
+      const { input, path } = await detachedWorktree()
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), { state: 'attached' })
+      await assert.rejects(reattachThreadWorktree(input), /already on a branch/)
+
+      git(path, ['checkout', '-q', '--detach', 'HEAD'])
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+        state: 'detached',
+        branch: input.worktree.branch,
+        recovery: null,
+      })
+
+      const gitDir = git(path, ['rev-parse', '--absolute-git-dir']).trim()
+      await mkdir(join(gitDir, 'rebase-merge'))
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+        state: 'detached',
+        branch: input.worktree.branch,
+        recovery: 'rebase',
+      })
+      await assert.rejects(reattachThreadWorktree(input), /rebase is still in progress/)
+      assert.equal((await inspectThreadWorktreeAttachment(input)).state, 'detached')
+    })
+
+    it('switches back when HEAD is still the branch tip', async () => {
+      const { input, path, branch } = await detachedWorktree()
+      git(path, ['checkout', '-q', '--detach', 'HEAD'])
+
+      assert.deepEqual(await reattachThreadWorktree(input), {
+        branch,
+        keptDetachedCommits: false,
+        backupBranch: null,
+      })
+      assert.equal(headBranch(path), branch)
+      await validateThreadWorktree(input)
+    })
+
+    it('moves the branch forward to keep commits made while detached', async () => {
+      const { input, path, branch } = await detachedWorktree()
+      git(path, ['checkout', '-q', '--detach', 'HEAD'])
+      const detachedCommit = await commitFile(path, 'detached.txt')
+
+      assert.deepEqual(await reattachThreadWorktree(input), {
+        branch,
+        keptDetachedCommits: true,
+        backupBranch: null,
+      })
+      assert.equal(headBranch(path), branch)
+      assert.equal(tipOf(path, branch), detachedCommit)
+    })
+
+    it('returns to the branch tip when HEAD is an older commit on it', async () => {
+      const { input, path, branch } = await detachedWorktree()
+      const tip = await commitFile(path, 'later.txt')
+      git(path, ['checkout', '-q', '--detach', 'HEAD~1'])
+
+      const result = await reattachThreadWorktree(input)
+      assert.equal(result.keptDetachedCommits, false)
+      assert.equal(headBranch(path), branch)
+      assert.equal(tipOf(path, branch), tip)
+      assert.equal(await readFile(join(path, 'later.txt'), 'utf8'), 'later.txt\n')
+    })
+
+    it('saves a diverged branch tip before following the detached HEAD', async () => {
+      const { input, path, branch } = await detachedWorktree()
+      const oldTip = await commitFile(path, 'branch-only.txt')
+      git(path, ['checkout', '-q', '--detach', 'HEAD~1'])
+      const detachedCommit = await commitFile(path, 'detached-only.txt')
+
+      const result = await reattachThreadWorktree(input)
+      const backupBranch = `${branch}-before-reattach-${oldTip.slice(0, 7)}`
+      assert.deepEqual(result, { branch, keptDetachedCommits: true, backupBranch })
+      assert.equal(headBranch(path), branch)
+      assert.equal(tipOf(path, branch), detachedCommit)
+      assert.equal(tipOf(path, backupBranch), oldTip)
+    })
+
+    it('leaves the checkout detached when uncommitted edits would be overwritten', async () => {
+      const { input, path } = await detachedWorktree()
+      await commitFile(path, 'later.txt')
+      git(path, ['checkout', '-q', '--detach', 'HEAD~1'])
+      await writeFile(join(path, 'later.txt'), 'uncommitted\n')
+
+      await assert.rejects(reattachThreadWorktree(input), /Cannot reattach thread worktree/)
+      assert.equal(await readFile(join(path, 'later.txt'), 'utf8'), 'uncommitted\n')
+      assert.equal((await inspectThreadWorktreeAttachment(input)).state, 'detached')
+    })
+
+    it('keeps the reattached root when an earlier detached inspection settles afterwards', async (t) => {
+      const { input, path, branch } = await detachedWorktree()
+      git(path, ['checkout', '-q', '--detach', 'HEAD'])
+      const root = await realpath(path)
+
+      // Hold the inspection at its recovery-marker probe, after it has
+      // observed the detached HEAD, until the reattach has fully finished.
+      const probing = Promise.withResolvers<undefined>()
+      const resume = Promise.withResolvers<undefined>()
+      const realLstat = fsPromises.lstat
+      let held = false
+      t.mock.method(fsPromises, 'lstat', async (target: PathLike) => {
+        if (!held && String(target).endsWith(`${sep}rebase-merge`)) {
+          held = true
+          probing.resolve(undefined)
+          await resume.promise
+        }
+        return realLstat(target)
+      })
+      syncBuiltinESMExports()
+      t.after(() => {
+        t.mock.restoreAll()
+        syncBuiltinESMExports()
+      })
+
+      const inspection = inspectThreadWorktreeAttachment(input)
+      await probing.promise
+      await reattachThreadWorktree(input)
+      assert.equal(headBranch(path), branch)
+      assert.equal(getInternalWorkspaceRootRegistration(root)?.checkoutRoot, root)
+
+      resume.resolve(undefined)
+      assert.equal((await inspection).state, 'detached')
+      assert.equal(
+        getInternalWorkspaceRootRegistration(root)?.checkoutRoot,
+        root,
+        'a stale detached inspection released the reattached root',
+      )
+    })
   })
 
   it('adopts a live branch after checkout -b inside the linked worktree', async () => {
