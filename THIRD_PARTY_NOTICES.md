@@ -47,3 +47,14 @@ AGPL-3.0-only license. noVNC's sources carry no "Incompatible With Secondary
 Licenses" notice, so MPL-2.0 section 3.3 permits distributing it as part of a
 Larger Work under the GNU licenses. The package's complete license text ships
 with the package.
+
+## Shell-command test set samples (benchmarks only)
+
+- **Datasets:** tomngdev/shell-safety-v2 (Copyright (c) tomngdev) and westenfelder/NL2SH-ALFA
+  (Copyright 2025 MIT-ALFA), both on Hugging Face.
+- **License:** MIT. The full notice and the pinned revisions are in
+  `benchmarks/escalation-review/testset/sources/LICENSE-HF.md`.
+- **Used by:** the escalation-review test set only (`benchmarks/escalation-review/testset/`).
+  Nothing from these datasets ships in the app.
+- **Modifications:** we kept a subset of rows and anonymised one ssh user name and one working
+  directory. The reference labels are our own.
