@@ -89,7 +89,8 @@ dashboard attribution and other providers ignore it.
 
 Experimental on-device PII redaction can redact the text the user typed before a
 provider, remote-agent, or ACP path receives it. It is off by default, fails open
-if the redactor cannot load, and does not cover repository files or tool output.
+(with a turn notice) if the redactor cannot run, and does not cover repository
+files or tool output.
 See [pii-redaction.md](pii-redaction.md).
 
 ## Remote execution boundaries
