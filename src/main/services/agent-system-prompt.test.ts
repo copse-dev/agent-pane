@@ -5,7 +5,11 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
-import { OPUS_5_RESPONSE_LENGTH_BLOCK, OPUS_5_TONE_REMINDER } from './agent-prompt.ts'
+import {
+  OPUS_5_RESPONSE_LENGTH_BLOCK,
+  OPUS_5_TONE_REMINDER,
+  WORKTREE_PREPARATION_BLOCK,
+} from './agent-prompt.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
@@ -335,5 +339,83 @@ describe('buildSystemPrompt Git repository root', () => {
     const prompt = await runWithThreadExecutionContext(context({}), () => build())
     assert.ok(!prompt.includes('Git repository root:'))
     assert.ok(prompt.includes(`Working directory: ${tempRoot}`))
+  })
+})
+
+describe('buildSystemPrompt worktree preparation steering', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    setSetting('skillsEnabled', false)
+    setSetting('skillPluginPaths', [])
+    setSetting('customInstructions', '')
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-worktree-preparation-prompt-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  const context = (checkoutMode: ThreadExecutionContext['checkoutMode']): ThreadExecutionContext =>
+    Object.freeze({
+      projectId: 'test-project',
+      threadId: 'test-thread',
+      projectRoot: tempRoot,
+      root: tempRoot,
+      checkoutMode,
+      branch: checkoutMode === 'worktree' ? 'copse/test' : null,
+    })
+
+  const build = (availableToolNames?: readonly string[]): Promise<string> =>
+    buildSystemPrompt({
+      subagentsEnabled: false,
+      invokedSkills: [],
+      ...(availableToolNames ? { availableToolNames } : {}),
+    })
+
+  it('tells a linked-worktree turn to preflight before validating', async () => {
+    const prompt = await runWithThreadExecutionContext(context('worktree'), () =>
+      build(['read_file', 'run_shell', 'preflight_worktree', 'prepare_worktree']),
+    )
+    assert.equal(prompt.split(WORKTREE_PREPARATION_BLOCK).length, 2, 'block appears exactly once')
+    assert.match(
+      prompt,
+      /Before the first typecheck, test, lint, or build here, call preflight_worktree/,
+    )
+    assert.match(prompt, /call prepare_worktree with its plan fingerprint/)
+    assert.match(prompt, /Cannot find name 'process'/)
+    assert.match(prompt, /not code defects/)
+    assert.ok(
+      prompt.indexOf(WORKTREE_PREPARATION_BLOCK) > prompt.indexOf(`Working directory: ${tempRoot}`),
+      'steering follows the working-directory statement it qualifies',
+    )
+  })
+
+  it('steers a worktree turn built without an explicit tool list', async () => {
+    const prompt = await runWithThreadExecutionContext(context('worktree'), () => build())
+    assert.ok(prompt.includes(WORKTREE_PREPARATION_BLOCK))
+  })
+
+  it('omits the steering when the turn does not offer preflight_worktree', async () => {
+    const prompt = await runWithThreadExecutionContext(context('worktree'), () =>
+      build(['read_file', 'run_shell']),
+    )
+    assert.ok(!prompt.includes('Worktree preparation:'))
+    assert.ok(!prompt.includes('preflight_worktree'))
+  })
+
+  it('omits the steering for a shared-checkout turn', async () => {
+    const prompt = await runWithThreadExecutionContext(context('shared'), () =>
+      build(['read_file', 'run_shell', 'preflight_worktree', 'prepare_worktree']),
+    )
+    assert.ok(!prompt.includes('Worktree preparation:'))
+  })
+
+  it('omits the steering outside a turn context', async () => {
+    const prompt = await build(['preflight_worktree'])
+    assert.ok(!prompt.includes('Worktree preparation:'))
   })
 })

@@ -47,4 +47,6 @@
 // v20 conservatively versions the optional appended system-reminder lengths on tool
 // results (`tool_result` chunks and thread tool calls). v18 and v19 are claimed by
 // open PRs, so this skips them to avoid a collision whichever lands first.
-export const API_PROTOCOL_VERSION = 20 as const
+// v21 conservatively versions the optional Copse Reviewer report initiator on
+// thread payloads and `review_report` chunks.
+export const API_PROTOCOL_VERSION = 21 as const

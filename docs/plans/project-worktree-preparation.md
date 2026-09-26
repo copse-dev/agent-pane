@@ -19,6 +19,7 @@ Preflight is read-only. It returns the detected package manager, runtime require
 - Project-specific native setup is opt-in through the same declaration. Copse's Electron/gortex setup becomes one ordinary declaration in this repository; there is no privileged application-side adapter for it.
 - Fingerprint runtime/package-manager identity, lockfiles, package manifests throughout the project (including `apps/`), package configuration, patches, the declaration, and additional declared inputs. Never reuse readiness merely because `node_modules` exists.
 - Preserve OS containment and read-only/offline preflight. Approved commands may write only the execution root and enumerated managed caches. No configurable home-directory grant, arbitrary cache roots, or unsandboxed fallback.
+- Preparation is never automatic on worktree creation. Instead, a native turn running in its thread's linked worktree gets a short system-prompt block (`WORKTREE_PREPARATION_BLOCK`, gated on the worktree checkout mode and on `preflight_worktree` being offered) telling the agent to preflight before its first typecheck, test, lint, or build, and to treat unresolved-module and missing-runtime-type errors in an unprepared worktree as environment state rather than code defects (#2493). ACP agents do not receive these tools through the native bridge, so they get no such steering.
 - Approval names project-defined commands as executable repository code. A declaration is not a trust grant. Changing its inputs invalidates the plan fingerprint and requires a new approval.
 
 ## Declaration

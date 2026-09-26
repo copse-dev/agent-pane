@@ -29,6 +29,7 @@ import {
   OPUS_5_TONE_REMINDER,
   PII_REDACTION_BLOCK,
   READ_TERMINAL_BLOCK,
+  WORKTREE_PREPARATION_BLOCK,
 } from './agent-prompt.ts'
 import { isOpus5Model } from '@copse/llm/model-catalog.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
@@ -78,6 +79,19 @@ async function buildRepositoryContext(): Promise<string> {
     ? ' (the working directory is a subdirectory of this repository)'
     : ''
   return `\nGit repository root: ${repositoryRoot}${subdirNote}`
+}
+
+/**
+ * Steer a linked-worktree turn to check dependency readiness before validating
+ * (#2493). Shared-checkout turns keep the user's own install, and a turn whose
+ * tool list omits preflight_worktree could not follow the steering.
+ */
+function worktreePreparationBlock(availableToolNames?: readonly string[]): string {
+  if (getThreadExecutionContext()?.checkoutMode !== 'worktree') return ''
+  if (availableToolNames !== undefined && !availableToolNames.includes('preflight_worktree')) {
+    return ''
+  }
+  return WORKTREE_PREPARATION_BLOCK
 }
 
 export interface BuildSystemPromptOptions {
@@ -157,6 +171,7 @@ export async function buildSystemPromptWithMetadata(
       // the main repo here makes the agent `cd` outside the grant and hit EPERM.
       .replace('{WORKSPACE_ROOT}', getAgentExecutionRoot() ?? '(none)')
       .replace('{REPO_CONTEXT}', await buildRepositoryContext()) +
+    worktreePreparationBlock(opts.availableToolNames) +
     (opus5 ? OPUS_5_RESPONSE_LENGTH_BLOCK : '') +
     // Workspace-authored instructions sit here — above every Copse-authored
     // steering block instead of terminal, so workspace text is never the

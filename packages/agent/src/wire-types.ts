@@ -128,6 +128,15 @@ export interface AgentRunPayload {
    * tree rather than restarting the budget each run.
    */
   continuationBudgetUsed?: number
+  /**
+   * Compact summary of the Copse Reviewer runs the user started since the
+   * model's last reply (#2519), rendered by the renderer from the thread's
+   * persisted reports. The run leads the outbound prompt with it, so the model
+   * sees the review and it stays in the thread's history. Absent when there is
+   * none; the model's own `review_changes` call reads its report as the tool
+   * result instead.
+   */
+  reviewContext?: string
 }
 
 /** Per-file line add/delete counts for write_file / str_replace tool cards. */

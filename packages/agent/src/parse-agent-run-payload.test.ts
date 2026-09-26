@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseAgentRunPayload } from './parse-agent-run-payload.ts'
+import { parseAgentRunPayload, REVIEW_CONTEXT_CHAR_CAP } from './parse-agent-run-payload.ts'
 
 describe('parseAgentRunPayload', () => {
   it('parses plain text prompts', () => {
@@ -73,5 +73,28 @@ describe('parseAgentRunPayload', () => {
     )
     assert.equal('turnTreeId' in bad, false)
     assert.equal('continuationBudgetUsed' in bad, false)
+  })
+
+  it('carries the summary of reviews the user ran, and drops a blank or non-string one', () => {
+    const r = parseAgentRunPayload(
+      JSON.stringify({ content: 'fix it', reviewContext: '<copse_review_report>…' }),
+    )
+    assert.equal(r.reviewContext, '<copse_review_report>…')
+    for (const reviewContext of ['  ', 42, null]) {
+      const bad = parseAgentRunPayload(JSON.stringify({ content: 'fix it', reviewContext }))
+      assert.equal(Object.hasOwn(bad, 'reviewContext'), false)
+    }
+  })
+
+  it('caps an oversized review summary so one prompt cannot flood the history', () => {
+    const r = parseAgentRunPayload(
+      JSON.stringify({
+        content: 'fix it',
+        reviewContext: 'x'.repeat(REVIEW_CONTEXT_CHAR_CAP + 50),
+      }),
+    )
+    assert.ok(r.reviewContext)
+    assert.ok(r.reviewContext.length < REVIEW_CONTEXT_CHAR_CAP + 50)
+    assert.ok(r.reviewContext.endsWith('[review summary truncated]'))
   })
 })

@@ -33,6 +33,20 @@ const todoSchema = z.object({
   assignedModel: z.enum(['cloud', 'local']).optional(),
 })
 
+/**
+ * Ceiling on the review summary a payload may carry. The renderer already
+ * keeps it compact (summary and findings, a few reports at most); this only
+ * bounds what one prompt can add to the thread's history.
+ */
+export const REVIEW_CONTEXT_CHAR_CAP = 20_000
+
+function parseReviewContext(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined
+  return value.length <= REVIEW_CONTEXT_CHAR_CAP
+    ? value
+    : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}\n[review summary truncated]`
+}
+
 export function parseAgentRunPayload(rawPrompt: string): {
   userContent: UserContent
   invokedSkills: string[]
@@ -45,6 +59,8 @@ export function parseAgentRunPayload(rawPrompt: string): {
   reasoning?: ReasoningLevel
   turnTreeId?: string
   continuationBudgetUsed?: number
+  /** Summary of reviews the user ran since the model's last reply, capped. */
+  reviewContext?: string
 } {
   try {
     const parsed: unknown = JSON.parse(rawPrompt)
@@ -55,6 +71,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
       }
       const invokedSkills = z.array(z.string()).safeParse(parsed['invokedSkills'])
       const priorTodos = z.array(todoSchema).safeParse(parsed['priorTodos'])
+      const reviewContext = parseReviewContext(parsed['reviewContext'])
       const normalizedTodos: TodoItem[] = priorTodos.success
         ? priorTodos.data.map((todo) => ({
             id: todo.id,
@@ -85,6 +102,7 @@ export function parseAgentRunPayload(rawPrompt: string): {
         Number.isFinite(parsed['continuationBudgetUsed'])
           ? { continuationBudgetUsed: parsed['continuationBudgetUsed'] }
           : {}),
+        ...(reviewContext !== undefined ? { reviewContext } : {}),
       }
     }
     const content = userContentSchema.safeParse(parsed)

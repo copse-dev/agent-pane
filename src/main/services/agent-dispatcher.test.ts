@@ -89,6 +89,40 @@ describe('AgentDispatcher', () => {
     ])
   })
 
+  it('hands the run the summary of reviews the user ran, alongside the prompt (#2519)', async () => {
+    const seen: Array<{ userContent: UserContent; reviewContext: string | undefined }> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async (_threadId, userContent, priorMessages, _host, _registry, options) => {
+          seen.push({ userContent, reviewContext: options.reviewContext })
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    await dispatcher.dispatch(
+      request({
+        payload: {
+          userContent: 'fix it',
+          invokedSkills: [],
+          priorTodos: [],
+          reviewContext: '<copse_review_report>…</copse_review_report>',
+        },
+      }),
+    )
+    await dispatcher.dispatch(request())
+
+    assert.deepEqual(seen, [
+      { userContent: 'fix it', reviewContext: '<copse_review_report>…</copse_review_report>' },
+      { userContent: 'continue', reviewContext: undefined },
+    ])
+  })
+
   it('rebuilds history from the transcript when the sidecar is empty', async () => {
     const recovered: LLMMessage[] = [
       { role: 'user', content: 'the question a dead turn lost' },

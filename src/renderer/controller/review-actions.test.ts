@@ -143,6 +143,7 @@ test('startReview seeds a running card, marks the thread running and quiet, then
   assert.ok(state.reviewReport)
   assert.equal(state.reviewReport.status, 'running')
   assert.equal(state.reviewReport.models.reviewer, 'gpt-5')
+  assert.equal(state.reviewReport.initiator, 'user', 'handed to the model once it completes')
   assert.equal(takeQuietRun('t1'), true, 'a review the user clicked for must not chime')
   assert.equal(calls.runs.length, 1)
   const [call] = calls.runs
