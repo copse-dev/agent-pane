@@ -208,6 +208,12 @@ describe('canvas artefact refresh', () => {
     // text visibly blurry when the old 480px capture filled the transcript.
     expect(preview.naturalWidth).toBeGreaterThanOrEqual(Math.ceil(preview.renderedWidth))
     expect(preview.renderedWidth).toBeLessThanOrEqual(1280)
+    // Opening every card grows the transcript past the thumbnail, and the view
+    // follows the bottom; bring the latest thumbnail back into the frame.
+    await browser.execute(() => {
+      const cards = document.querySelectorAll('.canvas-preview-card')
+      cards[cards.length - 1]?.scrollIntoView({ block: 'center' })
+    })
     await saveAppScreenshot('canvas-artefact-preview.png')
   })
 
