@@ -383,6 +383,7 @@ While active:
     `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
     `pg_restore`, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`) and SQL run
     from a file (`psql -f`);
+  - filtering shell history for a secret-named word (`history | grep -i token`);
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate

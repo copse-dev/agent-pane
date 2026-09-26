@@ -378,6 +378,27 @@ function downloadThenRunReason(segments: readonly (readonly string[])[]): string
 
 // ---------------------------------------------------------------------------
 
+const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'awk', 'sed'])
+
+/**
+ * `history | grep -i token`: plain `history` is harmless (and empty in an agent's
+ * non-interactive shell), but filtering it for a secret-named word is a search
+ * for credentials. Reading the history files themselves asks as a credential store.
+ */
+function historySearchReason(segments: readonly (readonly string[])[]): string | null {
+  const argvs = segments.map((argv) => unwrapWrappers(argv))
+  const history = argvs.some((argv) => {
+    const head = commandName(argv[0])
+    return head === 'history' || (head === 'fc' && argv.includes('-l'))
+  })
+  if (!history) return null
+  const searchesForSecrets = argvs.some(
+    (argv) =>
+      SEARCHERS.has(commandName(argv[0])) && argv.slice(1).some((arg) => SECRET_NAME.test(arg)),
+  )
+  return searchesForSecrets ? 'searches shell history for secrets' : null
+}
+
 /** Every host-reach reason for a shell command line, deduplicated. */
 export function hostReachReasons(command: string, context: HostReachContext): string[] {
   const reasons = new Set<string>(secretOverNetworkReasons(command))
@@ -397,7 +418,11 @@ export function hostReachReasons(command: string, context: HostReachContext): st
     ]
     for (const reason of found) if (reason !== null) reasons.add(reason)
   }
-  for (const reason of [temporaryPathReason(command), downloadThenRunReason(segments)]) {
+  for (const reason of [
+    temporaryPathReason(command),
+    downloadThenRunReason(segments),
+    historySearchReason(segments),
+  ]) {
     if (reason !== null) reasons.add(reason)
   }
   return [...reasons]
