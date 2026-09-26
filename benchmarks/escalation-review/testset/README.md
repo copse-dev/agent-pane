@@ -14,7 +14,9 @@ executed, and none comes from anyone's private history.
 
 ## Contents
 
-782 commands: 416 in `dev` and 366 in `holdout`.
+1,899 commands: 416 in `dev` and 1,483 in `holdout`. The first 782 are the sources below. The
+holdout also holds 1,117 anonymised real-history commands, and it grows with each
+[history slice](#real-history-slices).
 
 | Source                                                                               | Cases | What it adds                                                                                                            |
 | ------------------------------------------------------------------------------------ | ----: | ----------------------------------------------------------------------------------------------------------------------- |
@@ -34,8 +36,13 @@ shell-safety-v2's own label follows a different policy (it asks on `Select-Strin
 - `cases.jsonl` holds one case per line: `id`, `source`, `command`, `workspace`, the optional
   `files` and `trustedSshHosts` (the same meaning as in the regression set), `split`, and the
   reference `tier`, `effects` and `rationale`. `scope` appears only where a source reviewed it.
-- `fixtures/tier-dev.jsonl` and `fixtures/tier-holdout.jsonl` are `eval:classifier` fixtures. They
-  ask the tier question, with `expected.tier` set, and `expected.scope` where one is known.
+- `fixtures/` holds the `eval:classifier` fixtures. They ask the tier question, with
+  `expected.tier` set, and `expected.scope` where one is known:
+  - `tier-dev.jsonl` and `tier-holdout.jsonl` are the curated splits;
+  - `tier-history-<slice>[-partN].jsonl` holds each history slice.
+
+  No file holds more than the runner's limit of 1,000 fixtures.
+
 - `deterministic.jsonl` is the pinned verdict of every deterministic gate for every case.
 - `labels.jsonl` holds the reference labels, and `build.mjs` joins them to the sources.
 
@@ -66,6 +73,68 @@ Splits are by command family (`git push`, `gh pr`, `curl`, and so on), so near-d
 together. The shell-scope rows keep that corpus's own split. Families are disjoint within each
 source, but not across sources.
 
+## Real history slices
+
+The holdout grows with anonymised slices of real agent history, measured before any rule is tuned
+on them. Each slice:
+
+1. Extract with [`../scripts/extract.mjs`](../scripts/extract.mjs). The output stays private in
+   git-ignored `bench-results/`.
+2. `import-history.mjs candidates <run> --projects a,b` keeps commands from public repositories
+   only and skips every command an earlier slice used. It moves paths, users, hosts, repositories
+   and addresses onto the anonymised machine. It drops rows that still carry a home directory, the
+   user's name, a token, a key, an email or an excluded project's name, and rows over 1,200
+   characters.
+3. Two privacy reviewers read every candidate, and the ids they flag go in
+   `<run>/history-rejected.txt`.
+4. The candidates are labelled blind, as above. `import-history.mjs finalize <run> --slice <date>`
+   writes `sources/history-<date>.jsonl` and records every considered command's hash in a private
+   ledger (`~/.copse/cache/escalation-review/sliced.txt`), so no later slice reuses one.
+5. `build.mjs` puts every history row in `holdout`. Score the gates and models on the new rows
+   before changing any rule, and record the numbers here.
+
+### 2026-09-26: 1,117 commands
+
+- **Sources:** the four public repositories in the history (a Tauri fork, streaming-markdown, a
+  notes app, a Servo runtime). A private research repository, an employer's repository and
+  unattributed commands were excluded.
+- **Removed:** 14 commands for naming an excluded project, and 26 in privacy review. The 26 read or
+  listed dated personal blog posts, which together would identify the author.
+- **Labels:** the two labellers agreed on 1,102 of 1,117. Real traffic is mostly reads:
+
+  | read | local-write | remote-write | outside-read | outside-write | ask |
+  | ---: | ----------: | -----------: | -----------: | ------------: | --: |
+  |  847 |          91 |            3 |          148 |            18 |  10 |
+
+- **Gates:** measured on this slice before any change:
+  - the deterministic tiers approve none of the 10 `ask` commands, and cover 61% of eligible
+    commands in local-write mode (573/938) and 57% in outside-write mode (627/1104);
+  - the harm gate prompts on all 10 `ask` commands (`screencapture`, `pkill`, `launchctl`,
+    `npx serve`, an opaque compiled program) and allows 94–96% of eligible ones. Its over-tier
+    approvals are high in the write modes (151 in local-write), because most commands here that
+    need an outside tier are harmless.
+- **Models:** Kev-4b and Winnow-12B were served from the persistent cache. Their records are in
+  `results/2026-09-26/*/history-2026-09-26.jsonl`. Kev had 4 calls time out, which count as wrong.
+  Each blend uses the threshold chosen on dev earlier; none was tuned on this slice.
+
+  | Approver on 1,117 real commands         | Tiers correct | local-write coverage | outside-write coverage | `ask` approved |
+  | --------------------------------------- | ------------- | -------------------- | ---------------------- | -------------- |
+  | Deterministic tiers                     | –             | 573/938 (61%)        | 627/1104 (57%)         | 0              |
+  | Harm gate alone                         | –             | 900/938, 151 over    | 1048/1104, 3 over      | 0              |
+  | Kev alone                               | 1,004 (90%)   | 708/938 (75%)        | 1096/1104 (99%)        | 6              |
+  | Winnow alone                            | 1,064 (95%)   | 895/938 (95%)        | 1074/1104 (97%)        | 2              |
+  | Deterministic OR (Kev AND harm gate)    | –             | 792/938, 2 over      | 1047/1104 (95%)        | 0              |
+  | Deterministic OR (Winnow AND harm gate) | –             | 873/938, 1 over      | 1030/1104 (93%)        | 0              |
+
+  Both models caught 8 of the 10 `ask` commands. Winnow alone approved `npx serve` and
+  `screencapture`. Kev alone, at its looser outside-write threshold, also approved three `launchctl`
+  commands and an opaque compiled program. The harm gate stopped all of them, so the
+  blends made no `ask` approvals. On real traffic the Winnow blend covers 93% of eligible commands
+  in local-write mode, against 61% for the deterministic tiers, with one approval above the
+  configured tier.
+
+- **Caveat:** 10 `ask` commands are too few to bound a miss rate. Later slices will add to it.
+
 ## Deterministic gates
 
 ```bash
@@ -83,7 +152,7 @@ command labelled `ask`. The exceptions are listed in `KNOWN_GAPS` in `gates.mjs`
 reason. As in the regression set, a known gap that starts passing fails the check until it is
 removed from the list.
 
-Results on all 782 cases (coverage / over-tier / must-ask, as in the [README](../README.md)). The
+Results on the first 782 cases (coverage / over-tier / must-ask, as in the [README](../README.md)). The
 first run of this set found gaps in both gates, and this change fixes them:
 
 | Approver                                   | local-write      | remote-write     | outside-read    | outside-write  |
@@ -156,10 +225,10 @@ Two models were served locally from the persistent cache (`pnpm run classifier:s
 raw records are committed: [Kev-4b](results/2026-09-26/kev-4b/README.md) and
 [Winnow-12B](results/2026-09-26/winnow-12b/README.md).
 
-| Model      | Dev tiers correct | Holdout tiers correct | `ask` recall, dev / holdout | Median call |
-| ---------- | ----------------: | --------------------: | --------------------------: | ----------: |
-| Kev-4b     |     305/416 (73%) |         272/366 (74%) |                 0.91 / 0.75 |       2.3 s |
-| Winnow-12B |     312/416 (75%) |         284/366 (78%) |                 0.96 / 0.97 |       2.0 s |
+| Model      | Dev tiers correct | Holdout tiers correct (first 366) | `ask` recall, dev / holdout | Median call |
+| ---------- | ----------------: | --------------------------------: | --------------------------: | ----------: |
+| Kev-4b     |     305/416 (73%) |                     272/366 (74%) |                 0.91 / 0.75 |       2.3 s |
+| Winnow-12B |     312/416 (75%) |                     284/366 (78%) |                 0.96 / 0.97 |       2.0 s |
 
 Neither model is a gate on its own. The threshold was the lowest that made no over-tier or
 must-ask approval on dev. At that threshold on holdout, Kev alone approves 3 `ask` commands in

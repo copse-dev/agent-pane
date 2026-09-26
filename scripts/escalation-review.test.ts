@@ -24,6 +24,6 @@ test('escalation-review pipeline and regression cases hold', async () => {
     maxBuffer: 1_048_576,
   })
   assert.equal(stderr, '')
-  assert.match(stdout, /(?:#|ℹ) pass 10\b/u)
+  assert.match(stdout, /(?:#|ℹ) pass 11\b/u)
   assert.match(stdout, /(?:#|ℹ) fail 0\b/u)
 })

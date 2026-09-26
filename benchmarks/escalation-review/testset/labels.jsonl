@@ -780,3 +780,1120 @@
 {"id": "ss2-0978", "tier": "outside-write", "effects": ["network-read", "write-workspace", "write-outside"], "rationale": "adds a new module to go.mod and downloads it into the global module cache", "labellers": "adjudicated"}
 {"id": "ss2-0984", "tier": "read", "effects": ["read-workspace"], "rationale": "reads ACLs of a workspace file", "labellers": "agree"}
 {"id": "ss2-0986", "tier": "local-write", "effects": ["run-project-code", "write-workspace", "network-read"], "rationale": "cargo builds write target output in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0001", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0002", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0003", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0004", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0005", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0006", "tier": "read", "effects": ["read-workspace"], "rationale": "checks tool presence and parses workspace workflow YAML with python; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0007", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "network-read"], "rationale": "cargo package --list resolves deps; may write Cargo.lock/target and touch cargo registry cache", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0008", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lists toolchain directories under home and Homebrew; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0009", "tier": "read", "effects": ["read-workspace"], "rationale": "parses workspace YAML with python and shows git diff stat", "labellers": "agree"}
+{"id": "hist-2026-09-26-0010", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0011", "tier": "local-write", "effects": ["write-workspace", "network-read", "run-unknown-code"], "rationale": "npm install into workspace node_modules; may update lockfile and run install scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0012", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "runs the project's own build/test script; writes only workspace outputs", "labellers": "agree"}
+{"id": "hist-2026-09-26-0013", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "runs the project's own build/test script; writes only workspace outputs", "labellers": "agree"}
+{"id": "hist-2026-09-26-0014", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "runs the project's own build/test script; writes only workspace outputs", "labellers": "agree"}
+{"id": "hist-2026-09-26-0015", "tier": "read", "effects": [], "rationale": "lsof port queries; harmless local information", "labellers": "agree"}
+{"id": "hist-2026-09-26-0016", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0017", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0018", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0019", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0020", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0021", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0022", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0023", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0024", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0025", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0026", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0027", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0028", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0029", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0030", "tier": "local-write", "effects": ["write-workspace", "network-read", "run-unknown-code"], "rationale": "npm install into workspace node_modules; may update lockfile and run install scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0031", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "TypeScript compile of the project; writes build output under the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0032", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0033", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0034", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0035", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0036", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0037", "tier": "ask", "effects": ["read-workspace", "network-read", "run-unknown-code"], "rationale": "npx may download and run unpinned serve package; background server exposes demo dir", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0038", "tier": "local-write", "effects": ["read-workspace", "run-project-code"], "rationale": "starts a background local static server serving workspace demo files; no file writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0039", "tier": "read", "effects": [], "rationale": "lsof port query; harmless local information", "labellers": "agree"}
+{"id": "hist-2026-09-26-0040", "tier": "ask", "effects": ["read-workspace", "write-outside", "network-read", "run-unknown-code"], "rationale": "npx may fetch and run unpinned serve; nohup background server; log written to /tmp", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0041", "tier": "local-write", "effects": ["read-workspace", "run-project-code"], "rationale": "starts a background local static server serving workspace demo files; no file writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0042", "tier": "local-write", "effects": ["read-workspace", "run-project-code"], "rationale": "starts a background local static server serving workspace demo files; no file writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0043", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0044", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0045", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0046", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0047", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0048", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0049", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0050", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0051", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0052", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0053", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0054", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0055", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "git fetch updates refs/objects in a sibling repo outside the workspace", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0056", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0057", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0058", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0059", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0060", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0061", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "git fetch updates refs/objects in a sibling repo outside the workspace", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0062", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0063", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "git fetch updates refs/objects in a sibling repo outside the workspace", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0064", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0065", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0066", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0067", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0068", "tier": "read", "effects": ["read-workspace", "network-read"], "rationale": "gh pr list read query and local git branch listing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0069", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0070", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0071", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0072", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0073", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0074", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0075", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0076", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0077", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0078", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0079", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0080", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0081", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0082", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0083", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0084", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0085", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0086", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0087", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0088", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0089", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0090", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0091", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0092", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0093", "tier": "local-write", "effects": ["write-workspace"], "rationale": "git checkout of a branch in the workspace, then log", "labellers": "agree"}
+{"id": "hist-2026-09-26-0094", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0095", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0096", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0097", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0098", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0099", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0100", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0101", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0102", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0103", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0104", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0105", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0106", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0107", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0108", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "git fetch updates refs/objects in a sibling repo outside the workspace", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0109", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0110", "tier": "read", "effects": ["network-read"], "rationale": "unauthenticated GET to GitHub API, parsed to stdout; no files written", "labellers": "agree"}
+{"id": "hist-2026-09-26-0111", "tier": "outside-write", "effects": ["write-outside", "network-read"], "rationale": "curl downloads GitHub API JSON into a file in /tmp", "labellers": "agree"}
+{"id": "hist-2026-09-26-0112", "tier": "outside-read", "effects": ["read-outside"], "rationale": "python reads a JSON file in /tmp and prints it", "labellers": "agree"}
+{"id": "hist-2026-09-26-0113", "tier": "outside-read", "effects": ["read-outside"], "rationale": "python reads a JSON file in /tmp and prints it", "labellers": "agree"}
+{"id": "hist-2026-09-26-0114", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "git fetch updates refs/objects in a sibling repo outside the workspace", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0115", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0116", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0117", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0118", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0119", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0120", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0121", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0122", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0123", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0124", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "runs from a sibling checkout; only GitHub read queries and stdout parsing", "labellers": "agree"}
+{"id": "hist-2026-09-26-0125", "tier": "outside-read", "effects": ["read-outside", "network-read"], "rationale": "gh api GET plus read-only GraphQL query from a sibling checkout; nothing written", "labellers": "agree"}
+{"id": "hist-2026-09-26-0126", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0127", "tier": "read", "effects": ["read-workspace"], "rationale": "local git inspection and file reads inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0128", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0129", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "git fetch and checkout change the working tree of a sibling repo", "labellers": "agree"}
+{"id": "hist-2026-09-26-0130", "tier": "outside-write", "effects": ["write-outside", "network-read", "read-outside"], "rationale": "fetches and creates/checks out a new branch in a sibling repo", "labellers": "agree"}
+{"id": "hist-2026-09-26-0131", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0132", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0133", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0134", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0135", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0136", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0137", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0138", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0139", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0140", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0141", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0142", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0143", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0144", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0145", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0146", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0147", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0148", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0149", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0150", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0151", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0152", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0153", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0154", "tier": "outside-read", "effects": ["read-outside", "write-workspace"], "rationale": "copies source files from a sibling checkout into new workspace directories", "labellers": "agree"}
+{"id": "hist-2026-09-26-0155", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0156", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0157", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0158", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0159", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0160", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0161", "tier": "read", "effects": ["network-read"], "rationale": "unauthenticated GET to GitHub API, parsed to stdout; no files written", "labellers": "agree"}
+{"id": "hist-2026-09-26-0162", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0163", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0164", "tier": "outside-write", "effects": ["write-outside", "network-read"], "rationale": "curl writes GitHub API responses to /tmp files, then reads them", "labellers": "agree"}
+{"id": "hist-2026-09-26-0165", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0166", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0167", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0168", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0169", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0170", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0171", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0172", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0173", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0174", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0175", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0176", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0177", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0178", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0179", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0180", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads files or git history in a sibling checkout outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0181", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0182", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0183", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0184", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0185", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0186", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0187", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0188", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0189", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0190", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0191", "tier": "read", "effects": ["read-workspace"], "rationale": "only reads files inside the workspace and prints output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0192", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps ../wry sources, a sibling checkout outside the workspace; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0193", "tier": "outside-read", "effects": ["read-outside"], "rationale": "sed and grep over ../wry sources outside the workspace; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0194", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0195", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a file in another checkout /Users/dev/other-1; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0196", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a file in another checkout /Users/dev/other-1; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0197", "tier": "read", "effects": ["read-workspace"], "rationale": "lists workspace directories", "labellers": "agree"}
+{"id": "hist-2026-09-26-0198", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and heads workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0199", "tier": "read", "effects": ["read-workspace"], "rationale": "cats a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0200", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0201", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0202", "tier": "outside-read", "effects": ["read-outside", "read-workspace"], "rationale": "git log and ls in another checkout, then ls in the workspace; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0203", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout /Users/dev/other-1", "labellers": "agree"}
+{"id": "hist-2026-09-26-0204", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout /Users/dev/other-1", "labellers": "agree"}
+{"id": "hist-2026-09-26-0205", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0206", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0207", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0208", "tier": "read", "effects": ["read-workspace"], "rationale": "find in workspace and git status of the workspace repo", "labellers": "agree"}
+{"id": "hist-2026-09-26-0209", "tier": "outside-read", "effects": ["read-outside"], "rationale": "wc and grep on files in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0210", "tier": "outside-read", "effects": ["read-outside"], "rationale": "diffs two files under /Users/dev/other-1; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0211", "tier": "outside-read", "effects": ["read-outside"], "rationale": "diffs files under /Users/dev/other-1; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0212", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0213", "tier": "read", "effects": ["read-workspace"], "rationale": "git branch/log and grep in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0214", "tier": "outside-read", "effects": ["read-outside"], "rationale": "git remote -v and log in another checkout; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0215", "tier": "outside-read", "effects": ["read-outside"], "rationale": "git log in another checkout; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0216", "tier": "read", "effects": ["network-read"], "rationale": "gh pr view is a GitHub network read; cwd change reads no local files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0217", "tier": "read", "effects": ["network-read"], "rationale": "gh pr view --comments is a GitHub network read", "labellers": "agree"}
+{"id": "hist-2026-09-26-0218", "tier": "read", "effects": ["network-read"], "rationale": "gh pr view --comments is a GitHub network read", "labellers": "agree"}
+{"id": "hist-2026-09-26-0219", "tier": "read", "effects": ["network-read"], "rationale": "gh pr view --json reviews is a GitHub network read", "labellers": "agree"}
+{"id": "hist-2026-09-26-0220", "tier": "read", "effects": ["network-read"], "rationale": "gh api GET of PR reviews; network read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0221", "tier": "read", "effects": ["network-read"], "rationale": "gh api GETs of PR reviews and comments; network read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0222", "tier": "read", "effects": ["network-read", "read-workspace"], "rationale": "gh pr view read plus grep of workspace Cargo.toml files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0223", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0224", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0225", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0226", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0227", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0228", "tier": "read", "effects": ["read-workspace"], "rationale": "lists workspace directories only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0229", "tier": "read", "effects": ["read-workspace"], "rationale": "find and git log in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0230", "tier": "read", "effects": ["read-workspace"], "rationale": "wc and cat of workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0231", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and heads workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0232", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0233", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls, wc and git log/branch in another checkout; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0234", "tier": "outside-read", "effects": ["read-outside"], "rationale": "head and tail of a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0235", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0236", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0237", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0238", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0239", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0240", "tier": "outside-read", "effects": ["read-outside"], "rationale": "sed, find and xargs grep within another checkout; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0241", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0242", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0243", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0244", "tier": "outside-read", "effects": ["read-outside"], "rationale": "diffs files under /Users/dev/other-1; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0245", "tier": "outside-read", "effects": ["read-outside"], "rationale": "diffs and lists files under /Users/dev/other-1; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0246", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources and counts matches", "labellers": "agree"}
+{"id": "hist-2026-09-26-0247", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps files in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0248", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads line ranges in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0249", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0250", "tier": "outside-read", "effects": ["read-outside"], "rationale": "cats source files in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0251", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0252", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources and counts matches", "labellers": "agree"}
+{"id": "hist-2026-09-26-0253", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0254", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0255", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0256", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources and sorts output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0257", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps Cargo.toml in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0258", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0259", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0260", "tier": "read", "effects": ["read-workspace"], "rationale": "prints the top of workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0261", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0262", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0263", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0264", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0265", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lists ~/.cargo/bin and prints PATH; reads outside workspace, no secrets", "labellers": "agree"}
+{"id": "hist-2026-09-26-0266", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0267", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0268", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0269", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0270", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "touches a workspace file and runs cargo check into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0271", "tier": "read", "effects": ["read-workspace"], "rationale": "tails a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0272", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "touches a workspace file and runs cargo check into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0273", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "touches a workspace file and runs cargo check into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0274", "tier": "read", "effects": ["read-workspace"], "rationale": "lists and counts lines of workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0275", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0276", "tier": "read", "effects": ["read-workspace"], "rationale": "git diff of the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0277", "tier": "read", "effects": ["read-workspace"], "rationale": "lists and cats workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0278", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "workspace listings plus cargo check building into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0279", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lists ~/.cargo, ~/.rustup and searches the whole filesystem by name; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0280", "tier": "read", "effects": [], "rationale": "command -v lookup of tool locations; harmless local info", "labellers": "agree"}
+{"id": "hist-2026-09-26-0281", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0282", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0283", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0284", "tier": "read", "effects": ["read-workspace"], "rationale": "cats a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0285", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and heads workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0286", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0287", "tier": "read", "effects": ["read-workspace"], "rationale": "git branch, symbolic-ref and log in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0288", "tier": "read", "effects": ["read-workspace"], "rationale": "counts lines of workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0289", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0290", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0291", "tier": "read", "effects": ["read-workspace"], "rationale": "defines a shell helper that prints a line range of a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0292", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints lines of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0293", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0294", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0295", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0296", "tier": "read", "effects": ["read-workspace"], "rationale": "find and cat within the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0297", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0298", "tier": "local-write", "effects": ["read-workspace", "write-workspace"], "rationale": "creates directories and copies source files within the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0299", "tier": "local-write", "effects": ["read-workspace", "write-workspace"], "rationale": "copies a workspace file to a .bak inside the workspace and greps it", "labellers": "agree"}
+{"id": "hist-2026-09-26-0300", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0301", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0302", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0303", "tier": "read", "effects": ["read-workspace"], "rationale": "cats a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0304", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0305", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0306", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0307", "tier": "local-write", "effects": ["read-workspace", "write-workspace"], "rationale": "overwrites a workspace source with its .bak copy and removes the backup; all inside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0308", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0309", "tier": "outside-read", "effects": ["read-outside"], "rationale": "git log, ls and grep in another checkout; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0310", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls, find and grep in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0311", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls, find and grep in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0312", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lists and counts files in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0313", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0314", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0315", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0316", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0317", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0318", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0319", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0320", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0321", "tier": "outside-read", "effects": ["read-outside"], "rationale": "wc and find over files in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0322", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "runs cargo check twice; builds into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0323", "tier": "outside-read", "effects": ["read-outside"], "rationale": "sed and grep over a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0324", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps files in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0325", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a line range in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0326", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0327", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0328", "tier": "outside-read", "effects": ["read-outside"], "rationale": "awk and grep over a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0329", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads /Users/dev/other-1/src/lib.rs, outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0330", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0331", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0332", "tier": "outside-read", "effects": ["read-workspace", "read-outside"], "rationale": "greps workspace files and files in /Users/dev/other-1; read only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0333", "tier": "read", "effects": ["read-workspace"], "rationale": "cats workspace build.rs files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0334", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0335", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir, then reads a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0336", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0337", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0338", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0339", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0340", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0341", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0342", "tier": "read", "effects": ["read-workspace"], "rationale": "git log and grep in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0343", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0344", "tier": "read", "effects": ["read-workspace"], "rationale": "head and grep over workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0345", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0346", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0347", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0348", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0349", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0350", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0351", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0352", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0353", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0354", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0355", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0356", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0357", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "runs cargo check twice; builds into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0358", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0359", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0360", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0361", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0362", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0363", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0364", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0365", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "greps workspace file then runs cargo check into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0366", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0367", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0368", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0369", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0370", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0371", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0372", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "runs cargo check twice; builds into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0373", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0374", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0375", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0376", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0377", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0378", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0379", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0380", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0381", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "runs cargo check twice; builds into the workspace target dir", "labellers": "agree"}
+{"id": "hist-2026-09-26-0382", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check builds into the workspace target dir and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0383", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0384", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0385", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0386", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0387", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0388", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0389", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0390", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0391", "tier": "outside-write", "effects": ["run-project-code", "write-workspace", "write-outside", "read-outside"], "rationale": "cargo check writes target/; redirects log to /tmp and greps it", "labellers": "agree"}
+{"id": "hist-2026-09-26-0392", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0393", "tier": "local-write", "effects": ["write-workspace", "read-workspace"], "rationale": "in-place sed rename edits a workspace source file, then greps it", "labellers": "agree"}
+{"id": "hist-2026-09-26-0394", "tier": "local-write", "effects": ["write-workspace", "read-workspace"], "rationale": "in-place sed rename edits a workspace source file, then greps it", "labellers": "agree"}
+{"id": "hist-2026-09-26-0395", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0396", "tier": "outside-write", "effects": ["write-workspace", "run-project-code", "write-outside", "read-outside"], "rationale": "sed -i edits workspace source; cargo check log written to /tmp", "labellers": "agree"}
+{"id": "hist-2026-09-26-0397", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a cargo log file under /tmp", "labellers": "agree"}
+{"id": "hist-2026-09-26-0398", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0399", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0400", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0401", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0402", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0403", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0404", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0405", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0406", "tier": "outside-write", "effects": ["run-project-code", "write-workspace", "write-outside", "read-outside"], "rationale": "cargo check writes target/; log redirected to /tmp and tailed", "labellers": "agree"}
+{"id": "hist-2026-09-26-0407", "tier": "outside-write", "effects": ["run-project-code", "write-workspace", "write-outside", "read-outside"], "rationale": "greps /tmp log; reruns cargo check with log written to /tmp", "labellers": "agree"}
+{"id": "hist-2026-09-26-0408", "tier": "outside-read", "effects": ["read-workspace", "read-outside"], "rationale": "lists workspace, which cargo, lists ~/.cargo/bin and ~/.rustup", "labellers": "agree"}
+{"id": "hist-2026-09-26-0409", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0410", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0411", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0412", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0413", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0414", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0415", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0416", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0417", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0418", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0419", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0420", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0421", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0422", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0423", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0424", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0425", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0426", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0427", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0428", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0429", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0430", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0431", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0432", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0433", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0434", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0435", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0436", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0437", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0438", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0439", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0440", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0441", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0442", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0443", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0444", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0445", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0446", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0447", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0448", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0449", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0450", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0451", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0452", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0453", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0454", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0455", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0456", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0457", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0458", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0459", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0460", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0461", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0462", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0463", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0464", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0465", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0466", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0467", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0468", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0469", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0470", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0471", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0472", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0473", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0474", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0475", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0476", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0477", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0478", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0479", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0480", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0481", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0482", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0483", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0484", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0485", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0486", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0487", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0488", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0489", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0490", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0491", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0492", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0493", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0494", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0495", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0496", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0497", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0498", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0499", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0500", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0501", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0502", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0503", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0504", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0505", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0506", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0507", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0508", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0509", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0510", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0511", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0512", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0513", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0514", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0515", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0516", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0517", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0518", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0519", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0520", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0521", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0522", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0523", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0524", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0525", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0526", "tier": "outside-read", "effects": ["read-outside"], "rationale": "which cargo, lists ~/.cargo/bin, prints PATH; no secrets", "labellers": "agree"}
+{"id": "hist-2026-09-26-0527", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0528", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0529", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "touches a workspace source file and runs cargo check; writes target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0530", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0531", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0532", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0533", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0534", "tier": "read", "effects": ["read-workspace"], "rationale": "invoking target/debug directory fails harmlessly; awk prints source lines", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0535", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0536", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0537", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0538", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0539", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0540", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0541", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0542", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0543", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0544", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "stray Cargo.toml invocation fails; cargo check writes only target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0545", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0546", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0547", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0548", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0549", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0550", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0551", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0552", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0553", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0554", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0555", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0556", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0557", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0558", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0559", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0560", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0561", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0562", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "read-workspace"], "rationale": "runs cargo check on project crates; build scripts run, output written to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0563", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0564", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0565", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0566", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0567", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0568", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0569", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0570", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0571", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0572", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0573", "tier": "read", "effects": ["read-workspace"], "rationale": "reads/greps workspace source files or git state only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0574", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0575", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0576", "tier": "read", "effects": ["read-workspace"], "rationale": "awk prints numbered lines of a workspace file to stdout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0577", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed over workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0578", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0579", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0580", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0581", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files and echoes headers", "labellers": "agree"}
+{"id": "hist-2026-09-26-0582", "tier": "read", "effects": ["read-workspace"], "rationale": "sed, grep and awk filtering over a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0583", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0584", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0585", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0586", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0587", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file for function names", "labellers": "agree"}
+{"id": "hist-2026-09-26-0588", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0589", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and wc on a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0590", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0591", "tier": "read", "effects": ["read-workspace"], "rationale": "awk and tail print parts of a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0592", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and counts a line range of a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0593", "tier": "read", "effects": ["read-workspace"], "rationale": "sets PATH for this shell only, then greps workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0594", "tier": "read", "effects": ["read-workspace"], "rationale": "sets PATH for this shell only, then greps a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0595", "tier": "read", "effects": ["read-workspace"], "rationale": "sets PATH for this shell only, recursive grep inside workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0596", "tier": "outside-read", "effects": ["read-outside"], "rationale": "Lists ~/.cargo/bin to check toolchain presence; a directory outside the workspace.", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0597", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0598", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0599", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0600", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0601", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0602", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep within workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0603", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0604", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0605", "tier": "read", "effects": ["read-workspace"], "rationale": "git status and current branch name", "labellers": "agree"}
+{"id": "hist-2026-09-26-0606", "tier": "read", "effects": ["read-workspace"], "rationale": "find and grep inside workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0607", "tier": "read", "effects": ["read-workspace"], "rationale": "lists a workspace directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0608", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0609", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0610", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0611", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0612", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0613", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0614", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0615", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0616", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0617", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0618", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0619", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0620", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0621", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0622", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate and echoes exit codes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0623", "tier": "read", "effects": ["read-workspace"], "rationale": "grep counts and git diff --stat inside workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0624", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and git status --short inside workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0625", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0626", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0627", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lists contents of ~/.cargo/bin outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0628", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0629", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0630", "tier": "read", "effects": ["read-workspace"], "rationale": "ls, cat Cargo.toml and grep inside workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0631", "tier": "read", "effects": ["read-workspace"], "rationale": "prints first lines of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0632", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lists ~/.cargo/bin and prints PATH; PATH is not secret", "labellers": "agree"}
+{"id": "hist-2026-09-26-0633", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0634", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0635", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0636", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0637", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo check builds into workspace target/, runs build scripts, may fetch crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0638", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls and find in another directory /Users/dev/other-1", "labellers": "agree"}
+{"id": "hist-2026-09-26-0639", "tier": "outside-read", "effects": ["read-outside"], "rationale": "git branch/log and cat of a file in another checkout", "labellers": "agree"}
+{"id": "hist-2026-09-26-0640", "tier": "outside-read", "effects": ["read-outside"], "rationale": "git status in other checkouts outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0641", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls and cat package.json in another project", "labellers": "agree"}
+{"id": "hist-2026-09-26-0642", "tier": "outside-read", "effects": ["read-outside"], "rationale": "find and ls in another project directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0643", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps docs and Makefile in another project", "labellers": "agree"}
+{"id": "hist-2026-09-26-0644", "tier": "outside-read", "effects": ["read-outside"], "rationale": "recursive grep in another project directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0645", "tier": "read", "effects": ["read-workspace"], "rationale": "ls and cat of workspace example files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0646", "tier": "outside-read", "effects": ["read-outside"], "rationale": "recursive grep in another project directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0647", "tier": "outside-read", "effects": ["read-outside"], "rationale": "head and wc of files in another project", "labellers": "agree"}
+{"id": "hist-2026-09-26-0648", "tier": "read", "effects": ["read-workspace"], "rationale": "wc, find and cat within the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0649", "tier": "read", "effects": ["read-workspace"], "rationale": "find and cat of workspace example files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0650", "tier": "read", "effects": ["read-workspace"], "rationale": "git branch -a and git log", "labellers": "agree"}
+{"id": "hist-2026-09-26-0651", "tier": "read", "effects": ["read-workspace"], "rationale": "cat and grep of workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0652", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0653", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0654", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0655", "tier": "read", "effects": ["read-workspace"], "rationale": "grep, sed and find/xargs grep over workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0656", "tier": "read", "effects": ["read-workspace"], "rationale": "git diff and sed over workspace Cargo.toml files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0657", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0658", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and ls inside workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0659", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0660", "tier": "read", "effects": ["read-workspace"], "rationale": "ls and grep inside workspace crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0661", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0662", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0663", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls and grep in another project's site directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0664", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls and grep in another project directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0665", "tier": "read", "effects": ["read-workspace"], "rationale": "prints lines of a workspace example file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0666", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace Cargo.toml files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0667", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0668", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "builds and launches the project's own example app; build output under workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-0669", "tier": "read", "effects": ["read-workspace"], "rationale": "df and du disk usage queries; harmless local information", "labellers": "agree"}
+{"id": "hist-2026-09-26-0670", "tier": "read", "effects": ["read-workspace"], "rationale": "cat, sed and grep of workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0671", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0672", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0673", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0674", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0675", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0676", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0677", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0678", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed with command substitution over workspace files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0679", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0680", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0681", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0682", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0683", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0684", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0685", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0686", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep inside workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0687", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0688", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0689", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0690", "tier": "read", "effects": ["read-workspace"], "rationale": "cat of workspace example files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0691", "tier": "read", "effects": ["read-workspace"], "rationale": "git diff of a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0692", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo build of project example into workspace target/, runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0693", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0694", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0695", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0696", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0697", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0698", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0699", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0700", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0701", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and ls inside workspace sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0702", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0703", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0704", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0705", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0706", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0707", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0708", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0709", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph; no build output", "labellers": "agree"}
+{"id": "hist-2026-09-26-0710", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree inverse queries print the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0711", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed with command substitution over workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0712", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0713", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo build of project example into workspace target/, runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0714", "tier": "read", "effects": [], "rationale": "sleeps then lists processes with ps", "labellers": "agree"}
+{"id": "hist-2026-09-26-0715", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0716", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0717", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree plus grep of workspace Cargo.lock", "labellers": "agree"}
+{"id": "hist-2026-09-26-0718", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a crate source file in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0719", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a crate source file in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0720", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0721", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0722", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0723", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0724", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0725", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0726", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0727", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0728", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0729", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo metadata to /dev/null, then grep of workspace Cargo.lock", "labellers": "agree"}
+{"id": "hist-2026-09-26-0730", "tier": "read", "effects": [], "rationale": "just sleeps", "labellers": "agree"}
+{"id": "hist-2026-09-26-0731", "tier": "read", "effects": [], "rationale": "just sleeps", "labellers": "agree"}
+{"id": "hist-2026-09-26-0732", "tier": "outside-write", "effects": ["write-outside", "read-outside"], "rationale": "captures the whole screen to a /tmp file; writes outside, may capture sensitive on-screen content", "labellers": "agree"}
+{"id": "hist-2026-09-26-0733", "tier": "outside-write", "effects": ["write-outside", "read-outside"], "rationale": "captures the whole screen to a /tmp file; writes outside, may capture sensitive on-screen content", "labellers": "agree"}
+{"id": "hist-2026-09-26-0734", "tier": "outside-read", "effects": ["read-outside"], "rationale": "pgrep, ls of /tmp, and read-only System Events process name query", "labellers": "agree"}
+{"id": "hist-2026-09-26-0735", "tier": "read", "effects": [], "rationale": "read-only AppleScript window query and lsappinfo; harmless local process information", "labellers": "agree"}
+{"id": "hist-2026-09-26-0736", "tier": "ask", "effects": ["system-change", "write-outside", "run-project-code"], "rationale": "launchctl submit registers a launchd job; daemon changes always ask", "labellers": "agree"}
+{"id": "hist-2026-09-26-0737", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads log files in /tmp and queries lsappinfo", "labellers": "agree"}
+{"id": "hist-2026-09-26-0738", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0739", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0740", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0741", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0742", "tier": "read", "effects": ["read-workspace"], "rationale": "cargo tree prints the dependency graph", "labellers": "agree"}
+{"id": "hist-2026-09-26-0743", "tier": "outside-read", "effects": ["read-outside"], "rationale": "ls and grep over a crate in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0744", "tier": "read", "effects": ["read-workspace"], "rationale": "ls of workspace target/ and grep of Cargo.lock", "labellers": "agree"}
+{"id": "hist-2026-09-26-0745", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps crate sources in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0746", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads a crate source file in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0747", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0748", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0749", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed with command substitution over a workspace file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0750", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps crate files in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0751", "tier": "outside-read", "effects": ["read-outside"], "rationale": "greps a crate source file in ~/.cargo/registry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0752", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0753", "tier": "local-write", "effects": ["write-workspace", "run-project-code", "network-read"], "rationale": "cargo build of project example into workspace target/, runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0754", "tier": "ask", "effects": ["system-change", "write-outside", "read-outside", "run-project-code"], "rationale": "deletes /tmp logs and registers a launchd job via launchctl submit; daemon changes ask", "labellers": "agree"}
+{"id": "hist-2026-09-26-0755", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads /tmp logs, lsappinfo and read-only AppleScript window count", "labellers": "agree"}
+{"id": "hist-2026-09-26-0756", "tier": "read", "effects": [], "rationale": "read-only AppleScript query of a process's window names and geometry", "labellers": "agree"}
+{"id": "hist-2026-09-26-0757", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lsappinfo query and wc of log files in /tmp", "labellers": "agree"}
+{"id": "hist-2026-09-26-0758", "tier": "read", "effects": [], "rationale": "read-only AppleScript queries of window counts and visible process names", "labellers": "agree"}
+{"id": "hist-2026-09-26-0759", "tier": "outside-read", "effects": ["read-outside"], "rationale": "lsappinfo plus log show reading the system unified log for one process", "labellers": "agree"}
+{"id": "hist-2026-09-26-0760", "tier": "outside-write", "effects": ["write-outside", "read-outside"], "rationale": "captures the whole screen to a /tmp file; writes outside, may capture sensitive on-screen content", "labellers": "agree"}
+{"id": "hist-2026-09-26-0761", "tier": "ask", "effects": ["system-change", "write-outside", "run-project-code"], "rationale": "launchctl remove and submit change launchd jobs; daemon changes always ask", "labellers": "agree"}
+{"id": "hist-2026-09-26-0762", "tier": "outside-write", "effects": ["write-outside", "read-outside"], "rationale": "captures the whole screen to a /tmp file; writes outside, may capture sensitive on-screen content", "labellers": "agree"}
+{"id": "hist-2026-09-26-0763", "tier": "read", "effects": [], "rationale": "read-only AppleScript queries listing process names and window counts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0764", "tier": "read", "effects": [], "rationale": "lsappinfo prints info about a running app; harmless local information", "labellers": "agree"}
+{"id": "hist-2026-09-26-0765", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads log files in /tmp and queries app info with lsappinfo; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0766", "tier": "outside-read", "effects": ["read-outside"], "rationale": "reads log files in /tmp; no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0767", "tier": "read", "effects": [], "rationale": "inline python lists on-screen windows and lsappinfo prints process info; harmless local info, no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0768", "tier": "read", "effects": [], "rationale": "osascript queries System Events for a process's name and window count; read-only local info", "labellers": "agree"}
+{"id": "hist-2026-09-26-0769", "tier": "read", "effects": [], "rationale": "osascript lists running process names via System Events; read-only local info", "labellers": "agree"}
+{"id": "hist-2026-09-26-0770", "tier": "read", "effects": [], "rationale": "inline swift script lists on-screen windows; read-only local info", "labellers": "agree"}
+{"id": "hist-2026-09-26-0771", "tier": "ask", "effects": ["write-outside", "read-outside", "run-unknown-code"], "rationale": "compiles /tmp/windowlist.swift (unknown contents; heredoc goes to stdin) into /tmp and executes the binary", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-0772", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over Cargo.toml and source in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0773", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep over workspace crate files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0774", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0775", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0776", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0777", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0778", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0779", "tier": "read", "effects": ["read-workspace"], "rationale": "shows current branch and remotes; local git reads", "labellers": "agree"}
+{"id": "hist-2026-09-26-0780", "tier": "read", "effects": ["read-workspace"], "rationale": "cat and grep over workspace crate files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0781", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a source file and lists a crate directory in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0782", "tier": "read", "effects": ["read-workspace", "network-read"], "rationale": "lists branches and ls-remote heads from origin; network read of the project's remote", "labellers": "agree"}
+{"id": "hist-2026-09-26-0783", "tier": "local-write", "effects": ["write-workspace"], "rationale": "creates and switches to a new local branch", "labellers": "agree"}
+{"id": "hist-2026-09-26-0784", "tier": "remote-write", "effects": ["network-write"], "rationale": "non-force push of a new branch to origin with upstream tracking", "labellers": "agree"}
+{"id": "hist-2026-09-26-0785", "tier": "read", "effects": ["read-workspace"], "rationale": "cats workspace source and Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0786", "tier": "read", "effects": ["read-workspace"], "rationale": "series of greps over crate sources in the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0787", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crates for references", "labellers": "agree"}
+{"id": "hist-2026-09-26-0788", "tier": "read", "effects": ["read-workspace"], "rationale": "greps Cargo.toml and sources across the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0789", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0790", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0791", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0792", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0793", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0794", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0795", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0796", "tier": "read", "effects": ["read-workspace"], "rationale": "loop of greps over a workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0797", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0798", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0799", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0800", "tier": "read", "effects": ["read-workspace"], "rationale": "loop of greps across workspace crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0801", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0802", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0803", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "cargo check builds the crate; writes target/ in the workspace and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0804", "tier": "outside-read", "effects": ["read-outside"], "rationale": "sources ~/.cargo/env, lists ~/.cargo/bin and searches the whole filesystem for cargo; reads only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0805", "tier": "local-write", "effects": ["write-workspace", "run-project-code"], "rationale": "cargo check with PATH extended; writes target/ in the workspace and runs build scripts", "labellers": "agree"}
+{"id": "hist-2026-09-26-0806", "tier": "read", "effects": ["read-workspace"], "rationale": "local git branch, remote and log queries", "labellers": "agree"}
+{"id": "hist-2026-09-26-0807", "tier": "remote-write", "effects": ["network-write"], "rationale": "non-force push of a feature branch to origin", "labellers": "agree"}
+{"id": "hist-2026-09-26-0808", "tier": "read", "effects": ["read-workspace"], "rationale": "counts lines and prints a range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0809", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0810", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0811", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0812", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0813", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0814", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and heads workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0815", "tier": "read", "effects": ["read-workspace"], "rationale": "rg search across the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0816", "tier": "read", "effects": ["read-workspace"], "rationale": "cats workspace source files and lists a directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0817", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep over the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-0818", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0819", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0820", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0821", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0822", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0823", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0824", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0825", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0826", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0827", "tier": "read", "effects": ["read-workspace"], "rationale": "greps the workspace and lists a directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0828", "tier": "read", "effects": ["read-workspace"], "rationale": "rg search over a workspace crate", "labellers": "agree"}
+{"id": "hist-2026-09-26-0829", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources and lists a directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0830", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0831", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0832", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0833", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0834", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0835", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0836", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0837", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0838", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0839", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0840", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and lists workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0841", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0842", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0843", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0844", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0845", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0846", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0847", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps workspace crate files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0848", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0849", "tier": "read", "effects": ["read-workspace"], "rationale": "lists and greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0850", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0851", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0852", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and awk over a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0853", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0854", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crates", "labellers": "agree"}
+{"id": "hist-2026-09-26-0855", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0856", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0857", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and lists workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0858", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0859", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0860", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0861", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and counts lines in a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0862", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0863", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0864", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0865", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0866", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0867", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0868", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0869", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0870", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0871", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0872", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0873", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0874", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0875", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0876", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0877", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0878", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0879", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0880", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0881", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0882", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0883", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0884", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0885", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0886", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace sources and Cargo.toml", "labellers": "agree"}
+{"id": "hist-2026-09-26-0887", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0888", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0889", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0890", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0891", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0892", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0893", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0894", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0895", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0896", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0897", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and cats workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0898", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0899", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0900", "tier": "read", "effects": ["read-workspace"], "rationale": "lists a crate directory and prints workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0901", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0902", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges and lists a workspace directory", "labellers": "agree"}
+{"id": "hist-2026-09-26-0903", "tier": "read", "effects": ["read-workspace"], "rationale": "lists and greps workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0904", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0905", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0906", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0907", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0908", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0909", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0910", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0911", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0912", "tier": "read", "effects": ["read-workspace"], "rationale": "greps source, lists target/debug and shows git diff --stat; all workspace reads", "labellers": "agree"}
+{"id": "hist-2026-09-26-0913", "tier": "outside-read", "effects": ["read-outside"], "rationale": "which, lists ~/.cargo/bin and /opt/homebrew, echoes PATH; reads outside workspace, no writes", "labellers": "agree"}
+{"id": "hist-2026-09-26-0914", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0915", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0916", "tier": "read", "effects": ["read-workspace"], "rationale": "counts lines and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0917", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0918", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0919", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0920", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0921", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0922", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0923", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0924", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0925", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and lists workspace source", "labellers": "agree"}
+{"id": "hist-2026-09-26-0926", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0927", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0928", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a trait block from a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0929", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0930", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0931", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and lists workspace crate sources", "labellers": "agree"}
+{"id": "hist-2026-09-26-0932", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0933", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0934", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0935", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0936", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0937", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0938", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0939", "tier": "read", "effects": ["read-workspace"], "rationale": "greps source and lists workspace directories", "labellers": "agree"}
+{"id": "hist-2026-09-26-0940", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0941", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0942", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0943", "tier": "read", "effects": ["read-workspace"], "rationale": "greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0944", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0945", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0946", "tier": "read", "effects": ["read-workspace"], "rationale": "cats and greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0947", "tier": "read", "effects": ["read-workspace"], "rationale": "prints and greps a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0948", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0949", "tier": "read", "effects": ["read-workspace"], "rationale": "greps and prints a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0950", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0951", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0952", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0953", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace source file", "labellers": "agree"}
+{"id": "hist-2026-09-26-0954", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0955", "tier": "read", "effects": ["read-workspace"], "rationale": "greps workspace source files", "labellers": "agree"}
+{"id": "hist-2026-09-26-0956", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0957", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0958", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0959", "tier": "read", "effects": ["read-workspace"], "rationale": "sed, grep and grep -c on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0960", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and cat of workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0961", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0962", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0963", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed range print of workspace source; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0964", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0965", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0966", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0967", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0968", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0969", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0970", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0971", "tier": "read", "effects": ["read-workspace"], "rationale": "cat and recursive grep within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0972", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on workspace source and Cargo.toml; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0973", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0974", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0975", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0976", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep within workspace crates and examples; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0977", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0978", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep of workspace Rust files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0979", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep of workspace toml and Rust files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0980", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on workspace source and Cargo.toml; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0981", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0982", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0983", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0984", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0985", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0986", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0987", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0988", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0989", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0990", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed range print of workspace source; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0991", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0992", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0993", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0994", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0995", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0996", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0997", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0998", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-0999", "tier": "read", "effects": ["read-workspace"], "rationale": "grep pipelines over a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1000", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of workspace files with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1001", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1002", "tier": "read", "effects": ["read-workspace"], "rationale": "grep pipelines over a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1003", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1004", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1005", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1006", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1007", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1008", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1009", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1010", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1011", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1012", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1013", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1014", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1015", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file via relative path; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1016", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1017", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1018", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1019", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1020", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1021", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1022", "tier": "read", "effects": ["read-workspace"], "rationale": "grep pipelines over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1023", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep within workspace crates; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1024", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1025", "tier": "read", "effects": ["read-workspace"], "rationale": "grep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1026", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1027", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1028", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep within workspace crates; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1029", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1030", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1031", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1032", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1033", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1034", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1035", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1036", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1037", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1038", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1039", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1040", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1041", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1042", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check compiles the crate, running build scripts and writing target/ under the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-1043", "tier": "outside-read", "effects": ["read-outside"], "rationale": "which, lists ~/.cargo/bin outside the workspace, echoes PATH (not secret)", "labellers": "agree"}
+{"id": "hist-2026-09-26-1044", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check with cargo on PATH; build scripts run, output goes to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-1045", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1046", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1047", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check with cargo on PATH; build scripts run, output goes to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-1048", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1049", "tier": "read", "effects": ["read-workspace"], "rationale": "grep and sed on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1050", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep search across the workspace excluding target; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1051", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep over workspace source directories; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1052", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1053", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1054", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1055", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1056", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1057", "tier": "read", "effects": ["read-workspace"], "rationale": "lists workspace directories; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1058", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep and find listing directories within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1059", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep for Cargo.toml files in the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1060", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep of workspace Cargo.toml files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1061", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on workspace Cargo.toml files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1062", "tier": "read", "effects": ["read-workspace"], "rationale": "sed and grep on the workspace Cargo.toml; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1063", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of the workspace Cargo.toml; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1064", "tier": "read", "effects": ["read-workspace"], "rationale": "grep of workspace manifests and local git log; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1065", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1066", "tier": "read", "effects": ["read-workspace"], "rationale": "ls and grep within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1067", "tier": "read", "effects": ["read-workspace"], "rationale": "ls and grep within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1068", "tier": "read", "effects": ["read-workspace"], "rationale": "git log and git diff --stat; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1069", "tier": "read", "effects": ["read-workspace"], "rationale": "recursive grep of workspace config files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1070", "tier": "read", "effects": ["read-workspace"], "rationale": "ls and recursive grep within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1071", "tier": "read", "effects": ["read-workspace"], "rationale": "cat of workspace example source and config files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1072", "tier": "read", "effects": ["read-workspace"], "rationale": "ls and cat within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1073", "tier": "read", "effects": ["read-workspace"], "rationale": "cat of a workspace README; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1074", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of the workspace Cargo.toml; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1075", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on Cargo.toml and workspace .github workflows; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1076", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace workflow file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1077", "tier": "read", "effects": ["read-workspace"], "rationale": "grep on a workspace Cargo.toml; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1078", "tier": "outside-read", "effects": ["read-outside"], "rationale": "which plus listing ~/.cargo/bin and ~/.rustup/toolchains outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-1079", "tier": "read", "effects": ["read-workspace"], "rationale": "cats toolchain files and runs cargo --version; rustup could auto-install a pinned toolchain", "labellers": "agree"}
+{"id": "hist-2026-09-26-1080", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo check of a project example; build scripts run, output to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-1081", "tier": "local-write", "effects": ["read-workspace", "write-workspace", "run-project-code"], "rationale": "cargo build of a project example; output to workspace target/", "labellers": "agree"}
+{"id": "hist-2026-09-26-1082", "tier": "read", "effects": [], "rationale": "sleep then pgrep to list matching processes; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1083", "tier": "read", "effects": [], "rationale": "ps aux filtered by grep; harmless local process listing", "labellers": "agree"}
+{"id": "hist-2026-09-26-1084", "tier": "outside-write", "effects": ["write-outside", "system-change"], "rationale": "osascript queries app window, screencapture writes PNG to /tmp outside the workspace", "labellers": "agree"}
+{"id": "hist-2026-09-26-1085", "tier": "outside-read", "effects": ["read-outside"], "rationale": "Queries process/window names via System Events automation; read-only, outside the workspace.", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-1086", "tier": "ask", "effects": ["write-outside", "secrets"], "rationale": "full-screen screenshot to /tmp may capture anything visible, including private content", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-1087", "tier": "outside-read", "effects": ["read-outside", "run-unknown-code"], "rationale": "lsappinfo and inline swift script enumerating on-screen windows; reads system state, may write compiler caches", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-1088", "tier": "read", "effects": ["read-workspace"], "rationale": "ls, cat and head of workspace source files; read-only", "labellers": "adjudicated"}
+{"id": "hist-2026-09-26-1089", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1090", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1091", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1092", "tier": "read", "effects": ["read-workspace"], "rationale": "head and ripgrep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1093", "tier": "read", "effects": ["read-workspace"], "rationale": "cat of a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1094", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1095", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1096", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep over workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1097", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1098", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1099", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep and sed range print of workspace source; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1100", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1101", "tier": "read", "effects": ["read-workspace"], "rationale": "prints line ranges of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1102", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1103", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1104", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep and sed range print of workspace source; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1105", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1106", "tier": "read", "effects": ["read-workspace"], "rationale": "prints a line range of a workspace file with sed -n; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1107", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1108", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep and cat of workspace source files; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1109", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep on a workspace source file; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1110", "tier": "read", "effects": [], "rationale": "ps aux filtered by grep; harmless local process listing", "labellers": "agree"}
+{"id": "hist-2026-09-26-1111", "tier": "ask", "effects": ["system-change"], "rationale": "pkill -f with broad patterns like \"servo\" can kill unrelated processes", "labellers": "agree"}
+{"id": "hist-2026-09-26-1112", "tier": "read", "effects": ["read-workspace"], "rationale": "ripgrep and ls within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1113", "tier": "read", "effects": ["read-workspace"], "rationale": "find in workspace target/debug and ls; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1114", "tier": "read", "effects": ["read-workspace"], "rationale": "find, ripgrep and cat within the workspace; read-only", "labellers": "agree"}
+{"id": "hist-2026-09-26-1115", "tier": "ask", "effects": ["system-change"], "rationale": "pkill -f on helloworld patterns may kill processes the agent did not start", "labellers": "agree"}
+{"id": "hist-2026-09-26-1116", "tier": "ask", "effects": ["read-workspace", "network-read", "system-change"], "rationale": "pkill -f of the example process plus git reads; pkill requires a person", "labellers": "agree"}
+{"id": "hist-2026-09-26-1117", "tier": "remote-write", "effects": ["network-write"], "rationale": "non-force git push of a feature branch to origin", "labellers": "agree"}

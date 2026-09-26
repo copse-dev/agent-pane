@@ -10,12 +10,14 @@
 //   anonymised machine, keeping its reviewed sandbox/external label and dev/holdout split;
 // - authored: sources/authored.jsonl, written for this set;
 // - hf: sources/hf-*.jsonl, sampled by sample-hf.mjs.
+// - history: sources/history-*.jsonl, anonymised slices of real history from
+//   import-history.mjs, always in the holdout split.
 //
 // labels.jsonl holds the reference tier for every row (rubric.md). The build writes
 // cases.jsonl and fixtures/tier-{dev,holdout}.jsonl for `pnpm run eval:classifier`. With
 // --check it only verifies those files are current. --batches writes blind labelling rows.
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { TIER_QUESTION } from '../scripts/prepare.mjs'
@@ -106,6 +108,16 @@ export function collect() {
   for (const name of ['hf-shell-safety-v2.jsonl', 'hf-nl2sh-alfa.jsonl']) {
     for (const c of jsonl(join(TESTSET, 'sources', name))) rows.push({ ...c, workspace: WORKSPACE })
   }
+  // Anonymised slices of real history join the holdout only, in the order they were taken,
+  // so no prompt, threshold or gate rule is ever chosen on them before they are scored.
+  const history = readdirSync(join(TESTSET, 'sources'))
+    .filter((name) => /^history-[\w.-]+\.jsonl$/.test(name))
+    .sort()
+  for (const name of history) {
+    for (const c of jsonl(join(TESTSET, 'sources', name))) {
+      rows.push({ ...c, workspace: WORKSPACE, split: 'holdout' })
+    }
+  }
   return rows.map((row) => ({ ...row, split: row.split ?? splitFor(family(row.command)) }))
 }
 
@@ -161,16 +173,30 @@ export function build() {
   })
   const line = (value) => JSON.stringify(value)
   const text = (values) => values.map(line).join('\n') + '\n'
-  return {
-    'cases.jsonl': text(cases),
-    ...Object.fromEntries(
-      SPLITS.map((split) => [
-        `fixtures/tier-${split}.jsonl`,
-        text(cases.filter((c) => c.split === split).map(fixture)),
-      ]),
-    ),
+  // The curated splits keep their own files, so their scores stay comparable as history
+  // slices arrive; each slice gets its own. eval:classifier takes at most 1,000 fixtures
+  // per file, so larger groups are written in parts.
+  const groups = new Map()
+  for (const c of cases) {
+    const name = c.source.startsWith('history:')
+      ? `tier-history-${c.source.slice('history:'.length)}`
+      : `tier-${c.split}`
+    groups.set(name, [...(groups.get(name) ?? []), c])
   }
+  const outputs = { 'cases.jsonl': text(cases) }
+  for (const [name, group] of groups) {
+    const parts = Math.ceil(group.length / MAX_FIXTURES_PER_FILE)
+    for (let part = 0; part < parts; part++) {
+      const file = parts === 1 ? `${name}.jsonl` : `${name}-part${String(part + 1)}.jsonl`
+      const slice = group.slice(part * MAX_FIXTURES_PER_FILE, (part + 1) * MAX_FIXTURES_PER_FILE)
+      outputs[`fixtures/${file}`] = text(slice.map(fixture))
+    }
+  }
+  return outputs
 }
+
+/** The most fixtures `pnpm run eval:classifier` accepts in one input file. */
+export const MAX_FIXTURES_PER_FILE = 1000
 
 /** Deterministic shuffle (prepare.mjs's) so batches mix sources for the labeller. */
 function shuffled(rows) {
