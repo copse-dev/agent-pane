@@ -351,9 +351,43 @@ While active:
     process and runs);
   - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
     and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`, which always download.
+  - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
+    line (`… | sudo sh`);
+  - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
+    heredoc code that downloads and runs code or posts data (`python3 -c "exec(urlopen(…))"`,
+    `perl - <<EOF` with an HTTP POST), and running or `chmod +x` on a file the same command
+    downloaded;
+  - a temporary directory on `PATH` (`export PATH=/tmp/x:$PATH`);
+  - a secret file inside the workspace (`.env*` except templates such as `.env.example`, `*.pem`,
+    `*.key`, `id_rsa`, `.npmrc`, …) read, searched, encoded or sent by a program that shows its
+    contents, and CLIs whose output is a secret (`gh auth status --show-token`,
+    `gcloud auth print-access-token`, `aws configure get`, `npm token`, `kubectl get secret`,
+    `helm get values`, `security dump-keychain`, `git credential fill`, a `credential.helper`
+    change);
+  - any command other than the store's own client that names a credential store (`~/.ssh`,
+    `~/.aws`, `~/.config/gh`, `~/Library/Keychains`, shell history files, …), such as
+    `tar -czf - ~/.ssh` or `cp ~/.ssh/id_rsa /tmp/k`;
+  - publishing (`npm`/`cargo`/`gem`/`twine` publish, `docker push`), deploying and changing
+    infrastructure (`kubectl`, `helm`, `terraform`, `pulumi`, `vercel`, `netlify`, `fly`,
+    `firebase`, `heroku`, `wrangler`, whose read subcommands are an allow-list), cloud writes
+    (`aws`/`gcloud`/`az`/`doctl` verbs that create, delete, deploy or change IAM), Stripe calls
+    other than reads, and SQL or Mongo statements that drop, delete, truncate, alter or grant;
+  - containers with host access (`--privileged`, `--pid=host`, mounting `/`, `/etc`, home or the
+    Docker socket), stopping or removing containers, and the payload of `docker exec` or
+    `kubectl exec`, which is inspected as a command;
+  - installing from a registry other than the default (`GOPROXY`, `GOSUMDB=off`,
+    `--registry`, `--index-url`, …);
+  - sending a request body or upload to a host other than loopback (`curl -d`, `-T`, `-X POST`,
+    `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
+  - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
+    `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
   has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
-  name.
+  name. A program run by absolute path is inspected unless it lives under an installed-program
+  root (`/usr`, `/bin`, `/opt`, `/System`, …): a script's text is assessed, and a binary or missing
+  file outside the workspace still runs as an installed program. Anything run from a temporary
+  directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
+  `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
   allows them.
 
@@ -435,7 +469,13 @@ the registry still fails contained and offers to run outside.
   uses the same choice; through a connection it shares without asking only at P(safe) ≥ 0.80.
 - `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
-  are additionally capped at `read` if a caller reaches the level helper without a sandbox.
+  are additionally capped at `read` if a caller reaches the level helper without a sandbox. A
+  segment that names a secret file (`secrets.ts`) is never approved, even inside the workspace,
+  and `gh auth status --show-token` is not the `gh auth status` read.
+- `host-reach.ts`, `secrets.ts`, `remote-change.ts`: the Guarded YOLO ask-once rules above. The
+  public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
+  verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
+  reviewed and updated.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure.
 

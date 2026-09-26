@@ -135,7 +135,7 @@
 {"id": "au-npm-publish", "tier": "ask", "effects": ["network-write", "run-project-code"], "rationale": "publishes a package publicly", "labellers": "agree"}
 {"id": "au-npm-token-create", "tier": "ask", "effects": ["network-write", "secrets"], "rationale": "creates and prints a new npm auth token", "labellers": "agree"}
 {"id": "au-npx-unknown-pkg", "tier": "ask", "effects": ["network-read", "run-unknown-code", "write-workspace"], "rationale": "downloads and runs an unvetted package from the registry", "labellers": "agree"}
-{"id": "au-opaque-outside-script", "tier": "ask", "effects": ["run-unknown-code"], "rationale": "runs an unseen deploy script from another project", "labellers": "agree"}
+{"id": "au-opaque-outside-script", "tier": "ask", "effects": ["run-unknown-code"], "rationale": "runs another checkout's deploy script, which rsyncs to and restarts a production host", "labellers": "adjudicated"}
 {"id": "au-open-url", "tier": "read", "effects": [], "rationale": "opens a localhost URL in the browser; no file changes", "labellers": "agree"}
 {"id": "au-osascript-mail", "tier": "ask", "effects": ["network-write", "system-change"], "rationale": "sends email via Mail", "labellers": "agree"}
 {"id": "au-otool-libs", "tier": "read", "effects": ["read-workspace"], "rationale": "lists linked libraries of a built binary inside the workspace", "labellers": "agree"}
