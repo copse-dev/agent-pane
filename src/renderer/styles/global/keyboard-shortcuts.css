@@ -26,7 +26,8 @@
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  /* Display face (brand.css); Averia ships only 400. */
+  font-weight: 400;
 }
 .keyboard-shortcuts-grid {
   display: grid;

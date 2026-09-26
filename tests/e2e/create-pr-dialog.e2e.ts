@@ -5,6 +5,7 @@ import { waitForAgentIdle } from './helpers.ts'
 import { prepareMockTurn } from './helpers/mock-scenario.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 
 /**
@@ -107,6 +108,13 @@ describe('create PR dialog', function () {
     await setTitle('Roll up tool activity')
     await expect($(CREATE_BUTTON)).toBeEnabled()
     await expect($(CREATE_BUTTON)).toHaveText('Create pull request')
+
+    // The dialog title is display tier: Averia at its only weight, never a
+    // synthetic bold.
+    const title = await readHeadingStyle('.create-pr-dialog h3')
+    expect(title).not.toBeNull()
+    expect(isDisplayFace(title!.family)).toBe(true)
+    expect(title!.weight).toBe('400')
 
     await saveAppScreenshot('create-pr-dialog.png')
 

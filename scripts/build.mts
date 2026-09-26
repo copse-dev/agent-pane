@@ -211,7 +211,7 @@ if (!isDemo) {
   })
   // Every standalone main-process bundle, from the list `dev.mts` also builds
   // (see main-bundles.mts for why they are enumerated in one place).
-  for (const { entry, outfile } of STANDALONE_MAIN_BUNDLES) {
+  for (const { entry, outfile, manifest } of STANDALONE_MAIN_BUNDLES) {
     await esbuild.build({
       ...nodeOpts,
       entryPoints: [entry],
@@ -219,6 +219,12 @@ if (!isDemo) {
       ...standaloneOverrides(entry),
     })
     assertParses(outfile)
+    if (manifest) {
+      writeFileSync(
+        join(dirname(outfile), 'package.json'),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+      )
+    }
   }
   await esbuild.build({
     ...nodeOpts,
