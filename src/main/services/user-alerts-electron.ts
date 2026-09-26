@@ -1,5 +1,6 @@
-import { app, Notification, shell, type BrowserWindow } from 'electron'
+import { app, BrowserWindow, Notification, shell } from 'electron'
 import { NeedsInputBadge } from './needs-input-badge.ts'
+import type { RendererPromptTarget } from './renderer-prompt-target.ts'
 import { findThreadOwners } from './thread-store.ts'
 import {
   dispatchUserAlert,
@@ -112,6 +113,33 @@ export async function openUserAlertTarget<TWindow extends AlertClickWindow>(
   return target
 }
 
+/**
+ * Which window a notification click should surface, and whether it opens a
+ * thread there.
+ *
+ * Normally that is the sender's own window and the alert's thread. A prompt
+ * routed to a different renderer (a pop-out's terminal approval) exists only
+ * in that renderer, so the click brings the window hosting it forward and opens
+ * nothing: the prompt is already on screen there, and opening its thread in the
+ * main window would show the thread without the dialog needed to answer it. If
+ * that renderer's window is gone, the sender's window and thread are the
+ * fallback.
+ */
+export function alertClickOwner<TWindow extends AlertClickWindow>(
+  win: TWindow,
+  threadId: string | undefined,
+  promptTarget: RendererPromptTarget | undefined,
+  windows: readonly TWindow[],
+): { owner: TWindow; threadId: string | undefined } {
+  if (!promptTarget || promptTarget === win.webContents || promptTarget.isDestroyed()) {
+    return { owner: win, threadId }
+  }
+  const host = windows.find(
+    (candidate) => !candidate.isDestroyed() && candidate.webContents === promptTarget,
+  )
+  return host ? { owner: host, threadId: undefined } : { owner: win, threadId }
+}
+
 function applyAppBadgeCount(count: number): void {
   // macOS shows this on the Dock icon; Linux on launchers implementing the
   // LauncherEntry D-Bus API (elsewhere Electron returns false and nothing
@@ -152,7 +180,7 @@ export function createElectronUserAlertSender(
   dock: DockAttention | undefined,
   fallbackWindow: () => BrowserWindow | null,
 ): UserAlertSender {
-  return (kind, body, threadId) => {
+  return (kind, body, threadId, promptTarget) => {
     const stopAlert = dispatchUserAlert(readUserAlertPreferences(), kind, body, {
       notification: (title, notificationBody) => {
         if (!shouldSendSystemNotification(win) || !Notification.isSupported()) return
@@ -162,9 +190,12 @@ export function createElectronUserAlertSender(
         }
         notification.on('click', () => {
           forget()
-          void openUserAlertTarget(win, fallbackWindow, threadId).catch((error: unknown) => {
-            console.warn('[alerts] could not open the notification thread:', error)
-          })
+          const target = alertClickOwner(win, threadId, promptTarget, BrowserWindow.getAllWindows())
+          void openUserAlertTarget(target.owner, fallbackWindow, target.threadId).catch(
+            (error: unknown) => {
+              console.warn('[alerts] could not open the notification thread:', error)
+            },
+          )
         })
         notification.on('close', forget)
         notification.on('failed', forget)

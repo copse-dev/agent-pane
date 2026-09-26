@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   OPEN_THREAD_FROM_ALERT_CHANNEL,
+  alertClickOwner,
   openUserAlertTarget,
   shouldSendSystemNotification,
   startWindowAttention,
@@ -9,6 +10,7 @@ import {
   type DockAttention,
   type WindowAttention,
 } from './user-alerts-electron.ts'
+import type { RendererPromptTarget } from './renderer-prompt-target.ts'
 
 function fakeWindow(): {
   win: WindowAttention
@@ -101,6 +103,8 @@ interface FakeClickWindow extends AlertClickWindow {
   name: string
   calls: string[]
   sent: unknown[][]
+  // Structurally a prompt target too, as a real window's WebContents is.
+  webContents: { send(channel: string, ...args: unknown[]): void; isDestroyed(): boolean }
 }
 
 function clickWindow(
@@ -119,9 +123,60 @@ function clickWindow(
     restore: () => calls.push('restore'),
     show: () => calls.push('show'),
     focus: () => calls.push('focus'),
-    webContents: { send: (channel, ...args) => sent.push([channel, ...args]) },
+    webContents: {
+      send: (channel, ...args) => sent.push([channel, ...args]),
+      isDestroyed: () => state.destroyed ?? false,
+    },
   }
 }
+
+describe('alertClickOwner', () => {
+  /** A renderer no window in the list owns. */
+  function strayPromptTarget(destroyed: boolean): RendererPromptTarget {
+    return { isDestroyed: () => destroyed, send: () => undefined }
+  }
+
+  it('keeps the sender window and thread when no prompt target is given', () => {
+    const main = clickWindow('main')
+    assert.deepEqual(alertClickOwner(main, 'thread-1', undefined, [main]), {
+      owner: main,
+      threadId: 'thread-1',
+    })
+  })
+
+  it('keeps the sender window and thread when the prompt went to it', () => {
+    const main = clickWindow('main')
+    const result = alertClickOwner(main, 'thread-1', main.webContents, [main])
+    assert.equal(result.owner, main)
+    assert.equal(result.threadId, 'thread-1')
+  })
+
+  it('surfaces the pop-out that holds the prompt and opens no thread in main', () => {
+    const main = clickWindow('main')
+    const popout = clickWindow('popout')
+    const result = alertClickOwner(main, 'thread-1', popout.webContents, [main, popout])
+    assert.equal(result.owner, popout)
+    assert.equal(result.threadId, undefined)
+  })
+
+  it('falls back to the sender window when the pop-out is gone', () => {
+    const main = clickWindow('main')
+    const popout = clickWindow('popout', { destroyed: true })
+    const gone = alertClickOwner(main, 'thread-1', popout.webContents, [main, popout])
+    assert.equal(gone.owner, main)
+    assert.equal(gone.threadId, 'thread-1')
+
+    const unknown = alertClickOwner(main, 'thread-1', strayPromptTarget(false), [main])
+    assert.equal(unknown.owner, main)
+    assert.equal(unknown.threadId, 'thread-1')
+
+    const destroyedTarget = alertClickOwner(main, 'thread-1', strayPromptTarget(true), [
+      main,
+      popout,
+    ])
+    assert.equal(destroyedTarget.owner, main)
+  })
+})
 
 describe('openUserAlertTarget', () => {
   it('focuses the owning window and asks it to open the thread in its stored project', async () => {

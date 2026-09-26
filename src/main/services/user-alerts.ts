@@ -1,3 +1,4 @@
+import type { RendererPromptTarget } from './renderer-prompt-target.ts'
 import { getSetting } from './storage/settings.ts'
 
 export type UserAlertKind = 'interaction' | 'thread-finished'
@@ -20,8 +21,18 @@ export interface UserAlertEffects {
  * Raise one alert. `threadId` names the thread the alert is about, when there
  * is one: clicking the system notification opens it, and a needs-input alert
  * counts it on the Dock/taskbar badge until the returned stop runs.
+ *
+ * `promptTarget` is the renderer the prompt was actually sent to, when a caller
+ * routes prompts per request (`renderer-prompt-target.ts`). A prompt sent to a
+ * pop-out lives only there, so a click must bring that window forward rather
+ * than open the thread in the sender's own window, where the prompt is absent.
  */
-export type UserAlertSender = (kind: UserAlertKind, body: string, threadId?: string) => () => void
+export type UserAlertSender = (
+  kind: UserAlertKind,
+  body: string,
+  threadId?: string,
+  promptTarget?: RendererPromptTarget,
+) => () => void
 
 const noop = (): void => {}
 
