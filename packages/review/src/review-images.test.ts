@@ -160,11 +160,11 @@ describe('createRemoteImageFetcher', () => {
     let cancelled = false
     const endless = new ReadableStream<Uint8Array>(
       {
-        pull: (controller) => {
+        pull: (controller): void => {
           pulled += chunk.byteLength
           controller.enqueue(chunk)
         },
-        cancel: () => {
+        cancel: (): void => {
           cancelled = true
         },
       },
