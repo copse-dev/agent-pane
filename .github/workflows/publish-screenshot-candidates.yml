@@ -8,7 +8,9 @@ name: Publish screenshot candidates
 # GitHub's compare view for that commit, so image diffs (2-up/swipe/onion skin)
 # need no download, and previews up to 20 before/after pairs inline from raw
 # URLs pinned to the head and compare commit SHAs (the repository is public, so
-# GitHub renders them in the comment).
+# GitHub renders them in the comment). Screenshots the PR touches (reference
+# PNGs it changes, or names its changed e2e specs mention) preview first, so
+# unrelated rendering drift cannot crowd them out of the table.
 #
 # The branch is pushed with this job's GITHUB_TOKEN, which starts no workflows,
 # so it never runs CI or demo previews, and it is never merged. Accepting
@@ -120,6 +122,33 @@ jobs:
             if (matches.length === 1) {
               core.setOutput('has-artifact', 'true');
               core.setOutput('artifact-id', String(matches[0].id));
+              // The comment previews screenshots this PR touches first: the
+              // reference PNGs it changes and the e2e specs it changes. Only
+              // names and paths leave here; the candidate step re-validates
+              // them. A failed listing only loses the ordering.
+              const screenshotPath = /^tests\/e2e\/screenshots\/([A-Za-z0-9][A-Za-z0-9._-]*\.png)$/;
+              const specPath =
+                /^tests\/e2e\/(?:[A-Za-z0-9][A-Za-z0-9_-]*\/)*[A-Za-z0-9][A-Za-z0-9._-]*\.e2e\.ts$/;
+              const focusScreenshots = [];
+              const focusSpecs = [];
+              try {
+                const files = await github.paginate(github.rest.pulls.listFiles, {
+                  owner,
+                  repo,
+                  pull_number: number,
+                  per_page: 100,
+                });
+                for (const file of files) {
+                  if (typeof file?.filename !== 'string' || file.status === 'removed') continue;
+                  const screenshot = screenshotPath.exec(file.filename);
+                  if (screenshot && focusScreenshots.length < 500) focusScreenshots.push(screenshot[1]);
+                  if (specPath.test(file.filename) && focusSpecs.length < 200) focusSpecs.push(file.filename);
+                }
+              } catch (error) {
+                core.notice(`Could not list PR #${number} files; previews stay in name order: ${error.message}`);
+              }
+              core.setOutput('focus-screenshots', focusScreenshots.join('\n'));
+              core.setOutput('focus-specs', focusSpecs.join('\n'));
             } else {
               core.notice(`Run ${runId} published no changed screenshot candidates.`);
             }
@@ -152,9 +181,26 @@ jobs:
         id: candidates
         env:
           CANDIDATE_ROOT: ${{ runner.temp }}/screenshot-candidates
+          FOCUS_SCREENSHOTS: ${{ steps.discover.outputs.focus-screenshots }}
+          FOCUS_SPECS: ${{ steps.discover.outputs.focus-specs }}
         run: |
           listing="$RUNNER_TEMP/screenshot-candidate-names"
           : > "$listing"
+
+          # Screenshots this PR touches: reference PNGs it changes, plus every
+          # literal `<name>.png` in the e2e specs it changes. Specs are read as
+          # blobs from the head commit, never executed or followed as links.
+          focus_names="$RUNNER_TEMP/screenshot-focus-names"
+          focus_text="$RUNNER_TEMP/screenshot-focus-specs"
+          printf '%s\n' "$FOCUS_SCREENSHOTS" |
+            grep -xE '[A-Za-z0-9][A-Za-z0-9._-]*\.png' > "$focus_names" || true
+          : > "$focus_text"
+          while IFS= read -r spec; do
+            if [[ "$spec" =~ ^tests/e2e/([A-Za-z0-9][A-Za-z0-9_-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\.e2e\.ts$ ]]; then
+              git cat-file blob "HEAD:$spec" >> "$focus_text" 2> /dev/null || true
+            fi
+          done <<< "$FOCUS_SPECS"
+          grep -oE '[A-Za-z0-9][A-Za-z0-9._-]*\.png' "$focus_text" >> "$focus_names" || true
           if find "$CANDIDATE_ROOT" -type l -print -quit | grep -q .; then
             echo '::error::Screenshot candidate artifact contains a symlink.'
             exit 1
@@ -194,10 +240,13 @@ jobs:
                   exit 1
                 fi
                 # Recorded before applying: a name absent from the head tree is new.
+                # The leading rank sorts screenshots this PR touches first.
+                rank=1
+                if grep -qxF -- "$name" "$focus_names"; then rank=0; fi
                 if git cat-file -e "HEAD:tests/e2e/screenshots/$name" 2> /dev/null; then
-                  printf '%s changed\n' "$name" >> "$listing"
+                  printf '%s %s changed\n' "$rank" "$name" >> "$listing"
                 else
-                  printf '%s new\n' "$name" >> "$listing"
+                  printf '%s %s new\n' "$rank" "$name" >> "$listing"
                 fi
                 install -m 0644 "$path" "tests/e2e/screenshots/$name"
                 ;;
@@ -214,14 +263,16 @@ jobs:
           fi
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
-          # The parent comment previews the first names in byte order. Emit only
-          # a bounded prefix: a full refresh can carry thousands of names, and one
-          # environment variable is capped at 128 KiB on Linux. `count` stays
-          # the exact total. Names already matched the strict pattern above, so
-          # they need no JSON escaping.
+          # The parent comment previews the first names: those this PR touches,
+          # then the rest, each in byte order. Emit only a bounded prefix: a
+          # full refresh can carry thousands of names, and one environment
+          # variable is capped at 128 KiB on Linux. `count` stays the exact
+          # total. Names already matched the strict pattern above, so they need
+          # no JSON escaping.
           names="$(LC_ALL=C sort "$listing" | awk '
             NR <= 50 {
-              printf "%s{\"name\":\"%s\",\"new\":%s}", (NR > 1 ? "," : ""), $1, ($2 == "new" ? "true" : "false")
+              printf "%s{\"name\":\"%s\",\"new\":%s,\"focus\":%s}", (NR > 1 ? "," : ""), $2,
+                ($3 == "new" ? "true" : "false"), ($1 == "0" ? "true" : "false")
             }')"
           echo "names=[$names]" >> "$GITHUB_OUTPUT"
 
@@ -436,18 +487,25 @@ jobs:
                   (entry) =>
                     typeof entry?.name === 'string' &&
                     namePattern.test(entry.name) &&
-                    typeof entry.new === 'boolean',
+                    typeof entry.new === 'boolean' &&
+                    (entry.focus === undefined || typeof entry.focus === 'boolean'),
                 )
               ) {
                 return [];
               }
-              const sorted = [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-              const shown = sorted.slice(0, previewLimit);
+              // Screenshots this PR touches lead; unrelated changes (usually
+              // rendering drift) fill whatever rows remain.
+              const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+              const touched = entries.filter((entry) => entry.focus === true).sort(byName);
+              const others = entries.filter((entry) => entry.focus !== true).sort(byName);
+              const shownTouched = touched.slice(0, previewLimit);
+              const shownOthers = others.slice(0, previewLimit - shownTouched.length);
+              const shownCount = shownTouched.length + shownOthers.length;
               const total = Math.max(Number(process.env.CANDIDATE_COUNT) || 0, entries.length);
               const raw = (sha, name) =>
                 `https://github.com/${owner}/${repo}/raw/${sha}/tests/e2e/screenshots/${name}`;
               const image = (sha, name) => `<img src="${raw(sha, name)}" width="360">`;
-              const lines = [
+              const rows = (shown) => [
                 '| Screenshot | Before | After |',
                 '| --- | --- | --- |',
                 ...shown.map(
@@ -457,8 +515,22 @@ jobs:
                     `${image(commit, entry.name)} |`,
                 ),
               ];
-              if (total > shown.length) {
-                lines.push('', `…and ${total - shown.length} more — see [the compare view](${compareUrl}).`);
+              const lines = [];
+              if (shownTouched.length === 0) {
+                lines.push(...rows(shownOthers));
+              } else {
+                lines.push('**Screenshots this PR touches**', '', ...rows(shownTouched));
+                if (shownOthers.length > 0) {
+                  lines.push(
+                    '',
+                    '**Other changed screenshots**, not linked to this PR’s files (often rendering drift):',
+                    '',
+                    ...rows(shownOthers),
+                  );
+                }
+              }
+              if (total > shownCount) {
+                lines.push('', `…and ${total - shownCount} more — see [the compare view](${compareUrl}).`);
               }
               return ['', ...lines];
             };
