@@ -65988,6 +65988,25 @@ var init_attention = __esm({
   }
 });
 
+// packages/thread-store/src/prompt-placeholders.ts
+function stripPastePlaceholders(content) {
+  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
+  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
+}
+var PASTE_PLACEHOLDER;
+var init_prompt_placeholders = __esm({
+  "packages/thread-store/src/prompt-placeholders.ts"() {
+    PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
+  }
+});
+
 // src/shared/git/worktree-policy.ts
 function slugPrompt(prompt) {
   const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
@@ -66019,17 +66038,20 @@ var init_worktree_policy = __esm({
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
-    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && m2.content.trim()
+    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
 }
 function firstWords(text2, n2 = 6) {
   return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
+function promptWords(message2) {
+  return stripPastePlaceholders(message2.content);
+}
 function namingInput(userMessages) {
   const first = userMessages[0];
   if (!first) return "";
   const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m2) => m2.content.trim().slice(0, 300)).join("\n\n");
+  return [first, ...recent].map((m2) => promptWords(m2).slice(0, 300)).join("\n\n");
 }
 function owningProjectId(store2, threadId) {
   const background = backgroundProjectOf(store2, threadId);
@@ -66079,7 +66101,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(first.content) : current.title;
+    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -66091,6 +66113,7 @@ var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
     init_unknown_value3();
+    init_prompt_placeholders2();
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
@@ -75721,25 +75744,6 @@ var init_render_signature = __esm({
     FNV_OFFSET = 2166136261;
     MIX_PRIME = 2246822507;
     MIX_OFFSET = 3266489909;
-  }
-});
-
-// packages/thread-store/src/prompt-placeholders.ts
-function stripPastePlaceholders(content) {
-  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
-  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
-}
-var PASTE_PLACEHOLDER;
-var init_prompt_placeholders = __esm({
-  "packages/thread-store/src/prompt-placeholders.ts"() {
-    PASTE_PLACEHOLDER = "\uFFFC";
-  }
-});
-
-// src/shared/threads/prompt-placeholders.ts
-var init_prompt_placeholders2 = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
-    init_prompt_placeholders();
   }
 });
 
