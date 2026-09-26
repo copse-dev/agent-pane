@@ -38,7 +38,31 @@ describe('Open remote folder — add host inline', () => {
     await expect(dialog.$('.remote-folder-add-host-btn')).not.toBeDisplayed()
     await expect(dialog.$('.remote-folder-import-config')).toBeDisplayed()
     await expect(dialog.$('.remote-folder-save-host')).toBeDisplayed()
-    assert.match(await dialog.$('.remote-folder-status').getText(), /Add a host below/i)
+    // The next-step hint leads the form it refers to, and the empty host
+    // picker shows a placeholder instead of a blank box (#3065).
+    const emptyState = await browser.execute(() => {
+      const root = document.querySelector('#remote-folder-dialog')
+      const hint = root?.querySelector<HTMLElement>('.remote-folder-add-host-hint')
+      const firstField = root?.querySelector<HTMLElement>('.remote-folder-add-host-form label')
+      const select = root?.querySelector<HTMLSelectElement>('.remote-folder-host')
+      const status = root?.querySelector<HTMLElement>('.remote-folder-status')
+      if (!hint || !firstField || !select || !status) return null
+      const selected = select.selectedOptions[0]
+      return {
+        hint: hint.textContent.trim(),
+        hintAboveForm:
+          hint.getBoundingClientRect().bottom <= firstField.getBoundingClientRect().top,
+        selectedText: selected?.textContent.trim() ?? '',
+        selectedDisabled: selected?.disabled === true,
+        status: status.textContent.trim(),
+      }
+    })
+    assert.ok(emptyState, 'remote folder empty state must render')
+    assert.match(emptyState.hint, /No SSH hosts yet\. Add one/)
+    assert.equal(emptyState.hintAboveForm, true, 'the next-step hint sits above the form')
+    assert.equal(emptyState.selectedText, 'No hosts yet')
+    assert.equal(emptyState.selectedDisabled, true, 'the placeholder cannot be chosen')
+    assert.equal(emptyState.status, '', 'no duplicate hint under the form')
 
     await dialog.$('input[name="remoteFolderHostLabel"]').setValue('Staging Box')
     await dialog.$('input[name="remoteFolderHostHost"]').setValue('staging.example')

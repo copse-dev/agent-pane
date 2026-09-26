@@ -30,7 +30,10 @@ landing page's decorative density.
   styled `<span>`, as Plugins' Active/Inactive headings do. Group headings on a destination surface
   may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
   nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
-  every heading on it.
+  every heading on it. A side pane is not a page: its titles (the PR viewer's) are utility
+  headings. `src/renderer/styles/display-headings.test.ts` fails any rule that asks an `h1`–`h3`
+  in the display face for a bold weight, and holds Settings' masthead rule to
+  `.settings-section > h3` so it cannot restyle card titles mounted deeper in a section.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.
@@ -206,7 +209,9 @@ own.
 - Password inputs retain native `type="password"` semantics and use Chromium’s filled-disc mask
   (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
   glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
-  text-field overlay.
+  text-field overlay. The system font is for the mask alone: reset the field's `::placeholder` to
+  `--font-family` so the text it shows matches the fields beside it (the VNC auth fields do this;
+  a username or account field is interface text, not `--font-mono`).
 
 ### Permission / approval prompts
 
@@ -510,9 +515,13 @@ Save/Cancel) with `width: min(100%, var(--settings-content-max)); margin-inline:
 split chat uses for `.messages-list` / `.msg`.
 
 At large interface scales or short window heights, the Settings sidebar can also exceed the body.
-Keep the native dialog itself `overflow: hidden` and give `.settings-nav` its own vertical overflow
-with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole sidebar moves upward,
-then ends above the window bottom and exposes a large blank surface beneath it.
+Keep the native dialog itself (and `.settings-body`) `overflow: clip` and give `.settings-nav` its
+own vertical overflow with `min-height: 0`. Otherwise Chromium scrolls the outer dialog: the whole
+sidebar moves upward, then ends above the window bottom and exposes a large blank surface beneath
+it. `clip`, not `hidden`: an `overflow: hidden` box is still a scroll container, so
+`scrollIntoView()` on a group near the end of a section (the sidebar's jump links) scrolled the
+dialog once `.settings-content` ran out of travel and pushed the Settings header off the top.
+`settings-styling.e2e.ts` asserts the header stays put after a jump.
 
 ## Settings is a destination, not a dialog's worth of chrome
 
@@ -524,7 +533,19 @@ It fills the window and its sections run several screens, so it is typed and spa
   Active / Inactive — stays in the interface family, so the serif marks structure and not decoration.
 - **Group gaps are the page's punctuation.** Top-level groups clear `calc(var(--spacing-xl) * 2)`;
   a field and its own hint stay tight while the gap lives _between_ fields.
-- **Controls are targets, not text.** Nav rows, the search box, selects, text/number inputs, colour
+- **Top-level groups are flat; cards hold their title inside.** A top-level group (a section's own
+  fieldset, a mounted one, a search hit, and Usage's value map) has no fill or padding and a
+  display-face legend. A nested fieldset is a card, and its legend is floated so it sits inside the
+  card's padding — a rendered `<legend>` lives in the fieldset's border area and straddles the card's
+  top edge.
+- **Group introductions are `.settings-fieldset-desc`; `.field-hint` is for one field.** Two adjacent
+  groups should never introduce themselves in different sizes and colours.
+- **Disclosures use one recipe.** A `<details>` in a form takes `disclosureSummary()`
+  (`src/renderer/dom/disclosure-summary.ts`): the label, then the outline chevron that turns when
+  open — the same recipe as the plugin card's `Plugin settings` fold. Never the UA's filled ▶.
+- **A rejected field says so.** Set `aria-invalid="true"` on the field a save rejected (and clear it
+  when edited); `forms.css` paints it with `--error`, over the focus accent.
+- **Controls are targets, not text.** Nav rows, the search box, selects, text/number/url inputs, colour
   wells, and the provider chips all take `--action-min-height`; a checkbox's whole line is
   clickable (padding on `.checkbox-label`, pulled back with a negative `margin-inline-start` so the
   box still sits on the section's left edge).
@@ -1031,10 +1052,13 @@ tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal paddi
 remove the surface's inset or pull its summary into the padding. Only the closed, untextured
 disclosure label aligns flush with neighboring tool rows.
 
-The VNC pane takes a **gutter**: a 24px icon column in the authentication panel and a compact 6px
-status-dot column in status rows. It is a separate pane with its own chrome, and its status hue
-has to survive on a single line where a plate would just box three of them. These columns do not
-currently align across states; the shared gutter in the prototype remains a polish option.
+The VNC pane takes a **gutter**: one 6px severity-dot column shared by the authentication panel and
+the status rows, with the dot and the title painted in the state's hue. It is a separate pane with
+its own chrome, and its status hue has to survive on a single line where a plate would just box
+three of them. One recipe for every state: "Authentication required" is a blocking ask, so it takes
+`--warning`; "Authentication failed" and other failures take `--error`. Do not reach for the accent
+(or a second marker shape such as a lock icon) for either — the panel's wash stays neutral and the
+dot and title carry the severity.
 
 **Selection is the fill alone.** See "Sidebar selections" below.
 
