@@ -12,6 +12,7 @@ import {
 import { classifyGhSegment } from './gh-argv.ts'
 import { splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
+import { hostReachReasons } from './host-reach.ts'
 import {
   REASON_FIND_DELETE,
   REASON_RECURSIVE_DELETE,
@@ -29,8 +30,21 @@ export interface ShellHarmContext {
   homeDir: string
   /** Resolve symlinks when possible. Falls back to lexical resolution when absent/throwing. */
   canonicalizePath?: (path: string) => string
-  /** Read an interpreter/direct-execution script. Null means missing, unreadable, or too large. */
+  /** Read an interpreter/direct-execution script. Null means missing, unreadable, too large, or binary. */
   readScript?: (path: string) => string | null
+  /**
+   * Whether a file `readScript` could not read is a compiled executable (ELF,
+   * Mach-O, PE). Consulted only for direct execution of a file inside the
+   * workspace; absent, every unreadable file prompts.
+   */
+  isCompiledProgram?: (path: string) => boolean
+  /**
+   * Hosts (or `~/.ssh/config` aliases) the user trusts with `ssh`, `scp`,
+   * `rsync`, and `sftp`, lower-case. Any other host prompts. Empty by default.
+   */
+  trustedSshHosts?: readonly string[]
+  /** Whether a path exists; lets `npx <tool>` run a project dependency's own binary. */
+  pathExists?: (path: string) => boolean
 }
 
 interface MutableDecision {
@@ -874,7 +888,24 @@ function findExecPayloads(argv: string[]): string[][] {
 }
 
 /** The script an interpreter was handed, from its arguments only. */
+/** Shell options that take a separate value (`bash -o pipefail x`). */
+const SHELL_VALUE_OPTIONS = new Set(['-o', '+o', '-O', '+O'])
+
 function interpreterScriptOperand(argv: string[]): string | null {
+  // A shell runs its first operand as a script whatever it is called:
+  // `bash ./payload` was never read, while `bash ./payload.sh` was.
+  if (SHELL_LANGUAGE_INTERPRETERS.has(commandName(argv[0]))) {
+    for (let i = 1; i < argv.length; i++) {
+      const arg = argv[i] ?? ''
+      if (arg === '--') return argv[i + 1] ?? null
+      if (arg.startsWith('-') || arg.startsWith('+')) {
+        if (SHELL_VALUE_OPTIONS.has(arg)) i++
+        continue
+      }
+      return arg
+    }
+    return null
+  }
   for (const arg of argv.slice(1)) {
     if (arg.startsWith('-')) continue
     if (SCRIPT_EXTENSIONS.test(arg)) return arg
@@ -917,6 +948,10 @@ function isExecutablePathShape(token: string): boolean {
  */
 function directExecutionOperand(argv: string[]): string | null {
   const head = argv[0]
+  // A word starting with `#` in command position opens a comment; the shell runs
+  // nothing. A heredoc body's `#!/bin/sh` line reached here through the
+  // line-splitting fallback lexer and prompted as an uninspectable script.
+  if (head?.startsWith('#')) return null
   if (head && head.includes('/') && !isAbsolute(head) && isExecutablePathShape(head)) return head
   return null
 }
@@ -1026,6 +1061,20 @@ function inspectInterpreter(
   if (seenScripts.has(resolved)) return
   seenScripts.add(resolved)
   const contents = context.readScript?.(resolved) ?? null
+  // A program the project compiled (`./target/debug/app`) has no text to
+  // inspect, and running it is no riskier than the `cargo run` or `make` that
+  // built it, which the gate already lets through. Only for direct execution of
+  // a file inside the workspace: an interpreter never runs a compiled binary,
+  // and a binary elsewhere is not the project's.
+  if (
+    contents === null &&
+    !isInterpreter &&
+    context.workspaceRoot !== null &&
+    isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
+    context.isCompiledProgram?.(resolved) === true
+  ) {
+    return
+  }
   if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
     addUnique(out.prompt, `script contents could not be inspected safely: ${operand}`)
     return
@@ -1274,13 +1323,23 @@ function inspectRefusedOutsideReads(
   context: ShellHarmContext,
   out: MutableDecision,
 ): void {
-  if (!context.workspaceRoot) return
+  // With no workspace, relative paths resolve against the process directory, as
+  // `expandPathToken` does. Returning early here skipped the credential deny.
+  const workspaceRoot = context.workspaceRoot ?? process.cwd()
   // Judge each top-level command independently. A non-read sibling must not
   // launder a credential read (`cat ~/.ssh/id && touch marker`) by contributing
   // a whole-line "not a plain read" blocker that suppresses the refusal.
   const segments = splitSegments(command)
+  // A `cd` moves the segments after it: `cd ~/.ssh && cat id_rsa` reads the key
+  // exactly as `cat ~/.ssh/id_rsa` does. Carry the latest one into each later
+  // segment's analysis, which resolves relative operands against it.
+  let cdPrefix = ''
   for (const segment of segments.length > 0 ? segments : [command]) {
-    const analysis = analyzeReadOutsideProject(segment, context.workspaceRoot, {
+    if (/^\s*cd\s+\S+\s*$/.test(segment)) {
+      cdPrefix = `${segment.trim()} && `
+      continue
+    }
+    const analysis = analyzeReadOutsideProject(`${cdPrefix}${segment}`, workspaceRoot, {
       homeDir: context.homeDir,
     })
     const refused = analysis.blockers.filter(isRefusedOutsideReadBlocker)
@@ -1382,6 +1441,8 @@ function assess(
   if (language === 'shell') {
     inspectGithubCliWrites(inspectableCommand, out)
     inspectRefusedOutsideReads(inspectableCommand, context, out)
+    for (const reason of hostReachReasons(inspectableCommand, context))
+      addUnique(out.prompt, reason)
     inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
   }
 
