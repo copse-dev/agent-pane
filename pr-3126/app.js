@@ -23197,7 +23197,8 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   }
   const result = [];
   const grouped = buildGroupedDisplayItems(regular);
-  if (regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
     result.push({
       type: "rollup",
       key: TURN_ROLLUP_KEY,
