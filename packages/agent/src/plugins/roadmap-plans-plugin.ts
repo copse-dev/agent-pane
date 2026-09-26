@@ -39,7 +39,7 @@ export const roadmapPlansPlugin: RegisteredPlugin = definePlugin(
   {
     name: ROADMAP_PLANS_PLUGIN_ID,
     description:
-      'Roadmap plans — a durable, per-project backlog of future-work prompts with a status lifecycle via the `roadmap_plan` tool, plus a Roadmap pane to browse and run them, so longer-horizon work is captured without being started early.',
+      'Keeps a durable, per-project backlog of future-work prompts with a status lifecycle via the `roadmap_plan` tool, plus a Roadmap pane to browse and run them, so longer-horizon work is captured without being started early.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [ROADMAP_PLANS_TOOL_NAME] },
