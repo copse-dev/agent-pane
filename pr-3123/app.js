@@ -25079,6 +25079,59 @@ var init_icons = __esm({
   }
 });
 
+// src/renderer/dom/inline-status.ts
+function statusIcon(kind) {
+  switch (kind) {
+    case "ok":
+      return checkIcon("ui-icon ui-icon-sm");
+    case "error":
+      return closeIcon("ui-icon ui-icon-sm");
+    case "pending":
+      return spinnerIcon("ui-icon ui-icon-sm");
+    case "filled":
+      return dotIcon("ui-icon ui-icon-sm");
+    case "warn":
+      return warningIcon("ui-icon ui-icon-sm");
+    case "idle":
+      return minusIcon("ui-icon ui-icon-sm");
+  }
+}
+function inlineStatus(kind, text2) {
+  return el(
+    "span",
+    { class: "ui-inline-status", "data-status-kind": kind },
+    statusIcon(kind),
+    el("span", { class: "ui-inline-status-text" }, text2)
+  );
+}
+function setInlineStatus(target, kind, text2) {
+  target.replaceChildren(inlineStatus(kind, text2));
+}
+var init_inline_status = __esm({
+  "src/renderer/dom/inline-status.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
+// src/renderer/ipc-error-message.ts
+function unwrapIpcErrorText(text2) {
+  let message2 = text2;
+  for (; ; ) {
+    const next = message2.trimStart().replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
+    if (next === message2) return message2.trim();
+    message2 = next;
+  }
+}
+function ipcErrorMessage(err2, fallback) {
+  if (!(err2 instanceof Error)) return fallback;
+  return unwrapIpcErrorText(err2.message) || fallback;
+}
+var init_ipc_error_message = __esm({
+  "src/renderer/ipc-error-message.ts"() {
+  }
+});
+
 // src/renderer/views/remote-folder-dialog.ts
 var remote_folder_dialog_exports = {};
 __export(remote_folder_dialog_exports, {
@@ -25328,14 +25381,15 @@ function openRemoteFolderDialog(api2) {
         draft.identityFile = identityInput.value;
         const parsed2 = parseSshHostDraft(draft);
         if (!parsed2.ok) {
-          status.textContent = parsed2.error;
+          setInlineStatus(status, "error", parsed2.error);
           return;
         }
         try {
           await persistAndSelect(parsed2.host);
         } catch (err2) {
-          status.textContent = err2 instanceof Error ? err2.message : String(err2);
-          showToast(status.textContent, { variant: "error" });
+          const message2 = ipcErrorMessage(err2, "Could not save the host.");
+          setInlineStatus(status, "error", message2);
+          showToast(message2, { variant: "error" });
         }
       })();
     });
@@ -25344,7 +25398,7 @@ function openRemoteFolderDialog(api2) {
         try {
           const aliases = await api2.sshWorkspace.listConfigAliases();
           if (aliases.length === 0) {
-            status.textContent = "No Host entries found in ~/.ssh/config.";
+            setInlineStatus(status, "error", "No Host entries found in ~/.ssh/config.");
             return;
           }
           const raw = await api2.settings.get("sshWorkspaceHosts");
@@ -25357,8 +25411,9 @@ function openRemoteFolderDialog(api2) {
           status.textContent = imported.importedHostIds.length === 0 ? "All SSH config aliases are already imported." : `Imported ${String(imported.importedHostIds.length)} alias(es) from SSH config.`;
           if (currentHostId) await browse("/");
         } catch (err2) {
-          status.textContent = err2 instanceof Error ? err2.message : String(err2);
-          showToast(status.textContent, { variant: "error" });
+          const message2 = ipcErrorMessage(err2, "Could not import from ~/.ssh/config.");
+          setInlineStatus(status, "error", message2);
+          showToast(message2, { variant: "error" });
         }
       })();
     });
@@ -25376,7 +25431,7 @@ function openRemoteFolderDialog(api2) {
         setAddingHost(false);
         await browse("/");
       } catch (err2) {
-        status.textContent = err2 instanceof Error ? err2.message : String(err2);
+        setInlineStatus(status, "error", ipcErrorMessage(err2, "Could not load SSH hosts."));
       }
     }
     function renderBreadcrumbs(path) {
@@ -25420,7 +25475,7 @@ function openRemoteFolderDialog(api2) {
       } catch (err2) {
         currentPath = path;
         renderBreadcrumbs(currentPath);
-        status.textContent = err2 instanceof Error ? err2.message : String(err2);
+        setInlineStatus(status, "error", ipcErrorMessage(err2, "Could not reach the host."));
       } finally {
         loading = false;
         if (hosts.length > 0 && currentHostId) {
@@ -25452,6 +25507,8 @@ var init_remote_folder_dialog = __esm({
     init_ssh_host_helpers();
     init_remote_folder_path();
     init_icons();
+    init_inline_status();
+    init_ipc_error_message();
     dialogEl2 = null;
   }
 });
@@ -43955,41 +44012,6 @@ var init_confirm_dialog = __esm({
   }
 });
 
-// src/renderer/dom/inline-status.ts
-function statusIcon(kind) {
-  switch (kind) {
-    case "ok":
-      return checkIcon("ui-icon ui-icon-sm");
-    case "error":
-      return closeIcon("ui-icon ui-icon-sm");
-    case "pending":
-      return spinnerIcon("ui-icon ui-icon-sm");
-    case "filled":
-      return dotIcon("ui-icon ui-icon-sm");
-    case "warn":
-      return warningIcon("ui-icon ui-icon-sm");
-    case "idle":
-      return minusIcon("ui-icon ui-icon-sm");
-  }
-}
-function inlineStatus(kind, text2) {
-  return el(
-    "span",
-    { class: "ui-inline-status", "data-status-kind": kind },
-    statusIcon(kind),
-    el("span", { class: "ui-inline-status-text" }, text2)
-  );
-}
-function setInlineStatus(target, kind, text2) {
-  target.replaceChildren(inlineStatus(kind, text2));
-}
-var init_inline_status = __esm({
-  "src/renderer/dom/inline-status.ts"() {
-    init_helpers();
-    init_icons();
-  }
-});
-
 // packages/llm/src/composite-intellect.ts
 function compositeIntellect(model) {
   if (model.benchmarks["aa-intelligence"]) return null;
@@ -46455,7 +46477,11 @@ function validateDraft(draft, existingIds) {
 }
 function commandRow(label, command) {
   const code = el("code", { class: "acp-cmd" }, command);
-  const copy = el("button", { type: "button", class: "acp-cmd-copy", title: "Copy" }, "Copy");
+  const copy = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary acp-cmd-copy", title: "Copy" },
+    "Copy"
+  );
   copy.addEventListener("click", () => {
     void navigator.clipboard.writeText(command);
   });
@@ -47350,10 +47376,10 @@ var init_presets = __esm({
 
 // src/renderer/views/setup/classifiers-section.ts
 function classifierErrorMessage(error62) {
-  const message2 = errorMessage(error62).replace(
-    /^(?:Error invoking remote method '[^']+':\s*|(?:ClassifierError|Error):\s*)+/,
-    ""
-  );
+  let message2 = unwrapIpcErrorText(errorMessage(error62));
+  while (message2.startsWith("ClassifierError:")) {
+    message2 = unwrapIpcErrorText(message2.slice("ClassifierError:".length));
+  }
   if (message2.startsWith("IpcValidationError:")) {
     return "The supplied settings are invalid. Check the field values and try again.";
   }
@@ -47498,7 +47524,7 @@ function createClassifiersSection(api2) {
       presets.append(el("option", { value: "custom" }, "Custom compatible endpoint"));
       const add2 = el(
         "button",
-        { type: "button", class: "classifier-create" },
+        { type: "button", class: "ui-btn ui-btn-secondary classifier-create" },
         "Configure classifier"
       );
       add2.addEventListener("click", () => {
@@ -47664,15 +47690,22 @@ function createClassifiersSection(api2) {
     }
     advanced.append(el("label", {}, "Timeout (seconds)", timeout));
     form.append(advanced);
-    const save = el("button", { type: "button", class: "classifier-save" }, "Save classifier");
+    const save = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-primary classifier-save" },
+      "Save classifier"
+    );
     const test = el(
       "button",
-      { type: "button", class: "classifier-test", disabled: !saved },
+      { type: "button", class: "ui-btn ui-btn-secondary classifier-test", disabled: !saved },
       "Test classifier"
     );
     const remove = el(
       "button",
-      { type: "button", class: "classifier-remove" },
+      {
+        type: "button",
+        class: saved ? "ui-btn ui-btn-danger classifier-remove" : "ui-btn ui-btn-secondary classifier-remove"
+      },
       saved ? "Remove classifier" : "Discard draft"
     );
     const actions = el("div", { class: "provider-actions" }, save, test, remove);
@@ -47849,6 +47882,7 @@ var init_classifiers_section = __esm({
     init_inline_status();
     init_confirm_dialog();
     init_errors4();
+    init_ipc_error_message();
     PROTOCOL_CHOICES = [
       { value: "systemone", label: "SystemOne" },
       { value: "featherless", label: "Featherless classifier" }
@@ -59771,8 +59805,8 @@ function createSshWorkspaceSection(api2, opts = {}) {
     el(
       "div",
       { class: "provider-actions" },
-      el("button", { type: "button", class: "ssh-host-save" }, "Save host"),
-      el("button", { type: "button", class: "ssh-host-clear" }, "Clear")
+      el("button", { type: "button", class: "ui-btn ui-btn-primary ssh-host-save" }, "Save host"),
+      el("button", { type: "button", class: "ui-btn ui-btn-secondary ssh-host-clear" }, "Clear")
     )
   );
   async function persistHosts(next) {
@@ -59932,7 +59966,7 @@ function createSshWorkspaceSection(api2, opts = {}) {
   }
   const importBtn = el(
     "button",
-    { type: "button", class: "ssh-import-config" },
+    { type: "button", class: "ui-btn ui-btn-secondary ssh-import-config" },
     "Import from ~/.ssh/config"
   );
   importBtn.addEventListener("click", () => {
@@ -60027,8 +60061,7 @@ var init_automations_plugin = __esm({
 
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
-  if (!(error62 instanceof Error)) return "Automation request failed.";
-  return error62.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
+  return ipcErrorMessage(error62, "Automation request failed.");
 }
 function lastRunLabel(timestamp) {
   if (timestamp === void 0) return "Never run";
@@ -60519,6 +60552,7 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    init_ipc_error_message();
     WEEKDAYS = [
       "Sunday",
       "Monday",
@@ -76016,16 +76050,6 @@ function trimSelectionText(text2) {
 }
 var init_markdown_quote = __esm({
   "src/renderer/dom/markdown-quote.ts"() {
-  }
-});
-
-// src/renderer/ipc-error-message.ts
-function ipcErrorMessage(err2, fallback) {
-  if (!(err2 instanceof Error)) return fallback;
-  return err2.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, "") || fallback;
-}
-var init_ipc_error_message = __esm({
-  "src/renderer/ipc-error-message.ts"() {
   }
 });
 
@@ -94594,8 +94618,7 @@ ${description}
     checkoutErrorText.textContent = "";
   }
   function checkoutErrorMessage(error62) {
-    const message2 = error62 instanceof Error ? error62.message : "Could not prepare the checkout";
-    return message2.replace(/^Error invoking remote method 'agent:prepare-checkout': Error:\s*/, "");
+    return ipcErrorMessage(error62, "Could not prepare the checkout");
   }
   function selectCheckout(choice) {
     const id = getActiveThreadId();
@@ -95888,6 +95911,7 @@ var IMAGE_DETAIL_LABELS;
 var init_input_bar = __esm({
   "src/renderer/views/input-bar.ts"() {
     init_helpers();
+    init_ipc_error_message();
     init_outline_icon();
     init_icons();
     init_attachment_icons();
@@ -105966,16 +105990,8 @@ var init_create_after_persist = __esm({
 });
 
 // src/renderer/terminal/start-failure-message.ts
-function unwrapIpcError(raw) {
-  let message2 = raw;
-  for (; ; ) {
-    const next = message2.replace(/^Error:\s*/, "").replace(/^Error invoking remote method '[^']*':\s*/, "");
-    if (next === message2) return message2.trim();
-    message2 = next;
-  }
-}
 function terminalStartFailureMessage(err2) {
-  const detail = unwrapIpcError(errorMessage(err2));
+  const detail = unwrapIpcErrorText(errorMessage(err2));
   if (CROSS_PROJECT.test(detail)) {
     return "This terminal was opened against a thread from another project. Close the tab and open a new one.";
   }
@@ -105985,6 +106001,7 @@ var CROSS_PROJECT;
 var init_start_failure_message = __esm({
   "src/renderer/terminal/start-failure-message.ts"() {
     init_errors4();
+    init_ipc_error_message();
     CROSS_PROJECT = /^Thread "[^"]*" does not belong to project "[^"]*"$/;
   }
 });
@@ -133501,8 +133518,7 @@ var init_agent = __esm({
 
 // src/renderer/controller/automations.ts
 function startFailureDetail(error62) {
-  if (!(error62 instanceof Error)) return "the checkout could not be prepared";
-  return error62.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
+  return ipcErrorMessage(error62, "the checkout could not be prepared");
 }
 function isPendingAutomation(thread) {
   return thread.automation !== void 0 && thread.status === "idle" && Boolean(thread.draftPrompt?.trim());
@@ -133585,6 +133601,7 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
 }
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
+    init_ipc_error_message();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
