@@ -15,6 +15,34 @@
   text-wrap-style: auto;
 }
 
+/* The package spaces the block still streaming (the pending tail) with a flat
+   margin-top, but the committed block that replaces it follows the adjacency
+   rules — `p + p`, `p + h2`, a quote's own margin, nothing above the first
+   block — so the answer hopped by up to 16px each time a block finished. Give
+   the tail the margin its committed form will have. */
+.streaming-markdown.is-streaming .stream-complete > .stream-pending-block:last-child {
+  margin-top: 0;
+}
+.streaming-markdown.is-streaming
+  .stream-complete
+  > :is(p, ul, ol, h1, h2, h3, h4, h5, h6)
+  + p.stream-pending-block:last-child,
+.streaming-markdown.is-streaming
+  .stream-complete
+  > p
+  + .stream-pending-heading.stream-pending-block:last-child {
+  margin-top: var(--sm-space-sm, 8px);
+}
+.streaming-markdown.is-streaming
+  .stream-complete
+  > :not(p)
+  + .stream-pending-heading.stream-pending-block:last-child {
+  margin-top: var(--sm-space-md, 12px);
+}
+.streaming-markdown.is-streaming .stream-complete > * + blockquote.stream-pending-block:last-child {
+  margin-top: var(--spacing-sm);
+}
+
 /* Base table styling (borders, padding, header, zebra stripe, cell wrapping)
    comes from @copse/streaming-markdown's default.css. The rules below are
    agent-pane refinements layered on top of that base. */
