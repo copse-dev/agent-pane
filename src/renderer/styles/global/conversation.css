@@ -1252,6 +1252,38 @@ span.acp-resource-title {
     animation: none;
   }
 }
+/* A Play run's terminal output, directly under the command that produced it.
+   Terminal text keeps its columns, so long lines and logs scroll in place. */
+.code-block-output {
+  margin-top: var(--spacing-xs);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-size: var(--font-size-sm);
+}
+.code-block-output-summary {
+  padding: 4px var(--spacing-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.code-block-output[data-run-state='failed'] > .code-block-output-summary {
+  color: var(--error);
+}
+.code-block-output-text,
+.code-block-output-empty {
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+.code-block-output-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
 /* GFM table copy control (#615): mirror the code-block hover affordance. The
    shell carries the table's block margin so wrapping causes no layout shift, and
    the button floats in the top-right corner (revealed on hover/focus). */

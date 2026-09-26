@@ -2532,7 +2532,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
     if (!projectId || !threadId) {
-      setCodeBlockRunOutcome(list, id, null)
+      setCodeBlockRunOutcome(list, id, { exitCode: null, output: '' })
       return
     }
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
@@ -4328,7 +4328,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   const unsubs = [
     store.on('code_block_run_finished', (result) => {
-      setCodeBlockRunOutcome(list, result.id, result.exitCode)
+      setCodeBlockRunOutcome(list, result.id, {
+        exitCode: result.exitCode,
+        output: result.output,
+      })
     }),
     store.on('settings_changed', () => {
       agentNamesRequested = false

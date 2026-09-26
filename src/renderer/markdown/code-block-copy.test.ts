@@ -94,11 +94,110 @@ describe('attachCodeBlockCopyButtons', () => {
     assert.equal(button.dataset['runState'], 'running')
     assert.equal(button.disabled, true)
     const requestId = request.id
-    setCodeBlockRunOutcome(root, requestId, 0)
+    setCodeBlockRunOutcome(root, requestId, { exitCode: 0, output: 'checked\n' })
     assert.equal(button.dataset['runState'], 'succeeded')
     assert.equal(button.disabled, false)
     assert.equal(button.querySelector('svg')?.dataset['icon'], 'check')
     unbind()
+  })
+
+  it('shows the run under its code block, from running to its output', () => {
+    const root = preWithCode('pnpm test')
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+    const button = qsRequired<HTMLButtonElement>(root, '.code-block-run')
+
+    button.click()
+
+    const panel = qsRequired<HTMLDetailsElement>(root, '.code-block-shell > .code-block-output')
+    assert.equal(panel.open, true)
+    assert.equal(panel.dataset['runState'], 'running')
+    assert.equal(panel.querySelector('summary')?.textContent, 'Running…')
+    assert.equal(panel.querySelector('.code-block-output-text'), null)
+
+    const requestId = button.dataset['runId'] ?? ''
+    setCodeBlockRunOutcome(root, requestId, { exitCode: 1, output: '$ pnpm test\nFAIL\n\n' })
+    assert.equal(panel.dataset['runState'], 'failed')
+    assert.equal(panel.querySelector('summary')?.textContent, 'Output · exit 1')
+    assert.equal(panel.querySelector('.code-block-output-text')?.textContent, '$ pnpm test\nFAIL')
+    assert.equal(root.querySelectorAll('.code-block-output').length, 1, 'one panel per block')
+  })
+
+  it('says so when a run produced no output or never started', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<pre><code>pnpm lint</code></pre><pre><code>pnpm build</code></pre>'
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+    const [quiet, unstarted] = root.querySelectorAll<HTMLButtonElement>('.code-block-run')
+    assert.ok(quiet && unstarted)
+    quiet.click()
+    unstarted.click()
+
+    setCodeBlockRunOutcome(root, quiet.dataset['runId'] ?? '', { exitCode: 0, output: '  \n' })
+    setCodeBlockRunOutcome(root, unstarted.dataset['runId'] ?? '', { exitCode: null, output: '' })
+
+    const [quietPanel, unstartedPanel] = root.querySelectorAll('.code-block-output')
+    assert.ok(quietPanel && unstartedPanel)
+    assert.equal(quietPanel.querySelector('summary')?.textContent, 'Output · exit 0')
+    assert.equal(quietPanel.querySelector('.code-block-output-empty')?.textContent, 'No output')
+    assert.equal(unstartedPanel.querySelector('summary')?.textContent, 'Could not run')
+  })
+
+  it('picks a run back up when its message is rendered again', async () => {
+    const message = document.createElement('div')
+    message.dataset['messageId'] = 'msg-rerender'
+    const first = preWithCode('pnpm test --filter rerender')
+    message.append(first)
+    attachCodeBlockCopyButtons(first, { runCommands: true })
+    const button = qsRequired<HTMLButtonElement>(first, '.code-block-run')
+    button.click()
+    const requestId = button.dataset['runId'] ?? ''
+
+    // A thread switch rebuilds the body before it rejoins its message element.
+    const running = preWithCode('pnpm test --filter rerender')
+    attachCodeBlockCopyButtons(running, { runCommands: true })
+    message.replaceChildren(running)
+    await Promise.resolve()
+    const restored = qsRequired<HTMLButtonElement>(running, '.code-block-run')
+    assert.equal(restored.dataset['runState'], 'running')
+    assert.equal(qs(running, '.code-block-output summary')?.textContent, 'Running…')
+
+    // The run finishes while that body is on screen, then it is rebuilt again.
+    setCodeBlockRunOutcome(message, requestId, { exitCode: 0, output: 'ok' })
+    assert.equal(restored.dataset['runState'], 'succeeded')
+    const finished = preWithCode('pnpm test --filter rerender')
+    attachCodeBlockCopyButtons(finished, { runCommands: true })
+    message.replaceChildren(finished)
+    await Promise.resolve()
+    assert.equal(
+      qs<HTMLButtonElement>(finished, '.code-block-run')?.dataset['runState'],
+      'succeeded',
+    )
+    assert.equal(qs(finished, '.code-block-output-text')?.textContent, 'ok')
+  })
+
+  it('keeps a run on its own fence when a message repeats the command', async () => {
+    const message = document.createElement('div')
+    message.dataset['messageId'] = 'msg-repeated'
+    const body = (): HTMLElement => {
+      const wrapper = document.createElement('div')
+      wrapper.append(preWithCode('pnpm build'), preWithCode('pnpm build'))
+      return wrapper
+    }
+    const first = body()
+    message.append(first)
+    attachCodeBlockCopyButtons(first, { runCommands: true })
+    const [, second] = first.querySelectorAll<HTMLButtonElement>('.code-block-run')
+    assert.ok(second)
+    second.click()
+    setCodeBlockRunOutcome(message, second.dataset['runId'] ?? '', { exitCode: 0, output: 'built' })
+
+    const rebuilt = body()
+    attachCodeBlockCopyButtons(rebuilt, { runCommands: true })
+    message.replaceChildren(rebuilt)
+    await Promise.resolve()
+    const [idle, restored] = rebuilt.querySelectorAll<HTMLButtonElement>('.code-block-run')
+    assert.equal(idle?.dataset['runState'], 'idle')
+    assert.equal(restored?.dataset['runState'], 'succeeded')
+    assert.equal(rebuilt.querySelectorAll('.code-block-output').length, 1)
   })
 
   it('is idempotent and skips mermaid pre blocks', () => {
