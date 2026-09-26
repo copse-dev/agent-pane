@@ -15,6 +15,8 @@ import {
   setKnowledgeRootForTest,
 } from '../services/storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
+import { storageSet } from '../services/storage/storage.ts'
+import { runWithThreadExecutionContext } from '../services/thread-execution-context.ts'
 import type { ToolExecuteResult } from '@shared/types'
 
 const noSignal = new AbortController().signal
@@ -150,6 +152,56 @@ describe('roadmap-tools', () => {
       const out = await run(roadmapPlanTool, { action: 'list' })
       assert.match(out, /Roadmap \(1 item\):/)
       assert.match(out, /Ship the thing/)
+    })
+  })
+
+  // A run keeps going after the user switches projects. Its roadmap reads and
+  // writes (including the background title stamp) stay in its own project.
+  describe('after the user switches projects mid-run', () => {
+    const turnInProjectA = <T>(fn: () => T): T =>
+      runWithThreadExecutionContext(
+        {
+          projectId: 'project-a',
+          threadId: 'thread-a',
+          projectRoot: '/home/dev/my-project',
+          root: '/home/dev/my-project',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        fn,
+      )
+
+    beforeEach(() => {
+      storageSet('projects', [
+        { id: 'project-a', path: '/home/dev/my-project', name: 'my-project' },
+        { id: 'project-b', path: '/home/dev/other', name: 'other' },
+      ])
+      storageSet('activeProjectId', 'project-b')
+    })
+
+    afterEach(() => {
+      storageSet('projects', [])
+      storageSet('activeProjectId', null)
+    })
+
+    it("keeps the thread's roadmap in its own project", async () => {
+      const note = turnInProjectA(() =>
+        addRoadmapItem('Background item', undefined, null, undefined, () =>
+          Promise.resolve('Stamped name'),
+        ),
+      )
+      await settle()
+
+      assert.match(await run(roadmapPlanTool, { action: 'list' }), /The roadmap is empty/)
+      assert.equal(getKnowledgeNote(note.id), null, 'not visible from the active project')
+
+      const setStatus = await turnInProjectA(() =>
+        run(roadmapPlanTool, { action: 'set_status', id: note.id, status: 'blocked' }),
+      )
+      assert.match(setStatus, /→ blocked/)
+      const listed = await turnInProjectA(() => run(roadmapPlanTool, { action: 'list' }))
+      assert.match(listed, /\(blocked\) Background item/)
+      assert.equal(turnInProjectA(() => getKnowledgeNote(note.id))?.title, 'Stamped name')
     })
   })
 })

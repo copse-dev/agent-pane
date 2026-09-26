@@ -172,6 +172,16 @@ content (a boolean the agent loop can expose on the tool-execution context —
 - The knowledge sidebar shows the same marker, giving the user a review
   surface for the only channel that persists across threads.
 
+The marker only works if it cannot be laundered, so it is sticky:
+
+- `recall` that returns a marked note marks the turn as having ingested
+  external content, exactly as if the turn had fetched it. Anything that turn
+  then `remember`s — including the same text under a new title — is marked.
+- An agent rewrite of a marked note (same title) keeps the marker, even from
+  an unmarked turn: that turn may have read the note's file directly or
+  recalled it earlier. Only a user edit in the Memories pane
+  (`memories:update`), which is a review, clears it.
+
 No blocking, no prompts — recording and surfacing only. (An approval gate on
 tainted `remember` calls is listed as an open question, not committed.)
 
