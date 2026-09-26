@@ -9171,7 +9171,7 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-sm);
   background: var(--bg-base);
 }
-.automation-row-paused {
+.automation-row-paused .automation-row-copy {
   opacity: 0.7;
 }
 .automation-row-copy {
