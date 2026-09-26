@@ -403,3 +403,14 @@ export async function pinTextForCapture(
     })
   }
 }
+
+/**
+ * Pin the random suffix `mkdtemp` gives the e2e profile directory
+ * (`.wdio-profile-ajUEZS`) wherever `selector` prints a path under it.
+ * Fixtures that the app only accepts inside its own profile — thread
+ * worktrees, a storage root — cannot pick a fixed path, and Settings prints
+ * those paths in full. Same contract as {@link pinTextForCapture}.
+ */
+export function pinProfilePathForCapture(selector: string): Promise<() => Promise<void>> {
+  return pinTextForCapture(selector, /\.wdio-profile-[^/\s]+/g, '.wdio-profile-XXXXXX')
+}
