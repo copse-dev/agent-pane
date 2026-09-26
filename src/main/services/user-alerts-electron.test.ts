@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   OPEN_THREAD_FROM_ALERT_CHANNEL,
   alertClickOwner,
+  shouldNotifyForAlert,
   openUserAlertTarget,
   shouldSendSystemNotification,
   startWindowAttention,
@@ -129,6 +130,27 @@ function clickWindow(
     },
   }
 }
+
+describe('shouldNotifyForAlert', () => {
+  it('uses the sender window when the prompt went to it', () => {
+    const shown = clickWindow('main', { visible: true })
+    assert.equal(shouldNotifyForAlert(shown, 'thread-1', undefined, [shown]), false)
+    const hidden = clickWindow('main', { visible: false })
+    assert.equal(shouldNotifyForAlert(hidden, 'thread-1', hidden.webContents, [hidden]), true)
+  })
+
+  it('notifies for a hidden pop-out prompt even while the main window is visible', () => {
+    const main = clickWindow('main', { visible: true })
+    const popout = clickWindow('popout', { visible: false })
+    assert.equal(shouldNotifyForAlert(main, 'thread-1', popout.webContents, [main, popout]), true)
+  })
+
+  it('stays quiet for a visible pop-out prompt even while the main window is hidden', () => {
+    const main = clickWindow('main', { visible: false })
+    const popout = clickWindow('popout', { visible: true })
+    assert.equal(shouldNotifyForAlert(main, 'thread-1', popout.webContents, [main, popout]), false)
+  })
+})
 
 describe('alertClickOwner', () => {
   /** A renderer no window in the list owns. */

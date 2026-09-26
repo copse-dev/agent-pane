@@ -140,6 +140,22 @@ export function alertClickOwner<TWindow extends AlertClickWindow>(
   return host ? { owner: host, threadId: undefined } : { owner: win, threadId }
 }
 
+/**
+ * Whether an alert should raise a system notification: only while the window
+ * that holds its prompt is out of view. That is the pop-out a routed prompt was
+ * sent to, not the sender's own window — a visible main window says nothing
+ * about a hidden pop-out whose prompt is waiting, and a visible pop-out already
+ * shows its prompt even when the main window is hidden.
+ */
+export function shouldNotifyForAlert<TWindow extends AlertClickWindow>(
+  win: TWindow,
+  threadId: string | undefined,
+  promptTarget: RendererPromptTarget | undefined,
+  windows: readonly TWindow[],
+): boolean {
+  return shouldSendSystemNotification(alertClickOwner(win, threadId, promptTarget, windows).owner)
+}
+
 function applyAppBadgeCount(count: number): void {
   // macOS shows this on the Dock icon; Linux on launchers implementing the
   // LauncherEntry D-Bus API (elsewhere Electron returns false and nothing
@@ -183,7 +199,9 @@ export function createElectronUserAlertSender(
   return (kind, body, threadId, promptTarget) => {
     const stopAlert = dispatchUserAlert(readUserAlertPreferences(), kind, body, {
       notification: (title, notificationBody) => {
-        if (!shouldSendSystemNotification(win) || !Notification.isSupported()) return
+        const windows = BrowserWindow.getAllWindows()
+        if (!shouldNotifyForAlert(win, threadId, promptTarget, windows)) return
+        if (!Notification.isSupported()) return
         const notification = new Notification({ title, body: notificationBody, silent: true })
         const forget = (): void => {
           liveNotifications.delete(notification)
