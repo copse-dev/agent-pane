@@ -24810,10 +24810,13 @@ function removeHost(list, id) {
 function parseSshHostDraft(draft) {
   const id = draft.id.trim() || slugifyHostId(draft.label || draft.host);
   if (!SSH_HOST_ID_RE.test(id)) {
-    return { ok: false, error: "Host id must be a lowercase slug (a-z, 0-9, -)." };
+    return { ok: false, error: "Host id must be a lowercase slug (a-z, 0-9, -).", fields: ["id"] };
   }
   if (!draft.label.trim() || !draft.host.trim()) {
-    return { ok: false, error: "Label and host are required." };
+    const fields = [];
+    if (!draft.label.trim()) fields.push("label");
+    if (!draft.host.trim()) fields.push("host");
+    return { ok: false, error: "Label and host are required.", fields };
   }
   const host = {
     id,
@@ -24825,7 +24828,7 @@ function parseSshHostDraft(draft) {
   if (portText) {
     const port = Number(portText);
     if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
-      return { ok: false, error: "Port must be a whole number from 1 to 65535." };
+      return { ok: false, error: "Port must be a whole number from 1 to 65535.", fields: ["port"] };
     }
     host.port = port;
   }
@@ -25277,10 +25280,15 @@ function openRemoteFolderDialog(api2) {
     { type: "button", class: "ui-btn ui-btn-ghost remote-folder-import-config" },
     "Import from ~/.ssh/config"
   );
+  const addHostHint = el(
+    "p",
+    { class: "field-hint remote-folder-add-host-hint" },
+    "Add an SSH host to browse and open a remote folder."
+  );
   const addHostForm = el(
     "div",
     { class: "remote-folder-add-host-form ssh-host-form", hidden: true },
-    el("p", { class: "field-hint" }, "Add an SSH host to browse and open a remote folder."),
+    addHostHint,
     el("label", {}, "Id ", idInput),
     el("label", {}, "Label ", labelInput),
     el("label", {}, "Host ", hostInput),
@@ -25337,6 +25345,7 @@ function openRemoteFolderDialog(api2) {
       portInput.value = "";
       identityInput.value = "";
       idInput.disabled = false;
+      addHostHint.textContent = hosts.length === 0 ? "No SSH hosts yet. Add one to browse and open a remote folder." : "Add an SSH host to browse and open a remote folder.";
       status.textContent = "";
       labelInput.focus();
     }
@@ -25347,7 +25356,7 @@ function openRemoteFolderDialog(api2) {
       hostSelect.append(el("option", { value: host.id }, `${host.label} (${host.host})`));
     }
     if (hosts.length === 0) {
-      hostSelect.append(el("option", { value: "", disabled: true }, "No hosts yet"));
+      hostSelect.append(el("option", { value: "", disabled: true, selected: true }, "No hosts yet"));
       hostSelect.disabled = true;
       currentHostId = "";
       return;
@@ -25468,7 +25477,6 @@ function openRemoteFolderDialog(api2) {
           openBtn.disabled = true;
           upBtn.disabled = true;
           setAddingHost(true);
-          status.textContent = "Add a host below to continue.";
           return;
         }
         setAddingHost(false);
@@ -45609,6 +45617,24 @@ var init_provider_slug = __esm({
   }
 });
 
+// src/renderer/dom/disclosure-summary.ts
+function disclosureSummary(label) {
+  return el(
+    "summary",
+    { class: "settings-disclosure-summary" },
+    el("span", {}, label),
+    // `ui-icon` carries `fill: none; stroke: currentColor`; without it the path
+    // renders as a solid triangle (see the plugin fold in settings-dialog.ts).
+    chevronDownIcon("ui-icon settings-disclosure-chevron")
+  );
+}
+var init_disclosure_summary = __esm({
+  "src/renderer/dom/disclosure-summary.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/renderer/views/setup/custom-providers-section.ts
 function privacyBadgeEl(badge) {
   return el("span", { class: `provider-privacy-badge ${badge.kind}` }, badge.label);
@@ -46051,7 +46077,7 @@ function createCustomProvidersSection(api2, opts = {}) {
     const advanced = el(
       "details",
       { class: "provider-advanced" },
-      el("summary", {}, "Advanced"),
+      disclosureSummary("Advanced"),
       el(
         "label",
         { class: "checkbox-label" },
@@ -46423,6 +46449,7 @@ var init_custom_providers_section = __esm({
     init_data_policies();
     init_pareto_frontier();
     init_helpers();
+    init_disclosure_summary();
     init_icons();
     init_inline_status();
     init_confirm_dialog();
@@ -47612,9 +47639,11 @@ function createClassifiersSection(api2) {
       controls.set(name, control);
       return control;
     }
-    function select(name, value, options) {
+    function select(name, value, choices) {
       const control = el("select", { name: `classifier${name}` });
-      for (const option of options) control.append(el("option", { value: option }, option));
+      for (const choice of choices) {
+        control.append(el("option", { value: choice.value }, choice.label));
+      }
       control.value = values.get(name) ?? value;
       controls.set(name, control);
       return control;
@@ -47640,7 +47669,7 @@ function createClassifiersSection(api2) {
     const advanced = el(
       "details",
       { class: "provider-advanced" },
-      el("summary", {}, "Connection options")
+      disclosureSummary("Connection options")
     );
     let key;
     let removeKey;
@@ -47653,9 +47682,9 @@ function createClassifiersSection(api2) {
         }
       };
       const connection = profile.connection;
-      const protocol = select("Protocol", connection.protocol, ["systemone", "featherless"]);
+      const protocol = select("Protocol", connection.protocol, PROTOCOL_CHOICES);
       const url2 = input2("Url", connection.baseUrl, "url");
-      const auth = select("Auth", connection.auth, ["none", "bearer"]);
+      const auth = select("Auth", connection.auth, AUTH_CHOICES);
       const env = input2("KeyEnv", connection.apiKeyEnv ?? "");
       key = input2("Key", "", "password");
       const destinationNote = el("span", {
@@ -47719,7 +47748,7 @@ function createClassifiersSection(api2) {
       );
     } else {
       const connection = profile.connection;
-      const backend = select("Backend", connection.backend, ["torch", "mlx", "llamacpp"]);
+      const backend = select("Backend", connection.backend, BACKEND_CHOICES);
       const gguf = el("label", {}, "GGUF model path", input2("Gguf", connection.gguf ?? ""));
       const updateBackend = () => {
         gguf.hidden = backend.value !== "llamacpp";
@@ -47730,12 +47759,7 @@ function createClassifiersSection(api2) {
       advanced.append(
         el("label", {}, "Backend", backend),
         el("label", {}, "Model revision", input2("Revision", connection.revision)),
-        el(
-          "label",
-          {},
-          "Scoring mode",
-          select("Mode", connection.mode, ["direct", "serial", "shared"])
-        ),
+        el("label", {}, "Scoring mode", select("Mode", connection.mode, MODE_CHOICES)),
         gguf,
         el(
           "span",
@@ -47922,13 +47946,33 @@ function createClassifiersSection(api2) {
   render();
   return { root, refresh };
 }
+var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
 var init_classifiers_section = __esm({
   "src/renderer/views/setup/classifiers-section.ts"() {
     init_presets();
     init_helpers();
+    init_disclosure_summary();
     init_inline_status();
     init_confirm_dialog();
     init_errors4();
+    PROTOCOL_CHOICES = [
+      { value: "systemone", label: "SystemOne" },
+      { value: "featherless", label: "Featherless classifier" }
+    ];
+    AUTH_CHOICES = [
+      { value: "none", label: "None" },
+      { value: "bearer", label: "Bearer token (API key)" }
+    ];
+    BACKEND_CHOICES = [
+      { value: "torch", label: "PyTorch" },
+      { value: "mlx", label: "MLX" },
+      { value: "llamacpp", label: "llama.cpp (GGUF)" }
+    ];
+    MODE_CHOICES = [
+      { value: "direct", label: "Direct" },
+      { value: "serial", label: "Serial" },
+      { value: "shared", label: "Shared" }
+    ];
   }
 });
 
@@ -48004,7 +48048,7 @@ function createEnvKeyDetectSection(api2, opts = {}) {
     el("legend", {}, legend),
     el(
       "p",
-      { class: "field-hint" },
+      { class: "settings-fieldset-desc" },
       "Scans your exported environment and shell start-up files (e.g. ~/.zshrc, ~/.bashrc) for keys like ANTHROPIC_API_KEY or OPENAI_API_KEY. Nothing is read until you click Scan, and existing keys are never overwritten."
     ),
     actions,
@@ -56534,7 +56578,7 @@ function createModelRoutingSection(api2, options = {}) {
     el(
       "details",
       { class: "routing-advanced" },
-      el("summary", {}, "Advanced routes"),
+      disclosureSummary("Advanced routes"),
       routingField(
         "Instruct / safety model",
         safetyModel,
@@ -56672,6 +56716,7 @@ var init_model_routing_section = __esm({
     init_model_options();
     init_model_picker();
     init_helpers();
+    init_disclosure_summary();
     init_unknown_value3();
     init_ui();
   }
@@ -59337,7 +59382,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   heading.textContent = "Subscription plan limits";
   host.append(heading);
   const intro = document.createElement("p");
-  intro.className = "field-hint";
+  intro.className = "settings-fieldset-desc";
   intro.textContent = "Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
   host.append(intro);
   if (error62) {
@@ -59375,7 +59420,7 @@ function renderPlanWorthItSection(host, payload, error62, opts) {
   heading.textContent = "Is your plan worth it?";
   host.append(heading);
   const intro = document.createElement("p");
-  intro.className = "field-hint";
+  intro.className = "settings-fieldset-desc";
   intro.textContent = "Compares your Claude subscription\u2019s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse\u2019s local ledger is not used here.";
   host.append(intro);
   if (error62) {
@@ -59780,18 +59825,44 @@ function createSshWorkspaceSection(api2, opts = {}) {
   );
   const draft = emptySshHostDraft();
   let idTouched = false;
-  const idInput = el("input", { name: "sshHostId", placeholder: "my-server" });
-  const labelInput = el("input", { name: "sshHostLabel", placeholder: "Production" });
+  const idInput = el("input", { type: "text", name: "sshHostId", placeholder: "my-server" });
+  const labelInput = el("input", { type: "text", name: "sshHostLabel", placeholder: "Production" });
   const hostInput = el("input", {
+    type: "text",
     name: "sshHostHost",
     placeholder: "example.com or ~/.ssh/config alias"
   });
-  const userInput = el("input", { name: "sshHostUser", placeholder: "ubuntu" });
-  const portInput = el("input", { name: "sshHostPort", placeholder: "22", inputmode: "numeric" });
+  const userInput = el("input", { type: "text", name: "sshHostUser", placeholder: "ubuntu" });
+  const portInput = el("input", {
+    type: "text",
+    name: "sshHostPort",
+    placeholder: "22",
+    inputmode: "numeric"
+  });
   const identityInput = el("input", {
+    type: "text",
     name: "sshHostIdentity",
     placeholder: "~/.ssh/id_ed25519"
   });
+  const draftInputs = {
+    id: idInput,
+    label: labelInput,
+    host: hostInput,
+    user: userInput,
+    port: portInput,
+    identityFile: identityInput
+  };
+  function markInvalid(fields) {
+    for (const [field, input2] of Object.entries(draftInputs)) {
+      if (fields.some((name) => name === field)) input2.setAttribute("aria-invalid", "true");
+      else input2.removeAttribute("aria-invalid");
+    }
+  }
+  for (const input2 of Object.values(draftInputs)) {
+    input2.addEventListener("input", () => {
+      input2.removeAttribute("aria-invalid");
+    });
+  }
   const forwardInput = el("input", { type: "checkbox", name: "sshHostForwardAgent" });
   const form = el(
     "div",
@@ -59817,6 +59888,7 @@ function createSshWorkspaceSection(api2, opts = {}) {
   }
   function clearDraft() {
     Object.assign(draft, emptySshHostDraft());
+    markInvalid([]);
     idTouched = false;
     idInput.value = "";
     labelInput.value = "";
@@ -59828,6 +59900,7 @@ function createSshWorkspaceSection(api2, opts = {}) {
     idInput.disabled = false;
   }
   function fillDraft(host) {
+    markInvalid([]);
     draft.id = host.id;
     draft.label = host.label;
     draft.host = host.host;
@@ -59931,9 +60004,11 @@ function createSshWorkspaceSection(api2, opts = {}) {
     void (async () => {
       const parsed2 = parseSshHostDraft(draft);
       if (!parsed2.ok) {
+        markInvalid(parsed2.fields);
         setInlineStatus(status, "error", parsed2.error);
         return;
       }
+      markInvalid([]);
       const raw = await api2.settings.get("sshWorkspaceHosts");
       const existing = parseSshWorkspaceHosts(raw);
       await persistHosts(upsertHost(existing, parsed2.host));
@@ -63340,7 +63415,7 @@ function mountSettingsDialog(store2, api2) {
     if (!header) return;
     const testBtn = document.createElement("button");
     testBtn.type = "button";
-    testBtn.className = "sources-hook-test-btn";
+    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
     testBtn.textContent = "Test";
     testBtn.title = "Dry-run this hook against a synthetic payload for its event";
     header.append(testBtn);
