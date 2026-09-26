@@ -147,6 +147,49 @@ describe('createRemoteImageFetcher', () => {
     await allowed('https://shots.example/a.png', signal)
   })
 
+  it('refuses an allowed hostname on another port, including after a redirect', async () => {
+    const start = 'https://github.com/user-attachments/assets/0f6c'
+    const { fetch, calls } = fakeFetch({
+      [start]: { status: 302, location: 'https://github.com:8443/private.png' },
+    })
+    const fetchImage = createRemoteImageFetcher(REF, { fetch, extraHosts: ['shots.example'] })
+    for (const url of [
+      'https://github.com:8443/private.png',
+      'https://api.github.com:8443/x.png',
+      'https://raw.githubusercontent.com:8443/other/app/main/a.png',
+      'https://shots.example:8443/a.png',
+      `https://github.com:8443/acme/app/raw/${SHA}/a.png`,
+    ]) {
+      await assert.rejects(fetchImage(url, signal), /not an allowed image host/, url)
+    }
+    assert.equal(calls.length, 0)
+    await assert.rejects(fetchImage(start, signal), /github\.com:8443 is not an allowed image host/)
+    assert.deepEqual(
+      calls.map((call) => call.url),
+      [start],
+    )
+  })
+
+  it('keeps a Forgejo instance on its own port, sending the token only to that origin', async () => {
+    const forgejo: PullRequestRef = {
+      ...REF,
+      forge: 'forgejo',
+      apiBase: 'https://code.example.org:3000/api/v1',
+    }
+    const own = 'https://code.example.org:3000/attachments/1.png'
+    const { fetch, calls } = fakeFetch({ [own]: { status: 200, bytes: PNG } })
+    const fetchImage = createRemoteImageFetcher(forgejo, { fetch })
+    await fetchImage(own, signal)
+    assert.equal(calls[0]?.headers['Authorization'], 'token secret-token')
+    for (const url of [
+      'https://code.example.org/attachments/1.png',
+      'https://code.example.org:8443/attachments/1.png',
+    ]) {
+      await assert.rejects(fetchImage(url, signal), /not an allowed image host/, url)
+    }
+    assert.equal(calls.length, 1)
+  })
+
   it('refuses an image larger than a provider accepts before reading it', async () => {
     const url = 'https://raw.githubusercontent.com/other/app/main/huge.png'
     const { fetch } = fakeFetch({ [url]: { status: 200, length: MAX_IMAGE_BYTES + 1 } })

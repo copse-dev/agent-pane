@@ -133,7 +133,7 @@ never the exit code.
   --read-pr <forge>       read the pull request's description, comments, reviews and images
                           as review context: ${FORGES.join(' | ')}; needs --repo and --pr
   --image-host <host>     also fetch conversation images from this host (repeatable); the
-                          forge's own hosts are always allowed
+                          forge's own hosts are always allowed; default HTTPS port only
   --budget-chars <n>      diff budget handed to the model (default 60000)
   --max-steps <n>         tool-using steps the reviewer may take
   --store <dir>           pnpm store to mount read-only (default: host standard store)

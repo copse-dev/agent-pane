@@ -104,12 +104,22 @@ function webOrigin(ref: PullRequestRef): URL {
   return api.hostname === 'api.github.com' ? new URL('https://github.com') : new URL(api.origin)
 }
 
-function hostAllowed(ref: PullRequestRef, host: string, extra: readonly string[]): boolean {
-  const web = webOrigin(ref).hostname
-  if (host === web || extra.includes(host)) return true
+/**
+ * Whether `url` is on a host images may come from. The forge's own origin is
+ * matched by `URL.host`, so a Forgejo or GHE instance on its own port keeps
+ * working; every other allowed host must be on the default HTTPS port, since an
+ * allowed hostname on another port is a different service (fail closed).
+ */
+function hostAllowed(ref: PullRequestRef, url: URL, extra: readonly string[]): boolean {
+  const web = webOrigin(ref)
+  if (url.host === web.host) return true
+  // `URL` drops the default port, so an empty `port` is exactly https's 443.
+  if (url.port !== '') return false
+  const host = url.hostname
+  if (extra.includes(host)) return true
   // GitHub serves raw files, attachments and camo proxies from these.
   return (
-    web === 'github.com' &&
+    web.hostname === 'github.com' &&
     (host === 'githubusercontent.com' || host.endsWith('.githubusercontent.com'))
   )
 }
@@ -122,12 +132,12 @@ const COMMIT = /^[0-9a-f]{7,40}$/
  */
 export function sameRepositoryContentsPath(ref: PullRequestRef, url: URL): string | null {
   if (ref.forge !== 'github') return null
-  const web = webOrigin(ref).hostname
+  const web = webOrigin(ref).host
   const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
   let rest: string[] | null = null
-  if (url.hostname === web && (parts[2] === 'raw' || parts[2] === 'blob')) {
+  if (url.host === web && (parts[2] === 'raw' || parts[2] === 'blob')) {
     rest = [parts[0] ?? '', parts[1] ?? '', ...parts.slice(3)]
-  } else if (url.hostname === 'raw.githubusercontent.com') {
+  } else if (url.host === 'raw.githubusercontent.com') {
     rest = parts
   }
   if (rest === null) return null
@@ -215,9 +225,12 @@ export function createRemoteImageFetcher(
       await discard(response)
     }
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      if (current.protocol !== 'https:' || !hostAllowed(ref, current.hostname, extra)) {
+      // Re-checked on every hop: a redirect to another port is refused like one to another host.
+      if (current.protocol !== 'https:' || !hostAllowed(ref, current, extra)) {
         throw new Error(
-          `${current.hostname} is not an allowed image host; pass --image-host ${current.hostname} to allow it`,
+          current.port === ''
+            ? `${current.host} is not an allowed image host; pass --image-host ${current.hostname} to allow it`
+            : `${current.host} is not an allowed image host; images are fetched only from the default HTTPS port`,
         )
       }
       // Forgejo serves attachments from its own origin, which the token belongs to.

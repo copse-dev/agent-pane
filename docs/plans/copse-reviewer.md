@@ -1426,7 +1426,9 @@ nothing specific to one repository or one bot.
 - **Fetching is the security-relevant part (P7).** The model names an id, never a URL, so
   it cannot direct a fetch anywhere the conversation did not already point. Fetches are
   https only, from the forge's own hosts (plus `*.githubusercontent.com` on GitHub) or hosts
-  the caller passes with `--image-host`, and every redirect hop is re-checked. The forge
+  the caller passes with `--image-host`, and every redirect hop is re-checked. Hosts match
+  on port too: the forge's origin keeps its own port, and every other allowed host is
+  reachable only on the default HTTPS port, so `github.com:8443` is refused. The forge
   token goes only to the forge's API: a same-repository GitHub raw or blob link at a commit
   is read through the contents endpoint, which also serves a private repository; everything
   else is fetched without credentials. On Forgejo the token accompanies same-origin
