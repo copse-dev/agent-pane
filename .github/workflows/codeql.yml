@@ -1,25 +1,21 @@
 name: CodeQL
 
 on:
-  push:
-    # Deliberately still `main`, which is now TRUNK rather than the release
-    # branch — scanning every merge to trunk surfaces findings earlier than
-    # scanning `release` would. This is a behaviour change, not an oversight.
-    branches: [main]
   schedule:
-    - cron: '23 6 * * 1'
+    - cron: '23 6 * * *'
+  workflow_dispatch:
 
-# CodeQL is advisory rather than a required PR check. Scan the trusted main tip
-# after merges plus a weekly safety-net run instead of scanning every PR update.
-# Deliberately scans trunk rather than `release`: every commit reaches `release`
-# via a promotion from `main`, so scanning `main` covers the same code and
-# surfaces findings a promotion earlier. The weekly run remains the backstop for
-# anything sitting on `main` between promotions.
-# Both triggers stay on the self-hosted check fleet; there is intentionally no
-# GitHub-hosted fallback here because the scan can wait for fleet capacity.
+# CodeQL is advisory rather than a required PR check. It scans the `main` tip
+# once a day. Every commit reaches `release` via a promotion from `main`, so
+# scanning `main` covers the same code a promotion earlier.
 #
-# This repository does not currently have GitHub Code Security enabled, so
-# retain the SARIF as a workflow artifact instead of asking the API to ingest it.
+# It used to scan every push to `main` as well (~30 a day, ~8 minutes each).
+# That bought nothing: this repository does not have GitHub Code Security
+# enabled, so the SARIF is only retained as a 7-day workflow artifact, and no
+# one is notified per push. A daily scan still covers every day's tip for about
+# a thirtieth of the minutes; dispatch it by hand to scan a specific ref. If
+# Code Security is enabled and results are uploaded, per-push scanning becomes
+# worth reconsidering.
 permissions:
   actions: read
   contents: read
