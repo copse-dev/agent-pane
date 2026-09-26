@@ -301,7 +301,7 @@
   padding: 1px 6px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-primary) 60%, transparent);
+  background: color-mix(in srgb, var(--bg-base) 60%, transparent);
 }
 .review-report-check[data-verdict='regressed'] {
   color: var(--danger, #d9534f);
@@ -331,7 +331,7 @@
 .review-finding {
   --finding-sev: var(--text-secondary);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-base) 70%, transparent);
 }
 .review-finding[data-severity='critical'],
 .review-finding[data-severity='high'] {
@@ -403,7 +403,7 @@
   margin: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius);
-  background: var(--bg-secondary, var(--bg-primary));
+  background: var(--bg-elevated);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
