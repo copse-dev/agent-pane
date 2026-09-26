@@ -93,6 +93,10 @@ export interface McpServerStatus {
  * ones.
  */
 export interface DeclaredMcpServer {
+  /**
+   * The server's name as the plugin's `mcp.json` declares it — what Settings
+   * shows. The runtime-prefixed name Copse would register it under is internal.
+   */
   name: string
   transport: McpTransportKind
   /** Registry id of the plugin that declares it — also what Settings shows. */

@@ -1,6 +1,11 @@
 import { $, browser } from '@wdio/globals'
 
-/** Change theme through the same persisted settings surface a user uses. */
+/**
+ * Change theme through Settings → Appearance, the persisted surface a user
+ * uses. Mutating `data-theme` directly has intermittently dropped painted
+ * glyphs from the next capture; saving through Settings gives Chromium a
+ * stable render first.
+ */
 export async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
   await $('[aria-label="Settings"]').click()
   await $('.settings-nav-btn[data-section="appearance"]').click()
