@@ -2370,9 +2370,6 @@ dialog.settings-overlay::backdrop {
   font-size: 11px;
   color: var(--text-secondary);
 }
-.automation-row-schedule {
-  color: var(--accent);
-}
 .automation-row-actions,
 .automation-form-actions {
   flex: none;
