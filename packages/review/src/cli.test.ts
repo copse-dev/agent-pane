@@ -575,7 +575,7 @@ describe('copse-review CLI', () => {
         env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
         cwd: repo.root,
         fetch: (url, init) => {
-          posts.push({ url, body: init.body })
+          posts.push({ url, body: init.body ?? '' })
           return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
         },
       },

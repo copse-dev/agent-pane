@@ -148,7 +148,10 @@ shell's hand-offs (Phase 4).
   shape (findings included) before a field of it reaches a model or a comment.
 - **`forge-review.ts`** — the pull-request projection: one review (`COMMENT`, never a
   request for changes), each surfaced finding with a line an inline comment on the head
-  commit, the rest in the body. GitHub and Forgejo; a line the forge refuses is folded
+  commit, the rest in the body. On GitHub a re-run marks the same identity's earlier Copse
+  reviews superseded (a submitted review cannot be deleted: its body becomes a link to the new
+  one and its inline comments are hidden as outdated, keeping replies); a failure there leaves
+  them as they were and does not fail the run. GitHub and Forgejo; a line the forge refuses is folded
   into the body rather than lost. The claim and confirmation status stay visible;
   supporting reasoning and evidence use a collapsed `details` section. Run metadata and
   per-role timing live under `Review details`. Incomplete reviews and missing checks keep
@@ -207,7 +210,7 @@ The plan's job A and job B (`.github/workflows/review-ground.yml` and
 `review-findings.yml`; `.forgejo/workflows/review.yml` for Forgejo) review every ready (non-draft)
 owner pull request from this repository when it is opened, reopened or marked ready for review.
 The `copse-review` label reviews a draft or re-reviews a newer head, and `copse-review-skip` opts a
-pull request out; pushes alone do not re-review, since each run posts a new review. On GitHub,
+pull request out; pushes alone do not re-review. On GitHub,
 `review-trigger.yml` receives those `pull_request_target` events so an older pull request still
 selects trusted default-branch workflow code. That target-context job has PR-read and Actions-dispatch permission, but it checks
 out and executes nothing; it resolves current PR metadata and dispatches the separate ground

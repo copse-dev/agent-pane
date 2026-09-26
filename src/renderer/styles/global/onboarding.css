@@ -46,11 +46,6 @@
 .onboarding-body > section > :first-child {
   margin-top: 0;
 }
-.onboarding-body h3 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 var(--spacing-xs);
-}
 .onboarding-body .settings-section-desc {
   margin-bottom: var(--spacing-md);
 }
@@ -238,7 +233,7 @@
   line-height: var(--line-height-base);
 }
 .preferred-model-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .preferred-model-status.ok {
@@ -253,6 +248,6 @@
   font-size: var(--font-size-sm);
 }
 .download-progress {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }

@@ -34,7 +34,42 @@ describe('innerHTML-safe tool args', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'innerhtml-tool-args-collapsed.png'))
 
     await toolCard.$('summary.tool-card-header').click()
+
+    // The Arguments disclosure takes the transcript's text-chevron handle, not
+    // the UA triangle in primary text.
+    const summaryStyle = (): Promise<{
+      listStyle: string
+      marker: string
+      color: string
+      muted: string
+    } | null> =>
+      browser.execute(() => {
+        const summary = document.querySelector(
+          '.tool-card[data-tool-id="tc-write-trap"] > .tool-args > summary',
+        )
+        if (!(summary instanceof HTMLElement)) return null
+        const probe = document.createElement('div')
+        probe.style.color = 'var(--text-muted)'
+        document.body.append(probe)
+        const muted = getComputedStyle(probe).color
+        probe.remove()
+        const style = getComputedStyle(summary)
+        return {
+          listStyle: style.listStyleType,
+          marker: getComputedStyle(summary, '::before').content,
+          color: style.color,
+          muted,
+        }
+      })
+    const closed = await summaryStyle()
+    expect(closed).not.toBeNull()
+    expect(closed!.listStyle).toBe('none')
+    expect(closed!.marker).toBe('"▸ "')
+    expect(closed!.color).toBe(closed!.muted)
+
     await toolCard.$('.tool-args summary').click()
+    const opened = await summaryStyle()
+    expect(opened!.marker).toBe('"▾ "')
 
     const argsPre = toolCard.$('.tool-args pre')
     await expect(argsPre).toHaveText(renderToolArgs(INNERHTML_TRAP_ARGS))
@@ -43,6 +78,8 @@ describe('innerHTML-safe tool args', () => {
     await expect(toolCard.$$('img')).toBeElementsArrayOfSize(0)
     await expect(toolCard.$$('.tool-args pre')).toBeElementsArrayOfSize(1)
 
+    // Park the pointer off the summary so the shot shows its resting (muted) colour.
+    await argsPre.moveTo()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'innerhtml-tool-args-expanded.png'))
   })
 })
