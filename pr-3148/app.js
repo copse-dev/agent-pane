@@ -22989,9 +22989,13 @@ var init_persistence = __esm({
 function casedWord(word, leading) {
   const canonical = CANONICAL_WORDS.get(word);
   if (canonical !== void 0) return canonical;
-  const hyphenated = word.split("-");
-  if (hyphenated.length > 1) {
-    return hyphenated.map((part, index) => casedWord(part, leading && index === 0)).join("-");
+  const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
+  if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
+  for (const separator of ["-", ":"]) {
+    const parts = word.split(separator);
+    if (parts.length > 1) {
+      return parts.map((part, index) => casedWord(part, leading && index === 0)).join(separator);
+    }
   }
   return leading ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
@@ -53557,7 +53561,7 @@ var init_disclosure_summary = __esm({
 
 // src/renderer/views/setup/custom-providers-section.ts
 function privacyBadgeEl(badge) {
-  return el("span", { class: `provider-privacy-badge ${badge.kind}` }, badge.label);
+  return el("span", { class: `ui-badge provider-privacy-badge ${badge.kind}` }, badge.label);
 }
 function policyHintEl(policy) {
   return el(
@@ -53915,7 +53919,7 @@ function createCustomProvidersSection(api2, opts = {}) {
       "h4",
       { class: "provider-form-title" },
       provider.label,
-      el("span", { class: "provider-form-tag" }, provider.builtin ? "built-in" : "custom"),
+      el("span", { class: "ui-badge provider-form-tag" }, provider.builtin ? "built-in" : "custom"),
       privacyBadgeEl(privacyBadge(policy, { local: provider.local }))
     );
     form.append(title);
@@ -63413,7 +63417,9 @@ function mountSettingsDialog(store2, api2) {
     const rows = [];
     for (const agent of result.agents) {
       const extraBadges = [
-        { text: agent.container, className: "sources-badge-auto" }
+        // The container is a directory name (`.cursor`, `.claude`): a literal,
+        // shown as written rather than as a sentence-case label.
+        { text: agent.container, className: "ui-badge-literal" }
       ];
       if (agent.unsupportedFields.length > 0) {
         extraBadges.push({ text: "partly supported", className: "sources-badge-unsupported" });
@@ -63424,7 +63430,6 @@ function mountSettingsDialog(store2, api2) {
       ].filter(isNonEmptyString).join(" \xB7 ");
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
-          badgeClass: agent.source === "project" ? "sources-badge-project" : void 0,
           extraBadges,
           titleAttr: agent.agentPath,
           hoverDetail: agent.agentPath
@@ -63475,13 +63480,13 @@ function mountSettingsDialog(store2, api2) {
     header.append(primary);
     if (badge) {
       const badgeEl = document.createElement("span");
-      badgeEl.className = opts.badgeClass ? `sources-badge ${opts.badgeClass}` : "sources-badge";
+      badgeEl.className = opts.badgeClass ? `ui-badge sources-badge ${opts.badgeClass}` : "ui-badge sources-badge";
       badgeEl.textContent = badge;
       header.append(badgeEl);
     }
     for (const extra of opts.extraBadges ?? []) {
       const badgeEl = document.createElement("span");
-      badgeEl.className = `sources-badge ${extra.className}`;
+      badgeEl.className = `ui-badge sources-badge ${extra.className}`;
       badgeEl.textContent = extra.text;
       header.append(badgeEl);
     }
@@ -63509,7 +63514,6 @@ function mountSettingsDialog(store2, api2) {
     const title = h3.family === "claude" && h3.matcher ? `${h3.event} \xB7 ${h3.matcher}` : h3.event;
     const detail = `${familyLabel} \xB7 ${h3.command}`;
     const row2 = makeSourceRow(title, h3.scope, detail, {
-      badgeClass: h3.scope === "project" ? "sources-badge-project" : void 0,
       extraBadges
     });
     if (h3.lastError) {
@@ -63621,7 +63625,6 @@ function mountSettingsDialog(store2, api2) {
   }
   function makeHookWarningRow(w2) {
     const row2 = makeSourceRow(w2.message, w2.scope, w2.source, {
-      badgeClass: w2.scope === "project" ? "sources-badge-project" : void 0,
       extraBadges: [{ text: "warning", className: "sources-badge-warning" }]
     });
     row2.classList.add("sources-row-warning");
@@ -63652,7 +63655,7 @@ function mountSettingsDialog(store2, api2) {
     return new Date(value).toLocaleDateString();
   }
   function worktreeBadge(entry) {
-    if (entry.usage?.running) return { text: "in use", className: "sources-badge-project" };
+    if (entry.usage?.running) return { text: "in use", className: void 0 };
     if (!entry.managed) return { text: "external", className: void 0 };
     if (!entry.usage) return { text: "orphaned", className: "sources-badge-warning" };
     if (!entry.usage.linked) return { text: "released", className: "sources-badge-warning" };
@@ -63838,7 +63841,7 @@ function mountSettingsDialog(store2, api2) {
               target.row.querySelector(".sources-worktree-changes")?.remove();
               if (result.changedCount !== null && result.changedCount > 0) {
                 const badge = document.createElement("span");
-                badge.className = "sources-badge sources-badge-warning sources-worktree-changes";
+                badge.className = "ui-badge sources-badge sources-badge-warning sources-worktree-changes";
                 badge.textContent = `${String(result.changedCount)} uncommitted`;
                 target.row.querySelector(".sources-worktree-terminal-btn")?.before(badge);
               }
@@ -64222,7 +64225,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     const detail = `${file2.path} \xB7 ${formatByteSize(file2.bytes)}` + (file2.trusted ? nestedStatus : " \xB7 inert until you trust this workspace \u2014 click the badge to trust it");
     const badge = !file2.trusted ? "not loaded" : file2.duplicateOf !== void 0 ? "duplicate" : file2.scopePath !== void 0 ? file2.active ? "active" : "scoped" : file2.scope;
     const row2 = makeSourceRow(file2.name, badge, detail, {
-      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 ? file2.active && file2.duplicateOf === void 0 ? "sources-badge-auto" : void 0 : file2.scope === "project" ? "sources-badge-project" : void 0,
+      badgeClass: !file2.trusted ? "sources-badge-untrusted" : file2.scopePath !== void 0 && file2.active && file2.duplicateOf === void 0 ? "sources-badge-active" : void 0,
       titleAction: {
         label: `Open ${file2.name}`,
         run: () => {
@@ -64282,9 +64285,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
           if (r2.globs?.length) bits.push(`globs: ${r2.globs.join(", ")}`);
           if (r2.description) bits.push(r2.description);
           bits.push(r2.path);
-          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "), {
-            badgeClass: r2.kind === "always" ? "sources-badge-project" : r2.kind === "auto" ? "sources-badge-auto" : void 0
-          });
+          return makeSourceRow(r2.name, kindLabel2[r2.kind] ?? r2.kind, bits.join(" \xB7 "));
         }),
         "No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file)."
       );
@@ -64294,7 +64295,6 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         "#sources-skills-list",
         skills.map(
           (s16) => makeSourceRow(s16.name, s16.source, s16.description || null, {
-            badgeClass: s16.source === "project" ? "sources-badge-project" : void 0,
             // Keep the resting list uncluttered: path lives on hover (and as a
             // native tooltip fallback). Description stays as the always-visible
             // detail; when a skill has none, the hover line is the only path.
@@ -64385,7 +64385,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       nameLine.append(versionEl);
     }
     const stabilityBadge = document.createElement("span");
-    stabilityBadge.className = `plugin-badge plugin-badge-${plugin.stability}`;
+    stabilityBadge.className = `ui-badge plugin-badge-${plugin.stability}`;
     stabilityBadge.textContent = plugin.stability;
     stabilityBadge.title = plugin.stability === "experimental" ? "Experimental: behavior and compatibility may change." : "Stable: supported as part of the current plugin contract.";
     nameLine.append(stabilityBadge);
@@ -64871,9 +64871,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       "built-in": "Built in"
     };
     const chip2 = document.createElement("span");
-    chip2.className = `mcp-origin-chip mcp-origin-${s16.origin}`;
+    const pluginId = s16.origin === "plugin" && s16.originDetail ? s16.originDetail : void 0;
+    chip2.className = pluginId ? `ui-badge ui-badge-literal mcp-origin-chip mcp-origin-${s16.origin}` : `ui-badge mcp-origin-chip mcp-origin-${s16.origin}`;
     chip2.dataset["mcpOrigin"] = s16.origin;
-    chip2.textContent = s16.originDetail && s16.origin === "plugin" ? s16.originDetail : labels[s16.origin];
+    chip2.textContent = pluginId ?? labels[s16.origin];
     chip2.title = s16.originDetail ? `${labels[s16.origin]} \u2014 ${s16.originDetail}` : labels[s16.origin];
     return chip2;
   }
@@ -65030,7 +65031,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       title.className = "mcp-server-summary";
       title.append(`${s16.name} (${s16.transport}) `, inlineStatus("idle", "not running"));
       const chip2 = document.createElement("span");
-      chip2.className = "mcp-origin-chip mcp-origin-plugin";
+      chip2.className = "ui-badge ui-badge-literal mcp-origin-chip mcp-origin-plugin";
       chip2.dataset["mcpOrigin"] = "plugin";
       chip2.textContent = s16.pluginId;
       chip2.title = `Declared by the plugin ${s16.pluginId}`;
@@ -110324,6 +110325,9 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     clear(listBody);
     const message2 = ghStatus?.message ?? (ghStatus?.installed ? "Sign in with `gh auth login` to browse pull requests here." : "Install GitHub CLI (`gh`) to browse pull requests in Copse.");
     listBody.append(el("div", { class: "git-changes-empty pr-empty-state" }, message2));
+    renderGhUnavailableViewer();
+  }
+  function renderGhUnavailableViewer() {
     clear(metaHost);
     clear(sectionsHost);
     activityHost.hidden = true;
@@ -110999,6 +111003,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         state: "OPEN"
       }));
       renderList();
+      if (!selectedPr) renderGhUnavailableViewer();
       return;
     }
     workspacePrs = await api2.gh.listWorkspaceOpenPrs().catch(() => []);
