@@ -44,5 +44,8 @@
 // v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
 // v16 conservatively versions the optional post-turn review follow-up note on agent chunks.
 // v17 conservatively versions the optional release changelog on update prompts.
-// v18 versions container-run consent fields and terminal state.
-export const API_PROTOCOL_VERSION = 18 as const
+// v20 conservatively versions the optional appended system-reminder lengths on tool
+// results (`tool_result` chunks and thread tool calls). v18 and v19 are claimed by
+// open PRs, so this skips them to avoid a collision whichever lands first.
+// v23 versions container-run consent fields and terminal state.
+export const API_PROTOCOL_VERSION = 23 as const
