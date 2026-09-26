@@ -8,6 +8,7 @@ import {
 } from '@shared/auto-approval.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 import { classifyGhSegment, flagName, isFlag } from '@copse/shell-guard/gh-argv.ts'
+import { secretFilesIn } from '@copse/shell-guard/secrets.ts'
 import { SAFE_PREP_COMMANDS, splitSegments } from './command-routing.ts'
 import { isReadOnlySimpleCommand, READ_ONLY_GIT_SUBCOMMANDS } from './permission-policy.ts'
 import {
@@ -730,6 +731,12 @@ function classifySegment(segment: string, context: AutoApprovalContext): Segment
     return { tier: null, reason: `environment assignment before the command: ${segment}` }
   const head = commandName(effective[0])
   if (!head) return { tier: null, reason: `no command word in: ${segment}` }
+  // A secret file inside the workspace is still a secret: reading `.env` is
+  // exactly as contained as reading `README.md`, but it hands the agent a token.
+  const secrets = secretFilesIn(effective)
+  if (secrets.length > 0) {
+    return { tier: null, reason: `names a secret file (${secrets.join(', ')}): ${segment}` }
+  }
 
   if (head === 'git') return classifyGitSegment(effective, lexical, context)
 

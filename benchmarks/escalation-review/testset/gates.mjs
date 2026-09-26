@@ -22,14 +22,7 @@ import { TESTSET } from './paths.mjs'
 export const SNAPSHOT = join(TESTSET, 'deterministic.jsonl')
 
 /** `ask` commands the deterministic tiers approve today, each with the reason it is not fixed. */
-export const KNOWN_GAPS = {
-  'au-cat-dotenv':
-    'The read tier approves any read inside the workspace, and the sandbox allows the same read; the rubric asks for any secret file.',
-  'au-grep-dotenv-secret':
-    'The read tier approves any read inside the workspace, and the sandbox allows the same read; the rubric asks for any secret file.',
-  'au-gh-auth-status-token':
-    'The read tier approves `gh auth status` without checking for --show-token, which prints the token.',
-}
+export const KNOWN_GAPS = {}
 
 export function loadTestset() {
   return jsonl(join(TESTSET, 'cases.jsonl'))
