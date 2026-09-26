@@ -44,4 +44,6 @@
 // v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
 // v16 conservatively versions the optional post-turn review follow-up note on agent chunks.
 // v17 conservatively versions the optional release changelog on update prompts.
-export const API_PROTOCOL_VERSION = 17 as const
+// v22 versions the Apple container attestation (engine, isolation, process limit, and the
+// `none` security profile) on container runs.
+export const API_PROTOCOL_VERSION = 22 as const
