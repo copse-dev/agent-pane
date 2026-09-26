@@ -1,0 +1,12 @@
+{
+  "id": "metask-local",
+  "label": "metask-jev-4b local eval",
+  "model": "wayfind/metask-jev-4b-policy-mix",
+  "timeoutMs": 60000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8000/v1",
+    "auth": "none"
+  }
+}
