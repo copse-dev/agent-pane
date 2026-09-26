@@ -33,7 +33,6 @@ import { bundleThreadContainerWorker } from '../../../../scripts/lib/thread-cont
 const ENABLED = process.env['COPSE_THREAD_CONTAINER_E2E'] === '1'
 const IMAGE = 'copse-worker:e2e-acp'
 const AGENT_FILE = 'scripted-acp-agent.cjs'
-const KEY_ENV = 'COPSE_TEST_SCRIPTED_AGENT_KEY'
 const KEY_VALUE = 'scripted-key-0123456789'
 
 function git(cwd: string, args: string[]): string {
@@ -72,7 +71,6 @@ describe('thread under an ACP agent in a container (end to end)', { skip: !ENABL
     const runtimesDir = mkdtempSync(join(tmpdir(), 'copse-acp-runtimes-'))
     const canary = 'copse-canary-acp-0123456789abcdef'
     const logs: string[] = []
-    process.env[KEY_ENV] = KEY_VALUE
     try {
       const record = await runThreadInContainer(
         {
@@ -90,7 +88,7 @@ describe('thread under an ACP agent in a container (end to end)', { skip: !ENABL
             },
             keyEnvName: 'SCRIPTED_AGENT_KEY',
           },
-          apiKeyEnv: KEY_ENV,
+          apiKey: KEY_VALUE,
           budgets: { wallClockMs: 4 * 60_000, tokenCeiling: 1_000_000 },
           egressAllowlist: [],
           image: IMAGE,
@@ -138,7 +136,6 @@ describe('thread under an ACP agent in a container (end to end)', { skip: !ENABL
       assert.equal(record.cleanupError, null)
       assert.equal(await teardownRuntime(record.runtimeId), 'already-gone')
     } finally {
-      process.env[KEY_ENV] = ''
       rmSync(repo, { recursive: true, force: true })
       rmSync(runtimesDir, { recursive: true, force: true })
     }

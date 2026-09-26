@@ -24,6 +24,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -110,8 +111,13 @@ export interface ThreadContainerRequest {
   provider?: ProviderDescription
   /** What the guest trims history against; the desktop's own answer for the model. */
   contextWindow?: number
-  /** Environment variable on the host holding the provider key; the value is passed, never the name. */
-  apiKeyEnv?: string
+  /**
+   * The provider key for this run, held in memory only. It reaches the guest
+   * over the container's stdio link when the worker asks for it (decision
+   * A17) — never through an environment variable of this process or of
+   * `docker`, the container's configuration, argv, or a file.
+   */
+  apiKey?: string
   /**
    * Run the thread under an external ACP agent instead of Copse's own loop
    * (`docs/plans/thread-in-container.md`, "Agent models in the guest"). The
@@ -206,7 +212,11 @@ export interface DockerRunInput {
   egressToken: string | null
   /** Mount the host's shared pnpm store for the install step (decision A12). */
   sharedStore: boolean
-  apiKeyEnv: string | null
+  /**
+   * The worker collects the run's key over the stdio link (decision A17), so
+   * the link is opened even for a run with no egress.
+   */
+  keyOverLink: boolean
   memoryLimit: string
   pidsLimit: number
   cpus: number
@@ -292,6 +302,11 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
     '--env',
     'CYPRESS_INSTALL_BINARY=0',
   )
+  // The link to the host over the container's stdio: egress and the run's key
+  // both cross it, and a run with neither has none.
+  if (input.egress.length > 0 || input.keyOverLink) {
+    args.push('--env', 'COPSE_HOST_LINK=stdio')
+  }
   if (input.egress.length > 0) {
     // One link to the host over the container's stdio, and a loopback proxy
     // in the guest that opens a stream on it per request. Every client in the
@@ -333,9 +348,10 @@ export function dockerRunArgs(input: DockerRunInput): string[] {
       'NODE_OPTIONS=--disable-warning=UNDICI-EHPA',
     )
   }
-  // The provider key is the one secret the guest holds, scoped to this run and
-  // passed by value so the *name* of the host variable never leaks either.
-  if (input.apiKeyEnv) args.push('--env', input.apiKeyEnv)
+  // The provider key is deliberately absent: an `--env` would keep it in the
+  // container's configuration (`docker inspect`) for the container's lifetime
+  // and in the worker's initial environment, which every same-uid process in
+  // the guest can read from /proc. The worker collects it over the link.
   args.push(input.image)
   return args
 }
@@ -543,6 +559,19 @@ async function adoptOnce(workspace: string, ref: string, base: string): Promise<
   for (const sha of pending)
     applied.push(await git(workspace, ['log', '-1', '--format=%h %s', sha]))
   return { applied, alreadyApplied }
+}
+
+/**
+ * Whether this profile has ever started a container run. Every run makes its
+ * directory before Docker is asked for anything, so a profile without one has
+ * nothing managed to sweep, and the start-up sweep need not wake Docker.
+ */
+export function hasRecordedRuns(runtimesDir = join(copseDataRoot(), 'runtimes')): boolean {
+  try {
+    return readdirSync(runtimesDir).some((name) => name.startsWith('run-'))
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -935,10 +964,10 @@ export interface ContainerWaitOutcome {
 
 /** The two Docker calls the wait makes, injectable so their failures are testable. */
 /**
- * Start a created container attached: its stdout and stdin become the egress
- * link when the run has one, its stderr the run's log, line by line as it
- * happens. Without egress the guest's stdin is closed at once and its stdout
- * is only ever empty.
+ * Start a created container attached: its stdout and stdin become the link
+ * to the host when the run has one (egress, the run's key, or both), its
+ * stderr the run's log, line by line as it happens. Without a link the
+ * guest's stdin is closed at once and its stdout is only ever empty.
  */
 function attachContainer(
   name: string,
@@ -1151,8 +1180,6 @@ export interface RunThreadOptions {
   runtimeId?: string
   onLog?: (line: string) => void
   onPhase?: (phase: WorkerPhase) => void
-  /** Called once the container is running, i.e. the guest holds its environment. */
-  onStarted?: () => void
   /**
    * A stop asked for before the container exists (the snapshot and bundle of
    * a large checkout take a while): the runner refuses to create it and, if
@@ -1193,14 +1220,18 @@ export async function runThreadInContainer(
       )
     }
   }
-  const apiKeyEnv = request.apiKeyEnv ?? null
-  if (apiKeyEnv && !process.env[apiKeyEnv]) {
-    throw new Error(`Provider key variable ${apiKeyEnv} is not set on the host`)
-  }
+  const apiKey = request.apiKey !== undefined && request.apiKey.length > 0 ? request.apiKey : null
   const canary = options.canary ?? `copse-canary-${randomBytes(8).toString('hex')}`
   process.env['COPSE_SECRET_CANARY'] = canary
   await assertThreadContainerEngine()
 
+  // Private to this user on the host: a run directory holds the checkout's
+  // snapshot and, while a run with a sign-in is live, a copy of that sign-in
+  // the guest must be able to read (see agent-login.ts). The container sees
+  // only the run directory as its mount root, so a closed parent does not
+  // stop the guest, and does stop every other local account.
+  mkdirSync(runtimesDir, { recursive: true, mode: 0o700 })
+  chmodSync(runtimesDir, 0o700)
   for (const sub of ['', 'state', 'out']) {
     mkdirSync(join(runDir, sub), { recursive: true })
   }
@@ -1238,7 +1269,7 @@ export async function runThreadInContainer(
     model: request.model,
     provider: request.provider ?? null,
     contextWindow: request.contextWindow ?? null,
-    apiKeyEnv,
+    apiKeyOverLink: apiKey !== null,
     acp: acp ?? null,
     installDependencies: request.installDependencies === true,
     budgets: request.budgets,
@@ -1255,7 +1286,7 @@ export async function runThreadInContainer(
     egress,
     egressToken: egress.length > 0 ? randomBytes(16).toString('hex') : null,
     sharedStore: request.installDependencies === true,
-    apiKeyEnv,
+    keyOverLink: apiKey !== null,
     memoryLimit: '4g',
     pidsLimit: 512,
     cpus: 2,
@@ -1268,6 +1299,7 @@ export async function runThreadInContainer(
   const broker = new EgressBroker({
     rules: egress,
     ...(request.egressResolve ? { resolve: request.egressResolve } : {}),
+    ...(apiKey !== null ? { runKey: apiKey } : {}),
   })
   const startedAt = Date.now()
   let containerExit: number | null
@@ -1293,14 +1325,13 @@ export async function runThreadInContainer(
     // has nothing to remove yet, so the `finally` below is the removal.
     if (options.signal?.aborted) throw new Error(STOPPED_BEFORE_START)
     attached = attachContainer(containerName(runtimeId), {
-      broker: egress.length > 0 ? broker : null,
+      broker: egress.length > 0 || apiKey !== null ? broker : null,
       onPhase: options.onPhase,
       onLog: (line) => {
         log(`[guest] ${line}`)
       },
     })
     await untilStarted(containerName(runtimeId), attached)
-    options.onStarted?.()
     const waited = await waitForContainer(containerName(runtimeId), request.budgets.wallClockMs)
     containerExit = waited.exit
     cleanupError = waited.cleanupError
@@ -1360,7 +1391,7 @@ export async function runThreadInContainer(
     carryIn: { sha: carryIn.sha, dirty: carryIn.dirty },
     carryOut,
     containerExit,
-    credential: stagedLogin ? { login: stagedLogin } : apiKeyEnv ? 'key' : 'none',
+    credential: stagedLogin ? { login: stagedLogin } : apiKey !== null ? 'key' : 'none',
     teardown,
     cleanupError,
     secretCanary: secretCanaryCheck(runDir, canary),
