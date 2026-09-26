@@ -15,7 +15,10 @@ name: CLA
 #   - they have commented the signing sentence on this pull request.
 # Bots, and the AI co-author trailers our own agents add, are not authors for
 # this purpose. A human Co-authored-by trailer must resolve to a signature by
-# email, or by the id in a GitHub noreply address.
+# email, or by the id in a GitHub noreply address. A commit authored under an
+# agent or bot address (the same list as the trailers) is answered for by
+# whoever opened the pull request: nothing more on one opened by someone with
+# push access, otherwise the opener must have signed.
 #
 # A commit author or co-author whose email is not linked to any GitHub account
 # cannot be attributed and fails the check, except on a pull request opened by
@@ -52,7 +55,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      # Commenting on a pull request through the issues API needs both.
+      pull-requests: write
       issues: write
       statuses: write
     steps:
@@ -132,7 +136,14 @@ jobs:
             });
             for (const c of commits) {
               const sha = c.sha.slice(0, 9);
-              if (c.author) {
+              const authorEmail = (c.commit.author?.email ?? '').toLowerCase();
+              if (NON_AUTHOR_EMAIL.test(authorEmail)) {
+                // A commit an agent or bot wrote (its address can map to an
+                // account, e.g. noreply@anthropic.com to @claude). Whoever
+                // opened the pull request answers for it; the address is
+                // self-declared, so an outside opener must have signed.
+                if (!openedByMaintainer) await checkUser(pr.user, sha);
+              } else if (c.author) {
                 await checkUser(c.author, sha);
               } else if (!openedByMaintainer) {
                 const email = (c.commit.author?.email ?? '').toLowerCase();
