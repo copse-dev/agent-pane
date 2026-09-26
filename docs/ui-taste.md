@@ -67,6 +67,9 @@ choice load-bearing rather than stylistic:
   the eye reads as "the accent, with text on it" — takes `--accent-fill` (and `--accent-fill-hover`).
   `.ui-btn-primary` in `global/ui.css` is the reference recipe. Painting `--text-on-accent` onto
   `--accent` gives 1.24:1 in light with the shipped accent: dark text on a dark fill (#2488).
+- **Native checkboxes, radios, and range sliders** are fills too: a checked box is the accent with a
+  mark on it, and Chromium picks the mark's colour from the fill. Their `accent-color` is
+  `--accent-fill` (see "Accent colour versus interface tint").
 - **Everything the accent only tints** — text, links, borders, rails, focus outlines, washes — takes
   `--accent`, which is the tier derived to stay readable.
 - **A state a user has to see** — a selected row, an active tab — should not rest on the accent's
@@ -78,6 +81,22 @@ choice load-bearing rather than stylistic:
 
 `src/renderer/styles/light-contrast.test.ts` pins the first rule mechanically, and holds the light
 syntax-highlighting palette to WCAG AA on the real (tinted) code surface.
+
+#### Change marks and status dots
+
+Git status letters, `+N −M` line stats and the diff editor's washes take the change tokens in
+`tokens.css` — `--change-added` / `-modified` / `-deleted` / `-renamed`, `--diff-insert` /
+`--diff-delete` — never a hex of their own (there were five different "added" greens). They are
+bound to the status hues, not a separate palette; light darkens the letter tier because its status
+hues sit near 4:1 on the tinted panes and these marks are small text. Deleted binds to `--error`,
+not `--danger`, which is too dark to read as 10px text in dark. CI dots are non-text marks and use
+`--success` / `--error` / `--warning` directly. `light-contrast.test.ts` measures all of them in
+both themes on the pane surfaces (4.5:1 for marks you read, 3:1 for dots).
+
+Where a row already carries an inline status, the hue belongs to that status element only; the
+name beside it stays neutral (MCP server rows). A setting shown as a badge — auto-merge — is not a
+status and takes the neutral `.pr-badge` treatment, and summary text such as a schedule is
+`--text-secondary`, not the accent.
 
 ### Decorative motifs
 
@@ -259,6 +278,11 @@ Chrome band tokens (not spacing, but reach for these before inventing heights):
   introducing a new magic number. This mirrors what `onboarding.css` already does.
 - Colors: `--bg-base` / `--bg-elevated` / `--bg-hover`, `--text-primary` / `--text-secondary` /
   `--text-muted`, `--border`, `--accent`, and the `--error` / `--success` / `--warning` status hues.
+  There is no `--bg-primary`, `--bg-secondary`, `--bg`, `--radius-md`, or `--transition-*`. A
+  `var()` naming a token that does not exist computes to the initial value — a transparent fill,
+  square corners — without any warning, so
+  [`custom-properties.test.ts`](../src/renderer/styles/custom-properties.test.ts) fails on any
+  fallback-less `var(--x)` whose property no stylesheet declares and no renderer `setProperty` sets.
 - Per user preference: before adding any constant, check whether one already exists to import/use.
 - Column widths in markdown tables are magic numbers too — see **Markdown tables in chat** below.
 
@@ -919,8 +943,9 @@ wash through otherwise neutral surfaces. Derive hover and link shades from the a
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
 
-Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent)` on
-`html, body`, and every checkbox, radio and range input inherits it. Do not restate it per
+Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent-fill)` on
+`html, body`, and every checkbox, radio and range input inherits it. It is the fill tier because a
+checked box is a fill: light's darkened `--accent` would paint it a near-black plum. Do not restate it per
 control: three local copies were all that kept the accent on, and every other checkbox in
 Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
 declaration to `base.css`.

@@ -38,7 +38,8 @@
 .welcome-new-btn,
 .welcome-open-btn {
   /* Local baseline matches the brand action recipe so peer CTAs cannot diverge
-     if a selector is later dropped from brand.css. brand.css still owns fill. */
+     if a selector is later dropped from brand.css. brand.css owns the primary's
+     accent fill; Open Folder stays the outlined secondary below. */
   height: var(--action-min-height);
   min-height: var(--action-min-height);
   padding: var(--action-padding-block) var(--action-padding-inline);
