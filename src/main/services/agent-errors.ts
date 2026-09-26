@@ -207,10 +207,44 @@ const EXPIRED_AUTH_RE =
 const AUTH_FAILURE_RE =
   /authentication[\s_-]*(?:required|failed|error)|failed to authenticate|not (?:logged in|authenticated)|unauthenticated|invalid api key|\/login\b/i
 
-/** Every string an agent might have hidden the auth signal in, joined for matching. */
-function authSignalText(rpc: JsonRpcError | null, detail: string): string {
+/**
+ * A sandbox-owning helper died because Copse already confines the process it
+ * was spawned from: macOS forbids applying a second seatbelt profile inside
+ * the agent's own (`sandbox-exec: sandbox_apply: Operation not permitted`,
+ * observed 2026-09-23 with Codex's CUA `node_repl` kernel). ASRT documents the
+ * same nesting as a degraded mode (docs/plans/sandbox-network-scope-isolation.md,
+ * "What ASRT actually allows", point 4), so this is not transient and no retry
+ * inside the current confinement can succeed — the fix is structural (spawn the
+ * helper from the host process), not something the turn can do.
+ */
+const NESTED_SANDBOX_APPLY_RE =
+  /sandbox-exec:\s*sandbox_apply:\s*(?:Operation not permitted|EPERM)/i
+
+/**
+ * Every string an ACP turn failure might carry a signal in — the JSON-RPC
+ * message, the turn's own text, and the structured `data` — joined for matching.
+ */
+function acpSignalText(rpc: JsonRpcError | null, detail: string): string {
   const data = rpc ? formatErrorData(rpc.data) : null
   return [rpc?.message ?? '', detail, data ?? ''].join('\n')
+}
+
+/**
+ * Whether an ACP turn died on the nested-sandbox boundary (a helper that owns
+ * its own seatbelt profile spawned inside Copse's agent confinement — see
+ * {@link NESTED_SANDBOX_APPLY_RE}). Credentials failures are read first
+ * everywhere this is consulted, so it never has to exclude them itself.
+ *
+ * {@link acpTurnInterruptionFor} and {@link classifyAgentError} both read this
+ * one predicate, in the same place in their order: the persisted marker and the
+ * live diagnosis are two readings of one verdict, not two that can disagree.
+ */
+function isAcpNestedSandboxFailure(err: unknown, acpAgentId: string | undefined): boolean {
+  if (!acpAgentId) return false
+  const rpc = findJsonRpcError(err)
+  if (!rpc) return false
+  const { message } = parseProviderError(err)
+  return NESTED_SANDBOX_APPLY_RE.test(acpSignalText(rpc, message ?? errorMessage(err)))
 }
 
 /**
@@ -229,7 +263,7 @@ export function classifyAcpAuthFailure(
   if (!ctx?.acpAgentId) return rpc?.code === -32000 ? 'required' : null
 
   const { status, type, message } = parseProviderError(err)
-  const text = authSignalText(rpc, message ?? errorMessage(err))
+  const text = acpSignalText(rpc, message ?? errorMessage(err))
 
   // Codex 0.156.x gates every turn on ChatGPT workspace-routing discovery; a
   // 401 there is a stale credential — `codex login status` still reports
@@ -256,8 +290,11 @@ function acpAgentDisplayName(agentId?: string): string {
  * How an ACP turn ended when it did not end normally. `error` is the residual
  * case — a provider failure that outlived the retry loop — and the rest are the
  * outcomes that were previously indistinguishable from it once written down.
+ * `nested_sandbox` is the sandbox-owning-helper boundary (see
+ * {@link NESTED_SANDBOX_APPLY_RE}): not transient, not credentials, and not
+ * fixable from inside the turn.
  */
-export type AcpTurnInterruption = AcpAuthFailureKind | 'aborted' | 'error'
+export type AcpTurnInterruption = AcpAuthFailureKind | 'nested_sandbox' | 'aborted' | 'error'
 
 /**
  * The note appended to a failed turn's persisted assistant message.
@@ -277,9 +314,48 @@ export function acpTurnInterruptionMarker(outcome: AcpTurnInterruption, agentId?
       return `[This turn failed: ${agentName}’s sign-in is no longer valid. Re-running it will fail the same way until the user signs in again.]`
     case 'required':
       return `[This turn failed: ${agentName} is not authenticated. Re-running it will fail the same way until the user signs in.]`
+    case 'nested_sandbox':
+      return `[This turn failed: one of ${agentName}’s helpers tried to apply a second OS sandbox inside the one Copse runs it under, which macOS does not allow. Do not retry it — the same turn will fail the same way. Tell the user what failed.]`
     case 'error':
       return '[This turn was interrupted by a provider error before it completed.]'
   }
+}
+
+/**
+ * How a failed ACP turn is recorded. Reads the same signals in the same order
+ * as {@link classifyAgentError} — an abort first, then credentials, then the
+ * nested-sandbox boundary — so the persisted marker never contradicts the
+ * diagnosis the user saw. `authFailure` is the caller's own
+ * {@link classifyAcpAuthFailure} reading, passed in so it is taken once.
+ */
+export function acpTurnInterruptionFor(
+  err: unknown,
+  outcome: {
+    readonly aborted: boolean
+    readonly authFailure: AcpAuthFailureKind | null
+    readonly acpAgentId?: string
+  },
+): AcpTurnInterruption {
+  if (outcome.aborted) return 'aborted'
+  if (outcome.authFailure) return outcome.authFailure
+  if (isAcpNestedSandboxFailure(err, outcome.acpAgentId)) return 'nested_sandbox'
+  return 'error'
+}
+
+function formatNestedSandboxError(rpc: JsonRpcError | null, agentId?: string): string {
+  const agentName = acpAgentDisplayName(agentId)
+  const explanation =
+    `This turn couldn’t run because one of ${agentName}’s helpers tried to apply a second ` +
+    'OS sandbox inside the one Copse already runs it under, which macOS does not allow.'
+  return [
+    `> [!WARNING]\n> **${agentName} hit Copse’s sandbox boundary**\n>\n> ${explanation}`,
+    'Retrying won’t help: the helper fails the same way every time it starts inside Copse’s ' +
+      'sandbox. Ask for the task without that helper (for example, Codex’s CUA `node_repl`), ' +
+      'or report the failure so it can be fixed in Copse.',
+    acpTechnicalDetails(rpc),
+  ]
+    .filter(isNonEmptyString)
+    .join('\n\n')
 }
 
 /**
@@ -440,6 +516,12 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
 
   const authFailure = classifyAcpAuthFailure(err, ctx)
   if (authFailure) return formatAcpAuthError(rpc, authFailure, ctx?.acpAgentId)
+
+  // Straight after credentials, in the same order as `acpTurnInterruptionFor`:
+  // a helper that cannot nest a second seatbelt dies before any provider call,
+  // so no provider reading below (401, credit, rate limit…) may claim it.
+  if (isAcpNestedSandboxFailure(err, ctx?.acpAgentId))
+    return formatNestedSandboxError(rpc, ctx?.acpAgentId)
 
   // ACP turns never reach here: `classifyAcpAuthFailure` already claimed every
   // credentials failure that carries an agent id, and points at that agent's own

@@ -137,7 +137,7 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-3xs);
   line-height: 1.3;
   text-transform: uppercase;
   pointer-events: none;
@@ -268,11 +268,11 @@
   border-color: var(--accent);
 }
 .follow-up-stat-add {
-  color: #3dd68c;
+  color: var(--change-added);
   font-weight: 500;
 }
 .follow-up-stat-del {
-  color: #f07178;
+  color: var(--change-deleted);
   font-weight: 500;
 }
 .diff-conflict-banner {

@@ -12,7 +12,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
 }
 
 .apple-development-heading,
@@ -48,7 +48,7 @@
 .apple-development-operation-status,
 .apple-development-operation-detail {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .apple-development-status {
@@ -77,7 +77,7 @@
 .apple-development-message,
 .apple-development-error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .apple-development-error {
@@ -113,8 +113,8 @@
   min-width: 0;
   padding: 6px 8px;
   border-radius: var(--radius);
-  background: var(--bg-primary);
-  font-size: 11px;
+  background: var(--bg-base);
+  font-size: var(--font-size-xs);
 }
 
 .apple-development-target-name {
@@ -152,7 +152,7 @@
 .apple-development-operation .btn {
   min-height: 24px;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .apple-development-operations {
@@ -168,8 +168,8 @@
   gap: 3px;
   padding: 6px 8px;
   border-radius: var(--radius);
-  background: var(--bg-primary);
-  font-size: 12px;
+  background: var(--bg-base);
+  font-size: var(--font-size-sm);
 }
 
 .apple-development-operation-line {
