@@ -93,6 +93,20 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
+    // Rows render before the auto-selected staged.ts diff attaches; without
+    // this wait the screenshot can catch the viewer still "Loading changes…".
+    await waitForDiffOf('staged.ts')
+    await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector(
+              '#git-diff-viewer-host .line-insert, #git-diff-viewer-host .char-insert',
+            ) != null,
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected the staged.ts diff to show its change' },
+    )
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
