@@ -729,7 +729,7 @@ export function mountContainerRunControl(
         el(
           'section',
           { class: 'container-run-section container-run-warnings' },
-          el('h3', {}, 'Needs your attention'),
+          el('h4', {}, 'Needs your attention'),
           el('ul', {}, ...run.warnings.map((warning) => el('li', {}, warning))),
         ),
       )
@@ -753,7 +753,7 @@ export function mountContainerRunControl(
         el(
           'section',
           { class: 'container-run-section container-run-egress' },
-          el('h3', {}, 'Egress'),
+          el('h4', {}, 'Egress'),
           el(
             'ul',
             {},
@@ -776,7 +776,7 @@ export function mountContainerRunControl(
         el(
           'section',
           { class: 'container-run-section container-run-deferrals' },
-          el('h3', {}, `Waiting for your review (${String(result.deferrals.length)})`),
+          el('h4', {}, `Waiting for your review (${String(result.deferrals.length)})`),
           el(
             'ul',
             {},
@@ -797,7 +797,7 @@ export function mountContainerRunControl(
         el(
           'section',
           { class: 'container-run-section container-run-denials' },
-          el('h3', {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el('h4', {}, `Refused by the container policy (${String(result.denials.length)})`),
           el(
             'ul',
             {},
@@ -819,7 +819,7 @@ export function mountContainerRunControl(
           'section',
           { class: 'container-run-section container-run-commits' },
           el(
-            'h3',
+            'h4',
             {},
             run.record?.carryOut.ref === null || run.record?.carryOut.ref === undefined
               ? 'Commits the guest made (not fetched)'
@@ -834,13 +834,13 @@ export function mountContainerRunControl(
         el(
           'section',
           { class: 'container-run-section' },
-          el('h3', {}, 'The agent said'),
+          el('h4', {}, 'The agent said'),
           el('p', {}, result.finalText),
         ),
       )
     }
     const log = el('pre', { class: 'container-run-log' }, run.log.join('\n'))
-    sections.push(el('section', { class: 'container-run-section' }, el('h3', {}, 'Log'), log))
+    sections.push(el('section', { class: 'container-run-section' }, el('h4', {}, 'Log'), log))
     const close = el(
       'button',
       { type: 'button', class: 'ui-btn ui-btn-secondary container-run-close' },

@@ -203,6 +203,29 @@ describe('screenshot publication', () => {
     }
   })
 
+  it('gates every live same-repository head, passing integration heads unasked', async () => {
+    assert.equal((await discover()).get('gate-sha'), SHA)
+    assert.equal((await discover()).has('integration'), false)
+    for (const ref of ['main', 'release']) {
+      const outputs = await discover(parent({ ref }))
+      assert.equal(outputs.get('gate-sha'), SHA)
+      assert.equal(outputs.get('integration'), 'true')
+    }
+    for (const overrides of [
+      { sha: 'new-tip' },
+      { state: 'closed' },
+      { repo: 'fork/agent-pane' },
+      { ref: 'main', sha: 'new-tip' },
+      { ref: 'main', repo: 'fork/agent-pane' },
+    ]) {
+      assert.equal(
+        (await discover(parent(overrides))).has('gate-sha'),
+        false,
+        JSON.stringify(overrides),
+      )
+    }
+  })
+
   it('never opens a PR or mints an App token', () => {
     assert.doesNotMatch(
       JSON.stringify(steps),
@@ -247,6 +270,131 @@ describe('screenshot publication', () => {
     assert.ok(checkout?.with)
     assert.equal(checkout.with['persist-credentials'], false)
     assert.equal(checkout.with['fetch-depth'], 1, 'nothing needs the full PNG history')
+  })
+})
+
+interface StatusWrite {
+  sha: string
+  state: string
+  context: string
+  description: string
+}
+
+async function gate(
+  env: Record<string, string> = {},
+  existing: { context: string; state: string; description: string }[] = [],
+): Promise<{ writes: StatusWrite[]; outputs: Map<string, string> }> {
+  const writes: StatusWrite[] = []
+  const outputs = new Map<string, string>()
+  await execute('Gate the parent on screenshot review', {
+    context,
+    core: {
+      ...core,
+      info: () => {},
+      setOutput: (key: string, value: string) => outputs.set(key, value),
+    },
+    process: { env: { PARENT_NUMBER: '123', GATE_SHA: SHA, CANDIDATE_COUNT: '2', ...env } },
+    github: {
+      rest: {
+        repos: {
+          listCommitStatusesForRef: async ({ ref }: { ref: string }) => {
+            assert.equal(ref, SHA)
+            return { data: existing }
+          },
+          createCommitStatus: async (status: StatusWrite) => {
+            writes.push(status)
+          },
+        },
+      },
+    },
+  })
+  return { writes, outputs }
+}
+
+function statusOf(write: StatusWrite | undefined): string[] {
+  assert.ok(write)
+  assert.equal(write.sha, SHA)
+  assert.equal(write.context, 'Screenshot review')
+  assert.ok(write.description.length <= 140, write.description)
+  return [write.state, write.description]
+}
+
+describe('blocking screenshot review gate', () => {
+  it('holds a head with candidates pending until a label decides', async () => {
+    const { writes, outputs } = await gate()
+    assert.equal(writes.length, 1)
+    assert.deepEqual(statusOf(writes[0]), [
+      'pending',
+      '2 changed screenshots await review: label accept-screenshots or decline-screenshots',
+    ])
+    assert.equal(outputs.get('pending'), 'true')
+    assert.deepEqual(statusOf((await gate({ CANDIDATE_COUNT: '1' })).writes[0]), [
+      'pending',
+      '1 changed screenshot awaits review: label accept-screenshots or decline-screenshots',
+    ])
+  })
+
+  it('passes a head with no candidates, and an integration head unasked', async () => {
+    for (const env of [{ CANDIDATE_COUNT: '' }, { CANDIDATE_COUNT: '0' }]) {
+      const { writes, outputs } = await gate(env)
+      assert.deepEqual(statusOf(writes[0]), ['success', 'No changed reference screenshots'])
+      assert.equal(outputs.has('pending'), false)
+    }
+    const { writes } = await gate({ INTEGRATION: 'true', PARENT_NUMBER: '' })
+    assert.deepEqual(statusOf(writes[0]), [
+      'success',
+      'Integration branch: screenshots were reviewed on the source PRs',
+    ])
+  })
+
+  it('keeps a decision already recorded for this head when CI re-runs on it', async () => {
+    for (const description of [
+      'Declined by @reviewer; no candidate committed',
+      'Accepted by @reviewer; committed as def456def456',
+    ]) {
+      const { writes, outputs } = await gate({}, [
+        { context: 'CI Passed', state: 'success', description: 'Declined by @x' },
+        { context: 'Screenshot review', state: 'success', description },
+        { context: 'Screenshot review', state: 'pending', description: '2 changed…' },
+      ])
+      assert.deepEqual(writes, [])
+      assert.equal(outputs.get('decision'), description)
+    }
+  })
+
+  it('reopens a head whose latest review state is not a decision', async () => {
+    for (const existing of [
+      {
+        context: 'Screenshot review',
+        state: 'success',
+        description: 'No changed reference screenshots',
+      },
+      { context: 'Screenshot review', state: 'error', description: 'Declined by @x' },
+      { context: 'Screenshot review', state: 'pending', description: '2 changed…' },
+    ]) {
+      const { writes } = await gate({}, [existing])
+      assert.equal(writes[0]?.state, 'pending', JSON.stringify(existing))
+    }
+  })
+
+  it('sets the gate before best-effort cleanup and fails it closed if the job breaks first', () => {
+    const index = (name: string): number => steps.findIndex((step) => step.name === name)
+    const gateStep = steps.find((step) => step.name === 'Gate the parent on screenshot review')
+    assert.equal(gateStep?.id, 'gate')
+    assert.equal(gateStep.if, "steps.discover.outputs.gate-sha != ''")
+    assert.ok(
+      index('Validate and apply candidate PNGs') < index('Gate the parent on screenshot review'),
+    )
+    assert.ok(
+      index('Gate the parent on screenshot review') < index('Close legacy screenshot review PRs'),
+    )
+    const failClosed = steps.at(-1)
+    assert.equal(failClosed?.name, 'Fail the screenshot review closed')
+    assert.equal(
+      failClosed.if,
+      "failure() && steps.discover.outputs.gate-sha != '' && steps.gate.outcome != 'success'",
+    )
+    assert.match(z.string().parse(failClosed.with?.['script']), /state: 'error'/)
   })
 })
 
@@ -714,6 +862,36 @@ describe('parent screenshot evidence comment', () => {
       assert.doesNotMatch(body, /\| Screenshot \||<img|cherry-pick|compare\//, JSON.stringify(env))
       assert.match(body, /download the artifact and commit the intended PNGs/)
     }
+  })
+
+  it('asks for a label decision in a replaceable block while the review is pending', async () => {
+    const body = (await publish({ REVIEW_PENDING: 'true' })).bodies[0] ?? ''
+    const start = body.indexOf('<!-- copse-screenshot-review-state -->')
+    const end = body.indexOf('<!-- /copse-screenshot-review-state -->')
+    assert.ok(start > body.indexOf('### Screenshot evidence') && end > start, body)
+    const block = body.slice(start, end)
+    assert.match(block, /`Screenshot review` check blocks merging/)
+    assert.match(block, /`accept-screenshots` commits every candidate/)
+    assert.match(block, /`decline-screenshots` passes the check and commits nothing/)
+    assert.match(block, /Any push starts a new review/)
+    assert.ok(end < body.indexOf(COMPARE_URL), 'the decision request leads the comment')
+  })
+
+  it('offers accept only when there is a compare commit to fast-forward to', async () => {
+    for (const env of [{ COMPARE_PUSHED: '' }, { COMPARE_COMMIT: '' }]) {
+      const body = (await publish({ REVIEW_PENDING: 'true', ...env })).bodies[0] ?? ''
+      assert.match(body, /`decline-screenshots` passes the check/)
+      assert.doesNotMatch(body, /accept-screenshots/, JSON.stringify(env))
+    }
+  })
+
+  it('shows a recorded decision instead of asking again, without markup from the status', async () => {
+    const body =
+      (await publish({ REVIEW_DECISION: 'Declined by @<b>x</b>`; no candidate committed' }))
+        .bodies[0] ?? ''
+    assert.match(body, /\*\*Reviewed:\*\* Declined by @bx\/b; no candidate committed\./)
+    assert.doesNotMatch(body, /Review required|accept-screenshots/)
+    assert.doesNotMatch((await publish()).bodies[0] ?? '', /copse-screenshot-review-state/)
   })
 
   it('passes candidate names to the comment through env, never the script text', () => {
