@@ -30,8 +30,24 @@ Assistant labels; independent human review pending. This is not an authorization
 | decider-4b v2 | dev     | explicit (dev-selected) |         100/100 |      52 |            42 |              6 |             not computed | dev-fitted 0.09 not adopted |
 | decider-4b v2 | holdout | original                |         100/100 |      80 |            18 |              2 |             not computed |                 not adopted |
 | decider-4b v2 | holdout | explicit (dev-selected) |         100/100 |      87 |            13 |              0 |             not computed |                 not adopted |
+| winnow-12b    | dev     | original                |         100/100 |      62 |            31 |              7 |             not computed |            see combinations |
+| winnow-12b    | dev     | explicit (dev-selected) |         100/100 |      87 |             0 |             13 |             not computed |            see combinations |
+| winnow-12b    | holdout | original                |         100/100 |      94 |             4 |              2 |             not computed |            see combinations |
+| winnow-12b    | holdout | explicit (dev-selected) |         100/100 |      65 |             0 |             35 |             not computed |            see combinations |
+| reflex-4b     | dev     | original                |         100/100 |      47 |            51 |              2 |             not computed |            see combinations |
+| reflex-4b     | dev     | explicit (dev-selected) |         100/100 |      64 |             0 |             36 |             not computed |            see combinations |
+| reflex-4b     | holdout | original                |         100/100 |      74 |            25 |              1 |             not computed |            see combinations |
+| reflex-4b     | holdout | explicit (dev-selected) |         100/100 |      30 |             0 |             70 |             not computed |            see combinations |
+| kev-4b        | dev     | original                |         100/100 |      57 |            35 |              8 |             not computed |            see combinations |
+| kev-4b        | dev     | explicit (dev-selected) |         100/100 |      61 |            31 |              8 |             not computed |            see combinations |
+| kev-4b        | holdout | original                |         100/100 |      79 |            15 |              6 |             not computed |            see combinations |
+| kev-4b        | holdout | explicit (dev-selected) |         100/100 |      81 |            11 |              8 |             not computed |            see combinations |
+| metask-jev-4b | dev     | original                |         100/100 |      48 |            51 |              1 |             not computed |            see combinations |
+| metask-jev-4b | dev     | explicit (dev-selected) |         100/100 |      53 |            45 |              2 |             not computed |            see combinations |
+| metask-jev-4b | holdout | original                |         100/100 |      76 |            24 |              0 |             not computed |            see combinations |
+| metask-jev-4b | holdout | explicit (dev-selected) |         100/100 |      86 |            13 |              1 |             not computed |            see combinations |
 
-decider-4b v2 (2026-09-25) ran through `eval:classifier`; see [its run notes](results/2026-09-25/decider-4b-v2/README.md).
+The 2026-09-25 models ran through `eval:classifier`. Each directory under [`results/2026-09-25/`](results/2026-09-25) has run notes (`README.md`) and combinations with the deterministic check (`combinations.md`).
 
 No probability policy exists for categorical-only models. Missing/context-error outputs are not correct judgments; their planned cases remain in coverage denominators.
 

@@ -36,6 +36,11 @@ function collectSubagentUsage(toolCalls: ToolCall[], totals: SubagentUsageTotals
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent
     if (!session) continue
+    // A container run is not delegated work but the thread's own turn (A13):
+    // its usage is folded into the thread's counter once, when the run settles
+    // (container-run-control.ts), and must stay in the headline. Nested guest
+    // subagents are already inside that run total, so skip the whole tree.
+    if (session.kind === 'container') continue
     if (session.usage) {
       totals.runs += 1
       totals.inputTokens += session.usage.inputTokens

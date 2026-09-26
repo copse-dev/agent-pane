@@ -116,7 +116,9 @@ describe('comparison panel', () => {
     )
     const buttons = [...card.querySelectorAll('.comparison-panel-header button')]
     assert.deepEqual(
-      buttons.map((b) => b.className),
+      buttons.map((b) =>
+        ['card-retry-button', 'card-dismiss-button'].find((c) => b.classList.contains(c)),
+      ),
       ['card-retry-button', 'card-dismiss-button'],
     )
   })

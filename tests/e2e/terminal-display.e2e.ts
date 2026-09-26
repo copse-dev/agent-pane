@@ -1,6 +1,12 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedStableWorkspace } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import {
+  COPSE_TINT_COLOR,
+  applyAppearanceViaSettings,
+  channelDistance,
+  editorSurfacePaint,
+} from './helpers/appearance.ts'
 const PROJECT_ID = 'e2e-terminal-project'
 
 async function xtermText(): Promise<string> {
@@ -121,4 +127,41 @@ describe('integrated terminal', () => {
 
     await saveAppScreenshot('terminal-echo-hello.png')
   })
+
+  // The xterm canvas takes its colours from a JS theme, not the cascade, so it
+  // used to stay VS Code grey inside a teal pane under Strong + Copse (#3065).
+  // Switching through Settings also proves the open terminal re-themes live.
+  for (const theme of ['dark', 'light'] as const) {
+    it(`paints the terminal from --bg-base under Strong + Copse (${theme})`, async function () {
+      this.timeout(90_000)
+      await applyAppearanceViaSettings({
+        theme,
+        tintColor: COPSE_TINT_COLOR,
+        tintStrength: 'strong',
+      })
+      const viewport = '.terminal-container .xterm-viewport'
+      const scrollable = '.terminal-container .xterm-scrollable-element'
+      await browser.waitUntil(
+        async () => {
+          const paint = await editorSurfacePaint([viewport, scrollable])
+          return (
+            channelDistance(paint.surfaces[viewport] ?? null, paint.token) <= 1 &&
+            channelDistance(paint.surfaces[scrollable] ?? null, paint.token) <= 1
+          )
+        },
+        { timeout: 10_000, timeoutMsg: `expected the ${theme} terminal to match --bg-base` },
+      )
+      const paint = await editorSurfacePaint([viewport])
+      if (theme === 'dark') {
+        // The exact marketing-site surface themes.css pins for this combination.
+        expect(paint.token).toEqual([0, 46, 43])
+      } else {
+        // Light washes the teal into white: no longer the old flat #ffffff.
+        const [red = 0, green = 0] = paint.token
+        expect(paint.token).not.toEqual([255, 255, 255])
+        expect(green).toBeGreaterThan(red)
+      }
+      await saveAppScreenshot(`terminal-copse-strong-${theme}.png`)
+    })
+  }
 })
