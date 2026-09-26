@@ -63,11 +63,12 @@ permissions: {}
 jobs:
   evaluate:
     name: Evaluate base freshness
-    # Only a base change makes an `edited` event relevant.
+    # Only a base change makes an `edited` event relevant, and fork pull requests
+    # are outside this check (the script also drops them from the push fan-out).
     if: >-
       github.event_name != 'pull_request_target' ||
-      github.event.action != 'edited' ||
-      github.event.changes.base != null
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'edited' || github.event.changes.base != null))
     # Job-level so a filtered-out edit never cancels a real evaluation.
     #
     # Collapse a burst of merges into one evaluation of the base: the last push

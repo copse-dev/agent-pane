@@ -97,6 +97,13 @@ export type Candidate = {
   headSha: string
   baseRef: string
   draft: boolean
+  /**
+   * The head lives in another repository (a fork, or a deleted fork whose
+   * `head.repo` is null). Fork pull requests are outside this check: they have
+   * no `CI Passed` and must land through a same-repository branch
+   * (docs/plans/ci-base-freshness.md), so nothing is evaluated or posted for them.
+   */
+  fork: boolean
 }
 
 export type Verdict = {
@@ -181,7 +188,10 @@ function decodeCandidate(value: unknown): Candidate {
   if (typeof number !== 'number') throw new Error('pull request has no number')
   if (typeof headSha !== 'string') throw new Error('pull request has no head sha')
   if (typeof baseRef !== 'string') throw new Error('pull request has no base ref')
-  return { number, headSha, baseRef, draft: field(value, 'draft') === true }
+  const headRepo = field(field(value, 'head'), 'repo')
+  const baseRepo = field(field(value, 'base'), 'repo')
+  const fork = field(headRepo, 'full_name') !== field(baseRepo, 'full_name') || headRepo === null
+  return { number, headSha, baseRef, draft: field(value, 'draft') === true, fork }
 }
 
 export function decodeCandidates(text: string): Candidate[] {
@@ -242,7 +252,8 @@ export function githubApi(repository: string, token: string, fetchImpl: typeof f
 }
 
 /**
- * Open pull requests targeting `baseRef`, newest first, drafts already removed.
+ * Open same-repository pull requests targeting `baseRef`, newest first, drafts
+ * and forks already removed (forks are outside this check; see `Candidate.fork`).
  *
  * Drafts are skipped on the fan-out path because they cannot merge, and their
  * own `ready_for_review` event re-evaluates them the moment they can. That
@@ -261,7 +272,7 @@ export async function listCandidates(api: Api, baseRef: string): Promise<Candida
       `/pulls?state=open&base=${encoded}&per_page=100&page=${String(page)}`,
     )
     const batch = decodeCandidates(body)
-    candidates.push(...batch.filter((candidate) => !candidate.draft))
+    candidates.push(...batch.filter((candidate) => !candidate.draft && !candidate.fork))
     if (batch.length < 100) return candidates
   }
   throw new Error(
@@ -440,6 +451,10 @@ async function main(): Promise<void> {
     outcomes = await evaluate(api, candidates, publishImpl, await baseTip(api, baseRef))
   } else {
     const candidate = decodeCandidateResponse(await api.get(`/pulls/${pullNumber}`))
+    if (candidate.fork) {
+      console.log(`#${String(candidate.number)} is from a fork; ${CHECK_NAME} does not apply`)
+      return
+    }
     outcomes = [await evaluateSettled(api, candidate, publishImpl)]
   }
 

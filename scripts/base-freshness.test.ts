@@ -6,6 +6,7 @@ import {
   CHECK_NAME,
   decideBaseFreshness,
   decodeBehindBy,
+  decodeCandidateResponse,
   decodeCandidates,
   decodeRefSha,
   evaluate,
@@ -23,6 +24,7 @@ const candidate: Candidate = {
   headSha: '0123456789abcdef0123456789abcdef01234567',
   baseRef: 'main',
   draft: false,
+  fork: false,
 }
 
 type StubApi = {
@@ -128,6 +130,19 @@ describe('base freshness decoding', () => {
     assert.throws(() => decodeCandidates('{"message":"Not Found"}'), /not a JSON array/)
   })
 
+  it('marks a pull request whose head lives in another repository as a fork', () => {
+    const pull = (headRepo: unknown): string =>
+      JSON.stringify({
+        number: 1,
+        head: { sha: 'a', repo: headRepo },
+        base: { ref: 'main', repo: { full_name: 'copse-dev/agent-pane' } },
+      })
+    assert.equal(decodeCandidateResponse(pull({ full_name: 'copse-dev/agent-pane' })).fork, false)
+    assert.equal(decodeCandidateResponse(pull({ full_name: 'someone/agent-pane' })).fork, true)
+    // A deleted fork reports `head.repo: null`.
+    assert.equal(decodeCandidateResponse(pull(null)).fork, true)
+  })
+
   it('rejects an entry missing any field the verdict is addressed to', () => {
     // A check run posted against a missing head sha would attach the verdict to
     // nothing, so each field is required rather than defaulted.
@@ -161,6 +176,28 @@ describe('base freshness fan-out', () => {
     assert.deepEqual(
       candidates.map((c) => c.number),
       [1, 3],
+    )
+  })
+
+  it('skips fork pull requests, which this check does not cover', async () => {
+    const pulls = [
+      { number: 1, repo: 'copse-dev/agent-pane' },
+      { number: 2, repo: 'someone/agent-pane' },
+    ]
+    const { api } = stubApi({
+      '/pulls?state=open&base=main&per_page=100&page=1': JSON.stringify(
+        pulls.map((pull) => ({
+          number: pull.number,
+          draft: false,
+          head: { sha: `sha-${String(pull.number)}`, repo: { full_name: pull.repo } },
+          base: { ref: 'main', repo: { full_name: 'copse-dev/agent-pane' } },
+        })),
+      ),
+    })
+    const candidates = await listCandidates(api, 'main')
+    assert.deepEqual(
+      candidates.map((c) => c.number),
+      [1],
     )
   })
 
@@ -210,8 +247,8 @@ describe('base freshness fan-out', () => {
     const outcomes = await evaluate(
       api,
       [
-        { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false },
-        { number: 2, headSha: 'sha-2', baseRef: 'main', draft: false },
+        { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false, fork: false },
+        { number: 2, headSha: 'sha-2', baseRef: 'main', draft: false, fork: false },
       ],
       async (c, verdict) => {
         await api.post('/check-runs', {
@@ -240,8 +277,8 @@ describe('base freshness fan-out', () => {
     const outcomes = await evaluate(
       api,
       [
-        { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false },
-        { number: 2, headSha: 'sha-2', baseRef: 'main', draft: false },
+        { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false, fork: false },
+        { number: 2, headSha: 'sha-2', baseRef: 'main', draft: false, fork: false },
       ],
       async () => {
         await Promise.resolve()
@@ -271,6 +308,7 @@ describe('base freshness fan-out', () => {
         headSha: `sha-${String(number)}`,
         baseRef: 'main',
         draft: false,
+        fork: false,
       })),
       async (c) => {
         if (c.number === 2) throw new Error('503 from check-runs')
@@ -394,6 +432,13 @@ describe('base-freshness.yml workflow invariants', () => {
     for (const type of ['opened', 'synchronize', 'reopened', 'edited', 'ready_for_review']) {
       assert.match(workflow, new RegExp(`types: \\[[^\\]]*\\b${type}\\b`))
     }
+  })
+
+  it('does not evaluate fork pull requests on the pull request path', () => {
+    assert.match(
+      directives,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+    )
   })
 
   it('never checks out or executes pull request code under pull_request_target', () => {
