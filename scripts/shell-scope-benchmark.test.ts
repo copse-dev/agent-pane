@@ -38,6 +38,6 @@ test('shell-scope research snapshot validates its evidence and text-only boundar
     maxBuffer: 1_048_576,
   })
   assert.equal(stderr, '')
-  assert.match(stdout, /(?:#|ℹ) pass 16\b/u)
+  assert.match(stdout, /(?:#|ℹ) pass 17\b/u)
   assert.match(stdout, /(?:#|ℹ) fail 0\b/u)
 })

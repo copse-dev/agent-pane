@@ -15,7 +15,7 @@ import {
 // and the titlebar Changes-count badge painting `--text-on-accent` (a dark
 // grey) onto light's darkened `--accent` instead of the raw `--accent-fill`,
 // which measured 1.24:1. Both controls now declare `--accent-fill` directly
-// (`memories.css` `.memories-btn-primary`, `titlebar.css` `.titlebar-btn-badge`)
+// (`ui.css` `.ui-btn-primary`, `titlebar.css` `.titlebar-btn-badge`)
 // and are pinned at the stylesheet level by
 // `src/renderer/styles/light-contrast.test.ts`. This spec is the top of the
 // pyramid: it proves the *rendered* cascade on the real controls — the real

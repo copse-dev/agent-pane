@@ -37,7 +37,7 @@ describe('MCP tool labels', () => {
     await expect(steps[0]!).toHaveAttribute('data-step-message-id', 'msg-assistant-mcp-single')
     await expect(steps[1]!).toHaveAttribute('data-step-message-id', 'msg-assistant-mcp-group')
     await expect(steps[2]!).toHaveAttribute('data-step-message-id', 'msg-assistant-copse-group')
-    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Create Issue')
+    await expect(steps[0]!.$('.tool-card-header .tool-name')).toHaveText('Create issue')
     await expect(steps[1]!.$('.tool-card-header .tool-name')).toHaveText('github')
     await expect(steps[2]!.$('.tool-card-header .tool-name')).toHaveText('Checked git')
 
@@ -47,7 +47,7 @@ describe('MCP tool labels', () => {
     await single.$('summary.tool-card-header').click()
     await expect(single).toHaveAttribute('open')
     await expect(single.$('.tool-card[data-tool-id="tc-mcp-create"] .tool-name')).toHaveText(
-      'Create Issue',
+      'Create issue',
     )
 
     const transcript = await browser.execute(() => {

@@ -54,7 +54,6 @@ import {
   setPluginToolRuntimeController,
   type PluginToolRuntimeController,
 } from './plugin-tool-controller.ts'
-import { agentPluginMcpServerName } from './agent-plugin-mcp-runtime.ts'
 
 const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
@@ -872,7 +871,7 @@ describe('declaredMcpServers', () => {
     // this list: the server is not running because the plugin is not.
     assert.deepEqual(service.declaredMcpServers(), [
       {
-        name: agentPluginMcpServerName('acme.declarer', 'reviewer'),
+        name: 'reviewer',
         transport: 'stdio',
         pluginId: 'acme.declarer',
         pluginEnabled: false,
@@ -908,7 +907,7 @@ describe('declaredMcpServers', () => {
 
     assert.deepEqual(service.declaredMcpServers(), [
       {
-        name: agentPluginMcpServerName('acme.legacy', 'events'),
+        name: 'events',
         transport: 'http',
         pluginId: 'acme.legacy',
         pluginEnabled: true,

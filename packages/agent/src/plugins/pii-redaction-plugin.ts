@@ -63,7 +63,7 @@ export const piiRedactionPlugin: RegisteredPlugin = definePlugin(
   {
     name: PII_REDACTION_PLUGIN_ID,
     description:
-      'PII redaction — replaces personal data you type (names, emails, phone numbers, SSNs, card numbers) with stable placeholders on-device before your message reaches any model provider; the agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
+      'Replaces personal data you type (names, emails, phone numbers, SSNs, card numbers) with stable placeholders on-device before your message reaches any model provider; the agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [PII_REDACTION_TOOL_NAME] },

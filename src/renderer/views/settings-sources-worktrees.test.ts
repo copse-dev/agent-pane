@@ -304,6 +304,11 @@ describe('settings sources → worktrees list', () => {
     const list = await openWorktrees(stubApi([busy]))
     const badges = [...list.querySelectorAll('.sources-badge')].map((b) => b.textContent)
     assert.deepEqual(badges, ['in use', '3 uncommitted', 'unmerged'])
+    // "In use" names the owner; only the uncommitted/unmerged ones warn.
+    assert.deepEqual(
+      [...list.querySelectorAll('.sources-badge-warning')].map((b) => b.textContent),
+      ['3 uncommitted', 'unmerged'],
+    )
     assert.equal(deleteButton(list).disabled, true)
     assert.equal(
       list.querySelector<HTMLButtonElement>('.sources-worktree-cleanup-btn')?.disabled,

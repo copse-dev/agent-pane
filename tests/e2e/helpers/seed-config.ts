@@ -593,6 +593,8 @@ export function seedEmptyProject(
      * project to the shared checkout; `default` preserves the product default.
      */
     worktreeMode?: 'always' | 'never' | 'default'
+    /** File the seeded project under a sidebar project group (`projectGroups`). */
+    projectGroup?: { id: string; name: string }
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -601,6 +603,7 @@ export function seedEmptyProject(
     path: workspaceRoot,
     name: 'workspace',
   }
+  if (options?.projectGroup) project.groupId = options.projectGroup.id
   if (options?.worktreeMode && options.worktreeMode !== 'default') {
     project.worktreeMode = options.worktreeMode
   }
@@ -610,6 +613,7 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
+  if (options?.projectGroup) seedConfig.projectGroups = [options.projectGroup]
   // Plugin enablement lives in `config.json` under `pluginDisabled` (what the
   // plugin service reads via `storageGet`). Write it explicitly: an explicit
   // `pluginDisabled` wins, otherwise the host defaults with the opted-in
@@ -2642,9 +2646,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '1. Run `claude /login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
-    'Alternatively, set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
-    '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `ANTHROPIC_API_KEY` for Claude in Settings → General → Providers.',
     '',
     '**Technical details**',
     '',
@@ -2664,9 +2666,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '1. Run `cursor-agent login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
-    'Alternatively, set `CURSOR_SESSION_TOKEN` for Cursor in Settings → General → Providers.',
-    '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CURSOR_SESSION_TOKEN` for Cursor in Settings → General → Providers.',
     '',
     '**Technical details**',
     '',
@@ -2685,9 +2685,7 @@ export function seedAcpAuthErrorFixture(workspaceRoot: string): void {
     '1. Run `codex login` in a terminal.',
     '2. Finish signing in, then re-send your message.',
     '',
-    'Alternatively, set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Providers.',
-    '',
-    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself.',
+    '> Copse’s built-in provider credentials are not automatically shared with external agents. Configure credentials for the agent itself, or set `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex in Settings → General → Providers.',
     '',
     '**Technical details**',
     '',

@@ -9,6 +9,8 @@ import { itSkipInCi } from './helpers/ci-gate.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { AA_BODY_TEXT, fillContrast } from './helpers/fill-contrast.ts'
+import { switchTheme } from './helpers/theme.ts'
 
 const SCROLL_PIN_THRESHOLD_PX = 48
 const STREAMING_PROMPT = 'Please write a detailed follow-up about the implementation plan.'
@@ -75,6 +77,55 @@ describe('scroll to bottom', () => {
     await expect(await isScrollToBottomVisible()).toBe(true)
     await expect(await isNearBottom()).toBe(false)
     await saveAppScreenshot('scroll-to-bottom-scrolled-up.png')
+  })
+
+  it('paints scroll-to-bottom as an accent fill with a readable glyph in both themes', async () => {
+    resetUserData()
+    seedScrollToBottomFixture(process.cwd())
+    await browser.reloadSession()
+
+    await $('.messages-list .msg-user').waitForExist({ timeout: 30_000 })
+    for (const theme of ['dark', 'light'] as const) {
+      const current = await browser.execute(() => document.documentElement.dataset['theme'])
+      if (current !== theme) await switchTheme(theme)
+      await scrollMessagesListToTop()
+      await expect(await isScrollToBottomVisible()).toBe(true)
+
+      // White on an 80% --accent measured 2.91:1 in dark. The button is a fill
+      // carrying the label tier now: --accent-fill + --text-on-accent, opaque,
+      // floated on the shared --shadow-md rather than a one-off shadow.
+      const paint = await browser.execute(() => {
+        const btn = document.querySelector('.scroll-to-bottom')
+        if (!(btn instanceof HTMLElement)) return null
+        const probe = document.createElement('div')
+        probe.style.cssText =
+          'position:absolute;visibility:hidden;background:var(--accent-fill);color:var(--text-on-accent);box-shadow:var(--shadow-md)'
+        document.body.append(probe)
+        const expected = getComputedStyle(probe)
+        const actual = getComputedStyle(btn)
+        const result = {
+          fill: actual.backgroundColor === expected.backgroundColor,
+          label: actual.color === expected.color,
+          shadow: actual.boxShadow === expected.boxShadow,
+          opacity: actual.opacity,
+        }
+        probe.remove()
+        return result
+      })
+      await expect(paint).toEqual({ fill: true, label: true, shadow: true, opacity: '1' })
+      const rest = await fillContrast('.scroll-to-bottom')
+      if (!rest) throw new Error('scroll-to-bottom not found')
+      await expect(rest.ratio).toBeGreaterThanOrEqual(AA_BODY_TEXT)
+      await saveAppScreenshot(`scroll-to-bottom-${theme}.png`)
+
+      // The glyph is non-text, so hover holds it to the 3:1 non-text bar: light
+      // darkens --accent-fill-hover, which is the kit's primary hover recipe.
+      await $('.scroll-to-bottom').moveTo()
+      await browser.pause(300)
+      const hovered = await fillContrast('.scroll-to-bottom')
+      if (!hovered) throw new Error('scroll-to-bottom not found')
+      await expect(hovered.ratio).toBeGreaterThanOrEqual(3)
+    }
   })
 
   it('clicking scroll-to-bottom scrolls the view to the bottom', async () => {
