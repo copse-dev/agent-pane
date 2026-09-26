@@ -1,7 +1,9 @@
+import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import type { ThreadReviewReport } from '../../src/shared/types/index.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { measureKitButtonRow } from './helpers/kit-buttons.ts'
 
 // Visual evidence for the persisted error state emitted when a reviewer fails.
 // Service and controller unit tests cover failure propagation and startup recovery.
@@ -87,6 +89,27 @@ describe('review provider failure', () => {
     await expect(card.$('.review-report-clean')).not.toExist()
     await expect(card.$('.card-retry-button')).toBeDisplayed()
     await expect(card.$('.card-dismiss-button')).toBeDisplayed()
+
+    // Retry and × are compact kit buttons, not a bespoke `.card-*-button` stack
+    // (#3065): one row height, the kit radius, and a square icon-only dismiss.
+    const header = await measureKitButtonRow('[data-review-report-card] .review-report-header')
+    assert.ok(header, 'review card header not found')
+    assert.deepEqual(
+      header.buttons.map((button) => button.label),
+      ['Retry', 'Dismiss'],
+    )
+    for (const button of header.buttons) {
+      for (const kit of ['ui-btn', 'ui-btn-secondary', 'ui-btn-compact']) {
+        assert.ok(button.classes.includes(kit), `"${button.label}" must carry ${kit}`)
+      }
+      assert.equal(button.radius, header.kitRadius, `"${button.label}" must use the kit radius`)
+    }
+    const [retry, dismiss] = header.buttons
+    assert.ok(retry && dismiss)
+    assert.equal(retry.height, dismiss.height, 'Retry and × share the compact row height')
+    assert.equal(dismiss.width, dismiss.height, 'the icon-only × is a square hit target')
+
     await saveAppScreenshot('review-provider-failure.png')
+    await saveElementScreenshot('[data-review-report-card]', 'review-card-retry.png')
   })
 })

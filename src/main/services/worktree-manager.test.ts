@@ -16,6 +16,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import { initialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { setGitAvailableForTest } from './tool-availability.ts'
 import {
@@ -25,6 +26,7 @@ import {
 import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
+  isSandboxMountArtifact,
   listProjectWorktrees,
   managedThreadIdForPath,
   parkThreadWorktree,
@@ -34,11 +36,13 @@ import {
   removeRegisteredWorktreeCheckout,
   renameThreadWorktreeBranch,
   restoreRetiredThreadWorktree,
+  retireDeletedThreadWorktree,
   retireThreadWorktree,
   sameWorktreePath,
   ThreadWorktreeDetachedError,
   validateThreadWorktree,
   validateThreadWorktreeRecovery,
+  type DeletedThreadWorktreeResult,
 } from './worktree-manager.ts'
 
 function git(cwd: string, args: string[]): string {
@@ -537,6 +541,70 @@ describe('worktree manager', () => {
     assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
   })
 
+  it('does not seed from the empty mount points another sandboxed command left behind', async () => {
+    const { repo } = await setup()
+    // What a concurrent Linux bwrap command materializes in the shared checkout.
+    await writeFile(join(repo, '.bashrc'), '')
+    await writeFile(join(repo, '.vscode'), '')
+    await mkdir(join(repo, '.claude'))
+    await writeFile(join(repo, '.claude', 'agents'), '')
+    const beforeStatus = git(repo, ['status', '--porcelain=v1', '-z'])
+    assert.notEqual(beforeStatus, '', 'fixture must look dirty to git')
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-mount-points',
+      projectRoot: repo,
+      prompt: 'Start from the clean project',
+      baseBranch: 'main',
+    })
+
+    // Only Linux creates these mount points; elsewhere an empty .bashrc is the
+    // user's file and is seeded like any other untracked work.
+    const linux = process.platform === 'linux'
+    assert.equal(worktree.seededFromDirtyProject, !linux)
+    if (linux) {
+      await assert.rejects(lstat(join(worktree.path, '.bashrc')))
+      await assert.rejects(lstat(join(worktree.path, '.claude')))
+    }
+    assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
+  it('treats empty deny-path entries as mount points only on Linux', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.bashrc'), '')
+    await writeFile(join(repo, '.gitmodules'), '[submodule "x"]\n')
+
+    assert.equal(await isSandboxMountArtifact(repo, '.bashrc', 'linux'), true)
+    assert.equal(await isSandboxMountArtifact(repo, '.bashrc', 'darwin'), false)
+    // Content is always the user's, on every platform.
+    assert.equal(await isSandboxMountArtifact(repo, '.gitmodules', 'linux'), false)
+    // A path outside the deny list is never a mount point.
+    await writeFile(join(repo, 'notes.txt'), '')
+    assert.equal(await isSandboxMountArtifact(repo, 'notes.txt', 'linux'), false)
+  })
+
+  it('still seeds real work stored beside or under a sandbox deny path', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.bashrc'), '')
+    await mkdir(join(repo, '.claude'))
+    await writeFile(join(repo, '.claude', 'settings.json'), '{"model":"local"}\n')
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-real-config',
+      projectRoot: repo,
+      prompt: 'Keep the local settings',
+      baseBranch: 'main',
+    })
+
+    assert.equal(worktree.seededFromDirtyProject, true)
+    assert.equal(
+      await readFile(join(worktree.path, '.claude', 'settings.json'), 'utf-8'),
+      '{"model":"local"}\n',
+    )
+  })
+
   it('refuses to seed dirty content the caller says belongs to another branch', async () => {
     const { repo } = await setup()
     await writeFile(join(repo, 'unstaged.txt'), 'work from another branch\n')
@@ -979,5 +1047,115 @@ describe('worktree manager', () => {
     assert.ok(!paths.includes(safe.path))
     assert.ok(paths.includes(dirty.path))
     assert.ok(paths.includes(ahead.path))
+  })
+
+  it("removes a deleted thread's clean merged checkout and its merged branch", async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-deleted',
+      projectRoot: repo,
+      prompt: 'Merged before deletion',
+      baseBranch: 'main',
+    })
+    await writeFile(join(worktree.path, 'merged.txt'), 'merged\n')
+    git(worktree.path, ['add', '.'])
+    git(worktree.path, ['commit', '-q', '-m', 'merged work'])
+    git(repo, ['merge', '-q', '--no-edit', worktree.branch])
+    assert.notEqual(await readThreadWorktreeRecoveryMetadata(repo, worktree.branch), null)
+
+    assert.deepEqual(
+      await retireDeletedThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-deleted',
+        projectRoot: repo,
+        worktree,
+      }),
+      { status: 'removed', branch: worktree.branch, branchDeleted: true },
+    )
+    assert.ok(!(await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
+    await assert.rejects(lstat(worktree.path), { code: 'ENOENT' })
+    assert.equal(git(repo, ['branch', '--list', worktree.branch]).trim(), '')
+    // Git drops the branch's config section with it, recovery metadata included.
+    assert.equal(await readThreadWorktreeRecoveryMetadata(repo, worktree.branch), null)
+    assert.equal(git(repo, ['log', '-1', '--format=%s']).trim(), 'merged work')
+  })
+
+  it("keeps a deleted thread's dirty, untracked, or unmerged checkout and its branch", async () => {
+    const { repo } = await setup()
+    const allocate = (threadId: string): Promise<ThreadWorktree> =>
+      allocateThreadWorktree({
+        projectId: 'project-1',
+        threadId,
+        projectRoot: repo,
+        prompt: `Retained ${threadId}`,
+        baseBranch: 'main',
+      })
+    const retire = (
+      threadId: string,
+      worktree: ThreadWorktree,
+    ): Promise<DeletedThreadWorktreeResult> =>
+      retireDeletedThreadWorktree({ projectId: 'project-1', threadId, projectRoot: repo, worktree })
+
+    const modified = await allocate('thread-modified')
+    await writeFile(join(modified.path, 'README.md'), 'edited\n')
+    const untracked = await allocate('thread-untracked')
+    await writeFile(join(untracked.path, 'new.txt'), 'untracked\n')
+    const ahead = await allocate('thread-unmerged')
+    await writeFile(join(ahead.path, 'ahead.txt'), 'ahead\n')
+    git(ahead.path, ['add', '.'])
+    git(ahead.path, ['commit', '-q', '-m', 'unmerged work'])
+
+    assert.deepEqual(await retire('thread-modified', modified), {
+      status: 'blocked-dirty',
+      paths: ['README.md'],
+    })
+    assert.deepEqual(await retire('thread-untracked', untracked), {
+      status: 'blocked-dirty',
+      paths: ['new.txt'],
+    })
+    assert.deepEqual(await retire('thread-unmerged', ahead), {
+      status: 'blocked-unmerged',
+      branch: ahead.branch,
+      baseBranch: 'main',
+    })
+
+    const paths = (await listProjectWorktrees(repo)).map((record) => record.path)
+    for (const worktree of [modified, untracked, ahead]) {
+      assert.ok(paths.includes(worktree.path))
+      assert.equal(getInternalWorkspaceRootRegistration(worktree.path), null)
+      assert.equal(git(repo, ['branch', '--list', worktree.branch]).trim().length > 0, true)
+    }
+    assert.equal(await readFile(join(modified.path, 'README.md'), 'utf-8'), 'edited\n')
+    assert.equal(await readFile(join(untracked.path, 'new.txt'), 'utf-8'), 'untracked\n')
+    assert.equal(git(ahead.path, ['log', '-1', '--format=%s']).trim(), 'unmerged work')
+  })
+
+  it("releases a deleted thread's checkout when inspecting it fails", async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-unreadable',
+      projectRoot: repo,
+      prompt: 'Unreadable index',
+      baseBranch: 'main',
+    })
+    // A corrupt index makes `git status` fail after validation has already
+    // granted the checkout internal-root authority.
+    const gitDir = git(worktree.path, ['rev-parse', '--absolute-git-dir']).trim()
+    await writeFile(join(gitDir, 'index'), 'not an index')
+
+    await assert.rejects(
+      retireDeletedThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-unreadable',
+        projectRoot: repo,
+        worktree,
+      }),
+      /Cannot inspect thread worktree/,
+    )
+    assert.equal(getInternalWorkspaceRootRegistration(worktree.path), null)
+    assert.ok((await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
+    assert.notEqual(git(repo, ['branch', '--list', worktree.branch]).trim(), '')
   })
 })

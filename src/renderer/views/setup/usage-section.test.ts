@@ -59,6 +59,13 @@ describe('renderPlanProvider sign-in button', () => {
     const btn = host.querySelector<HTMLButtonElement>('.usage-plan-signin-btn')
     assert.ok(btn, 'expected a sign-in button')
     assert.match(btn.textContent, /Sign in to Claude/)
+    // The command renders as inline code, never with its backtick delimiters —
+    // in the hint and in the button's plain-text tooltip alike.
+    const hint = host.querySelector('.usage-plan-status')
+    assert.ok(hint)
+    assert.equal(hint.querySelector('code')?.textContent, 'claude /login')
+    assert.doesNotMatch(hint.textContent, /`/)
+    assert.doesNotMatch(btn.title, /`/)
     btn.click()
     assert.equal(clicked, 1)
   })

@@ -477,7 +477,12 @@ the registry still fails contained and offers to run outside.
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
-  on Windows and after init failure.
+  on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
+  reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the
+  read-only fs-server overlay: the same read confinement with no write rules. On Linux, a writable
+  overlay makes bubblewrap create empty host placeholders for missing mandatory write-deny paths
+  (`.bashrc`, `.gitconfig`, `.vscode`, ...), and ASRT removes them only once no sandbox is active,
+  so `git status` and the Changes pane would list them as untracked files.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.

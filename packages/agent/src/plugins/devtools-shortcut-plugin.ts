@@ -54,7 +54,7 @@ export const devtoolsShortcutPlugin: RegisteredPlugin = definePlugin(
   {
     name: DEVTOOLS_SHORTCUT_PLUGIN_ID,
     description:
-      'DevTools shortcut — register the Ctrl+Shift+I keyboard shortcut that toggles the Electron DevTools window, for debugging the app itself.',
+      'Registers the Ctrl+Shift+I keyboard shortcut that toggles the Electron DevTools window, for debugging the app itself.',
     trust: 'first-party',
     stability: 'experimental',
     capabilities: [DEVTOOLS_SHORTCUT_CAPABILITY_DECL],
