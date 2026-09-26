@@ -410,10 +410,23 @@ export async function runWorktreeGit(
       /^branch\..+\.copse-worktree-recovery$/.test(args[2] ?? '') &&
       args.length === 4) ||
     (args[0] === 'branch' && (args[1] === '-d' || args[1] === '-m') && args.length === 3)
+  // Every read-only subcommand must be listed. The writable manager overlay
+  // grants the checkout itself, so on Linux bubblewrap materializes each missing
+  // mandatory write-deny path (.bashrc, .gitconfig, .vscode, ...) as an empty
+  // file in the user's checkout while the command runs, and ASRT removes them
+  // only once no sandbox is active. The first send in a new project runs `show`
+  // during allocation and the title rename runs `for-each-ref`.
   const readOnly =
-    ['check-ignore', 'check-ref-format', 'merge-base', 'rev-parse', 'show-ref', 'status'].includes(
-      args[0] ?? '',
-    ) ||
+    [
+      'check-ignore',
+      'check-ref-format',
+      'for-each-ref',
+      'merge-base',
+      'rev-parse',
+      'show',
+      'show-ref',
+      'status',
+    ].includes(args[0] ?? '') ||
     (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin' && args.length === 3) ||
     (args[0] === 'config' && args[1] === '--local' && args[2] === '--get' && args.length === 4) ||
     (args[0] === 'symbolic-ref' &&

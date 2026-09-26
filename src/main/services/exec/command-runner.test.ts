@@ -1,8 +1,10 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 import { isCommandTimeoutError, runCommand } from './command-runner.ts'
 import {
   COMMAND_OUTPUT_MAX_BYTES,
@@ -215,5 +217,42 @@ describe('runCommand timeout', () => {
     )
     assert.equal(code, 0)
     assert.equal(stdout, 'ok')
+  })
+})
+
+// ASRT defers deleting Linux bubblewrap's write-deny mount points (.bashrc,
+// .gitconfig, .vscode, ...) until every wrapped command has released its lease.
+// A timed-out command that never released would keep every later command's
+// placeholders in the user's checkout until the app quits.
+describe('runCommand sandbox lease', () => {
+  it('releases the sandbox lease once when a sandboxed command times out', async () => {
+    let released = 0
+    let exited!: () => void
+    const processExited = new Promise<void>((resolve) => {
+      exited = resolve
+    })
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {
+      released += 1
+      exited()
+    })
+    mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
+      Promise.resolve({
+        argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+        env: { ...process.env },
+      }),
+    )
+    setProjectSandboxEnabled(true)
+    try {
+      await assert.rejects(
+        runCommand(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { timeout_ms: 150 }),
+        (error: unknown) => isCommandTimeoutError(error),
+      )
+      await Promise.race([processExited, new Promise((resolve) => setTimeout(resolve, 10_000))])
+      assert.equal(released, 1)
+    } finally {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+    }
   })
 })

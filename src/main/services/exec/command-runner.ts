@@ -193,12 +193,23 @@ export function runCommand(
             }, timeout_ms)
           : undefined
 
+      // The ASRT lease must end exactly once, when the child is gone. A timeout
+      // settles the promise early, so the `close` that follows the kill still
+      // releases it. Otherwise ASRT keeps deferring the Linux write-deny mount
+      // point cleanup (.bashrc, .gitconfig, ...) for every later command.
+      let sandboxReleased = false
+      const releaseSandbox = (): void => {
+        if (sandboxReleased || opts.unsandboxed) return
+        sandboxReleased = true
+        afterSandboxedCommand()
+      }
+
       const finish = (fn: () => void): void => {
         if (timer) clearTimeout(timer)
         cancelKill?.()
         opts.signal?.removeEventListener('abort', onAbort)
         releaseGitSsh?.()
-        if (!opts.unsandboxed) afterSandboxedCommand()
+        releaseSandbox()
         fn()
       }
 
@@ -228,7 +239,10 @@ export function runCommand(
       })
 
       proc.on('close', (code) => {
-        if (settled) return
+        if (settled) {
+          releaseSandbox()
+          return
+        }
         settled = true
         finish(() => {
           if (!stdoutCapped) stdout = appendFlatCapped(stdout, stdoutDecoder.end(), stdoutMaxBytes)
@@ -244,7 +258,10 @@ export function runCommand(
       })
 
       proc.on('error', (err) => {
-        if (settled) return
+        if (settled) {
+          releaseSandbox()
+          return
+        }
         settled = true
         finish(() => {
           reject(err instanceof Error ? err : new Error(String(err)))
