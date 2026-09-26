@@ -3,8 +3,9 @@
 //   node benchmarks/escalation-review/regression/run.mjs [--check]
 //
 // Every case runs as if the workspace were /Users/dev/project and the home
-// directory /Users/dev, with script files served from the case's `files` map and
-// nothing read from this machine. `enforced` cases must hold; `known-gap` cases
+// directory /Users/dev, with files (scripts, binaries, node_modules/.bin entries)
+// served from the case's `files` map, trusted SSH hosts from `trustedSshHosts`,
+// and nothing read from this machine. `enforced` cases must hold; `known-gap` cases
 // record behaviour a planned fix changes. With --check the exit status is non-zero
 // when an enforced case fails or a known gap starts passing (flip it to enforced).
 import { readFileSync } from 'node:fs'
@@ -33,6 +34,14 @@ export function mismatches(testCase, result) {
         `harm ${result.harm} (${result.harmReasons.join('; ')}), expected ${allowed.join(' or ')}`,
       )
   }
+  if (Object.hasOwn(expect, 'scope') && result.scope !== expect.scope) {
+    out.push(`scope ${result.scope} (${result.scopeReasons.join('; ')}), expected ${expect.scope}`)
+  }
+  if (Object.hasOwn(expect, 'readOutside') && result.readOutside !== expect.readOutside) {
+    out.push(
+      `outside-read proof ${result.readOutside ? 'eligible' : 'ineligible'}, expected ${expect.readOutside ? 'eligible' : 'ineligible'}`,
+    )
+  }
   if (Object.hasOwn(expect, 'read') && result.autoApproval.read !== expect.read) {
     out.push(
       `read tier ${result.autoApproval.read ?? 'prompt'} (${result.autoApprovalReasons.join('; ')}), expected ${expect.read ?? 'prompt'}`,
@@ -51,7 +60,15 @@ export async function run(cases = loadCases()) {
       const files = testCase.files ?? {}
       const readScript = (path) => (Object.hasOwn(files, path) ? (files[path].text ?? null) : null)
       const workspace = Object.hasOwn(testCase, 'workspace') ? testCase.workspace : WORKSPACE
-      const result = analyze(guard, testCase.command, workspace, { homeDir: HOME, readScript })
+      const isCompiledProgram = (path) => Object.hasOwn(files, path) && files[path].binary === true
+      const pathExists = (path) => Object.hasOwn(files, path)
+      const result = analyze(guard, testCase.command, workspace, {
+        homeDir: HOME,
+        readScript,
+        isCompiledProgram,
+        pathExists,
+        trustedSshHosts: testCase.trustedSshHosts ?? [],
+      })
       const problems = mismatches(testCase, result)
       const outcome =
         testCase.status === 'enforced'
