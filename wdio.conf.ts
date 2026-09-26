@@ -25,6 +25,17 @@ import {
   E2E_DEVICE_SCALE_FACTOR,
 } from './tests/e2e/helpers/screenshot.ts'
 
+/**
+ * A fresh session can start with the pointer over the transcript: references
+ * such as markdown-text-wrap-pretty caught a message's hover-only Copy button
+ * without a single click. Start every session, and every reloadSession, with
+ * WebDriver's pointer in the window's top-left corner; a spec that wants hover
+ * moves the pointer itself.
+ */
+async function parkSessionPointer(): Promise<void> {
+  await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+}
+
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
@@ -141,6 +152,10 @@ export const config: Options.Testrunner = {
     // a control clear at click time; see helpers/settings-action-bar-click.ts.
     installSettingsActionBarClickSafety(browser)
     await assertE2eDeviceScaleFactor()
+    await parkSessionPointer()
+  },
+  async onReload() {
+    await parkSessionPointer()
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
