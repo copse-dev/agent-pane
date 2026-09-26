@@ -805,7 +805,7 @@ describe('Guarded YOLO shell harm gate — shapes the public test set found', ()
     for (const command of [
       'find /system -type f -exec rm {} +',
       "find /system -name '*.txt' | xargs rm",
-      'find ../other -name "*.o" -exec rm -f {} \;',
+      'find ../other -name "*.o" -exec rm -f {} \\;',
     ]) {
       assert.equal(action(command), 'prompt', command)
     }
