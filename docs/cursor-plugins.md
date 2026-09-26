@@ -97,6 +97,16 @@ one:
    layout; it was added after a Codex-backed thread could not find the skill it
    had been asked to run (reconcile-worktrees post-mortem, 2026-09-09).
 2. **Bundled Cursor plugin skills** shipped with Copse (`bundled`, trusted).
+   Each bundled plugin has its own switch in Settings → Customise → Plugins,
+   saved per plugin in `bundledSkillPluginOverrides`; the Agent → Skills
+   checkbox (`bundledCursorSkillsEnabled`) still turns all of them off at once.
+   Most default on. `pstack` defaults off: its workflows call Cursor's `Task`
+   subagents and model slugs, and its autonomy guidance conflicts with Copse's
+   approval model (`OFF_BY_DEFAULT` in `bundled-cursor-skills.ts`).
+   `pnpm sync:cursor-skills` vendors each skill's `SKILL.md` plus the files
+   under its directory that its text names (followed transitively), except
+   files inside a JS/TS project within the skill. `SOURCE.json` lists every
+   reference still missing, and the build fails if that list drifts.
 3. **Project** — the same four container directories under the workspace,
    including monorepo packages, but never inside a nested repository such as a
    `.claude/worktrees/*` checkout (`project`, untrusted). Within the project
@@ -105,6 +115,15 @@ one:
    `skillPluginPaths` (`plugin` / `plugin-path`, untrusted).
 5. **Built-in skills** shipped in `assets/skills` (`bundled`); last, so any
    user or project skill of the same name overrides a first-party one.
+
+### Skill names in the catalog and `read_skill`
+
+Each `<agent_skill>` catalog entry leads with `name=` — the argument
+`read_skill` takes — and, for a plugin skill, `plugin=`. `read_skill` also
+accepts `plugin/skill` or `plugin:skill`, and a bare plugin name returns the
+skills that plugin offers the agent (or, for a switched-off bundled plugin,
+where the user can turn it on) instead of "unknown skill". Before the name was
+in the catalog, models derived it from `fullPath` and asked for `pstack`.
 
 ### Frontmatter
 

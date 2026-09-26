@@ -78,7 +78,7 @@ import {
   parseTrustedCommands,
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
-import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
+import { isRecord, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import {
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
@@ -3790,12 +3790,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // installed; Cursor owns its own cache, so those rows are read-only. A
       // Cursor failure must not blank the registry rows beside it, hence the
       // catch rather than a bare Promise.all.
-      const [result, cursorPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api.plugins.list(),
         api.cursorPlugins.list().catch(() => []),
+        api.bundledSkillPlugins.list().catch(() => []),
       ])
       listEl.innerHTML = ''
-      if (result.plugins.length === 0 && cursorPlugins.length === 0) {
+      if (
+        result.plugins.length === 0 &&
+        cursorPlugins.length === 0 &&
+        bundledPlugins.length === 0
+      ) {
         const empty = document.createElement('span')
         empty.className = 'plugins-empty'
         empty.textContent = 'No plugins installed.'
@@ -3821,6 +3826,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             id: plugin.name,
             enabled: true,
             render: () => makeCursorPluginRow(plugin),
+          })),
+          ...bundledPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: plugin.enabled && !plugin.suppressed,
+            render: () => makeBundledSkillPluginRow(plugin),
           })),
         ].sort((a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id))
 
@@ -3968,6 +3978,135 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     path.className = 'plugin-source-path'
     path.textContent = plugin.root
     row.append(path)
+
+    return row
+  }
+
+  /**
+   * A Cursor plugin whose skills ship inside Copse, with a switch that is ours.
+   *
+   * Same row shape as a Cursor-installed plugin — the Cursor mark, because
+   * Cursor wrote it — but Copse vendors it, so the switch is live. The choice
+   * is saved per plugin, so a default can change in a later release without
+   * overriding what the user picked. A plugin that ships switched off says why
+   * on the face of the row, next to the switch it explains.
+   */
+  function makeBundledSkillPluginRow(
+    plugin: import('@shared/types/cursor-plugins.ts').BundledSkillPluginSummary,
+  ): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'plugin-row'
+    row.dataset['pluginId'] = plugin.name
+    row.dataset['pluginOrigin'] = 'bundled'
+    row.dataset['enabled'] = String(plugin.enabled && !plugin.suppressed)
+
+    const header = document.createElement('div')
+    header.className = 'plugin-row-header'
+
+    const icon = document.createElement('span')
+    icon.className = 'plugin-icon plugin-icon-cursor'
+    icon.setAttribute('aria-hidden', 'true')
+    const mark = document.createElement('img')
+    mark.src = './cursor-mark.svg'
+    mark.alt = ''
+    icon.append(mark)
+    header.append(icon)
+
+    const title = document.createElement('div')
+    title.className = 'plugin-row-title'
+    const originBadge = document.createElement('span')
+    originBadge.className = 'plugin-badge plugin-badge-cursor'
+    originBadge.textContent = 'Cursor · Bundled'
+    originBadge.title = 'Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.'
+    title.append(originBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'plugin-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'plugin-name'
+    nameEl.textContent = plugin.name
+    nameLine.append(nameEl)
+    if (plugin.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'plugin-version'
+      versionEl.textContent = plugin.version
+      nameLine.append(versionEl)
+    }
+    title.append(nameLine)
+
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'plugin-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'plugin-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    const toggleLabel = document.createElement('label')
+    toggleLabel.className = 'toggle-switch plugin-toggle'
+    toggleLabel.title = plugin.suppressed
+      ? 'All bundled skills are off — turn them on under Agent → Skills.'
+      : plugin.enabled
+        ? 'Turn off this plugin'
+        : 'Turn on this plugin'
+    const toggle = document.createElement('input')
+    toggle.type = 'checkbox'
+    toggle.checked = plugin.enabled
+    toggle.disabled = plugin.suppressed
+    toggle.className = 'plugin-toggle-input'
+    toggle.setAttribute('aria-label', `${plugin.name} plugin enabled`)
+    const track = document.createElement('span')
+    track.className = 'toggle-switch-track'
+    track.setAttribute('aria-hidden', 'true')
+    toggle.addEventListener('change', () => {
+      toggle.disabled = true
+      void (async (): Promise<void> => {
+        const stored = await api.settings.get('bundledSkillPluginOverrides')
+        await api.settings.set('bundledSkillPluginOverrides', {
+          ...(isRecord(stored) ? stored : {}),
+          [plugin.name]: toggle.checked,
+        })
+        await refreshPlugins()
+        // The skill catalog, /-picker and context meter all read the skills
+        // registry, which main has just reloaded; wake the listeners that show them.
+        store.emit('settings_changed')
+      })()
+        .catch(() => {
+          toggle.checked = !toggle.checked
+        })
+        .finally(() => {
+          toggle.disabled = plugin.suppressed
+        })
+    })
+    toggleLabel.append(toggle, track)
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
+    row.append(header)
+
+    if (plugin.description) {
+      const desc = document.createElement('div')
+      desc.className = 'plugin-row-desc'
+      desc.textContent = plugin.description
+      row.append(desc)
+    }
+
+    if (plugin.offByDefaultReason) {
+      const note = document.createElement('p')
+      note.className = 'field-hint plugin-default-off-note'
+      note.textContent = `Off by default. ${plugin.offByDefaultReason}`
+      row.append(note)
+    }
+
+    const chips = document.createElement('div')
+    chips.className = 'plugin-chips'
+    const chip = document.createElement('span')
+    chip.className = 'plugin-chip'
+    chip.textContent = `${String(plugin.skillCount)} ${plugin.skillCount === 1 ? 'skill' : 'skills'}`
+    chips.append(chip)
+    row.append(chips)
 
     return row
   }

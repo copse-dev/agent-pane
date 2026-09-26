@@ -71,8 +71,13 @@ export function buildSkillsCatalogBlock(availableToolNames?: readonly string[]):
   const entries = skills
     .map((skill) => {
       const trust = isTrustedSource(skill.source) ? 'trusted' : 'untrusted'
+      // Lead with the name read_skill takes. Without it the model derives a
+      // name from fullPath, and a plugin skill's path
+      // (`.../plugins/pstack/skills/how/SKILL.md`) reads as if `pstack` were it.
+      const plugin = skill.plugin ? ` plugin="${escapeXml(skill.plugin)}"` : ''
       return (
-        `<agent_skill fullPath="${escapeXml(skill.skillPath)}" source="${escapeXml(skill.source)}" trust="${trust}">` +
+        `<agent_skill name="${escapeXml(skill.name)}"${plugin} fullPath="${escapeXml(skill.skillPath)}" ` +
+        `source="${escapeXml(skill.source)}" trust="${trust}">` +
         `${escapeXml(skill.description)}</agent_skill>`
       )
     })
@@ -86,8 +91,9 @@ export function buildSkillsCatalogBlock(availableToolNames?: readonly string[]):
     `workspace or plugin rather than installed by the user). Skills are invoked manually via ` +
     `/skill-name in the input. When a skill is invoked, its full instructions are injected below ` +
     `and its directory becomes readable by run_shell for the rest of the thread. Until then, ` +
-    `use read_skill (not read_file or run_shell) with skill name + optional relative path for ` +
-    `additional files under a skill directory.`
+    `use read_skill (not read_file or run_shell) with the entry's name + optional relative path ` +
+    `for additional files under a skill directory. A plugin groups several skills; its name is ` +
+    `not a skill name.`
   )
 }
 

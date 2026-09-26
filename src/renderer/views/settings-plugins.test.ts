@@ -31,6 +31,7 @@ function stubApi(initial: PluginsListResult, spy: StubApiSpy): ApiClient {
     'skills.list': () => Promise.resolve([]),
     'agents.list': () => Promise.resolve({ agents: [], skipped: [], shadowed: [] }),
     'cursorPlugins.list': () => Promise.resolve([]),
+    'bundledSkillPlugins.list': () => Promise.resolve([]),
     'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
     'plugins.list': () => Promise.resolve(current),
     'plugins.setEnabled': (id: string, enabled: boolean) => {

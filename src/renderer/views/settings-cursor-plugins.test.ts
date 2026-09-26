@@ -14,7 +14,10 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
+import type {
+  BundledSkillPluginSummary,
+  CursorPluginSummary,
+} from '@shared/types/cursor-plugins.ts'
 import type { PluginSummary, PluginsListResult } from '@shared/types/plugins.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
@@ -55,7 +58,12 @@ const CURSOR_PLUGIN: CursorPluginSummary = {
     '/Users/dev/.cursor/plugins/cache/cursor-public/huggingface-skills/d7223848/.mcp.json',
 }
 
-function stubApi(plugins: PluginsListResult, cursorPlugins: CursorPluginSummary[]): ApiClient {
+function stubApi(
+  plugins: PluginsListResult,
+  cursorPlugins: CursorPluginSummary[],
+  bundledPlugins: BundledSkillPluginSummary[] = [],
+  overrides: Readonly<Record<string, (...args: never[]) => unknown>> = {},
+): ApiClient {
   return createPendingApi({
     'instructions.list': () => Promise.resolve([]),
     'cursorRules.list': () => Promise.resolve([]),
@@ -64,15 +72,18 @@ function stubApi(plugins: PluginsListResult, cursorPlugins: CursorPluginSummary[
     'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
     'plugins.list': () => Promise.resolve(plugins),
     'cursorPlugins.list': () => Promise.resolve(cursorPlugins),
+    'bundledSkillPlugins.list': () => Promise.resolve(bundledPlugins),
+    ...overrides,
   })
 }
 
 async function openCustomise(
   plugins: PluginsListResult,
   cursorPlugins: CursorPluginSummary[],
+  api: ApiClient = stubApi(plugins, cursorPlugins),
 ): Promise<HTMLElement> {
   document.body.innerHTML = ''
-  mountSettingsDialog(createStore(), stubApi(plugins, cursorPlugins))
+  mountSettingsDialog(createStore(), api)
   const btn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="customise"]',
   )
@@ -177,5 +188,104 @@ describe('settings → plugin settings disclosure', () => {
     const chevron = list.querySelector('.plugin-settings-chevron')
     assert.ok(chevron)
     assert.equal(chevron.classList.contains('ui-icon'), true)
+  })
+})
+
+const PSTACK: BundledSkillPluginSummary = {
+  name: 'pstack',
+  description: 'Rigorous agent workflows.',
+  version: '0.9.2',
+  skillCount: 36,
+  enabled: false,
+  defaultEnabled: false,
+  offByDefaultReason: 'Written for Cursor.',
+  suppressed: false,
+}
+
+const TEAM_KIT: BundledSkillPluginSummary = {
+  name: 'cursor-team-kit',
+  skillCount: 1,
+  enabled: true,
+  defaultEnabled: true,
+  suppressed: false,
+}
+
+describe('settings → bundled Cursor plugins in the plugin list', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function bundledRow(list: HTMLElement, name: string): HTMLElement {
+    const row = list.querySelector<HTMLElement>(
+      `.plugin-row[data-plugin-origin="bundled"][data-plugin-id="${name}"]`,
+    )
+    assert.ok(row)
+    return row
+  }
+
+  it('gives each bundled plugin a live switch and groups it by its own state', async () => {
+    const list = await openCustomise(
+      { plugins: [] },
+      [],
+      stubApi({ plugins: [] }, [], [PSTACK, TEAM_KIT]),
+    )
+    const ids = [...list.querySelectorAll<HTMLElement>('.plugin-row')].map(
+      (row) => row.dataset['pluginId'],
+    )
+    assert.deepEqual(ids, ['cursor-team-kit', 'pstack'], 'Active first, then Inactive')
+
+    const pstack = bundledRow(list, 'pstack')
+    const toggle = pstack.querySelector<HTMLInputElement>('.plugin-toggle-input')
+    assert.ok(toggle)
+    assert.equal(toggle.checked, false)
+    assert.equal(toggle.disabled, false, 'Copse vendors it, so the switch is ours')
+    assert.equal(pstack.querySelector('.plugin-badge-cursor')?.textContent, 'Cursor · Bundled')
+    assert.equal(
+      pstack.querySelector('.plugin-default-off-note')?.textContent,
+      'Off by default. Written for Cursor.',
+    )
+    assert.deepEqual(
+      [...pstack.querySelectorAll('.plugin-chip')].map((chip) => chip.textContent),
+      ['36 skills'],
+    )
+    assert.equal(
+      bundledRow(list, 'cursor-team-kit').querySelector('.plugin-default-off-note'),
+      null,
+    )
+  })
+
+  it("saves the switch into the per-plugin choices, keeping the others'", async () => {
+    const writes: unknown[] = []
+    const api = stubApi({ plugins: [] }, [], [PSTACK], {
+      'settings.get': (key: string) =>
+        Promise.resolve(
+          key === 'bundledSkillPluginOverrides' ? { 'cursor-team-kit': false } : null,
+        ),
+      'settings.set': (key: string, value: unknown) => {
+        if (key === 'bundledSkillPluginOverrides') writes.push(value)
+        return Promise.resolve()
+      },
+    })
+    const list = await openCustomise({ plugins: [] }, [], api)
+    const toggle = bundledRow(list, 'pstack').querySelector<HTMLInputElement>(
+      '.plugin-toggle-input',
+    )
+    assert.ok(toggle)
+    toggle.checked = true
+    toggle.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(writes, [{ 'cursor-team-kit': false, pstack: true }])
+  })
+
+  it('locks every switch while all bundled skills are off, and says where to change it', async () => {
+    const list = await openCustomise(
+      { plugins: [] },
+      [],
+      stubApi({ plugins: [] }, [], [{ ...TEAM_KIT, suppressed: true }]),
+    )
+    const row = bundledRow(list, 'cursor-team-kit')
+    assert.equal(row.dataset['enabled'], 'false', 'contributes nothing, so it is not Active')
+    assert.equal(row.querySelector<HTMLInputElement>('.plugin-toggle-input')?.disabled, true)
+    assert.match(row.querySelector('.plugin-toggle')?.getAttribute('title') ?? '', /Agent → Skills/)
   })
 })

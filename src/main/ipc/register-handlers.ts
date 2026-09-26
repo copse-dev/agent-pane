@@ -206,6 +206,7 @@ import {
   waitForAgentsRegistryRefresh,
 } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
+import { listBundledSkillPlugins } from '../services/skills/bundled-cursor-skills.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import {
@@ -439,6 +440,7 @@ const zAutomationScheduleInput = z.object({
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
   'bundledCursorSkillsEnabled',
+  'bundledSkillPluginOverrides',
   'skillPluginPaths',
 ])
 
@@ -2006,6 +2008,7 @@ export function registerAllHandlers(
     return listAgents()
   })
   ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
+  ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }

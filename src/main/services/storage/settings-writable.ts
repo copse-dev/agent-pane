@@ -273,6 +273,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
    */
   claudePlanMonthlyFeeUsd: z.number().min(1).max(10_000).nullable(),
   bundledCursorSkillsEnabled: z.boolean(),
+  // Per bundled Cursor plugin: the user's switch in Settings → Plugins, keyed
+  // by plugin name. An absent name takes the plugin's default (most on; see
+  // `OFF_BY_DEFAULT` in bundled-cursor-skills.ts).
+  bundledSkillPluginOverrides: z.record(z.string().min(1).max(128), z.boolean()),
   skillsEnabled: z.boolean(),
   // Skill safety toggles (default on). Warn up front when an invoked skill
   // references external links; reinforce sandbox/approval confinement for skills.

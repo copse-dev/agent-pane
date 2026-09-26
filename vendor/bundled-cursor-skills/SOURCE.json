@@ -3,6 +3,14 @@
   "commit": "e46364b8be46000b7df0f260550cd712afbb8d36",
   "pluginCount": 13,
   "skillCount": 71,
-  "contentSha256": "155c001d169094ab0504d5db9bfae3f87b209ea8e40cb775dcda3f16ae30b138",
-  "slim": true
+  "contentSha256": "eb3b41eb449a59a1f7f2fb7ee058968b8156010a72cb31c273c5c039f2b38bf7",
+  "skillFiles": "referenced",
+  "danglingReferences": {
+    "orchestrate/orchestrate": [
+      "scripts/cli.ts"
+    ],
+    "pstack/show-me-your-work": [
+      "scripts/snapshot.sh"
+    ]
+  }
 }
