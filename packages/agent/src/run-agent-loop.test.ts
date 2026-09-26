@@ -121,6 +121,31 @@ describe('runAgentLoop', () => {
     assert.ok(chunks.some((c) => c.type === 'tool_result'))
   })
 
+  it('streams appended-reminder lengths to the transcript but not to the model', async () => {
+    const chunks: AgentStreamChunk[] = []
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    const block = '<system-reminder>\nnote\n</system-reminder>'
+    await runAgentLoop({
+      provider: mockProvider([
+        [{ type: 'tool_call', toolCall: { id: '1', name: 'test', args: {} } }, { type: 'done' }],
+        [{ type: 'text', text: 'done' }, { type: 'done' }],
+      ]),
+      messages,
+      tools: [],
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => ({
+        result: `found\n\n${block}`,
+        appendedReminderLengths: [block.length],
+      }),
+    })
+    const streamed = chunks.find((c) => c.type === 'tool_result')
+    assert.ok(streamed?.type === 'tool_result')
+    assert.deepEqual(streamed.appendedReminderLengths, [block.length])
+    const toolMessage = messages.find((m) => m.role === 'tool')
+    assert.ok(toolMessage?.role === 'tool')
+    assert.deepEqual(toolMessage.toolResults, [{ toolCallId: '1', result: `found\n\n${block}` }])
+  })
+
   it('streams explicit visual evidence before settling its tool call', async () => {
     const chunks: AgentStreamChunk[] = []
     await runAgentLoop({

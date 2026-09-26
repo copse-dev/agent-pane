@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -14,6 +14,10 @@ import {
 } from './file-index.ts'
 import { getWorkspaceIndexStatus, resetWorkspaceIndexStatusForTest } from './index-status.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
+import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
+import { setRgAvailableForTest } from '../tool-availability.ts'
 
 describe('file-index', () => {
   let tempRoot = ''
@@ -128,5 +132,49 @@ describe('file-index', () => {
       invalidateIndex(worktreeRoot)
       await rm(worktreeRoot, { recursive: true, force: true })
     }
+  })
+
+  // Workspace open lists the checkout before the user does anything. Under the
+  // writable overlay, Linux bubblewrap creates empty host placeholders for every
+  // missing mandatory write-deny path (.bashrc, .gitconfig, .vscode, ...), and
+  // they stay visible to `git status` while any sandbox is active.
+  it('lists through the read-only sandbox overlay when the project sandbox is active', async () => {
+    const overlays: (Partial<SandboxRuntimeConfig> | undefined)[] = []
+    let released = 0
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {
+      released += 1
+    })
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (_command: string, _shell?: string, customConfig?: Partial<SandboxRuntimeConfig>) => {
+        overlays.push(customConfig)
+        // Stand in for `rg --files` so the test does not depend on ripgrep.
+        const listing = `${join(tempRoot, 'src', 'main.ts')}\n`
+        return Promise.resolve({
+          argv: ['/bin/sh', '-c', 'printf %s "$0"', listing],
+          env: { ...process.env },
+        })
+      },
+    )
+    setRgAvailableForTest(true)
+    setProjectSandboxEnabled(true)
+    try {
+      await buildIndex(tempRoot)
+    } finally {
+      setProjectSandboxEnabled(false)
+      setRgAvailableForTest(null)
+      mock.restoreAll()
+    }
+
+    assert.deepEqual(getIndex(tempRoot)?.paths, ['src/main.ts'])
+    assert.equal(overlays.length, 1)
+    const filesystem = overlays[0]?.filesystem
+    assert.ok(filesystem)
+    assert.deepEqual(filesystem.allowWrite, [])
+    assert.deepEqual(filesystem.denyWrite, [])
+    assert.deepEqual(overlays[0], readOnlyWorkspaceSandboxOverlay(tempRoot))
+    assert.equal(released, 1)
   })
 })

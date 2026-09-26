@@ -39,10 +39,39 @@ describe('settings usage panel plan errors', () => {
       claudeText,
       /HTTP 401|authentication_error|request_id|req_011Cd5RChA2NLVzY1EV634KW/,
     )
+    // The recovery command renders as inline code, never as raw backticks.
+    await expect(claude.$('.usage-plan-status code')).toHaveText('claude /login')
+    assert.doesNotMatch(claudeText, /`/)
     // A rejected Claude credential offers an inline recovery affordance.
     const signIn = claude.$('.usage-plan-signin-btn')
     await expect(signIn).toBeDisplayed()
     assert.match(await signIn.getText(), /Sign in to Claude/i)
+    // It is the kit primary (#3065), not a bespoke filled button: kit classes,
+    // kit radius, and the readable --accent-fill tier behind its label.
+    const signInStyle = await browser.execute(() => {
+      const button = document.querySelector<HTMLElement>('.usage-plan-signin-btn')
+      if (!button) return null
+      const probe = document.createElement('div')
+      probe.style.height = 'var(--radius)'
+      probe.style.background = 'var(--accent-fill)'
+      document.body.append(probe)
+      const probeStyle = getComputedStyle(probe)
+      const kit = { radius: probeStyle.height, fill: probeStyle.backgroundColor }
+      probe.remove()
+      const style = getComputedStyle(button)
+      return {
+        classes: [...button.classList],
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        kit,
+      }
+    })
+    assert.ok(signInStyle, 'sign-in button not found')
+    assert.ok(signInStyle.classes.includes('ui-btn'), 'sign-in is a kit button')
+    assert.ok(signInStyle.classes.includes('ui-btn-primary'), 'sign-in is the kit primary')
+    assert.equal(signInStyle.radius, signInStyle.kit.radius, 'sign-in uses the kit radius')
+    assert.equal(signInStyle.background, signInStyle.kit.fill, 'sign-in fills with --accent-fill')
+    assert.doesNotMatch((await signIn.getAttribute('title')) ?? '', /`/)
 
     await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
 
@@ -56,6 +85,11 @@ describe('settings usage panel plan errors', () => {
     const cursor = $('.usage-plan-provider[data-provider="cursor"][data-status="unavailable"]')
     await expect(cursor).toBeDisplayed()
     assert.match(await cursor.$('.usage-plan-status').getText(), /Cursor session was rejected/i)
+
+    const planText = await browser.execute(() =>
+      [...document.querySelectorAll('.usage-plan-provider')].map((card) => card.textContent).join(),
+    )
+    assert.doesNotMatch(planText, /`/, 'no plan-usage copy shows raw backtick delimiters')
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-auth-errors.png')
