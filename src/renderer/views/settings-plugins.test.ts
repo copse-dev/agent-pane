@@ -308,15 +308,19 @@ describe('settings → plugins list', () => {
     // Capitalising every word turned `copse.pii-redaction` into "Pii redaction"
     // and `copse.ci-investigator` into "Ci investigator" — the id transformation
     // showing through as user-facing copy. Only the lead word is capitalised,
-    // and known acronyms stay whole.
+    // known acronyms stay whole, prose compounds keep their hyphen, and a
+    // Markdown instruction-file slug reads as the file it names.
     const cases: readonly (readonly [string, string])[] = [
       ['copse.todos', 'Todos'],
-      ['copse.long-horizon-tasks', 'Long horizon tasks'],
-      ['copse.post-turn-review', 'Post turn review'],
+      ['copse.long-horizon-tasks', 'Long-horizon tasks'],
+      ['copse.post-turn-review', 'Post-turn review'],
       ['copse.pii-redaction', 'PII redaction'],
       ['copse.ci-investigator', 'CI investigator'],
       ['copse.okf-memories', 'OKF memories'],
       ['copse.mcp-ui-canvas', 'MCP UI canvas'],
+      ['copse.agents-md', 'AGENTS.md'],
+      ['copse.claude-md', 'CLAUDE.md'],
+      ['copse.devtools-shortcut', 'DevTools shortcut'],
     ]
     for (const [id, expected] of cases) {
       const list = await openPlugins({ plugins: [{ ...demoPlugin, id, name: id }] }, spy)

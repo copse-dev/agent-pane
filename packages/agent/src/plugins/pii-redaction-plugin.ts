@@ -63,7 +63,7 @@ export const piiRedactionPlugin: RegisteredPlugin = definePlugin(
   {
     name: PII_REDACTION_PLUGIN_ID,
     description:
-      'PII redaction — replaces email addresses, SSNs and card numbers you type with placeholders on-device before your message reaches any model provider; names, phone numbers and street addresses are only caught when the optional contextual model is installed, which Copse releases do not include. URLs and IP addresses are left as typed. The agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
+      'Replaces email addresses, SSNs and card numbers you type with placeholders on-device before your message reaches any model provider; names, phone numbers and street addresses are only caught when the optional contextual model is installed, which Copse releases do not include. URLs and IP addresses are left as typed. The agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [PII_REDACTION_TOOL_NAME] },

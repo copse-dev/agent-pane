@@ -1,4 +1,5 @@
 import { el } from '../dom/helpers.ts'
+import { closeIcon } from '../dom/icons.ts'
 
 export interface AttachmentPreviewSession {
   /** True while this request still owns the shared dialog. */
@@ -51,12 +52,16 @@ function ensureDialog(): HTMLDialogElement {
   dialog = document.createElement('dialog')
   dialog.className = 'attachment-preview-dialog'
 
-  titleEl = el('div', { class: 'attachment-preview-title' })
+  titleEl = el('h2', { class: 'attachment-preview-title' })
   bodyEl = el('div', { class: 'attachment-preview-body' })
   const closeBtn = el(
     'button',
-    { type: 'button', class: 'attachment-preview-close', 'aria-label': 'Close' },
-    '×',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost attachment-preview-close',
+      'aria-label': 'Close',
+    },
+    closeIcon(),
   )
   const header = el('div', { class: 'attachment-preview-header' }, titleEl, closeBtn)
   dialog.append(header, bodyEl)

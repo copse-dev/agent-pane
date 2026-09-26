@@ -57,6 +57,11 @@ such as `--bg-base`, `--accent`, `--text-primary`, and `--border`.
     flipping the switch, which is emphasis, not status. Keep it to that meaning: `--warning` still
     owns "this needs your attention because something is off".
 - Error, warning, success, and danger continue to use their semantic tokens.
+  - A destructive action (`showConfirmDialog({ danger: true })`, `.ui-btn-danger`) is the one
+    button that fills with `--danger`; it keeps the danger fill, never the accent, and takes the
+    same pill geometry as its Cancel. Its label is `--text-on-danger` (dark text on dark's light
+    red, white on light's deep red), not hard-coded white — both are pinned at AA in
+    `src/renderer/styles/light-contrast.test.ts`. Visual eval: `tests/e2e/ui-kit-confirm.e2e.ts`.
 - Light-theme interaction colours must be derived for readable contrast; do not place raw neon
   green behind or beneath small light-theme text.
 
@@ -70,6 +75,13 @@ choice load-bearing rather than stylistic:
   the eye reads as "the accent, with text on it" — takes `--accent-fill` (and `--accent-fill-hover`).
   `.ui-btn-primary` in `global/ui.css` is the reference recipe. Painting `--text-on-accent` onto
   `--accent` gives 1.24:1 in light with the shipped accent: dark text on a dark fill (#2488).
+- **Never hard-code white on a fill.** The label tier follows the fill: `--text-on-accent` on
+  `--accent-fill` (recomputed for a custom accent by `accentTextColor()` in `settings-dialog.ts`),
+  `--text-on-warning` on `--warning` (dark text in dark, white in light — no single colour clears AA
+  on both). A hover keeps that label: the queued `Send now` / `Release` chips once flipped it to
+  white on hover and measured 1.86:1. Where a filled chip's hover must hold AA for text, lift it
+  with `filter: brightness()`; light's `--accent-fill-hover` darkens the fill and leaves the default
+  label at 3.49:1, which is fine for a glyph (3:1) but not for words.
 - **Native checkboxes, radios, and range sliders** are fills too: a checked box is the accent with a
   mark on it, and Chromium picks the mark's colour from the fill. Their `accent-color` is
   `--accent-fill` (see "Accent colour versus interface tint").
@@ -157,10 +169,27 @@ When building dialogs, settings forms, or labelled controls, prefer the shared k
 [`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
 [`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
 classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+A class with no rule of its own (`primary`, `foo-save`) is not a button style: the global
+`button` reset in `forms.css` strips border and fill, so such a control renders as a bare word.
+Kit buttons never wrap their label and never shrink in a flex row; a long sibling (an inline
+status, an error) wraps instead. Inline status lines (`setInlineStatus`) paint `error` / `ok` /
+`warn` in `--error` / `--success` / `--warning` themselves; show IPC failures through
+`ipcErrorMessage` so Electron's `Error invoking remote method '…'` wrapping never reaches copy.
 Only add a new kit primitive once **two product call sites** need it and it does more than
 class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
 (tabs+content, list+viewer chrome) over inventing more atom variants — see
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
+
+### Chips and composer strips share one box each
+
+- Attachment and reference chips — composer image/file chips, inline paste and `@thread` chips,
+  transcript attachment chips, roadmap attachments, thread-proposal chips — take `--radius`. They
+  are data, not calls to action, and pill geometry is reserved for primary CTAs.
+- Composer advisory strips (branch guard, dirty checkout, checkout error, image compatibility,
+  context fit) are `.composer-banner` with `.composer-banner-icon`, `.composer-banner-text`, and
+  `.composer-banner-action` buttons. The strip's `--composer-banner-tone` (warning by default,
+  `.composer-banner-danger` for danger) colours its wash, icon, and action borders; add a new strip
+  by composing those classes, not by re-declaring the button.
 
 ### An outlined chip needs an edge you can find
 
@@ -200,6 +229,18 @@ own.
   Suggested-answer buttons may render sanitized, phrasing-only Markdown (`code`, emphasis, and
   strong text); block or interactive Markdown remains literal because buttons are controls, not
   document containers.
+- The same applies to system copy that names commands, paths, or environment variables in
+  backticks (plan-usage sign-in hints, known ACP agent notes, tool descriptions in Tool
+  permissions, key-storage errors): render it with `setInlineMarkdown`
+  ([`inline-markdown.ts`](../src/renderer/markdown/inline-markdown.ts)) so `code` becomes `<code>`,
+  rather than assigning it to `textContent`. Native `title` tooltips cannot hold markup, so write
+  their text without delimiters.
+- Machine identifiers shown as labels — tool names without a curated display name, first-party
+  plugin ids — go through `humanizeIdentifier`
+  ([`humanize-identifier.ts`](../src/shared/humanize-identifier.ts)): sentence case, acronyms and
+  product names in their canonical spelling ("Launch GUI app", "GitHub PR create"), prose compounds
+  hyphenated ("Post-turn review"), and a listed instruction-file slug as the file ("AGENTS.md").
+  Extend its word lists rather than special-casing a label at one call site.
 - Authentication errors lead with the deterministic diagnosis and recovery action. Keep opaque
   provider/ACP wording in a visually subordinate technical-details block so it remains copyable
   without competing with the fix.
@@ -222,8 +263,14 @@ install?`) — never snake_case tool ids (`gh_pr_mark_ready`) or `GitHub action:
   Approve in `--success` and Reject in `--error`; those tokens are for status, not yes/no chrome.
 - Shell commands keep monospaced `.approval-body-code`; other bodies use the interface font so a
   one-line PR target does not look like a `<pre>` of JSON.
+- Reasons are sentences (capitalised, one concern each) and render as a real list: the main
+  process sends them as `• ` lines and the dialog turns each run into `ul.approval-reasons`.
 
-Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`.
+The same rule covers the staged-diff Accept / Reject bar in the Changes pane (Accept = primary,
+Reject = secondary, `uiActions` gap).
+
+Visual eval: `tests/e2e/github-write-approval.e2e.ts`, `tests/e2e/install-approval.e2e.ts`,
+`tests/e2e/staged-diff-ui.e2e.ts`.
 
 ### Offers are not approvals
 
