@@ -28029,6 +28029,57 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "update-prompt-changelog",
+        label: "Update prompt listing every missed release",
+        project: project("demo-update-prompt-changelog-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-update-prompt-changelog-thread",
+            title: "Weekly release cadence",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        updatePromptRequests: [
+          {
+            id: "demo-update-prompt-changelog",
+            message: "Copse 0.1.0-beta.11 is available",
+            detail: "Download the update now? You can install it immediately once downloaded.",
+            changelog: [
+              {
+                version: "0.1.0-beta.11",
+                notes: [
+                  "- The Browser pane restores its tabs when Copse is reopened.",
+                  "- Tool calls that miss a numeric bound run at the cap instead of failing.",
+                  "",
+                  "## Known issues",
+                  "",
+                  "- Restored tabs do not keep their scroll position."
+                ].join("\n")
+              },
+              {
+                version: "0.1.0-beta.10",
+                // Release notes arrive over the network: markup must render inert.
+                notes: '- Faster `find_files` on large repositories.\n- <img src="x" onerror="document.body.dataset.pwned=1"><script>document.body.dataset.pwned=1<\/script>Hardened update checks.'
+              },
+              { version: "0.1.0-beta.9", notes: "" }
+            ],
+            changelogUrl: "https://github.com/copse-dev/copse-releases/releases",
+            buttons: ["Download", "Later"],
+            defaultIndex: 0,
+            cancelIndex: 1
+          }
+        ]
+      },
+      {
         id: "vnc-discovered-ports",
         label: "Remote desktop discovered-port list with one selected",
         project: project("demo-vnc-discovered-ports-project"),
@@ -28736,7 +28787,19 @@ function createDemoApi(scenario, options = {}) {
     },
     updatePrompt: {
       respond: resolvedVoid,
-      onRequest: subscribe,
+      onRequest: (handler) => {
+        for (const { changelog, buttons, ...rest } of scenario.updatePromptRequests ?? []) {
+          const request = {
+            ...structuredClone(rest),
+            buttons: [...buttons],
+            ...changelog ? { changelog: changelog.map((entry) => ({ ...entry })) } : {}
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onDevNotice: subscribe
     },
     closeConfirm: {
@@ -44489,7 +44552,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${current} (no key)` });
+      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
   const concreteCount = options.filter(
@@ -130983,8 +131046,16 @@ var init_ssh_prompt_dialog = __esm({
 function mountUpdatePromptDialog(api2) {
   const messageEl = el("h3", { class: "update-prompt-message" });
   const detailEl = el("p", { class: "update-prompt-detail" });
+  const changelogEl = el("section", { class: "update-prompt-changelog" });
   const buttonsEl = uiActions({ className: "update-prompt-buttons" });
-  const dialog2 = el("dialog", { id: "update-prompt-dialog" }, messageEl, detailEl, buttonsEl);
+  const dialog2 = el(
+    "dialog",
+    { id: "update-prompt-dialog" },
+    messageEl,
+    detailEl,
+    changelogEl,
+    buttonsEl
+  );
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
@@ -131009,6 +131080,8 @@ function mountUpdatePromptDialog(api2) {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
+    renderChangelog(changelogEl, active2);
+    dialog2.classList.toggle("has-changelog", !changelogEl.hidden);
     const defaultIndex = active2.defaultIndex ?? 0;
     buttonsEl.replaceChildren(
       ...active2.buttons.map((label, index) => {
@@ -131048,8 +131121,51 @@ function mountUpdatePromptDialog(api2) {
     );
   });
 }
+function renderChangelog(host, req) {
+  const entries2 = req.changelog ?? [];
+  if (entries2.length === 0) {
+    host.replaceChildren();
+    host.hidden = true;
+    return;
+  }
+  const heading = entries2.length === 1 ? "What's new" : `What's new in ${String(entries2.length)} releases`;
+  const list = el("div", { class: "update-prompt-changelog-list" });
+  for (const entry of entries2) {
+    const notes = el("div", { class: "update-prompt-notes message-text streaming-markdown" });
+    notes.innerHTML = renderMarkdown(entry.notes || "_No notes for this release._");
+    list.append(
+      el(
+        "article",
+        { class: "update-prompt-release", "data-version": entry.version },
+        el("h4", { class: "update-prompt-version" }, entry.version),
+        notes
+      )
+    );
+  }
+  const children = [
+    el("h4", { class: "update-prompt-changelog-title" }, heading),
+    list
+  ];
+  if (req.changelogUrl?.startsWith("https://") === true) {
+    children.push(
+      el(
+        "a",
+        {
+          class: "update-prompt-all-notes",
+          href: req.changelogUrl,
+          target: "_blank",
+          rel: "noopener noreferrer"
+        },
+        "All release notes"
+      )
+    );
+  }
+  host.replaceChildren(...children);
+  host.hidden = false;
+}
 var init_update_prompt_dialog = __esm({
   "src/renderer/views/update-prompt-dialog.ts"() {
+    init_dist();
     init_helpers();
     init_ui();
     init_toast();
