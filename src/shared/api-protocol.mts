@@ -44,4 +44,7 @@
 // v15 conservatively versions the optional macOS trustd grant in ACP agent discovery.
 // v16 conservatively versions the optional post-turn review follow-up note on agent chunks.
 // v17 conservatively versions the optional release changelog on update prompts.
-export const API_PROTOCOL_VERSION = 17 as const
+// v19 conservatively versions the optional subagent-usage share on usage chunks and
+// thread usage, and the optional user-abort cause on turn outcomes. (v18 is taken
+// by the container-run consent fields in #2689.)
+export const API_PROTOCOL_VERSION = 19 as const
