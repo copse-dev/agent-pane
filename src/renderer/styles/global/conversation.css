@@ -562,12 +562,11 @@
   display: none;
 }
 /* The user's own replies read as "yours" through a restrained accent-tinted
-   fill and matching hairline — distinct from the trace without becoming a
-   full-width blue slab. */
+   fill alone — no hairline, so prompts stay softer than the bordered response
+   cards while remaining distinct from the trace. */
 .msg-user {
   width: min(100%, var(--chat-user-max));
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }

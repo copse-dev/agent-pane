@@ -86,6 +86,36 @@ describe('assistant Reading layout in the real renderer', () => {
     await scrollToStart()
   })
 
+  it('marks the user prompt with its tinted fill alone, without a hairline border', async () => {
+    const readBubble = () =>
+      browser.execute(() => {
+        const bubble = document.querySelector('.messages-list > .msg-user')
+        const list = document.querySelector('.messages-list')
+        if (!bubble || !list) throw new Error('Missing user prompt')
+        const style = getComputedStyle(bubble)
+        return {
+          borderWidth: style.borderTopWidth,
+          borderStyle: style.borderTopStyle,
+          background: style.backgroundColor,
+          listBackground: getComputedStyle(list).backgroundColor,
+        }
+      })
+    for (const theme of ['dark', 'light']) {
+      await browser.execute((next) => {
+        document.documentElement.dataset.theme = next
+      }, theme)
+      const bubble = await readBubble()
+      expect(bubble.borderStyle).toBe('none')
+      expect(bubble.borderWidth).toBe('0px')
+      expect(bubble.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(bubble.background).not.toBe(bubble.listBackground)
+      await saveElementScreenshot('.messages-list > .msg-user', `user-prompt-fill-${theme}.png`)
+    }
+    await browser.execute(() => {
+      document.documentElement.dataset.theme = 'dark'
+    })
+  })
+
   it('wraps in a light narrow split while code keeps its own horizontal scroll', async () => {
     const files = $('#pane-files')
     if (!(await files.isDisplayed())) {
