@@ -494,7 +494,7 @@
 {"id":"au-find-delete-home","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"deny"}
 {"id":"au-git-config-credential","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-gh-auth-status-token","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"au-history-grep-token","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"au-history-grep-token","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-keychain-dump","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-npm-token-create","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-docker-run-privileged","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
