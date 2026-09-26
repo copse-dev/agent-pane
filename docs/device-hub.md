@@ -20,14 +20,16 @@ Call `list` first, then use an explicit `device_id` for every device action. `la
 left. Use the bundled XcodeBuildMCP tools to build, install, and boot simulators.
 
 Device Hub calls request host-device permission by default, including discovery and screenshots.
-The normal explicit Always allow, Always ask, and Blocked settings apply. Read-only agent mode
-blocks the tool. All subprocesses use fixed argument arrays, cancellation, time limits, and output
+Enrollment is checked against the calling agent task's project, independent of the project
+selected in the UI. The normal explicit Always allow, Always ask, and Blocked settings apply.
+Read-only agent mode blocks the tool. All subprocesses use fixed argument arrays, cancellation, time limits, and output
 bounds. Screenshots and JSON outputs use private per-call temporary directories.
 
 The simulator input helper searches both Xcode 27's `Contents/SharedFrameworks/SimulatorKit.framework`
 and earlier Xcode's `Contents/Developer/Library/PrivateFrameworks/SimulatorKit.framework`. Capture
-and input respect `DEVELOPER_DIR`. Input initialization failures fail the operation, and a discrete
-input call waits for HID delivery acknowledgements before exiting.
+and input respect `DEVELOPER_DIR`, including when it points to an Xcode.app bundle. Initialization
+failures fail the operation, and a discrete input call waits for HID delivery acknowledgements
+before exiting. A lost DTUHID connection stops the helper so the viewer reports disconnection.
 
 Recent simulators use the DTUHID XPC transport for touch, keys, and hardware buttons. Copse checks
 that the guest daemon answers before sending input, and drains the transport before a discrete

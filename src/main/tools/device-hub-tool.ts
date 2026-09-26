@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { deviceHubService } from '../services/apple-development/device-hub.ts'
-import { getActiveProjectId } from '../services/workspace.ts'
+import { getThreadExecutionContext } from '../services/thread-execution-context.ts'
 import {
   isAppleDevelopmentProjectEnrolled,
   isAppleDevelopmentProjectSupported,
@@ -12,7 +12,7 @@ import { getSetting } from '../services/storage/settings.ts'
 import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { getSimulatorDesktopService } from '../services/simulator-desktop/simulator-desktop-service.ts'
 
-const deviceId = z.string().regex(/^[A-Za-z0-9-]{1,128}$/)
+const deviceId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/)
 const ratio = z.number().min(0).max(1)
 const input = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tap'), x: ratio, y: ratio }),
@@ -43,7 +43,7 @@ export const deviceHubTool = defineTool({
     z.object({ action: z.literal('input'), device_id: deviceId, input }),
   ]),
   async execute(args, signal) {
-    const projectId = getActiveProjectId()
+    const projectId = getThreadExecutionContext()?.projectId
     if (
       !projectId ||
       !getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID) ||

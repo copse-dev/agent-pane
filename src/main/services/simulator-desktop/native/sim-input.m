@@ -6,8 +6,8 @@
 //
 // Headless HID input forwarder for the booted iOS Simulator.
 //
-// Reads NDJSON events on stdin and synthesises Indigo HID messages, sending
-// them via SimulatorKit's SimDeviceLegacyHIDClient. No Simulator.app needed.
+// Reads NDJSON events on stdin and sends DTUHID XPC events on newer runtimes,
+// or Indigo messages through SimDeviceLegacyHIDClient on older runtimes.
 //
 // Event schema (one JSON object per line):
 //   {"type":"touch","phase":"down|move|up","x":0..1,"y":0..1}
@@ -140,8 +140,7 @@ static void elog(NSString *fmt, ...) {
 // ───────────────────────────────────────────────────────────────────────────
 
 static NSString *developerDir(void) {
-    NSString *override = NSProcessInfo.processInfo.environment[@"DEVELOPER_DIR"];
-    if (override.length) return override;
+    // xcode-select resolves DEVELOPER_DIR, including an Xcode.app bundle path.
     NSTask *t = [NSTask new];
     t.launchPath = @"/usr/bin/xcode-select";
     t.arguments = @[@"-p"];
@@ -252,7 +251,10 @@ static int connectDTU(id device) {
     if (!gDTUConnection) return -1;
     enableFn(gDTUConnection);
     xpc_connection_set_event_handler(gDTUConnection, ^(xpc_object_t event) {
-        if (xpc_get_type(event) == XPC_TYPE_ERROR) atomic_store(&gInputFailed, 1);
+        if (xpc_get_type(event) == XPC_TYPE_ERROR) {
+            elog(@"[sim-input] DTUHID disconnected; reconnect the Desktop viewer");
+            exit(2);
+        }
     });
     xpc_connection_resume(gDTUConnection);
     if (!dtuBarrier()) {
@@ -289,13 +291,6 @@ static BOOL ensureHID(void) {
         elog(@"[sim-input] FAIL dlopen SimulatorKit in selected Xcode: %s", dlerror());
         return NO;
     }
-    gButtonFn = (IndigoButtonFn) dlsym(kit, "IndigoHIDMessageForButton");
-    gKeyboardFn = (IndigoKeyboardFn) dlsym(kit, "IndigoHIDMessageForKeyboardArbitrary");
-    gMouseFn  = (IndigoMouseFn)  dlsym(kit, "IndigoHIDMessageForMouseNSEvent");
-    if (!gButtonFn || !gKeyboardFn || !gMouseFn) {
-        elog(@"[sim-input] FAIL Indigo dlsym button=%p keyboard=%p mouse=%p", gButtonFn, gKeyboardFn, gMouseFn);
-        return NO;
-    }
 
     id ctx = sharedServiceContext(); if (!ctx) return NO;
     id ds  = defaultDeviceSet(ctx);  if (!ds)  return NO;
@@ -312,6 +307,14 @@ static BOOL ensureHID(void) {
         elog(@"[sim-input] DTUHID unavailable. Wait for simulator startup to finish and reconnect.");
         return NO;
     }
+    gButtonFn = (IndigoButtonFn) dlsym(kit, "IndigoHIDMessageForButton");
+    gKeyboardFn = (IndigoKeyboardFn) dlsym(kit, "IndigoHIDMessageForKeyboardArbitrary");
+    gMouseFn  = (IndigoMouseFn)  dlsym(kit, "IndigoHIDMessageForMouseNSEvent");
+    if (!gButtonFn || !gKeyboardFn || !gMouseFn) {
+        elog(@"[sim-input] FAIL Indigo dlsym button=%p keyboard=%p mouse=%p", gButtonFn, gKeyboardFn, gMouseFn);
+        return NO;
+    }
+
     Class clientCls = objc_lookUpClass("_TtC12SimulatorKit24SimDeviceLegacyHIDClient");
     if (!clientCls) clientCls = NSClassFromString(@"SimulatorKit.SimDeviceLegacyHIDClient");
     if (!clientCls) { elog(@"[sim-input] FAIL no SimDeviceLegacyHIDClient class"); return NO; }

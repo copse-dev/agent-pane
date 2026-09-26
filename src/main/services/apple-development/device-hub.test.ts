@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { DeviceHubService, parseDeviceHubDevices } from './device-hub.ts'
 
 const ID = '11111111-2222-4333-8444-555555555555'
@@ -81,6 +83,7 @@ describe('Device Hub', () => {
     const before = calls.length
     await assert.rejects(service.launch(ID, '--console', signal))
     await assert.rejects(service.device('../../oops', signal))
+    await assert.rejects(service.device('--all', signal))
     assert.equal(calls.length, before)
     for (const output of outputs) await assert.rejects(stat(output), { code: 'ENOENT' })
   })
@@ -121,6 +124,44 @@ describe('Device Hub', () => {
     invalidPng = true
     await assert.rejects(service.screenshot(ID, signal), /invalid PNG/)
     for (const file of files) await assert.rejects(stat(file), { code: 'ENOENT' })
+  })
+
+  it('opens Device Hub from the resolved selected toolchain and reports missing Xcode support', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-xcode-test-'))
+    const developer = join(root, 'Xcode.app', 'Contents', 'Developer')
+    const app = join(root, 'Xcode.app', 'Contents', 'Applications', 'DeviceHub.app')
+    const signal = new AbortController().signal
+    const calls: string[][] = []
+    const service = new DeviceHubService(async (file, args, receivedSignal) => {
+      assert.equal(receivedSignal, signal)
+      calls.push([file, ...args])
+      return `${developer}\n`
+    })
+    try {
+      await assert.rejects(service.open(signal), /requires Xcode 27/)
+      assert.deepEqual(calls, [['/usr/bin/xcode-select', '-p']])
+      await mkdir(app, { recursive: true })
+      await service.open(signal)
+      assert.deepEqual(calls.at(-1), ['/usr/bin/open', '-a', app])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects malformed launch output and removes its scratch file', async () => {
+    let output: string | undefined
+    const service = new DeviceHubService(async (_file, args) => {
+      output = args[args.indexOf('--json-output') + 1]
+      assert.ok(output)
+      await writeFile(output, args.includes('list') ? inventory : '{"error":"failed"}')
+      return ''
+    })
+    await assert.rejects(
+      service.launch(PHYSICAL.identifier, 'com.example.app', new AbortController().signal),
+      /invalid launch results/,
+    )
+    assert.ok(output)
+    await assert.rejects(stat(output), { code: 'ENOENT' })
   })
 
   it('cleans JSON scratch when a command aborts', async () => {

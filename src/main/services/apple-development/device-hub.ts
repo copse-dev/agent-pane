@@ -8,7 +8,7 @@ import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 
 const exec = promisify(execFile)
 const MAX_BYTES = 20 * 1024 * 1024
-const identifierSchema = z.string().regex(/^[A-Za-z0-9-]{1,128}$/)
+const identifierSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/)
 const propertiesSchema = z.object({
   connection: z.object({ state: z.string().optional() }).optional(),
   hardware: z
@@ -156,9 +156,8 @@ export class DeviceHubService {
   }
 
   async open(signal: AbortSignal): Promise<void> {
-    const developerDir =
-      process.env['DEVELOPER_DIR'] ??
-      (await this.execute('/usr/bin/xcode-select', ['-p'], signal)).trim()
+    // xcode-select also resolves DEVELOPER_DIR when it names an Xcode.app bundle.
+    const developerDir = (await this.execute('/usr/bin/xcode-select', ['-p'], signal)).trim()
     const app = resolve(developerDir, '..', 'Applications', 'DeviceHub.app')
     if (!(await stat(app).catch(() => null))?.isDirectory()) {
       throw new Error(

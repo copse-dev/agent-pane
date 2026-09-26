@@ -107,7 +107,7 @@ function runToString(
     const child = spawn(file, args, {
       env: environment,
       stdio: ['pipe', 'pipe', 'pipe'],
-      ...(signal ? { signal } : {}),
+      ...(signal ? { signal, killSignal: 'SIGKILL' } : {}),
     })
     child.stdin.on('error', () => {})
     child.stdin.end(input)
@@ -121,7 +121,7 @@ function runToString(
       outcome()
     }
     const timer = setTimeout(() => {
-      child.kill('SIGTERM')
+      child.kill('SIGKILL')
       finish(() => {
         reject(new Error(`${file} timed out after ${String(timeoutMs / 1_000)}s`))
       })
@@ -131,6 +131,12 @@ function runToString(
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk
+      if (stdout.length > 20 * 1024 * 1024) {
+        child.kill('SIGKILL')
+        finish(() => {
+          reject(new Error(`${file} returned too much data`))
+        })
+      }
     })
     child.stderr.on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-MAX_DIAGNOSTIC_CHARS)
@@ -282,13 +288,16 @@ export class SimulatorDesktopService {
       | Extract<SimulatorDesktopInput, { type: 'key-tap' | 'button-tap' }>,
     signal: AbortSignal,
   ): Promise<void> {
-    if (!(await this.listDevices()).some((device) => device.udid === udid)) {
+    signal.throwIfAborted()
+    if (!(await this.listDevices(signal)).some((device) => device.udid === udid)) {
       throw new Error('That Simulator is no longer booted')
     }
+    signal.throwIfAborted()
     const attempt = this.helpers ?? compileHelpers()
     this.helpers = attempt
     try {
       const helpers = await attempt
+      signal.throwIfAborted()
       await runToString(
         helpers.input,
         [udid],
@@ -303,16 +312,18 @@ export class SimulatorDesktopService {
     }
   }
 
-  async listDevices(): Promise<SimulatorDesktopDevice[]> {
+  async listDevices(signal?: AbortSignal): Promise<SimulatorDesktopDevice[]> {
+    signal?.throwIfAborted()
     if (seededDevices) return seededDevices.map((device) => ({ ...device }))
     if (process.platform !== 'darwin') return []
-    const output = await runToString('/usr/bin/xcrun', [
-      'simctl',
-      'list',
-      'devices',
-      'booted',
-      '--json',
-    ])
+    const output = await runToString(
+      '/usr/bin/xcrun',
+      ['simctl', 'list', 'devices', 'booted', '--json'],
+      process.env,
+      NATIVE_HELPER_TIMEOUT_MS,
+      undefined,
+      signal,
+    )
     return parsedBootedDevices(output)
   }
 
