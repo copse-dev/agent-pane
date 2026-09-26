@@ -381,6 +381,13 @@ export class ContainerRunService {
       // the wrong tree. The resolver validates the worktree and throws rather
       // than falling back, which is exactly the behaviour wanted here.
       checkout = await this.deps.resolveContext(request.projectId, request.threadId)
+      // A deferred thread's root is the user's own checkout, which it must
+      // never act on. Fail closed rather than carry that tree into a run.
+      if (checkout.deferredWorktree) {
+        throw new Error(
+          'This thread has no worktree yet. Ask the agent to make a change (or call request_write_access) first.',
+        )
+      }
       assertGitCheckout(
         checkout.root,
         checkout.checkoutMode === 'worktree' ? "The thread's worktree" : 'The project checkout',

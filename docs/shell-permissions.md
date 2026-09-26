@@ -62,6 +62,18 @@ fallback: main must validate the persisted checkout path, Git registration, repo
 base commit, and the per-worktree Git directory must contain an active rebase or cherry-pick marker.
 An unrelated detached checkout remains blocked.
 
+### Deferred-worktree threads (prototype)
+
+In an `on-write` project a thread's first turns read the user's own checkout before it has a
+worktree (see [`plans/deferred-thread-worktrees.md`](plans/deferred-thread-worktrees.md)). While
+deferred, a contained `run_shell` command runs in the ordinary profile with every write at or under
+the checkout removed; reads, the workspace tmp dir, agent scratch, and the no-network policy are
+unchanged. There is no unsandboxed route in that state: a command the platform matrix would run
+outside the sandbox (hard-external, trusted-routed, or `expects_sandbox_block`), or any command when
+no sandbox is active, first allocates the thread's worktree and then follows the matrix above
+there. The reactive unsandboxed retry and denial-cache escalation are not offered, and the spawn
+layer refuses an unsandboxed read-only request outright.
+
 ## Apple development operations
 
 Apple Development uses actor-specific consent. Clicking Load targets, Build, Test, Run, or Cancel

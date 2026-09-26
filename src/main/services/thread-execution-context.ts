@@ -3,7 +3,7 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import { agentErrorNotice, classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
-import { getProjectRoot } from './workspace.ts'
+import { getProjectRoot, setExecutionRootAliasLookup } from './workspace.ts'
 import {
   restoreRetiredThreadWorktree,
   ThreadWorktreeDetachedError,
@@ -13,7 +13,7 @@ import {
   type ValidatedThreadWorktreeRecovery,
 } from './worktree-manager.ts'
 import { startExecutionRootIndexing } from './search/workspace-indexing.ts'
-import type { ThreadWorktree } from '@shared/types/worktree.ts'
+import type { ThreadDeferredWorktree, ThreadWorktree } from '@shared/types/worktree.ts'
 
 async function syncAdoptedWorktreeBranch(
   projectId: string,
@@ -33,6 +33,14 @@ export interface ThreadExecutionContext {
   readonly root: string
   readonly checkoutMode: ThreadCheckoutMode
   readonly branch: string | null
+  /**
+   * Present while an `on-write` thread has not allocated its worktree yet. The
+   * context is then a read-only view of the project checkout (`checkoutMode`
+   * is `shared`, `root` is `projectRoot`): tools that may write must first
+   * allocate through `ensureWritableThreadCheckout`, which swaps this turn onto
+   * the new worktree.
+   */
+  readonly deferredWorktree?: ThreadDeferredWorktree
 }
 
 export type ThreadExecutionOwner = Pick<ThreadExecutionContext, 'projectId' | 'threadId'>
@@ -46,6 +54,7 @@ export interface ThreadExecutionContextDependencies {
     readonly id: string
     readonly gitBranch?: string
     readonly worktree?: ThreadWorktree
+    readonly deferredWorktree?: ThreadDeferredWorktree
   } | null>
   validateWorktree?: (input: {
     projectId: string
@@ -263,6 +272,7 @@ async function resolveThreadExecutionContextUncached(
     root: projectRoot,
     checkoutMode: 'shared',
     branch: threadMeta.gitBranch ?? null,
+    ...(threadMeta.deferredWorktree ? { deferredWorktree: threadMeta.deferredWorktree } : {}),
   })
 }
 
@@ -295,12 +305,54 @@ export function runWithThreadExecutionContext<T>(context: ThreadExecutionContext
   return storage.run(context, fn)
 }
 
+// A deferred (read-only) turn that allocates its worktree mid-turn cannot
+// rebind the AsyncLocal store: `storage.run` inside a tool does not reach the
+// caller's chain, and the loop, subagents, and the ACP bridge each hold their
+// own bound copy. Instead every bound copy that is still deferred resolves
+// through this map, so all of them move to the worktree at the same instant.
+// Entries are only consulted for deferred contexts, and a thread never becomes
+// deferred again once it owns a worktree, so a stale entry cannot misroute.
+const upgradedContexts = new Map<string, ThreadExecutionContext>()
+
+/** Move every deferred context bound for this thread onto its new worktree. */
+export function adoptUpgradedThreadExecutionContext(context: ThreadExecutionContext): void {
+  if (context.checkoutMode !== 'worktree') {
+    throw new Error('An upgraded execution context must own a worktree')
+  }
+  upgradedContexts.set(executionOwnerKey(context.projectId, context.threadId), context)
+}
+
+/** Drop the upgrade once the turn that performed it has finished. */
+export function releaseUpgradedThreadExecutionContext(owner: ThreadExecutionOwner): void {
+  upgradedContexts.delete(executionOwnerKey(owner.projectId, owner.threadId))
+}
+
+function currentContext(): ThreadExecutionContext | undefined {
+  const bound = storage.getStore()
+  if (!bound?.deferredWorktree) return bound
+  return upgradedContexts.get(executionOwnerKey(bound.projectId, bound.threadId)) ?? bound
+}
+
 export function getThreadExecutionContext(): ThreadExecutionContext | null {
-  return storage.getStore() ?? null
+  return currentContext() ?? null
+}
+
+// File tools in a worktree turn read an absolute path into the project checkout
+// as the same file in the worktree (see `resolvePathWithinRoot`). Scoped to the
+// turn's own root, so renderer IPC and any other explicit root are unaffected.
+setExecutionRootAliasLookup((root) => {
+  const context = currentContext()
+  if (context?.checkoutMode !== 'worktree' || context.root !== root) return null
+  return context.projectRoot
+})
+
+/** True while the active turn is a read-only view awaiting its first write. */
+export function isThreadCheckoutDeferred(): boolean {
+  return currentContext()?.deferredWorktree !== undefined
 }
 
 export function requireThreadExecutionContext(): ThreadExecutionContext {
-  const context = storage.getStore()
+  const context = currentContext()
   if (!context) throw new Error('No thread execution context is active')
   return context
 }
@@ -316,7 +368,7 @@ export function requireThreadExecutionContext(): ThreadExecutionContext {
  * around every bridged call (#1439), so this resolves on that chain too.
  */
 export function requireThreadExecutionOwner(): ThreadExecutionOwner {
-  const context = storage.getStore()
+  const context = currentContext()
   if (context) return { projectId: context.projectId, threadId: context.threadId }
   throw new Error('No thread execution context is active')
 }

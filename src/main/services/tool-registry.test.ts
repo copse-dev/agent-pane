@@ -706,3 +706,53 @@ describe('ToolRegistry', () => {
     setPermissionGateForTests(null)
   })
 })
+
+describe('ToolRegistry in a deferred-worktree thread', () => {
+  it('gets the worktree before a write-capable tool runs, and leaves reads alone', async () => {
+    // A project the store does not know makes the allocation fail at its first
+    // step. That failure is the observable: it proves the registry tried to
+    // allocate before the write tool's own code, without faking the allocator.
+    const root = await mkdtemp(join(tmpdir(), 'copse-deferred-registry-'))
+    setPermissionGateForTests(async () => true)
+    try {
+      const context: ThreadExecutionContext = {
+        projectId: 'deferred-registry-missing-project',
+        threadId: 'deferred-registry-thread',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: 'main',
+        deferredWorktree: { baseBranch: 'main', requestedAt: 1 },
+      }
+      const reg = new ToolRegistry()
+      let wrote = false
+      reg.register({
+        name: 'git_log',
+        description: 'read-only inspection',
+        parameters: z.object({}),
+        execute: async () => 'log ok',
+      })
+      reg.register({
+        name: 'write_file',
+        description: 'writes the checkout',
+        parameters: z.object({ path: z.string() }),
+        execute: async () => {
+          wrote = true
+          return 'written'
+        },
+      })
+      await runWithThreadExecutionContext(context, async () => {
+        const signal = new AbortController().signal
+        assert.equal(await reg.execute('git_log', {}, signal), 'log ok')
+        await assert.rejects(
+          reg.execute('write_file', { path: 'a.txt' }, signal),
+          /Project is no longer available/,
+        )
+      })
+      assert.equal(wrote, false, 'the write must not run against the user checkout')
+    } finally {
+      setPermissionGateForTests(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})

@@ -82,6 +82,13 @@ export interface AllocateWorktreeInput {
    * checkout's own HEAD, whatever the caller asked for.
    */
   seedFromDirtyProject?: boolean
+  /**
+   * Name the branch from this description (`copse/<slug>-<id>`) instead of the
+   * anonymous `copse/thread-<id>`. A deferred thread allocates only once its
+   * agent knows what it is changing, so the name is available up front and the
+   * post-title rename (which only touches anonymous names) leaves it alone.
+   */
+  branchTitle?: string
 }
 
 export interface ValidateWorktreeInput {
@@ -601,6 +608,19 @@ async function chooseInitialBranch(projectRoot: string, threadId: string): Promi
   throw new Error('Could not find an available initial worktree branch name')
 }
 
+async function chooseAllocationBranch(
+  projectRoot: string,
+  threadId: string,
+  branchTitle: string | undefined,
+): Promise<string> {
+  if (branchTitle?.trim()) {
+    // No current branch yet, so the titled search can only return a candidate.
+    const titled = await chooseTitledBranch(projectRoot, branchTitle, threadId, '')
+    if (titled) return titled
+  }
+  return chooseInitialBranch(projectRoot, threadId)
+}
+
 async function chooseTitledBranch(
   projectRoot: string,
   title: string,
@@ -835,7 +855,7 @@ export async function allocateThreadWorktree(
       getDefaultBranch(projectRoot),
       repositoryIsDirty(projectRoot),
       git(projectRoot, ['show', '-s', '--format=%H%x00%T', 'HEAD']),
-      chooseInitialBranch(projectRoot, input.threadId),
+      chooseAllocationBranch(projectRoot, input.threadId, input.branchTitle),
       hasOriginRemote(projectRoot),
     ])
     const isDefaultBranch = defaultBranch !== null && defaultBranch === input.baseBranch

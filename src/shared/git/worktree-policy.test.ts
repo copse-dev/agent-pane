@@ -42,6 +42,12 @@ describe('decideThreadWorktreePolicy', () => {
       { patch: { isLocal: false }, mode: 'shared', reason: 'not-local' },
       { patch: { projectMode: 'always' }, mode: 'worktree', reason: 'project-always' },
       { patch: { projectMode: 'never' }, mode: 'shared', reason: 'project-disabled' },
+      { patch: { projectMode: 'on-write' }, mode: 'worktree', reason: 'project-always' },
+      {
+        patch: { projectMode: 'on-write', isGitRepository: false },
+        mode: 'shared',
+        reason: 'not-git',
+      },
     ]
 
     for (const row of rows) {
@@ -68,8 +74,22 @@ describe('decideThreadWorktreePolicy', () => {
         checkoutMode: 'worktree',
         reason: 'explicit-worktree',
         seededFromDirtyProject: true,
+        deferAllocation: false,
       },
     )
+  })
+
+  it('defers allocation only for an automatic choice in an on-write project', () => {
+    const deferred = (patch: Partial<WorktreePolicyInput>): boolean | null => {
+      const decision = decideThreadWorktreePolicy({ ...supported, ...patch })
+      return decision.checkoutMode === 'worktree' ? decision.deferAllocation : null
+    }
+    assert.equal(deferred({ projectMode: 'on-write' }), true)
+    assert.equal(deferred({ projectMode: 'on-write', isDirty: true }), true)
+    // Asking for a worktree by name is a request to have one now.
+    assert.equal(deferred({ projectMode: 'on-write', choice: 'worktree' }), false)
+    assert.equal(deferred({ projectMode: 'always' }), false)
+    assert.equal(deferred({}), false)
   })
 
   it('seeds dirty project work from the selected local branch', () => {
@@ -148,7 +168,12 @@ const INSPECTIONS: Inspection[] = ((): Inspection[] => {
 })()
 
 const CHOICES: Array<WorktreePolicyInput['choice']> = [undefined, 'automatic', 'shared', 'worktree']
-const PROJECT_MODES: Array<WorktreePolicyInput['projectMode']> = [undefined, 'always', 'never']
+const PROJECT_MODES: Array<WorktreePolicyInput['projectMode']> = [
+  undefined,
+  'always',
+  'never',
+  'on-write',
+]
 
 /** The policy's own view of a (choice, projectMode) pair, before any inspection. */
 function settledFor(

@@ -667,6 +667,37 @@ export function readOnlyWorkspaceSandboxOverlay(
 }
 
 /**
+ * Strip every write grant at or under the checkout from an agent overlay.
+ *
+ * A deferred-worktree thread's execution root is the user's own project
+ * checkout, which the thread must never modify. Everything else the ordinary
+ * profile grants — reads, the workspace tmp dir (under `~/.copse`, outside the
+ * checkout), agent scratch, the macOS user temp dir, and the no-network policy —
+ * is kept, so read-only commands behave as they would in a worktree. Matching
+ * by prefix rather than exact entry removes more rather than less if a grant
+ * was spelled differently. `denyWrite` is emptied for the same reason as
+ * {@link readOnlyWorkspaceSandboxOverlay}: with no checkout write to carve
+ * exceptions from, Linux deny mounts would only litter the checkout.
+ */
+export function withoutCheckoutWrites(
+  overlay: Partial<SandboxRuntimeConfig>,
+  workspaceRoot: string,
+): Partial<SandboxRuntimeConfig> {
+  const root = canonicalizeWorkspaceRoot(workspaceRoot)
+  const fs = overlay.filesystem
+  if (!fs) throw new Error('An agent sandbox overlay must define a filesystem config')
+  const underRoot = (path: string): boolean => path === root || path.startsWith(`${root}/`)
+  return {
+    ...overlay,
+    filesystem: {
+      ...fs,
+      allowWrite: fs.allowWrite.filter((path) => !underRoot(path)),
+      denyWrite: [],
+    },
+  }
+}
+
+/**
  * Backups read the checkout and write only Git objects/refs and a scratch index.
  * Keeping the checkout read-only also avoids Linux's synthetic write-deny
  * mount points: `git add -A` must snapshot user files, not sandbox placeholders.

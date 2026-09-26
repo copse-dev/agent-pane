@@ -15,7 +15,10 @@ import { getGitStatus } from './github/git-service.ts'
 import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
-import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
+import {
+  DEFERRED_CHECKOUT_BLOCK_MESSAGE,
+  READONLY_MODE_BLOCK_MESSAGE,
+} from '@shared/tools/readonly-tools.ts'
 import { getSetting } from './storage/settings.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runAfterFileEditHooks } from './hooks/after-file-edit.ts'
@@ -25,6 +28,7 @@ import { snapshotHookRunContext } from './hook-run-recorder.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
   getThreadExecutionContext,
+  isThreadCheckoutDeferred,
   requireThreadExecutionOwner,
   type ThreadCheckoutMode,
   type ThreadExecutionOwner,
@@ -1052,13 +1056,25 @@ function restage(owner: ThreadExecutionOwner, entry: QueueEntry, current: string
   )
 }
 
+/**
+ * Why an agent write must not land, or null. A deferred-checkout thread's root
+ * is the user's own checkout, so a write that slipped past the registry's
+ * allocate-first step is refused here rather than applied there.
+ */
+function writeBlockReason(): string | null {
+  if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
+  if (isThreadCheckoutDeferred()) return DEFERRED_CHECKOUT_BLOCK_MESSAGE
+  return null
+}
+
 export function stageDiff(
   rawPath: string,
   before: string,
   after: string,
   language: string,
 ): Promise<string> {
-  if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
+  const blocked = writeBlockReason()
+  if (blocked) return Promise.resolve(blocked)
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
   const path = queuePath(rawPath, executionRootFor(state))
@@ -1091,7 +1107,8 @@ export async function applyOrStageDiff(
   after: string,
   language: string,
 ): Promise<string> {
-  if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
+  const blocked = writeBlockReason()
+  if (blocked) return blocked
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
   const path = queuePath(rawPath, executionRootFor(state))
@@ -1165,7 +1182,8 @@ function appliedFileOpVerb(entry: FileOpRequest): string {
  * bookkeeping behave the same however the op got there.
  */
 export async function applyOrStageFileOp(request: FileOpRequest): Promise<string> {
-  if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
+  const blocked = writeBlockReason()
+  if (blocked) return blocked
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
   const entry: FileOpRequest = {
@@ -1221,7 +1239,8 @@ export async function applyOrStageFileOp(request: FileOpRequest): Promise<string
  * mkdir: directory marker) and is not applied until approved.
  */
 function stageFileOp(request: FileOpRequest): Promise<string> {
-  if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
+  const blocked = writeBlockReason()
+  if (blocked) return Promise.resolve(blocked)
   const owner = requireThreadExecutionOwner()
   const state = stateFor(owner)
   const entry: FileOpRequest = {

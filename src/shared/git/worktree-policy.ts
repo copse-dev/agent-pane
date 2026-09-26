@@ -32,6 +32,12 @@ export type WorktreePolicyDecision =
       checkoutMode: 'worktree'
       reason: 'explicit-worktree' | 'project-always'
       seededFromDirtyProject: boolean
+      /**
+       * Allocate at the first write rather than before the first message
+       * (`on-write` projects). Only an automatic choice defers: a user who
+       * explicitly picked a worktree gets one up front.
+       */
+      deferAllocation: boolean
     }
   | {
       checkoutMode: 'shared'
@@ -115,6 +121,7 @@ export function decideThreadWorktreePolicy(input: WorktreePolicyInput): Worktree
       checkoutMode: 'worktree',
       reason: 'explicit-worktree',
       seededFromDirtyProject: canSeedFromDirtyProject(input),
+      deferAllocation: false,
     }
   }
 
@@ -125,6 +132,7 @@ export function decideThreadWorktreePolicy(input: WorktreePolicyInput): Worktree
     checkoutMode: 'worktree',
     reason: 'project-always',
     seededFromDirtyProject: canSeedFromDirtyProject(input),
+    deferAllocation: projectMode === 'on-write',
   }
 }
 

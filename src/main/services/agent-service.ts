@@ -123,7 +123,10 @@ import {
   readFileLimitsFromConversationBudget,
 } from './agent-run-read-limits.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
-import { isToolAllowedInReadonlyMode } from '@shared/tools/readonly-tools.ts'
+import {
+  isToolAllowedInReadonlyMode,
+  REQUEST_WRITE_ACCESS_TOOL,
+} from '@shared/tools/readonly-tools.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
@@ -352,6 +355,10 @@ function parentTools(
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   const executionContext = getThreadExecutionContext()
+  // Only a thread still reading the user's checkout has write access to ask for.
+  if (!executionContext?.deferredWorktree) {
+    tools = tools.filter((tool) => tool.name !== REQUEST_WRITE_ACCESS_TOOL)
+  }
   if (!executionContext || !isAppleDevelopmentProjectEnrolled(executionContext.projectId)) {
     tools = tools.filter((tool) => !isXcodeBuildMcpToolName(tool.name))
   }

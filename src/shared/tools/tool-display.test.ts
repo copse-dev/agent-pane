@@ -49,6 +49,9 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('prepare_worktree'), 'Prepared worktree')
     assert.equal(getToolDisplayName('prepare_worktree', 'running'), 'Preparing worktree')
     assert.equal(getToolGroupKey('prepare_worktree'), 'shell')
+    assert.equal(getToolDisplayName('request_write_access'), 'Created worktree')
+    assert.equal(getToolDisplayName('request_write_access', 'running'), 'Creating worktree')
+    assert.equal(getToolGroupKey('request_write_access'), null)
   })
 
   it('labels file edits with the target path (tense follows status)', () => {

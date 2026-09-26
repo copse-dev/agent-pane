@@ -10,6 +10,7 @@ import {
   ensureWorkspaceTmpDir,
   portBindingSandboxOverlay,
   readAllowedSandboxOverlay,
+  withoutCheckoutWrites,
   workspaceSandboxOverlay,
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
@@ -197,10 +198,20 @@ export async function spawnShellInProjectSandbox(
      * reads — never writes, network, or the whole profile.
      */
     readGrantTargets?: readonly string[]
+    /**
+     * `cwd` is a checkout this command must not modify (a deferred-worktree
+     * thread reading the user's project). The command runs in the ordinary
+     * profile minus checkout writes, and can never run unsandboxed: there is no
+     * contained way to honour that request, so it fails instead.
+     */
+    readonlyCheckout?: boolean
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
   const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
+  if (opts.readonlyCheckout && (isSshExecutionTarget(target) || opts.unsandboxed)) {
+    throw new Error('A read-only checkout cannot run commands outside the project sandbox')
+  }
   if (isSshExecutionTarget(target)) {
     return spawnRemoteShellCommand(shellCommandLine, {
       hostId: target.hostId,
@@ -212,6 +223,9 @@ export async function spawnShellInProjectSandbox(
   }
   await requireLocalWorkingDirectory(opts.cwd)
 
+  if (opts.readonlyCheckout && !isProjectSandboxEnabled()) {
+    throw new Error('A read-only checkout needs the project sandbox, which is unavailable')
+  }
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
@@ -226,10 +240,13 @@ export async function spawnShellInProjectSandbox(
   }
 
   const readGrantTargets = opts.readGrantTargets ?? []
-  const customConfig =
+  const baseConfig =
     readGrantTargets.length > 0
       ? readAllowedSandboxOverlay(opts.cwd, readGrantTargets)
       : workspaceSandboxOverlay(opts.cwd)
+  const customConfig = opts.readonlyCheckout
+    ? withoutCheckoutWrites(baseConfig, opts.cwd)
+    : baseConfig
   const { argv, env } = await SandboxManager.wrapWithSandboxArgv(
     shellCommandLine,
     shellForSandboxWrap(),

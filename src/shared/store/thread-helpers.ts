@@ -1118,6 +1118,7 @@ export function applyPreparedThreadCheckout(
     worktreeChoice: prepared.choice,
     ...(prepared.branch ? { gitBranch: prepared.branch } : {}),
     ...(prepared.worktree ? { worktree: prepared.worktree } : {}),
+    ...(prepared.deferredWorktree ? { deferredWorktree: prepared.deferredWorktree } : {}),
     updatedAt: Date.now(),
   }))
   if (!applied) return

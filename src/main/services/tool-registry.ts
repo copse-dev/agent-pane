@@ -21,7 +21,7 @@ import { expectRecord } from '@shared/unknown-value.ts'
 import { isRecord } from '@copse/std/unknown-value.ts'
 import { describeToolArgError } from './tool-arg-error.ts'
 import { clampNumericRangeArgs, describeClampRepair } from './tool-arg-repair.ts'
-import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { getThreadExecutionContext, isThreadCheckoutDeferred } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
 import { isExecutionRootWatched, watchExecutionRootSoon } from './search/execution-root-watcher.ts'
 import {
@@ -48,6 +48,15 @@ interface RegisteredTool {
 export interface ToolCatalogDescriptor {
   name: string
   description: string
+}
+
+type DeferredCheckoutModule = typeof import('./deferred-worktree.ts')
+let deferredCheckoutModule: DeferredCheckoutModule | null = null
+
+/** Loaded on first use, like the permission gate: most turns never defer. */
+async function loadDeferredCheckout(): Promise<DeferredCheckoutModule> {
+  deferredCheckoutModule ??= await import('./deferred-worktree.ts')
+  return deferredCheckoutModule
 }
 
 let permissionGateOverride: PermissionGateFn | null = null
@@ -205,6 +214,13 @@ export class ToolRegistry {
       }
     }
     const mcpAnnotations = name.startsWith('mcp__') ? getMcpToolMeta(name)?.annotations : undefined
+    // A deferred-worktree thread reads the user's checkout. Anything that may
+    // write gets the thread's worktree first — before the permission gate, so
+    // approval keys, sandbox routing, and the tool itself all see the root the
+    // call will actually run in. A failed allocation fails this call.
+    const checkoutNote = isThreadCheckoutDeferred()
+      ? await (await loadDeferredCheckout()).prepareCheckoutForTool(name, parsed, mcpAnnotations)
+      : null
     if (isAgentRunReadonly()) {
       const blockReason = getReadonlyToolBlockReason(name, { mcpAnnotations })
       if (blockReason) return blockReason
@@ -266,7 +282,10 @@ export class ToolRegistry {
     // result so the model reads it right after the tool output. The numeric-
     // range repair's clamp note rides the same channel: it is Copse-authored
     // context about the call, not tool output, and the model must read it.
+    // A worktree this call allocated is announced on the same channel, first:
+    // the model must learn its root moved from the first result produced there.
     const reminders = [
+      ...(checkoutNote ? [formatSystemReminder(checkoutNote)] : []),
       ...(clampedNotes.length > 0 ? [formatSystemReminder(describeClampRepair(clampedNotes))] : []),
       ...(check.injectContext !== undefined && check.injectContext.length > 0
         ? [check.injectContext]

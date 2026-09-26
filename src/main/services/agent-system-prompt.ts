@@ -7,6 +7,7 @@ import {
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { REQUEST_WRITE_ACCESS_TOOL } from '@shared/tools/readonly-tools.ts'
 import { repositoryLocation } from './worktree-manager.ts'
 import {
   BROWSER_TOOLS_ENABLED_SETTING,
@@ -77,6 +78,18 @@ async function buildRepositoryContext(): Promise<string> {
   const subdirNote = projectRelativePath
     ? ' (the working directory is a subdirectory of this repository)'
     : ''
+  if (context.deferredWorktree) {
+    // Stated once, up front, so a question-only thread never pays for a
+    // worktree and an editing thread knows the switch is coming. The base
+    // branch is fixed for the thread, so this text is cache-stable per turn.
+    return (
+      `\nGit repository root: ${repositoryRoot}${subdirNote} — the user's own checkout, read-only for this thread. ` +
+      'Reading, searching, git inspection, and shell commands that only read all work here; shell commands run in a sandbox where the checkout cannot be written. ' +
+      `Before you edit a file, commit, install dependencies, or run anything that writes (builds, test runs that emit files), call ${REQUEST_WRITE_ACCESS_TOOL} with a short description of the change: ` +
+      `it gives this thread its own worktree and branch, cut from ${context.deferredWorktree.baseBranch}. ` +
+      'If you only need to answer a question or review code, do not call it.'
+    )
+  }
   return `\nGit repository root: ${repositoryRoot}${subdirNote}`
 }
 
