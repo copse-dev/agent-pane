@@ -8,7 +8,6 @@ import {
   seedE2eViewport,
   seedStableWorkspace,
   writeSeedConfig,
-  writeSettings,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
@@ -93,13 +92,14 @@ describe('Activity panel', function () {
         ),
       ],
     })
-    writeSettings({
+    // One write: seedE2eViewport replaces the settings file, so a separate
+    // writeSettings before it would be lost.
+    seedE2eViewport(undefined, {
       model: 'claude-sonnet-4-6',
       subagentsEnabled: false,
       // Every shell command asks, sandbox or not, so the approval is deterministic.
       autoRunSandboxCommands: false,
     })
-    seedE2eViewport()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
   })
