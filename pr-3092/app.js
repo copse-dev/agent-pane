@@ -65988,6 +65988,25 @@ var init_attention = __esm({
   }
 });
 
+// packages/thread-store/src/prompt-placeholders.ts
+function stripPastePlaceholders(content) {
+  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
+  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
+}
+var PASTE_PLACEHOLDER;
+var init_prompt_placeholders = __esm({
+  "packages/thread-store/src/prompt-placeholders.ts"() {
+    PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
+  }
+});
+
 // src/shared/git/worktree-policy.ts
 function slugPrompt(prompt) {
   const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
@@ -66019,17 +66038,20 @@ var init_worktree_policy = __esm({
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
-    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && m2.content.trim()
+    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
 }
 function firstWords(text2, n2 = 6) {
   return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
+function promptWords(message2) {
+  return stripPastePlaceholders(message2.content);
+}
 function namingInput(userMessages) {
   const first = userMessages[0];
   if (!first) return "";
   const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m2) => m2.content.trim().slice(0, 300)).join("\n\n");
+  return [first, ...recent].map((m2) => promptWords(m2).slice(0, 300)).join("\n\n");
 }
 function owningProjectId(store2, threadId) {
   const background = backgroundProjectOf(store2, threadId);
@@ -66079,7 +66101,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(first.content) : current.title;
+    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -66091,6 +66113,7 @@ var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
     init_unknown_value3();
+    init_prompt_placeholders2();
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
@@ -75721,25 +75744,6 @@ var init_render_signature = __esm({
     FNV_OFFSET = 2166136261;
     MIX_PRIME = 2246822507;
     MIX_OFFSET = 3266489909;
-  }
-});
-
-// packages/thread-store/src/prompt-placeholders.ts
-function stripPastePlaceholders(content) {
-  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
-  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
-}
-var PASTE_PLACEHOLDER;
-var init_prompt_placeholders = __esm({
-  "packages/thread-store/src/prompt-placeholders.ts"() {
-    PASTE_PLACEHOLDER = "\uFFFC";
-  }
-});
-
-// src/shared/threads/prompt-placeholders.ts
-var init_prompt_placeholders2 = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
-    init_prompt_placeholders();
   }
 });
 
@@ -90213,7 +90217,8 @@ function mountFileTree(root, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "sidebar-header sidebar-header-compact" },
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Explorer"),
     panePopoutButton(store2, api2, "explorer", "explorer"),
     paneMaximizeButton(store2, "explorer"),
     refreshBtn
@@ -106477,8 +106482,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   });
   const listHeader = el(
     "div",
-    { class: "terminals-list-header terminal-rail-section-header" },
-    "Shells"
+    { class: "pane-header terminals-list-header terminal-rail-section-header" },
+    el("span", { class: "pane-header-title" }, "Shells")
   );
   const newBtn = el(
     "button",
@@ -107763,8 +107768,8 @@ function defaultProposedPath(queue, activeDiff) {
   return first.path;
 }
 function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
-  const listHeader = el("div", { class: "git-changes-header" });
-  const headerTitle = el("span", { class: "git-changes-title" }, "Changes");
+  const listHeader = el("div", { class: "pane-header git-changes-header" });
+  const headerTitle = el("span", { class: "pane-header-title" }, "Changes");
   const bulkActions = el("div", { class: "git-changes-bulk-actions" });
   const acceptAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Accept all");
   const rejectAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Reject all");
@@ -108947,9 +108952,9 @@ function collectLinkedPrs(store2) {
   return refs;
 }
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
-  const listHeader = el("div", { class: "git-changes-header" });
+  const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Pull requests"),
+    el("span", { class: "pane-header-title" }, "Pull requests"),
     panePopoutButton(store2, api2, "prs", "pull requests"),
     paneMaximizeButton(store2, "pull requests"),
     el(
@@ -110000,9 +110005,9 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   let creating = false;
   let loadToken = 0;
   let loading = false;
-  const listHeader = el("div", { class: "git-changes-header" });
+  const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Memories"),
+    el("span", { class: "pane-header-title" }, "Memories"),
     panePopoutButton(store2, api2, "memories", "memories"),
     paneMaximizeButton(store2, "memories"),
     el(
@@ -110932,7 +110937,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   const collapsedCategories = /* @__PURE__ */ new Set();
   const editorDrafts = /* @__PURE__ */ new Map();
   const autoSaveToken = /* @__PURE__ */ new Map();
-  const listHeader = el("div", { class: "git-changes-header roadmap-list-header" });
+  const listHeader = el("div", { class: "pane-header roadmap-list-header" });
   const filter = el("div", { class: "roadmap-filter" });
   const searchInput = el("input", {
     type: "search",
@@ -111026,7 +111031,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   });
   actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn);
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Roadmap"),
+    el("span", { class: "pane-header-title" }, "Roadmap"),
     panePopoutButton(store2, api2, "roadmap", "roadmap"),
     paneMaximizeButton(store2, "roadmap"),
     filter,
@@ -112802,6 +112807,28 @@ var init_roadmap_pane = __esm({
   }
 });
 
+// src/shared/canvas/guest-surface.ts
+function canvasGuestTextCss(color) {
+  if (!COMPUTED_COLOR_RE.test(color.trim())) return null;
+  return `:where(:root) { color: ${color.trim()}; }`;
+}
+var CANVAS_TRANSPARENT_ROOT_PROBE, COMPUTED_COLOR_RE;
+var init_guest_surface = __esm({
+  "src/shared/canvas/guest-surface.ts"() {
+    CANVAS_TRANSPARENT_ROOT_PROBE = `(() => {
+  const paints = (element) => {
+    if (!element) return false
+    const style = getComputedStyle(element)
+    if (style.backgroundImage !== 'none') return true
+    const alpha = /^rgba\\((?:[^,]+,){3}\\s*([\\d.]+)\\s*\\)$/.exec(style.backgroundColor)
+    return alpha ? Number(alpha[1]) > 0 : style.backgroundColor !== 'transparent'
+  }
+  return !paints(document.documentElement) && !paints(document.body)
+})()`;
+    COMPUTED_COLOR_RE = /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/;
+  }
+});
+
 // src/shared/types/main-window.ts
 var MAX_RESTORED_BROWSER_TABS;
 var init_main_window = __esm({
@@ -113158,7 +113185,11 @@ function createWebview(partition, resolveWorkspacePreview) {
   return guest;
 }
 function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
-  const listHeader = el("div", { class: "browser-tabs-list-header" }, "Tabs");
+  const listHeader = el(
+    "div",
+    { class: "pane-header browser-tabs-list-header" },
+    el("span", { class: "pane-header-title" }, "Tabs")
+  );
   const newBtn = el(
     "button",
     {
@@ -113295,6 +113326,13 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       syncWebviewSize2(tab);
     });
   }
+  function applyCanvasGuestText(tab, webview) {
+    if (!tab.artefactTitle || !webview.getURL().startsWith("data:text/html")) return;
+    const css2 = canvasGuestTextCss(getComputedStyle(tab.webviewHost).color);
+    if (!css2 || !webview.executeJavaScript || !webview.insertCSS) return;
+    const insertCSS = webview.insertCSS.bind(webview);
+    void webview.executeJavaScript(CANVAS_TRANSPARENT_ROOT_PROBE).then((transparent) => transparent === true ? insertCSS(css2) : void 0).catch(() => void 0);
+  }
   function ensureWebview(tab) {
     if (tab.webview) return tab.webview;
     const webview = createWebview(tab.partition, resolveWorkspacePreview);
@@ -113320,6 +113358,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
         tab.pendingUrl = null;
@@ -114150,6 +114189,7 @@ var init_browser_pane = __esm({
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
+    init_guest_surface();
     init_browser_session();
     init_unknown_value3();
     init_panels();
@@ -130389,8 +130429,8 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "git-changes-header" },
-    el("span", { class: "git-changes-title" }, "Desktop"),
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Desktop"),
     el(
       "div",
       { class: "vnc-header-actions" },
