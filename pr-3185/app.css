@@ -181,7 +181,11 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --titlebar-height: calc(40px * var(--ui-scale));
   --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: calc(16px * var(--ui-scale));
-  --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
+  --pane-header-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
+  --browser-chrome-band-height: var(--pane-header-band-height);
+  --group-header-font-size: var(--font-size-xs);
+  --group-header-letter-spacing: 0.04em;
+  --group-header-font-weight: 600;
 }
 
 /* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
@@ -915,9 +919,10 @@ copse-ui-field input[type=password],
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-sm) var(--projects-action-inset) var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-xs);
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -1102,7 +1107,7 @@ copse-ui-field input[type=password],
   align-items: center;
   gap: var(--spacing-xs);
   width: 100%;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   text-align: left;
@@ -1630,7 +1635,9 @@ copse-ui-field input[type=password],
 }
 .file-tree-host {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg-elevated);
   min-height: 0;
 }
@@ -1669,18 +1676,6 @@ copse-ui-field input[type=password],
   background: var(--accent);
   outline: none;
 }
-.terminals-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-sm);
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
 .terminals-list {
   flex: 1;
   display: flex;
@@ -1696,7 +1691,7 @@ copse-ui-field input[type=password],
   gap: 4px;
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
@@ -1771,15 +1766,22 @@ copse-ui-field input[type=password],
   overflow: hidden;
   min-height: 0;
 }
-.git-changes-header {
+.pane-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-xs);
-  padding: var(--spacing-sm);
+  box-sizing: border-box;
+  min-height: var(--pane-header-band-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+.pane-header-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 .git-changes-bulk-actions {
   display: flex;
@@ -1805,11 +1807,6 @@ copse-ui-field input[type=password],
 }
 .git-change-row-proposed.is-selected {
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-selected));
-}
-.git-changes-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
 }
 .git-changes-refresh-btn {
   display: inline-flex;
@@ -1893,9 +1890,10 @@ copse-ui-field input[type=password],
 }
 .git-changes-section-title {
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: var(--font-size-2xs);
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
 }
 .git-change-row {
@@ -2163,6 +2161,10 @@ copse-ui-field input[type=password],
   padding: var(--spacing-sm) var(--spacing-md);
   border-bottom: 1px solid var(--border);
 }
+.pr-viewer-meta:empty,
+.pr-viewer-files:empty {
+  display: none;
+}
 .pr-viewer-title-row {
   display: flex;
   align-items: flex-start;
@@ -2241,9 +2243,10 @@ copse-ui-field input[type=password],
   gap: 4px;
   width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: var(--font-size-2xs);
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   background: none;
   border: none;
@@ -2350,6 +2353,7 @@ copse-ui-field input[type=password],
 }
 .terminal-container .xterm {
   height: 100%;
+  padding-inline: var(--spacing-sm);
 }
 .terminal-container .xterm .xterm-viewport {
   background-color: var(--xterm-bg);
@@ -2362,9 +2366,10 @@ copse-ui-field input[type=password],
 }
 .agent-tasks-section-header {
   padding: var(--spacing-sm);
-  font-size: var(--font-size-xs);
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -2381,7 +2386,7 @@ copse-ui-field input[type=password],
   gap: var(--spacing-sm);
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   background: none;
@@ -2442,7 +2447,7 @@ copse-ui-field input[type=password],
   align-items: flex-start;
   gap: var(--spacing-sm);
   min-width: 0;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
 }
 .supervised-task-row:hover {
   background: var(--bg-hover);
@@ -2570,20 +2575,9 @@ copse-ui-field input[type=password],
   min-height: 0;
 }
 .browser-tabs-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
   height: var(--browser-chrome-band-height);
-  min-height: var(--browser-chrome-band-height);
   max-height: var(--browser-chrome-band-height);
-  padding: 0 var(--spacing-sm);
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 .browser-tabs-list {
   flex: 1;
@@ -2600,7 +2594,7 @@ copse-ui-field input[type=password],
   gap: 4px;
   width: 100%;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
@@ -2780,6 +2774,7 @@ copse-ui-field input[type=password],
   min-height: 0;
   overflow: hidden;
   background: var(--bg-base);
+  color: var(--text-primary);
   -webkit-app-region: no-drag;
   position: relative;
 }
@@ -2835,7 +2830,7 @@ copse-ui-field input[type=password],
   color: var(--text-secondary);
 }
 .file-viewer-toolbar button.is-active {
-  background: var(--bg-base);
+  background: var(--bg-selected);
   color: var(--text-primary);
 }
 .markdown-file-preview {
@@ -2852,21 +2847,6 @@ copse-ui-field input[type=password],
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
 }
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.sidebar-header-compact {
-  justify-content: flex-end;
-}
 .sidebar-refresh {
   display: inline-flex;
   align-items: center;
@@ -2875,6 +2855,7 @@ copse-ui-field input[type=password],
 }
 .file-tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--spacing-xs) 0;
 }
@@ -3650,7 +3631,7 @@ label {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--spacing-sm);
-  border: 1px solid color-mix(in srgb, var(--sev) 45%, var(--border));
+  border: 0;
   border-radius: var(--radius);
   padding: var(--spacing-sm) var(--spacing-md);
   background:
@@ -3669,9 +3650,11 @@ label {
   min-width: 0;
 }
 .turn-recovery-title {
-  color: var(--text-primary);
+  color: var(--sev);
   font-size: var(--font-size-sm);
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .turn-recovery-detail,
 .turn-recovery-model-note {
@@ -4212,6 +4195,10 @@ label {
   max-width: 720px;
   font-size: var(--font-size-lg);
   line-height: var(--sm-line-height);
+}
+.msg-assistant > .message-body > .message-text pre {
+  font-size: var(--sm-font-size-sm);
+  line-height: var(--line-height-base);
 }
 .msg-assistant > .message-body > .message-text :is(li + li) {
   margin-top: var(--spacing-xs);
@@ -11586,10 +11573,10 @@ dialog.process-manager-overlay {
   align-items: center;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
-  font-weight: 600;
-  font-size: var(--font-size-sm);
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--text-secondary);
 }
 .plugin-panel-title {
@@ -11723,10 +11710,10 @@ dialog.process-manager-overlay {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  font-weight: 600;
-  font-size: var(--font-size-sm);
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
 .review-panel > summary.review-panel-header {
@@ -11775,10 +11762,10 @@ dialog.process-manager-overlay {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
-  font-weight: 600;
-  font-size: var(--font-size-sm);
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
 .review-report-meta,
@@ -11997,10 +11984,10 @@ dialog.process-manager-overlay {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  font-weight: 600;
-  font-size: var(--font-size-sm);
+  font-weight: var(--group-header-font-weight);
+  font-size: var(--group-header-font-size);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
 }
 .comparison-panel-cost {
@@ -13028,7 +13015,7 @@ dialog.process-manager-overlay {
   width: 100%;
   min-width: 0;
   text-align: left;
-  padding: 5px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-sm);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   background: none;
@@ -13130,7 +13117,7 @@ dialog.process-manager-overlay {
   justify-content: space-between;
   width: 100%;
   min-width: 0;
-  padding: 6px var(--spacing-xs) 6px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-xs) var(--list-row-padding-block) var(--spacing-sm);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   text-align: left;
@@ -13719,9 +13706,9 @@ dialog.process-manager-overlay {
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
+  letter-spacing: var(--group-header-letter-spacing);
   text-align: left;
   text-transform: uppercase;
   cursor: pointer;
