@@ -98,6 +98,8 @@ export interface SpineToolCall {
   locations?: import('@copse/agent/wire-types.ts').AcpToolCallLocation[]
   /** Render `result` as Markdown (external ACP agents author Markdown output). */
   resultFormat?: 'markdown'
+  /** Lengths of the system-reminder blocks Copse appended to `result` (display metadata). */
+  appendedReminderLengths?: number[]
   /** Image data is persisted out of line; this list retains order and labels. */
   images?: SpineToolResultImage[]
   subagent?: SpineSubagentRef

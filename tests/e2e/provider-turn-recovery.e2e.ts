@@ -113,6 +113,32 @@ describe('explicit provider turn recovery', () => {
     await expect(card).toHaveText('Retry this turn', { containing: true })
     await expect(card).toHaveText('An earlier turn completed with', { containing: true })
     await expect(await card.$$('.turn-recovery-button')).toBeElementsArrayOfSize(2)
+    // A hatched status plate like Review and Comparison: no perimeter border and
+    // a caps title in the plate's severity hue (docs/ui-taste.md).
+    const plate = await browser.execute(() => {
+      const recovery = document.querySelector<HTMLElement>('[data-turn-recovery-card]')
+      const title = recovery?.querySelector<HTMLElement>('.turn-recovery-title')
+      const icon = recovery?.querySelector<HTMLElement>('.turn-recovery-icon')
+      if (!recovery || !title || !icon) return { missing: true }
+      const cardStyle = getComputedStyle(recovery)
+      const titleStyle = getComputedStyle(title)
+      return {
+        missing: false,
+        borderWidths: [
+          cardStyle.borderTopWidth,
+          cardStyle.borderRightWidth,
+          cardStyle.borderBottomWidth,
+          cardStyle.borderLeftWidth,
+        ],
+        titleTransform: titleStyle.textTransform,
+        titleColor: titleStyle.color,
+        severityColor: getComputedStyle(icon).color,
+      }
+    })
+    expect(plate.missing).toBe(false)
+    expect(plate.borderWidths).toEqual(['0px', '0px', '0px', '0px'])
+    expect(plate.titleTransform).toBe('uppercase')
+    expect(plate.titleColor).toBe(plate.severityColor)
 
     await savePreparedElementScreenshot('.messages-list', 'provider-turn-recovery.png')
 

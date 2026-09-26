@@ -32,6 +32,7 @@ import {
   sandboxNetworkConfig,
   threadReadRootAllowEntries,
   uncoveredSiblingDenyPaths,
+  isMandatoryWriteDenyMountPath,
   workspaceMandatoryWriteDenyPaths,
   darwinUserTempWriteEntries,
   darwinUserTempDir,
@@ -56,6 +57,30 @@ import {
 
 /** Bare directory entries are emitted everywhere but Linux (see config.ts). */
 const LISTING_ENTRIES = process.platform !== 'linux'
+
+describe('isMandatoryWriteDenyMountPath', () => {
+  it('names each deny target and the parent directory bwrap creates for it', () => {
+    for (const path of [
+      '.bashrc',
+      '.gitmodules',
+      '.mcp.json',
+      '.vscode',
+      '.claude/',
+      '.claude/agents',
+      '.copse/agents',
+      'packages/app/.zshrc',
+      'packages/app/.cursor/',
+    ]) {
+      assert.equal(isMandatoryWriteDenyMountPath(path), true, path)
+    }
+  })
+
+  it('rejects ordinary paths and files inside a deny directory', () => {
+    for (const path of ['', 'README.md', '.claude/settings.json', '.bashrc/extra', 'agents']) {
+      assert.equal(isMandatoryWriteDenyMountPath(path), false, path)
+    }
+  })
+})
 
 describe('acpAgentSandboxOverlay', () => {
   const workspace = '/tmp/acp-sandbox-test-workspace'
