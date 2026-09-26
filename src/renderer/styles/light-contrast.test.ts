@@ -169,6 +169,8 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
       '.titlebar-btn-badge',
       '.memories-btn-primary',
       '.queued-action.queued-send-now',
+      '.queued-action.queued-release',
+      '.scroll-to-bottom',
       '.usage-plan-signin-btn',
       '.automation-save-btn',
     ]
@@ -262,6 +264,135 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
       ratio < AA_BODY_TEXT,
       `expected the pre-fix --accent/--text-on-accent pairing to stay unreadable in light, measured ${ratio.toFixed(2)}:1`,
     )
+  })
+})
+
+/** Hex tokens declared in each theme scope the app can render under. */
+function tokenScopes(): { name: string; css: string }[] {
+  const strip = (file: string): string =>
+    readFileSync(resolve(STYLES, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const scope = (css: string, selector: string): string => {
+    const start = css.indexOf(`${selector} {`)
+    assert.ok(start >= 0, `could not find ${selector}`)
+    return css.slice(start, css.indexOf('\n}', start))
+  }
+  const tokens = strip('tokens.css')
+  const themes = strip('themes.css')
+  return [
+    { name: ':root', css: scope(tokens, ':root') },
+    { name: "[data-theme='dark']", css: scope(themes, "[data-theme='dark']") },
+    { name: "[data-theme='light']", css: scope(themes, "[data-theme='light']") },
+  ]
+}
+
+/** The hex a scope assigns to `name`, falling back to `:root` like the cascade. */
+function scopedHex(scopes: { name: string; css: string }[], at: string, name: string): Rgb {
+  const read = (css: string): string | undefined =>
+    new RegExp(`^\\s*${name}:\\s*(#[0-9a-fA-F]{3,8})\\s*;`, 'm').exec(css)?.[1]
+  const own = read(scopes.find((scope) => scope.name === at)?.css ?? '')
+  const inherited = read(scopes.find((scope) => scope.name === ':root')?.css ?? '')
+  const found = own ?? inherited
+  assert.ok(found, `${at} resolves no hex for ${name}`)
+  return parseHex(found)
+}
+
+describe('no white label on an accent or warning fill (issue #3065)', () => {
+  // Dark is where these failed: white on dark's pink --accent is 2.03:1, and on
+  // dark's yellow --warning 2.31:1. The shipped accent is light enough that its
+  // label tier is dark grey, and a custom accent recomputes `--text-on-accent`
+  // (settings-dialog.ts `accentTextColor`), so hard-coding white is wrong for
+  // every accent the user can pick.
+  const declarations = stylesheets().flatMap(({ file, css }) => rules(file, css))
+  const hardWhite = /(?:^|;)\s*color:\s*(?:white|#fff|#ffffff)\s*(?:;|$)/i
+
+  it('never pairs an accent fill with a hard-coded white label', () => {
+    const offenders = declarations
+      .filter(
+        (rule) =>
+          /background(?:-color)?:[^;]*var\(--accent/.test(rule.body) && hardWhite.test(rule.body),
+      )
+      .map((rule) => `${rule.file}:${String(rule.line)} ${rule.selector}`)
+    assert.deepEqual(offenders, [], 'use --accent-fill with --text-on-accent')
+  })
+
+  it('keeps the label tier on hover for the filled queued chips and scroll-to-bottom', () => {
+    // `.queued-send-now:hover` once flipped the label to white while the fill
+    // stayed pink: 1.86:1 in both themes, only while the pointer was on it.
+    for (const target of [
+      '.queued-action.queued-send-now:hover',
+      '.queued-action.queued-release:hover',
+      '.scroll-to-bottom:hover',
+    ]) {
+      const matching = declarations.filter((rule) => rule.selector.includes(target))
+      assert.ok(matching.length > 0, `missing a rule for ${target}`)
+      for (const rule of matching) {
+        const where = `${rule.file}:${String(rule.line)} ${target}`
+        assert.doesNotMatch(rule.body, hardWhite, `${where} flips its label to white`)
+        const colour = /(?:^|;)\s*color:\s*([^;]+)/.exec(rule.body)?.[1]?.trim()
+        if (colour !== undefined) assert.equal(colour, 'var(--text-on-accent)', where)
+        const fill = /background(?:-color)?:\s*([^;]+)/.exec(rule.body)?.[1]?.trim()
+        if (fill !== undefined) assert.match(fill, /^var\(--accent-fill(?:-hover)?\)$/, where)
+      }
+    }
+  })
+
+  it('undoes the global button hover fade on those controls', () => {
+    // forms.css fades every hovered <button> to 0.8, which took the filled
+    // chip's label to 3.98:1 in dark while the pointer was on it.
+    for (const selector of ['.queued-action:hover', '.scroll-to-bottom:hover']) {
+      const rule = declarations.find((candidate) => candidate.selector === selector)
+      assert.ok(rule, `missing the ${selector} rule`)
+      assert.match(rule.body, /(?:^|;)\s*opacity:\s*1\s*(?:;|$)/, selector)
+    }
+  })
+
+  it('floats scroll-to-bottom on the shared elevation scale', () => {
+    const rule = declarations.find((candidate) => candidate.selector === '.scroll-to-bottom')
+    assert.ok(rule, 'missing the .scroll-to-bottom rule')
+    assert.match(rule.body, /box-shadow:\s*var\(--shadow-(?:sm|md|lg)\)/)
+    assert.doesNotMatch(rule.body, /(?:^|;)\s*opacity:/, 'a dimmed fill drops the label below AA')
+  })
+
+  it('gives the held badge a token label that clears AA on --warning in every theme', () => {
+    const rule = declarations.find((candidate) =>
+      candidate.selector.includes('.msg-held .message-queued-badge'),
+    )
+    assert.ok(rule, 'missing the held badge rule')
+    assert.match(rule.body, /(?:^|;)\s*color:\s*var\(--text-on-warning\)/)
+    assert.match(rule.body, /background:\s*var\(--warning\)/)
+    const scopes = tokenScopes()
+    for (const scope of scopes) {
+      const ratio = contrastRatio(
+        scopedHex(scopes, scope.name, '--text-on-warning'),
+        scopedHex(scopes, scope.name, '--warning'),
+      )
+      assert.ok(
+        ratio >= AA_BODY_TEXT,
+        `${scope.name}: --text-on-warning on --warning is ${ratio.toFixed(2)}:1`,
+      )
+    }
+  })
+
+  it('clears AA for the queued chips hovered, where a brightness filter lifts both', () => {
+    // `filter: brightness(n)` scales every gamma-encoded channel of the chip,
+    // label included, so the hovered pair is measured after that scaling.
+    const hover = declarations.find((rule) =>
+      rule.selector.includes('.queued-action.queued-send-now:hover'),
+    )
+    const factor = Number.parseFloat(
+      /filter:\s*brightness\(([\d.]+)\)/.exec(hover?.body ?? '')?.[1] ?? '1',
+    )
+    const lift = (rgb: Rgb): Rgb => {
+      const at = (index: 0 | 1 | 2): number => Math.min(255, Math.round(rgb[index] * factor))
+      return [at(0), at(1), at(2)]
+    }
+    const scopes = tokenScopes()
+    const fill = scopedHex(scopes, ':root', '--accent-color')
+    const label = scopedHex(scopes, ':root', '--text-on-accent')
+    const ratio = contrastRatio(lift(label), lift(fill))
+    assert.ok(ratio >= AA_BODY_TEXT, `hovered Send now measures ${ratio.toFixed(2)}:1`)
+    // Guards the guard: the white label this replaced has to fail the same bar.
+    assert.ok(contrastRatio(lift([255, 255, 255]), lift(fill)) < AA_BODY_TEXT)
   })
 })
 
