@@ -25,6 +25,7 @@ import {
   gortexStoreMaxBytes,
   gortexStoreNeedsReclaim,
   reclaimBloatedGortexStore,
+  removeGortexExcludes,
   semanticThreadCap,
   setSemanticBackendForTest,
   setSemanticIndexReadyForTest,
@@ -446,6 +447,30 @@ describe('gortex daemon scoping + reaping', () => {
     const repaired = repairGortexConfigYaml(torn)
     assert.deepEqual(parseTrackedRepos(repaired), ['/tmp/repo'])
     assert.deepEqual(parseGortexExcludes(repaired), ['node_modules/', 'dist/'])
+  })
+
+  it('removes only the named exclude entries, leaving repos and other keys intact', () => {
+    const config = [
+      'repos:',
+      '    - path: /tmp/.wdio-profile-0K8Umz/',
+      'exclude:',
+      '    - node_modules/',
+      '    - .wdio-profile-0K8Umz/',
+      '    - .wdio-profile-*/',
+      '    - .wdio-profile-1KVaSe/',
+      'workspaces:',
+      '    - .wdio-profile-1KVaSe/',
+      '',
+    ].join('\n')
+    const pruned = removeGortexExcludes(
+      config,
+      new Set(['.wdio-profile-0K8Umz/', '.wdio-profile-1KVaSe/']),
+    )
+    assert.deepEqual(parseGortexExcludes(pruned), ['node_modules/', '.wdio-profile-*/'])
+    // A same-named line outside the exclude block is not an exclude entry.
+    assert.deepEqual(parseTrackedRepos(pruned), ['/tmp/.wdio-profile-0K8Umz/'])
+    assert.match(pruned, /^workspaces:\n {4}- \.wdio-profile-1KVaSe\/$/m)
+    assert.equal(gortexConfigNeedsRepair(pruned), false)
   })
 
   it('repairCorruptGortexConfig is best-effort and never throws on the boot path', async () => {
