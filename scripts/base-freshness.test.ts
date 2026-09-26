@@ -70,7 +70,7 @@ describe('base freshness policy', () => {
     // the newer base, so "behind" must not be worded as "CI ran against the
     // earlier base": only the branch's own deficit is known.
     const verdict = decideBaseFreshness(candidate, 3)
-    assert.equal(verdict.conclusion, 'failure')
+    assert.equal(verdict.conclusion, 'neutral')
     assert.equal(verdict.title, 'Branch is 3 commits behind main')
     assert.match(verdict.summary, /does not contain 3 commits on `main`/)
     assert.doesNotMatch(verdict.summary, /CI ran against|no longer exists/)
@@ -90,18 +90,21 @@ describe('base freshness policy', () => {
     assert.match(verdict.summary, /not current rather than assumed current/)
   })
 
-  it('never returns a conclusion branch protection treats as passing but untested', () => {
-    // `neutral` and `skipped` both SATISFY a required status check
-    // (docs.github.com, troubleshooting required status checks), so the policy
-    // has exactly two outcomes and success is reachable only from zero behind.
+  it('reports a behind branch as neutral and keeps red for an unestablished comparison', () => {
+    // Every base push makes every open pull request behind. A red check there
+    // invites a base merge on each one, re-running its CI and restarting its
+    // reviews for no finding, so being behind is `neutral`. Success is still
+    // reachable only from zero behind, and a comparison this run could not
+    // establish is still `failure`.
     for (const behind of [null, 0, 1, 250, -1, 0.5, Number.NaN]) {
       const verdict: Verdict = decideBaseFreshness(candidate, behind)
-      const conclusion: string = verdict.conclusion
-      assert.ok(
-        ['success', 'failure'].includes(conclusion),
-        `${String(behind)} produced ${conclusion}`,
-      )
-      assert.equal(conclusion === 'success', behind === 0)
+      const expected =
+        behind === 0
+          ? 'success'
+          : behind !== null && Number.isInteger(behind) && behind > 0
+            ? 'neutral'
+            : 'failure'
+      assert.equal(verdict.conclusion, expected, `${String(behind)} produced ${verdict.conclusion}`)
     }
   })
 })
@@ -261,12 +264,12 @@ describe('base freshness fan-out', () => {
     )
     assert.deepEqual(
       outcomes.map((o) => o.verdict.conclusion),
-      ['success', 'failure'],
+      ['success', 'neutral'],
     )
     assert.ok(outcomes.every((o) => o.published))
     assert.deepEqual(posted, [
       { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-1', conclusion: 'success' } },
-      { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-2', conclusion: 'failure' } },
+      { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-2', conclusion: 'neutral' } },
     ])
   })
 
@@ -367,8 +370,8 @@ describe('base freshness single pull request path', () => {
     const stub = movingBase([TIP, moved, moved], { [TIP]: 0, [moved]: 1 })
     const conclusions: string[] = []
     const outcome = await evaluateSettled(stub.api, candidate, post(stub, conclusions))
-    assert.equal(outcome.verdict.conclusion, 'failure')
-    assert.deepEqual(conclusions, ['success', 'failure'])
+    assert.equal(outcome.verdict.conclusion, 'neutral')
+    assert.deepEqual(conclusions, ['success', 'neutral'])
   })
 
   it('stops chasing a base that never settles, and fails closed when it gives up', async () => {
@@ -398,7 +401,7 @@ describe('base freshness single pull request path', () => {
     const stub = movingBase([tip1, tip2, tip3, tip4], { [tip1]: 1, [tip2]: 1, [tip3]: 0 })
     const conclusions: string[] = []
     const outcome = await evaluateSettled(stub.api, candidate, post(stub, conclusions))
-    assert.deepEqual(conclusions, ['failure', 'failure', 'success', 'failure'])
+    assert.deepEqual(conclusions, ['neutral', 'neutral', 'success', 'failure'])
     assert.equal(outcome.verdict.conclusion, 'failure')
     assert.match(outcome.verdict.title, /could not be established/)
   })
