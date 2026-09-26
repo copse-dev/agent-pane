@@ -9967,6 +9967,9 @@ dialog.settings-overlay::backdrop {
 #update-prompt-dialog {
   max-width: 480px;
 }
+#update-prompt-dialog.has-changelog {
+  max-width: 560px;
+}
 .update-prompt-message {
   margin: 0 0 var(--spacing-sm);
   font-size: var(--font-size-md);
@@ -9975,6 +9978,41 @@ dialog.settings-overlay::backdrop {
   margin: 0 0 var(--spacing-lg);
   color: var(--text-secondary);
   line-height: var(--line-height-base);
+}
+.update-prompt-changelog {
+  margin: 0 0 var(--spacing-lg);
+}
+.update-prompt-changelog-title {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.update-prompt-changelog-list {
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+.update-prompt-release + .update-prompt-release {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.update-prompt-version {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+.update-prompt-notes {
+  font-size: var(--font-size-sm);
+}
+.update-prompt-notes :is(h1, h2, h3, h4) {
+  font-size: var(--font-size-sm);
+}
+.update-prompt-all-notes {
+  display: inline-block;
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-sm);
 }
 .update-prompt-buttons {
   margin-top: 0;
