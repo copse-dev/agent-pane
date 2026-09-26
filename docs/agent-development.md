@@ -27,6 +27,8 @@ the convention. These records do not establish or change branch-review requireme
 
 ## Runtime and standard scripts
 
+For a removable-drive toolchain, see [portable development](portable-development.md).
+
 Copse is an Electron desktop app with no backend service. `make run` is the normal entry point: it
 runs `check-node`, content-addresses dependency and build inputs, verifies the complete `dist/` tree,
 and then starts the app. It is safe to repeat and does the minimum work needed even after branch

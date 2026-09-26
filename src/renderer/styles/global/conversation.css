@@ -472,7 +472,7 @@
   top: 0;
   right: 0;
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -513,7 +513,7 @@
   opacity: 1;
 }
 .msg-action {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -576,7 +576,7 @@
   align-items: center;
   gap: 4px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.25;
   color: var(--text-secondary);
   background: transparent;
@@ -967,7 +967,7 @@
 .visual-evidence-source-url {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1177,7 +1177,7 @@ span.acp-resource-title {
 .code-block-copy,
 .code-block-run {
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1238,7 +1238,7 @@ span.acp-resource-title {
   top: var(--spacing-xs);
   right: var(--spacing-xs);
   opacity: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1336,7 +1336,7 @@ span.acp-resource-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted, var(--text));
 }
 
@@ -1401,7 +1401,7 @@ span.acp-resource-title {
   gap: 2px;
 }
 .canvas-inline-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .canvas-preview-open {

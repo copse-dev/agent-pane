@@ -10,7 +10,7 @@
   min-height: 0;
 }
 .memories-new-btn {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 /* Padding stays with `.git-change-row` so memories and roadmap rows keep the
    shared list rhythm; only the two-line title/tags stack differs here. */
@@ -39,7 +39,7 @@
 .memories-row-taint {
   flex: none;
   align-self: flex-start;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -49,7 +49,7 @@
   padding: 0 5px;
 }
 .memories-tag {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
@@ -78,7 +78,7 @@
   margin-top: var(--spacing-sm);
 }
 .memories-label {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -105,7 +105,7 @@
   line-height: var(--line-height-base);
 }
 .memories-meta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .memories-error {
