@@ -1,0 +1,12 @@
+{
+  "id": "winnow-local",
+  "label": "Winnow-12B local eval",
+  "model": "jev-latest",
+  "timeoutMs": 60000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8091/v1",
+    "auth": "none"
+  }
+}
