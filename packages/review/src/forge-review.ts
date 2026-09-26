@@ -10,9 +10,17 @@
 // does not contain, so an inline comment that is rejected is folded into the
 // body rather than lost: a finding at a line the diff never touched (Stage 0's
 // anchor at the script in `package.json`, say) still reaches the reader.
+import { z } from 'zod'
 import { errorMessage } from '@copse/std/errors.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { memberOf } from '@copse/std/member-of.ts'
 import type { Finding } from './finding.ts'
+import {
+  CLAIM_CONTAINMENT_THRESHOLD,
+  CLAIM_SIMILARITY_THRESHOLD,
+  claimContainment,
+  claimSimilarity,
+} from './cluster.ts'
 import { reviewerLimitations, type ReviewReport } from './stage5.ts'
 
 export const FORGES = ['github', 'forgejo'] as const
@@ -36,6 +44,8 @@ export interface ForgeReviewOptions {
   readonly toolVersion: string
   /** Full, commit-pinned diffs. An absent path has no place for an inline comment. */
   readonly fileDiffs?: ReadonlyMap<string, string>
+  /** Findings left out because another open pull request already carries them. */
+  readonly repeatedElsewhere?: readonly { readonly pr: number; readonly url: string }[]
 }
 
 /** Choose a visible head-side line within the finding's own range, never a nearby line. */
@@ -77,7 +87,7 @@ function where(finding: Finding): string {
  * team gets a zero-width space. Code spans are kept as written — neither
  * renders inside one.
  */
-function inertMarkdown(text: string): string {
+export function inertMarkdown(text: string): string {
   const inert = (prose: string): string =>
     prose
       .replaceAll('\\', '\\\\')
@@ -331,6 +341,16 @@ export function buildForgeReview(
   if (report.appendix.length > 0) {
     lines.push('', `${String(report.appendix.length)} more below the cap, in the review's JSON.`)
   }
+  const repeated = options.repeatedElsewhere ?? []
+  if (repeated.length > 0) {
+    const links = [...new Map(repeated.map((ref) => [ref.pr, ref.url])).entries()]
+      .map(([pr, link]) => `[#${String(pr)}](${link})`)
+      .join(', ')
+    lines.push(
+      '',
+      `${String(repeated.length)} more already raised on ${links}, which carries the same change; not repeated here.`,
+    )
+  }
   const supporting = reviewDetails(report, options)
   if (report.refuted.length > 0)
     supporting.push(
@@ -359,13 +379,18 @@ export interface ForgeTarget {
 
 export type FetchLike = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: { method: string; headers: Record<string, string>; body?: string },
 ) => Promise<{ status: number; text(): Promise<string> }>
 
-function reviewsUrl(target: ForgeTarget): string {
+/** The pull request itself: `GET` reads its head and description, `PATCH` edits them. */
+export function pullRequestUrl(target: ForgeTarget): string {
   const base = target.apiBase.replace(/\/+$/, '')
-  const path = `repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${String(target.number)}/reviews`
+  const path = `repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${String(target.number)}`
   return target.forge === 'github' ? `${base}/${path}` : `${base}/api/v1/${path}`
+}
+
+function reviewsUrl(target: ForgeTarget): string {
+  return `${pullRequestUrl(target)}/reviews`
 }
 
 function reviewPayload(target: ForgeTarget, review: ForgeReview): Record<string, unknown> {
@@ -395,7 +420,7 @@ function reviewPayload(target: ForgeTarget, review: ForgeReview): Record<string,
   }
 }
 
-function headers(target: ForgeTarget): Record<string, string> {
+export function forgeHeaders(target: ForgeTarget): Record<string, string> {
   return target.forge === 'github'
     ? {
         Accept: 'application/vnd.github+json',
@@ -414,9 +439,205 @@ export interface PostedReview {
   readonly inline: number
   /** Anchored findings kept in the body because their line could not be used. */
   readonly folded: number
+  /** Earlier Copse reviews on the pull request marked superseded (GitHub only). */
+  readonly superseded?: number
+  /** Why superseding earlier reviews stopped; the new review is posted regardless. */
+  readonly supersedeError?: string
+  /** Nothing was posted: after de-duplication there were no findings to raise. */
+  readonly notPosted?: 'no findings'
+  /** Findings left out because another open pull request already carries them. */
+  readonly repeatedElsewhere?: number
+  /** Why the lookup of other open pull requests failed; every finding was kept. */
+  readonly repeatLookupError?: string
 }
 
-const ERROR_EXCERPT_CHARS = 512
+/** Every posted review carries it; a superseded one no longer does. */
+const REVIEW_MARKER = /<!-- copse-review:[0-9a-f]{40} -->/
+const postedReviewSchema = z.object({
+  id: z.number(),
+  html_url: z.string(),
+  user: z.object({ login: z.string() }).nullable(),
+})
+const listedReviewSchema = z.array(
+  z.object({
+    id: z.number(),
+    body: z.string().nullable(),
+    user: z.object({ login: z.string(), type: z.string().optional() }).nullable(),
+  }),
+)
+const repoReviewCommentsSchema = z.array(
+  z.object({
+    path: z.string(),
+    body: z.string(),
+    html_url: z.string(),
+    pull_request_url: z.string(),
+    user: z.object({ type: z.string() }).nullable(),
+  }),
+)
+const openPullsSchema = z.array(z.object({ number: z.number() }))
+const reviewCommentsSchema = z.array(z.object({ node_id: z.string() }))
+
+function graphqlUrl(apiBase: string): string {
+  const base = apiBase.replace(/\/+$/, '')
+  // GitHub Enterprise serves REST at /api/v3 and GraphQL at /api/graphql.
+  return base.endsWith('/api/v3') ? `${base.slice(0, -'/v3'.length)}/graphql` : `${base}/graphql`
+}
+
+type GithubRequest = (method: string, requestUrl: string, body?: unknown) => Promise<string>
+
+function githubRequest(target: ForgeTarget, fetchImpl: FetchLike): GithubRequest {
+  return async (method, requestUrl, body) => {
+    const response = await fetchImpl(requestUrl, {
+      method,
+      headers: forgeHeaders(target),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+    const text = await response.text()
+    if (response.status < 200 || response.status >= 300) {
+      throw new ForgeReviewError(
+        response.status,
+        `github returned ${String(response.status)} for ${method} ${requestUrl}: ${text.slice(0, ERROR_EXCERPT_CHARS)}`,
+      )
+    }
+    return text
+  }
+}
+
+interface Supersession {
+  /** The review just posted, never superseded itself. */
+  readonly exceptId?: number
+  /**
+   * Whose reviews count as earlier Copse reviews: the poster's login when a
+   * review was just posted, otherwise any bot account carrying the marker.
+   */
+  readonly login?: string
+  readonly body: string
+}
+
+/**
+ * Mark earlier Copse reviews on the pull request superseded. A submitted
+ * review cannot be deleted, so its body is replaced and its inline comments
+ * are hidden as outdated — reversible, and replies to them are kept.
+ */
+async function supersedeEarlierReviews(
+  target: ForgeTarget,
+  supersession: Supersession,
+  request: GithubRequest,
+): Promise<number> {
+  const url = reviewsUrl(target)
+  const earlier: number[] = []
+  for (let page = 1; ; page++) {
+    const listed = safeJsonParse(
+      await request('GET', `${url}?per_page=100&page=${String(page)}`),
+      decodeWithSchema(listedReviewSchema),
+    )
+    if (listed === null) throw new Error('github returned an unreadable review list')
+    for (const review of listed) {
+      const ours =
+        supersession.login === undefined
+          ? review.user?.type === 'Bot'
+          : review.user?.login === supersession.login
+      if (review.id !== supersession.exceptId && ours && REVIEW_MARKER.test(review.body ?? '')) {
+        earlier.push(review.id)
+      }
+    }
+    if (listed.length < 100) break
+  }
+  for (const id of earlier) {
+    await request('PUT', `${url}/${String(id)}`, { body: supersession.body })
+    const comments = safeJsonParse(
+      await request('GET', `${url}/${String(id)}/comments?per_page=100`),
+      decodeWithSchema(reviewCommentsSchema),
+    )
+    for (const comment of comments ?? []) {
+      await request('POST', graphqlUrl(target.apiBase), {
+        query:
+          'mutation($id: ID!) { minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { clientMutationId } }',
+        variables: { id: comment.node_id },
+      })
+    }
+  }
+  return earlier.length
+}
+
+interface RaisedElsewhere {
+  readonly pr: number
+  readonly url: string
+  readonly path: string
+  readonly findingClass: string
+  readonly claim: string
+}
+
+/** A Copse finding comment: the bold claim, then the category and id in its details. */
+const FINDING_COMMENT = /^\*\*(.+?)\*\*\n[\s\S]*Category: ([a-z-]+)\.[\s\S]*· id `[0-9a-f]{16}`/
+const REPEAT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * Copse inline findings already posted on other open pull requests of the
+ * repository. Stacked or cherry-picked branches carry the same commits, and
+ * without this the same finding was posted once per branch — seven times
+ * for one change in a live batch.
+ */
+async function findingsRaisedElsewhere(
+  target: ForgeTarget,
+  request: GithubRequest,
+  now: number,
+): Promise<RaisedElsewhere[]> {
+  const repo = `${target.apiBase.replace(/\/+$/, '')}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`
+  const open = new Set<number>()
+  for (let page = 1; page <= 5; page++) {
+    const pulls = safeJsonParse(
+      await request('GET', `${repo}/pulls?state=open&per_page=100&page=${String(page)}`),
+      decodeWithSchema(openPullsSchema),
+    )
+    if (pulls === null) throw new Error('github returned an unreadable pull request list')
+    for (const pull of pulls) open.add(pull.number)
+    if (pulls.length < 100) break
+  }
+  open.delete(target.number)
+  const since = new Date(now - REPEAT_LOOKBACK_MS).toISOString()
+  const raised: RaisedElsewhere[] = []
+  for (let page = 1; page <= 10; page++) {
+    const comments = safeJsonParse(
+      await request(
+        'GET',
+        `${repo}/pulls/comments?sort=created&direction=desc&since=${since}&per_page=100&page=${String(page)}`,
+      ),
+      decodeWithSchema(repoReviewCommentsSchema),
+    )
+    if (comments === null) throw new Error('github returned an unreadable review comment list')
+    for (const comment of comments) {
+      const pr = Number(comment.pull_request_url.split('/').pop())
+      const match = FINDING_COMMENT.exec(comment.body)
+      if (comment.user?.type !== 'Bot' || !open.has(pr) || match === null) continue
+      raised.push({
+        pr,
+        url: comment.html_url,
+        path: comment.path,
+        claim: match[1] ?? '',
+        findingClass: match[2] ?? '',
+      })
+    }
+    if (comments.length < 100) break
+  }
+  return raised
+}
+
+/** The same defect, worded differently, on the same file: Stage 3's claim test. */
+function raisedAs(
+  finding: Finding,
+  raised: readonly RaisedElsewhere[],
+): RaisedElsewhere | undefined {
+  return raised.find(
+    (ref) =>
+      ref.path === finding.anchor.path &&
+      ref.findingClass === finding.class &&
+      (claimSimilarity(ref.claim, finding.claim) >= CLAIM_SIMILARITY_THRESHOLD ||
+        claimContainment(ref.claim, finding.claim) >= CLAIM_CONTAINMENT_THRESHOLD),
+  )
+}
+
+export const ERROR_EXCERPT_CHARS = 512
 
 /**
  * Check anchors against full diffs before posting so one invalid location does
@@ -431,18 +652,69 @@ export async function postForgeReview(
     readonly toolVersion: string
     readonly fetch?: FetchLike
     readonly diffForPath?: (path: string) => Promise<string>
+    /**
+     * Post nothing when there is no finding to raise. A completed review then
+     * still marks earlier Copse reviews resolved; an incomplete one leaves
+     * them, since it cannot vouch that their findings are gone.
+     */
+    readonly skipWhenEmpty?: boolean
+    /** GitHub: leave out findings another open pull request already carries. */
+    readonly skipRaisedElsewhere?: boolean
+    readonly now?: () => number
   },
 ): Promise<PostedReview> {
   const fetchImpl: FetchLike = options.fetch ?? fetch
   const url = reviewsUrl(target)
-  const attempt = async (review: ForgeReview): Promise<number> => {
+  const request = githubRequest(target, fetchImpl)
+  const sha = target.headCommit === null ? '' : ` of \`${target.headCommit.slice(0, 12)}\``
+  let repeated: { finding: Finding; ref: RaisedElsewhere }[] = []
+  let repeatLookup: Partial<PostedReview> = {}
+  if (
+    options.skipRaisedElsewhere === true &&
+    target.forge === 'github' &&
+    report.findings.length > 0
+  ) {
+    try {
+      const raised = await findingsRaisedElsewhere(target, request, (options.now ?? Date.now)())
+      const kept: Finding[] = []
+      for (const finding of report.findings) {
+        const ref = raisedAs(finding, raised)
+        if (ref === undefined) kept.push(finding)
+        else repeated.push({ finding, ref })
+      }
+      report = { ...report, findings: kept }
+    } catch (err) {
+      repeated = []
+      repeatLookup = { repeatLookupError: errorMessage(err) }
+    }
+  }
+  if (repeated.length > 0) repeatLookup = { repeatedElsewhere: repeated.length }
+  if (options.skipWhenEmpty === true && report.findings.length === 0) {
+    const complete = report.reviews.every((review) => review.outcome === 'completed')
+    let resolved: Partial<PostedReview> = {}
+    if (complete && target.forge === 'github') {
+      try {
+        resolved = {
+          superseded: await supersedeEarlierReviews(
+            target,
+            { body: `### Copse Reviewer\n\nResolved: a newer review${sha} raised no new issues.` },
+            request,
+          ),
+        }
+      } catch (err) {
+        resolved = { supersedeError: errorMessage(err) }
+      }
+    }
+    return { inline: 0, folded: 0, notPosted: 'no findings', ...repeatLookup, ...resolved }
+  }
+  const attempt = async (review: ForgeReview): Promise<string> => {
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
-        headers: headers(target),
+        headers: forgeHeaders(target),
         body: JSON.stringify(reviewPayload(target, review)),
       })
-      if (response.status >= 200 && response.status < 300) return response.status
+      if (response.status >= 200 && response.status < 300) return await response.text()
       const text = (await response.text()).slice(0, ERROR_EXCERPT_CHARS)
       throw new ForgeReviewError(
         response.status,
@@ -471,22 +743,51 @@ export async function postForgeReview(
     headCommit: target.headCommit,
     toolVersion: options.toolVersion,
     ...(fileDiffs === undefined ? {} : { fileDiffs }),
+    ...(repeated.length === 0
+      ? {}
+      : { repeatedElsewhere: repeated.map(({ ref }) => ({ pr: ref.pr, url: ref.url })) }),
   }
   const inline = buildForgeReview(report, reviewOptions)
   const anchored = report.findings.filter(
     (finding) => finding.anchor.startLine !== undefined,
   ).length
+  // A re-run replaces the earlier review rather than stacking another beside it.
+  const supersede = async (responseText: string): Promise<Partial<PostedReview>> => {
+    if (target.forge !== 'github') return {}
+    const posted = safeJsonParse(responseText, decodeWithSchema(postedReviewSchema))
+    if (posted === null) return {}
+    try {
+      return {
+        superseded: await supersedeEarlierReviews(
+          target,
+          {
+            exceptId: posted.id,
+            ...(posted.user === null ? {} : { login: posted.user.login }),
+            body: `### Copse Reviewer\n\nSuperseded by [a newer review](${posted.html_url})${sha}.`,
+          },
+          request,
+        ),
+      }
+    } catch (err) {
+      return { supersedeError: errorMessage(err) }
+    }
+  }
   try {
-    await attempt(inline)
-    return { inline: inline.comments.length, folded: anchored - inline.comments.length }
+    const response = await attempt(inline)
+    return {
+      inline: inline.comments.length,
+      folded: anchored - inline.comments.length,
+      ...repeatLookup,
+      ...(await supersede(response)),
+    }
   } catch (err) {
     if (!(err instanceof ForgeReviewError) || err.status !== 422 || inline.comments.length === 0) {
       throw err
     }
   }
   const everything = new Set(report.findings.map((_finding, index) => index))
-  await attempt(buildForgeReview(report, reviewOptions, everything))
-  return { inline: 0, folded: anchored }
+  const response = await attempt(buildForgeReview(report, reviewOptions, everything))
+  return { inline: 0, folded: anchored, ...repeatLookup, ...(await supersede(response)) }
 }
 
 export class ForgeReviewError extends Error {

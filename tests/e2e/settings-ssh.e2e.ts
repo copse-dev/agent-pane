@@ -6,6 +6,7 @@ import {
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
+import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
 
 function settingsSection(section: 'ssh') {
@@ -85,6 +86,14 @@ describe('SSH settings section', () => {
     await browser.execute(() => {
       document.querySelector('.ssh-host-form')?.scrollIntoView({ block: 'center' })
     })
+    // "Forward SSH agent" is a checkbox line like every other `.checkbox-label`:
+    // the host form's own label rule must not stack the box above its wording.
+    const forwardAgentLabel = '.settings-section[data-section="ssh"] .ssh-host-form .checkbox-label'
+    await assertCheckboxBesideLabel(forwardAgentLabel)
+    await saveElementScreenshot(
+      '.settings-section[data-section="ssh"] .ssh-host-form',
+      'settings-ssh-host-form.png',
+    )
     // The fixed settings footer currently intercepts low controls on main
     // (#2067); invoke the product handler directly so this validation eval stays
     // scoped to the port parser while that independent layout fix is pending.
@@ -95,20 +104,45 @@ describe('SSH settings section', () => {
       'Port must be a whole number from 1 to 65535.',
     )
     await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    // The rejected field itself is marked, in the error hue, not just the
+    // status line; and every host field takes the Settings field recipe (#3065).
+    const fields = await browser.execute(() => {
+      const section = document.querySelector('.settings-section[data-section="ssh"]')
+      const port = section?.querySelector<HTMLInputElement>('input[name="sshHostPort"]')
+      const host = section?.querySelector<HTMLInputElement>('input[name="sshHostHost"]')
+      const policy = section?.querySelector<HTMLSelectElement>('select[name="sshStrictHostKeys"]')
+      if (!port || !host || !policy) return null
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--error)'
+      port.parentElement?.append(probe)
+      const errorColor = getComputedStyle(probe).color
+      probe.remove()
+      const widths = ['sshHostId', 'sshHostLabel', 'sshHostHost', 'sshHostUser', 'sshHostPort']
+        .map((name) => section?.querySelector<HTMLInputElement>(`input[name="${name}"]`))
+        .map((input) => input?.getBoundingClientRect().width ?? 0)
+      return {
+        portInvalid: port.getAttribute('aria-invalid'),
+        hostInvalid: host.getAttribute('aria-invalid'),
+        portBorder: getComputedStyle(port).borderTopColor,
+        errorColor,
+        widths,
+        policyWidth: policy.getBoundingClientRect().width,
+      }
+    })
+    assert.ok(fields, 'SSH host form must render')
+    assert.equal(fields.portInvalid, 'true', 'the bad port is marked aria-invalid')
+    assert.equal(fields.hostInvalid, null, 'fields that passed stay unmarked')
+    assert.equal(fields.portBorder, fields.errorColor, 'the invalid port draws in --error')
+    for (const width of fields.widths) {
+      assert.equal(width, fields.policyWidth, 'host fields share the Settings field width')
+    }
     await browser.execute(() => {
       document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
     })
-    // Form actions are UI-kit buttons and the checkbox sits inline with its label (#3065).
+    // Form actions are UI-kit buttons, not bare text (#3065). The Forward SSH
+    // agent row is held by assertCheckboxBesideLabel above.
     await expect(sshSection.$('.ssh-host-save')).toHaveElementClass('ui-btn-primary')
     await expect(sshSection.$('.ssh-host-clear')).toHaveElementClass('ui-btn-secondary')
-    assert.equal(
-      await browser.execute(() => {
-        const label = document.querySelector<HTMLElement>('.ssh-host-form label.checkbox-label')
-        return label ? getComputedStyle(label).flexDirection : null
-      }),
-      'row',
-      'the Forward SSH agent checkbox must sit beside its label, not above it',
-    )
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-invalid-port.png')
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.ssh-host-clear')?.click()

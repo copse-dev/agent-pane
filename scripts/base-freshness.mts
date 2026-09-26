@@ -1,0 +1,613 @@
+#!/usr/bin/env node
+// Base freshness: does an open pull request's green CI still describe the
+// commit that would actually land?
+//
+// `CI Passed` is attached to a HEAD SHA. GitHub tests `refs/pull/N/merge` —
+// head merged into the base branch as it stood when the run was dispatched —
+// but branch protection only ever reads the check's name and conclusion. It
+// has no idea which base that run merged. So once the base branch advances,
+// an untouched pull request keeps a green `CI Passed` describing a merge
+// result that no longer exists, and merging it authorizes a combination CI
+// never executed. That is the "base advancement" half of #2520, left open by
+// #2722 (cancellation) and the retarget trigger work.
+//
+// The usual fixes are unavailable or unaffordable here:
+//   - GitHub's merge queue needs Enterprise Cloud for a private repository and
+//     this org is on Team (see ci.yml's `merge_group` note).
+//   - Re-dispatching CI for every open pull request on each push to `main`
+//     would multiply the day's load across an ephemeral self-hosted fleet that
+//     already serves both tiers.
+//
+// So this does the cheap half only: it RE-EVALUATES, it never re-runs. On each
+// push to a protected base, and on each event that moves a pull request's head
+// or base, it asks GitHub how far behind that pull request is and publishes the
+// answer as its own check run, `Base Current`. No checkout, no dependency
+// restore, no fleet — one comparison and one check run per candidate.
+//
+// ## What it measures, exactly
+//
+// `Base Current` reports whether the BRANCH contains the current base tip. It
+// does not claim to know which base the last CI run merged: a run dispatched
+// after the base moved already tested head + that newer base, even though the
+// branch itself is still behind. The base SHA a `pull_request` run merged is
+// not recoverable from the API afterwards (`refs/pull/N/merge` moves, and a
+// run's `pull_requests[]` is resolved at read time), so the honest signal
+// available here is the plain one: "the branch is N commits behind the base".
+// Zero is the only value that proves every tested merge result equals the one
+// that would land, because merging a head with any ancestor of it is the head.
+//
+// ## This REPORTS. It must never become a required check.
+//
+// `Base Current` is advisory, and the limit is structural rather than a gap to
+// be tightened later. The authorizing artifact would be a `success` check run
+// already attached to a head SHA, and the only way to withdraw one is to
+// successfully POST a newer check run to that same head. Check runs have no
+// expiry and there is no atomic bulk invalidation, so ANY failure of the
+// fan-out — a single API error, a lost runner, an aborted run, the listing call
+// failing before a single candidate is reached, the workflow not dispatching at
+// all — leaves earlier `success` results in place on every head it did not
+// reach. Those pull requests then carry an authorizing success across a base
+// that has moved, which is precisely the case this is written to expose. The
+// run's own failure is attached to the base commit, not to those heads, so
+// nothing on the candidate reflects it.
+//
+// Continuing past per-candidate errors (below) narrows that window and makes
+// the incompleteness visible; it cannot close it. Revocation by push is
+// best-effort by construction, so requiring this context would reintroduce the
+// stale authorization it is meant to surface, but harder to see.
+//
+// Sound enforcement of the same property already exists and needs no
+// revocation because GitHub evaluates it at merge time: the branch-protection
+// setting "Require branches to be up to date before merging", or a merge queue.
+// Choosing between those is a repository-settings decision, not something this
+// workflow can substitute for. docs/plans/ci-base-freshness.md carries that
+// reasoning and the open enforcement question.
+//
+// Deliberately ADDITIVE. `CI Passed` keeps its exact current meaning, so no
+// existing branch rule or consumer changes, and nothing here can open a merge
+// window that was closed before.
+//
+// A branch behind its base is `neutral` unless the commits it lacks change a
+// file it also changes; then it is `failure` and names the files (see
+// `decideBaseFreshness`). Within a candidate this run does reach, the report is
+// conservative: when freshness cannot be established the verdict is `failure`,
+// never a quiet pass.
+// Every path self-heals — the next push to the base and the pull request's own
+// next event both re-evaluate it.
+//
+// Run locally:  GITHUB_REPOSITORY=owner/repo GITHUB_TOKEN=... BASE_REF=main \
+//                 pnpm run ci:base-freshness -- --dry-run
+
+// Node builtins only — no import from `src/`, no workspace package, no
+// `node_modules` at all. Same doctrine as ci.yml's `ci-passed` aggregate: a job
+// that decides whether a merge is authorized must not be able to fail because a
+// dependency restore did. The small decoders below exist for that reason.
+
+/** The additive, advisory check context this script publishes. */
+export const CHECK_NAME = 'Base Current'
+
+/**
+ * Hard ceiling on candidates evaluated in one run. Reaching it is an error, not
+ * a truncation: silently skipping the tail would hand back exactly the quiet
+ * pass this control exists to remove.
+ */
+export const MAX_CANDIDATES = 500
+
+const API_ROOT = 'https://api.github.com'
+
+/**
+ * GitHub lists at most this many changed files for one comparison. A list that
+ * long may be truncated, so the overlap it would give is unknown, not empty.
+ */
+export const MAX_COMPARE_FILES = 300
+
+/** Overlapping files named in a verdict; the rest are counted. */
+const OVERLAP_LISTED = 10
+
+export type Candidate = {
+  number: number
+  headSha: string
+  baseRef: string
+  draft: boolean
+  /**
+   * The head lives in another repository (a fork, or a deleted fork whose
+   * `head.repo` is null). Fork pull requests are outside this check: they have
+   * no `CI Passed` and must land through a same-repository branch
+   * (docs/plans/ci-base-freshness.md), so nothing is evaluated or posted for them.
+   */
+  fork: boolean
+}
+
+export type Verdict = {
+  conclusion: 'success' | 'neutral' | 'failure'
+  title: string
+  summary: string
+}
+
+/**
+ * The whole policy, as a pure function of one comparison.
+ *
+ * `behindBy` is GitHub's own count of commits on the base that the head does
+ * not contain — the same measure "Require branches to be up to date before
+ * merging" uses. Zero means the tested merge result is still the merge result.
+ * A positive count is reported as exactly that — the branch is behind — and
+ * deliberately makes no claim about which base CI merged (see the header).
+ *
+ * Being behind alone is `neutral`, not `failure`: every push to the base makes
+ * every open pull request behind, and a red check there invites a base merge on
+ * each one, which re-runs its whole CI and restarts its reviews for no finding.
+ * This context is advisory and never required, so `neutral` passing a required
+ * check does not apply.
+ *
+ * `overlap` is what makes it red: the files that both the missing base commits
+ * and this pull request change. Those are where the tested merge result is most
+ * likely to differ from the one that would land, so a non-empty overlap is
+ * `failure` and names them. An empty overlap is `neutral`; `null` means the
+ * overlap could not be established (a truncated file list, or a comparison that
+ * failed) and is `neutral` too, saying so, because it is no evidence of risk.
+ *
+ * `behindBy === null` means the comparison could not be established at all.
+ * That is a failure, not a neutral: an unestablished base is indistinguishable
+ * from a stale one at merge time.
+ */
+export function decideBaseFreshness(
+  candidate: Candidate,
+  behindBy: number | null,
+  overlap: readonly string[] | null = null,
+): Verdict {
+  const where = `\`${candidate.baseRef}\``
+  // Success is reachable from exactly one value. Anything else — absent,
+  // fractional, negative — is a comparison this run did not establish, and an
+  // unestablished base must not read as a current one.
+  if (behindBy === null || !Number.isInteger(behindBy) || behindBy < 0) {
+    return {
+      conclusion: 'failure',
+      title: 'Base freshness could not be established',
+      summary:
+        `Could not establish how far ${candidate.headSha} is behind ${where}, so this ` +
+        `pull request's CI result cannot be shown to describe the commit that would land. ` +
+        `Reported as not current rather than assumed current. It is re-evaluated on the next ` +
+        `push to ${where} and on this pull request's next push, retarget or reopen.`,
+    }
+  }
+  if (behindBy > 0) {
+    const commits = behindBy === 1 ? '1 commit' : `${String(behindBy)} commits`
+    const deficit =
+      `This branch does not contain ${commits} on ${where}. This reports the branch only: ` +
+      `\`CI Passed\` may already have tested a merge with some or all of those commits, or ` +
+      `none of them, depending on when it ran.`
+    if (overlap !== null && overlap.length > 0) {
+      const listed = overlap.slice(0, OVERLAP_LISTED).map((file) => `- \`${file}\``)
+      const more = overlap.length - listed.length
+      return {
+        conclusion: 'failure',
+        title: `Branch is ${commits} behind ${candidate.baseRef}, which changed files this PR changes`,
+        summary: [
+          `${deficit} Those commits change ${overlap.length === 1 ? 'a file' : 'files'} this ` +
+            `pull request also changes:`,
+          '',
+          ...listed,
+          ...(more > 0 ? [`- and ${String(more)} more`] : []),
+          '',
+          `Update the branch from ${where} so CI tests these changes together.`,
+        ].join('\n'),
+      }
+    }
+    return {
+      conclusion: 'neutral',
+      title: `Branch is ${commits} behind ${candidate.baseRef}`,
+      summary:
+        overlap === null
+          ? `${deficit} Whether those commits change a file this pull request changes could ` +
+            `not be established, so this is reported without a recommendation.`
+          : `${deficit} None of those commits change a file this pull request changes, so ` +
+            `there is no need to update the branch for this alone.`,
+    }
+  }
+  return {
+    conclusion: 'success',
+    title: `Up to date with ${candidate.baseRef}`,
+    summary:
+      `This branch contains every commit on ${where}, so any merge result CI tested is the ` +
+      `merge result that would land.`,
+  }
+}
+
+/**
+ * One field of a decoded JSON value, as `unknown`; `undefined` when the value
+ * is not an object or does not own the key.
+ *
+ * Deliberately NOT a `value is Record<string, unknown>` predicate. An asserted
+ * predicate is an `as` cast in nicer syntax — TypeScript never checks that the
+ * body proves the claim — and `scripts/type-predicate-inventory.test.ts` holds
+ * that population shrink-only. Handing back `unknown` leaves every narrowing to
+ * the `typeof` checks at the use site, which the compiler does check.
+ * `Object.hasOwn` rather than `in`, which also matches inherited members.
+ */
+function field(value: unknown, key: string): unknown {
+  if (typeof value !== 'object' || value === null) return undefined
+  if (!Object.hasOwn(value, key)) return undefined
+  const descriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(value, key)
+  const own: unknown = descriptor?.value
+  return own
+}
+
+function decodeCandidate(value: unknown): Candidate {
+  const number = field(value, 'number')
+  const headSha = field(field(value, 'head'), 'sha')
+  const baseRef = field(field(value, 'base'), 'ref')
+  if (typeof number !== 'number') throw new Error('pull request has no number')
+  if (typeof headSha !== 'string') throw new Error('pull request has no head sha')
+  if (typeof baseRef !== 'string') throw new Error('pull request has no base ref')
+  const headRepo = field(field(value, 'head'), 'repo')
+  const baseRepo = field(field(value, 'base'), 'repo')
+  const fork = field(headRepo, 'full_name') !== field(baseRepo, 'full_name') || headRepo === null
+  return { number, headSha, baseRef, draft: field(value, 'draft') === true, fork }
+}
+
+export function decodeCandidates(text: string): Candidate[] {
+  const value: unknown = JSON.parse(text)
+  if (!Array.isArray(value)) throw new Error('pull request listing was not a JSON array')
+  return value.map(decodeCandidate)
+}
+
+export function decodeCandidateResponse(text: string): Candidate {
+  const value: unknown = JSON.parse(text)
+  return decodeCandidate(value)
+}
+
+/** What one `base...head` comparison established. */
+export type Comparison = {
+  /** Commits on the base the head does not contain, or null when absent. */
+  behindBy: number | null
+  /** The comparison's merge base, or null when it carries none. */
+  mergeBase: string | null
+  /**
+   * Every path the head side changes since the merge base, renames under both
+   * names; null when the list is absent or may be truncated.
+   */
+  files: readonly string[] | null
+}
+
+/** The changed paths a comparison lists, or null when absent or possibly truncated. */
+function decodeFiles(value: unknown): readonly string[] | null {
+  const files = field(value, 'files')
+  if (!Array.isArray(files) || files.length >= MAX_COMPARE_FILES) return null
+  const paths: string[] = []
+  for (const file of files) {
+    for (const key of ['filename', 'previous_filename']) {
+      const path = field(file, key)
+      if (typeof path === 'string') paths.push(path)
+    }
+  }
+  return paths
+}
+
+export function decodeComparison(text: string): Comparison {
+  const value: unknown = JSON.parse(text)
+  const behindBy = field(value, 'behind_by')
+  const mergeBase = field(field(value, 'merge_base_commit'), 'sha')
+  return {
+    behindBy:
+      typeof behindBy === 'number' && Number.isInteger(behindBy) && behindBy >= 0 ? behindBy : null,
+    mergeBase: typeof mergeBase === 'string' && /^[0-9a-f]{40}$/.test(mergeBase) ? mergeBase : null,
+    files: decodeFiles(value),
+  }
+}
+
+/**
+ * `behind_by` from a base...head comparison, or null when the response does not
+ * carry one. Callers turn null into a fail-closed verdict rather than guessing.
+ */
+export function decodeBehindBy(text: string): number | null {
+  return decodeComparison(text).behindBy
+}
+
+/** The commit a `/git/ref/heads/...` lookup resolves to, or null when it carries none. */
+export function decodeRefSha(text: string): string | null {
+  const value: unknown = JSON.parse(text)
+  const sha = field(field(value, 'object'), 'sha')
+  return typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha) ? sha : null
+}
+
+type Api = {
+  get: (path: string) => Promise<string>
+  post: (path: string, body: unknown) => Promise<void>
+}
+
+export function githubApi(repository: string, token: string, fetchImpl: typeof fetch = fetch): Api {
+  const headers = {
+    accept: 'application/vnd.github+json',
+    authorization: `Bearer ${token}`,
+    'x-github-api-version': '2022-11-28',
+  }
+  return {
+    async get(path): Promise<string> {
+      const res = await fetchImpl(`${API_ROOT}/repos/${repository}${path}`, { headers })
+      if (!res.ok) throw new Error(`GET ${path} -> ${String(res.status)} ${res.statusText}`)
+      return await res.text()
+    },
+    async post(path, body): Promise<void> {
+      const res = await fetchImpl(`${API_ROOT}/repos/${repository}${path}`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`POST ${path} -> ${String(res.status)} ${res.statusText}`)
+    },
+  }
+}
+
+/**
+ * Open same-repository pull requests targeting `baseRef`, newest first, drafts
+ * and forks already removed (forks are outside this check; see `Candidate.fork`).
+ *
+ * Drafts are skipped on the fan-out path because they cannot merge, and their
+ * own `ready_for_review` event re-evaluates them the moment they can. That
+ * keeps a push to a busy base to about two requests per mergeable candidate
+ * (one comparison, one check-run POST; the base-side file list is shared by
+ * candidates with the same merge base) plus the listing and one base lookup,
+ * which is what holds this inside the Actions token's hourly budget.
+ */
+export async function listCandidates(api: Api, baseRef: string): Promise<Candidate[]> {
+  const candidates: Candidate[] = []
+  // Bounded on PAGES, not on kept candidates: a base fronted by hundreds of
+  // drafts would otherwise page forever without the kept count ever moving.
+  const maxPages = Math.ceil(MAX_CANDIDATES / 100)
+  for (let page = 1; page <= maxPages; page += 1) {
+    const encoded = encodeURIComponent(baseRef)
+    const body = await api.get(
+      `/pulls?state=open&base=${encoded}&per_page=100&page=${String(page)}`,
+    )
+    const batch = decodeCandidates(body)
+    candidates.push(...batch.filter((candidate) => !candidate.draft && !candidate.fork))
+    if (batch.length < 100) return candidates
+  }
+  throw new Error(
+    `more than ${String(MAX_CANDIDATES)} open pull requests target ${baseRef}; refusing to ` +
+      `evaluate a truncated set`,
+  )
+}
+
+/**
+ * The base branch's current tip, or null when it could not be read. Comparing
+ * against this exact SHA (rather than the branch name) pins what a verdict was
+ * computed against, so the single-PR path can tell whether the base moved
+ * before its verdict landed.
+ */
+export async function baseTip(api: Api, baseRef: string): Promise<string | null> {
+  try {
+    return decodeRefSha(await api.get(`/git/ref/heads/${encodeURIComponent(baseRef)}`))
+  } catch {
+    return null
+  }
+}
+
+/** Base-side changed paths per merge base, shared by one run's candidates. */
+export type BaseFilesCache = Map<string, readonly string[] | null>
+
+/**
+ * The verdict for one candidate against `baseSha`: one `base...head` comparison,
+ * and, only when the head is behind, one `mergeBase...base` comparison for the
+ * paths the missing commits change. Candidates that share a merge base share
+ * that second request through `cache`, which keeps a push to a busy base close
+ * to one comparison and one check-run POST per candidate.
+ */
+export async function assess(
+  api: Api,
+  candidate: Candidate,
+  baseSha: string | null,
+  cache: BaseFilesCache,
+): Promise<Verdict> {
+  if (baseSha === null) return decideBaseFreshness(candidate, null)
+  let comparison: Comparison
+  try {
+    // `per_page=1` trims the commit list to one entry; `behind_by` is a total,
+    // and the file list (up to MAX_COMPARE_FILES) comes on the first page.
+    comparison = decodeComparison(
+      await api.get(`/compare/${baseSha}...${candidate.headSha}?per_page=1`),
+    )
+  } catch {
+    // A comparison this run could not make is not evidence of freshness. The
+    // null flows into decideBaseFreshness and becomes an explicit failure.
+    return decideBaseFreshness(candidate, null)
+  }
+  const { behindBy, mergeBase, files } = comparison
+  if (behindBy === null || behindBy === 0 || mergeBase === null || files === null) {
+    return decideBaseFreshness(candidate, behindBy)
+  }
+  let baseFiles = cache.get(mergeBase)
+  if (baseFiles === undefined) {
+    try {
+      baseFiles = decodeComparison(
+        await api.get(`/compare/${mergeBase}...${baseSha}?per_page=1`),
+      ).files
+    } catch {
+      baseFiles = null
+    }
+    cache.set(mergeBase, baseFiles)
+  }
+  if (baseFiles === null) return decideBaseFreshness(candidate, behindBy)
+  const changedOnBase = new Set(baseFiles)
+  const overlap = [...new Set(files)].filter((path) => changedOnBase.has(path)).sort()
+  return decideBaseFreshness(candidate, behindBy, overlap)
+}
+
+export async function publish(api: Api, candidate: Candidate, verdict: Verdict): Promise<void> {
+  await api.post('/check-runs', {
+    name: CHECK_NAME,
+    head_sha: candidate.headSha,
+    status: 'completed',
+    conclusion: verdict.conclusion,
+    output: { title: verdict.title, summary: verdict.summary },
+  })
+}
+
+export type Outcome = {
+  candidate: Candidate
+  verdict: Verdict
+  /** False when this candidate's verdict could not be posted to its head. */
+  published: boolean
+  error?: string
+}
+
+/**
+ * Evaluate every candidate, and keep going when one cannot be published.
+ *
+ * Aborting on the first failed POST was worse than useless: every candidate
+ * after it kept whatever `Base Current` it already had — a `success` from
+ * before the base moved, for most of them — while the run's own red was
+ * attached to the base commit where no candidate shows it.
+ *
+ * Continuing narrows that window to the candidates that individually failed,
+ * and the caller turns any of those into a red run naming them. It does NOT
+ * make the fan-out sound; see the header. That is why this context reports and
+ * must not be required.
+ */
+export async function evaluate(
+  api: Api,
+  candidates: Candidate[],
+  publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
+  baseSha: string | null,
+): Promise<Outcome[]> {
+  const outcomes: Outcome[] = []
+  const cache: BaseFilesCache = new Map()
+  for (const candidate of candidates) {
+    outcomes.push(await evaluateOne(api, candidate, publishImpl, baseSha, cache))
+  }
+  return outcomes
+}
+
+async function evaluateOne(
+  api: Api,
+  candidate: Candidate,
+  publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
+  baseSha: string | null,
+  cache: BaseFilesCache,
+): Promise<Outcome> {
+  const verdict = await assess(api, candidate, baseSha, cache)
+  try {
+    await publishImpl(candidate, verdict)
+    return { candidate, verdict, published: true }
+  } catch (error: unknown) {
+    return {
+      candidate,
+      verdict,
+      published: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+/** Rounds the single-PR path spends chasing a base that keeps moving. */
+export const MAX_SETTLE_ROUNDS = 3
+
+/**
+ * The single-PR path, made safe against the push fan-out.
+ *
+ * The two paths run in different concurrency groups (one per pull request, one
+ * per base), so without this a pull request's run could compute `success`, lose
+ * the race to a base push whose fan-out posts "1 behind", and then POST its
+ * now-stale `success` last — and the latest check run is the one GitHub shows.
+ *
+ * Check runs have no compare-and-swap, so instead the verdict is re-validated
+ * AFTER it is posted: if the base tip it was computed against is no longer the
+ * tip, the base moved while this ran, and the verdict is recomputed and posted
+ * again. EVERY post is validated this way, the last one included, so whatever
+ * this path posts last was either computed against a tip that was still current
+ * after the POST — a fan-out that started later posts after it and is current
+ * too — or is the explicit not-current failure described below.
+ *
+ * Bounded at `MAX_SETTLE_ROUNDS` chases, because a base that never settles is
+ * the push path's job and that path runs after every push. Exhausting them is
+ * not licence to walk away from the verdict just posted: the base moved under
+ * it, so leaving it as the latest result would be exactly the stale answer this
+ * path exists to prevent. It fails closed instead, publishing the unestablished
+ * failure rather than one this run cannot stand behind.
+ */
+export async function evaluateSettled(
+  api: Api,
+  candidate: Candidate,
+  publishImpl: (candidate: Candidate, verdict: Verdict) => Promise<void>,
+): Promise<Outcome> {
+  const cache: BaseFilesCache = new Map()
+  let tip = await baseTip(api, candidate.baseRef)
+  let outcome = await evaluateOne(api, candidate, publishImpl, tip, cache)
+  for (let round = 1; outcome.published && tip !== null; round += 1) {
+    const now = await baseTip(api, candidate.baseRef)
+    // The tip this verdict was computed against is still the tip, so nothing
+    // overtook the POST and it stands.
+    if (now === tip) return outcome
+    if (round >= MAX_SETTLE_ROUNDS) {
+      return await evaluateOne(api, candidate, publishImpl, null, cache)
+    }
+    tip = now
+    outcome = await evaluateOne(api, candidate, publishImpl, tip, cache)
+  }
+  return outcome
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name]
+  if (value === undefined || value === '') throw new Error(`${name} is required`)
+  return value
+}
+
+async function main(): Promise<void> {
+  const dryRun = process.argv.includes('--dry-run')
+  const repository = requireEnv('GITHUB_REPOSITORY')
+  const api = githubApi(repository, requireEnv('GITHUB_TOKEN'))
+  const pullNumber = process.env['PR_NUMBER']
+
+  const publishImpl = async (candidate: Candidate, verdict: Verdict): Promise<void> => {
+    console.log(`#${String(candidate.number)} ${verdict.conclusion}: ${verdict.title}`)
+    if (!dryRun) await publish(api, candidate, verdict)
+  }
+
+  // One pull request when its own head or base moved (PR_NUMBER wins whenever it
+  // is set); the whole open set for that base when the base itself moved. The
+  // fan-out snapshots the base tip once, so every candidate is compared against
+  // the same commit; a later push is a later run in the same concurrency group.
+  let outcomes: Outcome[]
+  if (pullNumber === undefined || pullNumber === '') {
+    const baseRef = requireEnv('BASE_REF')
+    const candidates = await listCandidates(api, baseRef)
+    outcomes = await evaluate(api, candidates, publishImpl, await baseTip(api, baseRef))
+  } else {
+    const candidate = decodeCandidateResponse(await api.get(`/pulls/${pullNumber}`))
+    if (candidate.fork) {
+      console.log(`#${String(candidate.number)} is from a fork; ${CHECK_NAME} does not apply`)
+      return
+    }
+    outcomes = [await evaluateSettled(api, candidate, publishImpl)]
+  }
+
+  const stale = outcomes.filter((outcome) => outcome.verdict.conclusion !== 'success').length
+  const unpublished = outcomes.filter((outcome) => !outcome.published)
+  console.log(`${CHECK_NAME}: ${String(outcomes.length)} evaluated, ${String(stale)} not current`)
+
+  // Reporting a stale candidate is this workflow succeeding at its job, so it
+  // does not redden the run. A candidate whose verdict never reached its head
+  // does: that pull request is now showing a result this run could not refresh,
+  // and the report is knowingly incomplete. Naming them is the most this can
+  // do — the red lands on the base commit, not on their heads.
+  for (const outcome of unpublished) {
+    console.error(
+      `#${String(outcome.candidate.number)} (${outcome.candidate.headSha}) kept its previous ` +
+        `${CHECK_NAME}: ${outcome.error ?? 'publish failed'}`,
+    )
+  }
+  if (unpublished.length > 0) {
+    console.error(
+      `${String(unpublished.length)} of ${String(outcomes.length)} candidates were not refreshed.`,
+    )
+    process.exitCode = 1
+  }
+}
+
+if (process.argv[1]?.endsWith('base-freshness.mts') === true) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}

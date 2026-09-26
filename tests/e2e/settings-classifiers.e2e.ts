@@ -128,6 +128,29 @@ describe('classifier connections settings', () => {
       expect.stringContaining('COPSE_CLASSIFIER_*'),
     )
     await host.$('[name="classifierTimeout"]').setValue('1.005')
+    // Choices read as words, not wire enums, and the fold wears the app's
+    // outline chevron rather than the UA triangle (#3065).
+    const options = await browser.execute(() => {
+      const root = document.querySelector('#settings-classifiers-host')
+      const labels = (name: string): string[] =>
+        Array.from(
+          root?.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.options ?? [],
+          (option) => option.text,
+        )
+      const summary = root?.querySelector<HTMLElement>('.provider-advanced > summary')
+      return {
+        protocol: labels('classifierProtocol'),
+        auth: labels('classifierAuth'),
+        summaryListStyle: summary ? getComputedStyle(summary).listStyleType : '',
+        chevron: summary?.querySelector('svg.settings-disclosure-chevron') != null,
+      }
+    })
+    assert.deepEqual(options, {
+      protocol: ['SystemOne', 'Featherless classifier'],
+      auth: ['None', 'Bearer token (API key)'],
+      summaryListStyle: 'none',
+      chevron: true,
+    })
     await saveElementScreenshot(
       '#settings-classifiers-host .provider-advanced',
       'settings-classifiers-options.png',
@@ -168,6 +191,20 @@ describe('classifier connections settings', () => {
     await expect(host.$('.classifier-destination-note')).toHaveText(
       expect.stringContaining('removes any saved key'),
     )
+    // The Base URL (`type="url"`) takes the same field recipe as its text
+    // siblings: same width cap, same left edge (#3065).
+    const fields = await browser.execute(() => {
+      const box = (name: string): { left: number; width: number } | null => {
+        const rect = document
+          .querySelector(`#settings-classifiers-host [name="${name}"]`)
+          ?.getBoundingClientRect()
+        return rect ? { left: rect.left, width: rect.width } : null
+      }
+      return { url: box('classifierUrl'), label: box('classifierLabel') }
+    })
+    assert.ok(fields.url && fields.label, 'classifier fields must render')
+    assert.equal(fields.url.width, fields.label.width, 'Base URL matches its siblings’ width')
+    assert.equal(fields.url.left, fields.label.left, 'Base URL shares its siblings’ left edge')
     await saveElementScreenshot('#settings-dialog', 'settings-classifiers-destination.png')
     await host.$('[name="classifierUrl"]').setValue(baseUrl)
   })
@@ -286,6 +323,25 @@ describe('classifier connections settings', () => {
     )
     assert.equal(lastAuthorization, undefined, 'keyless profiles must send no Authorization header')
     assert.equal(requests, 4)
+
+    // Route safety screening to the saved Kev connection through the real IPC.
+    const screening = host.$('[name="classifierScreening"]')
+    await screening.scrollIntoView({ block: 'center' })
+    await expect(screening).toHaveValue('')
+    await screening.selectByVisibleText('Kev fixture')
+    await browser.waitUntil(
+      async () =>
+        /Safety screening now uses Kev fixture/.test(await host.$('.classifier-status').getText()),
+      { timeout: 10_000, timeoutMsg: 'screening choice did not save' },
+    )
+    const screeningId: unknown = await browser.execute(async () =>
+      window.api.classifiers.screening(),
+    )
+    assert.ok(typeof screeningId === 'string' && screeningId.startsWith('kev-'))
+    await expect(screening).toHaveValue(screeningId)
+    assert.equal(requests, 4, 'choosing a screening classifier must not call inference')
+    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-screening.png')
+
     fail = true
     await clickAction('test')
     await browser.waitUntil(
@@ -298,6 +354,9 @@ describe('classifier connections settings', () => {
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 1, {
       timeout: 10_000,
     })
+    // Removing the screening connection hands screening back to the safety model.
+    await expect(screening).toHaveValue('')
+    assert.equal(await browser.execute(async () => window.api.classifiers.screening()), null)
     await clickAction('remove')
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
       timeout: 10_000,

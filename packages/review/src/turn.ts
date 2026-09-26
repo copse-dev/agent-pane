@@ -96,6 +96,8 @@ export interface TurnOptions {
       }
     | undefined
   readonly signal?: AbortSignal | undefined
+  /** The clock the turn states as today's date. Default: the system clock. */
+  readonly now?: (() => Date) | undefined
   /** Receives each contract event as it happens. */
   readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
 }
@@ -114,13 +116,23 @@ export interface TurnResult {
   readonly error?: string
 }
 
+/**
+ * Every role is told today's date. Without it a model reasons from its
+ * training cutoff: live reviews reported a deliberately past timestamp as "a
+ * future deadline" on seven pull requests, and the challenger let it stand.
+ */
+function currentDateNote(now: () => Date = () => new Date()): string {
+  const today = now().toISOString().slice(0, 10)
+  return `Today's date is ${today} (UTC). Dates and timestamps before it are in the past; do not assume an earlier current date.`
+}
+
 export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   const startedAt = performance.now()
   let activeTools = 0
   let toolsStartedAt = 0
   let toolMs = 0
   const messages: LLMMessage[] = [
-    { role: 'system', content: options.systemPrompt },
+    { role: 'system', content: `${options.systemPrompt}\n\n${currentDateNote(options.now)}` },
     { role: 'user', content: options.userPrompt },
   ]
   const events: HeadlessEvent[] = []

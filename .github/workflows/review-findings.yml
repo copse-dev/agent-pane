@@ -10,7 +10,9 @@ name: Copse review findings
 # no model, cloud, workflow, or App credential. The Stage 0 report remains
 # untrusted input and is validated before a field reaches a model. Then one
 # review is posted on the pull request: each anchored finding an inline comment
-# on the head commit, the rest in the body.
+# on the head commit, the rest in the body. Last, the description summary that
+# review-summary.yml keeps on every push is rewritten with this review's
+# evidence, unless the pull request has moved past the reviewed head.
 #
 # The fresh handoff job at the end of "Copse review ground" explicitly
 # dispatches this workflow. `workflow_dispatch` is GitHub's documented
@@ -88,9 +90,15 @@ jobs:
             if (pull.state !== 'open' || pull.user?.id !== 338988 ||
                 pull.head.repo?.id !== 1274237362 || pull.base.repo?.id !== 1274237362 ||
                 pull.head.sha !== process.env.EXPECTED_HEAD ||
-                pull.base.ref !== process.env.EXPECTED_BASE ||
-                !pull.labels.some(label => label.name === 'copse-review')) {
-              core.notice('Paid reviews require a current, labelled owner PR from this repository.');
+                pull.base.ref !== process.env.EXPECTED_BASE) {
+              core.notice('Paid reviews require a current owner PR from this repository.');
+              return;
+            }
+            const labels = pull.labels.map(label => label.name);
+            // Ready pull requests are reviewed by default; a draft needs the label.
+            if (labels.includes('copse-review-skip') ||
+                (pull.draft && !labels.includes('copse-review'))) {
+              core.notice('Paid reviews skip copse-review-skip and unlabelled draft PRs.');
               return;
             }
             core.setOutput('authorized', 'true');
@@ -188,16 +196,21 @@ jobs:
           test "$path" = ".github/workflows/review-ground.yml"
 
           number="$EXPECTED_PR"
-          IFS=$'\t' read -r head base state author_id head_repo_id base_repo_id labelled < <(
+          IFS=$'\t' read -r head base state author_id head_repo_id base_repo_id draft labelled skipped < <(
             gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" \
-              --jq '[.head.sha, .base.ref, .state, .user.id, .head.repo.id, .base.repo.id, ([.labels[].name] | index("copse-review") != null)] | @tsv'
+              --jq '[.head.sha, .base.ref, .state, .user.id, .head.repo.id, .base.repo.id, .draft,
+                ([.labels[].name] | index("copse-review") != null),
+                ([.labels[].name] | index("copse-review-skip") != null)] | @tsv'
           )
           test -n "$number" && test -n "$head" && test -n "$base"
           test "$state" = "open"
           test "$head" = "$EXPECTED_HEAD"
           test "$base" = "$EXPECTED_BASE"
           test "$author_id" = 338988 && test "$head_repo_id" = 1274237362 && test "$base_repo_id" = 1274237362
-          test "$labelled" = true
+          # The same rule as authorize, rechecked here: a ready pull request, or
+          # a draft with the copse-review label, and never copse-review-skip.
+          test "$skipped" = false
+          test "$draft" = false || test "$labelled" = true
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "head=${head}" >> "$GITHUB_OUTPUT"
           echo "base=${base}" >> "$GITHUB_OUTPUT"
@@ -310,6 +323,7 @@ jobs:
             --max-verify "$REVIEW_MAX_VERIFY" \
             --verify-concurrency "$REVIEW_VERIFY_CONCURRENCY" \
             --post-review github \
+            --post-summary github \
             --repo "$GITHUB_REPOSITORY" \
             --pr "$PR_NUMBER" \
             --json findings.json \
