@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import { load } from 'js-yaml'
@@ -75,13 +78,21 @@ const context = {
   payload: { workflow_run: { pull_requests: [{ number: 123 }] } },
 }
 
+interface PrFile {
+  filename: string
+  status: string
+}
+
 async function discover(
   liveParent = parent(),
   artifacts = [{ id: 42, name: 'reference-screenshot-candidates-99', expired: false }],
   runHeadSha = SHA,
   setFailed: (message: string) => void = assert.fail,
+  files: PrFile[] | Error = [],
 ): Promise<Map<string, string>> {
   const outputs = new Map<string, string>()
+  const listWorkflowRunArtifacts = (): void => {}
+  const listFiles = (): void => {}
   await execute('Resolve the live parent PR and exact artifact', {
     context,
     process: { env: { RUN_ID: '99', RUN_HEAD_SHA: runHeadSha } },
@@ -92,10 +103,15 @@ async function discover(
     },
     github: {
       rest: {
-        pulls: { get: async () => ({ data: liveParent }) },
-        actions: { listWorkflowRunArtifacts: () => {} },
+        pulls: { get: async () => ({ data: liveParent }), listFiles },
+        actions: { listWorkflowRunArtifacts },
       },
-      paginate: async () => artifacts,
+      paginate: async (method: unknown) => {
+        if (method === listWorkflowRunArtifacts) return artifacts
+        assert.equal(method, listFiles)
+        if (files instanceof Error) throw files
+        return files
+      },
     },
   })
   return outputs
@@ -112,6 +128,32 @@ describe('screenshot publication', () => {
       [...outputs.keys()].filter((key) => /review/.test(key)),
       [],
     )
+  })
+
+  it('names the reference PNGs and e2e specs the PR changes for the preview order', async () => {
+    const outputs = await discover(parent(), undefined, SHA, assert.fail, [
+      { filename: 'tests/e2e/screenshots/touched.png', status: 'modified' },
+      { filename: 'tests/e2e/screenshots/added.png', status: 'added' },
+      { filename: 'tests/e2e/screenshots/gone.png', status: 'removed' },
+      { filename: 'tests/e2e/screenshots/nested/deep.png', status: 'modified' },
+      { filename: 'tests/e2e/settings-styling.e2e.ts', status: 'modified' },
+      { filename: 'tests/e2e/browser/pane.e2e.ts', status: 'added' },
+      { filename: 'tests/e2e/../../etc/passwd.e2e.ts', status: 'modified' },
+      { filename: 'tests/e2e/helpers/screenshot.ts', status: 'modified' },
+      { filename: 'src/renderer/styles/brand.css', status: 'modified' },
+    ])
+    assert.equal(outputs.get('focus-screenshots'), 'touched.png\nadded.png')
+    assert.equal(
+      outputs.get('focus-specs'),
+      'tests/e2e/settings-styling.e2e.ts\ntests/e2e/browser/pane.e2e.ts',
+    )
+  })
+
+  it('still publishes, in name order, when the PR file listing fails', async () => {
+    const outputs = await discover(parent(), undefined, SHA, assert.fail, new Error('boom'))
+    assert.equal(outputs.get('has-artifact'), 'true')
+    assert.equal(outputs.get('focus-screenshots'), '')
+    assert.equal(outputs.get('focus-specs'), '')
   })
 
   it('treats a labelled refresh like any other run with candidates', async () => {
@@ -367,6 +409,93 @@ describe('screenshot compare branch cleanup', () => {
   })
 })
 
+const PNG = Buffer.from('89504e470d0a1a0a0000', 'hex')
+
+function writeFile(root: string, relative: string, content: string | Buffer): void {
+  const path = join(root, relative)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content)
+}
+
+// Runs the real candidate step in a throwaway repository standing in for the
+// shallow head checkout.
+function applyCandidates(env: { FOCUS_SCREENSHOTS: string; FOCUS_SPECS: string }): string {
+  const script = z
+    .string()
+    .parse(steps.find((step) => step.name === 'Validate and apply candidate PNGs')?.run)
+  assert.doesNotMatch(script, /\$\{\{/)
+  const root = mkdtempSync(join(tmpdir(), 'screenshot-candidates-'))
+  try {
+    const checkout = join(root, 'checkout')
+    const candidates = join(root, 'candidates')
+    const runnerTemp = join(root, 'runner')
+    mkdirSync(runnerTemp)
+    writeFile(checkout, 'tests/e2e/screenshots/existing.png', PNG)
+    writeFile(
+      checkout,
+      'tests/e2e/pane.e2e.ts',
+      "await saveElementScreenshot('.pane', 'spec-named.png')\nconst other = `${name}-dynamic.png`\n",
+    )
+    writeFile(checkout, 'tests/e2e/unchanged.e2e.ts', "await save('a-drift.png')\n")
+    const git = (...args: string[]): void => {
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: checkout })
+    }
+    git('init', '-q')
+    git('add', '.')
+    git('commit', '-qm', 'head')
+    for (const name of ['a-drift.png', 'existing.png', 'spec-named.png', 'z-touched.png']) {
+      writeFile(
+        candidates,
+        `tests/e2e/screenshots/${name}`,
+        Buffer.concat([PNG, Buffer.from(name)]),
+      )
+    }
+    const output = join(runnerTemp, 'output')
+    execFileSync('bash', ['-e', '-c', script], {
+      cwd: checkout,
+      env: {
+        PATH: process.env['PATH'],
+        CANDIDATE_ROOT: candidates,
+        RUNNER_TEMP: runnerTemp,
+        GITHUB_OUTPUT: output,
+        ...env,
+      },
+    })
+    return readFileSync(output, 'utf8')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+describe('screenshot candidate validation', () => {
+  it('lists screenshots the PR touches first, each group in name order', () => {
+    const output = applyCandidates({
+      FOCUS_SCREENSHOTS: 'z-touched.png\n../escape.png',
+      FOCUS_SPECS: 'tests/e2e/pane.e2e.ts\ntests/e2e/../../etc/passwd.e2e.ts',
+    })
+    assert.match(output, /^count=4$/m)
+    const names = /^names=(.*)$/m.exec(output)?.[1] ?? ''
+    assert.deepEqual(JSON.parse(names), [
+      { name: 'spec-named.png', new: true, focus: true },
+      { name: 'z-touched.png', new: true, focus: true },
+      { name: 'a-drift.png', new: true, focus: false },
+      { name: 'existing.png', new: false, focus: false },
+    ])
+  })
+
+  it('keeps plain name order when the PR touches no screenshots', () => {
+    const output = applyCandidates({ FOCUS_SCREENSHOTS: '', FOCUS_SPECS: '' })
+    const names = /^names=(.*)$/m.exec(output)?.[1] ?? ''
+    assert.deepEqual(
+      z.array(z.object({ name: z.string(), focus: z.boolean() })).parse(JSON.parse(names)),
+      ['a-drift.png', 'existing.png', 'spec-named.png', 'z-touched.png'].map((name) => ({
+        name,
+        focus: false,
+      })),
+    )
+  })
+})
+
 async function publish(
   env: Record<string, string> = {},
   liveParent = parent(),
@@ -489,6 +618,57 @@ describe('parent screenshot evidence comment', () => {
     assert.ok(body.includes(`…and 40 more — see [the compare view](${COMPARE_URL}).`), body)
   })
 
+  it('leads with screenshots the PR touches, even past the 20-row cap', async () => {
+    const drift = Array.from({ length: 30 }, (_, index) => ({
+      name: `a-drift-${String(index).padStart(2, '0')}.png`,
+      new: false,
+      focus: false,
+    }))
+    const touched = [
+      { name: 'z-touched.png', new: false, focus: true },
+      { name: 'y-touched.png', new: true, focus: true },
+    ]
+    const body =
+      (
+        await publish({
+          CANDIDATE_NAMES: JSON.stringify([...drift, ...touched]),
+          CANDIDATE_COUNT: '32',
+        })
+      ).bodies[0] ?? ''
+    const names = body
+      .split('\n')
+      .filter((line) => line.startsWith('| `'))
+      .map((line) => /^\| `([^`]+)`/.exec(line)?.[1])
+    assert.deepEqual(names, [
+      'y-touched.png',
+      'z-touched.png',
+      ...drift.slice(0, 18).map((entry) => entry.name),
+    ])
+    const touchedHeading = body.indexOf('**Screenshots this PR touches**')
+    const otherHeading = body.indexOf('**Other changed screenshots**')
+    assert.ok(touchedHeading > 0 && touchedHeading < body.indexOf('y-touched.png'), body)
+    assert.ok(body.indexOf('z-touched.png') < otherHeading, body)
+    assert.ok(otherHeading < body.indexOf('a-drift-00.png'), body)
+    assert.ok(body.includes('…and 12 more'), body)
+  })
+
+  it('omits the other-screenshots heading when every preview is touched by the PR', async () => {
+    const body =
+      (
+        await publish({
+          CANDIDATE_NAMES: JSON.stringify([{ name: 'touched.png', new: false, focus: true }]),
+          CANDIDATE_COUNT: '1',
+        })
+      ).bodies[0] ?? ''
+    assert.ok(body.includes('**Screenshots this PR touches**'), body)
+    assert.doesNotMatch(body, /Other changed screenshots/)
+  })
+
+  it('keeps a single untitled table when nothing is linked to the PR', async () => {
+    const body = (await publish()).bodies[0] ?? ''
+    assert.doesNotMatch(body, /Screenshots this PR touches|Other changed screenshots/)
+  })
+
   it('keeps the comment far below GitHub’s size limit with the longest allowed names', async () => {
     const entries = Array.from({ length: 50 }, (_, index) => ({
       name: `${String(index).padStart(2, '0')}${'x'.repeat(240)}.png`,
@@ -518,6 +698,7 @@ describe('parent screenshot evidence comment', () => {
         ]),
       },
       { CANDIDATE_NAMES: '[{"name":"a.png","new":"yes"}]' },
+      { CANDIDATE_NAMES: '[{"name":"a.png","new":false,"focus":"yes"}]' },
       { CANDIDATE_NAMES: 'not json' },
       { CANDIDATE_NAMES: '' },
     ]) {
