@@ -381,7 +381,8 @@ While active:
     `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
   - test and load runners pointed at a non-loopback URL (`pytest --base-url https://…`,
     `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
-    `pg_restore`, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`) and SQL run
+    `pg_restore` into a database, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`),
+    `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
     from a file (`psql -f`);
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
