@@ -234,7 +234,7 @@
 {"id":"scope-find-actions-1","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-find-actions-2","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"scope-find-actions-3","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"scope-find-actions-4","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-find-actions-4","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"scope-find-actions-5","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"scope-env-wrappers-1","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-env-wrappers-2","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}

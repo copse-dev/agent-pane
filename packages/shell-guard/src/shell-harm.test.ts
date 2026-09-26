@@ -774,8 +774,16 @@ describe('Guarded YOLO shell harm gate — shapes the public test set found', ()
     assert.equal(action('/Users/tester/other/deploy.sh', withScripts), 'prompt')
     assert.equal(action('/Users/tester/other/lint.sh', withScripts), 'allow')
     assert.equal(action('/usr/local/bin/node --version'), 'allow')
-    // A missing or compiled program outside the workspace is still an installed program.
+    // A binary where toolchains install programs is an installed program.
     assert.equal(action('/Users/tester/.cargo/bin/cargo-nextest run'), 'allow')
+    assert.equal(action('/Users/tester/.nvm/versions/node/v24.0.0/bin/node -v'), 'allow')
+    // An unreadable program anywhere else outside the workspace is not.
+    assert.equal(action('/Users/tester/other/bin/tool'), 'prompt')
+    assert.equal(action("find ./src -exec /outside/checker '{}' ';'"), 'prompt')
+    // Paths the fallback lexer or a substitution leaves in command position are not run.
+    const readsEverything: Partial<ShellHarmContext> = { readScript: () => 'rm -rf ~\n' }
+    assert.equal(action('sed -n "s|/etc/hosts|x|p" src/a.ts', readsEverything), 'allow')
+    assert.equal(action('ls $(xcode-select -p)/Platforms'), 'allow')
   })
 
   it('inspects what a container exec runs', () => {

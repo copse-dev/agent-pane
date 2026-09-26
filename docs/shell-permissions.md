@@ -388,9 +388,12 @@ While active:
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
   has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
-  name. A program run by absolute path is inspected unless it lives under an installed-program
-  root (`/usr`, `/bin`, `/opt`, `/System`, …): a script's text is assessed, and a binary or missing
-  file outside the workspace still runs as an installed program. Anything run from a temporary
+  name. A program run by absolute path is an installed program when it lives under a system root
+  (`/usr`, `/bin`, `/opt`, `/System`, …) or a home toolchain directory (`~/.cargo/bin`,
+  `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
+  text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
+  command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. Anything run from a temporary
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
