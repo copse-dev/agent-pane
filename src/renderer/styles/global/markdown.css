@@ -60,7 +60,7 @@
   content: 'Click to expand';
   display: block;
   margin-top: var(--spacing-xs);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-align: center;
   pointer-events: none;
@@ -142,12 +142,12 @@
 .mermaid-expand-zoom-label {
   min-width: 3.5em;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .mermaid-expand-hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .mermaid-expand-close {
@@ -170,7 +170,7 @@
   margin-bottom: var(--spacing-xs);
 }
 .mermaid-fallback-hint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   margin-bottom: var(--spacing-sm);
 }
@@ -188,7 +188,7 @@
 }
 .mermaid-fallback-source pre {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   white-space: pre-wrap;
   color: var(--text-muted);
   max-height: 240px;
@@ -253,6 +253,11 @@ html.mark-external-links
   padding: var(--spacing-sm) var(--spacing-md);
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-secondary);
+}
+/* The package gives a quote still streaming its own margin; keep it on this
+   one, so a quote doesn't shift when it finishes. */
+.streaming-markdown blockquote.stream-pending-blockquote {
+  margin: var(--spacing-sm) 0;
 }
 .streaming-markdown blockquote.markdown-alert {
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
