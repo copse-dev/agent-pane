@@ -269,6 +269,80 @@ describe('projects pane automation group', () => {
 })
 
 describe('projects pane automation setup links', () => {
+  it('right-clicks a schedule heading into Run now and setup', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [
+        thread('docs-latest', 'Docs freshness', 'schedule-docs', 20),
+        thread('docs-previous', 'Docs freshness', 'schedule-docs', 10),
+      ],
+      activeThreadId: 'chat',
+    })
+    const api = createFakeApi()
+    const runNowCalls: Array<{ projectId: string; scheduleId: string }> = []
+    api.automations.runNow = (
+      projectId: string,
+      scheduleId: string,
+    ): Promise<{
+      projectId: string
+      scheduleId: string
+      threadId: string
+      triggeredAt: number
+      disposition: 'started' | 'coalesced'
+      coalescedReason?: 'busy' | 'worktree-limit'
+    }> => {
+      runNowCalls.push({ projectId, scheduleId })
+      return Promise.resolve({
+        projectId,
+        scheduleId,
+        threadId: 'docs-new-run',
+        triggeredAt: 2,
+        disposition: 'started',
+      })
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, api)
+
+    const heading = host.querySelector<HTMLButtonElement>('.automation-threads-toggle')
+    assert.ok(heading)
+    heading.click()
+    const scheduleHeading = host.querySelector('.automation-schedule-toggle')
+    assert.ok(scheduleHeading)
+    scheduleHeading.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const labels = Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (item) => item.textContent,
+    )
+    assert.deepEqual(labels, ['Run now', 'Automation setup…'])
+    const headingLabel = document.querySelector('.context-menu-heading')
+    assert.equal(headingLabel?.textContent, 'Docs freshness')
+
+    const runNow = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Run now')
+    assert.ok(runNow)
+    runNow.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.deepEqual(runNowCalls, [{ projectId: 'a', scheduleId: 'schedule-docs' }])
+  })
+
+  it('right-clicks the workspace heading into a create action', () => {
+    const host = mount([thread('docs', 'Docs freshness', 'schedule-docs')], 'docs')
+
+    const toggle = host.querySelector('.automation-threads-toggle')
+    assert.ok(toggle)
+    toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const labels = Array.from(document.querySelectorAll('.context-menu-item')).map(
+      (item) => item.textContent,
+    )
+    assert.deepEqual(labels, ['New automation…'])
+    dismissContextMenu()
+  })
+
   it('opens the linked schedule’s editor from its heading', async () => {
     const host = mountWithSettings(
       [
@@ -347,7 +421,13 @@ describe('projects pane automation setup links', () => {
     const automationRow = host.querySelector('.chat-row.is-automation')
     const conversationRow = host.querySelector('.chat-row:not(.is-automation)')
     assert.ok(automationRow && conversationRow)
-    assert.deepEqual(labelsFor(automationRow), ['Rename', 'Fork', 'Archive', 'Automation setup…'])
+    assert.deepEqual(labelsFor(automationRow), [
+      'Rename',
+      'Fork',
+      'Archive',
+      'Run now',
+      'Automation setup…',
+    ])
     assert.deepEqual(labelsFor(conversationRow), ['Rename', 'Fork', 'Archive'])
   })
 })
@@ -470,9 +550,148 @@ describe('workspace-level automations section (#2511)', () => {
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
     assert.deepEqual(
       Array.from(document.querySelectorAll('.context-menu-item')).map((item) => item.textContent),
-      ['Automation setup…'],
+      ['Run now', 'Automation setup…'],
     )
     dismissContextMenu()
+  })
+
+  it('runs a background project’s schedule from its row menu without switching projects', async () => {
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('chat', 'Regular conversation')],
+      activeThreadId: 'chat',
+    })
+    setThreadCacheForTest('b', [thread('issues', 'Issue triage', 'schedule-issues')])
+    const api = createFakeApi()
+    const runNowCalls: Array<{ projectId: string; scheduleId: string }> = []
+    api.automations.runNow = (
+      projectId: string,
+      scheduleId: string,
+    ): Promise<{
+      projectId: string
+      scheduleId: string
+      threadId: string
+      triggeredAt: number
+      disposition: 'started' | 'coalesced'
+      coalescedReason?: 'busy' | 'worktree-limit'
+    }> => {
+      runNowCalls.push({ projectId, scheduleId })
+      return Promise.resolve({
+        projectId,
+        scheduleId,
+        threadId: 'issues-new-run',
+        triggeredAt: 2,
+        disposition: 'started',
+      })
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, api)
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+
+    const row = Array.from(host.querySelectorAll('.automation-thread-rows .chat-row')).find(
+      (candidate) => candidate.querySelector('.chat-title')?.textContent === 'Issue triage',
+    )
+    assert.ok(row)
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const runNow = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Run now')
+    assert.ok(runNow)
+    runNow.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Scoped to the run's own project/schedule — the sidebar knows both even
+    // for a project never activated this session.
+    assert.deepEqual(runNowCalls, [{ projectId: 'b', scheduleId: 'schedule-issues' }])
+    assert.equal(store.getState().activeProjectId, 'a')
+  })
+
+  it('reports a coalesced run as already pending or running', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('docs', 'Docs freshness', 'schedule-docs')],
+      activeThreadId: 'docs',
+    })
+    const api = createFakeApi()
+    api.automations.runNow = (): Promise<{
+      projectId: string
+      scheduleId: string
+      threadId: string
+      triggeredAt: number
+      disposition: 'started' | 'coalesced'
+      coalescedReason?: 'busy' | 'worktree-limit'
+    }> =>
+      Promise.resolve({
+        projectId: 'a',
+        scheduleId: 'schedule-docs',
+        threadId: 'docs',
+        triggeredAt: 2,
+        disposition: 'coalesced',
+        coalescedReason: 'busy',
+      })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, api)
+
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+    const row = host.querySelector('.chat-row.is-automation')
+    assert.ok(row)
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const runNow = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Run now')
+    assert.ok(runNow)
+    runNow.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const toast = document.querySelector<HTMLElement>('.toast')
+    assert.ok(toast?.textContent)
+    assert.match(toast.textContent, /already pending or running/)
+  })
+
+  it('surfaces a failed run-now as an error toast', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('docs', 'Docs freshness', 'schedule-docs')],
+      activeThreadId: 'docs',
+    })
+    const api = createFakeApi()
+    api.automations.runNow = (): Promise<never> =>
+      Promise.reject(
+        new Error("Error invoking remote method 'automations:run-now': Error: not git"),
+      )
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, api)
+
+    host.querySelector<HTMLButtonElement>('.automation-threads-toggle')?.click()
+    const row = host.querySelector('.chat-row.is-automation')
+    assert.ok(row)
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    const runNow = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((item) => item.textContent === 'Run now')
+    assert.ok(runNow)
+    runNow.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const toast = document.querySelector<HTMLElement>('.toast-error')
+    assert.ok(toast?.textContent)
+    assert.match(toast.textContent, /Could not run “Docs freshness”/)
+    assert.match(toast.textContent, /not git/)
   })
 
   it('opens the thread in its owning project when a collated row is selected', async () => {
