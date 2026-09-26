@@ -397,8 +397,39 @@ describe('resolveModelParameters', () => {
     assert.deepEqual(resolveModelParameters(stored, 'claude-opus-5'), { reasoning: 'high' })
   })
 
-  it('returns nothing for a model with no entry', () => {
+  it('returns nothing for a model with no entry and no recipe', () => {
     assert.deepEqual(resolveModelParameters({ 'gpt-4o': { temperature: 1 } }, 'claude-opus-5'), {})
+  })
+
+  it('applies the curated recipe when nothing is stored for the model', () => {
+    // The regression: a thread that picked Qwen without touching Settings ran
+    // on the server's own sampling, with no presence penalty, and looped.
+    assert.deepEqual(resolveModelParameters({}, 'lmstudio:qwen/qwen3.6-35b-a3b'), {
+      temperature: 1,
+      topP: 0.95,
+      topK: 20,
+      minP: 0,
+      presencePenalty: 1.5,
+      repetitionPenalty: 1,
+    })
+  })
+
+  it('lets a stored value replace the recipe field by field', () => {
+    const model = 'openrouter:deepseek/deepseek-v4-flash-0731'
+    const stored = { [model]: { reasoning: 'low', temperature: 0.6 } }
+    assert.deepEqual(resolveModelParameters(stored, model), {
+      reasoning: 'low',
+      temperature: 0.6,
+      topP: 0.95,
+    })
+  })
+
+  it('sanitizes the recipe against the route, like a stored entry', () => {
+    // A bare id could reach either cloud vendor, so only the universal pair goes.
+    assert.deepEqual(resolveModelParameters(undefined, 'qwen3.6-35b-a3b'), {
+      temperature: 1,
+      topP: 0.95,
+    })
   })
 })
 

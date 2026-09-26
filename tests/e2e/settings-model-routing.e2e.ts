@@ -95,7 +95,8 @@ describe('settings model routing placement', function () {
     )
     assert.equal(
       await $('#settings-models-section').$$('.model-picker-field-host').length,
-      6,
+      // Includes Model parameters' own "Model to tune" picker.
+      7,
       'every model control in the Settings model section should use the shared picker',
     )
     await scrollSettingsToLegend('Models')
@@ -157,7 +158,7 @@ describe('settings model routing placement', function () {
         generalHasRouting: !!routingHost?.querySelector('fieldset'),
         modelsLegend: modelSection?.querySelector('legend')?.textContent?.trim() ?? '',
         modelControlNames: [
-          ...(modelSection?.querySelectorAll<HTMLSelectElement>('select') ?? []),
+          ...(modelSection?.querySelectorAll<HTMLSelectElement>('select[name]') ?? []),
         ].map((select) => select.name),
         standaloneModelLegends: [...(generalSection?.querySelectorAll('legend') ?? [])]
           .map((legend) => legend.textContent?.trim())

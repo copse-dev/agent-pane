@@ -43,10 +43,12 @@ export type ReasoningLevel = (typeof REASONING_LEVELS)[number]
 export const isReasoningLevel = memberOf(REASONING_LEVELS)
 
 /**
- * User-chosen generation parameters for one model selection. Every field is
- * optional and an absent field means "send nothing" — the provider default,
- * not a value of our choosing. That distinction matters: a model's own default
- * temperature is not necessarily 1, and sending 1 is not the same as omitting.
+ * Generation parameters for one model selection. Every field is optional and an
+ * absent field means "send nothing" — the provider default, not a value of our
+ * choosing. That distinction matters: a model's own default temperature is not
+ * necessarily 1, and sending 1 is not the same as omitting. (A stored entry's
+ * absent field falls back to the model's curated recipe first; see
+ * {@link resolveModelParameters}.)
  */
 export interface ModelParameters {
   reasoning?: ReasoningLevel
@@ -439,12 +441,17 @@ export function clampReasoning(
 /**
  * A sourced parameter recipe for a model.
  *
- * Deliberately *offered*, never applied: recipes are scenario-specific (DeepSeek
- * publishes one `top_p` for agentic use and another for everything else), an
- * aggregator may route the same id to an endpoint the recipe was not written
- * for, and a value we applied on the user's behalf is invisible when it turns
- * out to be wrong. Filling the visible fields keeps the choice theirs and the
- * result on screen.
+ * Applied by default, underneath whatever the user saved (see
+ * {@link resolveModelParameters}). It used to be offered only, behind a button
+ * next to the default chat model — and a thread that picked the model any other
+ * way ran on the server's own sampling instead. For Qwen3.6 in thinking mode
+ * that meant no `presence_penalty`, and the reasoning looped on itself for
+ * hundreds of lines, which is exactly what the card's recipe exists to prevent.
+ *
+ * The risks that argued for offering still hold — a recipe is scenario-specific
+ * and an aggregator may route the id to an endpoint it was not written for — so
+ * the settings UI shows every applied value as the field's placeholder, and any
+ * value the user types replaces the recipe's for that field.
  */
 export interface ModelParameterRecommendation {
   /** What the recipe is tuned for, shown on the affordance. */
@@ -836,8 +843,13 @@ export function decodeModelParametersMap(value: unknown): Record<string, ModelPa
   return out
 }
 
-/** The parameters stored for `model`, sanitized against what it accepts. */
+/**
+ * The parameters a turn on `model` is sent with: its curated recipe, if we hold
+ * one, with the user's stored values replacing it field by field, sanitized
+ * against what the model accepts.
+ */
 export function resolveModelParameters(stored: unknown, model: string): ModelParameters {
-  const entry = decodeModelParametersMap(stored)[model]
-  return entry ? sanitizeModelParameters(entry, model) : {}
+  const entry = decodeModelParametersMap(stored)[model] ?? {}
+  const recipe = recommendedModelParameters(model)?.params ?? {}
+  return sanitizeModelParameters({ ...recipe, ...entry }, model)
 }
