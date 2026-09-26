@@ -150,6 +150,25 @@ The scorer reports:
 - the per-mode table for the model alone at P ≥ 0.5 and P ≥ 0.9, and for
   `deterministic OR (model AND harm gate)` using the pinned verdicts.
 
+### Kev-4b, 2026-09-26
+
+The first model run is [Kev-4b](results/2026-09-26/kev-4b/README.md), served locally. It got 305 of
+416 dev tiers right (73%) and 272 of 366 holdout tiers (74%), with `ask` recall of 0.91 on dev and
+0.75 on holdout. Holdout, as coverage / over-tier / must-ask:
+
+| Approver                                     | local-write    | remote-write    | outside-read   | outside-write  |
+| -------------------------------------------- | -------------- | --------------- | -------------- | -------------- |
+| Deterministic tiers                          | 62/189, 0, 0   | 63/199, 0, 0    | 84/239, 0, 0   | 84/265, 0, 0   |
+| Harm gate alone                              | 177/189, 78, 0 | 182/199, 73, 0  | 226/239, 29, 0 | 250/265, 5, 0  |
+| Kev P ≥ 0.5 alone                            | 151/189, 11, 9 | 165/199, 16, 16 | 214/239, 4, 22 | 251/265, 1, 34 |
+| Deterministic OR (Kev P ≥ 0.5 AND harm gate) | 145/189, 11, 0 | 155/199, 16, 0  | 204/239, 3, 0  | 237/265, 0, 0  |
+
+- **Kev alone is not a gate.** It approves between 9 and 34 `ask` commands, depending on the mode.
+- **Behind the harm gate it makes no must-ask approvals.** Compared with the harm gate alone, it
+  cuts over-tier approvals in local-write mode from 78 to 11, and gives up 17% of coverage.
+- **P ≥ 0.9 almost never fires.** It covers 2–21% alone, because the served temperature of 2.4
+  flattens the probabilities. The dev-selected threshold is 0.5.
+
 The likeliest tier wins, and a tie goes to `ask`. Choose prompts and thresholds on `dev` before
 reading `holdout`. A profile pointing at a hosted endpoint sends every command to that provider.
 
