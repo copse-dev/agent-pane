@@ -72,9 +72,12 @@ interface TestPull {
   head: { sha: string; repo: { id: number; full_name: string } }
   base: { ref: string; repo: { id: number } }
   labels: { name: string }[]
+  draft: boolean
 }
 
-function pull(options: { author?: number; repository?: number; labels?: string[] } = {}): TestPull {
+function pull(
+  options: { author?: number; repository?: number; labels?: string[]; draft?: boolean } = {},
+): TestPull {
   return {
     number: 123,
     state: 'open',
@@ -88,6 +91,7 @@ function pull(options: { author?: number; repository?: number; labels?: string[]
     },
     base: { ref: 'main', repo: { id: 1274237362 } },
     labels: (options.labels ?? ['copse-review']).map((name) => ({ name })),
+    draft: options.draft ?? false,
   }
 }
 
@@ -199,14 +203,23 @@ describe('paid PR reviewer access', () => {
     })
   }
 
-  it('requires the exact labelled head/base before entering the protected findings job', async () => {
+  it('requires the exact ready-or-labelled head/base before entering the protected findings job', async () => {
     assert.equal(job('review-findings', 'findings').needs, 'authorize')
     assert.match(
       z.string().parse(job('review-findings', 'findings').if),
       /needs\.authorize\.outputs\.authorized == 'true'/,
     )
-    for (const rejected of [
+    for (const accepted of [
       pull({ labels: [] }),
+      pull({ labels: ['copse-review'], draft: true }),
+    ]) {
+      const result = await authorize('review-findings', 'authorize', accepted)
+      assert.equal(result.outputs.get('authorized'), 'true')
+    }
+    for (const rejected of [
+      pull({ labels: [], draft: true }),
+      pull({ labels: ['copse-review-skip'] }),
+      pull({ labels: ['copse-review', 'copse-review-skip'], draft: true }),
       { ...pull(), head: { ...pull().head, sha: 'b'.repeat(40) } },
       { ...pull(), base: { ...pull().base, ref: 'other' } },
     ]) {
@@ -217,12 +230,17 @@ describe('paid PR reviewer access', () => {
   it('filters external authors from scheduled samples and honors explicit opt-outs', async () => {
     const result = await authorize('review-nightly', 'select', pull(), {
       requested: '',
-      candidates: [pull({ author: 999, labels: [] }), pull({ repository: 999, labels: [] })],
+      candidates: [
+        pull({ author: 999, labels: [], draft: true }),
+        pull({ repository: 999, labels: [], draft: true }),
+        // Ready pull requests are reviewed when they become ready, not sampled.
+        pull({ labels: [] }),
+      ],
     })
     assert.equal(result.outputs.size, 0)
     const selected = await authorize('review-nightly', 'select', pull(), {
       requested: '',
-      candidates: [pull({ labels: [] })],
+      candidates: [pull({ labels: [], draft: true })],
     })
     assert.equal(selected.outputs.get('number'), '123')
     assert.equal(
