@@ -100,7 +100,11 @@ describe('switching threads during first-message checkout', () => {
     if (projectRoot && existsSync(worktreeRoot)) {
       git(projectRoot, ['worktree', 'remove', '--force', worktreeRoot])
     }
-    if (projectRoot) rmSync(projectRoot, { recursive: true, force: true })
+    // The app is still running: a sandboxed command can briefly materialize
+    // mount points in the checkout while it is being removed (ENOTEMPTY).
+    if (projectRoot) {
+      rmSync(projectRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    }
     delete process.env['COPSE_PANEL_MOCK_LLM']
     delete process.env['ANTHROPIC_API_KEY']
     delete process.env['OPENAI_API_KEY']

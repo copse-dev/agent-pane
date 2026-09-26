@@ -8,6 +8,7 @@ import {
   type KnownAcpAgent,
 } from '@shared/acp-known-agents.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { setInlineMarkdown } from '../../markdown/inline-markdown.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import type { ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
@@ -155,7 +156,11 @@ export function validateDraft(
 /** A label + monospace command + copy button (used for install / sign-in lines). */
 function commandRow(label: string, command: string): HTMLElement {
   const code = el('code', { class: 'acp-cmd' }, command)
-  const copy = el('button', { type: 'button', class: 'acp-cmd-copy', title: 'Copy' }, 'Copy')
+  const copy = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary acp-cmd-copy', title: 'Copy' },
+    'Copy',
+  )
   copy.addEventListener('click', () => {
     void navigator.clipboard.writeText(command)
   })
@@ -547,7 +552,11 @@ export function createAcpAgentsSection(
     )
     if (!installed && known.install) form.append(commandRow('Install', known.install))
     if (known.setup) form.append(commandRow('Sign in', known.setup))
-    if (known.note) form.append(el('p', { class: 'field-hint' }, known.note))
+    if (known.note) {
+      const note = el('p', { class: 'field-hint acp-known-agent-note' })
+      setInlineMarkdown(note, known.note)
+      form.append(note)
+    }
     if (known.docsUrl) {
       form.append(
         el(
