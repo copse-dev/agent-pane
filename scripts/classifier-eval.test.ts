@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import {
   parseClassifierEvalArgs,
@@ -254,5 +256,19 @@ test('headless CLI calls a local fixture server with environment credentials and
   } finally {
     server.close()
     await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('every example profile and fixture in benchmarks/classifiers parses', () => {
+  const directory = 'benchmarks/classifiers'
+  const files = readdirSync(directory)
+  const profiles = files.filter((name) => name.endsWith('.json'))
+  assert.ok(profiles.length >= 7)
+  for (const name of profiles) {
+    const parsed = parseClassifierEvalProfile(readFileSync(join(directory, name), 'utf8'))
+    assert.ok(parsed.id, name)
+  }
+  for (const name of files.filter((entry) => entry.endsWith('.jsonl'))) {
+    assert.ok(parseClassifierFixtures(readFileSync(join(directory, name), 'utf8')).length > 0, name)
   }
 })

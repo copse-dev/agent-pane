@@ -145,13 +145,33 @@ describe('browser network policy', () => {
         }),
       { timeout: 15_000, timeoutMsg: 'expected the user-entered server to load' },
     )
-    await browser.waitUntil(async () =>
-      browser.execute(async () => {
-        const guest = document.querySelector<Guest>('webview')
-        return guest?.executeJavaScript<boolean>(
-          'document.querySelector("#own").naturalWidth > 0 && getComputedStyle(document.querySelector("#styled")).color === "rgb(143, 47, 65)"',
-        )
-      }),
+    // The first subresources can race the preview-to-web commit; wait for each
+    // separately so a regression names the resource the policy blocked.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(async () => {
+          const guest = document.querySelector<Guest>('webview')
+          return guest?.executeJavaScript<boolean>(
+            'getComputedStyle(document.querySelector("#styled")).color === "rgb(143, 47, 65)"',
+          )
+        }),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the cross-origin stylesheet to apply on the user-entered page',
+      },
+    )
+    await browser.waitUntil(
+      async () =>
+        browser.execute(async () => {
+          const guest = document.querySelector<Guest>('webview')
+          return guest?.executeJavaScript<boolean>(
+            'document.querySelector("#own").naturalWidth > 0',
+          )
+        }),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'expected the same-origin image to load on the user-entered page',
+      },
     )
     const result = await browser.execute(async () => {
       const guest = document.querySelector<Guest>('webview')
