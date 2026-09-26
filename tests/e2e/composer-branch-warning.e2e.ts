@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedComposerBranchWarningFixture } from './helpers/seed-config.ts'
-import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { composerBannerMetrics } from './helpers/composer-banner.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { seedBranchWorkspace } from './helpers/branch-workspace.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
@@ -35,6 +36,31 @@ describe('composer branch warning', () => {
     )
     await expect(warning.$('.composer-branch-checkout-btn')).toHaveText('Check out')
 
+    // The same banner-action box as every other composer strip. Check out takes
+    // the warning tone; Continue here is the advisory alternative and stays
+    // neutral until hovered.
+    const metrics = await composerBannerMetrics('.composer-branch-warning')
+    if (!metrics) throw new Error('branch warning not found')
+    await expect(metrics.padding).toBe('8px 12px')
+    await expect(metrics.fontSize).toBe('12px')
+    await expect(metrics.actions).toEqual([
+      {
+        label: 'Check out',
+        padding: '4px 8px',
+        fontSize: '12px',
+        radius: '6px',
+        edge: metrics.edges.warning,
+      },
+      {
+        label: 'Continue here',
+        padding: '4px 8px',
+        fontSize: '12px',
+        radius: '6px',
+        edge: metrics.edges.neutral,
+      },
+    ])
+
     await saveAppScreenshot('composer-branch-warning-checkout.png')
+    await saveElementScreenshot('.composer-branch-warning', 'composer-branch-warning-actions.png')
   })
 })
