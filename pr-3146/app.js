@@ -24704,10 +24704,13 @@ function removeHost(list, id) {
 function parseSshHostDraft(draft) {
   const id = draft.id.trim() || slugifyHostId(draft.label || draft.host);
   if (!SSH_HOST_ID_RE.test(id)) {
-    return { ok: false, error: "Host id must be a lowercase slug (a-z, 0-9, -)." };
+    return { ok: false, error: "Host id must be a lowercase slug (a-z, 0-9, -).", fields: ["id"] };
   }
   if (!draft.label.trim() || !draft.host.trim()) {
-    return { ok: false, error: "Label and host are required." };
+    const fields = [];
+    if (!draft.label.trim()) fields.push("label");
+    if (!draft.host.trim()) fields.push("host");
+    return { ok: false, error: "Label and host are required.", fields };
   }
   const host = {
     id,
@@ -24719,7 +24722,7 @@ function parseSshHostDraft(draft) {
   if (portText) {
     const port = Number(portText);
     if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
-      return { ok: false, error: "Port must be a whole number from 1 to 65535." };
+      return { ok: false, error: "Port must be a whole number from 1 to 65535.", fields: ["port"] };
     }
     host.port = port;
   }
@@ -24952,16 +24955,6 @@ function warningIcon(className = DEFAULT) {
     className
   );
 }
-function lockIcon(className = DEFAULT) {
-  return outlineIcon(
-    "lock",
-    [
-      "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z",
-      "M7 11V7a5 5 0 0 1 10 0v4"
-    ],
-    className
-  );
-}
 function searchIcon(className = DEFAULT) {
   return outlineIcon(
     "search",
@@ -25181,10 +25174,15 @@ function openRemoteFolderDialog(api2) {
     { type: "button", class: "ui-btn ui-btn-ghost remote-folder-import-config" },
     "Import from ~/.ssh/config"
   );
+  const addHostHint = el(
+    "p",
+    { class: "field-hint remote-folder-add-host-hint" },
+    "Add an SSH host to browse and open a remote folder."
+  );
   const addHostForm = el(
     "div",
     { class: "remote-folder-add-host-form ssh-host-form", hidden: true },
-    el("p", { class: "field-hint" }, "Add an SSH host to browse and open a remote folder."),
+    addHostHint,
     el("label", {}, "Id ", idInput),
     el("label", {}, "Label ", labelInput),
     el("label", {}, "Host ", hostInput),
@@ -25241,6 +25239,7 @@ function openRemoteFolderDialog(api2) {
       portInput.value = "";
       identityInput.value = "";
       idInput.disabled = false;
+      addHostHint.textContent = hosts.length === 0 ? "No SSH hosts yet. Add one to browse and open a remote folder." : "Add an SSH host to browse and open a remote folder.";
       status.textContent = "";
       labelInput.focus();
     }
@@ -25251,7 +25250,7 @@ function openRemoteFolderDialog(api2) {
       hostSelect.append(el("option", { value: host.id }, `${host.label} (${host.host})`));
     }
     if (hosts.length === 0) {
-      hostSelect.append(el("option", { value: "", disabled: true }, "No hosts yet"));
+      hostSelect.append(el("option", { value: "", disabled: true, selected: true }, "No hosts yet"));
       hostSelect.disabled = true;
       currentHostId = "";
       return;
@@ -25372,7 +25371,6 @@ function openRemoteFolderDialog(api2) {
           openBtn.disabled = true;
           upBtn.disabled = true;
           setAddingHost(true);
-          status.textContent = "Add a host below to continue.";
           return;
         }
         setAddingHost(false);
@@ -28024,6 +28022,57 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "update-prompt-changelog",
+        label: "Update prompt listing every missed release",
+        project: project("demo-update-prompt-changelog-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-update-prompt-changelog-thread",
+            title: "Weekly release cadence",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        updatePromptRequests: [
+          {
+            id: "demo-update-prompt-changelog",
+            message: "Copse 0.1.0-beta.11 is available",
+            detail: "Download the update now? You can install it immediately once downloaded.",
+            changelog: [
+              {
+                version: "0.1.0-beta.11",
+                notes: [
+                  "- The Browser pane restores its tabs when Copse is reopened.",
+                  "- Tool calls that miss a numeric bound run at the cap instead of failing.",
+                  "",
+                  "## Known issues",
+                  "",
+                  "- Restored tabs do not keep their scroll position."
+                ].join("\n")
+              },
+              {
+                version: "0.1.0-beta.10",
+                // Release notes arrive over the network: markup must render inert.
+                notes: '- Faster `find_files` on large repositories.\n- <img src="x" onerror="document.body.dataset.pwned=1"><script>document.body.dataset.pwned=1<\/script>Hardened update checks.'
+              },
+              { version: "0.1.0-beta.9", notes: "" }
+            ],
+            changelogUrl: "https://github.com/copse-dev/copse-releases/releases",
+            buttons: ["Download", "Later"],
+            defaultIndex: 0,
+            cancelIndex: 1
+          }
+        ]
+      },
+      {
         id: "vnc-discovered-ports",
         label: "Remote desktop discovered-port list with one selected",
         project: project("demo-vnc-discovered-ports-project"),
@@ -28045,6 +28094,30 @@ var init_demo_scenarios = __esm({
           }
         ],
         vncDiscoveredPorts: [5900, 5901, 5902]
+      },
+      {
+        id: "vnc-saved-login",
+        label: "Remote desktop device with a saved login in a narrow rail",
+        project: project("demo-vnc-saved-login-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          vncEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-vnc-saved-login-thread",
+            title: "Remote desktop",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        vncDiscoveredPorts: [5900],
+        vncSavedLogin: { username: "saved-user" }
       },
       {
         id: "inline-thread-reference",
@@ -28731,7 +28804,19 @@ function createDemoApi(scenario, options = {}) {
     },
     updatePrompt: {
       respond: resolvedVoid,
-      onRequest: subscribe,
+      onRequest: (handler) => {
+        for (const { changelog, buttons, ...rest } of scenario.updatePromptRequests ?? []) {
+          const request = {
+            ...structuredClone(rest),
+            buttons: [...buttons],
+            ...changelog ? { changelog: changelog.map((entry) => ({ ...entry })) } : {}
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onDevNotice: subscribe
     },
     closeConfirm: {
@@ -28939,7 +29024,9 @@ function createDemoApi(scenario, options = {}) {
       list: emptyArray,
       save: unsupported,
       remove: unsupported,
-      test: unsupported
+      test: unsupported,
+      screening: () => resolved(null),
+      setScreening: unsupported
     },
     settings: {
       get: (key) => resolved(settings.get(key)),
@@ -29043,10 +29130,10 @@ function createDemoApi(scenario, options = {}) {
       discover: () => resolved([...scenario.vncDiscoveredPorts ?? []]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
-      getUsername: () => resolved(null),
+      getUsername: () => resolved(scenario.vncSavedLogin?.username ?? null),
       getPassword: () => resolved(null),
-      hasPassword: () => resolved(false),
-      canStoreCredentials: () => resolved(false),
+      hasPassword: () => resolved(scenario.vncSavedLogin !== void 0),
+      canStoreCredentials: () => resolved(scenario.vncSavedLogin !== void 0),
       rememberUsername: () => resolved(false),
       rememberPassword: () => resolved(false),
       forgetPassword: resolvedVoid,
@@ -29703,9 +29790,9 @@ var init_tokens = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css
 var init_default = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css"() {
   }
 });
 
@@ -44484,7 +44571,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${current} (no key)` });
+      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
   const concreteCount = options.filter(
@@ -45424,6 +45511,24 @@ var init_provider_slug = __esm({
   }
 });
 
+// src/renderer/dom/disclosure-summary.ts
+function disclosureSummary(label) {
+  return el(
+    "summary",
+    { class: "settings-disclosure-summary" },
+    el("span", {}, label),
+    // `ui-icon` carries `fill: none; stroke: currentColor`; without it the path
+    // renders as a solid triangle (see the plugin fold in settings-dialog.ts).
+    chevronDownIcon("ui-icon settings-disclosure-chevron")
+  );
+}
+var init_disclosure_summary = __esm({
+  "src/renderer/dom/disclosure-summary.ts"() {
+    init_helpers();
+    init_icons();
+  }
+});
+
 // src/renderer/views/setup/custom-providers-section.ts
 function privacyBadgeEl(badge) {
   return el("span", { class: `provider-privacy-badge ${badge.kind}` }, badge.label);
@@ -45866,7 +45971,7 @@ function createCustomProvidersSection(api2, opts = {}) {
     const advanced = el(
       "details",
       { class: "provider-advanced" },
-      el("summary", {}, "Advanced"),
+      disclosureSummary("Advanced"),
       el(
         "label",
         { class: "checkbox-label" },
@@ -46238,6 +46343,7 @@ var init_custom_providers_section = __esm({
     init_data_policies();
     init_pareto_frontier();
     init_helpers();
+    init_disclosure_summary();
     init_icons();
     init_inline_status();
     init_confirm_dialog();
@@ -47176,9 +47282,12 @@ var init_providers_section = __esm({
 // packages/llm/src/classifiers/presets.ts
 function classifierCredentialId(id) {
   if (!/^[a-z0-9-]{1,53}$/.test(id)) throw new Error("Invalid classifier profile ID");
-  return `classifier-${id}`;
+  return `${CLASSIFIER_CREDENTIAL_PREFIX}${id}`;
 }
-var CLASSIFIER_PRESETS;
+function classifierEndpointKey(baseUrl) {
+  return new URL(baseUrl).href.replace(/\/+$/, "");
+}
+var CLASSIFIER_PRESETS, CLASSIFIER_CREDENTIAL_PREFIX;
 var init_presets = __esm({
   "packages/llm/src/classifiers/presets.ts"() {
     CLASSIFIER_PRESETS = [
@@ -47235,6 +47344,7 @@ var init_presets = __esm({
         }
       }
     ];
+    CLASSIFIER_CREDENTIAL_PREFIX = "classifier-";
   }
 });
 
@@ -47266,6 +47376,7 @@ function createClassifiersSection(api2) {
   const chips = el("div", { class: "provider-chips", "aria-label": "Classifier profiles" });
   const formHost = el("div", { class: "provider-form-host" });
   const status = el("p", { class: "classifier-status", role: "status", "aria-live": "polite" });
+  const screening = el("select", { name: "classifierScreening" });
   const root = el(
     "fieldset",
     { class: "classifiers-section" },
@@ -47273,13 +47384,25 @@ function createClassifiersSection(api2) {
     el(
       "p",
       { class: "settings-fieldset-desc" },
-      "Connect local or hosted classifiers for evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+      "Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge."
+    ),
+    el(
+      "label",
+      { class: "classifier-screening" },
+      "Safety screening",
+      screening,
+      el(
+        "span",
+        { class: "field-hint" },
+        "Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions."
+      )
     ),
     chips,
     formHost,
     status
   );
   let profiles = [];
+  let screeningId = null;
   let selectedId = null;
   const drafts = /* @__PURE__ */ new Map();
   let captureDraft;
@@ -47324,7 +47447,43 @@ function createClassifiersSection(api2) {
     });
     chips.append(add2);
   }
+  function renderScreening() {
+    clear(screening);
+    screening.append(el("option", { value: "" }, "Instruct / safety model"));
+    for (const { profile } of profiles) {
+      if (profile.connection.type !== "http") continue;
+      screening.append(el("option", { value: profile.id }, profile.label));
+    }
+    screening.value = profiles.some((item) => item.profile.id === screeningId) ? screeningId ?? "" : "";
+  }
+  screening.addEventListener("change", () => {
+    const id = screening.value || null;
+    if (busy) {
+      renderScreening();
+      return;
+    }
+    busy = true;
+    root.disabled = true;
+    void (async () => {
+      try {
+        screeningId = await api2.classifiers.setScreening(id);
+        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label;
+        setInlineStatus(
+          status,
+          "ok",
+          chosen ? `Safety screening now uses ${chosen}. No test call has been made.` : "Safety screening now uses the Instruct / safety model."
+        );
+      } catch (error62) {
+        setInlineStatus(status, "error", classifierErrorMessage(error62));
+      } finally {
+        busy = false;
+        root.disabled = false;
+        renderScreening();
+      }
+    })();
+  });
   function render() {
+    renderScreening();
     renderChips();
     clear(formHost);
     clear(status);
@@ -47374,9 +47533,11 @@ function createClassifiersSection(api2) {
       controls.set(name, control);
       return control;
     }
-    function select(name, value, options) {
+    function select(name, value, choices) {
       const control = el("select", { name: `classifier${name}` });
-      for (const option of options) control.append(el("option", { value: option }, option));
+      for (const choice of choices) {
+        control.append(el("option", { value: choice.value }, choice.label));
+      }
       control.value = values.get(name) ?? value;
       controls.set(name, control);
       return control;
@@ -47402,22 +47563,22 @@ function createClassifiersSection(api2) {
     const advanced = el(
       "details",
       { class: "provider-advanced" },
-      el("summary", {}, "Connection options")
+      disclosureSummary("Connection options")
     );
     let key;
     let removeKey;
     if (profile.connection.type === "http") {
       let normalizedUrl = function(value) {
         try {
-          return new URL(value).href.replace(/\/+$/, "");
+          return classifierEndpointKey(value);
         } catch {
           return value.trim().replace(/\/+$/, "");
         }
       };
       const connection = profile.connection;
-      const protocol = select("Protocol", connection.protocol, ["systemone", "featherless"]);
+      const protocol = select("Protocol", connection.protocol, PROTOCOL_CHOICES);
       const url2 = input2("Url", connection.baseUrl, "url");
-      const auth = select("Auth", connection.auth, ["none", "bearer"]);
+      const auth = select("Auth", connection.auth, AUTH_CHOICES);
       const env = input2("KeyEnv", connection.apiKeyEnv ?? "");
       key = input2("Key", "", "password");
       const destinationNote = el("span", {
@@ -47481,7 +47642,7 @@ function createClassifiersSection(api2) {
       );
     } else {
       const connection = profile.connection;
-      const backend = select("Backend", connection.backend, ["torch", "mlx", "llamacpp"]);
+      const backend = select("Backend", connection.backend, BACKEND_CHOICES);
       const gguf = el("label", {}, "GGUF model path", input2("Gguf", connection.gguf ?? ""));
       const updateBackend = () => {
         gguf.hidden = backend.value !== "llamacpp";
@@ -47492,12 +47653,7 @@ function createClassifiersSection(api2) {
       advanced.append(
         el("label", {}, "Backend", backend),
         el("label", {}, "Model revision", input2("Revision", connection.revision)),
-        el(
-          "label",
-          {},
-          "Scoring mode",
-          select("Mode", connection.mode, ["direct", "serial", "shared"])
-        ),
+        el("label", {}, "Scoring mode", select("Mode", connection.mode, MODE_CHOICES)),
         gguf,
         el(
           "span",
@@ -47648,7 +47804,10 @@ function createClassifiersSection(api2) {
     });
     remove.addEventListener("click", () => {
       void run2(async () => {
-        if (saved) profiles = await api2.classifiers.remove(profile.id);
+        if (saved) {
+          profiles = await api2.classifiers.remove(profile.id);
+          screeningId = await api2.classifiers.screening();
+        }
         pending.delete(profile.id);
         selectedId = profiles[0]?.profile.id ?? null;
         drafts.delete(profile.id);
@@ -47665,7 +47824,11 @@ function createClassifiersSection(api2) {
     if (busy) return;
     captureDraft?.();
     try {
-      profiles = await api2.classifiers.list();
+      ;
+      [profiles, screeningId] = await Promise.all([
+        api2.classifiers.list(),
+        api2.classifiers.screening()
+      ]);
       selectedId ??= profiles[0]?.profile.id ?? null;
       if (selectedId !== null && !drafts.has(selectedId) && !profiles.some((item) => item.profile.id === selectedId))
         selectedId = null;
@@ -47677,13 +47840,33 @@ function createClassifiersSection(api2) {
   render();
   return { root, refresh };
 }
+var PROTOCOL_CHOICES, AUTH_CHOICES, BACKEND_CHOICES, MODE_CHOICES;
 var init_classifiers_section = __esm({
   "src/renderer/views/setup/classifiers-section.ts"() {
     init_presets();
     init_helpers();
+    init_disclosure_summary();
     init_inline_status();
     init_confirm_dialog();
     init_errors4();
+    PROTOCOL_CHOICES = [
+      { value: "systemone", label: "SystemOne" },
+      { value: "featherless", label: "Featherless classifier" }
+    ];
+    AUTH_CHOICES = [
+      { value: "none", label: "None" },
+      { value: "bearer", label: "Bearer token (API key)" }
+    ];
+    BACKEND_CHOICES = [
+      { value: "torch", label: "PyTorch" },
+      { value: "mlx", label: "MLX" },
+      { value: "llamacpp", label: "llama.cpp (GGUF)" }
+    ];
+    MODE_CHOICES = [
+      { value: "direct", label: "Direct" },
+      { value: "serial", label: "Serial" },
+      { value: "shared", label: "Shared" }
+    ];
   }
 });
 
@@ -47759,7 +47942,7 @@ function createEnvKeyDetectSection(api2, opts = {}) {
     el("legend", {}, legend),
     el(
       "p",
-      { class: "field-hint" },
+      { class: "settings-fieldset-desc" },
       "Scans your exported environment and shell start-up files (e.g. ~/.zshrc, ~/.bashrc) for keys like ANTHROPIC_API_KEY or OPENAI_API_KEY. Nothing is read until you click Scan, and existing keys are never overwritten."
     ),
     actions,
@@ -48303,7 +48486,7 @@ var init_lm_studio_section = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js
 function activeConfig() {
   return active;
 }
@@ -48327,14 +48510,14 @@ function withConfig(config2, fn2) {
 }
 var baseDefaults, active, scopeDepth;
 var init_config = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/config.js"() {
     baseDefaults = {};
     active = baseDefaults;
     scopeDepth = 0;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js
 function replaceCodePoint(codePoint) {
   if (codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111)
     return 65533;
@@ -48374,7 +48557,7 @@ function decodeHtmlEntities(text2) {
 }
 var BUILTIN_NAMED_ENTITIES, C1_REMAP, ENTITY_TOKEN_RE, cachedNamedSource, cachedEffective;
 var init_entity_decoder = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/entity-decoder.js"() {
     init_config();
     BUILTIN_NAMED_ENTITIES = Object.freeze({
       aacute: "\xE1",
@@ -48665,7 +48848,7 @@ var init_entity_decoder = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js
 function nextCodeSpan(s16, from) {
   let i2 = from;
   while (i2 < s16.length && s16[i2] !== "`")
@@ -48746,12 +48929,12 @@ function renderInlineCode(text2) {
 }
 var ANGLE_AUTOLINK_VERBATIM_RE;
 var init_inline_code_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-code-spans.js"() {
     ANGLE_AUTOLINK_VERBATIM_RE = /^<(?:[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*|[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^<>\s@.]+(?:\.[^<>\s@.]+)+)>/;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js
 function isEscapablePunctuation(ch) {
   return /^[!-/:-@[-`{-~]$/.test(ch);
 }
@@ -48827,7 +49010,7 @@ function canonicalizeEscapedPunctuation(text2) {
 }
 var ESCAPED_BASE, ANGLE_AUTOLINK_RE, TAG_NAME, TAG_ATTR, RAW_TAG_LIKE_RE, ENTITY_CANDIDATE_RE, INCOMPLETE_ENTITY_RE, ENCODED_PUNCT_RE, DECODE_HTML_ESCAPES;
 var init_backslash_escapes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/backslash-escapes.js"() {
     init_entity_decoder();
     init_inline_code_spans();
     ESCAPED_BASE = 57344;
@@ -48848,7 +49031,7 @@ var init_backslash_escapes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js
 function isLinkReferencesEnabled() {
   return activeConfig().linkReferences !== false;
 }
@@ -49126,7 +49309,7 @@ function parseReferenceLabel(source, openBracketIndex, fallbackLabel) {
 }
 var TITLE_TOKEN_RES, BLANK_LINE_RE;
 var init_link_references = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-references.js"() {
     init_entity_decoder();
     init_backslash_escapes();
     init_config();
@@ -49135,7 +49318,7 @@ var init_link_references = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js
 function leadingIndentWidth(line) {
   let col = 0;
   for (let i2 = 0; i2 < line.length; i2++) {
@@ -49285,7 +49468,7 @@ function parseOpenFenceContent(source) {
 }
 var FENCE_OPEN_RE, FENCE_CLOSE_RE, ATX_HEADING_DETECT_RE, ATX_HEADING_CAPTURE_RE, BLOCKQUOTE_DETECT_RE, FENCE_INFO_BACKSLASH_RE;
 var init_block_patterns = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-patterns.js"() {
     init_entity_decoder();
     FENCE_OPEN_RE = /^ {0,3}(?:(`{3,})([^\n`]*)|(~{3,})([^\n]*?))\s*$/;
     FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
@@ -49296,17 +49479,17 @@ var init_block_patterns = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js
 function getHtmlPolicy() {
   return activeConfig().htmlPolicy ?? "passthrough";
 }
 var init_html_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-policy.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js
 function escapeHtml(text2) {
   return text2.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] ?? ch);
 }
@@ -49402,7 +49585,7 @@ function decodeSafeMarkdownEntities(text2) {
 }
 var HTML_ESCAPES, SAFE_OUTER_TAG_RE, BENIGN_RAW_INLINE_TAG_RE, BR_TAG_RE, EVENT_HANDLER_ATTR_RE, URL_ATTR_RE, DANGEROUS_HREF_SCHEME_RE, PASSTHROUGH_TAG_RE, SAFE_ANCHOR_ATTR_NAME_RE, TAG_ATTR_RE, ANCHOR_OPEN_TAG_RE, QUOTED_HREF_RE, SAFE_MARKDOWN_ENTITY_SOURCE, SAFE_MARKDOWN_ENTITY_RE, COMPLETE_SAFE_MARKDOWN_ENTITY_RE, KNOWN_SAFE_ENTITIES;
 var init_escape = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/escape.js"() {
     init_backslash_escapes();
     init_html_policy();
     init_link_references();
@@ -49438,7 +49621,7 @@ var init_escape = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js
 function onelineMathBody(trimmed2, delimiter) {
   const [open2, close] = delimiter === "dollar" ? ["$$", "$$"] : ["\\[", "\\]"];
   if (!trimmed2.startsWith(open2) || !trimmed2.endsWith(close))
@@ -49533,7 +49716,7 @@ function syncFormingMathBlockDom(container, source, formingClass) {
 }
 var MATH_DOLLAR_LINE_RE, MATH_BRACKET_OPEN_LINE_RE, MATH_BRACKET_CLOSE_LINE_RE, MATH_OPEN_PREFIX_RE, PARTIAL_DOLLAR_CLOSER_RE, PARTIAL_BRACKET_CLOSER_RE, PARTIAL_DOLLAR_CLOSER_LINE_RE, PARTIAL_BRACKET_CLOSER_LINE_RE;
 var init_math_block = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-block.js"() {
     init_block_patterns();
     init_escape();
     MATH_DOLLAR_LINE_RE = /^ {0,3}\$\$\s*$/;
@@ -49547,7 +49730,7 @@ var init_math_block = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js
 function isFootnotesEnabled() {
   return activeConfig().footnotes !== false;
 }
@@ -49683,7 +49866,7 @@ function isPendingFootnoteDefLine(pending) {
 }
 var FOOTNOTE_DEF_LINE_RE, FOOTNOTE_REF_RE, activeFootnotes;
 var init_footnotes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/footnotes.js"() {
     init_block_patterns();
     init_escape();
     init_link_references();
@@ -49694,17 +49877,17 @@ var init_footnotes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js
 function isMathSyntaxEnabled() {
   return activeConfig().mathSyntax ?? false;
 }
 var init_math_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js
 function parseOrderedListMarker(line) {
   const m2 = line.match(ORDERED_LIST_MARKER_RE);
   if (!m2?.[1])
@@ -50471,7 +50654,7 @@ function isAmbiguousBlockLine(line) {
 }
 var THEMATIC_BREAK_RE, UNORDERED_LIST_ITEM_RE, ORDERED_LIST_MARKER_RE, LIST_ITEM_RE, EMPTY_LIST_ITEM_RE, BLOCKQUOTE_RE, SETEXT_UNDERLINE_RE, TABLE_SEP_RE;
 var init_block_tokenizer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/block-tokenizer.js"() {
     init_link_references();
     init_block_patterns();
     init_math_block();
@@ -50488,7 +50671,7 @@ var init_block_tokenizer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js
 function alertTypeFromMarker(bodyLine) {
   const word = ALERT_MARKER_RE.exec(bodyLine.trim())?.[1]?.toLowerCase();
   if (word !== void 0 && word in ALERT_TITLES)
@@ -50509,7 +50692,7 @@ function pendingBlockquoteAlertType(pendingLine) {
 }
 var ALERT_TITLES, ALERT_MARKER_RE;
 var init_alerts = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/alerts.js"() {
     init_block_patterns();
     ALERT_TITLES = {
       note: "Note",
@@ -50522,7 +50705,7 @@ var init_alerts = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js
 function normalizeFenceLang(lang) {
   return lang.trim().toLowerCase();
 }
@@ -50548,7 +50731,7 @@ function getFenceHandler(lang) {
 }
 var FORMING_FENCE_PRE_CLASS, mermaidFenceHandler, mathFenceHandler, BUILTIN_FENCE_HANDLERS, cachedOverrideSource, cachedOverrideMap;
 var init_fence_handlers = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/fence-handlers.js"() {
     init_config();
     init_escape();
     init_math_block();
@@ -50600,7 +50783,7 @@ var init_fence_handlers = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js
 function resolveLanguage(lang) {
   const key = lang.trim().toLowerCase();
   if (!key)
@@ -50632,7 +50815,7 @@ function fenceCodeClass(lang) {
 }
 var KNOWN_LANGUAGES, LANG_ALIASES;
 var init_highlight = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight.js"() {
     init_config();
     init_escape();
     KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
@@ -50671,7 +50854,7 @@ var init_highlight = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js
 function leadingSpaces(line) {
   return line.match(/^ */)?.[0].length ?? 0;
 }
@@ -50693,13 +50876,13 @@ function isIndentedHtmlBlock(content) {
 }
 var HTML_BLOCK_TAGS, HTML_BLOCK_START_RE;
 var init_indented_html = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/indented-html.js"() {
     HTML_BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
     HTML_BLOCK_START_RE = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[\\s/>]|$)`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const decodedTag = decodeEscapedHref(tag);
@@ -50732,7 +50915,7 @@ function restoreRawImages(text2, images) {
 }
 var RAW_IMAGE_RE, PLACEHOLDER_OPEN, PLACEHOLDER_CLOSE, PLACEHOLDER_RE;
 var init_raw_images = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/raw-images.js"() {
     init_config();
     init_escape();
     RAW_IMAGE_RE = /(?:<img\b[\s\S]*?\/?>|&lt;img\b[\s\S]*?\/?&gt;)/gi;
@@ -50742,17 +50925,17 @@ var init_raw_images = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js
 function isEmailAutolinksEnabled() {
   return activeConfig().emailAutolinks ?? true;
 }
 var init_autolink_syntax = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/autolink-syntax.js"() {
     init_config();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js
 function workspaceLinkTargetFromHref(raw) {
   let pathPart = raw.trim();
   if (pathPart === "" || pathPart.startsWith("#") || pathPart.startsWith("//"))
@@ -50805,13 +50988,13 @@ function isWorkspaceMarkdownLinkHref(raw) {
 }
 var URL_SCHEME_RE, COMMONMARK_FIXTURE_SINGLE_SEGMENTS;
 var init_workspace_link_href = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/workspace-link-href.js"() {
     URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
     COMMONMARK_FIXTURE_SINGLE_SEGMENTS = /* @__PURE__ */ new Set(["uri", "url"]);
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js
 function lookupWithRenderedLabels(refs, label, renderForMatch) {
   const direct = lookupLinkReference(refs, label);
   if (direct || !renderForMatch || !label.includes("<") || !isValidReferenceLabel(label)) {
@@ -51014,7 +51197,7 @@ function rangeAt(index, ranges) {
 }
 var renderedLabelIndexCache, DEFAULT_SAFE_HREF_SCHEMES, HREF_SCHEME_RE, DEFAULT_SAFE_HREF_SCHEMES_SET, cachedSchemesSource, cachedSchemes, neutralLinkDecorator, appLinkDecorator, RENDERED_ANCHOR_RE, INLINE_SHIELD_RE;
 var init_inline_links = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-links.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -51043,7 +51226,7 @@ var init_inline_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js
 function getInlinePasses(stage) {
   const passes = activeConfig().inlinePasses ?? NO_PASSES;
   if (stage === void 0)
@@ -51062,7 +51245,7 @@ function restoreInlinePassHtml(text2) {
 }
 var NO_PASSES, TOKEN_OPEN, TOKEN_CLOSE, TOKEN_RE, TOKEN_CHAR_RE, emitted, nextEmitId, inlinePassContext;
 var init_inline_passes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-passes.js"() {
     init_config();
     NO_PASSES = [];
     TOKEN_OPEN = "\uE100";
@@ -51081,7 +51264,7 @@ var init_inline_passes = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js
 function inlineHtmlMask(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -51279,7 +51462,7 @@ function mathHoldStart(s16, mask) {
 }
 var ESCAPED_LPAREN, ESCAPED_RPAREN;
 var init_inline_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-math.js"() {
     init_backslash_escapes();
     init_escape();
     init_inline_emphasis();
@@ -51290,7 +51473,7 @@ var init_inline_math = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js
 function inlineHtmlMask2(text2) {
   const mask = new Array(text2.length).fill(false);
   for (const match of text2.matchAll(INLINE_HTML_SHIELD_RE)) {
@@ -51385,12 +51568,12 @@ function strikethroughHoldStart(s16, mask) {
   return cut;
 }
 var init_inline_strikethrough = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-strikethrough.js"() {
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js
 function isFlankingWhitespace(ch) {
   return ch === "" || ch === HARD_BREAK_SENTINEL || /\s/.test(ch);
 }
@@ -51687,7 +51870,7 @@ function renderEmphasisOutsideInlineHtml(text2, linkRefs = /* @__PURE__ */ new M
 }
 var UNICODE_PUNCTUATION_RE, HARD_BREAK_SENTINEL, INLINE_HTML_SHIELD_RE;
 var init_inline_emphasis = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-emphasis.js"() {
     init_backslash_escapes();
     init_config();
     init_escape();
@@ -51704,7 +51887,7 @@ var init_inline_emphasis = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js
 function autolinkHref(raw) {
   if (!isAllowedHref(raw))
     return null;
@@ -51754,7 +51937,7 @@ function renderAngleAutolinks(text2) {
 }
 var URI_AUTOLINK_RE, EMAIL_AUTOLINK_RE;
 var init_inline_autolinks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-autolinks.js"() {
     init_escape();
     init_inline_emphasis();
     init_inline_links();
@@ -51764,7 +51947,7 @@ var init_inline_autolinks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js
 function applyInlinePasses(t2, stage) {
   const passes = getInlinePasses(stage);
   if (passes.length === 0)
@@ -51983,7 +52166,7 @@ function linkifyEmailAutolinks(segment) {
 }
 var URL_SCHEME_RE2, WWW_DOMAIN_RE, AUTOLINK_TRAILING_PUNCTUATION, EMAIL_LOCAL_CHAR_RE;
 var init_inline_spans = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/inline-spans.js"() {
     init_autolink_syntax();
     init_backslash_escapes();
     init_config();
@@ -52003,7 +52186,7 @@ var init_inline_spans = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js
 function stripHtmlComments(text2) {
   return text2.replace(/<!--[\s\S]*?-->/g, "");
 }
@@ -52099,7 +52282,7 @@ function renderProseBlock(text2, linkRefs, softBreak = "newline") {
 }
 var HARD_BREAK;
 var init_render_prose_inline = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-prose-inline.js"() {
     init_backslash_escapes();
     init_escape();
     init_raw_images();
@@ -52109,7 +52292,7 @@ var init_render_prose_inline = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js
 function renderFencedBlock(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler)
@@ -52558,7 +52741,7 @@ function renderFootnoteSectionItems(ctx, linkRefs, startIndex = 0) {
 }
 var MAX_BLOCK_NESTING_DEPTH, blockNestingDepth, stripBlockquoteLine, TASK_LIST_MARKER_RE, SETEXT_UNDERLINE_SLICE_RE;
 var init_render_blocks = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-blocks.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -52576,7 +52759,7 @@ var init_render_blocks = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js
 function resolvedPolicy() {
   const source = activeConfig().linkImagePolicy ?? null;
   if (source !== cachedPolicySource) {
@@ -52676,7 +52859,7 @@ function applyLinkImagePolicy(node2, tagName) {
 }
 var DEFAULT_BLOCKED_LINK_CLASS, DEFAULT_BLOCKED_IMAGE_CLASS, cachedPolicySource, cachedResolved;
 var init_link_image_policy = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/link-image-policy.js"() {
     init_config();
     DEFAULT_BLOCKED_LINK_CLASS = "blocked-link";
     DEFAULT_BLOCKED_IMAGE_CLASS = "blocked-image";
@@ -52684,16 +52867,16 @@ var init_link_image_policy = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js
 var DATA_ATTR_NAME_SOURCE, DATA_ATTR_NAME_RE;
 var init_data_attributes = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/data-attributes.js"() {
     DATA_ATTR_NAME_SOURCE = "data-[a-z0-9-]+";
     DATA_ATTR_NAME_RE = /* @__PURE__ */ new RegExp(`^${DATA_ATTR_NAME_SOURCE}$`, "i");
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js
 function isBrowserSanitizerSupported() {
   return typeof document !== "undefined" && typeof Element.prototype.setHTML === "function";
 }
@@ -52740,7 +52923,7 @@ function sanitizeIntoElement(target, html2, config2) {
 }
 var DROP_CONTENT_TAGS, browserSanitizerBackend;
 var init_sanitize_browser = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-browser.js"() {
     init_data_attributes();
     DROP_CONTENT_TAGS = /* @__PURE__ */ new Set(["script", "style", "noscript", "template", "title"]);
     browserSanitizerBackend = {
@@ -52764,7 +52947,7 @@ var init_sanitize_browser = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js
 function getSanitizerBackend() {
   return activeConfig().sanitizerBackend ?? null;
 }
@@ -52833,7 +53016,7 @@ function sanitizeRenderedMarkdownInto(target, html2) {
 }
 var ALLOWED_TAGS, ALLOWED_ATTR, FOOTNOTE_ID_RE, DOUBLE_ENCODED_NBSP_RE, DOUBLE_ENCODED_NBSP_DATA_RE, SHOW_TEXT;
 var init_sanitize = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize.js"() {
     init_config();
     init_link_image_policy();
     init_sanitize_browser();
@@ -52915,7 +53098,7 @@ var init_sanitize = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js
 function scopedConfig(options) {
   const { tokens, indentedCode, ...config2 } = options;
   return config2;
@@ -52953,7 +53136,7 @@ ${section}`;
 }
 var TOP_LEVEL_RENDER_OPTS;
 var init_renderer = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/renderer.js"() {
     init_block_tokenizer();
     init_footnotes();
     init_config();
@@ -52963,7 +53146,7 @@ var init_renderer = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js
 function revealFormingLink(text2) {
   if (!text2.includes("["))
     return text2;
@@ -53137,7 +53320,7 @@ function renderPendingLine(pending, options = {}) {
 }
 var COMPLETE_LINK_AT_START_RE, TOP_LEVEL_LIST_MARKER_RE;
 var init_render_pending_line = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/render-pending-line.js"() {
     init_alerts();
     init_block_patterns();
     init_block_tokenizer();
@@ -53151,7 +53334,7 @@ var init_render_pending_line = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js
 function splitAtLastNewline(content) {
   const lastNl = content.lastIndexOf("\n");
   if (lastNl === -1)
@@ -53266,14 +53449,14 @@ function splitForStreamingCore(content, blocks) {
   };
 }
 var init_streaming_split = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-split.js"() {
     init_block_tokenizer();
     init_inline_code_spans();
     init_inline_emphasis();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js
 function canExtendAcrossBlank(kind) {
   return kind === "list_item" || kind === "indented_code" || kind === "blockquote" || kind === "footnote_def";
 }
@@ -53325,7 +53508,7 @@ function advanceSafeBoundary(source, tokens, fromIdx, fromOffset, lastNonBlankKi
 }
 var IncrementalSourceScanner;
 var init_incremental_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/incremental-scan.js"() {
     init_block_tokenizer();
     IncrementalSourceScanner = class {
       tokens = [];
@@ -53510,7 +53693,7 @@ var init_incremental_scan = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js
 function childMatches(el3, tagName, cls) {
   return (tagName === null || el3.tagName === tagName) && (cls === null || el3.classList.contains(cls));
 }
@@ -53539,11 +53722,11 @@ function findDescendantByClass(root, cls, tagName) {
   return null;
 }
 var init_dom_scan = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/dom-scan.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js
 function resolvePolicy() {
   const hostPolicy = activeConfig().trustedTypesPolicy;
   if (hostPolicy)
@@ -53592,13 +53775,13 @@ function setHostTrustedHtml(el3, html2) {
 }
 var defaultPolicy, defaultPolicyFactory;
 var init_html_sink = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/html-sink.js"() {
     init_config();
     init_sanitize();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js
 function readMathSource(el3) {
   return (el3.querySelector("pre.math") ?? el3).textContent ?? "";
 }
@@ -53642,13 +53825,13 @@ async function hydratePendingMath(root, options = {}) {
 }
 var PENDING_MATH_SELECTOR;
 var init_math = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/math.js"() {
     init_html_sink();
     PENDING_MATH_SELECTOR = ".math-block.math-block--pending, .math-inline.math-inline--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js
 function decodeMermaidHtmlEntities(text2) {
   return text2.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
@@ -53689,11 +53872,11 @@ function mermaidSourceCandidates(raw) {
   return [...new Set([gentle, aggressive].filter(Boolean))];
 }
 var init_mermaid_source = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid-source.js"() {
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js
 function readDiagramSource(container) {
   return container.querySelector("pre.mermaid")?.textContent ?? "";
 }
@@ -53743,14 +53926,14 @@ async function hydratePendingDiagrams(root, options = {}) {
 }
 var PENDING_DIAGRAM_SELECTOR;
 var init_mermaid = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/mermaid.js"() {
     init_mermaid_source();
     init_html_sink();
     PENDING_DIAGRAM_SELECTOR = ".mermaid-diagram.mermaid-diagram--pending";
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js
 function tableLines(source) {
   const trimmed2 = dropTrailingNewline(source);
   if (trimmed2 === "")
@@ -53856,7 +54039,7 @@ function removePendingTableRow(table) {
 }
 var FORMING_TABLE_CLASS, PENDING_ROW_CLASS, SEPARATOR_ROW_CLASS;
 var init_streaming_table_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-table-dom.js"() {
     init_dom_scan();
     init_block_tokenizer();
     init_block_patterns();
@@ -53869,7 +54052,7 @@ var init_streaming_table_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js
 function renderFormingFenceInner(lang, code) {
   const handler = getFenceHandler(lang);
   if (handler) {
@@ -53914,7 +54097,7 @@ function clearFormingFenceDom(container) {
   container.replaceChildren();
 }
 var init_streaming_fence_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-fence-dom.js"() {
     init_block_patterns();
     init_fence_handlers();
     init_dom_scan();
@@ -53923,18 +54106,18 @@ var init_streaming_fence_dom = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js
 function syncFormingMathDom(container, source) {
   syncFormingMathBlockDom(container, parseOpenMathBlock(source), FORMING_FENCE_PRE_CLASS);
 }
 var init_streaming_math_dom = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-math-dom.js"() {
     init_fence_handlers();
     init_math_block();
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js
 function attributesEqual(a3, b4) {
   const aAttrs = a3.attributes;
   const bAttrs = b4.attributes;
@@ -54036,7 +54219,7 @@ function syncAttributes(el3, template) {
 }
 var TEXT_NODE, ELEMENT_NODE, COMMENT_NODE;
 var init_streaming_dom_morph = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-dom-morph.js"() {
     init_html_sink();
     TEXT_NODE = 3;
     ELEMENT_NODE = 1;
@@ -54044,7 +54227,7 @@ var init_streaming_dom_morph = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js
 function settleClassOf(kind) {
   switch (kind) {
     case "fence":
@@ -54231,7 +54414,7 @@ function detailsBalance(html2) {
 }
 var RENDER_OPTS, INTRA_LIST_MIN_ITEMS, MAX_LINK_REF_PATCH_PARTS, BENIGN_BALANCED_TAGS, VOID_HTML_TAGS, HTML_TAG_SCAN_RE, SAFE_REROOT_TAGS, PROBE_TAG, PROBE_HTML, DETAILS_OPEN_RE, DETAILS_CLOSE_RE, FrozenTailRenderer;
 var init_streaming_frozen_tail = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming-frozen-tail.js"() {
     init_block_tokenizer();
     init_render_blocks();
     init_footnotes();
@@ -55467,7 +55650,7 @@ ${section}`;
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js
 function trailingFootnotesSection(completedEl) {
   const last = completedEl.lastElementChild;
   return last && last.tagName === "SECTION" && last.classList.contains("footnotes") ? last : null;
@@ -55909,7 +56092,7 @@ function clearFormingDom(container) {
 }
 var BLOCK_PENDING_CLASS, LIST_CONTINUATION_CLASS, PARAGRAPH_CONTINUATION_CLASS, PENDING_FAST_PATH_INERT_RE, StreamingMarkdownRenderer;
 var init_streaming = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/streaming.js"() {
     init_alerts();
     init_block_tokenizer();
     init_render_pending_line();
@@ -56177,9 +56360,9 @@ var init_streaming = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js
 var init_dist = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/index.js"() {
     init_renderer();
     init_config();
     init_streaming();
@@ -56289,11 +56472,11 @@ function createModelRoutingSection(api2, options = {}) {
     el(
       "details",
       { class: "routing-advanced" },
-      el("summary", {}, "Advanced routes"),
+      disclosureSummary("Advanced routes"),
       routingField(
         "Instruct / safety model",
         safetyModel,
-        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider."
+        "Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does \u2014 a cloud choice sends that screening content to its provider. A classifier chosen under Classifiers \u2192 Safety screening replaces it."
       ),
       routingField("Post-turn review model", reviewModel, "Reviews the diff after an editing turn")
     )
@@ -56427,6 +56610,7 @@ var init_model_routing_section = __esm({
     init_model_options();
     init_model_picker();
     init_helpers();
+    init_disclosure_summary();
     init_unknown_value3();
     init_ui();
   }
@@ -59087,12 +59271,12 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
 }
 function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.replaceChildren();
-  const heading = document.createElement("h3");
+  const heading = document.createElement("h4");
   heading.className = "usage-plan-heading";
   heading.textContent = "Subscription plan limits";
   host.append(heading);
   const intro = document.createElement("p");
-  intro.className = "field-hint";
+  intro.className = "settings-fieldset-desc";
   intro.textContent = "Live plan windows for the accounts you are signed in to. If a plan cannot be read, the local ledger below still tracks this app\u2019s usage.";
   host.append(intro);
   if (error62) {
@@ -59125,12 +59309,12 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
 }
 function renderPlanWorthItSection(host, payload, error62, opts) {
   host.replaceChildren();
-  const heading = document.createElement("h3");
+  const heading = document.createElement("h4");
   heading.className = "usage-worth-heading";
   heading.textContent = "Is your plan worth it?";
   host.append(heading);
   const intro = document.createElement("p");
-  intro.className = "field-hint";
+  intro.className = "settings-fieldset-desc";
   intro.textContent = "Compares your Claude subscription\u2019s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse\u2019s local ledger is not used here.";
   host.append(intro);
   if (error62) {
@@ -59307,7 +59491,7 @@ function createUsageSection(api2, store2, onRequestClose) {
     <div class="usage-plan-section" id="usage-plan-section"></div>
     <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
-      <h3 class="usage-ledger-heading">Local usage ledger</h3>
+      <h4 class="usage-ledger-heading">Local usage ledger</h4>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
         <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
         <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
@@ -59535,18 +59719,44 @@ function createSshWorkspaceSection(api2, opts = {}) {
   );
   const draft = emptySshHostDraft();
   let idTouched = false;
-  const idInput = el("input", { name: "sshHostId", placeholder: "my-server" });
-  const labelInput = el("input", { name: "sshHostLabel", placeholder: "Production" });
+  const idInput = el("input", { type: "text", name: "sshHostId", placeholder: "my-server" });
+  const labelInput = el("input", { type: "text", name: "sshHostLabel", placeholder: "Production" });
   const hostInput = el("input", {
+    type: "text",
     name: "sshHostHost",
     placeholder: "example.com or ~/.ssh/config alias"
   });
-  const userInput = el("input", { name: "sshHostUser", placeholder: "ubuntu" });
-  const portInput = el("input", { name: "sshHostPort", placeholder: "22", inputmode: "numeric" });
+  const userInput = el("input", { type: "text", name: "sshHostUser", placeholder: "ubuntu" });
+  const portInput = el("input", {
+    type: "text",
+    name: "sshHostPort",
+    placeholder: "22",
+    inputmode: "numeric"
+  });
   const identityInput = el("input", {
+    type: "text",
     name: "sshHostIdentity",
     placeholder: "~/.ssh/id_ed25519"
   });
+  const draftInputs = {
+    id: idInput,
+    label: labelInput,
+    host: hostInput,
+    user: userInput,
+    port: portInput,
+    identityFile: identityInput
+  };
+  function markInvalid(fields) {
+    for (const [field, input2] of Object.entries(draftInputs)) {
+      if (fields.some((name) => name === field)) input2.setAttribute("aria-invalid", "true");
+      else input2.removeAttribute("aria-invalid");
+    }
+  }
+  for (const input2 of Object.values(draftInputs)) {
+    input2.addEventListener("input", () => {
+      input2.removeAttribute("aria-invalid");
+    });
+  }
   const forwardInput = el("input", { type: "checkbox", name: "sshHostForwardAgent" });
   const form = el(
     "div",
@@ -59572,6 +59782,7 @@ function createSshWorkspaceSection(api2, opts = {}) {
   }
   function clearDraft() {
     Object.assign(draft, emptySshHostDraft());
+    markInvalid([]);
     idTouched = false;
     idInput.value = "";
     labelInput.value = "";
@@ -59583,6 +59794,7 @@ function createSshWorkspaceSection(api2, opts = {}) {
     idInput.disabled = false;
   }
   function fillDraft(host) {
+    markInvalid([]);
     draft.id = host.id;
     draft.label = host.label;
     draft.host = host.host;
@@ -59686,9 +59898,11 @@ function createSshWorkspaceSection(api2, opts = {}) {
     void (async () => {
       const parsed2 = parseSshHostDraft(draft);
       if (!parsed2.ok) {
+        markInvalid(parsed2.fields);
         setInlineStatus(status, "error", parsed2.error);
         return;
       }
+      markInvalid([]);
       const raw = await api2.settings.get("sshWorkspaceHosts");
       const existing = parseSshWorkspaceHosts(raw);
       await persistHosts(upsertHost(existing, parsed2.host));
@@ -59919,7 +60133,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
-  const formTitle = el("h3", { class: "automation-form-title" }, "New automation");
+  const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -61803,8 +62017,8 @@ function mountSettingsDialog(store2, api2) {
           <section class="settings-section" data-section="classifiers">
             <h3>Classifiers</h3>
             <p class="settings-section-desc">
-              Connections for classification evals and explicit calls. Copse's built-in classifiers
-              and chat model choices are configured separately.
+              Connections for safety screening, classification evals and explicit calls. Chat model
+              choices are configured separately.
             </p>
             <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
@@ -63147,7 +63361,7 @@ function mountSettingsDialog(store2, api2) {
     if (!header) return;
     const testBtn = document.createElement("button");
     testBtn.type = "button";
-    testBtn.className = "sources-hook-test-btn";
+    testBtn.className = "ui-btn ui-btn-secondary sources-hook-test-btn";
     testBtn.textContent = "Test";
     testBtn.title = "Dry-run this hook against a synthetic payload for its event";
     header.append(testBtn);
@@ -71417,6 +71631,256 @@ var init_mermaid2 = __esm({
   }
 });
 
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js
+function defaultNow() {
+  const perf = globalThis.performance;
+  return typeof perf?.now === "function" ? perf.now() : Date.now();
+}
+function defaultRequestFrame(callback) {
+  const raf = globalThis.requestAnimationFrame;
+  if (typeof raf === "function")
+    return raf(() => callback());
+  return setTimeout(callback, 16);
+}
+function defaultCancelFrame(handle) {
+  const caf = globalThis.cancelAnimationFrame;
+  if (typeof caf === "function")
+    caf(handle);
+  else
+    clearTimeout(handle);
+}
+function prefersReducedMotion(matchMedia2) {
+  const mm = matchMedia2 ?? globalThis.matchMedia;
+  if (typeof mm !== "function")
+    return false;
+  return mm(REDUCED_MOTION_QUERY).matches;
+}
+function documentHidden() {
+  const doc = globalThis.document;
+  return doc?.visibilityState === "hidden";
+}
+function endsUndecided(text2, end) {
+  const last = text2[end - 1];
+  return last !== void 0 && (SYNTAX_CHARS.has(last) || /\s/.test(last));
+}
+function revealBoundary(text2, count) {
+  if (count <= 0)
+    return 0;
+  if (count >= text2.length)
+    return text2.length;
+  let end = count;
+  const limit = Math.min(text2.length, count + MAX_BOUNDARY_EXTENSION);
+  while (end < limit && endsUndecided(text2, end))
+    end++;
+  if (end >= text2.length)
+    return text2.length;
+  const code = text2.charCodeAt(end - 1);
+  if (code >= 55296 && code <= 56319)
+    return end - 1;
+  return end;
+}
+function createInputSmoother(options) {
+  const { update, cadence = "fixed", charsPerSecond = DEFAULT_CHARS_PER_SECOND3, lagMs = DEFAULT_LAG_MS, initial = "", disabled = false, respectReducedMotion = true, now = defaultNow, requestFrame = defaultRequestFrame, cancelFrame = defaultCancelFrame, matchMedia: matchMedia2 } = options;
+  const enabled = !disabled && !(respectReducedMotion && prefersReducedMotion(matchMedia2));
+  let target = initial;
+  let revealed = initial.length;
+  let emitted2 = initial;
+  let velocity = 0;
+  let lastTick = 0;
+  let handle = null;
+  let disposed = false;
+  let settle2 = null;
+  let requesting = false;
+  let synchronousFrames = false;
+  function emit(text2) {
+    if (text2 === emitted2)
+      return;
+    emitted2 = text2;
+    update(text2);
+  }
+  function settleNow() {
+    const done = settle2;
+    settle2 = null;
+    done?.();
+  }
+  function rate(dtMs, backlog) {
+    let perMs;
+    if (cadence === "adaptive") {
+      const desired = Math.max(backlog / lagMs, MIN_CHARS_PER_MS);
+      velocity += (desired - velocity) * (1 - Math.exp(-dtMs / VELOCITY_SMOOTHING_MS));
+      perMs = velocity;
+    } else {
+      perMs = charsPerSecond / 1e3;
+    }
+    if (settle2)
+      perMs = Math.max(perMs, backlog / DRAIN_LAG_MS, MIN_CHARS_PER_MS);
+    return perMs;
+  }
+  function frame() {
+    handle = null;
+    if (disposed)
+      return;
+    if (requesting)
+      synchronousFrames = true;
+    const nowMs = now();
+    const dtMs = Math.max(0, nowMs - lastTick);
+    lastTick = nowMs;
+    const backlog = target.length - revealed;
+    const catchUp = synchronousFrames || cadence === "adaptive" && dtMs > MAX_FRAME_GAP_MS;
+    if (catchUp)
+      revealed = target.length;
+    else if (backlog > 0)
+      revealed = Math.min(target.length, revealed + rate(dtMs, backlog) * dtMs);
+    const end = revealBoundary(target, Math.floor(revealed));
+    revealed = Math.max(revealed, end);
+    emit(target.slice(0, end));
+    if (end < target.length)
+      schedule();
+    else
+      settleNow();
+  }
+  function schedule() {
+    if (disposed || handle !== null || synchronousFrames)
+      return;
+    requesting = true;
+    const requested = requestFrame(frame);
+    requesting = false;
+    if (!synchronousFrames)
+      handle = requested;
+  }
+  function cancel() {
+    if (handle !== null) {
+      cancelFrame(handle);
+      handle = null;
+    }
+  }
+  function releaseAll() {
+    cancel();
+    revealed = target.length;
+    emit(target);
+    settleNow();
+  }
+  function push(text2) {
+    if (disposed)
+      return;
+    settle2 = null;
+    target = text2;
+    if (revealed > target.length)
+      revealed = target.length;
+    if (!enabled || synchronousFrames) {
+      revealed = target.length;
+      emitted2 = target;
+      update(target);
+      return;
+    }
+    if (handle === null)
+      lastTick = now();
+    schedule();
+  }
+  function finish(onSettled) {
+    if (disposed)
+      return;
+    settle2 = onSettled ?? null;
+    if (!enabled || synchronousFrames || emitted2 === target || documentHidden()) {
+      releaseAll();
+      return;
+    }
+    if (handle === null)
+      lastTick = now();
+    schedule();
+  }
+  function flush() {
+    if (disposed)
+      return;
+    cancel();
+    revealed = target.length;
+    emitted2 = target;
+    update(target);
+    settleNow();
+  }
+  function dispose() {
+    disposed = true;
+    settle2 = null;
+    cancel();
+  }
+  return {
+    push,
+    finish,
+    flush,
+    dispose,
+    get enabled() {
+      return enabled;
+    }
+  };
+}
+var DEFAULT_CHARS_PER_SECOND3, DEFAULT_LAG_MS, VELOCITY_SMOOTHING_MS, MIN_CHARS_PER_MS, MAX_FRAME_GAP_MS, DRAIN_LAG_MS, MAX_BOUNDARY_EXTENSION, REDUCED_MOTION_QUERY, SYNTAX_CHARS;
+var init_smoothing = __esm({
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/smoothing.js"() {
+    DEFAULT_CHARS_PER_SECOND3 = 600;
+    DEFAULT_LAG_MS = 120;
+    VELOCITY_SMOOTHING_MS = 180;
+    MIN_CHARS_PER_MS = 0.06;
+    MAX_FRAME_GAP_MS = 250;
+    DRAIN_LAG_MS = 60;
+    MAX_BOUNDARY_EXTENSION = 32;
+    REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+    SYNTAX_CHARS = new Set("`*_~[]()|#>!-+=.:<\\0123456789");
+  }
+});
+
+// src/renderer/views/frame-loop.ts
+function prefersReducedMotion2() {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function createFrameLoop(step, frames = browserFrames) {
+  let handle = null;
+  let lastTick = 0;
+  let requesting = false;
+  let framesRun = 0;
+  const frame = () => {
+    framesRun++;
+    handle = null;
+    const now = frames.now();
+    const gap = now - lastTick;
+    lastTick = now;
+    const dt2 = requesting || gap > MAX_FRAME_GAP_MS2 || !frames.canAnimate() ? Infinity : gap;
+    if (step(dt2) && dt2 !== Infinity) schedule();
+  };
+  const schedule = () => {
+    const before = framesRun;
+    requesting = true;
+    const requested = frames.request(frame);
+    requesting = false;
+    if (framesRun === before) handle = requested;
+  };
+  return {
+    start: () => {
+      if (handle !== null) return;
+      lastTick = frames.now();
+      if (frames.canAnimate()) schedule();
+      else step(Infinity);
+    },
+    stop: () => {
+      if (handle !== null) frames.cancel(handle);
+      handle = null;
+    }
+  };
+}
+var MAX_FRAME_GAP_MS2, browserFrames;
+var init_frame_loop = __esm({
+  "src/renderer/views/frame-loop.ts"() {
+    MAX_FRAME_GAP_MS2 = 250;
+    browserFrames = {
+      now: () => performance.now(),
+      request: (callback) => requestAnimationFrame(callback),
+      cancel: (handle) => {
+        cancelAnimationFrame(handle);
+      },
+      canAnimate: () => document.visibilityState !== "hidden" && !prefersReducedMotion2()
+    };
+  }
+});
+
 // src/shared/fs/file-reference.ts
 function fileReferenceMatches(text2) {
   const matches2 = [];
@@ -71878,9 +72342,9 @@ var init_browser_links = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js
 var init_host_workspace = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/host-workspace.js"() {
     init_inline_links();
     init_workspace_link_href();
   }
@@ -75999,18 +76463,49 @@ function flushPendingAcpTransportNoise(messageTextEl) {
   if (pending === void 0) return;
   syncAcpTransportNoiseDisclosure(messageTextEl, pending);
 }
+function paintStreamingMarkdown(el3, display) {
+  let renderer = streamingRenderers.get(el3);
+  if (!renderer) {
+    renderer = new StreamingMarkdownRenderer(el3);
+    streamingRenderers.set(el3, renderer);
+  }
+  renderer.update(display);
+  attachCodeBlockCopyButtons(el3, { runCommands: true });
+}
+function streamSmootherFor(el3, display) {
+  const existing = streamSmoothers.get(el3);
+  if (existing) return existing;
+  const shown = el3.hasChildNodes() ? display : "";
+  if (shown) paintStreamingMarkdown(el3, shown);
+  const smoother = createInputSmoother({
+    update: (text2) => {
+      paintStreamingMarkdown(el3, text2);
+      el3.dispatchEvent(new CustomEvent(STREAM_PAINT_EVENT, { bubbles: true }));
+    },
+    // Follow the provider's own rate: a steady reveal a little behind it.
+    cadence: "adaptive",
+    initial: shown
+  });
+  streamSmoothers.set(el3, smoother);
+  return smoother;
+}
 function setAssistantMarkdown(el3, content, streaming, api2) {
   const { body: display, transportNoise } = assistantDisplayParts(content);
   if (streaming) {
     el3.classList.add("is-streaming");
-    let renderer = streamingRenderers.get(el3);
-    if (!renderer) {
-      renderer = new StreamingMarkdownRenderer(el3);
-      streamingRenderers.set(el3, renderer);
-    }
-    renderer.update(display);
-    attachCodeBlockCopyButtons(el3, { runCommands: true });
+    streamSmootherFor(el3, display).push(display);
     syncAcpTransportNoiseDisclosure(el3, transportNoise);
+    return;
+  }
+  const smoother = streamSmoothers.get(el3);
+  if (smoother) {
+    smoother.push(display);
+    smoother.finish(() => {
+      smoother.dispose();
+      streamSmoothers.delete(el3);
+      setAssistantMarkdown(el3, content, false, api2);
+      el3.dispatchEvent(new CustomEvent(STREAM_SETTLED_EVENT, { bubbles: true }));
+    });
     return;
   }
   el3.classList.remove("is-streaming");
@@ -77641,11 +78136,33 @@ function mountConversation(root, store2, api2) {
     userScrolledUpAt = 0;
     scrollToBottom(true);
   });
+  const streamFollow = createFrameLoop((dt2) => {
+    if (!shouldAutoScroll()) return false;
+    const gap = list.scrollHeight - list.clientHeight - list.scrollTop;
+    if (gap <= 1 || dt2 === Infinity) {
+      scrollToBottom();
+      return false;
+    }
+    setScrollTopProgrammatically(
+      list.scrollTop + Math.ceil(gap * (1 - Math.exp(-dt2 / STREAM_FOLLOW_EASE_MS)))
+    );
+    scrollToBottomBtn.hidden = true;
+    return true;
+  });
+  list.addEventListener(STREAM_PAINT_EVENT, () => {
+    if (shouldAutoScroll()) streamFollow.start();
+  });
+  list.addEventListener(STREAM_SETTLED_EVENT, () => {
+    hydrateRemoteArtifactImages(list, api2);
+    syncAcpResourceReferences(list, api2, store2);
+    scrollToBottom();
+  });
   function setActivity(label) {
     if (!label) {
       activityBar.hidden = true;
       return;
     }
+    const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
     if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
       activityBar.hidden = true;
@@ -77657,7 +78174,7 @@ function mountConversation(root, store2, api2) {
       !!list.querySelector(".msg-assistant .message-reasoning")
     );
     activityBar.hidden = false;
-    scrollToBottom();
+    if (changed) scrollToBottom();
   }
   function syncFromStore() {
     const tid = store2.getState().activeThreadId;
@@ -78468,9 +78985,11 @@ function mountConversation(root, store2, api2) {
             setReasoningDisclosureTitle(details, false);
           });
           const absorbed = msg.toolCalls.some((tc2) => !tc2.subagent) && !msgEl.querySelector(".tool-card") || Boolean(msg.reasoning?.trim()) && trails.length === 0;
-          if (absorbed) resyncRunMembership(thread, mid);
+          if (absorbed) {
+            resyncRunMembership(thread, mid);
+            scrollToBottom();
+          }
         }
-        scrollToBottom();
       }
     }),
     store2.on("message_canvas_artefacts_changed", (mid) => {
@@ -78689,7 +79208,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -78711,6 +79230,8 @@ var init_conversation = __esm({
     init_dist();
     init_mermaid2();
     init_dist();
+    init_smoothing();
+    init_frame_loop();
     init_file_links();
     init_browser_links();
     init_workspace_links();
@@ -78763,6 +79284,9 @@ var init_conversation = __esm({
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
+    streamSmoothers = /* @__PURE__ */ new WeakMap();
+    STREAM_PAINT_EVENT = "copse:stream-paint";
+    STREAM_SETTLED_EVENT = "copse:stream-settled";
     showAcpTransportNoiseDisclosure = () => false;
     subagentMessageCommitted = /* @__PURE__ */ new WeakMap();
     subagentInnerToolsSig = /* @__PURE__ */ new WeakMap();
@@ -78775,6 +79299,7 @@ var init_conversation = __esm({
     reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
     USER_SCROLL_UP_DEBOUNCE_MS = 150;
+    STREAM_FOLLOW_EASE_MS = 90;
     TOOL_AUTO_REVEAL_DELAY_MS = 300;
     TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
     TOOL_AUTO_COMPACT_DELAY_MS = 750;
@@ -93056,7 +93581,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-warnings" },
-          el("h3", {}, "Needs your attention"),
+          el("h4", {}, "Needs your attention"),
           el("ul", {}, ...run2.warnings.map((warning) => el("li", {}, warning)))
         )
       );
@@ -93077,7 +93602,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-egress" },
-          el("h3", {}, "Egress"),
+          el("h4", {}, "Egress"),
           el(
             "ul",
             {},
@@ -93100,7 +93625,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-deferrals" },
-          el("h3", {}, `Waiting for your review (${String(result.deferrals.length)})`),
+          el("h4", {}, `Waiting for your review (${String(result.deferrals.length)})`),
           el(
             "ul",
             {},
@@ -93121,7 +93646,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-denials" },
-          el("h3", {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el("h4", {}, `Refused by the container policy (${String(result.denials.length)})`),
           el(
             "ul",
             {},
@@ -93143,7 +93668,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           "section",
           { class: "container-run-section container-run-commits" },
           el(
-            "h3",
+            "h4",
             {},
             run2.record?.carryOut.ref === null || run2.record?.carryOut.ref === void 0 ? "Commits the guest made (not fetched)" : `Commits on ${run2.record.carryOut.ref}`
           ),
@@ -93156,13 +93681,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section" },
-          el("h3", {}, "The agent said"),
+          el("h4", {}, "The agent said"),
           el("p", {}, result.finalText)
         )
       );
     }
     const log = el("pre", { class: "container-run-log" }, run2.log.join("\n"));
-    sections.push(el("section", { class: "container-run-section" }, el("h3", {}, "Log"), log));
+    sections.push(el("section", { class: "container-run-section" }, el("h4", {}, "Log"), log));
     const close = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-secondary container-run-close" },
@@ -108571,7 +109096,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       el(
         "div",
         { class: "pr-viewer-title-row" },
-        el("h3", { class: "pr-viewer-title" }, prDetails.title),
+        el("h4", { class: "pr-viewer-title" }, prDetails.title),
         badges
       ),
       el(
@@ -108766,7 +109291,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el(
           "div",
           { class: "pr-viewer-title-row" },
-          el("h3", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
+          el("h4", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
         ),
         el(
           "div",
@@ -128224,9 +128749,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   const authPanel = el(
     "div",
     { class: "vnc-auth-panel", "aria-label": "Screen Sharing authentication", hidden: true },
-    // Gutter marker. The panel used to be edged with an accent rail; the icon
-    // column replaces it, so the title and the body start at the same inset.
-    lockIcon("ui-icon vnc-auth-icon"),
+    // Gutter marker: the same severity dot as the status line below, so
+    // "Authentication required" and "Authentication failed" read as one
+    // recipe. Decorative — the title says the same thing.
+    el("span", { class: "vnc-status-dot", "aria-hidden": "true" }),
     el("div", { class: "vnc-auth-title" }, "Authentication required"),
     authDescription,
     usernameField,
@@ -128248,9 +128774,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "button",
     {
       type: "button",
-      class: "vnc-setup-forget-login"
+      class: "ui-btn ui-btn-ghost vnc-setup-forget-login"
     },
-    "Forget login"
+    "Forget saved login"
   );
   const savedLoginCopy = el("span", { class: "vnc-saved-login-copy" });
   const savedLoginDetails = el(
@@ -131021,8 +131547,16 @@ var init_ssh_prompt_dialog = __esm({
 function mountUpdatePromptDialog(api2) {
   const messageEl = el("h3", { class: "update-prompt-message" });
   const detailEl = el("p", { class: "update-prompt-detail" });
+  const changelogEl = el("section", { class: "update-prompt-changelog" });
   const buttonsEl = uiActions({ className: "update-prompt-buttons" });
-  const dialog2 = el("dialog", { id: "update-prompt-dialog" }, messageEl, detailEl, buttonsEl);
+  const dialog2 = el(
+    "dialog",
+    { id: "update-prompt-dialog" },
+    messageEl,
+    detailEl,
+    changelogEl,
+    buttonsEl
+  );
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
@@ -131047,6 +131581,8 @@ function mountUpdatePromptDialog(api2) {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
+    renderChangelog(changelogEl, active2);
+    dialog2.classList.toggle("has-changelog", !changelogEl.hidden);
     const defaultIndex = active2.defaultIndex ?? 0;
     buttonsEl.replaceChildren(
       ...active2.buttons.map((label, index) => {
@@ -131086,8 +131622,51 @@ function mountUpdatePromptDialog(api2) {
     );
   });
 }
+function renderChangelog(host, req) {
+  const entries2 = req.changelog ?? [];
+  if (entries2.length === 0) {
+    host.replaceChildren();
+    host.hidden = true;
+    return;
+  }
+  const heading = entries2.length === 1 ? "What's new" : `What's new in ${String(entries2.length)} releases`;
+  const list = el("div", { class: "update-prompt-changelog-list" });
+  for (const entry of entries2) {
+    const notes = el("div", { class: "update-prompt-notes message-text streaming-markdown" });
+    notes.innerHTML = renderMarkdown(entry.notes || "_No notes for this release._");
+    list.append(
+      el(
+        "article",
+        { class: "update-prompt-release", "data-version": entry.version },
+        el("h4", { class: "update-prompt-version" }, entry.version),
+        notes
+      )
+    );
+  }
+  const children = [
+    el("h4", { class: "update-prompt-changelog-title" }, heading),
+    list
+  ];
+  if (req.changelogUrl?.startsWith("https://") === true) {
+    children.push(
+      el(
+        "a",
+        {
+          class: "update-prompt-all-notes",
+          href: req.changelogUrl,
+          target: "_blank",
+          rel: "noopener noreferrer"
+        },
+        "All release notes"
+      )
+    );
+  }
+  host.replaceChildren(...children);
+  host.hidden = false;
+}
 var init_update_prompt_dialog = __esm({
   "src/renderer/views/update-prompt-dialog.ts"() {
+    init_dist();
     init_helpers();
     init_ui();
     init_toast();
@@ -136040,7 +136619,7 @@ var init_purify_es = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js
 var sanitize_dompurify_exports = {};
 __export(sanitize_dompurify_exports, {
   dompurifyBackend: () => dompurifyBackend
@@ -136064,7 +136643,7 @@ function withGate(config2, run2) {
 }
 var hookInstalled, activeOnElement, dompurifyBackend;
 var init_sanitize_dompurify = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/sanitize-dompurify.js"() {
     init_purify_es();
     hookInstalled = false;
     dompurifyBackend = {
@@ -142862,7 +143441,7 @@ var init_yaml = __esm({
   }
 });
 
-// node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
+// node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js
 var highlight_hljs_exports = {};
 __export(highlight_hljs_exports, {
   highlightjsHighlighter: () => highlightjsHighlighter,
@@ -142873,7 +143452,7 @@ function loadHighlightjs() {
 }
 var highlightjsHighlighter;
 var init_highlight_hljs = __esm({
-  "node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
+  "node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/dist/highlight-hljs.js"() {
     init_core3();
     init_bash();
     init_css();
