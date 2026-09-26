@@ -27,6 +27,14 @@ input:focus,
 textarea:focus {
   border-color: var(--accent);
 }
+/* A field its form rejected (`aria-invalid="true"`, set alongside the error
+   message). The error hue wins over the focus accent too: focus is where the
+   caret goes after a failed save, and a pink ring there reads as "fine". */
+input[aria-invalid='true'],
+textarea[aria-invalid='true'],
+select[aria-invalid='true'] {
+  border-color: var(--error);
+}
 /* The native dropdown arrow is platform chrome: a different glyph, inset further
    from the edge than the model picker's chevron, so a <select> and a picker
    sitting in the same form never line up. Draw the picker's own chevron instead

@@ -558,6 +558,8 @@ const api: ApiClient = {
         id: string
         message: string
         detail?: string
+        changelog?: { version: string; notes: string }[]
+        changelogUrl?: string
         buttons: string[]
         defaultIndex?: number
         cancelIndex?: number
@@ -569,6 +571,8 @@ const api: ApiClient = {
           id: string
           message: string
           detail?: string
+          changelog?: { version: string; notes: string }[]
+          changelogUrl?: string
           buttons: string[]
           defaultIndex?: number
           cancelIndex?: number
@@ -972,6 +976,8 @@ const api: ApiClient = {
     save: (profile: ClassifierProfile) => ipcRenderer.invoke('classifiers:save', profile),
     remove: (id: string) => ipcRenderer.invoke('classifiers:remove', id),
     test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
+    screening: () => ipcRenderer.invoke('classifiers:screening'),
+    setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

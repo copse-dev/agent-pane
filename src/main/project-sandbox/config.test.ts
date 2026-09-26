@@ -26,6 +26,7 @@ import {
   readOnlyTreeExcluding,
   readOnlyWorkspaceSandboxOverlay,
   resolveNodeToolchainAllowRead,
+  resolveRustToolchainAllowRead,
   sandboxRuntimeHelperAllowReadPaths,
   sandboxNetworkConfig,
   threadReadRootAllowEntries,
@@ -169,6 +170,74 @@ describe('resolveNodeToolchainAllowRead', () => {
     const binDir = dirname(nodePath)
     assert.ok(allow.includes(binDir))
     assert.ok(allow.some((p) => p === `${binDir}/**`))
+  })
+})
+
+describe('resolveRustToolchainAllowRead', () => {
+  function rustHome(): { home: string; cleanup: () => void } {
+    const home = mkdtempSync(join(tmpdir(), 'rust-toolchain-'))
+    mkdirSync(join(home, '.cargo', 'bin'), { recursive: true })
+    mkdirSync(join(home, '.cargo', 'registry'), { recursive: true })
+    writeFileSync(join(home, '.cargo', 'credentials.toml'), '[registry]\ntoken = "x"\n')
+    writeFileSync(join(home, '.cargo', 'config.toml'), '')
+    mkdirSync(join(home, '.rustup', 'toolchains', 'stable-aarch64-apple-darwin'), {
+      recursive: true,
+    })
+    writeFileSync(join(home, '.rustup', 'settings.toml'), 'default_toolchain = "stable"\n')
+    return {
+      home,
+      cleanup: (): void => {
+        rmSync(home, { recursive: true, force: true })
+      },
+    }
+  }
+
+  it('allows the rustup proxies, toolchains, and settings, and nothing else in CARGO_HOME', () => {
+    const { home, cleanup } = rustHome()
+    try {
+      const allow = resolveRustToolchainAllowRead({}, home)
+      assert.deepEqual(allow, [
+        join(home, '.cargo', 'bin'),
+        `${join(home, '.cargo', 'bin')}/**`,
+        join(home, '.rustup', 'toolchains'),
+        `${join(home, '.rustup', 'toolchains')}/**`,
+        join(home, '.rustup', 'settings.toml'),
+      ])
+      assert.ok(!allow.some((p) => p.includes('credentials') || p.includes('registry')))
+      assert.ok(
+        !allow.includes(join(home, '.cargo')) && !allow.includes(`${join(home, '.cargo')}/**`),
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('honours absolute CARGO_HOME and RUSTUP_HOME and ignores relative ones', () => {
+    const { home, cleanup } = rustHome()
+    try {
+      const moved = resolveRustToolchainAllowRead(
+        { CARGO_HOME: join(home, '.cargo'), RUSTUP_HOME: 'relative/rustup' },
+        '/nonexistent',
+      )
+      assert.deepEqual(moved, [join(home, '.cargo', 'bin'), `${join(home, '.cargo', 'bin')}/**`])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('adds nothing when rust is not installed', () => {
+    assert.deepEqual(resolveRustToolchainAllowRead({}, '/nonexistent-home'), [])
+  })
+
+  it('is part of the workspace overlay while home stays denied', () => {
+    const overlay = workspaceSandboxOverlay('/tmp/project')
+    const { filesystem } = overlay
+    assert.ok(filesystem)
+    assert.ok(filesystem.denyRead.includes(homedir()))
+    for (const path of resolveRustToolchainAllowRead()) {
+      assert.ok(filesystem.allowRead?.includes(path), path)
+    }
+    assert.ok(!filesystem.allowRead?.includes(join(homedir(), '.cargo', 'credentials.toml')))
   })
 })
 

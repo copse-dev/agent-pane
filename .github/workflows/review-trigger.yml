@@ -3,7 +3,7 @@ name: Copse review trigger
 # Every ready (non-draft) pull request is reviewed when it is opened, reopened
 # or marked ready for review; the `copse-review` label reviews a draft or asks
 # for a fresh review of a newer head, and `copse-review-skip` opts a pull
-# request out. Pushes do not re-review: each run posts a new review.
+# request out. Pushes do not re-review; a re-review supersedes the earlier one.
 #
 # A label event on an older pull request must still select trusted workflow code.
 # `pull_request_target` provides that default-branch context, but this workflow
