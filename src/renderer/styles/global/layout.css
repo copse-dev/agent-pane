@@ -677,7 +677,7 @@
 .orphans-hint {
   margin: 0 0 2px 22px;
   font-size: var(--font-size-xs);
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--text-muted);
 }
 .orphan-row {
