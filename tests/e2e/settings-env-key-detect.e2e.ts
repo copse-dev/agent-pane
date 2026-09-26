@@ -54,7 +54,7 @@ describe('environment API-key detection (Settings → General)', () => {
     // the code face rather than the interface font.
     const hintCode = await browser.execute(() => {
       const codes = document.querySelectorAll<HTMLElement>(
-        '#settings-env-detect-host .field-hint code',
+        '#settings-env-detect-host .settings-fieldset-desc code',
       )
       return [...codes].map((code) => ({
         text: code.textContent,

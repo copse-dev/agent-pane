@@ -9,6 +9,7 @@ import {
 } from '@copse/llm/data-policies.ts'
 import { blendedRate } from '@copse/llm/pareto-frontier.ts'
 import { el, clear } from '../../dom/helpers.ts'
+import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { closeIcon, plusIcon } from '../../dom/icons.ts'
 import { setInlineStatus, setInlineStatusMarkdown } from '../../dom/inline-status.ts'
 import { PLAINTEXT_STORAGE_DISABLED_REASON } from './api-keys-section.ts'
@@ -688,7 +689,7 @@ export function createCustomProvidersSection(
     const advanced = el(
       'details',
       { class: 'provider-advanced' },
-      el('summary', {}, 'Advanced'),
+      disclosureSummary('Advanced'),
       el(
         'label',
         { class: 'checkbox-label' },

@@ -46,7 +46,7 @@ export function createEnvKeyDetectSection(
     el('legend', {}, legend),
     el(
       'p',
-      { class: 'field-hint' },
+      { class: 'settings-fieldset-desc' },
       'Scans your exported environment and shell start-up files (e.g. ',
       el('code', {}, '~/.zshrc'),
       ', ',
