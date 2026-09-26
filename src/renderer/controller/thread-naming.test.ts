@@ -180,18 +180,30 @@ test('maybeNameThread keeps chip placeholders out of the title and the naming in
   assert.deepEqual(titleCalls, ['Summarize this feedback:\n\nCompare with please'])
 })
 
-test('maybeNameThread does not ask the model to name a prompt that was only chips', async () => {
+// A chip-only prompt has no words to name the thread by. It must not spend
+// naming pass 0 (which would leave the thread titled "New Thread" until the
+// third message), so the next real prompt still names the thread.
+test('maybeNameThread waits past a chip-only first prompt without spending a pass', async () => {
   const store = createStore({
-    threads: [newThread('t-only-chip', [userMessage('￼')])],
+    threads: [newThread('t-only-chip', [userMessage('\uFFFC')])],
     activeThreadId: 't-only-chip',
   })
-  const { api, titleCalls } = apiWithTitle(async () => 'Unexpected')
+  const { api, titleCalls } = apiWithTitle(async () => 'Review The Pasted Log')
 
   maybeNameThread(store, api, 't-only-chip')
   await new Promise((r) => setTimeout(r, 0))
 
   assert.deepEqual(titleCalls, [])
   assert.equal(requireThread(store, 't-only-chip').title, 'New Thread')
+  assert.equal(requireThread(store, 't-only-chip').autoTitleCount, undefined)
+
+  addUserMessages(store, 't-only-chip', ['What does this log say went wrong?'])
+  maybeNameThread(store, api, 't-only-chip')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, ['What does this log say went wrong?'])
+  assert.equal(requireThread(store, 't-only-chip').title, 'Review The Pasted Log')
+  assert.equal(requireThread(store, 't-only-chip').autoTitleCount, 1)
 })
 
 test('maybeNameThread is a no-op when the title is already set', async () => {

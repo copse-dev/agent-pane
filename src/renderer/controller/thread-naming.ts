@@ -30,12 +30,14 @@ const PASS_THRESHOLDS = [1, 3, 8]
  * benefit but carry an `origin`; a "continue" from a stop hook says nothing
  * about the thread's goal and must not advance a pass. A still-queued follow-up
  * is likewise not part of the conversation yet — it renders as a user bubble
- * before it dispatches — so it waits until it leaves the pending queue.
+ * before it dispatches — so it waits until it leaves the pending queue. A
+ * prompt that was nothing but chips has no words to name the thread by, so it
+ * neither spends a pass nor counts towards the next one.
  */
 function namingMessages(thread: Thread): Message[] {
   const queued = queuedMessageIds(thread)
   return thread.messages.filter(
-    (m) => m.role === 'user' && !m.origin && !queued.has(m.id) && m.content.trim(),
+    (m) => m.role === 'user' && !m.origin && !queued.has(m.id) && promptWords(m),
   )
 }
 
@@ -61,10 +63,7 @@ function namingInput(userMessages: Message[]): string {
   const first = userMessages[0]
   if (!first) return ''
   const recent = userMessages.slice(1).slice(-3)
-  return [first, ...recent]
-    .map((m) => promptWords(m).slice(0, 300))
-    .filter(Boolean)
-    .join('\n\n')
+  return [first, ...recent].map((m) => promptWords(m).slice(0, 300)).join('\n\n')
 }
 
 const branchRenameInFlight = new Set<string>()
@@ -134,8 +133,7 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
   void (async (): Promise<void> => {
     let title: string | null
     try {
-      // A prompt that was nothing but chips leaves the model nothing to name.
-      title = input ? await api.agent.suggestTitle(input) : null
+      title = await api.agent.suggestTitle(input)
     } catch {
       title = null
     } finally {
