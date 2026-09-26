@@ -84,9 +84,9 @@
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: var(--font-size-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--group-header-font-size);
+  font-weight: var(--group-header-font-weight);
+  letter-spacing: var(--group-header-letter-spacing);
   text-align: left;
   text-transform: uppercase;
   cursor: pointer;
@@ -136,19 +136,26 @@
 }
 .roadmap-row .memories-row-main {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 2px var(--spacing-xs);
 }
+/* The title claims a readable minimum before the indicators: its 8em basis is
+   what the wrap check measures, so when title + chips cannot share the line the
+   chips drop under the title instead of crushing it to one letter ("M…"). With
+   room it still grows to fill the line and ellipsizes as before. */
 .roadmap-row-title {
-  flex: 1 1 auto;
+  flex: 1 1 8em;
   min-width: 0;
 }
 .roadmap-row-meta {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--spacing-xs);
   align-items: center;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
 }
 
@@ -207,21 +214,10 @@
   align-self: flex-start;
 }
 /* Roadmap forms can show up to six actions (Save/Start/Reopen/Fit/Delete/Cancel).
-   Keep them compact and content-sized — they wrap instead of stretching. */
+   They are compact kit buttons (`.ui-btn-compact`) and wrap instead of stretching. */
 .roadmap-form .memories-actions {
-  display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
   justify-content: flex-start;
-}
-.roadmap-form .memories-actions .memories-btn {
-  width: auto;
-  flex: 0 0 auto;
-  min-width: 0;
-  padding-inline: var(--spacing-sm);
-}
-.roadmap-form .memories-actions .memories-btn-danger {
-  margin-left: 0;
 }
 .roadmap-issue-chip {
   font-size: var(--font-size-2xs);
@@ -250,7 +246,9 @@
   height: 12px;
 }
 
-/* Category is independent from complexity: what kind of work this is. */
+/* Category is independent from complexity: what kind of work this is. It is a
+   label, not a status, so every category is the same neutral chip — a warning hue
+   on `project` would read as the `blocked` status badge sitting beside it. */
 .roadmap-category-badge {
   font-size: var(--font-size-2xs);
   line-height: 1.4;
@@ -258,15 +256,6 @@
   border-radius: var(--radius);
   background: var(--bg-hover);
   color: var(--text-muted);
-}
-.roadmap-category-badge.is-bug {
-  color: var(--danger, #f14c4c);
-}
-.roadmap-category-badge.is-feature {
-  color: var(--accent);
-}
-.roadmap-category-badge.is-project {
-  color: var(--warning, #d29922);
 }
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
@@ -507,7 +496,6 @@
 }
 .roadmap-review-row-actions {
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
   padding-top: 2px;
 }
 .roadmap-review-actions {

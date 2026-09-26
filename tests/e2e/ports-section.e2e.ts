@@ -6,6 +6,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
+import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
+import { tokenColour } from './helpers/theme.ts'
 
 // Ports are discovered by scanning the host, and the CI image has neither `ss`
 // nor `lsof` — so this spec seeds the rows main would have produced. What it
@@ -100,19 +102,22 @@ describe('ports section', function () {
     assert.equal(await $('.ports-kill-btn').isExisting(), true)
     assert.match(await $('.ports-detail').getText(), /npm run dev/)
 
-    // The action buttons take the elevated fill. They used to name a token that
-    // does not exist (`--bg-secondary`), which computes to transparent (#3065).
-    const fill = await browser.execute(() => {
-      const button = document.querySelector('.ports-open-btn')
-      const probe = document.createElement('div')
-      probe.style.background = 'var(--bg-elevated)'
-      document.body.append(probe)
-      const elevated = getComputedStyle(probe).backgroundColor
-      probe.remove()
-      return { button: button ? getComputedStyle(button).backgroundColor : null, elevated }
+    // Open / Copy / Kill are compact kit buttons, not a `.ports-btn` stack (#3065).
+    const actions = assertKitButtonRow(await measureKitButtonRow('.ports-actions'), 'ports row', {
+      compact: true,
+      minButtons: 3,
     })
-    assert.notEqual(fill.button, 'rgba(0, 0, 0, 0)', 'the Open button should not be transparent')
-    assert.equal(fill.button, fill.elevated, 'the Open button should take --bg-elevated')
+    const kill = actions.buttons.find((button) => button.label === 'Kill')
+    assert.ok(kill?.classes.includes('ui-btn-danger'), 'Kill is the kit danger variant')
+
+    // The Open button's outline resolves to a defined token. The bespoke
+    // `.ports-btn` it replaced named `--bg-secondary`, which does not exist and
+    // computed to transparent (#3065); the kit secondary is outlined by design.
+    const openBorder = await browser.execute(() => {
+      const button = document.querySelector('.ports-open-btn')
+      return button ? getComputedStyle(button).borderTopColor : null
+    })
+    assert.equal(openBorder, await tokenColour('--border', 'border-top-color'))
 
     await prepareE2eScreenshot()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ports-section-owned.png'))
