@@ -571,7 +571,11 @@ describe('promote-develop.yml workflow invariants', () => {
     const pin = workflow.indexOf('github.rest.git.createRef')
     const pullRequestLookup = workflow.indexOf('github.paginate')
     assert.match(workflow, /compare\/\{basehead\}/)
-    assert.match(workflow, /basehead: `\$\{base\}\.\.\.\$\{sha\}`/, 'compare the commit being pinned')
+    assert.match(
+      workflow,
+      /basehead: `\$\{base\}\.\.\.\$\{sha\}`/,
+      'compare the commit being pinned',
+    )
     assert.ok(noChangesExit >= 0, 'expected an explicit no-unpromoted-commits exit')
     assert.ok(noChangesExit < pin, 'the no-changes exit must run before pinning promote/main')
     assert.ok(
@@ -589,7 +593,10 @@ describe('promote-develop.yml workflow invariants', () => {
     // A pinned head stops trunk merges cancelling the promotion's CI. It must
     // only ever hold `main` commits: forcing it could carry a commit pushed to
     // the branch by hand into `release`.
-    assert.match(workflow, /updateRef\(\{ owner, repo, ref: `heads\/\$\{head\}`, sha, force: false \}\)/)
+    assert.match(
+      workflow,
+      /updateRef\(\{ owner, repo, ref: `heads\/\$\{head\}`, sha, force: false \}\)/,
+    )
     assert.doesNotMatch(workflow, /force: true/)
   })
 
