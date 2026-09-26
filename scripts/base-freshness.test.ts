@@ -7,11 +7,13 @@ import {
   decideBaseFreshness,
   decodeBehindBy,
   decodeCandidateResponse,
+  decodeComparison,
   decodeCandidates,
   decodeRefSha,
   evaluate,
   evaluateSettled,
   listCandidates,
+  MAX_COMPARE_FILES,
   MAX_SETTLE_ROUNDS,
   type Candidate,
   type Verdict,
@@ -109,7 +111,73 @@ describe('base freshness policy', () => {
   })
 })
 
+describe('base freshness overlap', () => {
+  it('reports red when the missing base commits change files this PR changes, and names them', () => {
+    const verdict = decideBaseFreshness(candidate, 3, ['src/a.ts', 'src/b.ts'])
+    assert.equal(verdict.conclusion, 'failure')
+    assert.equal(
+      verdict.title,
+      'Branch is 3 commits behind main, which changed files this PR changes',
+    )
+    assert.match(verdict.summary, /^- `src\/a\.ts`$/m)
+    assert.match(verdict.summary, /^- `src\/b\.ts`$/m)
+    assert.match(verdict.summary, /Update the branch from `main`/)
+  })
+
+  it('names the first overlapping files and counts the rest', () => {
+    const files = Array.from({ length: 13 }, (_, i) => `f${String(i)}.ts`)
+    const verdict = decideBaseFreshness(candidate, 1, files)
+    assert.equal(verdict.summary.match(/^- `f\d+\.ts`$/gm)?.length, 10)
+    assert.match(verdict.summary, /^- and 3 more$/m)
+  })
+
+  it('stays neutral without an overlap, and says why no update is needed', () => {
+    const verdict = decideBaseFreshness(candidate, 2, [])
+    assert.equal(verdict.conclusion, 'neutral')
+    assert.match(verdict.summary, /None of those commits change a file this pull request changes/)
+    assert.doesNotMatch(verdict.summary, /Update the branch/)
+  })
+
+  it('stays neutral when the overlap could not be established, and says so', () => {
+    const verdict = decideBaseFreshness(candidate, 2, null)
+    assert.equal(verdict.conclusion, 'neutral')
+    assert.match(verdict.summary, /could not be established/)
+  })
+
+  it('ignores an overlap for a branch that is up to date', () => {
+    assert.equal(decideBaseFreshness(candidate, 0, ['src/a.ts']).conclusion, 'success')
+  })
+})
+
 describe('base freshness decoding', () => {
+  it('reads a comparison: behind count, merge base, and every changed path', () => {
+    const mergeBase = 'a'.repeat(40)
+    const comparison = decodeComparison(
+      JSON.stringify({
+        behind_by: 2,
+        merge_base_commit: { sha: mergeBase },
+        files: [{ filename: 'src/new.ts', previous_filename: 'src/old.ts' }, { filename: 'b.md' }],
+      }),
+    )
+    assert.deepEqual(comparison, {
+      behindBy: 2,
+      mergeBase,
+      files: ['src/new.ts', 'src/old.ts', 'b.md'],
+    })
+  })
+
+  it('treats a file list that may be truncated, or is missing, as unknown', () => {
+    const full = Array.from({ length: MAX_COMPARE_FILES }, (_, i) => ({
+      filename: `f${String(i)}`,
+    }))
+    assert.equal(decodeComparison(JSON.stringify({ behind_by: 1, files: full })).files, null)
+    assert.equal(decodeComparison('{"behind_by":1}').files, null)
+    assert.equal(
+      decodeComparison('{"behind_by":1,"merge_base_commit":{"sha":"short"}}').mergeBase,
+      null,
+    )
+  })
+
   it('reads the commit a base ref resolves to, and nothing that is not a full sha', () => {
     const sha = 'a'.repeat(40)
     assert.equal(decodeRefSha(JSON.stringify({ object: { sha, type: 'commit' } })), sha)
@@ -271,6 +339,60 @@ describe('base freshness fan-out', () => {
       { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-1', conclusion: 'success' } },
       { path: '/check-runs', body: { name: CHECK_NAME, head_sha: 'sha-2', conclusion: 'neutral' } },
     ])
+  })
+
+  it('reds only the candidate whose missing base commits touch its files', async () => {
+    const mergeBase = 'a'.repeat(40)
+    const compare = (files: string[]): string =>
+      JSON.stringify({
+        behind_by: 2,
+        merge_base_commit: { sha: mergeBase },
+        files: files.map((filename) => ({ filename })),
+      })
+    const { api, requested } = stubApi({
+      [`/compare/${TIP}...sha-1?per_page=1`]: compare(['src/shared.ts', 'src/one.ts']),
+      [`/compare/${TIP}...sha-2?per_page=1`]: compare(['docs/two.md']),
+      [`/compare/${mergeBase}...${TIP}?per_page=1`]: compare(['src/shared.ts', 'README.md']),
+    })
+    const outcomes = await evaluate(
+      api,
+      [
+        { number: 1, headSha: 'sha-1', baseRef: 'main', draft: false, fork: false },
+        { number: 2, headSha: 'sha-2', baseRef: 'main', draft: false, fork: false },
+      ],
+      async () => {
+        await Promise.resolve()
+      },
+      TIP,
+    )
+    assert.deepEqual(
+      outcomes.map((o) => o.verdict.conclusion),
+      ['failure', 'neutral'],
+    )
+    assert.match(outcomes.at(0)?.verdict.summary ?? '', /^- `src\/shared\.ts`$/m)
+    // Candidates sharing a merge base share the base-side comparison.
+    assert.equal(requested.filter((path) => path.startsWith(`/compare/${mergeBase}`)).length, 1)
+  })
+
+  it('stays neutral when the base-side file list cannot be read', async () => {
+    const mergeBase = 'a'.repeat(40)
+    const { api } = stubApi({
+      [`/compare/${TIP}...sha-1?per_page=1`]: JSON.stringify({
+        behind_by: 1,
+        merge_base_commit: { sha: mergeBase },
+        files: [{ filename: 'src/a.ts' }],
+      }),
+    })
+    const outcomes = await evaluate(
+      api,
+      [{ number: 1, headSha: 'sha-1', baseRef: 'main', draft: false, fork: false }],
+      async () => {
+        await Promise.resolve()
+      },
+      TIP,
+    )
+    assert.equal(outcomes.at(0)?.verdict.conclusion, 'neutral')
+    assert.match(outcomes.at(0)?.verdict.summary ?? '', /could not be established/)
   })
 
   it('reports a candidate whose comparison errors, without abandoning the rest', async () => {
