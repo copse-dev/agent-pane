@@ -134,8 +134,7 @@ function copyMessage(message: Message): Message {
   return {
     ...rest,
     id: randomUUID(),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
+    toolCalls: toolCalls.map((toolCall) => ({ ...toolCall })),
     ...(images !== undefined ? { images: [...images] } : {}),
     ...(canvasArtefacts !== undefined
       ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) }

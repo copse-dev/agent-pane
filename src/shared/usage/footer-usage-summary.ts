@@ -45,8 +45,7 @@ function collectSubagentUsage(toolCalls: ToolCall[], totals: SubagentUsageTotals
     // into its parent's (run-subagent.ts does not forward `usage` upstream), so
     // recursing here sums the tree rather than double-counting it.
     for (const message of session.messages) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      collectSubagentUsage(message.toolCalls ?? [], totals)
+      collectSubagentUsage(message.toolCalls, totals)
     }
   }
 }
@@ -61,8 +60,7 @@ function collectSubagentUsage(toolCalls: ToolCall[], totals: SubagentUsageTotals
 export function sumSubagentUsage(messages: Message[]): SubagentUsageTotals {
   const totals: SubagentUsageTotals = { runs: 0, inputTokens: 0, outputTokens: 0 }
   for (const message of messages) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    collectSubagentUsage(message.toolCalls ?? [], totals)
+    collectSubagentUsage(message.toolCalls, totals)
   }
   return totals
 }
@@ -81,8 +79,7 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
   for (const message of messages) {
     if (message.role !== 'assistant') continue
     chars += message.content.length
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    for (const toolCall of message.toolCalls ?? []) {
+    for (const toolCall of message.toolCalls) {
       for (const subMessage of toolCall.subagent?.messages ?? []) {
         if (subMessage.role === 'assistant') chars += subMessage.content.length
       }

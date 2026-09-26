@@ -272,9 +272,9 @@ function attachPtyHandlers(
     clearActiveIfNeeded(sessionId, session.owner.id)
     sessions.delete(sessionId)
     notifyThreadResourceFinished(session.threadId)
-    // exitCode comes from node-pty (external); guard against a missing code at runtime.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    sendTerminalEvent(owner, 'terminal:exit', sessionId, exitCode ?? 1)
+    // exitCode comes from node-pty (external); its typing promises a number, but
+    // report a generic failure rather than forwarding a missing or non-integer code.
+    sendTerminalEvent(owner, 'terminal:exit', sessionId, Number.isInteger(exitCode) ? exitCode : 1)
   })
   session.listeners = { onData, onExit }
 }

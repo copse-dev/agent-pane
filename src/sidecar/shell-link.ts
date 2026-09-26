@@ -14,6 +14,9 @@
  * still drive the IPC surface.
  */
 import { createInterface } from 'node:readline'
+import { isRecord } from '@shared/unknown-value.ts'
+import { memberOf } from '@shared/member-of.ts'
+import { safeJsonParse } from '@shared/safe-json.ts'
 
 const PREFIX = '@tauri-shell '
 
@@ -39,13 +42,25 @@ export interface WindowOpMessage {
 
 export type ShellOutMessage = CreateWindowMessage | WindowOpMessage
 
+const WINDOW_EVENTS = ['close-requested', 'closed', 'focus', 'blur'] as const
+const isWindowEvent = memberOf(WINDOW_EVENTS)
+
 export interface WindowEventMessage {
   op: 'window-event'
   winId: number
-  event: 'close-requested' | 'closed' | 'focus' | 'blur'
+  event: (typeof WINDOW_EVENTS)[number]
 }
 
 export type ShellInMessage = WindowEventMessage
+
+/** Decode one inbound line's parsed JSON; null for anything that is not a known message. */
+export function decodeShellInMessage(value: unknown): ShellInMessage | null {
+  if (!isRecord(value) || value['op'] !== 'window-event') return null
+  const winId = value['winId']
+  const event = value['event']
+  if (typeof winId !== 'number' || !isWindowEvent(event)) return null
+  return { op: 'window-event', winId, event }
+}
 
 export function isShellAttached(): boolean {
   return process.env['TAURI_SHELL'] === '1'
@@ -71,12 +86,10 @@ export function startShellLink(): void {
   if (!isShellAttached() || started) return
   started = true
   createInterface({ input: process.stdin }).on('line', (line) => {
-    let message: ShellInMessage
-    try {
-      // Trusted peer: the shell is our own parent process on a private pipe.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-      message = JSON.parse(line) as ShellInMessage
-    } catch {
+    // The shell is our own parent process on a private pipe, but decode anyway
+    // so a protocol mismatch is logged rather than dispatched as a bad shape.
+    const message = safeJsonParse(line, decodeShellInMessage)
+    if (message === null) {
       console.error(`[shell-link] unparseable line from shell: ${line}`)
       return
     }

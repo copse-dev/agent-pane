@@ -28,8 +28,7 @@ export function lastExchange(store: AppStore, threadId: string): LastExchange | 
   const lastAssistant = assistantMessages.at(-1)
   if (!lastUser?.content.trim() || !lastAssistant) return null
 
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-  const toolNames = (lastAssistant.toolCalls ?? []).map((tc) => tc.name)
+  const toolNames = lastAssistant.toolCalls.map((tc) => tc.name)
   // Plan items still open at turn end feed the deterministic "continue the
   // plan" bubble; an empty list (plan done, or thread runs no plan) means no
   // bubble.

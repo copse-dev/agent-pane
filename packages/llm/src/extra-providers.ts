@@ -21,6 +21,7 @@
 // edit; only a dialect that needs new wire handling in create-provider.ts
 // touches TypeScript.
 
+import { isRecord } from '@copse/std/unknown-value.ts'
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
 import {
   PROVIDER_PRESETS,
@@ -340,9 +341,9 @@ export function resolveExtraProviders(
   const customs: StoredExtraProvider[] = []
   for (const s of stored ?? []) {
     // `stored` is persisted/external data typed as StoredExtraProvider[]; a null
-    // or malformed entry is still possible at runtime, so guard defensively.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!s || typeof s.slug !== 'string') continue
+    // or malformed entry is still possible at runtime, so check it as unknown.
+    const entry: unknown = s
+    if (!isRecord(entry) || typeof entry['slug'] !== 'string') continue
     if (BUILTIN_BY_SLUG.has(s.slug)) overrides.set(s.slug, s)
     else customs.push(s)
   }

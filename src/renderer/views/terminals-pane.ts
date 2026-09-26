@@ -233,10 +233,12 @@ export function mountTerminalsPane(
     const text = readTerminalText(tab)
     if (text.length < 8) return
     tab.naming = true
+    // Read afresh after the await: a user rename can land while the title is
+    // being suggested, but TypeScript keeps the narrowing from the guard above.
+    const renamedByUser = (): boolean => tab.renamed
     try {
       const title = await api.agent.suggestTerminalTitle(text)
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- tab.renamed can be set by a user rename during the await above
-      if (title && !tab.renamed) {
+      if (title && !renamedByUser()) {
         setTabLabel(tab, title)
         tab.autoNamed = true
       }
