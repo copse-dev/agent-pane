@@ -10,6 +10,8 @@ import {
 import { join } from 'node:path'
 import { expectRecord, expectString, parseJsonUnknown } from '../src/shared/unknown-value.mts'
 import { resolveDepRoot } from './resolve-dep.mts'
+import { createRequire } from 'node:module'
+import { prepareElectronHeaders } from './lib/electron-headers.mts'
 
 /**
  * node-pty ships spawn-helper without the executable bit (prebuilds); PTY spawn
@@ -62,10 +64,22 @@ const electron = expectRecord(
   parseJsonUnknown(readFileSync(join(resolveDepRoot('electron'), 'package.json'), 'utf8')),
   'Electron package',
 )
+const electronVersion = expectString(electron['version'], 'Electron version')
+const headerCache = process.env['COPSE_ELECTRON_HEADERS_CACHE']
+if (headerCache) {
+  process.env['npm_package_config_node_gyp_nodedir'] = prepareElectronHeaders({
+    cache: headerCache,
+    version: electronVersion,
+    nodeGypCli: createRequire(join(resolveDepRoot('@electron/rebuild'), 'package.json')).resolve(
+      'node-gyp/bin/node-gyp.js',
+    ),
+    offline: process.env['COPSE_PORTABLE_OFFLINE'] === '1',
+  })
+}
 await rebuild({
   buildPath: process.cwd(),
   projectRootPath: process.cwd(),
-  electronVersion: expectString(electron['version'], 'Electron version'),
+  electronVersion,
   force: true,
   onlyModules: ['node-pty'],
 })
