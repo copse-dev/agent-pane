@@ -744,6 +744,15 @@ input[type=password] {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.ui-btn-compact {
+  min-height: var(--spacing-xl);
+  padding: 0 var(--spacing-sm);
+  font-size: var(--font-size-xs);
+}
+.ui-btn-compact[aria-label]:has(> .ui-icon:only-child) {
+  min-width: var(--spacing-xl);
+  padding-inline: 0;
+}
 copse-ui-actions,
 .ui-actions {
   display: flex;
@@ -2146,44 +2155,10 @@ copse-ui-field input[type=password],
 }
 .pr-viewer-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-md);
   margin-top: var(--spacing-xs);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-.pr-open-external-btn,
-.pr-open-thread-btn,
-.pr-new-thread-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  padding: 2px 0;
-}
-.pr-open-external-btn:hover,
-.pr-open-thread-btn:hover,
-.pr-new-thread-btn:hover {
-  color: var(--text-primary);
-}
-.pr-action-btn {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--bg-subtle);
-}
-.pr-action-btn:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: var(--accent);
-}
-.pr-action-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .pr-action-status {
   margin-top: var(--spacing-xs);
@@ -7984,17 +7959,6 @@ dialog.settings-overlay::backdrop {
 .usage-plan-signin-btn {
   align-self: flex-start;
   -webkit-app-region: no-drag;
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius);
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.usage-plan-signin-btn:hover {
-  filter: brightness(1.05);
 }
 .usage-plan-window,
 .usage-credit-grant {
@@ -9023,27 +8987,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   justify-content: space-between;
   gap: var(--spacing-md);
 }
-.automation-add-btn,
-.automation-save-btn,
-.automation-cancel-btn,
-.automation-row-btn {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  cursor: pointer;
-}
-.automation-add-btn:hover:not(:disabled),
-.automation-cancel-btn:hover:not(:disabled),
-.automation-row-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.automation-add-btn:disabled,
-.automation-row-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
 .automation-scope,
 .automation-notice,
 .automation-status,
@@ -9085,7 +9028,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-sm);
   background: var(--bg-base);
 }
-.automation-row-paused {
+.automation-row-paused .automation-row-copy {
   opacity: 0.7;
 }
 .automation-row-copy {
@@ -9109,16 +9052,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-row-actions,
 .automation-form-actions {
   flex: none;
-  gap: var(--spacing-sm);
-}
-.automation-run-btn,
-.automation-save-btn {
-  border-color: var(--accent-fill);
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-}
-.automation-remove-btn {
-  color: var(--error);
+  gap: var(--spacing-md);
 }
 .automation-form {
   display: grid;
@@ -11776,49 +11710,14 @@ dialog.process-manager-overlay {
 }
 .card-retry-button {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: 2px var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--font-size-xs);
   text-transform: none;
   letter-spacing: normal;
-  cursor: pointer;
-}
-.card-retry-button:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-}
-.card-retry-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .card-dismiss-button {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
 }
 .card-retry-button + .card-dismiss-button {
   margin-left: 0;
-}
-.card-dismiss-button:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-}
-.card-dismiss-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .review-panel-icon {
   display: inline-flex;
@@ -13109,43 +13008,11 @@ dialog.process-manager-overlay {
 }
 .memories-actions {
   display: flex;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-md);
   align-items: center;
 }
-.memories-btn {
-  padding: 4px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-}
-.memories-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.memories-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.memories-btn-primary {
-  background: var(--accent-fill);
-  border-color: var(--accent-fill);
-  color: var(--text-on-accent);
-}
-.memories-btn-primary:hover:not(:disabled) {
-  background: var(--accent-fill);
-  filter: brightness(1.08);
-  color: var(--text-on-accent);
-}
-.memories-btn-danger {
+.memories-delete-btn {
   margin-left: auto;
-  color: var(--danger, #f14c4c);
-}
-.memories-btn-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
-  color: var(--danger, #f14c4c);
 }
 
 /* src/renderer/styles/global/ports.css */
@@ -13215,32 +13082,8 @@ dialog.process-manager-overlay {
 .ports-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-md);
   margin-top: 2px;
-}
-.ports-btn {
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  cursor: pointer;
-}
-.ports-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.ports-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.ports-btn-danger {
-  color: var(--danger, #f14c4c);
-}
-.ports-btn-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
-  color: var(--danger, #f14c4c);
 }
 .ports-detail-note,
 .ports-empty {
@@ -13983,19 +13826,8 @@ dialog.process-manager-overlay {
   align-self: flex-start;
 }
 .roadmap-form .memories-actions {
-  display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
   justify-content: flex-start;
-}
-.roadmap-form .memories-actions .memories-btn {
-  width: auto;
-  flex: 0 0 auto;
-  min-width: 0;
-  padding-inline: var(--spacing-sm);
-}
-.roadmap-form .memories-actions .memories-btn-danger {
-  margin-left: 0;
 }
 .roadmap-issue-chip {
   font-size: var(--font-size-2xs);
@@ -14261,7 +14093,6 @@ dialog.process-manager-overlay {
 }
 .roadmap-review-row-actions {
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
   padding-top: 2px;
 }
 .roadmap-review-actions {

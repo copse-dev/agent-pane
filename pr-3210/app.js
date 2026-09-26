@@ -59392,7 +59392,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
     if (result.provider === "claude" && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
       const signIn = document.createElement("button");
       signIn.type = "button";
-      signIn.className = "usage-plan-signin-btn";
+      signIn.className = "ui-btn ui-btn-primary usage-plan-signin-btn";
       signIn.textContent = "Sign in to Claude";
       signIn.title = "Open a terminal and run claude /login";
       signIn.addEventListener("click", () => {
@@ -60305,7 +60305,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       "button",
       {
         type: "button",
-        class: "automation-add-btn",
+        class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
       "Add schedule"
@@ -60407,8 +60407,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
-  const saveButton = el("button", { type: "submit", class: "automation-save-btn" }, "Save schedule");
-  const cancelButton = el("button", { type: "button", class: "automation-cancel-btn" }, "Cancel");
+  const saveButton = el(
+    "button",
+    { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
+    "Save schedule"
+  );
+  const cancelButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary automation-cancel-btn" },
+    "Cancel"
+  );
   form.append(
     formTitle,
     el("label", { class: "automation-label" }, "Name", nameInput),
@@ -60567,12 +60575,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
       );
       const actions = el("div", { class: "automation-row-actions" });
-      const edit = el("button", { type: "button", class: "automation-row-btn" }, "Edit");
+      const edit = el(
+        "button",
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn" },
+        "Edit"
+      );
       const run2 = el(
         "button",
         {
           type: "button",
-          class: "automation-row-btn automation-run-btn",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn automation-run-btn",
           disabled: pluginEnabled ? void 0 : true,
           title: pluginEnabled ? "Start a scheduled task now" : "Enable the plugin to run"
         },
@@ -60580,7 +60592,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       );
       const remove = el(
         "button",
-        { type: "button", class: "automation-row-btn automation-remove-btn" },
+        {
+          type: "button",
+          class: "ui-btn ui-btn-danger ui-btn-compact automation-row-btn automation-remove-btn"
+        },
         "Delete"
       );
       edit.addEventListener("click", () => void openForm(schedule));
@@ -74429,7 +74444,11 @@ var init_todos_plugin = __esm({
 function createRetryButton(onRetry) {
   const button = el(
     "button",
-    { type: "button", class: "card-retry-button", "data-tooltip": "Run this again" },
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary ui-btn-compact card-retry-button",
+      "data-tooltip": "Run this again"
+    },
     refreshIcon("ui-icon ui-icon-sm"),
     el("span", {}, "Retry")
   );
@@ -74532,7 +74551,7 @@ function createDismissButton(onDismiss) {
     "button",
     {
       type: "button",
-      class: "card-dismiss-button",
+      class: "ui-btn ui-btn-secondary ui-btn-compact card-dismiss-button",
       "data-tooltip": "Dismiss",
       "aria-label": "Dismiss"
     },
@@ -74956,7 +74975,7 @@ function createDismissCardButton(onDismiss) {
     "button",
     {
       type: "button",
-      class: "card-dismiss-button",
+      class: "ui-btn ui-btn-secondary ui-btn-compact card-dismiss-button",
       "data-tooltip": "Dismiss",
       "aria-label": "Dismiss"
     },
@@ -92210,6 +92229,7 @@ function collectSubagentUsage(toolCalls, totals) {
   for (const toolCall of toolCalls) {
     const session = toolCall.subagent;
     if (!session) continue;
+    if (session.kind === "container") continue;
     if (session.usage) {
       totals.runs += 1;
       totals.inputTokens += session.usage.inputTokens;
@@ -96309,6 +96329,192 @@ var init_diff_scroll = __esm({
   }
 });
 
+// src/renderer/dom/editor-theme.ts
+function hexByte(value) {
+  return Math.round(Math.min(255, Math.max(0, value))).toString(16).padStart(2, "0");
+}
+function isOpaque(alpha) {
+  if (alpha === void 0) return true;
+  const trimmed2 = alpha.trim();
+  const value = trimmed2.endsWith("%") ? Number.parseFloat(trimmed2) / 100 : Number.parseFloat(trimmed2);
+  return value >= 1;
+}
+function cssColorToHex(value) {
+  const text2 = value.trim().toLowerCase();
+  const hex3 = HEX_PATTERN.exec(text2)?.[1];
+  if (hex3 !== void 0) {
+    if (hex3.length === 3) return `#${hex3.replace(/(.)/g, "$1$1")}`;
+    if (hex3.length === 8 && !hex3.endsWith("ff")) return null;
+    return `#${hex3.slice(0, 6)}`;
+  }
+  const match = FUNCTION_PATTERN.exec(text2);
+  const name = match?.[1];
+  const args = match?.[2];
+  if (name === void 0 || args === void 0) return null;
+  const [channelText, alphaText, extra] = args.split("/");
+  if (extra !== void 0 || !isOpaque(alphaText)) return null;
+  const parts = (channelText ?? "").split(/[\s,]+/).filter((part) => part.length > 0);
+  let channels2;
+  let scale2;
+  if (name === "color") {
+    if (parts[0] !== "srgb") return null;
+    channels2 = parts.slice(1);
+    scale2 = 255;
+  } else {
+    if (parts.length === 4 && isOpaque(parts[3])) parts.length = 3;
+    channels2 = parts;
+    scale2 = 1;
+  }
+  if (channels2.length !== 3) return null;
+  const bytes = channels2.map(
+    (channel) => channel.endsWith("%") ? Number.parseFloat(channel) / 100 * 255 : Number.parseFloat(channel) * scale2
+  );
+  if (bytes.some((byte) => !Number.isFinite(byte))) return null;
+  return `#${bytes.map(hexByte).join("")}`;
+}
+function channels(hex3) {
+  return [
+    Number.parseInt(hex3.slice(1, 3), 16),
+    Number.parseInt(hex3.slice(3, 5), 16),
+    Number.parseInt(hex3.slice(5, 7), 16)
+  ];
+}
+function mixHex(a3, b4, weight) {
+  const from = channels(a3);
+  const to = channels(b4);
+  return `#${from.map((channel, index) => hexByte(channel * weight + (to[index] ?? 0) * (1 - weight))).join("")}`;
+}
+function xtermThemeFromTokens(tokens) {
+  return {
+    background: tokens.background,
+    foreground: tokens.foreground,
+    cursor: tokens.foreground,
+    cursorAccent: tokens.background,
+    selectionBackground: tokens.selectionBackground,
+    selectionForeground: tokens.selectionForeground,
+    selectionInactiveBackground: mixHex(
+      tokens.selectionBackground,
+      tokens.background,
+      INACTIVE_SELECTION_WEIGHT
+    )
+  };
+}
+function monacoThemeFromTokens(tokens) {
+  return {
+    base: tokens.scheme === "dark" ? "vs-dark" : "vs",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": tokens.background,
+      "editor.foreground": tokens.foreground,
+      "editor.lineHighlightBorder": tokens.borderSubtle,
+      "editorWidget.background": tokens.elevated,
+      "editorWidget.border": tokens.border,
+      "diffEditor.unchangedRegionBackground": tokens.elevated
+    }
+  };
+}
+function readEditorThemeTokens(root = document.documentElement) {
+  const scheme = root.dataset["theme"] === "light" ? "light" : "dark";
+  const fallback = FALLBACK_EDITOR_THEME_TOKENS[scheme];
+  const view = root.ownerDocument.defaultView;
+  const probe = root.ownerDocument.createElement("span");
+  probe.hidden = true;
+  root.append(probe);
+  const resolve = (field) => {
+    probe.style.color = `var(${EDITOR_THEME_TOKEN_PROPERTIES[field]})`;
+    return cssColorToHex(view?.getComputedStyle(probe).color ?? "") ?? fallback[field];
+  };
+  const tokens = {
+    scheme,
+    background: resolve("background"),
+    elevated: resolve("elevated"),
+    foreground: resolve("foreground"),
+    border: resolve("border"),
+    borderSubtle: resolve("borderSubtle"),
+    selectionBackground: resolve("selectionBackground"),
+    selectionForeground: resolve("selectionForeground")
+  };
+  probe.remove();
+  return tokens;
+}
+function sameTokens(a3, b4) {
+  return a3.scheme === b4.scheme && EDITOR_THEME_TOKEN_FIELDS.every((field) => a3[field] === b4[field]);
+}
+function watchEditorTheme(onChange, root = document.documentElement) {
+  let current = readEditorThemeTokens(root);
+  const observer = new MutationObserver(() => {
+    const next = readEditorThemeTokens(root);
+    if (sameTokens(current, next)) return;
+    current = next;
+    onChange(next);
+  });
+  observer.observe(root, {
+    attributes: true,
+    attributeFilter: ["data-theme", "data-tint-palette", "data-tint-strength", "style"]
+  });
+  return () => {
+    observer.disconnect();
+  };
+}
+function installMonacoEditorTheme(monaco) {
+  const apply2 = (tokens) => {
+    monaco.editor.defineTheme(COPSE_MONACO_THEME, monacoThemeFromTokens(tokens));
+    monaco.editor.setTheme(COPSE_MONACO_THEME);
+  };
+  apply2(readEditorThemeTokens());
+  return watchEditorTheme(apply2);
+}
+var EDITOR_THEME_TOKEN_PROPERTIES, FALLBACK_EDITOR_THEME_TOKENS, COPSE_MONACO_THEME, HEX_PATTERN, FUNCTION_PATTERN, INACTIVE_SELECTION_WEIGHT, EDITOR_THEME_TOKEN_FIELDS;
+var init_editor_theme = __esm({
+  "src/renderer/dom/editor-theme.ts"() {
+    EDITOR_THEME_TOKEN_PROPERTIES = {
+      background: "--bg-base",
+      elevated: "--bg-elevated",
+      foreground: "--text-primary",
+      border: "--border",
+      borderSubtle: "--border-subtle",
+      selectionBackground: "--selection-bg",
+      selectionForeground: "--selection-text"
+    };
+    FALLBACK_EDITOR_THEME_TOKENS = {
+      dark: {
+        scheme: "dark",
+        background: "#1e1e1e",
+        elevated: "#252526",
+        foreground: "#d4d4d4",
+        border: "#414141",
+        borderSubtle: "#333333",
+        selectionBackground: "#2f6fd0",
+        selectionForeground: "#ffffff"
+      },
+      light: {
+        scheme: "light",
+        background: "#ffffff",
+        elevated: "#f3f3f3",
+        foreground: "#333333",
+        border: "#d4d4d4",
+        borderSubtle: "#e4e4e4",
+        selectionBackground: "#b0d3ff",
+        selectionForeground: "#10243b"
+      }
+    };
+    COPSE_MONACO_THEME = "copse";
+    HEX_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+    FUNCTION_PATTERN = /^(rgba?|color)\(\s*(.*?)\s*\)$/i;
+    INACTIVE_SELECTION_WEIGHT = 0.6;
+    EDITOR_THEME_TOKEN_FIELDS = [
+      "background",
+      "elevated",
+      "foreground",
+      "border",
+      "borderSubtle",
+      "selectionBackground",
+      "selectionForeground"
+    ];
+  }
+});
+
 // src/renderer/monaco/git-diff-viewer.ts
 function viewerVisible(host) {
   return !host.hidden && host.offsetWidth > 0 && host.offsetHeight > 0;
@@ -96350,11 +96556,11 @@ async function whenDiffHostVisible(host, isCurrent = () => true) {
     requestAnimationFrame(tick);
   });
 }
-function createGitChangesDiffEditor(container, monaco, fontSize, theme) {
+function createGitChangesDiffEditor(container, monaco, fontSize) {
   const diffEditor = monaco.editor.createDiffEditor(container, {
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,
     fontSize,
-    theme
+    theme: COPSE_MONACO_THEME
   });
   keepSingleGutterInInlineView(container, diffEditor);
   return diffEditor;
@@ -96473,6 +96679,7 @@ var diffModelVersion, attachedViewModels, presentedDiffs, pendingPresentations, 
 var init_git_diff_viewer = __esm({
   "src/renderer/monaco/git-diff-viewer.ts"() {
     init_diff_scroll();
+    init_editor_theme();
     diffModelVersion = 0;
     attachedViewModels = /* @__PURE__ */ new WeakMap();
     presentedDiffs = /* @__PURE__ */ new WeakMap();
@@ -96551,8 +96758,7 @@ function mountContextPanel(root, store2, api2, monaco) {
         const created = createGitChangesDiffEditor(
           diffContainer,
           monaco,
-          scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
-          store2.getState().theme === "dark" ? "vs-dark" : "vs"
+          scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale)
         );
         diffEditor = created;
         registerMonacoSelectionToChatShortcut(created.getOriginalEditor(), monaco, () => {
@@ -96632,7 +96838,7 @@ function mountContextPanel(root, store2, api2, monaco) {
     automaticLayout: true,
     scrollBeyondLastLine: false,
     fontSize: scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
-    theme: store2.getState().theme === "dark" ? "vs-dark" : "vs"
+    theme: COPSE_MONACO_THEME
   });
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store2.getState();
@@ -96715,9 +96921,6 @@ function mountContextPanel(root, store2, api2, monaco) {
         void api2.fs.watch(owner.projectId, owner.threadId, openFile.path);
         watched = { ...owner, path: openFile.path };
       }
-    }),
-    store2.on("theme_changed", (theme) => {
-      monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
     })
   ];
   const unsubFsChanged = api2.fs.onChanged((projectId, threadId, path, newContent) => {
@@ -96780,6 +96983,7 @@ var init_context_panel = __esm({
     init_selection_to_chat();
     init_git_diff_viewer();
     init_toast();
+    init_editor_theme();
     init_context_menu();
     init_ui_scale();
     init_files();
@@ -106207,7 +106411,7 @@ var init_tab_scope = __esm({
 
 // src/renderer/views/terminals-pane.ts
 function applyXtermBg(container, theme) {
-  container.style.setProperty("--xterm-bg", XTERM_THEME[theme].background);
+  container.style.setProperty("--xterm-bg", theme.background ?? "");
 }
 function terminalModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -106277,7 +106481,7 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
       cursorBlink: true,
       fontSize: scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: XTERM_THEME[store2.getState().theme]
+      theme: xtermThemeFromTokens(readEditorThemeTokens())
     });
     const fitAddon = new o2();
     term.loadAddon(fitAddon);
@@ -106564,7 +106768,7 @@ ${output2}` : "Terminal output: (none)"
     );
     const panel = el("div", { class: "terminals-tab-panel", "data-tab-id": id });
     const container = el("div", { class: "terminal-container" });
-    applyXtermBg(container, store2.getState().theme);
+    applyXtermBg(container, xtermThemeFromTokens(readEditorThemeTokens()));
     panel.append(container);
     const { term, fitAddon } = createXterm();
     const fileLinks = installTerminalFileLinks(term, store2, api2);
@@ -106708,12 +106912,13 @@ ${output2}` : "Terminal output: (none)"
       resizeObserver.disconnect();
     }
   }
-  function onThemeChange(theme) {
+  const unwatchTheme = watchEditorTheme((tokens) => {
+    const theme = xtermThemeFromTokens(tokens);
     for (const tab of tabs.values()) {
-      tab.term.options.theme = XTERM_THEME[theme];
+      tab.term.options.theme = theme;
       applyXtermBg(tab.container, theme);
     }
-  }
+  });
   function onFontSizeChange() {
     const { fontSize, uiScale } = store2.getState();
     const size = scaledEditorFontSize(fontSize, uiScale);
@@ -106797,13 +107002,13 @@ ${output2}` : "Terminal output: (none)"
     store2.on("right_panel_mode_changed", onTerminalModeChange),
     store2.on("files_pane_changed", onTerminalModeChange),
     store2.on("agent_task_selected", onAgentTaskSelected),
-    store2.on("theme_changed", onThemeChange),
     store2.on("settings_changed", onFontSizeChange),
     store2.on("threads_changed", onThreadMaybeChanged),
     store2.on("thread_checkout_changed", onThreadCheckoutChanged),
     store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("request_terminal_command", runCommandInNewShell),
-    store2.on("code_block_run_requested", runCodeBlockInBackground)
+    store2.on("code_block_run_requested", runCodeBlockInBackground),
+    unwatchTheme
   ];
   const unregisterCatalog = registerShellCatalog(
     () => [...tabs.values()].map((tab) => ({
@@ -106839,7 +107044,6 @@ ${output2}` : "Terminal output: (none)"
     })();
   };
 }
-var XTERM_THEME;
 var init_terminals_pane = __esm({
   "src/renderer/views/terminals-pane.ts"() {
     init_xterm();
@@ -106862,22 +107066,7 @@ var init_terminals_pane = __esm({
     init_create_after_persist();
     init_start_failure_message();
     init_tab_scope();
-    XTERM_THEME = {
-      dark: {
-        background: "#1e1e1e",
-        foreground: "#d4d4d4",
-        cursor: "#d4d4d4",
-        selectionBackground: "#264f78",
-        selectionInactiveBackground: "#1e3a57"
-      },
-      light: {
-        background: "#ffffff",
-        foreground: "#1e1e1e",
-        cursor: "#1e1e1e",
-        selectionBackground: "#add6ff",
-        selectionInactiveBackground: "#d3e6fb"
-      }
-    };
+    init_editor_theme();
   }
 });
 
@@ -107723,12 +107912,10 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function ensureDiffEditor() {
     const monacoApi = requireMonaco();
     if (!diffEditor) {
-      const theme = store2.getState().theme === "dark" ? "vs-dark" : "vs";
       diffEditor = createGitChangesDiffEditor(
         diffWrap,
         monacoApi,
-        scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
-        theme
+        scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale)
       );
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monacoApi, () => {
         if (selection2?.kind === "proposed") {
@@ -108363,9 +108550,6 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
       if (!adoptActiveOwner() && !ownerNeedsRefresh) return;
       if (changesModeActive(store2)) void refresh();
     }),
-    store2.on("theme_changed", (theme) => {
-      monaco?.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
-    }),
     store2.on("staged_diffs_changed", () => {
       const queue = store2.getState().stagedDiffs;
       if (queue.length === 0) conflictBanner.hidden = true;
@@ -108833,15 +109017,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     });
   }
   function ensureDiffEditor() {
-    if (!diffEditor) {
-      const theme = store2.getState().theme === "dark" ? "vs-dark" : "vs";
-      diffEditor = createGitChangesDiffEditor(
-        diffWrap,
-        monaco,
-        scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale),
-        theme
-      );
-    }
+    diffEditor ??= createGitChangesDiffEditor(
+      diffWrap,
+      monaco,
+      scaledEditorFontSize(store2.getState().fontSize, store2.getState().uiScale)
+    );
     return diffEditor;
   }
   function renderGhLoading() {
@@ -109078,7 +109258,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     renderSections();
   }
   function actionButton(label, confirmMessage, run2) {
-    const btn = el("button", { type: "button", class: "pr-action-btn" }, label);
+    const btn = el(
+      "button",
+      { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact pr-action-btn" },
+      label
+    );
     btn.addEventListener("click", () => {
       const ref = selectedPr;
       if (!ref) return;
@@ -109108,7 +109292,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       "button",
       {
         type: "button",
-        class: "pr-open-external-btn",
+        class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-external-btn",
         "data-tooltip": "Open this pull request on GitHub"
       },
       el("span", {}, "Open on GitHub"),
@@ -109123,7 +109307,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       "button",
       {
         type: "button",
-        class: "pr-open-thread-btn",
+        class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
         "data-tooltip": `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
       },
       el("span", {}, `Open ${agentProviderLabel(agent.provider)} agent thread`)
@@ -109137,7 +109321,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       "button",
       {
         type: "button",
-        class: "pr-new-thread-btn",
+        class: "ui-btn ui-btn-ghost ui-btn-compact pr-new-thread-btn",
         "data-tooltip": "Open a new thread about this pull request"
       },
       el("span", {}, "New thread")
@@ -109654,9 +109838,6 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       pendingOpen = { owner, repo, number: number4 };
       if (prsModeActive(store2)) void refresh();
     }),
-    store2.on("theme_changed", (theme) => {
-      monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
-    }),
     api2.gh.onListsTick(() => {
       if (prsModeActive(store2)) void refresh({ reason: "poll" });
     })
@@ -109822,15 +110003,19 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   const errorLine = el("div", { class: "memories-error", hidden: true });
   const saveBtn = el(
     "button",
-    { type: "submit", class: "memories-btn memories-btn-primary" },
+    { type: "submit", class: "ui-btn ui-btn-primary ui-btn-compact memories-save-btn" },
     "Save"
   );
   const deleteBtn = el(
     "button",
-    { type: "button", class: "memories-btn memories-btn-danger" },
+    { type: "button", class: "ui-btn ui-btn-danger ui-btn-compact memories-delete-btn" },
     "Delete"
   );
-  const cancelBtn = el("button", { type: "button", class: "memories-btn" }, "Cancel");
+  const cancelBtn = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact memories-cancel-btn" },
+    "Cancel"
+  );
   const actions = el("div", { class: "memories-actions" }, saveBtn, deleteBtn, cancelBtn);
   form.append(
     el("label", { class: "memories-label" }, "Title"),
@@ -110099,7 +110284,11 @@ function mountPortsSection(listRoot, store2, api2) {
   section.append(header, list);
   listRoot.append(section);
   function actionButton(label, className, onClick) {
-    const button = el("button", { type: "button", class: `ports-btn ${className}` }, label);
+    const button = el(
+      "button",
+      { type: "button", class: `ui-btn ui-btn-compact ${className}` },
+      label
+    );
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       onClick();
@@ -110117,10 +110306,10 @@ function mountPortsSection(listRoot, store2, api2) {
     if (row2.url) {
       const url2 = row2.url;
       actions.append(
-        actionButton("Open", "ports-open-btn", () => {
+        actionButton("Open", "ui-btn-secondary ports-open-btn", () => {
           openBrowserUrl(store2, url2);
         }),
-        actionButton("Copy", "ports-copy-btn", () => {
+        actionButton("Copy", "ui-btn-secondary ports-copy-btn", () => {
           void navigator.clipboard.writeText(url2).then(
             () => {
               showToast(`Copied ${url2}`);
@@ -110133,7 +110322,7 @@ function mountPortsSection(listRoot, store2, api2) {
       );
     }
     if (row2.owner) {
-      const killBtn = actionButton("Kill", "ports-btn-danger ports-kill-btn", () => {
+      const killBtn = actionButton("Kill", "ui-btn-danger ports-kill-btn", () => {
         void kill(row2, killBtn);
       });
       actions.append(killBtn);
@@ -110919,14 +111108,14 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   reviewResult.append(reviewResultMeta, reviewResultBody);
   const saveBtn = el(
     "button",
-    { type: "submit", class: "memories-btn memories-btn-primary roadmap-save-btn" },
+    { type: "submit", class: "ui-btn ui-btn-primary ui-btn-compact roadmap-save-btn" },
     "Save"
   );
   const startBtn = el(
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-start-btn",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-start-btn",
       title: "Open a new thread with this prompt in the composer"
     },
     "Start thread"
@@ -110935,7 +111124,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-reopen-btn",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-reopen-btn",
       title: "Switch to the thread previously started from this item"
     },
     "Reopen thread"
@@ -110944,7 +111133,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-fit-btn",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-fit-btn",
       title: "Ask the local model whether this prompt would resolve the pinned issue"
     },
     "Check fit"
@@ -110953,26 +111142,26 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-resolution-btn",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-resolution-btn",
       title: "Deep resolution check \u2014 full commit history since this item was created"
     },
     "Check resolution"
   );
   const deleteBtn = el(
     "button",
-    { type: "button", class: "memories-btn memories-btn-danger roadmap-delete-btn" },
+    { type: "button", class: "ui-btn ui-btn-danger ui-btn-compact roadmap-delete-btn" },
     "Delete"
   );
   const cancelBtn = el(
     "button",
-    { type: "button", class: "memories-btn roadmap-cancel-btn" },
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-cancel-btn" },
     "Cancel"
   );
   const reviewBackBtn = el(
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-review-back",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-review-back",
       title: "Return to the in-progress review results"
     },
     "Back to review"
@@ -111013,17 +111202,21 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   const importList = el("div", { class: "roadmap-import-list" });
   const importConfirmBtn = el(
     "button",
-    { type: "button", class: "memories-btn memories-btn-primary roadmap-import-confirm" },
+    { type: "button", class: "ui-btn ui-btn-primary ui-btn-compact roadmap-import-confirm" },
     "Import selected"
   );
   const importLoadMoreBtn = el(
     "button",
-    { type: "button", class: "memories-btn roadmap-import-more", hidden: true },
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-import-more",
+      hidden: true
+    },
     "Load more"
   );
   const importCancelBtn = el(
     "button",
-    { type: "button", class: "memories-btn roadmap-import-cancel" },
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-import-cancel" },
     "Cancel"
   );
   const importView = el(
@@ -111040,21 +111233,21 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-review-stop",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-review-stop",
       title: "Stop the in-progress review"
     },
     "Stop"
   );
   const reviewCloseBtn = el(
     "button",
-    { type: "button", class: "memories-btn roadmap-review-close" },
+    { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-review-close" },
     "Close"
   );
   const reviewMarkResolvedBtn = el(
     "button",
     {
       type: "button",
-      class: "memories-btn memories-btn-primary roadmap-review-mark-resolved",
+      class: "ui-btn ui-btn-primary ui-btn-compact roadmap-review-mark-resolved",
       title: "Mark every resolved/likely item as done"
     },
     "Mark resolved done"
@@ -111063,7 +111256,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
     "button",
     {
       type: "button",
-      class: "memories-btn roadmap-review-archive-resolved",
+      class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-review-archive-resolved",
       title: "Archive every resolved/likely item"
     },
     "Archive resolved"
@@ -112188,7 +112381,7 @@ Notes: ${notes}` : prompt;
       const actions2 = el("div", { class: "memories-actions roadmap-review-row-actions" });
       const openBtn = el(
         "button",
-        { type: "button", class: "memories-btn roadmap-review-open" },
+        { type: "button", class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-review-open" },
         "Open"
       );
       openBtn.addEventListener("click", () => {
@@ -112199,7 +112392,10 @@ Notes: ${notes}` : prompt;
         pendingResolved++;
         const doneBtn = el(
           "button",
-          { type: "button", class: "memories-btn memories-btn-primary roadmap-review-mark-done" },
+          {
+            type: "button",
+            class: "ui-btn ui-btn-primary ui-btn-compact roadmap-review-mark-done"
+          },
           "Mark done"
         );
         doneBtn.addEventListener("click", () => {
@@ -112207,7 +112403,10 @@ Notes: ${notes}` : prompt;
         });
         const archiveBtn = el(
           "button",
-          { type: "button", class: "memories-btn roadmap-review-archive" },
+          {
+            type: "button",
+            class: "ui-btn ui-btn-secondary ui-btn-compact roadmap-review-archive"
+          },
           "Archive"
         );
         archiveBtn.addEventListener("click", () => {
@@ -134659,6 +134858,7 @@ function loadMonaco() {
   monacoPromise = loadMonacoBundle().then(async (monaco) => {
     configureMonacoFileRoot();
     configureMonacoLanguageDefaults(monaco);
+    installMonacoEditorTheme(monaco);
     window.MonacoEnvironment = {
       getWorker(_workerId, label) {
         return monacoWorkers.take(label);
@@ -134692,6 +134892,7 @@ var MONACO_BASE_META, WARM_WORKER_TTL_MS, monacoWorkers, EDITOR_WORKER_SERVICE_L
 var init_setup = __esm({
   "src/renderer/monaco/setup.ts"() {
     init_worker_handout();
+    init_editor_theme();
     MONACO_BASE_META = "copse-monaco-base";
     WARM_WORKER_TTL_MS = 45e3;
     monacoWorkers = createWorkerHandout(createMonacoWorkerOnce, {
