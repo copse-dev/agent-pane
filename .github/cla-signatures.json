@@ -1,0 +1,4 @@
+{
+  "$comment": "Contributors who have signed CLA.md. Read by .github/workflows/cla.yml from the default branch. Add an entry after someone signs on a pull request: `id` is their numeric GitHub user id (logins can change), `evidence` links the signing comment, `emails` optionally lists commit addresses not linked to their account.",
+  "signatures": []
+}

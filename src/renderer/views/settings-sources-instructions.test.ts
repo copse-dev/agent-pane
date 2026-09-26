@@ -141,8 +141,10 @@ describe('settings sources → instructions', () => {
     assert.ok(api)
     assert.ok(web)
     assert.equal(api.querySelector('.sources-badge')?.textContent, 'active')
+    assert.ok(api.querySelector('.sources-badge-active'), 'active this turn takes the accent')
     assert.match(api.querySelector('.sources-row-detail')?.textContent ?? '', /active this turn/)
     assert.equal(web.querySelector('.sources-badge')?.textContent, 'scoped')
+    assert.equal(web.querySelector('.sources-badge-active'), null)
     assert.match(
       web.querySelector('.sources-row-detail')?.textContent ?? '',
       /activates when a path under this directory enters context/,
@@ -204,6 +206,8 @@ describe('settings sources → instructions', () => {
     assert.deepEqual(trustCalls, [true])
     assert.equal(list.querySelector('button.sources-badge-untrusted'), null)
     assert.equal(list.querySelector('.sources-badge')?.textContent, 'project')
+    // Once loaded, project scope is a neutral label like user scope.
+    assert.equal(list.querySelector('.sources-badge')?.className, 'ui-badge sources-badge')
     assert.doesNotMatch(
       list.querySelector('.sources-row-detail')?.textContent ?? '',
       /inert until you trust/,
