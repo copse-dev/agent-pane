@@ -21,7 +21,7 @@
 }
 .app-run-heading h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: calc(20px * var(--ui-scale));
 }
 .app-run-spacer {
   flex: 1;
@@ -91,7 +91,7 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 12px/1.5 var(--font-mono);
+  font: var(--font-size-sm)/1.5 var(--font-mono);
 }
 .app-run-logs {
   margin-top: 10px;
