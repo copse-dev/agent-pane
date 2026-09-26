@@ -144,6 +144,10 @@ describe('SSH settings section', () => {
     await browser.execute(() => {
       document.querySelector('.ssh-host-status')?.scrollIntoView({ block: 'center' })
     })
+    // Form actions are UI-kit buttons, not bare text (#3065). The Forward SSH
+    // agent row is held by assertCheckboxBesideLabel above.
+    await expect(sshSection.$('.ssh-host-save')).toHaveElementClass('ui-btn-primary')
+    await expect(sshSection.$('.ssh-host-clear')).toHaveElementClass('ui-btn-secondary')
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-invalid-port.png')
     await browser.execute(() => {
       document.querySelector<HTMLButtonElement>('.ssh-host-clear')?.click()
