@@ -296,6 +296,11 @@ export function mountPrPane(
         ? 'Sign in with `gh auth login` to browse pull requests here.'
         : 'Install GitHub CLI (`gh`) to browse pull requests in Copse.')
     listBody.append(el('div', { class: 'git-changes-empty pr-empty-state' }, message))
+    renderGhUnavailableViewer()
+  }
+
+  /** The viewer half of {@link renderGhUnavailable}, for when nothing is selected. */
+  function renderGhUnavailableViewer(): void {
     clear(metaHost)
     clear(sectionsHost)
     activityHost.hidden = true
@@ -1086,6 +1091,9 @@ export function mountPrPane(
         state: 'OPEN',
       }))
       renderList()
+      // With chat-linked rows to list, renderList() leaves the viewer alone, so
+      // it would keep the cold-start "Loading pull requests…" status forever.
+      if (!selectedPr) renderGhUnavailableViewer()
       return
     }
 
