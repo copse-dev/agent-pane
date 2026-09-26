@@ -675,8 +675,17 @@ async function seedFromSnapshot(worktreePath: string, snapshotRef: string): Prom
  * An empty entry at a mandatory write-deny path is a sandbox mount point, not
  * work: see {@link isMandatoryWriteDenyMountPath}. One that has already gone
  * away has nothing to seed either.
+ *
+ * Only Linux (bubblewrap) materializes those mount points. macOS seatbelt
+ * denies without creating anything, so there an empty `.bashrc` is the user's
+ * own file and still counts as work to seed.
  */
-async function isSandboxMountArtifact(root: string, relativePath: string): Promise<boolean> {
+export async function isSandboxMountArtifact(
+  root: string,
+  relativePath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  if (platform !== 'linux') return false
   if (!isMandatoryWriteDenyMountPath(relativePath)) return false
   const path = join(root, relativePath)
   try {
@@ -684,7 +693,7 @@ async function isSandboxMountArtifact(root: string, relativePath: string): Promi
     if (stat.isFile()) return stat.size === 0
     if (!stat.isDirectory()) return false
     for (const entry of await readdir(path)) {
-      if (!(await isSandboxMountArtifact(root, join(relativePath, entry)))) return false
+      if (!(await isSandboxMountArtifact(root, join(relativePath, entry), platform))) return false
     }
     return true
   } catch (error) {

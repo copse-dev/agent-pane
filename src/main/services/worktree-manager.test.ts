@@ -25,6 +25,7 @@ import {
 import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
+  isSandboxMountArtifact,
   listProjectWorktrees,
   managedThreadIdForPath,
   parkThreadWorktree,
@@ -555,10 +556,29 @@ describe('worktree manager', () => {
       baseBranch: 'main',
     })
 
-    assert.equal(worktree.seededFromDirtyProject, false)
-    await assert.rejects(lstat(join(worktree.path, '.bashrc')))
-    await assert.rejects(lstat(join(worktree.path, '.claude')))
+    // Only Linux creates these mount points; elsewhere an empty .bashrc is the
+    // user's file and is seeded like any other untracked work.
+    const linux = process.platform === 'linux'
+    assert.equal(worktree.seededFromDirtyProject, !linux)
+    if (linux) {
+      await assert.rejects(lstat(join(worktree.path, '.bashrc')))
+      await assert.rejects(lstat(join(worktree.path, '.claude')))
+    }
     assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
+  it('treats empty deny-path entries as mount points only on Linux', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.bashrc'), '')
+    await writeFile(join(repo, '.gitmodules'), '[submodule "x"]\n')
+
+    assert.equal(await isSandboxMountArtifact(repo, '.bashrc', 'linux'), true)
+    assert.equal(await isSandboxMountArtifact(repo, '.bashrc', 'darwin'), false)
+    // Content is always the user's, on every platform.
+    assert.equal(await isSandboxMountArtifact(repo, '.gitmodules', 'linux'), false)
+    // A path outside the deny list is never a mount point.
+    await writeFile(join(repo, 'notes.txt'), '')
+    assert.equal(await isSandboxMountArtifact(repo, 'notes.txt', 'linux'), false)
   })
 
   it('still seeds real work stored beside or under a sandbox deny path', async () => {
