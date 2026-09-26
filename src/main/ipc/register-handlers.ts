@@ -1,5 +1,10 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
+import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
+import {
+  openableLicenseFile,
+  readThirdPartyLicenseReport,
+} from '../services/about/third-party-licenses.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -2772,6 +2777,20 @@ export function registerAllHandlers(
   ipcMain.handle('acp:auto-setup', (event) => {
     assertMainFrameSender(event, win)
     return runAcpAutoSetup(new AbortController().signal)
+  })
+  ipcMain.handle('about:get-info', async (event): Promise<AboutInfo> => {
+    assertMainFrameSender(event, win)
+    return { version: app.getVersion(), report: await readThirdPartyLicenseReport() }
+  })
+  ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
+    assertMainFrameSender(event, win)
+    const file = await openableLicenseFile(
+      parseIpcArgs(z.enum(LICENSE_FILE_KINDS), [kind]),
+      app.getPath('temp'),
+    )
+    // openPath resolves to an error message rather than rejecting.
+    const error = await shell.openPath(file)
+    if (error) throw new Error(`Could not open ${file}: ${error}`)
   })
   ipcMain.handle('shell:open-external', (event, url: unknown) => {
     assertMainFrameSender(event, win)

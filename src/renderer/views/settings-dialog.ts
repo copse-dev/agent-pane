@@ -55,6 +55,7 @@ import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createModelParametersSection } from './setup/model-parameters-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createAboutSection } from './setup/about-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -119,6 +120,7 @@ export type SettingsSection =
   | 'appearance'
   | 'ssh'
   | 'experimental'
+  | 'about'
 
 const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
   value === 'general' ||
@@ -131,7 +133,8 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
   value === 'storage' ||
   value === 'appearance' ||
   value === 'ssh' ||
-  value === 'experimental'
+  value === 'experimental' ||
+  value === 'about'
 
 /**
  * Friendly display name for a plugin row. First-party plugins ship with a
@@ -549,6 +552,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -1502,6 +1506,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
+          </section>
+
           <div class="settings-search-results" id="settings-search-results"></div>
 
           <p class="settings-search-empty" id="settings-search-empty" hidden></p>
@@ -1641,6 +1654,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
+
+  const aboutSection = createAboutSection(api)
+  qsRequired(overlay, '#settings-about-host').append(aboutSection.root)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
@@ -1935,6 +1951,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         if (id === 'classifiers') void classifiersSection.refresh()
         if (id === 'usage') void usageSection.refresh()
         if (id === 'permissions') void toolPermissionsPanel.refresh()
+        if (id === 'about') void aboutSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
@@ -4454,6 +4471,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
+    if (openedSection === 'about') void aboutSection.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
       void revealPluginDetail()
