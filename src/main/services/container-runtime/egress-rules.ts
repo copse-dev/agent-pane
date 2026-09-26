@@ -22,6 +22,16 @@ export interface EgressRule {
 }
 
 /**
+ * The name the guest dials a server on the desktop's loopback by. Loopback in
+ * the guest bypasses its proxy, so the host renames such an endpoint to this
+ * (`guestFacingEndpoint`) and tells the broker to dial it on the host's
+ * loopback. The guest counts it as loopback for the provider URL rule (A16):
+ * its bytes cross only the guest's own loopback, the container's stdio and
+ * the host's loopback.
+ */
+export const HOST_LOCAL_ALIAS = 'model.copse.internal'
+
+/**
  * Where the guest proxy listens. Fixed rather than ephemeral because Node reads
  * `HTTPS_PROXY` once at startup under `NODE_USE_ENV_PROXY=1`, so the address
  * has to be known before the worker process exists. The guest is single-tenant,

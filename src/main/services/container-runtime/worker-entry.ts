@@ -16,10 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { threadContainerRunSpecSchema, type ThreadContainerRunSpec as Spec } from './run-spec.ts'
-import {
-  buildProviderFromDescription,
-  providerEndpointUrl,
-} from '../providers/provider-description.ts'
+import { buildGuestProvider } from './guest-provider.ts'
 import { runHeadlessAgent } from '../headless-agent-host.ts'
 import {
   declareContainerRuntime,
@@ -522,15 +519,10 @@ async function main(): Promise<void> {
         },
       },
       // The desktop's own resolution of the model, built here from its
-      // description with the run's one key; the guest has no settings to
-      // resolve anything from. The endpoint's host counts as approved: the
-      // desktop admitted it to the allowlist when it described the provider.
+      // description with the run's one key.
       spec.provider !== null
         ? {
-            provider: buildProviderFromDescription(spec.provider, {
-              apiKey: apiKey || null,
-              approvedHosts: [new URL(providerEndpointUrl(spec.provider)).hostname],
-            }),
+            provider: buildGuestProvider(spec.provider, apiKey || null),
             contextWindow: spec.contextWindow ?? DEFAULT_GUEST_CONTEXT_WINDOW,
           }
         : {},
