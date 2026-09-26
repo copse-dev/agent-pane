@@ -380,6 +380,29 @@ export function upsertSummaryBlock(body: string | null, block: string): string {
   return `${kept}${close}\n\n${block}`
 }
 
+/** The lines of the summary block this tool wrote into `body`, or none. */
+function botBlockLines(body: string | null): readonly string[] {
+  const lines = (body ?? '').split('\n')
+  const found = findBotBlock(lines)
+  return found === null ? [] : lines.slice(found.start, found.end + 1)
+}
+
+/**
+ * The 12-character commit a block's footer names when a full review wrote it,
+ * or null for a summary-only block. Model prose is inert, so no line it wrote
+ * can pass for the footer.
+ */
+function reviewedCommit(block: readonly string[]): string | null {
+  for (const line of block) {
+    const footer =
+      /^> <sup>Summary by Copse Reviewer for commit ([0-9a-f]{12})\. The review reported /.exec(
+        bareLine(line),
+      )
+    if (footer !== null) return footer[1] ?? null
+  }
+  return null
+}
+
 const pullSchema = z.object({
   body: z.string().nullable(),
   head: z.object({ sha: z.string() }),
@@ -395,6 +418,11 @@ export type PostedSummary =
  * summary on the way, and an older one must not overwrite it. The forge has
  * no conditional update for a description, so an author's edit landing
  * between the read and the write is lost; the window is one round trip.
+ *
+ * A summary-only block never replaces one a full review wrote for the same
+ * commit: the push-time summary can finish after the review, and must not
+ * throw its evidence away. Two runs writing within the same round trip can
+ * still race; the later write wins.
  */
 export async function postSummary(
   target: ForgeTarget,
@@ -430,6 +458,13 @@ export async function postSummary(
       updated: false,
       reason: `the pull request has moved on to ${pull.head.sha.slice(0, 12)}`,
     }
+  }
+  if (
+    target.headCommit !== null &&
+    !reviewedCommit(block.split('\n')) &&
+    reviewedCommit(botBlockLines(pull.body)) === target.headCommit.slice(0, 12)
+  ) {
+    return { updated: false, reason: 'a full review has already summarised this commit' }
   }
   const next = upsertSummaryBlock(pull.body, block)
   if (next === pull.body) return { updated: false, reason: 'the summary is unchanged' }

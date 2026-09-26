@@ -408,6 +408,35 @@ describe('postSummary', () => {
     )
   })
 
+  it("keeps a full review's summary of this commit from a later summary-only run", async () => {
+    const reviewed = renderSummaryBlock(summary, {
+      headCommit: HEAD,
+      toolVersion: '1',
+      report: report([]),
+    })
+    const current = forge({ body: `Text.\n\n${reviewed}`, head: { sha: HEAD } })
+    assert.deepEqual(await postSummary(target, block, { fetch: current.fetch }), {
+      updated: false,
+      reason: 'a full review has already summarised this commit',
+    })
+    assert.equal(current.calls.length, 1)
+    // A review of an older commit is replaced, and a review always replaces.
+    const older = renderSummaryBlock(summary, {
+      headCommit: 'c'.repeat(40),
+      toolVersion: '1',
+      report: report([]),
+    })
+    const stale = forge({ body: `Text.\n\n${older}`, head: { sha: HEAD } })
+    assert.deepEqual(await postSummary(target, block, { fetch: stale.fetch }), { updated: true })
+    const newer = renderSummaryBlock(summary, {
+      headCommit: HEAD,
+      toolVersion: '1',
+      report: report([finding('low')]),
+    })
+    const again = forge({ body: `Text.\n\n${reviewed}`, head: { sha: HEAD } })
+    assert.deepEqual(await postSummary(target, newer, { fetch: again.fetch }), { updated: true })
+  })
+
   it('leaves a pull request that has moved on, or an unchanged summary, alone', async () => {
     const moved = forge({ body: 'Text.', head: { sha: 'c'.repeat(40) } })
     assert.deepEqual(await postSummary(target, block, { fetch: moved.fetch }), {

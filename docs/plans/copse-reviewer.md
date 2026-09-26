@@ -1421,9 +1421,12 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   Stage 0, nothing executed). The findings job also passes `--post-summary`, so a finished
   review rewrites the summary with its evidence. Every write first reads the pull request and
   skips when its head is no longer the summarised commit, so a slow review cannot overwrite
-  a newer push's summary.
+  a newer push's summary. A summary-only run also skips when a full review has already
+  summarised the same commit, so a push-time summary that finishes late cannot discard the
+  review's evidence.
 - **Limits.** The forge has no conditional update for a description, so an author's edit
-  landing between the read and the write is lost; the window is one round trip. A tool that
+  landing between the read and the write is lost, as is the earlier of two runs that write
+  within the same round trip. A tool that
   replaces the whole description (`gh pr edit --body-file`) deletes the block until the next
   push. The trigger acts only on the owner's own pushes, so after a bot or another identity
   pushes, the summary names the older commit until the owner pushes again. When Stage 1
