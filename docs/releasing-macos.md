@@ -117,7 +117,9 @@ Monday. Publishing is the only routine manual step:
    notes, edit the `## <version>` section on the PR branch.
 2. Let [the daily promotion](../.github/workflows/promote-develop.yml) carry
    `main` to `release`, or dispatch it early. Merging requires the full
-   `CI Passed` tier.
+   `CI Passed` tier. The promotion PR's head is `promote/main`, pinned to the
+   `main` commit the run read, so later merges to `main` do not restart its CI;
+   a dispatch fast-forwards it to the current `main`.
 3. [`Cut release tag`](../.github/workflows/release-cut.yml) sees the new
    version on `release`, creates `v<version>` at that exact commit, and starts
    `Release (macOS)`. A promotion whose version is already tagged is a no-op, so
