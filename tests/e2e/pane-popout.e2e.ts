@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
   resetUserData,
@@ -94,9 +95,15 @@ describe('Pane pop-out (mock gh)', () => {
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       if (pane.mode === 'browser') {
-        await $('.browser-url-input').waitForDisplayed({ timeout: 10_000 })
-        await $('.browser-url-input').setValue('https://example.com')
-        await $('.browser-go-btn').click()
+        await navigateActiveBrowserTab('https://example.com')
+        // The submit reached navigation: the tab leaves "New tab" for the
+        // host (or the page title once it loads), before any network answer.
+        await browser.waitUntil(
+          async () =>
+            (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) !==
+            'New tab',
+          { timeout: 20_000, timeoutMsg: 'browser tab did not navigate before pop-out' },
+        )
         await browser.waitUntil(
           async () => (await $('.browser-url-input').getValue()).includes('example.com'),
           { timeout: 20_000, timeoutMsg: 'browser address bar did not update before pop-out' },

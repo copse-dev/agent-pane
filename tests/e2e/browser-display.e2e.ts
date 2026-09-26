@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { WebviewTag } from 'electron'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import {
   resetUserData,
   seedE2eViewport,
@@ -35,22 +36,6 @@ async function openBrowserMode(): Promise<void> {
 
   await expect(browserBtn).toHaveElementClass('active')
   await $('.browser-url-input').waitForDisplayed({ timeout: 5_000 })
-}
-
-async function navigateActiveTab(url: string): Promise<void> {
-  await browser.execute((targetUrl) => {
-    const input = document.querySelector<HTMLInputElement>(
-      '.browser-tab-panel.is-active .browser-url-input',
-    )
-    if (!input) throw new Error('active browser address input missing')
-    input.value = targetUrl
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    const goBtn = document.querySelector<HTMLButtonElement>(
-      '.browser-tab-panel.is-active .browser-go-btn',
-    )
-    if (!goBtn) throw new Error('active browser go button missing')
-    goBtn.click()
-  }, url)
 }
 
 async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promise<void> {
@@ -161,7 +146,7 @@ describe('browser panel display', () => {
     await seam.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'browser-chrome-tabs-toolbar-seam.png'))
     await browser.execute(() => document.getElementById('e2e-browser-chrome-seam')?.remove())
 
-    await navigateActiveTab(page.url)
+    await navigateActiveBrowserTab(page.url)
     await waitForWebviewTitle('Copse browser fixture')
     await expect($('.browser-tab-panel.is-active .browser-url-input')).toHaveValue(page.url)
     expect(page.requests).toContain('/page')
