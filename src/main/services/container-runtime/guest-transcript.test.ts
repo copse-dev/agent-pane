@@ -178,6 +178,22 @@ describe('decodeGuestTranscript', () => {
     assert.equal(decodeGuestTranscript({ not: 'a list' }), null)
     assert.equal(decodeGuestTranscript([{ id: 'x' }]), null)
   })
+
+  it("keeps the guest registry's appended-reminder lengths so the card can show notes", () => {
+    const block = '<system-reminder>\nnote\n</system-reminder>'
+    const folded = foldGuestTranscript([
+      call('t1'),
+      {
+        type: 'tool_result',
+        toolCallId: 't1',
+        result: `ok\n\n${block}`,
+        isError: false,
+        appendedReminderLengths: [block.length],
+      },
+    ])
+    const decoded = decodeGuestTranscript(JSON.parse(JSON.stringify(folded)))
+    assert.deepEqual(decoded?.[0]?.toolCalls[0]?.appendedReminderLengths, [block.length])
+  })
 })
 
 describe('relocateGuestPaths', () => {

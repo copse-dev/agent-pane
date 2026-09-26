@@ -124,7 +124,7 @@ import {
 } from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import { mcpErrorMessage } from './tool-error-format.ts'
-import { splitTrailingSystemReminders } from './tool-result-reminders.ts'
+import { splitAppendedReminders } from './tool-result-reminders.ts'
 import {
   createThreadProposalToolCard,
   isThreadProposalCall,
@@ -245,6 +245,7 @@ function createToolResultSection(
   status: ToolCall['status'],
   format?: 'markdown',
   showEmptyState = false,
+  appendedReminderLengths?: readonly number[],
 ): HTMLElement {
   if (!result) {
     return showEmptyState
@@ -252,8 +253,9 @@ function createToolResultSection(
       : el('div', { class: 'tool-result' })
   }
   // Copse appends model-facing notes (clamped arguments, hook context) as
-  // trailing system-reminder blocks; show them as notes, not raw tags.
-  const { output, reminders } = splitTrailingSystemReminders(result)
+  // system-reminder blocks whose lengths the registry records; show exactly
+  // those as notes, not raw tags, and never reinterpret the tool's own text.
+  const { output, reminders } = splitAppendedReminders(result, appendedReminderLengths)
   const notes = reminders.map((reminder) => el('p', { class: 'tool-result-note' }, reminder))
   const errorMessage = status === 'error' ? mcpErrorMessage(output) : null
   if (errorMessage) {
@@ -422,6 +424,7 @@ function appendStandardToolSections(
         tc.status,
         tc.resultFormat,
         argsSection === null && tc.status !== 'running',
+        tc.appendedReminderLengths,
       ),
       ...appendIfPresent(createToolLocationsSection(tc.locations)),
     )

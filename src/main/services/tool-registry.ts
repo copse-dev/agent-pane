@@ -68,13 +68,21 @@ export function setPermissionGateForTests(fn: PermissionGateFn | null): void {
 }
 
 /**
- * Append a hook's current-turn injected context (H2) to a tool result, keeping
- * the result's structured shape (edit stats) intact. A blank line separates the
- * tool output from the injected system-reminder block.
+ * Append Copse-authored system-reminder blocks — the clamp note and a hook's
+ * current-turn injected context (H2) — to a tool result, keeping the result's
+ * structured shape (edit stats) intact. A blank line precedes each block. The
+ * block lengths ride along as display metadata so the transcript can set
+ * exactly these blocks apart from the tool's own output; the text the model
+ * reads is the same either way.
  */
-function appendInjectedContext(result: ToolExecuteResult, block: string): ToolExecuteResult {
-  if (typeof result === 'string') return `${result}\n\n${block}`
-  return { ...result, result: `${result.result}\n\n${block}` }
+function appendSystemReminders(
+  result: ToolExecuteResult,
+  blocks: readonly string[],
+): ToolExecuteResult {
+  const suffix = blocks.map((block) => `\n\n${block}`).join('')
+  const appendedReminderLengths = blocks.map((block) => block.length)
+  if (typeof result === 'string') return { result: `${result}${suffix}`, appendedReminderLengths }
+  return { ...result, result: `${result.result}${suffix}`, appendedReminderLengths }
 }
 
 /** Wrap a result's textual part in the external-content envelope, keeping structured fields. */
@@ -256,15 +264,13 @@ export class ToolRegistry {
     // result so the model reads it right after the tool output. The numeric-
     // range repair's clamp note rides the same channel: it is Copse-authored
     // context about the call, not tool output, and the model must read it.
-    const injected =
-      clampedNotes.length > 0 ? formatSystemReminder(describeClampRepair(clampedNotes)) : undefined
-    if (check.injectContext !== undefined && check.injectContext.length > 0) {
-      return appendInjectedContext(
-        result,
-        injected ? `${injected}\n\n${check.injectContext}` : check.injectContext,
-      )
-    }
-    return injected ? appendInjectedContext(result, injected) : result
+    const reminders = [
+      ...(clampedNotes.length > 0 ? [formatSystemReminder(describeClampRepair(clampedNotes))] : []),
+      ...(check.injectContext !== undefined && check.injectContext.length > 0
+        ? [check.injectContext]
+        : []),
+    ]
+    return reminders.length > 0 ? appendSystemReminders(result, reminders) : result
   }
 
   /** Execute and unwrap structured tool results (e.g. file-edit line stats). */
@@ -276,6 +282,7 @@ export class ToolRegistry {
     result: string
     editStats?: { additions: number; deletions: number }
     resultFormat?: 'markdown'
+    appendedReminderLengths?: number[]
     /**
      * Images a tool produced alongside its text (screenshots, generations, frames). Always returned
      * by `normalizeToolExecuteResult`; declared here so callers that can render

@@ -164,6 +164,8 @@ export type ToolExecuteResult =
        * store replaces each data URL with an immutable blob reference.
        */
       visualEvidence?: VisualEvidenceDraft[]
+      /** Set by the tool registry only; see {@link ToolCall.appendedReminderLengths}. */
+      appendedReminderLengths?: number[]
     }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
@@ -172,6 +174,7 @@ export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   resultFormat?: 'markdown'
   images?: ToolResultImage[]
   visualEvidence?: VisualEvidenceDraft[]
+  appendedReminderLengths?: number[]
 } {
   if (typeof value === 'string') return { result: value }
   return value
@@ -206,6 +209,15 @@ export interface ToolCall {
    * (plain text) for built-in tools, whose results are structured payloads.
    */
   resultFormat?: 'markdown'
+  /**
+   * Character lengths, in order, of the system-reminder blocks Copse appended
+   * to the end of `result` for the model (an argument-clamp note, a `toolGate`
+   * hook's injected context — H2), each after a blank line. Written by the tool
+   * registry that appends them, so the transcript can show exactly those blocks
+   * as notes without mistaking tool output that merely looks like one. Absent
+   * when nothing was appended, and on results recorded before this field.
+   */
+  appendedReminderLengths?: number[]
   /** Images returned by the tool, rendered beside its collapsed transcript card. */
   images?: ToolResultImage[]
   subagent?: SubagentSession
