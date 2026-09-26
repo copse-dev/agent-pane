@@ -9,6 +9,7 @@ import {
   type PullRequestRef,
 } from './pr-conversation.ts'
 import { isCopseReviewBody, type FetchLike } from './forge-review.ts'
+import { renderSummaryBlock } from './pr-summary.ts'
 
 const SHA_BEFORE = 'd5b006fa3ff06fa2c0b6e0cb0969ffbf10166dfd'
 const SHA_AFTER = 'a517e0011776800309f93024f51aba3feb75ccb4'
@@ -281,6 +282,30 @@ describe('readPullRequestConversation', () => {
     )
     assert.equal(conversation.images[0]?.label, 'clipped')
     assert.ok(headersSeen.every((headers) => headers['Authorization'] === 'token fj'))
+  })
+
+  it('drops Copse Reviewer’s summary block from the description, and nothing the author wrote', async () => {
+    const summary = renderSummaryBlock(
+      { risk: 'low', riskReason: 'Only moves a button.', overview: ['Moves the save button.'] },
+      { headCommit: 'e'.repeat(40), toolVersion: '1', report: null },
+    )
+    const authored =
+      'Moves the save button.\n\n<!-- copse-review-summary -->\nmy own note\n<!-- /copse-review-summary -->'
+    const { fetch } = fakeForge({
+      '/repos/acme/app/pulls/7': {
+        body: {
+          title: 'Tidy the toolbar',
+          body: `${authored}\n\n${summary}\n\nThanks!`,
+          user: { login: 'alice', type: 'User' },
+          created_at: '2026-09-01T00:00:00Z',
+        },
+      },
+      '/repos/acme/app/issues/7/comments': { body: [] },
+      '/repos/acme/app/pulls/7/reviews': { body: [] },
+      '/repos/acme/app/pulls/7/comments': { body: [] },
+    })
+    const conversation = await readPullRequestConversation(GITHUB, { fetch })
+    assert.equal(conversation.entries[0]?.body, `${authored}\n\nThanks!`)
   })
 
   it('fails with the forge’s status rather than reviewing half a conversation', async () => {

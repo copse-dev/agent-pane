@@ -1505,6 +1505,7 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   within the same round trip. A tool that
   replaces the whole description (`gh pr edit --body-file`) deletes the block until the next
   push. The trigger acts only on the owner's own pushes, so after a bot or another identity
-  pushes, the summary names the older commit until the owner pushes again. When Stage 1
-  starts reading the description (§Pipeline), it must strip this block first, or the
-  reviewer will read its own summary as the author's intent.
+  pushes, the summary names the older commit until the owner pushes again.
+- **Not read back.** `--read-pr` (§Pull request conversation and images) drops this block
+  from the description before Stage 1 sees it (`summary-block.ts`), so the reviewer never
+  reads its own summary as the author's intent. A block the author wrote or edited is kept.

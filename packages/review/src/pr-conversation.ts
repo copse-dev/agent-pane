@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { wrapExternalContent } from '@copse/agent/external-content.ts'
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { isCopseReviewBody, type FetchLike, type Forge } from './forge-review.ts'
+import { withoutSummaryBlock } from './summary-block.ts'
 
 /** Which pull request to read; a token is optional for a public repository. */
 export interface PullRequestRef {
@@ -210,7 +211,8 @@ async function readRawEntries(
       kind: 'description',
       user: pull.user,
       createdAt: pull.created_at,
-      body: pull.body ?? '',
+      // Copse Reviewer's own summary is not the author's intent.
+      body: withoutSummaryBlock(pull.body ?? ''),
     },
   ]
   for (const comment of comments) {
