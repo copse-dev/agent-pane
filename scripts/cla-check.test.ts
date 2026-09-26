@@ -61,8 +61,8 @@ interface Scenario {
   pr: ClaPullRequest
   commits: ClaCommit[]
   comments?: ClaComment[]
-  /** CLA statuses already on this pull request's head. */
-  statuses?: string[]
+  /** The latest status per context already on this pull request's head. */
+  statuses?: { context: string; state: string }[]
 }
 
 interface Written {
@@ -125,7 +125,7 @@ function fakeGitHub(
         },
         getCombinedStatusForRef: async ({ ref }) => {
           const found = scenarios.find((s) => s.pr.head.sha === ref)
-          return { data: { statuses: (found?.statuses ?? []).map((context) => ({ context })) } }
+          return { data: { statuses: found?.statuses ?? [] } }
         },
         createCommitStatus: async ({ sha, state, context, description }) => {
           assert.equal(context, CLA_CONTEXT)
@@ -327,7 +327,12 @@ describe('CLA backfill', () => {
       body: `${COMMENT_MARKER}\nThanks for contributing. ... Waiting on:\n- @claude`,
     }
     const { github, written } = fakeGitHub([
-      { pr: pull(3121, maintainer, commits), commits, comments: [stale], statuses: [CLA_CONTEXT] },
+      {
+        pr: pull(3121, maintainer, commits),
+        commits,
+        comments: [stale],
+        statuses: [{ context: CLA_CONTEXT, state: 'failure' }],
+      },
     ])
     const results = await evaluateOpenPullRequests(
       { github, owner: 'copse-dev', repo: 'agent-pane', log },
@@ -345,7 +350,11 @@ describe('CLA backfill', () => {
     const present = [commit(maintainer, 'jk@example.com')]
     const { github, written } = fakeGitHub([
       { pr: pull(3228, maintainer, missing), commits: missing },
-      { pr: pull(3245, maintainer, present), commits: present, statuses: [CLA_CONTEXT] },
+      {
+        pr: pull(3245, maintainer, present),
+        commits: present,
+        statuses: [{ context: CLA_CONTEXT, state: 'success' }],
+      },
     ])
     const results = await evaluateOpenPullRequests(
       { github, owner: 'copse-dev', repo: 'agent-pane', log },
@@ -359,6 +368,67 @@ describe('CLA backfill', () => {
       written.statuses.map((s) => s.sha),
       [missing[0]?.sha],
     )
+  })
+
+  it('does not let a backfill that read comments before a signature overwrite the signing run', async () => {
+    // The backfill (concurrency group `cla-backfill`) and the signing
+    // comment's run (`cla-<number>`) can overlap on the same head.
+    const commits = [commit(outsider, 'eve@example.com')]
+    const scenario: Scenario = { pr: pull(12, outsider, commits, { fork: true }), commits }
+    const { github, written } = fakeGitHub([scenario])
+    const listCommits = github.rest.pulls.listCommits
+    let raced = false
+    github.rest.pulls.listCommits = async (params): ReturnType<typeof listCommits> => {
+      if (!raced) {
+        // The backfill has read the comments; now eve signs and that
+        // comment's run evaluates and publishes before the backfill does.
+        raced = true
+        scenario.comments = [{ id: 6, user: outsider, body: SIGN_PHRASE }]
+        const signing = await evaluatePullRequest(
+          { github, owner: 'copse-dev', repo: 'agent-pane', log },
+          12,
+        )
+        assert.equal(stateOf(signing), 'success')
+      }
+      return listCommits(params)
+    }
+    await evaluateOpenPullRequests(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyMissing: false },
+    )
+    assert.ok(raced)
+    assert.equal(written.statuses.at(-1)?.state, 'success')
+    assert.deepEqual(written.created, [], 'no request to sign after the signature')
+  })
+
+  it('in only-missing mode, re-evaluates a failing head and rewrites only a changed verdict', async () => {
+    // A stale failure (from a race or an older rule) must not block merging
+    // until the next push; an unchanged failure is not rewritten every sweep.
+    const signed = [commit(outsider, 'eve@example.com')]
+    const unsigned = [commit(outsider, 'eve@example.com')]
+    const failed = [{ context: CLA_CONTEXT, state: 'failure' }]
+    const { github, written } = fakeGitHub([
+      {
+        pr: pull(20, outsider, signed, { fork: true }),
+        commits: signed,
+        comments: [{ id: 8, user: outsider, body: SIGN_PHRASE }],
+        statuses: failed,
+      },
+      { pr: pull(21, outsider, unsigned, { fork: true }), commits: unsigned, statuses: failed },
+    ])
+    const results = await evaluateOpenPullRequests(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyMissing: true },
+    )
+    assert.deepEqual(results.map(stateOf), ['success', 'failure'])
+    assert.deepEqual(written.statuses, [
+      {
+        sha: signed[0]?.sha,
+        state: 'success',
+        description: 'Every commit author has signed the CLA',
+      },
+    ])
+    assert.deepEqual(written.created, [])
   })
 
   it('keeps going past one pull request that errors, then fails the run', async () => {

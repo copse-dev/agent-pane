@@ -13,8 +13,12 @@ name: CLA
 #             `check`, and a status computed under an older rule or before a
 #             signature landed is never recomputed by one. Runs when
 #             main's signatures, this workflow or the script change (all heads
-#             recomputed), on dispatch (all heads), and on a schedule (only heads
-#             with no `CLA` status yet, which is cheap).
+#             recomputed), on dispatch (all heads), and on a schedule (heads
+#             with no `CLA` status yet or a failing one, rewritten only when the
+#             verdict changes). The two jobs run in different concurrency
+#             groups, so a backfill can overlap a signing comment's run; the
+#             script drops a failure whose author signed meanwhile, and the
+#             schedule recomputes any failure left stale.
 #
 # No pull request code is checked out or run. Both jobs check out only
 # scripts/cla-check.mts, at `github.sha`: under `pull_request_target` that is the

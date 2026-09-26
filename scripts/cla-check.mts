@@ -120,7 +120,7 @@ export interface ClaOctokit {
       ) => Promise<{ data: { permission: string } }>
       getCombinedStatusForRef: (
         p: RepoParams & { ref: string; per_page: number },
-      ) => Promise<{ data: { statuses: { context: string }[] } }>
+      ) => Promise<{ data: { statuses: { context: string; state: string }[] } }>
       createCommitStatus: (
         p: RepoParams & {
           sha: string
@@ -214,8 +214,11 @@ function decodeContentBase64(data: unknown): string | null {
 export interface ClaEvaluator {
   /** The verdict for one pull request, without writing anything. */
   decide: (pr: ClaPullRequest) => Promise<ClaResult>
-  /** Decides, then sets the status on the head and syncs the comment. */
-  evaluate: (pr: ClaPullRequest) => Promise<ClaResult>
+  /**
+   * Decides, then sets the status on the head and syncs the comment. With
+   * `current` (the head's `CLA` state now), an unchanged verdict writes nothing.
+   */
+  evaluate: (pr: ClaPullRequest, current?: string) => Promise<ClaResult>
 }
 
 export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
@@ -434,12 +437,37 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     return lines.join('\n')
   }
 
-  /** Sets the status on the head it was computed for and syncs the comment. */
+  /**
+   * Sets the status on the head it was computed for and syncs the comment.
+   * Writes nothing when a failure has gone stale: one of its unsigned authors
+   * has since posted the signing sentence. That comment starts its own run,
+   * in another concurrency group from the backfill, which sets the status;
+   * a failure written after it would stand on a signed head.
+   */
   async function publish(
     pr: ClaPullRequest,
     result: Extract<ClaResult, { kind: 'evaluated' }>,
-  ): Promise<void> {
+  ): Promise<ClaResult> {
     const claUrl = `https://github.com/${owner}/${repo}/blob/${pr.base.repo.default_branch}/CLA.md`
+    const comments = await github.paginate(github.rest.issues.listComments, {
+      owner,
+      repo,
+      issue_number: pr.number,
+      per_page: 100,
+    })
+    if (result.state === 'failure') {
+      const waitingOn = new Set(result.unsigned.map((u) => u.login))
+      const signer = comments.find(
+        (c) => c.user && waitingOn.has(c.user.login) && c.body?.includes(SIGN_PHRASE),
+      )?.user
+      if (signer) {
+        return {
+          kind: 'skipped',
+          number: pr.number,
+          reason: `${signer.login} signed while this was evaluated; the signing comment's run sets the status`,
+        }
+      }
+    }
     await github.rest.repos.createCommitStatus({
       owner,
       repo,
@@ -450,12 +478,6 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       description: result.description.slice(0, 140),
     })
 
-    const comments = await github.paginate(github.rest.issues.listComments, {
-      owner,
-      repo,
-      issue_number: pr.number,
-      per_page: 100,
-    })
     const existing = comments.find(
       (c) => c.user?.type === 'Bot' && c.body?.includes(COMMENT_MARKER),
     )
@@ -468,7 +490,7 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
           body: `${COMMENT_MARKER}\n${SIGNED_COMMENT_TEXT} the [Copse CLA](${claUrl}). Thank you.`,
         })
       }
-      return
+      return result
     }
     const body = failureBody(result, claUrl)
     if (!existing) {
@@ -476,13 +498,14 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     } else if (existing.body !== body) {
       await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
     }
+    return result
   }
 
-  async function evaluate(pr: ClaPullRequest): Promise<ClaResult> {
+  async function evaluate(pr: ClaPullRequest, current?: string): Promise<ClaResult> {
     if (pr.state !== 'open') return { kind: 'skipped', number: pr.number, reason: 'not open' }
     const result = await decide(pr)
-    if (result.kind === 'evaluated') await publish(pr, result)
-    return result
+    if (result.kind !== 'evaluated' || result.state === current) return result
+    return publish(pr, result)
   }
 
   return { decide, evaluate }
@@ -507,9 +530,12 @@ export async function evaluatePullRequest(ctx: ClaContext, number: number): Prom
 }
 
 /**
- * Every open pull request. With `onlyMissing`, only heads that carry no `CLA`
- * status yet (the scheduled sweep); otherwise every head is recomputed (after
- * a signature or rule change, or on dispatch). One pull request's failure does
+ * Every open pull request. With `onlyMissing` (the scheduled sweep), heads
+ * whose `CLA` status is success are skipped and the rest recomputed: those with
+ * none yet, and failures, which may be stale (a backfill that read the comments
+ * before a signature can finish after the signing run), rewritten only if the
+ * verdict changed. Otherwise every head is recomputed and rewritten (after a
+ * signature or rule change, or on dispatch). One pull request's failure does
  * not stop the rest; the run fails at the end if any did.
  */
 export async function evaluateOpenPullRequests(
@@ -528,16 +554,19 @@ export async function evaluateOpenPullRequests(
   const failed: number[] = []
   for (const pr of pulls) {
     try {
+      let current: string | undefined
       if (options.onlyMissing) {
+        // The combined status carries the latest status of each context.
         const { data } = await github.rest.repos.getCombinedStatusForRef({
           owner,
           repo,
           ref: pr.head.sha,
           per_page: 100,
         })
-        if (data.statuses.some((s) => s.context === CLA_CONTEXT)) continue
+        current = data.statuses.find((s) => s.context === CLA_CONTEXT)?.state
+        if (current === 'success') continue
       }
-      const result = await evaluator.evaluate(pr)
+      const result = await evaluator.evaluate(pr, current)
       log(summarize(result))
       results.push(result)
     } catch (error) {
