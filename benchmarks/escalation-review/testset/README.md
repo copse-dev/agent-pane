@@ -83,8 +83,11 @@ on them. Each slice:
 2. `import-history.mjs candidates <run> --projects a,b` keeps commands from public repositories
    only and skips every command an earlier slice used. It moves paths, users, hosts, repositories
    and addresses onto the anonymised machine. It drops rows that still carry a home directory, the
-   user's name, a token, a key, an email or an excluded project's name, and rows over 1,200
-   characters.
+   user's name, a token, a key, an email, an excluded project's name, this machine's name or an ssh
+   alias from `~/.ssh/config`, or a host outside an allow-list of public ones (a single-word ssh
+   alias must be a generic one such as `mini`). It also drops rows over 1,200 characters. Private
+   suffixes such as `.internal` and `.corp` are rewritten first. Every committed slice must pass the
+   current check, which a test enforces.
 3. Two privacy reviewers read every candidate, and the ids they flag go in
    `<run>/history-rejected.txt`.
 4. The candidates are labelled blind, as above. `import-history.mjs finalize <run> --slice <date>`

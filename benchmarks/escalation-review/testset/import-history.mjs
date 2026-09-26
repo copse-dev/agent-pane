@@ -15,8 +15,15 @@
 // later slice reuses them. The ledger is <COPSE_DIR or ~/.copse>/cache/escalation-review/
 // sliced.txt, one sha256 of a raw command per line, and never leaves this machine.
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir, hostname } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { HOME, TESTSET, WORKSPACE } from './paths.mjs'
@@ -95,7 +102,108 @@ export function anonymise(command, { realHome, workspace, project, user }) {
     .replace(new RegExp(`\\b${escape(user)}\\/[\\w.-]+`, 'gi'), 'o/r')
     .replace(/\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)(?:\.\d{1,3}){2,3}\b/g, '192.0.2.10')
     .replace(/\b[\w-]+\.local\b/gi, 'mini.local')
+    .replace(PRIVATE_HOST, () => 'internal.example')
     .replace(new RegExp(`\\b${escape(user)}\\b`, 'gi'), 'dev')
+}
+
+/** Hosts on suffixes that only exist inside an organisation. */
+const PRIVATE_HOST = /\b(?:[\w-]+\.)+(?:internal|corp|lan|home|intranet|private|localdomain)\b/gi
+
+/**
+ * Hosts a published command may name. Anything else is dropped until a reviewer
+ * adds it here: an unknown host can be someone's infrastructure.
+ */
+const PUBLIC_HOSTS = new Set([
+  'github.com',
+  'githubusercontent.com',
+  'github.io',
+  'githubassets.com',
+  'gitlab.com',
+  'bitbucket.org',
+  'crates.io',
+  'docs.rs',
+  'rust-lang.org',
+  'rustup.rs',
+  'npmjs.org',
+  'npmjs.com',
+  'yarnpkg.com',
+  'pypi.org',
+  'pythonhosted.org',
+  'golang.org',
+  'go.dev',
+  'nodejs.org',
+  'deno.land',
+  'jsdelivr.net',
+  'unpkg.com',
+  'docker.com',
+  'docker.io',
+  'ghcr.io',
+  'apple.com',
+  'mozilla.org',
+  'servo.org',
+  'tauri.app',
+  'w3.org',
+  'whatwg.org',
+  'wikipedia.org',
+  'huggingface.co',
+  'copse.dev',
+  'example.com',
+  'example.org',
+  'example.net',
+])
+const RESERVED_SUFFIX =
+  /(?:^|\.)(?:example|invalid|test|localhost)$|^localhost$|^(?:\d{1,3}\.){3}\d{1,3}$/
+
+/** Hosts a command names in a URL, after `user@`, or as an ssh-family destination. */
+export function namedHosts(command) {
+  const hosts = []
+  for (const match of command.matchAll(
+    /[a-z][\w+.-]*:\/\/(?:[\w.%+-]*(?::[\w.%+-]*)?@)?(\[[\da-f:]+\]|[a-z0-9.-]+)/gi,
+  )) {
+    hosts.push(match[1])
+  }
+  for (const match of command.matchAll(/\b[\w.+-]+@([a-z0-9-]+(?:\.[a-z0-9-]+)+)/gi)) {
+    hosts.push(match[1])
+  }
+  // ssh, sftp and mosh take the host as their first operand; flags may take a value.
+  const shell =
+    /\b(?:ssh|sftp|mosh)\s+(?:-\S+\s+(?:\S+\s+)?)*(?:[\w.-]+@)?([a-z0-9-]+(?:\.[a-z0-9-]+)*)(?=[\s'"]|$)/gi
+  for (const match of command.matchAll(shell)) hosts.push(match[1])
+  // scp and rsync name a remote as `host:path`.
+  if (/\b(?:scp|rsync)\b/.test(command)) {
+    for (const match of command.matchAll(
+      /(?:^|\s)(?:[\w.-]+@)?([a-z0-9-]+(?:\.[a-z0-9-]+)*):(?!\/\/)/gi,
+    )) {
+      hosts.push(match[1])
+    }
+  }
+  return [...new Set(hosts.map((host) => host.toLowerCase().replace(/\.$/, '')))]
+}
+
+/** Single-word ssh aliases generic enough to name nobody's machine. */
+const GENERIC_ALIASES = new Set([
+  'mini',
+  'host',
+  'server',
+  'remote',
+  'bastion',
+  'web',
+  'box',
+  'devbox',
+  'buildbox',
+  'prod',
+  'staging',
+  'localhost',
+])
+
+function isPublicHost(host) {
+  if (RESERVED_SUFFIX.test(host)) return true
+  if (!host.includes('.')) return GENERIC_ALIASES.has(host)
+  const labels = host.split('.')
+  for (let i = 0; i < labels.length - 1; i++) {
+    if (PUBLIC_HOSTS.has(labels.slice(i).join('.'))) return true
+  }
+  return false
 }
 
 /** Why an anonymised command must not be published, or null. */
@@ -120,6 +228,7 @@ export function leakReason(command, { user, denied = [] }) {
   const name = denied.find((word) => lower.includes(word.toLowerCase()))
   if (name) return 'an excluded project name'
   if (command.length > 1200) return 'too long to review'
+  if (namedHosts(command).some((host) => !isPublicHost(host))) return 'an unrecognised hostname'
   return null
 }
 
@@ -130,6 +239,23 @@ function jsonl(path) {
     .map((line) => JSON.parse(line))
 }
 
+/**
+ * This machine's name and its ssh aliases (`Host` lines in ~/.ssh/config). A
+ * command naming one of them names the user's own machines.
+ */
+function machineNames(realHome) {
+  const names = [hostname().split('.')[0] ?? '']
+  try {
+    const config = readFileSync(join(realHome, '.ssh', 'config'), 'utf8')
+    for (const match of config.matchAll(/^\s*Host\s+(.+)$/gim)) {
+      names.push(...(match[1] ?? '').split(/\s+/).filter((alias) => !/[*?]/.test(alias)))
+    }
+  } catch {
+    // No ssh config: nothing to add.
+  }
+  return names.filter((name) => name.length >= 4 && !GENERIC_ALIASES.has(name.toLowerCase()))
+}
+
 export function candidates(runDir, projects, env = process.env) {
   const realHome = env.HOME ?? homedir()
   const user = basename(realHome)
@@ -138,7 +264,9 @@ export function candidates(runDir, projects, env = process.env) {
   const rows = jsonl(join(runDir, 'dataset.jsonl'))
   const denied = [
     ...new Set(rows.map((row) => basename(projectOf(row))).filter((name) => name.length >= 4)),
-  ].filter((name) => !allowed.has(name))
+  ]
+    .filter((name) => !allowed.has(name))
+    .concat(machineNames(realHome))
   const seen = new Set()
   const out = []
   const dropped = {}
@@ -158,6 +286,8 @@ export function candidates(runDir, projects, env = process.env) {
   }
   const path = join(runDir, 'history-candidates.jsonl')
   writeFileSync(path, out.map((row) => JSON.stringify(row)).join('\n') + '\n', { mode: 0o600 })
+  // `mode` applies only when the file is created; a rerun must not keep a wider mode.
+  chmodSync(path, 0o600)
   return { path, kept: out.length, dropped }
 }
 
@@ -183,6 +313,7 @@ export function finalize(runDir, slice, env = process.env) {
   // Every candidate counts as used, rejected or not: a rejected command is not fresh either.
   const used = jsonl(join(runDir, 'history-candidates.jsonl')).map((row) => row.rawHash)
   appendFileSync(ledger, used.map((line) => `${line}\n`).join(''), { mode: 0o600 })
+  chmodSync(ledger, 0o600)
   return { target, rows: rows.length, rejected: rejected.size }
 }
 

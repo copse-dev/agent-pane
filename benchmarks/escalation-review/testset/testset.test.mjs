@@ -4,7 +4,7 @@ import { TIERS } from '../scripts/score.mjs'
 import { MAX_FIXTURES_PER_FILE, build, family, jsonl, relocateShellScope } from './build.mjs'
 import { SNAPSHOT, analyzeTestset, drift, loadTestset, violations } from './gates.mjs'
 import { parseCsv, shuffle } from './sample-hf.mjs'
-import { anonymise, leakReason } from './import-history.mjs'
+import { anonymise, leakReason, namedHosts } from './import-history.mjs'
 import { accuracy, predicted } from './score-models.mjs'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -106,7 +106,38 @@ test('history slices are anonymised, leak-checked and held out', () => {
     'an excluded project name',
   )
   assert.equal(leakReason('git clone git@github.com:o/r.git', { user: 'alice' }), null)
+  assert.equal(
+    anonymise('ssh deploy@build.corp.internal uptime', context),
+    'ssh dev@example.com uptime',
+  )
+  assert.equal(
+    anonymise('curl https://ci.acme.corp/status', context),
+    'curl https://internal.example/status',
+  )
+  assert.equal(
+    leakReason('ssh build.acme-private.net uptime', { user: 'alice' }),
+    'an unrecognised hostname',
+  )
+  assert.equal(
+    leakReason('curl https://metrics.acme.io/x', { user: 'alice' }),
+    'an unrecognised hostname',
+  )
+  assert.equal(leakReason('curl https://api.github.com/repos/o/r', { user: 'alice' }), null)
+  assert.equal(leakReason('cat package.json && node index.js', { user: 'alice' }), null)
+  assert.deepEqual(namedHosts('scp -P 22 build.tar dev@mini.example:/tmp/'), ['mini.example'])
+  assert.deepEqual(namedHosts("ssh mini 'docker ps'"), ['mini'])
+  assert.equal(leakReason("ssh mini 'docker ps'", { user: 'alice' }), null)
+  assert.equal(
+    leakReason('ssh workstation-7 uptime', { user: 'alice' }),
+    'an unrecognised hostname',
+  )
+  assert.equal(
+    leakReason('scp build.tar workbox7:/tmp/', { user: 'alice' }),
+    'an unrecognised hostname',
+  )
   for (const c of loadTestset().filter((c) => c.source.startsWith('history:'))) {
     assert.equal(c.split, 'holdout', `${c.id} is a history row and must stay held out`)
+    // Every committed slice passes the current leak check, whenever the check grows.
+    assert.equal(leakReason(c.command, { user: 'nobody-in-particular' }), null, c.id)
   }
 })
