@@ -535,6 +535,92 @@ export function terminateAcpChild(child: ChildProcess): void {
 }
 
 /**
+ * How long a disposed agent gets to wind down on its own after its stdin
+ * closes before {@link shutdownAcpChild} falls back to {@link terminateAcpChild}.
+ */
+const ACP_GRACEFUL_EXIT_MS = 3_000
+
+const GROUP_DRAIN_POLL_MS = 50
+
+const acpChildShutdowns = new WeakMap<ChildProcess, Promise<void>>()
+const pendingAcpChildShutdowns = new Set<Promise<void>>()
+
+/** True while `child` leads a process group that still has live members. */
+function processGroupAlive(child: ChildProcess): boolean {
+  if (child.pid === undefined || process.platform === 'win32') return false
+  try {
+    process.kill(-child.pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Dispose an ACP agent the way the protocol expects: close its stdin and let it
+ * tear its own sessions down, signalling only what is still alive at the
+ * deadline.
+ *
+ * A group SIGTERM reaches the agent and everything it spawned at the same
+ * instant. `claude-agent-acp` answers SIGTERM by cancelling each session through
+ * the Claude Code subprocess the same signal just killed, so every teardown
+ * logged "cancellation failed during teardown … exited with code 143". On
+ * stdin EOF it cancels against a live subprocess and closes it itself.
+ *
+ * The agent's own children usually outlive it briefly while they finish closing
+ * (~700ms for Claude Code), so the promise waits for the whole group to drain,
+ * not just the leader. Idempotent per child.
+ */
+export function shutdownAcpChild(
+  child: ChildProcess,
+  graceMs = ACP_GRACEFUL_EXIT_MS,
+): Promise<void> {
+  const existing = acpChildShutdowns.get(child)
+  if (existing) return existing
+  const done = new Promise<void>((resolve) => {
+    let finished = false
+    let drainPoll: ReturnType<typeof setInterval> | undefined
+    const finish = (terminate: boolean): void => {
+      if (finished) return
+      finished = true
+      clearTimeout(deadline)
+      clearInterval(drainPoll)
+      child.off('exit', onExit)
+      // Reaches the agent if it ignored EOF, or its lingering children if not.
+      if (terminate) terminateAcpChild(child)
+      resolve()
+    }
+    const drain = (): void => {
+      if (!processGroupAlive(child)) finish(false)
+    }
+    const onExit = (): void => {
+      drain()
+      if (!finished) drainPoll = setInterval(drain, GROUP_DRAIN_POLL_MS)
+    }
+    const deadline = setTimeout(() => {
+      finish(true)
+    }, graceMs)
+    if (child.exitCode !== null || child.signalCode !== null) onExit()
+    else child.once('exit', onExit)
+    // An already-destroyed pipe (the connection aborted it) has signalled EOF.
+    child.stdin?.end()
+  })
+  acpChildShutdowns.set(child, done)
+  pendingAcpChildShutdowns.add(done)
+  void done.then(() => pendingAcpChildShutdowns.delete(done))
+  return done
+}
+
+/**
+ * Wait for every in-flight {@link shutdownAcpChild}. Quit awaits this so an
+ * agent still winding down is not orphaned by the app exiting first; each
+ * shutdown is bounded by its own deadline.
+ */
+export async function settleAcpChildShutdowns(): Promise<void> {
+  await Promise.all([...pendingAcpChildShutdowns])
+}
+
+/**
  * Configured servers must not be handed straight to an external agent. Direct
  * forwarding makes each call invisible to Copse, so hooks, read-only mode and
  * per-tool allow/ask/block policies cannot be enforced. Their registered tools
@@ -751,7 +837,7 @@ function acpChildStdoutStream(
   const stdout = child.stdout
   if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
   let cancelRead = (): void => {
-    terminateAcpChild(child)
+    void shutdownAcpChild(child)
   }
   return new ReadableStream<Uint8Array>({
     start(controller): void {
@@ -792,12 +878,14 @@ function acpChildStdoutStream(
           })
         }
       }
+      // Closing the connection cancels this read; that is a dispose, not a
+      // fault, so the agent gets to exit on its own first.
       cancelRead = (): void => {
         if (!settled) {
           settled = true
           cleanup()
         }
-        terminateAcpChild(child)
+        void shutdownAcpChild(child)
       }
       stdout.on('data', onData)
       stdout.on('error', onStdoutError)
@@ -863,7 +951,7 @@ async function spawnTransport(
   return {
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
-      terminateAcpChild(child)
+      void shutdownAcpChild(child)
     },
     resourceFault: stderr.resourceFault,
   }
@@ -1327,6 +1415,6 @@ export async function probeAcpAgent(
     throw acpProcessExitError(config.command, code, signal, stderr.tail())
   } finally {
     clearTimeout(timer)
-    terminateAcpChild(child)
+    void shutdownAcpChild(child)
   }
 }

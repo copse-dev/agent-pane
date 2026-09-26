@@ -16,7 +16,12 @@ import type { AcpAgentSandboxConfig } from '@shared/types/acp.ts'
 import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { baseSandboxConfig } from '../../project-sandbox/config.ts'
 import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
-import { spawnAcpAgentProcess, terminateAcpChild, type AcpAgentSpawnConfig } from './acp-client.ts'
+import {
+  shutdownAcpChild,
+  spawnAcpAgentProcess,
+  terminateAcpChild,
+  type AcpAgentSpawnConfig,
+} from './acp-client.ts'
 import {
   ACP_SESSION_HOST_REQUEST_ENV,
   type AcpSessionHostMessage,
@@ -162,8 +167,10 @@ async function main(): Promise<void> {
   child.stderr?.pipe(process.stderr)
   process.stdin.pipe(stdin)
   stdout.pipe(process.stdout)
+  // The pipe above has already forwarded EOF; give the agent the same chance
+  // to wind down that an unsandboxed one gets (see shutdownAcpChild).
   process.stdin.once('end', () => {
-    terminateAcpChild(child)
+    void shutdownAcpChild(child)
   })
   child.once('error', (err) => {
     console.error(`[acp-session-host] agent process error: ${errorMessage(err)}`)

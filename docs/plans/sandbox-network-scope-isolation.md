@@ -171,6 +171,11 @@ five bare `child.kill()` sites; both spawn paths now pass
 `detached: detachForGroupKill` (newly exported from `project-sandbox/spawn.ts`),
 and `release` is bound to `exit`, `close`, and `error`.
 
+Later, disposing a session stopped signalling first: `shutdownAcpChild` closes the
+agent's stdin, waits up to `ACP_GRACEFUL_EXIT_MS` for its process group to drain,
+and only then falls back to `terminateAcpChild`. A group SIGTERM killed the agent's
+own subprocesses before the agent could cancel its sessions through them.
+
 ### Phase 2 — Make it observable (implemented)
 
 - Add a `label` to `SandboxNetworkScope` (`acp-probe:codex`,
