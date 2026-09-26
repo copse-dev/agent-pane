@@ -50,7 +50,7 @@ def head_for(question):
     if kind == "choice":
         if not isinstance(criteria, dict) or len(criteria) < 2:
             raise ValueError("choice question needs at least two options")
-        head["labels"] = {str(k): str(v) for k, v in criteria.items()}
+        head["labels"] = {str(k): str(k) if v is None else str(v) for k, v in criteria.items()}
 
         def decode(probs):
             choice = max(probs, key=probs.get)
@@ -69,9 +69,10 @@ def head_for(question):
 
         return head, decode
     if kind == "noul":
+        described = criteria if isinstance(criteria, dict) else {}
         head["labels"] = {
-            "yes": criteria if isinstance(criteria, str) and criteria else "The statement holds.",
-            "no": "The statement does not hold.",
+            "yes": described.get("true") or "The statement holds.",
+            "no": described.get("false") or "The statement does not hold.",
         }
 
         def decode(probs):

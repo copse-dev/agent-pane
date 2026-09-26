@@ -18,16 +18,21 @@ pnpm run eval:classifier --config benchmarks/classifiers/gliner-decide.json \
 
 The first start downloads about 1.8 GB of fp32 weights and takes around 30 s to load. The server
 serves one request at a time and binds loopback only.
+`python3 benchmarks/classifiers/gliner-decide/server.test.py` checks the question mapping without
+the model or its dependencies.
 
 ## How a Copse question maps to GLiNER
 
 - **The `state`** is rendered as `key: value` lines, with nested values as JSON. That rendering
   is the text the model reads.
 - **A `choice` question** becomes one classification head. Its options, with their descriptions,
-  become the labels, and its instructions become the head's prompt.
+  become the labels, and its instructions become the head's prompt. An option without a
+  description uses its name.
 - **A `score` question** becomes a head with one label per level. The answer is the likeliest
   level.
-- **A boolean (`noul`) question** becomes a yes/no head. The answer is P(yes).
+- **A boolean (`noul`) question** becomes a yes/no head. The question's `true` and `false`
+  criteria describe the yes and no labels, with a generic statement for any that is missing. The
+  answer is P(yes).
 - **All heads are scored in a single forward pass.**
 
 Each head is requested as softmax over every label (`multi_label` with `cls_threshold: 0` and
