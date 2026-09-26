@@ -1959,6 +1959,15 @@ export async function runAgent(
           signal: AbortSignal,
           toolCallId: string,
         ): Promise<ToolExecuteResult> => {
+          // `parentTools` only narrows what the model is offered; a model can still
+          // name any registered tool (e.g. through prompt injection). The registry
+          // is process-wide, so refuse Apple tools here as the ACP bridge does.
+          if (!isAppleDevelopmentToolOffered(name, getThreadExecutionContext()?.projectId)) {
+            throw new Error(
+              `Tool "${name}" is not available in this project. Apple Development tools run ` +
+                'only in a project enrolled in Apple Development on a local Mac.',
+            )
+          }
           const instructionContextPaths = instructionContextPathsForTool(name, args)
           if (instructionContextPaths.length > 0) {
             const activation = await activateNestedInstructionSources(

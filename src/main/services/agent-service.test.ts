@@ -720,6 +720,103 @@ describe('runAgent AgentHost decoupling', () => {
     }
   })
 
+  it('refuses an Apple Development tool called by name in a project that is not enrolled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-apple-scope-'))
+    const ran: string[] = []
+    const registry = new ToolRegistry()
+    // The registry is process-wide, so a macOS host with the plugin on has
+    // these registered for every thread; only the offered list is per turn.
+    for (const name of ['open_simulator_desktop', 'mcp__xcodebuildmcp__build_sim']) {
+      registry.register(
+        defineTool({
+          name,
+          description: 'Test Apple tool',
+          parameters: z.object({}),
+          execute: () => {
+            ran.push(name)
+            return Promise.resolve('ran')
+          },
+        }),
+      )
+    }
+
+    let calls = 0
+    const offered: string[][] = []
+    const results = new Map<string, { result: string; isError?: boolean }>()
+    const provider: LLMProvider = {
+      stream: async function* (messages, tools) {
+        calls += 1
+        offered.push(tools.map((tool) => tool.name))
+        if (calls === 1) {
+          // Prompt injection: the model names tools it was never offered.
+          yield {
+            type: 'tool_call' as const,
+            toolCall: { id: 'simulator', name: 'open_simulator_desktop', args: {} },
+          }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: { id: 'xcode', name: 'mcp__xcodebuildmcp__build_sim', args: {} },
+          }
+          return
+        }
+        for (const message of messages) {
+          if (message.role !== 'tool') continue
+          for (const result of message.toolResults) results.set(result.toolCallId, result)
+        }
+        yield { type: 'text' as const, text: 'Done.' }
+      },
+    }
+    setDefaultPluginRegistry(new PluginRegistry())
+    await setSetting('subagentsEnabled', false)
+    await setSetting('skillsEnabled', false)
+
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-not-enrolled',
+            threadId: 'thread-apple-scope',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-apple-scope', () =>
+              agentService.runAgent(
+                'thread-apple-scope',
+                'Build the app.',
+                [],
+                { emit: () => undefined },
+                registry,
+                {
+                  provider,
+                  contextWindow: 100_000,
+                  model: 'claude-sonnet-4-6',
+                  maxSteps: 4,
+                  maxLlmCalls: 4,
+                },
+              ),
+            ),
+        ),
+      )
+      assert.equal(calls, 2)
+      assert.ok(offered[0], 'first model call')
+      assert.ok(!offered[0].includes('open_simulator_desktop'))
+      assert.ok(!offered[0].includes('mcp__xcodebuildmcp__build_sim'))
+      assert.deepEqual(ran, [])
+      for (const id of ['simulator', 'xcode']) {
+        const result = results.get(id)
+        assert.ok(result, id)
+        assert.match(result.result, /not available in this project/, id)
+        assert.match(result.result, /enrolled in Apple Development/, id)
+      }
+    } finally {
+      setDefaultPluginRegistry(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('emits a structured terminal record with raw provider failure details', async () => {
     const received: StreamChunk[] = []
     const host: AgentHost<StreamChunk> = {
