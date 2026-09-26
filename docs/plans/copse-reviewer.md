@@ -1434,6 +1434,12 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
   a newer push's summary. A summary-only run also skips when a full review has already
   summarised the same commit, so a push-time summary that finishes late cannot discard the
   review's evidence.
+- **No CI re-run.** CI subscribes to `edited` for base retargets, so a description edit
+  starts a whole CI run on the unchanged head. The push-time summary therefore edits with
+  its job's own `GITHUB_TOKEN` (`pull-requests: write` on that job only), because GitHub
+  starts no workflow run for an event that token causes; with the App token, every push cost
+  two full CI runs. The findings job still writes as the App, once per full review, so a
+  review still costs one extra CI run.
 - **Limits.** The forge has no conditional update for a description, so an author's edit
   landing between the read and the write is lost, as is the earlier of two runs that write
   within the same round trip. A tool that
