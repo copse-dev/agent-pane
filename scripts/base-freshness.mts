@@ -107,7 +107,7 @@ export type Candidate = {
 }
 
 export type Verdict = {
-  conclusion: 'success' | 'failure'
+  conclusion: 'success' | 'neutral' | 'failure'
   title: string
   summary: string
 }
@@ -120,6 +120,11 @@ export type Verdict = {
  * merging" uses. Zero means the tested merge result is still the merge result.
  * A positive count is reported as exactly that — the branch is behind — and
  * deliberately makes no claim about which base CI merged (see the header).
+ * It is `neutral`, not `failure`: every push to the base makes every open pull
+ * request behind, and a red check there invites a base merge on each one,
+ * which re-runs its whole CI and restarts its reviews for no finding. This
+ * context is advisory and never required, so `neutral` passing a required
+ * check does not apply.
  *
  * `behindBy === null` means the comparison could not be established at all.
  * That is a failure, not a neutral: an unestablished base is indistinguishable
@@ -144,7 +149,7 @@ export function decideBaseFreshness(candidate: Candidate, behindBy: number | nul
   if (behindBy > 0) {
     const commits = behindBy === 1 ? '1 commit' : `${String(behindBy)} commits`
     return {
-      conclusion: 'failure',
+      conclusion: 'neutral',
       title: `Branch is ${commits} behind ${candidate.baseRef}`,
       summary:
         `This branch does not contain ${commits} on ${where}. This reports the branch only: ` +
@@ -458,7 +463,7 @@ async function main(): Promise<void> {
     outcomes = [await evaluateSettled(api, candidate, publishImpl)]
   }
 
-  const stale = outcomes.filter((outcome) => outcome.verdict.conclusion === 'failure').length
+  const stale = outcomes.filter((outcome) => outcome.verdict.conclusion !== 'success').length
   const unpublished = outcomes.filter((outcome) => !outcome.published)
   console.log(`${CHECK_NAME}: ${String(outcomes.length)} evaluated, ${String(stale)} not current`)
 
