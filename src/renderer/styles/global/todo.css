@@ -13,7 +13,7 @@
   background: var(--bg-elevated);
   padding: var(--spacing-sm) var(--spacing-lg);
   margin-bottom: var(--spacing-sm);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
 }
 .plugin-panel-header {
   display: flex;
@@ -21,7 +21,7 @@
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-xs);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
@@ -36,7 +36,7 @@
   text-transform: none;
   letter-spacing: normal;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 /* Zero padding on the inner lists only — not `section.plugin-panel.plugin-panel-list`
    (createPluginPanelEl also puts plugin-panel-${kind} on the section). */
@@ -106,11 +106,11 @@
 }
 .plugin-panel-row-detail {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .plugin-panel-badge {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--bg-hover);
@@ -144,7 +144,7 @@
     ),
     color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
   padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
 }
 .messages-list > [data-review-card] {
   width: min(100%, var(--chat-content-max));
@@ -179,7 +179,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--sev);
@@ -220,7 +220,7 @@
     ),
     color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
   padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
 }
 .messages-list > [data-review-report-card] {
   width: min(100%, var(--chat-content-max));
@@ -239,7 +239,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--sev);
@@ -260,7 +260,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   margin-top: var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 .review-report-check,
@@ -268,7 +268,7 @@
   padding: 1px 6px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-primary) 60%, transparent);
+  background: color-mix(in srgb, var(--bg-base) 60%, transparent);
 }
 .review-report-check[data-verdict='regressed'] {
   color: var(--danger, #d9534f);
@@ -298,7 +298,7 @@
 .review-finding {
   --finding-sev: var(--text-secondary);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-base) 70%, transparent);
 }
 .review-finding[data-severity='critical'],
 .review-finding[data-severity='high'] {
@@ -325,20 +325,20 @@
   padding: var(--spacing-xs) var(--spacing-sm);
 }
 .review-finding-severity {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--finding-sev);
 }
 .review-finding-class {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 .review-finding-location {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 .review-finding-claim {
@@ -346,7 +346,7 @@
   color: var(--text-primary);
 }
 .review-finding-verdict {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -359,7 +359,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .review-finding-reason {
   margin: 0;
@@ -370,9 +370,9 @@
   margin: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius);
-  background: var(--bg-secondary, var(--bg-primary));
+  background: var(--bg-elevated);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -389,13 +389,13 @@
 }
 .review-finding-command {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .review-finding-evidence-meta,
 .review-finding-provenance,
 .review-finding-confidence {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .review-finding-actions {
   display: flex;
@@ -406,7 +406,7 @@
 .review-finding-dismiss,
 .review-finding-restore,
 .review-report-dismissed-toggle {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 1px 8px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -424,7 +424,7 @@
 }
 .review-report-footer {
   margin-top: var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -448,7 +448,7 @@
     ),
     color-mix(in srgb, var(--sev) var(--callout-hatch-fill), transparent);
   padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
 }
 .messages-list > [data-comparison-card] {
   width: min(100%, var(--chat-content-max));
@@ -466,7 +466,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--sev);
@@ -492,7 +492,7 @@
 }
 .comparison-panel-col-title {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   margin-bottom: var(--spacing-xs);
   word-break: break-word;

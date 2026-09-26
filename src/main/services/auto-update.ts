@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
 import { getAutoUpdatePolicy } from '../../shared/release-channel.mts'
+import { RELEASES_URL, fetchUpdateChangelog } from './update-changelog.ts'
 import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 
 // Auto-update for the direct-download (Developer ID + notarized) macOS build.
@@ -48,7 +49,7 @@ export function initAutoUpdate(win: BrowserWindow): void {
   autoUpdater.allowDowngrade = updatePolicy.allowDowngrade
 
   autoUpdater.on('update-available', (info: UpdateInfo): void => {
-    void promptDownload(win, info.version)
+    void promptDownload(win, info.version, updatePolicy.allowPrerelease)
   })
   autoUpdater.on('update-downloaded', (info: UpdateInfo): void => {
     void promptInstall(win, info.version)
@@ -79,10 +80,22 @@ export function checkForUpdatesManually(win: BrowserWindow): void {
   })
 }
 
-async function promptDownload(_win: BrowserWindow, version: string): Promise<void> {
+async function promptDownload(
+  _win: BrowserWindow,
+  version: string,
+  includePrereleases: boolean,
+): Promise<void> {
+  // Every version since the running one, so a user who skipped releases sees
+  // what each changed. An unreachable API just leaves the changelog out.
+  const changelog = await fetchUpdateChangelog({
+    currentVersion: app.getVersion(),
+    latestVersion: version,
+    includePrereleases,
+  })
   const response = await requestUpdatePrompt({
     message: `Copse ${version} is available`,
     detail: 'Download the update now? You can install it immediately once downloaded.',
+    ...(changelog.length > 0 ? { changelog, changelogUrl: RELEASES_URL } : {}),
     buttons: ['Download', 'Later'],
     defaultIndex: 0,
     cancelIndex: 1,

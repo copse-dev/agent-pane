@@ -2,7 +2,7 @@ import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import electronBinary from 'electron'
 import { createRequire } from 'node:module'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   forceKillWedgedE2eSession,
@@ -19,6 +19,7 @@ import { driverVerboseOptions } from './tests/e2e/helpers/driver-verbose.ts'
 import { shouldUseChromiumHeadless } from './tests/e2e/helpers/display-mode.mts'
 import { E2E_GIT_BRANCH, E2E_SHELL } from './tests/e2e/helpers/e2e-env.ts'
 import { installE2eProfileCleanup } from './tests/e2e/helpers/profile-cleanup.ts'
+import { makeE2eScratchDir } from './tests/e2e/helpers/scratch-dir.ts'
 import {
   assertE2eDeviceScaleFactor,
   E2E_DEVICE_SCALE_FACTOR,
@@ -198,7 +199,7 @@ export const config: Options.Testrunner = {
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
     cleanupE2eUserDataDir?.()
-    e2eUserDataDir = mkdtempSync(join(process.cwd(), '.wdio-profile-'))
+    e2eUserDataDir = makeE2eScratchDir('.wdio-profile-')
     cleanupE2eUserDataDir = installE2eProfileCleanup(e2eUserDataDir)
 
     const e2eEnv: Record<string, string> = {

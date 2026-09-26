@@ -56,7 +56,7 @@
   color: var(--text-muted);
 }
 .thread-proposal-eyebrow {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -82,7 +82,7 @@
   gap: var(--spacing-xs);
   margin-left: auto;
   padding-left: var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -97,7 +97,7 @@
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -147,7 +147,7 @@
   padding: 2px var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -167,7 +167,7 @@
   gap: var(--spacing-xs);
   cursor: pointer;
   list-style: none;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 .thread-proposal-prompt-summary::-webkit-details-marker {
@@ -192,7 +192,7 @@
   background: var(--bg-base);
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: var(--line-height-base);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -212,5 +212,5 @@
 }
 .thread-proposal-error {
   color: var(--error);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }

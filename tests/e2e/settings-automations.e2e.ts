@@ -12,6 +12,7 @@ import {
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
+import { tokenColour } from './helpers/theme.ts'
 
 const PROJECT_ID = 'e2e-settings-automations'
 const SCHEDULE_ID = 'schedule-morning-review'
@@ -215,6 +216,13 @@ describe('settings automations plugin', function () {
     })
     assert.ok(fade.copy !== null && fade.copy < 1, 'a paused schedule still reads as paused')
     assert.equal(fade.remove, 1, 'the paused row does not fade its Delete button')
+    // The schedule is summary text, not a control, so it is not painted in the
+    // interaction accent.
+    const scheduleColour = await browser.execute(() => {
+      const schedule = document.querySelector('.automation-row-schedule')
+      return schedule ? getComputedStyle(schedule).color : null
+    })
+    assert.equal(scheduleColour, await tokenColour('--text-secondary'))
     await saveElementScreenshot('.automation-plugin-settings', 'settings-automations.png')
 
     // Hovered "Run now" keeps a readable label. The bespoke button it replaced

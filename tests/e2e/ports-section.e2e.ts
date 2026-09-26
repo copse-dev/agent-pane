@@ -7,6 +7,7 @@ import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approva
 import { assertNoErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
+import { tokenColour } from './helpers/theme.ts'
 
 // Ports are discovered by scanning the host, and the CI image has neither `ss`
 // nor `lsof` — so this spec seeds the rows main would have produced. What it
@@ -108,6 +109,15 @@ describe('ports section', function () {
     })
     const kill = actions.buttons.find((button) => button.label === 'Kill')
     assert.ok(kill?.classes.includes('ui-btn-danger'), 'Kill is the kit danger variant')
+
+    // The Open button's outline resolves to a defined token. The bespoke
+    // `.ports-btn` it replaced named `--bg-secondary`, which does not exist and
+    // computed to transparent (#3065); the kit secondary is outlined by design.
+    const openBorder = await browser.execute(() => {
+      const button = document.querySelector('.ports-open-btn')
+      return button ? getComputedStyle(button).borderTopColor : null
+    })
+    assert.equal(openBorder, await tokenColour('--border', 'border-top-color'))
 
     await prepareE2eScreenshot()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'ports-section-owned.png'))
