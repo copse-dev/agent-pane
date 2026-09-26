@@ -445,6 +445,9 @@ Changing one of these requires updating this document in the same change — the
    looked at and anchored at the code that causes it. Taste — a colour or spacing a reviewer
    would have chosen differently — stays out, as style does. See §Pull request conversation
    and images.
+   _Amended 2026-09-26:_ a description summary (a risk level and a short overview, §PR
+   description summary) is allowed. It is not a finding: it never enters the findings list,
+   the ranking, SARIF or B8's precision measurement, and no lens produces it.
 5. **B5 — TypeScript with pnpm is the only ecosystem for now.** Stage 0's build and test
    detection targets TypeScript/pnpm repositories only; other ecosystems are unscheduled
    until there is a consumer for them. Recorded 2026-09-04; answers Q16.
@@ -1188,7 +1191,7 @@ that setting; it does not transfer to the offline track. Price floor for context
 free, GitLab Duo about $0.25 per MR, Bugbot about $1.20 per review, Anthropic managed review
 in the tens of dollars.
 
-**Where this design is weaker.** Table stakes it lacks: PR summaries, inline suggested
+**Where this design is weaker.** Table stakes it lacks: inline suggested
 changes, one-click fix, learnings, four-forge support, two-click install. Cost, because
 verification is the expensive stage. Latency, because ninety seconds is unreachable if the
 suite runs. Codebase context, where Greptile's graph is a real advantage on large repos. And
@@ -1462,3 +1465,46 @@ Not done here, deliberately:
 - **Pulling a pull request's conversation into the app.** The app reviews a thread's
   checkout and knows no pull request number; its GitHub backend reads comments for the PR
   panel but is not wired to the reviewer.
+
+### PR description summary (2026-09-26)
+
+Bugbot and similar reviewers keep a short summary at the bottom of the pull request's
+description: a risk level with one sentence of reasoning, an overview of what the change does,
+and a footer naming the commit, between HTML-comment markers so each run replaces it in place.
+Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as amended.
+
+- **Shape.** `packages/review/src/pr-summary.ts` renders a `> [!NOTE]` block between
+  `<!-- copse-review-summary -->` and `<!-- /copse-review-summary -->`: **Low**, **Medium**
+  or **High risk** and the reason, **Overview** as up to five points, and a footer naming the
+  commit and, when a review accompanies it, how many issues that review reported.
+- **Ownership.** Only the block the tool wrote is replaced: the last start marker whose next
+  marker is the end marker, each a whole line outside fenced code, with exactly the rendered
+  shape between them and a hidden digest line that still matches that text. A marker quoted
+  in prose or a code fence, a marker pair the author wrote, or a block the author edited,
+  even one reworded sentence, is the author's text and is kept, and a new block is appended
+  at the bottom. Nothing else in the description changes.
+- **Generation.** One tool-free model turn over the Stage 1 context that must end in
+  `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
+  describe, not review. It reuses the review's model route; it adds no new trust boundary.
+- **Grounding.** The model proposes the level; evidence can only raise it. A surfaced high or
+  critical finding makes it High, any surfaced finding makes Low into Medium, and the block
+  says why. Stage 0's regressions are findings, so they count.
+- **Inertness.** Every model-written line goes through the same `inertMarkdown` as review
+  comments and is flattened to one quoted line. `<` becomes `&lt;`, so a diff that steers
+  the model cannot forge the end marker, hide the author's text or mention anyone.
+- **Freshness.** The review runs when a pull request opens or becomes ready. The summary runs
+  on every push too, through `review-summary.yml` (`--summary-only`: read-only checkouts, no
+  Stage 0, nothing executed). The findings job also passes `--post-summary`, so a finished
+  review rewrites the summary with its evidence. Every write first reads the pull request and
+  skips when its head is no longer the summarised commit, so a slow review cannot overwrite
+  a newer push's summary. A summary-only run also skips when a full review has already
+  summarised the same commit, so a push-time summary that finishes late cannot discard the
+  review's evidence.
+- **Limits.** The forge has no conditional update for a description, so an author's edit
+  landing between the read and the write is lost, as is the earlier of two runs that write
+  within the same round trip. A tool that
+  replaces the whole description (`gh pr edit --body-file`) deletes the block until the next
+  push. The trigger acts only on the owner's own pushes, so after a bot or another identity
+  pushes, the summary names the older commit until the owner pushes again. When Stage 1
+  starts reading the description (§Pipeline), it must strip this block first, or the
+  reviewer will read its own summary as the author's intent.
