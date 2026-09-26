@@ -308,8 +308,19 @@ export function parseWorktreePorcelain(raw: string): WorktreeRecord[] {
   return records
 }
 
+/**
+ * Execution roots a reattach is repairing right now. Git IPC keeps validating
+ * the thread while the reattach runs, and every validation of a still-detached
+ * checkout releases its root. That would drop the Git-metadata grants from
+ * under the reattach's own sandboxed `git switch`: on Linux the common
+ * `.git` is then re-bound read-only over the checkout's administration
+ * directory and bubblewrap aborts with "Read-only file system".
+ */
+const reattachingRoots = new Set<string>()
+
 /** Drop a retired/failed worktree's internal-root authority and its index/watcher (#1400). */
 export function releaseWorktreeRoot(executionRoot: string): void {
+  if (reattachingRoots.has(executionRoot)) return
   unregisterInternalWorkspaceRoot(executionRoot)
   stopExecutionRootIndexing(executionRoot)
   // The cached `rev-parse` probes for this root are keyed by path, and a
@@ -1199,7 +1210,11 @@ export async function reattachThreadWorktree(
   const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
     const validated = await validateThreadWorktreeState(input)
+    reattachingRoots.add(validated.root)
     try {
+      // A concurrent validation may have released the root between this
+      // validation registering it and the pin above; restore the grant.
+      await registerInternalWorkspaceRoot(validated.path, validated.root)
       if (validated.branch) throw new Error('Thread worktree is already on a branch')
       const recovery = await activeGitRecovery(validated.gitDir)
       if (recovery) {
@@ -1245,8 +1260,11 @@ export async function reattachThreadWorktree(
       await switchTo(['-C', branch])
       return { branch, keptDetachedCommits: true, backupBranch }
     } catch (error) {
+      reattachingRoots.delete(validated.root)
       releaseWorktreeRoot(validated.root)
       throw error
+    } finally {
+      reattachingRoots.delete(validated.root)
     }
   })
 }
