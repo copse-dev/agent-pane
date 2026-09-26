@@ -139,7 +139,7 @@ test('maybeRenameThreadBranch applies an idle settled title to its worktree bran
   assert.equal(requireThread(store, 't-branch').worktree?.branch, 'copse/repair-sessions-branch')
 })
 
-test('maybeNameThread falls back to first words when suggestTitle fails', async () => {
+test('maybeNameThread falls back to a deterministic title when suggestTitle fails', async () => {
   const store = createStore({
     threads: [newThread('t-fallback', [userMessage('Fix the flicker please now')])],
     activeThreadId: 't-fallback',
@@ -176,7 +176,7 @@ test('maybeNameThread keeps chip placeholders out of the title and the naming in
   maybeNameThread(store, api, 't-chips')
   await new Promise((r) => setTimeout(r, 0))
 
-  assert.equal(requireThread(store, 't-chips').title, 'Summarize this feedback:')
+  assert.equal(requireThread(store, 't-chips').title, 'Summarize this feedback')
   assert.deepEqual(titleCalls, ['Summarize this feedback:\n\nCompare with please'])
 })
 
