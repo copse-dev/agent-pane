@@ -81,6 +81,43 @@ export interface CodeBlockCopyOptions {
   runCommands?: boolean
 }
 
+export interface CodeBlockRunOutcome {
+  /** Null when the command never ran (no thread to run it for). */
+  exitCode: number | null
+  /** The terminal's text, ANSI-free, as the agent receives it. */
+  output: string
+}
+
+type RunState = 'idle' | 'running' | 'succeeded' | 'failed'
+
+interface CodeBlockRun {
+  id: string
+  state: RunState
+  outcome: CodeBlockRunOutcome | null
+}
+
+// A run outlives the DOM that started it: switching threads, or the final
+// render replacing the streaming scaffold, rebuilds every code block. Runs are
+// remembered per message and command so a rebuilt block picks its run back up —
+// still spinning if it has not finished, with its output if it has. In memory
+// only; after a reload the sent result in the transcript is the record.
+const REMEMBERED_RUN_LIMIT = 100
+const runsByBlock = new Map<string, CodeBlockRun>()
+
+function runKey(pre: HTMLElement, command: string): string | null {
+  const messageId = pre.closest<HTMLElement>('[data-message-id]')?.dataset['messageId']
+  return messageId ? `${messageId}\u0000${command}` : null
+}
+
+function rememberRun(key: string, run: CodeBlockRun): void {
+  runsByBlock.delete(key)
+  runsByBlock.set(key, run)
+  for (const oldest of runsByBlock.keys()) {
+    if (runsByBlock.size <= REMEMBERED_RUN_LIMIT) break
+    runsByBlock.delete(oldest)
+  }
+}
+
 function copyButtonText(code: HTMLElement): string {
   return code.textContent.trimStart()
 }
@@ -113,10 +150,7 @@ export function isRunnableCodeBlock(code: HTMLElement): boolean {
   return looksLikeUnlabelledCommand(copyButtonText(code))
 }
 
-function setRunButtonState(
-  button: HTMLButtonElement,
-  state: 'idle' | 'running' | 'succeeded' | 'failed',
-): void {
+function setRunButtonState(button: HTMLButtonElement, state: RunState): void {
   button.dataset['runState'] = state
   button.disabled = state === 'running'
   button.classList.toggle('is-running', state === 'running')
@@ -126,15 +160,15 @@ function setRunButtonState(
     button.replaceChildren(spinnerIcon('ui-icon ui-icon-sm'))
   } else if (state === 'succeeded') {
     button.setAttribute('aria-label', 'Run command again')
-    button.setAttribute('data-tooltip', 'Result attached · Run again')
+    button.setAttribute('data-tooltip', 'Run again')
     button.replaceChildren(checkIcon('ui-icon ui-icon-sm'))
   } else if (state === 'failed') {
     button.setAttribute('aria-label', 'Run command again')
-    button.setAttribute('data-tooltip', 'Command failed · Result attached · Run again')
+    button.setAttribute('data-tooltip', 'Command failed · Run again')
     button.replaceChildren(warningIcon('ui-icon ui-icon-sm'))
   } else {
     button.setAttribute('aria-label', 'Run command')
-    button.setAttribute('data-tooltip', 'Run in background and attach result')
+    button.setAttribute('data-tooltip', 'Run and send the result to the agent')
     button.replaceChildren(playIcon('ui-icon ui-icon-sm'))
   }
 }
@@ -156,16 +190,59 @@ export function bindCodeBlockRunRequests(
   }
 }
 
+function runSummary(run: CodeBlockRun): string {
+  if (!run.outcome) return 'Running…'
+  const { exitCode } = run.outcome
+  return exitCode === null ? 'Could not run' : `Output · exit ${String(exitCode)}`
+}
+
+/** Show `run` in the panel under its code block, creating the panel on first use. */
+function renderRunOutput(shell: HTMLElement, run: CodeBlockRun): void {
+  let panel = shell.querySelector<HTMLDetailsElement>(':scope > .code-block-output')
+  if (!panel) {
+    panel = el('details', { class: 'code-block-output', open: true })
+    shell.append(panel)
+  }
+  panel.dataset['runState'] = run.state
+  const summary = el('summary', { class: 'code-block-output-summary' }, runSummary(run))
+  if (!run.outcome) {
+    panel.replaceChildren(summary)
+    return
+  }
+  const output = run.outcome.output.trimEnd()
+  panel.replaceChildren(
+    summary,
+    output
+      ? el('div', { class: 'code-block-output-text' }, output)
+      : el('div', { class: 'code-block-output-empty' }, 'No output'),
+  )
+}
+
+function showRun(shell: HTMLElement, button: HTMLButtonElement, run: CodeBlockRun): void {
+  button.dataset['runId'] = run.id
+  setRunButtonState(button, run.state)
+  renderRunOutput(shell, run)
+}
+
 export function setCodeBlockRunOutcome(
   root: ParentNode,
   requestId: string,
-  exitCode: number | null,
+  outcome: CodeBlockRunOutcome,
 ): void {
+  const state: RunState = outcome.exitCode === 0 ? 'succeeded' : 'failed'
+  let run: CodeBlockRun | undefined
+  for (const remembered of runsByBlock.values()) {
+    if (remembered.id !== requestId) continue
+    remembered.state = state
+    remembered.outcome = outcome
+    run = remembered
+  }
+  run ??= { id: requestId, state, outcome }
   const buttons = root.querySelectorAll<HTMLButtonElement>('.code-block-run')
   for (const button of buttons) {
     if (button.dataset['runId'] !== requestId) continue
-    setRunButtonState(button, exitCode === 0 ? 'succeeded' : 'failed')
-    return
+    const shell = button.closest<HTMLElement>('.code-block-shell')
+    if (shell) showRun(shell, button, run)
   }
 }
 
@@ -222,6 +299,7 @@ export function attachCodeBlockCopyButtons(
     if (!actions || actions.querySelector('.code-block-run')) continue
     const runBtn = el('button', { class: 'code-block-run', type: 'button' })
     setRunButtonState(runBtn, 'idle')
+    const runShell = shell
     runBtn.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -229,16 +307,28 @@ export function attachCodeBlockCopyButtons(
       if (!currentCode) return
       const command = copyButtonText(currentCode).trim()
       if (!command) return
-      const id = crypto.randomUUID()
-      runBtn.dataset['runId'] = id
-      setRunButtonState(runBtn, 'running')
+      const run: CodeBlockRun = { id: crypto.randomUUID(), state: 'running', outcome: null }
+      const key = runKey(pre, command)
+      if (key) rememberRun(key, run)
+      showRun(runShell, runBtn, run)
       runBtn.dispatchEvent(
         new CustomEvent(CODE_BLOCK_RUN_REQUEST_EVENT, {
           bubbles: true,
-          detail: { id, command },
+          detail: { id: run.id, command },
         }),
       )
     })
+    // A first render builds the message body before it joins its message
+    // element, so the message id is only reachable once this task's DOM work
+    // is done.
+    if (runsByBlock.size > 0) {
+      queueMicrotask(() => {
+        const command = copyButtonText(code).trim()
+        const key = runKey(pre, command)
+        const run = key ? runsByBlock.get(key) : undefined
+        if (run && !runBtn.dataset['runId']) showRun(runShell, runBtn, run)
+      })
+    }
     actions.prepend(runBtn)
   }
 }

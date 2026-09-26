@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedCodeBlockCopyFixture } from './helpers/seed-config.ts'
 import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('code block actions', () => {
@@ -16,7 +17,7 @@ describe('code block actions', () => {
     resetUserData()
   })
 
-  it('copies examples and runs shell commands into an attached result', async function () {
+  it('copies examples, and runs shell commands into inline output sent to the agent', async function () {
     this.timeout(90_000)
     const message = await $('[data-message-id="msg-assistant-code-blocks"] .message-text')
     await message.waitForExist({ timeout: 30_000 })
@@ -53,22 +54,48 @@ describe('code block actions', () => {
     expect(clipboardText).toMatch(/^export function greet/)
     expect(clipboardText).toContain('Hello, ${name}!')
 
+    const reply = 'The command printed 424242 and exited cleanly.'
+    await installMockScenario({
+      title: 'Read a Play result',
+      turns: [{ user: { includes: '424242' }, responses: [{ text: reply }] }],
+    })
     await runButton.click()
     await approveUnsandboxedTerminalIfPrompted()
 
-    const chip = await $('.attachment-chip.shell-chip')
-    await chip.waitForDisplayed({ timeout: 30_000 })
+    const output = await $(
+      '[data-message-id="msg-assistant-code-blocks"] .code-block-shell > .code-block-output',
+    )
+    await output.waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      async () => (await output.getAttribute('data-run-state')) !== 'running',
+      {
+        timeout: 30_000,
+        timeoutMsg: 'the run never reported its exit',
+      },
+    )
     await expect(runButton).toHaveAttribute('data-run-state', 'succeeded')
-    await expect(chip.$('.attachment-chip-label')).toHaveText(expect.stringContaining('exit 0'))
+    await expect(output.$('summary')).toHaveText('Output · exit 0')
+    await expect(output.$('.code-block-output-text')).toHaveText(expect.stringContaining('424242'))
 
-    await chip.$('.attachment-chip-label').click()
+    // The result goes to the agent as the next user message; nothing is left
+    // waiting on the draft for a Send.
+    const sent = await $('.msg-user .transcript-attachment-shell')
+    await sent.waitForDisplayed({ timeout: 30_000 })
+    await expect(sent.$('.transcript-attachment-label')).toHaveText(
+      expect.stringContaining('exit 0'),
+    )
+    await expect($('.attachment-chip.shell-chip')).not.toExist()
+
+    await sent.click()
     const preview = await $('dialog.attachment-preview-dialog[open]')
     await preview.waitForDisplayed({ timeout: 10_000 })
     await expect(preview.$('.attachment-preview-text')).toHaveText(
       expect.stringContaining('424242'),
     )
     await preview.$('.attachment-preview-close').click()
+    await expectAssistantReply(reply)
 
-    await saveAppScreenshot('code-block-run-result-attached.png')
+    await output.scrollIntoView({ block: 'center' })
+    await saveAppScreenshot('code-block-run-output-sent.png')
   })
 })

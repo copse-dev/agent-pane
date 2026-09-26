@@ -33,6 +33,7 @@ import {
   enqueueUserMessage,
   startHumanTurnTree,
 } from '../controller/message-queue.ts'
+import { sendCodeBlockRunResult } from '../controller/code-block-runs.ts'
 import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
@@ -2567,17 +2568,22 @@ export function mountInputBar(
       refreshSkillsCache()
       scheduleContextEstimate(0)
     }),
+    // A Play run's result goes straight to its thread's agent. Only when the
+    // thread cannot take it now does it fall back to a chip on that thread's
+    // draft, so the output is never lost.
     store.on('code_block_run_finished', (result) => {
-      const active = result.threadId === activeComposerThreadId
-      placeStoredShell(result.threadId, result.shell)
-      if (!active) return
-      targetSelect.value = 'thread'
-      showToast(
-        result.exitCode === 0
-          ? 'Command finished — result attached.'
-          : `Command ${result.exitCode === null ? 'could not start' : `exited with code ${String(result.exitCode)}`} — result attached.`,
-        result.exitCode === 0 ? undefined : { variant: 'error' },
-      )
+      void sendCodeBlockRunResult(store, api, result)
+        .catch((error: unknown) => {
+          console.error('[code-block-run] Could not send the result:', error)
+          return false
+        })
+        .then((sent) => {
+          if (sent) return
+          placeStoredShell(result.threadId, result.shell)
+          if (result.threadId !== activeComposerThreadId) return
+          targetSelect.value = 'thread'
+          showToast('Command finished — result attached to your next message.')
+        })
     }),
     store.on('new_thread_opened', () => {
       // Refresh provider-reported context windows for the new chat, then re-estimate
