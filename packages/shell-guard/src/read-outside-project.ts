@@ -55,7 +55,10 @@ import { READ_ONLY_GIT_SUBCOMMANDS, READ_ONLY_SHELL_BASENAMES } from './shell-ar
  * ({@link sensitiveTargetReason}). The whole home directory and the filesystem
  * root are therefore refused outright as targets, but a granted read of a
  * narrower directory is a real (bounded) trust decision, which is what the
- * prompt's warning says.
+ * prompt's warning says. Paths are judged as text and symlinks are not
+ * resolved, so a link inside a granted directory reaches whatever it points at.
+ * A seatbelt does not stop that either: the read overlay canonicalizes each
+ * target with `realpath` and widens `allowRead` to the link's destination.
  */
 
 /** Read-only heads beyond {@link READ_ONLY_SHELL_BASENAMES} that this shape allows. */

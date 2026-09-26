@@ -174,7 +174,15 @@ A command that only reads fully-accounted-for paths outside the project receives
 warns that a directory can contain sensitive files. Its primary action grants reads of those
 specific paths for the remainder of the thread, in memory only: an approved file covers only that
 file, while an approved directory covers its descendants. A later command that names any other
-outside path asks again. An expanded “Approve this command” action approves one invocation without
+outside path asks again. A descendant is covered only when every segment of its path is literal:
+a token the shell would expand (braces, `*`/`?`/`[` globs, `$`, backticks, quotes, backslashes,
+`~` past the start, extglob parentheses) asks again, because `dir/{..,sub}/x` sits under `dir` as
+text but reads `dir/../x`. Repeating the exact approved token is still covered.
+
+Coverage and the credential checks are decided on the path text and do not resolve symlinks, so a
+symlink inside an approved directory reaches whatever it points to. The sandbox does not close this:
+`readAllowedSandboxOverlay` canonicalizes each target with `realpath` before widening `allowRead`,
+so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An expanded “Approve this command” action approves one invocation without
 a grant.
 
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
