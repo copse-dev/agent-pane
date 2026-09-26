@@ -11,6 +11,8 @@ import {
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
+  screeningClassifierId,
+  setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
 import { SPINE_SCHEMA_VERSION } from '@shared/threads/spine-schema.ts'
@@ -1254,6 +1256,14 @@ export function registerAllHandlers(
   ipcMain.handle('classifiers:test', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return testClassifierProfile(parseIpcArgs(keyProviderSchema.max(53), [raw]))
+  })
+  ipcMain.handle('classifiers:screening', (event) => {
+    assertMainFrameSender(event, win)
+    return screeningClassifierId()
+  })
+  ipcMain.handle('classifiers:set-screening', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return setScreeningClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {

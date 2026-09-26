@@ -1,0 +1,12 @@
+{
+  "id": "decider-local",
+  "label": "decider-4b local eval",
+  "model": "Mapika/decider-4b",
+  "timeoutMs": 60000,
+  "connection": {
+    "type": "http",
+    "protocol": "systemone",
+    "baseUrl": "http://127.0.0.1:8000/v1",
+    "auth": "none"
+  }
+}

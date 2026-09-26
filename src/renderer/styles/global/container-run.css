@@ -129,9 +129,12 @@
 .container-run-section {
   margin: 0 0 var(--spacing-md);
 }
-.container-run-section h3 {
+/* <h4>: small uppercase section labels are utility headings, so they stay in
+   the interface family rather than the h1–h3 display face. */
+.container-run-section h4 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
