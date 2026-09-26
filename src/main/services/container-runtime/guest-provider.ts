@@ -15,7 +15,9 @@ import { HOST_LOCAL_ALIAS } from './egress-rules.ts'
  * allowlist when it described the provider. The host-local alias counts as
  * loopback, so a server on the desktop's loopback keeps its plain http here as
  * it has there (`docs/plans/thread-in-container.md`, A16) — and only the alias:
- * any other plain-http host is refused as it is on the desktop.
+ * any other plain-http host is refused as it is on the desktop. The host holds
+ * up its end: no run starts, and no broker is built, that would dial the alias
+ * anywhere but its own loopback (`hostLocalAliasRefusal`).
  */
 export function buildGuestProvider(
   description: ProviderDescription,

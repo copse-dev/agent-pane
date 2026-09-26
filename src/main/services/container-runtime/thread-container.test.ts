@@ -19,6 +19,7 @@ import {
   loadCarryOutForAdoption,
   loadRunForContinuation,
   providerOrigin,
+  runThreadInContainer,
   secretCanaryCheck,
   WORKER_UID,
   writeCarryInBundle,
@@ -539,6 +540,49 @@ describe('secretCanaryCheck', () => {
       writeFileSync(join(dir, 'run.json'), '{"prompt":"canary-123"}')
       assert.equal(secretCanaryCheck(dir, 'canary-123').present, true)
     } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('runThreadInContainer and the host-local alias (A16)', () => {
+  // The guest sends its key over plain http to the alias, so a run is refused
+  // before anything starts unless the broker will dial the alias on the host's
+  // loopback — the CLI takes the URL, allowlist and remap from its caller.
+  it('refuses a run whose alias the broker would dial off the loopback', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
+    process.env['COPSE_TEST_ALIAS_KEY'] = 'sk-test'
+    try {
+      const url = 'http://model.copse.internal:1234/v1'
+      for (const egressResolve of [{ 'model.copse.internal': '203.0.113.5' }, {}]) {
+        await assert.rejects(
+          runThreadInContainer({
+            workspace: join(dir, 'missing-checkout'),
+            runtimesDir: join(dir, 'runtimes'),
+            prompt: 'hello',
+            model: 'm',
+            provider: {
+              kind: 'openai-compatible',
+              model: 'm',
+              apiKeySlug: 'cli',
+              url,
+              label: 'the --provider-url endpoint',
+              local: true,
+              includeUsage: true,
+              apiStyle: null,
+              extraBody: null,
+              params: {},
+            },
+            apiKeyEnv: 'COPSE_TEST_ALIAS_KEY',
+            budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
+            egressAllowlist: ['model.copse.internal:1234'],
+            egressResolve,
+          }),
+          /model\.copse\.internal .*loopback/,
+        )
+      }
+    } finally {
+      delete process.env['COPSE_TEST_ALIAS_KEY']
       rmSync(dir, { recursive: true, force: true })
     }
   })

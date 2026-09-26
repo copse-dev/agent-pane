@@ -674,10 +674,15 @@ guarantee, and the record must say so.
   refused in the guest as on the desktop. For the exemption to mean "the host's
   loopback", the alias must only ever arrive by the rewrite that also tells the broker
   where to dial it, so `guestFacingEndpoint` refuses a desktop endpoint that already
-  names it (the broker would otherwise resolve it through DNS). Rejected: loosening the
-  rule for `*.internal` or for any host on the egress allowlist, which would let a
-  tampered or synced setting send a key in plaintext to a real host; and rewriting the
-  guest's client back to `127.0.0.1`, which the guest's `NO_PROXY` sends to its own
+  names it (the broker would otherwise resolve it through DNS). The CLI takes its
+  endpoint, allowlist and `--resolve` from its caller and has no such rewrite, so the
+  invariant is held where every run meets it: an allowlist that admits the alias
+  (exactly or by a wildcard) needs `egressResolve` to map it to `127.0.0.1` or `::1`,
+  or `runThreadInContainer` refuses the run before anything starts and `EgressBroker`
+  refuses to be built (`hostLocalAliasRefusal`) — never DNS, never another address.
+  Rejected: loosening the rule for `*.internal` or for any host on the egress
+  allowlist, which would let a tampered or synced setting send a key in plaintext to a
+  real host; and rewriting the guest's client back to `127.0.0.1`, which the guest's `NO_PROXY` sends to its own
   empty loopback by design. Left as it was: LM Studio configured at a LAN address over
   plain http (`http://models.lan:1234/v1`) is still refused in the guest, since those
   bytes do cross a network; the desktop reaches it only because its LM Studio transport
@@ -835,6 +840,7 @@ already in the list, one group up, and it keeps the deferral guarantee.
 | Run as a turn: guest   | unit        | The carry-out follows HEAD onto a branch the agent made; a failed turn is named; the agent's live context counts against the ceiling                                        | `guest-carry-out.test.ts`, `guest-turn.test.ts`, `guest-progress.test.ts` (A14)                                                        |
 | Run as a turn: host    | unit        | A loopback server gets a guest-facing name the runner is told to resolve; a stop before `docker run` is honoured; a held tunnel does not hold close                         | `container-provider.test.ts`, `container-run-service.test.ts`, `guest-egress-proxy.test.ts`, `input-bar.test.ts` (A14)                 |
 | Host-local alias       | unit        | The guest builds a plain-http client for the alias and refuses plain http to any other host; the desktop's rule still refuses the alias; a desktop URL naming it is refused | `guest-provider.test.ts`, `credential-url.test.ts`, `container-provider.test.ts` (A16)                                                 |
+| Host-local alias route | unit        | A run, or a broker, that would dial the alias anywhere but the host's loopback is refused before anything starts (the CLI's `--resolve` included)                           | `egress-broker.test.ts`, `thread-container.test.ts` (A16)                                                                              |
 
 ## Non-goals
 

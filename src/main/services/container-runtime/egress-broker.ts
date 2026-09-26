@@ -29,8 +29,10 @@ import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { EgressLink, type EgressLinkOutput, type MuxStream } from './egress-link.ts'
 import {
+  egressRuleAllows,
   findEgressRule,
   formatEgressRule,
+  HOST_LOCAL_ALIAS,
   parseEgressTarget,
   type EgressRule,
 } from './egress-rules.ts'
@@ -138,6 +140,27 @@ function dialAddress(
   return remapped ?? { host: mapped, port }
 }
 
+/**
+ * Why a broker with these rules may not run, or null when it may. The guest
+ * counts {@link HOST_LOCAL_ALIAS} as loopback and sends its key there over
+ * plain http (`docs/plans/thread-in-container.md`, A16), which holds only
+ * while the broker dials the alias on the host's own loopback. So an allowlist
+ * that admits the alias needs a remap of it to a loopback literal — never DNS,
+ * never another address — whoever assembled the run.
+ */
+export function hostLocalAliasRefusal(
+  rules: readonly EgressRule[],
+  resolve: Readonly<Record<string, string>>,
+): string | null {
+  const admits = rules.filter((rule) => egressRuleAllows(rule, HOST_LOCAL_ALIAS, rule.port))
+  if (admits.length === 0) return null
+  const dial = Object.hasOwn(resolve, HOST_LOCAL_ALIAS)
+    ? dialAddress(resolve, HOST_LOCAL_ALIAS, 0).host
+    : null
+  if (dial === '127.0.0.1' || dial === '::1') return null
+  return `${HOST_LOCAL_ALIAS} is reserved for a model server on this computer's loopback; the egress allowlist admits it (${admits.map(formatEgressRule).join(', ')}), so it must be resolved to 127.0.0.1 or ::1, not ${dial === null ? 'left to DNS' : `"${dial}"`}.`
+}
+
 export class EgressBroker {
   private link: EgressLink | null = null
   private readonly entries: EgressLogEntry[] = []
@@ -149,6 +172,8 @@ export class EgressBroker {
   constructor(options: EgressBrokerOptions) {
     this.rules = options.rules
     this.resolve = options.resolve ?? {}
+    const refusal = hostLocalAliasRefusal(this.rules, this.resolve)
+    if (refusal !== null) throw new Error(refusal)
   }
 
   /**

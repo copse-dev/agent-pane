@@ -187,3 +187,46 @@ describe('EgressBroker', () => {
     assert.equal(last.bytesFromOrigin, 'COUNT ME'.length)
   })
 })
+
+describe('EgressBroker and the host-local alias (A16)', () => {
+  // The guest sends a key over plain http to the alias, so the broker must
+  // only ever dial it on the host's loopback, whoever built the run.
+  const rules = [parseEgressRule('model.copse.internal:1234')]
+
+  it('refuses to broker the alias anywhere but the loopback', () => {
+    for (const resolve of [
+      {},
+      { 'model.copse.internal': '203.0.113.5' },
+      { 'model.copse.internal': '203.0.113.5:1234' },
+      { 'model.copse.internal': 'localhost' },
+      { 'model.copse.internal': 'models.lan:1234' },
+      { 'MODEL.copse.internal': '127.0.0.1' },
+    ]) {
+      assert.throws(
+        () => new EgressBroker({ rules, resolve }),
+        /model\.copse\.internal .*loopback/,
+        JSON.stringify(resolve),
+      )
+    }
+    assert.throws(
+      () =>
+        new EgressBroker({
+          rules: [parseEgressRule('*.copse.internal:1234')],
+          resolve: { 'model.copse.internal': '203.0.113.5' },
+        }),
+      /loopback/,
+    )
+  })
+
+  it("brokers the alias on the host's loopback, and leaves other remaps alone", () => {
+    for (const dial of ['127.0.0.1', '::1', '127.0.0.1:5555']) {
+      const broker = new EgressBroker({ rules, resolve: { 'model.copse.internal': dial } })
+      broker.stop()
+    }
+    const other = new EgressBroker({
+      rules: [parseEgressRule('models.lan:1234')],
+      resolve: { 'models.lan': '203.0.113.5' },
+    })
+    other.stop()
+  })
+})
