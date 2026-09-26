@@ -166,6 +166,14 @@ shell's hand-offs (Phase 4).
   supporting reasoning and evidence use a collapsed `details` section. Run metadata and
   per-role timing live under `Review details`. Incomplete reviews and missing checks keep
   a visible warning even when the details are collapsed.
+- **`pr-summary.ts`** — the pull request's description summary (B4 as amended): one
+  tool-free model turn over the Stage 1 context that must end in `write_summary` (a risk
+  level, a one-sentence reason and a short overview), rendered as a `[!NOTE]` block between
+  `<!-- copse-review-summary -->` markers at the bottom of the description and replaced in
+  place. A surfaced high-severity finding raises the risk to High, and any finding raises Low
+  to Medium; the evidence never lowers it. Model prose is inert markdown, as in reviews, so a
+  diff cannot forge the end marker. Posting reads the description and writes it back, and
+  leaves a pull request whose head has moved past the summarised commit alone.
 - **`eval.ts`** — the measurement (P6, B8): a case's known defects as anchors, a finding
   matched to a defect the way Stage 3 clusters (same path, overlapping lines within the
   slack) or by the Stage 0 regression it declares, and the metrics — precision on surfaced
@@ -289,6 +297,16 @@ through Scaleway. `SCW_GENERATIVE_API_KEY` is the fallback for a dedicated
 one correctness lens, at most 12 tool-using steps and at most three challenged findings.
 Review context is secret-redacted before it leaves the runner, but it does leave GitHub for
 the configured model endpoint.
+
+The description summary follows the head rather than the review. The trigger's `summary` job
+dispatches `review-summary.yml` when a pull request the review would accept is opened,
+reopened, marked ready or labelled, and on every push to one. That workflow authorizes like
+the findings workflow, then runs the default branch's CLI with `--summary-only
+--post-summary github`: read-only checkouts, no Stage 0, no container and nothing executed,
+with the same model route and the same App token. The findings job also passes
+`--post-summary github`, so a finished review rewrites the summary with its evidence unless
+a newer push has moved the pull request on. Forgejo's findings job does the same on each
+labelled push.
 
 `.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
 each night from its drafts, because that is where most active Copse work lives and ready pull

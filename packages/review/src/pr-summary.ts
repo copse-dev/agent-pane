@@ -1,0 +1,303 @@
+// The pull request's summary block (docs/plans/copse-reviewer.md, §PR
+// description summary): a risk level and a short overview of what the change
+// does, kept at the bottom of the pull request's description between two
+// markers and replaced in place on every run — the shape Cursor's Bugbot and
+// similar reviewers use.
+//
+// A summary is not a finding and is not held to the findings' evidence bar,
+// but it is still grounded where evidence exists: a surfaced high-severity
+// finding raises the risk to High whatever the model said. The text comes from
+// a model that read an untrusted diff and is written under the App's identity,
+// so every model-written line goes through the same inert-markdown escaping as
+// review comments; that also keeps a crafted diff from forging the end marker.
+import { z } from 'zod'
+import type { HeadlessEvent } from '@copse/agent/headless-contract.ts'
+import { EXTERNAL_CONTENT_BLOCK } from '@copse/agent/external-content.ts'
+import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
+import { errorMessage } from '@copse/std/errors.ts'
+import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
+import { renderReviewContext, type ReviewContext } from './context.ts'
+import {
+  ERROR_EXCERPT_CHARS,
+  ForgeReviewError,
+  forgeHeaders,
+  inertMarkdown,
+  pullRequestUrl,
+  type FetchLike,
+  type ForgeTarget,
+} from './forge-review.ts'
+import type { ReviewReport } from './stage5.ts'
+import { runTurn, type TurnResult } from './turn.ts'
+
+export const SUMMARY_RISKS = ['low', 'medium', 'high'] as const
+export type SummaryRisk = (typeof SUMMARY_RISKS)[number]
+
+const MAX_OVERVIEW_ITEMS = 5
+
+const summarySchema = z.object({
+  risk: z.enum(SUMMARY_RISKS),
+  riskReason: z.string().trim().min(8).max(300),
+  overview: z.array(z.string().trim().min(8).max(400)).min(1).max(MAX_OVERVIEW_ITEMS),
+})
+
+export interface PrSummary {
+  readonly risk: SummaryRisk
+  readonly riskReason: string
+  readonly overview: readonly string[]
+  /** Why the evidence raised the model's risk level, when it did. */
+  readonly raisedBecause?: string
+}
+
+const START_MARKER = '<!-- copse-review-summary -->'
+const END_MARKER = '<!-- /copse-review-summary -->'
+const BLOCK = /\s*<!-- copse-review-summary -->[\s\S]*?<!-- \/copse-review-summary -->/g
+
+function writeSummaryTool(): LLMTool {
+  return {
+    name: 'write_summary',
+    description:
+      'Required, and the only tool. Record the summary of the change for the pull request description. Call exactly once.',
+    parameters: {
+      type: 'object',
+      properties: {
+        risk: {
+          type: 'string',
+          enum: [...SUMMARY_RISKS],
+          description: 'How much could go wrong if this change is wrong',
+        },
+        riskReason: {
+          type: 'string',
+          minLength: 8,
+          maxLength: 300,
+          description: 'One sentence: why this risk level, naming the surfaces the change touches',
+        },
+        overview: {
+          type: 'array',
+          minItems: 1,
+          maxItems: MAX_OVERVIEW_ITEMS,
+          items: { type: 'string', minLength: 8, maxLength: 400 },
+          description:
+            'Two to four short points on what the change does, most important first; one sentence each',
+        },
+      },
+      required: ['risk', 'riskReason', 'overview'],
+    },
+  }
+}
+
+export function summarySystemPrompt(): string {
+  return [
+    'You are Copse Reviewer, writing the summary that sits at the bottom of a pull request description.',
+    'Describe what the change does and how risky it is. Do not review it: finding bugs is a separate step, so do not speculate about defects or suggest improvements.',
+    '',
+    'Risk levels:',
+    '- low: documentation, tests, comments, configuration with no runtime effect, or a small, contained behaviour change.',
+    '- medium: a runtime behaviour change in a bounded area, or a change to shared code with a limited set of callers.',
+    '- high: security, permissions or sandboxing, authentication or secrets, persisted data or migrations, process or IPC boundaries, concurrency, dependency or build changes, or a broad cross-cutting change.',
+    '',
+    'Write for a reviewer who has not opened the diff. Name files, functions or settings only when that makes a point clearer. Say what changed and why it matters; do not narrate the diff line by line.',
+    'Call write_summary exactly once and then stop. Do not reply in plain text instead.',
+    EXTERNAL_CONTENT_BLOCK,
+  ].join('\n')
+}
+
+export interface SummaryOptions {
+  readonly provider: LLMProvider
+  readonly model: string
+  readonly context: ReviewContext
+  readonly threadId: string
+  readonly turnId: string
+  readonly signal?: AbortSignal | undefined
+  readonly onEvent?: ((event: HeadlessEvent) => void) | undefined
+}
+
+export interface SummaryResult {
+  readonly summary: PrSummary | null
+  readonly turn: TurnResult
+}
+
+/** One tool-free turn over the Stage 1 context that ends in `write_summary`. */
+export async function writeSummary(options: SummaryOptions): Promise<SummaryResult> {
+  let recorded: PrSummary | null = null
+  let rejection: string | null = null
+  const tools = [writeSummaryTool()]
+  const turn = await runTurn({
+    provider: options.provider,
+    model: options.model,
+    systemPrompt: summarySystemPrompt(),
+    userPrompt: renderReviewContext(options.context),
+    tools,
+    execute: (name, args) => {
+      if (name !== 'write_summary') return Promise.reject(new Error(`Unknown tool ${name}`))
+      if (recorded !== null) {
+        return Promise.reject(new Error('The summary is already recorded; stop now'))
+      }
+      const parsed = summarySchema.safeParse(args)
+      if (!parsed.success) {
+        rejection = parsed.error.issues
+          .map((issue) => `${issue.path.join('.') || 'input'}: ${issue.message}`)
+          .join('; ')
+        return Promise.reject(new Error(`write_summary is invalid: ${rejection}`))
+      }
+      recorded = parsed.data
+      return Promise.resolve('Recorded.')
+    },
+    threadId: options.threadId,
+    turnId: options.turnId,
+    maxSteps: 3,
+    completionError: () =>
+      recorded === null
+        ? `the summary ended without a valid write_summary call${rejection === null ? '' : ` (last rejection: ${rejection})`}`
+        : undefined,
+    completionRepair: {
+      tools,
+      toolChoice: { name: 'write_summary' },
+      maxSteps: 2,
+      prompt: (_summary, error) =>
+        `Protocol correction: ${error}. Call write_summary exactly once now and emit no plain text.`,
+    },
+    signal: options.signal,
+    onEvent: options.onEvent,
+  })
+  return { summary: recorded, turn }
+}
+
+/**
+ * Raise the model's risk level to what the review's evidence shows. A
+ * surfaced high or critical finding makes it High; any surfaced finding makes
+ * a Low at least Medium. The evidence never lowers it.
+ */
+export function applyEvidenceFloor(summary: PrSummary, report: ReviewReport | null): PrSummary {
+  if (report === null || report.findings.length === 0) return summary
+  const severe = report.findings.filter(
+    (finding) => finding.severity === 'high' || finding.severity === 'critical',
+  ).length
+  if (severe > 0 && summary.risk !== 'high') {
+    return {
+      ...summary,
+      risk: 'high',
+      raisedBecause: `the review surfaced ${String(severe)} high-severity ${severe === 1 ? 'issue' : 'issues'}`,
+    }
+  }
+  if (summary.risk === 'low') {
+    const count = report.findings.length
+    return {
+      ...summary,
+      risk: 'medium',
+      raisedBecause: `the review surfaced ${String(count)} ${count === 1 ? 'issue' : 'issues'}`,
+    }
+  }
+  return summary
+}
+
+/** One line of model prose, inert, inside a blockquote. */
+function quotedLine(text: string): string {
+  return inertMarkdown(text.replace(/\s+/g, ' ').trim())
+}
+
+const RISK_LABEL: Record<SummaryRisk, string> = {
+  low: 'Low risk',
+  medium: 'Medium risk',
+  high: 'High risk',
+}
+
+export interface SummaryBlockOptions {
+  readonly headCommit: string | null
+  readonly toolVersion: string
+  /** The review this summary accompanies; null when only the summary ran. */
+  readonly report: ReviewReport | null
+}
+
+/** The marked block, ready to append to a pull request description. */
+export function renderSummaryBlock(summary: PrSummary, options: SummaryBlockOptions): string {
+  const lines = [START_MARKER, '---', '', '> [!NOTE]', `> **${RISK_LABEL[summary.risk]}**`]
+  lines.push(`> ${quotedLine(summary.riskReason)}`)
+  if (summary.raisedBecause !== undefined) {
+    lines.push('>', `> Raised to ${RISK_LABEL[summary.risk]} because ${summary.raisedBecause}.`)
+  }
+  lines.push('>', '> **Overview**')
+  for (const point of summary.overview) {
+    lines.push(`> - ${quotedLine(point.replace(/^\s*[-*•]\s+/, ''))}`)
+  }
+  const footer = [
+    `Summary by Copse Reviewer${options.headCommit === null ? '' : ` for commit ${options.headCommit.slice(0, 12)}`}.`,
+  ]
+  if (options.report !== null) {
+    const count = options.report.findings.length
+    footer.push(
+      count === 0
+        ? 'The review reported no issues.'
+        : `The review reported ${String(count)} ${count === 1 ? 'issue' : 'issues'}.`,
+    )
+  }
+  footer.push(`copse-review ${options.toolVersion}`)
+  lines.push('>', `> <sup>${footer.join(' ')}</sup>`, END_MARKER)
+  return lines.join('\n')
+}
+
+/**
+ * `body` with its summary block replaced by `block`, or `block` appended when
+ * there was none. Only a complete marker pair is removed, so an author who
+ * deletes the end marker never loses the text after it.
+ */
+export function upsertSummaryBlock(body: string | null, block: string): string {
+  const kept = (body ?? '').replace(BLOCK, '').trimEnd()
+  return kept.length === 0 ? block : `${kept}\n\n${block}`
+}
+
+const pullSchema = z.object({
+  body: z.string().nullable(),
+  head: z.object({ sha: z.string() }),
+})
+
+export type PostedSummary =
+  | { readonly updated: true }
+  | { readonly updated: false; readonly reason: string }
+
+/**
+ * Read the description, replace the block, write it back. A pull request that
+ * has moved past `target.headCommit` is left alone: a newer push has its own
+ * summary on the way, and an older one must not overwrite it. The forge has
+ * no conditional update for a description, so an author's edit landing
+ * between the read and the write is lost; the window is one round trip.
+ */
+export async function postSummary(
+  target: ForgeTarget,
+  block: string,
+  options: { readonly fetch?: FetchLike } = {},
+): Promise<PostedSummary> {
+  const fetchImpl: FetchLike = options.fetch ?? fetch
+  const url = pullRequestUrl(target)
+  const request = async (method: string, body?: unknown): Promise<string> => {
+    let response
+    try {
+      response = await fetchImpl(url, {
+        method,
+        headers: forgeHeaders(target),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    } catch (err) {
+      throw new ForgeReviewError(0, `could not reach ${url}: ${errorMessage(err)}`)
+    }
+    const text = await response.text()
+    if (response.status < 200 || response.status >= 300) {
+      throw new ForgeReviewError(
+        response.status,
+        `${target.forge} returned ${String(response.status)} for ${method} ${url}: ${text.slice(0, ERROR_EXCERPT_CHARS)}`,
+      )
+    }
+    return text
+  }
+  const pull = safeJsonParse(await request('GET'), decodeWithSchema(pullSchema))
+  if (pull === null) throw new Error(`${target.forge} returned an unreadable pull request`)
+  if (target.headCommit !== null && pull.head.sha !== target.headCommit) {
+    return {
+      updated: false,
+      reason: `the pull request has moved on to ${pull.head.sha.slice(0, 12)}`,
+    }
+  }
+  const next = upsertSummaryBlock(pull.body, block)
+  if (next === pull.body) return { updated: false, reason: 'the summary is unchanged' }
+  await request('PATCH', { body: next })
+  return { updated: true }
+}
