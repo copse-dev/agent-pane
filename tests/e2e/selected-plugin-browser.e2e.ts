@@ -9,6 +9,7 @@ import { listenOnFixturePort } from './helpers/fixture-server.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
 
 const PLUGIN_ID = 'personal.browser-fixture'
 const MODEL_ID = 'browser'
@@ -148,6 +149,7 @@ describe('selected plugin browser behavior', function () {
     assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/reference$/)
 
     await waitForActiveThreadTitle()
+    await assertBrowserAddressFieldRoomy()
     await saveElementScreenshot('#app', 'selected-plugin-browser-tab.png')
   })
 })

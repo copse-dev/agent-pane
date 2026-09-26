@@ -65,8 +65,21 @@ html.is-popout .roadmap-thread-indicator {
   text-overflow: ellipsis;
 }
 
+/* The switcher spans the space the title leaves, right-aligned, rather than
+   sizing to its own buttons. Its `…` planner compares the buttons against the
+   container's width: sized to content, that is the buttons' own width rounded
+   to whole pixels, so a rounding-down alone sent the last mode into the menu
+   with the rest of the titlebar empty, and a narrow window never overflowed.
+   The empty stretch stays a window drag handle; the buttons themselves are
+   no-drag through `.titlebar button`. */
 .popout-titlebar .popout-panel-bar {
-  margin-left: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: flex-end;
+  -webkit-app-region: drag;
+}
+.popout-titlebar .popout-panel-bar .portrait-panel-overflow {
+  -webkit-app-region: no-drag;
 }
 
 .popout-titlebar .popout-panel-bar .titlebar-text-btn,

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
   resetUserData,
@@ -9,6 +10,7 @@ import {
   seedPrPanelChatFixture,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, waitForImagesSettled } from './helpers/screenshot.ts'
+import { assertPopoutModesAllShown } from './helpers/popout-panel-bar.ts'
 
 // Terminal is omitted: opening it spawns a PTY (node-pty), which isn't built in
 // this sandbox. The pop-out path is identical to the panes covered here — the
@@ -93,9 +95,15 @@ describe('Pane pop-out (mock gh)', () => {
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
       if (pane.mode === 'browser') {
-        await $('.browser-url-input').waitForDisplayed({ timeout: 10_000 })
-        await $('.browser-url-input').setValue('https://example.com')
-        await $('.browser-go-btn').click()
+        await navigateActiveBrowserTab('https://example.com')
+        // The submit reached navigation: the tab leaves "New tab" for the
+        // host (or the page title once it loads), before any network answer.
+        await browser.waitUntil(
+          async () =>
+            (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) !==
+            'New tab',
+          { timeout: 20_000, timeoutMsg: 'browser tab did not navigate before pop-out' },
+        )
         await browser.waitUntil(
           async () => (await $('.browser-url-input').getValue()).includes('example.com'),
           { timeout: 20_000, timeoutMsg: 'browser address bar did not update before pop-out' },
@@ -183,6 +191,7 @@ describe('Pane pop-out (mock gh)', () => {
       // this pane has is done.
       if (pane.rowProbe) await $(pane.rowProbe).waitForExist({ timeout: 30_000 })
       await waitForImagesSettled(pane.listHost, { minImages: pane.minImages })
+      await assertPopoutModesAllShown()
       await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, `pane-popout-${pane.mode}.png`))
 
       // Close this pop-out before opening the next so handles stay unambiguous.
