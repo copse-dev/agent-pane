@@ -254,6 +254,11 @@ html.mark-external-links
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-secondary);
 }
+/* The package gives a quote still streaming its own margin; keep it on this
+   one, so a quote doesn't shift when it finishes. */
+.streaming-markdown blockquote.stream-pending-blockquote {
+  margin: var(--spacing-sm) 0;
+}
 .streaming-markdown blockquote.markdown-alert {
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   border-radius: var(--radius);
