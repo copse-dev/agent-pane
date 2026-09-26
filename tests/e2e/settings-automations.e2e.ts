@@ -3,7 +3,9 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { AUTOMATIONS_PLUGIN_ID } from '../../packages/agent/src/plugins/automations-plugin.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { tokenColour } from './helpers/theme.ts'
 
 const PROJECT_ID = 'e2e-settings-automations'
 const SCHEDULE_ID = 'schedule-morning-review'
@@ -82,6 +84,13 @@ describe('settings automations plugin', function () {
     assert.match(await detail.getText(), /1 live worktree max/i)
     assert.match(await detail.getText(), /Normal tool permission prompts still apply/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
+    // The schedule is summary text, not a control, so it is not painted in the
+    // interaction accent.
+    const scheduleColour = await browser.execute(() => {
+      const schedule = document.querySelector('.automation-row-schedule')
+      return schedule ? getComputedStyle(schedule).color : null
+    })
+    assert.equal(scheduleColour, await tokenColour('--text-secondary'))
     await saveElementScreenshot('.automation-plugin-settings', 'settings-automations.png')
 
     // Capture the editor separately so the settings dialog's sticky global
@@ -97,6 +106,15 @@ describe('settings automations plugin', function () {
     )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
     await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()
+    // The form's title is a nested card title: it keeps its own Pliant recipe
+    // rather than inheriting the section masthead's 28px display face.
+    const formTitle = await readHeadingStyle('.automation-form-title')
+    const masthead = await readHeadingStyle('.settings-section.active > h3')
+    assert.ok(formTitle && masthead)
+    assert.equal(formTitle.tag, 'H4')
+    assert.ok(!isDisplayFace(formTitle.family), `form title family: ${formTitle.family}`)
+    assert.equal(formTitle.weight, '600')
+    assert.ok(formTitle.size < masthead.size)
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.automation-form', 'settings-automation-form.png')
     await detail.$('.automation-cancel-btn').click()

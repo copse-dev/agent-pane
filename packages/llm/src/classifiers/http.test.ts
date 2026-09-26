@@ -28,6 +28,110 @@ function success(): object {
 }
 
 describe('classifier HTTP adapters', () => {
+  it('derives fields that self-hosted systemone servers omit, and says so', async () => {
+    // Shaped like metask-jev (no model, no choice), Jobe (score without score or
+    // legend) and JevK5 (score without legend), with their extra fields.
+    const request: ClassifierRequest = {
+      state: 'The parcel arrived at reception.',
+      questions: {
+        status: {
+          type: 'choice',
+          instructions: 'Delivery status?',
+          options: { delivered: null, lost: null, pending: null },
+        },
+        arrived: { type: 'boolean', instructions: 'Has it arrived?' },
+        certainty: { type: 'score', instructions: 'How certain?', levels: ['low', 'mid', 'high'] },
+      },
+    }
+    const result = await classifyHttp(profile(), request, {
+      fetchImpl: async () =>
+        Response.json({
+          answers: {
+            status: {
+              type: 'choice',
+              probabilities: { delivered: 0.7, lost: 0.1, pending: 0.2 },
+              _meta: { passes: 1 },
+            },
+            arrived: { type: 'noul', noul: 0.9, confidence: 0.8 },
+            certainty: { type: 'score', probabilities: { '0': 0.1, '1': 0.2, '2': 0.7 } },
+          },
+          latency_s: 0.2,
+        }),
+    })
+    assert.equal(result.model, 'kev-latest', 'an unnamed server reports the requested model')
+    assert.deepEqual(result.answers['status'], {
+      type: 'choice',
+      choice: 'delivered',
+      probabilities: { delivered: 0.7, lost: 0.1, pending: 0.2 },
+      derived: true,
+    })
+    assert.deepEqual(result.answers['arrived'], { type: 'boolean', probability: 0.9 })
+    const certainty = result.answers['certainty']
+    assert.equal(certainty?.type, 'score')
+    assert.ok(Math.abs(certainty.score - 1.6) < 1e-9, 'score is the expected level')
+    assert.deepEqual(result.metadata?.['derivedFields'], [
+      'model',
+      'answers.status.choice',
+      'answers.certainty.score',
+    ])
+  })
+
+  it('breaks a tie in the first offered option, and still validates fields that are present', async () => {
+    const tie = await classifyHttp(profile(), CLASSIFIER_TEST_REQUEST, {
+      fetchImpl: async () =>
+        Response.json({
+          model: 'hopper',
+          answers: { color: { type: 'choice', probabilities: { red: 0.5, blue: 0.5 } } },
+        }),
+    })
+    assert.equal(tie.answers['color']?.type === 'choice' && tie.answers['color'].choice, 'red')
+    assert.deepEqual(tie.metadata?.['derivedFields'], ['answers.color.choice'])
+
+    const scored: ClassifierRequest = {
+      state: 'x',
+      questions: { level: { type: 'score', instructions: 'Level?', levels: ['low', 'high'] } },
+    }
+    for (const answer of [
+      { type: 'score', probabilities: { '0': 0.5, '1': 0.5 }, legend: { '0': 'high', '1': 'low' } },
+      { type: 'score', score: 3, probabilities: { '0': 0.5, '1': 0.5 } },
+      { type: 'choice', choice: 'green', probabilities: { red: 0.5, blue: 0.5 } },
+    ]) {
+      await assert.rejects(
+        classifyHttp(profile(), answer.type === 'score' ? scored : CLASSIFIER_TEST_REQUEST, {
+          fetchImpl: async () =>
+            Response.json({
+              answers: answer.type === 'score' ? { level: answer } : { color: answer },
+            }),
+        }),
+        { code: 'invalid-response' },
+      )
+    }
+  })
+
+  it('keeps a derived score on the scale when the distribution rounds above 1', async () => {
+    const result = await classifyHttp(
+      profile(),
+      {
+        state: 'x',
+        questions: {
+          level: { type: 'score', instructions: 'Level?', levels: ['low', 'mid', 'high'] },
+        },
+      },
+      {
+        fetchImpl: async () =>
+          Response.json({
+            answers: {
+              level: { type: 'score', probabilities: { '0': 0, '1': 0.01, '2': 1 } },
+            },
+          }),
+      },
+    )
+    const level = result.answers['level']
+    assert.equal(level?.type, 'score')
+    assert.ok(Math.abs(level.score - 2.01 / 1.01) < 1e-9, 'score is normalized by the total')
+    assert.ok(level.score <= 2)
+  })
+
   it('encodes named questions and preserves confidence separately from probabilities', async () => {
     let attempts = 0
     const result = await classifyHttp(profile('typesafe'), CLASSIFIER_TEST_REQUEST, {

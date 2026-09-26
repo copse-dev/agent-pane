@@ -540,6 +540,7 @@ describe('copse-review CLI', () => {
     )
     const importedEvents = join(dir, 'imported.events.jsonl')
     const posts: { url: string; body: string }[] = []
+    const lookups: string[] = []
     let out = ''
     let err = ''
     const code = await main(
@@ -575,6 +576,11 @@ describe('copse-review CLI', () => {
         env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
         cwd: repo.root,
         fetch: (url, init) => {
+          // No other open pull request carries these findings.
+          if (init.method === 'GET') {
+            lookups.push(url)
+            return Promise.resolve({ status: 200, text: () => Promise.resolve('[]') })
+          }
           posts.push({ url, body: init.body ?? '' })
           return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
         },
@@ -591,6 +597,7 @@ describe('copse-review CLI', () => {
     assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
     assert.match(post.body, /pnpm run test|check\.cjs/)
     assert.equal(posts.length, 1)
+    assert.ok(lookups.some((url) => url.includes('/pulls?state=open')))
     assert.match(err, /1 inline comment\(s\), 1 folded into the body/)
     const payload: unknown = JSON.parse(post.body)
     assert.ok(typeof payload === 'object' && payload !== null)
@@ -753,6 +760,235 @@ describe('copse-review CLI', () => {
     ])
     assert.equal(container.code, HEADLESS_EXIT.APPROVAL_REQUIRED)
     assert.match(container.err, /no container backend for copse-review-test:never-built/)
+  })
+
+  it('rejects a summary-only run combined with a review, and a summary on another forge', async () => {
+    const repo = await fixture({})
+    const withReview = await run(repo, [
+      '--summary-only',
+      '--post-review',
+      'github',
+      '--repo',
+      'a/b',
+      '--pr',
+      '1',
+    ])
+    assert.equal(withReview.code, HEADLESS_EXIT.USAGE)
+    assert.match(withReview.err, /--summary-only cannot be used with --post-review/)
+    const noModel = await run(repo, ['--summary-only', '--no-model'])
+    assert.match(noModel.err, /--summary-only cannot be used with --no-model/)
+    assert.throws(
+      () =>
+        resolveForgeTarget(
+          { 'post-review': 'github', 'post-summary': 'forgejo', repo: 'a/b', pr: '1' },
+          { GITHUB_TOKEN: 't' },
+        ),
+      /must name the same forge/,
+    )
+    assert.throws(
+      () => resolveForgeTarget({ 'post-summary': 'github', pr: '1' }, { GITHUB_TOKEN: 't' }),
+      /--post-summary needs --repo/,
+    )
+  })
+
+  it('writes only the summary for a foreign ref, executing nothing, and keeps it in the description', async () => {
+    const repo = await fixture({ test: { exit: 1 } })
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const contributed = repo.git('rev-parse', 'HEAD')
+    repo.git('update-ref', 'refs/pull/7/head', contributed)
+    repo.git('checkout', '-q', 'main')
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify({
+        roles: {
+          summary: [
+            {
+              type: 'tool_call',
+              name: 'write_summary',
+              args: {
+                risk: 'medium',
+                riskReason: 'Changes the arithmetic every caller of add relies on.',
+                overview: ['Makes add subtract its second argument.'],
+              },
+            },
+            { type: 'text', text: 'Done.' },
+          ],
+        },
+      }),
+    )
+    const calls: { url: string; method: string; body: string }[] = []
+    let out = ''
+    let err = ''
+    const code = await main(
+      [
+        '--base',
+        'main',
+        '--head',
+        'refs/pull/7/head',
+        '--foreign',
+        '--summary-only',
+        '--provider',
+        'mock',
+        '--mock-script',
+        script,
+        '--post-summary',
+        'github',
+        '--repo',
+        'copse-dev/fixture',
+        '--pr',
+        '7',
+      ],
+      {
+        stdout: (text) => {
+          out += text
+        },
+        stderr: (text) => {
+          err += text
+        },
+        env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
+        cwd: repo.root,
+        fetch: (url, init) => {
+          calls.push({ url, method: init.method, body: init.body ?? '' })
+          const text =
+            init.method === 'GET'
+              ? JSON.stringify({ body: 'Author text.', head: { sha: contributed } })
+              : '{}'
+          return Promise.resolve({ status: 200, text: () => Promise.resolve(text) })
+        },
+      },
+    )
+    assert.equal(code, HEADLESS_EXIT.SUCCESS, err)
+    // No Stage 0 and no review: the only output is the block.
+    assert.doesNotMatch(out, /Stage 0/)
+    assert.match(out, /^<!-- copse-review-summary -->\n/)
+    assert.match(out, /> \*\*Medium risk\*\*\n> Changes the arithmetic/)
+    assert.match(out, new RegExp(`for commit ${contributed.slice(0, 12)}\\.`))
+    assert.match(err, /updated the summary in the description of copse-dev\/fixture#7/)
+    assert.deepEqual(
+      calls.map((call) => `${call.method} ${call.url}`),
+      [
+        'GET https://api.github.com/repos/copse-dev/fixture/pulls/7',
+        'PATCH https://api.github.com/repos/copse-dev/fixture/pulls/7',
+      ],
+    )
+    const patched: unknown = JSON.parse(calls[1]?.body ?? '')
+    assert.ok(typeof patched === 'object' && patched !== null)
+    assert.equal(Reflect.get(patched, 'body'), `Author text.\n\n${out.trimEnd()}`)
+  })
+
+  it('posts the review first, then a summary whose risk the findings raise', async () => {
+    const repo = await fixture({})
+    const dir = await mkdtemp(join(tmpdir(), 'review-cli-'))
+    scratch.push(dir)
+    const contributed = repo.git('rev-parse', 'HEAD')
+    repo.git('update-ref', 'refs/pull/7/head', contributed)
+    repo.git('checkout', '-q', 'main')
+    const script = join(dir, 'script.json')
+    await writeFile(
+      script,
+      JSON.stringify({
+        roles: {
+          'review:correctness': [
+            {
+              type: 'tool_call',
+              name: 'report_finding',
+              args: {
+                path: 'src/math.ts',
+                startLine: 1,
+                class: 'contract',
+                severity: 'high',
+                confidence: 'high',
+                claim: 'add subtracts its second argument.',
+                reason: 'The body is a - b.',
+              },
+            },
+            finishReviewStep('src/math.ts.'),
+            { type: 'text', text: 'Done.' },
+          ],
+          summary: [
+            {
+              type: 'tool_call',
+              name: 'write_summary',
+              args: {
+                risk: 'low',
+                riskReason: 'A one-line change to a helper.',
+                overview: ['Changes add.'],
+              },
+            },
+            { type: 'text', text: 'Done.' },
+          ],
+        },
+      }),
+    )
+    const calls: { url: string; method: string; body: string }[] = []
+    const result = await (async (): Promise<Captured> => {
+      let out = ''
+      let err = ''
+      const code = await main(
+        [
+          '--base',
+          'main',
+          '--head',
+          'refs/pull/7/head',
+          '--foreign',
+          '--image',
+          'copse-review-test:never-built',
+          '--provider',
+          'mock',
+          '--mock-script',
+          script,
+          '--no-verify',
+          '--post-review',
+          'github',
+          '--post-summary',
+          'github',
+          '--repo',
+          'copse-dev/fixture',
+          '--pr',
+          '7',
+        ],
+        {
+          stdout: (text) => {
+            out += text
+          },
+          stderr: (text) => {
+            err += text
+          },
+          env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
+          cwd: repo.root,
+          fetch: (url, init) => {
+            calls.push({ url, method: init.method, body: init.body ?? '' })
+            const text =
+              init.method === 'GET' && url.endsWith('/pulls/7')
+                ? JSON.stringify({ body: null, head: { sha: contributed } })
+                : init.method === 'GET'
+                  ? '[]'
+                  : '{}'
+            return Promise.resolve({ status: 200, text: () => Promise.resolve(text) })
+          },
+        },
+      )
+      return { out, err, code }
+    })()
+    // Not executed (no container), but the review and the summary are both posted.
+    assert.equal(result.code, HEADLESS_EXIT.APPROVAL_REQUIRED, result.err)
+    assert.match(result.err, /posted the review on copse-dev\/fixture#7/)
+    assert.match(result.err, /updated the summary in the description of copse-dev\/fixture#7/)
+    const order = calls.map((call) => `${call.method} ${call.url.replace(/^.*\/pulls\/7/, '')}`)
+    // The review is posted before the description is read and edited.
+    assert.deepEqual(order.slice(-2), ['GET ', 'PATCH '])
+    const posted = order.indexOf('POST /reviews')
+    assert.ok(posted >= 0 && posted < order.length - 2, order.join(', '))
+    const patched: unknown = JSON.parse(calls.at(-1)?.body ?? '')
+    assert.ok(typeof patched === 'object' && patched !== null)
+    const body = String(Reflect.get(patched, 'body'))
+    assert.match(body, /> \*\*High risk\*\*\n> A one-line change to a helper\./)
+    assert.match(body, /Raised to High risk because the review surfaced 1 high-severity issue\./)
+    assert.match(body, /The review reported 1 issue\./)
+    // The summary never reaches the review's own stdout report.
+    assert.doesNotMatch(result.out, /copse-review-summary/)
   })
 
   it('treats a blank forge token as unset and rejects a pull request number with junk', () => {

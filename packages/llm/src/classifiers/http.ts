@@ -1,6 +1,8 @@
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
+import { readResponseTextWithin } from '@copse/std/bounded-response.ts'
 import { redactSecrets } from '../redact-secrets.ts'
+import { classifierDeadline, interruption } from './deadline.ts'
 import { ClassifierError } from './error.ts'
 import { parseClassifierBatch } from './validation.ts'
 import type {
@@ -16,24 +18,29 @@ import type {
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const probability = z.number().min(0).max(1)
 const probabilities = z.record(z.string(), probability)
+// Self-hosted systemone servers (JevK5, Jobe, metask-jev, Hopper) omit fields
+// the hosted API always sends: `choice`, `score`, `legend`, or the top-level
+// `model`. Each is derivable from what they do send, so the adapter derives
+// it and records that in `metadata.derivedFields` rather than rejecting the
+// answer. A field that is present is still validated in full.
 const answerSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('choice'),
-    choice: z.string(),
+    choice: z.string().optional(),
     probabilities,
     confidence: probability.optional(),
   }),
   z.object({ type: z.literal('noul'), noul: probability }),
   z.object({
     type: z.literal('score'),
-    score: z.number(),
+    score: z.number().optional(),
     probabilities,
-    legend: z.record(z.string(), z.string()),
+    legend: z.record(z.string(), z.string()).optional(),
     confidence: probability.optional(),
   }),
 ])
 const responseSchema = z.object({
-  model: z.string().min(1).max(512),
+  model: z.string().min(1).max(512).optional(),
   answers: z.record(z.string(), answerSchema),
   usage: z
     .object({
@@ -71,37 +78,63 @@ function validateDistribution(values: Record<string, number>, keys: readonly str
   }
 }
 
-function normalizeAnswer(question: ClassifierQuestion, answer: WireAnswer): ClassifierAnswer {
+/** The likeliest key, the first in `keys` order on a tie. */
+function likeliest(values: Record<string, number>, keys: readonly string[]): string {
+  let best = keys[0] ?? ''
+  for (const key of keys) if ((values[key] ?? 0) > (values[best] ?? 0)) best = key
+  return best
+}
+
+/**
+ * Normalize one answer. `derive` receives the name of each field that the
+ * provider omitted and the adapter computed from the distribution instead.
+ */
+function normalizeAnswer(
+  question: ClassifierQuestion,
+  answer: WireAnswer,
+  derive: (field: string) => void,
+): ClassifierAnswer {
   if (question.type === 'boolean' && answer.type === 'noul') {
     return { type: 'boolean', probability: answer.noul }
   }
   if (question.type === 'choice' && answer.type === 'choice') {
     const keys = Object.keys(question.options)
     validateDistribution(answer.probabilities, keys)
-    if (!Object.hasOwn(question.options, answer.choice)) {
+    if (answer.choice !== undefined && !Object.hasOwn(question.options, answer.choice)) {
       throw new ClassifierError('invalid-response', 'Classifier returned an unknown choice.')
     }
+    if (answer.choice === undefined) derive('choice')
     return {
       type: 'choice',
-      choice: answer.choice,
+      choice: answer.choice ?? likeliest(answer.probabilities, keys),
       probabilities: Object.fromEntries(keys.map((key) => [key, answer.probabilities[key] ?? 0])),
       ...(answer.confidence === undefined ? {} : { confidence: answer.confidence }),
+      ...(answer.choice === undefined ? { derived: true } : {}),
     }
   }
   if (question.type === 'score' && answer.type === 'score') {
     const keys = question.levels.map((_, index) => String(index))
     validateDistribution(answer.probabilities, keys)
+    const { legend } = answer
+    // The hosted API's score is the distribution's expected level. Divide by the
+    // total so a distribution inside the rounding tolerance stays on the scale.
+    const total = keys.reduce((sum, key) => sum + (answer.probabilities[key] ?? 0), 0)
+    const score =
+      answer.score ??
+      keys.reduce((sum, key, index) => sum + index * (answer.probabilities[key] ?? 0), 0) / total
     if (
-      answer.score < 0 ||
-      answer.score > question.levels.length - 1 ||
-      !sameKeys(answer.legend, keys) ||
-      !question.levels.every((level, index) => answer.legend[String(index)] === level)
+      score < 0 ||
+      score > question.levels.length - 1 ||
+      (legend !== undefined &&
+        (!sameKeys(legend, keys) ||
+          !question.levels.every((level, index) => legend[String(index)] === level)))
     ) {
       throw new ClassifierError('invalid-response', 'Classifier returned an invalid score scale.')
     }
+    if (answer.score === undefined) derive('score')
     return {
       type: 'score',
-      score: answer.score,
+      score,
       levels: [...question.levels],
       probabilities: Object.fromEntries(keys.map((key) => [key, answer.probabilities[key] ?? 0])),
       ...(answer.confidence === undefined ? {} : { confidence: answer.confidence }),
@@ -129,46 +162,10 @@ function encodeQuestion(question: ClassifierQuestion): object {
 }
 
 async function readResponse(response: Response, signal: AbortSignal): Promise<string> {
-  const declared = Number(response.headers.get('content-length') ?? 0)
-  if (declared > MAX_RESPONSE_BYTES) {
-    await response.body?.cancel()
+  const text = await readResponseTextWithin(response, MAX_RESPONSE_BYTES, signal)
+  if (text === null)
     throw new ClassifierError('invalid-response', 'Classifier response exceeded the size limit.')
-  }
-  if (!response.body)
-    throw new ClassifierError('invalid-response', 'Classifier returned an empty response.')
-  const reader = response.body.getReader()
-  const cancelReader = (): void => {
-    void reader.cancel().catch(() => undefined)
-  }
-  signal.addEventListener('abort', cancelReader, { once: true })
-  if (signal.aborted) cancelReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  try {
-    for (;;) {
-      const next = await reader.read()
-      if (next.done) break
-      size += next.value.byteLength
-      if (size > MAX_RESPONSE_BYTES) {
-        await reader.cancel()
-        throw new ClassifierError(
-          'invalid-response',
-          'Classifier response exceeded the size limit.',
-        )
-      }
-      chunks.push(next.value)
-    }
-  } finally {
-    signal.removeEventListener('abort', cancelReader)
-    reader.releaseLock()
-  }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.length
-  }
-  return new TextDecoder().decode(bytes)
+  return text
 }
 
 function httpError(status: number): ClassifierError {
@@ -233,27 +230,8 @@ export async function classifyHttpValidated(
       'Classifier timeout must be between 1 and 600000 milliseconds.',
     )
   if (options.signal?.aborted) throw new ClassifierError('cancelled', 'Classifier call cancelled.')
-  const controller = new AbortController()
-  const abort = (): void => {
-    controller.abort(new ClassifierError('cancelled', 'Classifier call cancelled.'))
-  }
-  options.signal?.addEventListener('abort', abort, { once: true })
-  const timer = setTimeout(() => {
-    controller.abort(new ClassifierError('timeout', 'Classifier call timed out.'))
-  }, timeoutMs)
+  const deadline = classifierDeadline(timeoutMs, options.signal)
   const started = performance.now()
-  let rejectAborted: (() => void) | undefined
-  const interrupted = new Promise<never>((_, reject) => {
-    rejectAborted = (): void => {
-      const reason: unknown = controller.signal.reason
-      reject(
-        reason instanceof ClassifierError
-          ? reason
-          : new ClassifierError('cancelled', 'Classifier call cancelled.'),
-      )
-    }
-    controller.signal.addEventListener('abort', rejectAborted, { once: true })
-  })
   const call = async (): Promise<ClassifierResult> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -265,7 +243,7 @@ export async function classifyHttpValidated(
       method: 'POST',
       headers,
       redirect: 'manual',
-      signal: controller.signal,
+      signal: deadline.signal,
       body: JSON.stringify({
         model: profile.model,
         state: request.state,
@@ -279,7 +257,7 @@ export async function classifyHttpValidated(
       throw httpError(response.status)
     }
     const decoded = safeJsonParse(
-      await readResponse(response, controller.signal),
+      await readResponse(response, deadline.signal),
       decodeWithSchema(responseSchema),
     )
     if (!decoded || !sameKeys(decoded.answers, Object.keys(request.questions)))
@@ -288,10 +266,13 @@ export async function classifyHttpValidated(
         'Classifier returned malformed or incomplete answers.',
       )
     const answers: Record<string, ClassifierAnswer> = {}
+    const derivedFields: string[] = decoded.model === undefined ? ['model'] : []
     for (const [id, question] of Object.entries(request.questions)) {
       const answer = decoded.answers[id]
       if (!answer) throw new ClassifierError('invalid-response', 'Classifier omitted an answer.')
-      answers[id] = normalizeAnswer(question, answer)
+      answers[id] = normalizeAnswer(question, answer, (field) => {
+        derivedFields.push(`answers.${id}.${field}`)
+      })
     }
     const metadata: Record<string, JsonValue> = {
       confidenceSemantics:
@@ -304,6 +285,7 @@ export async function classifyHttpValidated(
     // leaving caller-owned question/option identifiers intact.
     const activeSecrets = apiKey ? [apiKey] : []
     const redactProviderText = (value: string): string => redactSecrets(value, activeSecrets)
+    if (derivedFields.length > 0) metadata['derivedFields'] = derivedFields
     if (decoded.latency_ms !== undefined) metadata['providerLatencyMs'] = decoded.latency_ms
     if (decoded.model_revision !== undefined)
       metadata['modelRevision'] = redactProviderText(decoded.model_revision)
@@ -316,7 +298,8 @@ export async function classifyHttpValidated(
       profileId: profile.id,
       adapter: `${connection.protocol}@1`,
       requestedModel: profile.model,
-      model: redactProviderText(decoded.model),
+      // A server that does not name its model is reported as the one requested.
+      model: redactProviderText(decoded.model ?? profile.model),
       answers,
       elapsedMs: performance.now() - started,
       metadata,
@@ -336,15 +319,12 @@ export async function classifyHttpValidated(
     }
   }
   try {
-    return await Promise.race([call(), interrupted])
+    return await Promise.race([call(), deadline.interrupted])
   } catch (error) {
     if (error instanceof ClassifierError) throw error
-    if (controller.signal.aborted && controller.signal.reason instanceof ClassifierError)
-      throw controller.signal.reason
+    if (deadline.signal.aborted) throw interruption(deadline.signal)
     throw new ClassifierError('connectivity', 'Could not connect to the classifier endpoint.')
   } finally {
-    clearTimeout(timer)
-    options.signal?.removeEventListener('abort', abort)
-    if (rejectAborted) controller.signal.removeEventListener('abort', rejectAborted)
+    deadline.dispose()
   }
 }

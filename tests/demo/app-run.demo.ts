@@ -29,6 +29,67 @@ describe('shared Apple and Android Run app picker', () => {
       await expect($('.app-run-more')).not.toHaveAttribute('open')
       await saveElementScreenshot('#app-run-dialog', `app-run-${platform}-picker.png`)
     })
+  it('uses the shared dialog chrome and scales with the interface', async () => {
+    await browser.url('/app-run-fixture.html?mode=android')
+    await $('.app-run-run').waitForEnabled()
+    // Off-token before #3065: a 12px radius on --bg-base with 20px padding and
+    // an 8px action gap, next to every other dialog's --radius-lg on
+    // --bg-elevated with --spacing-xl and --spacing-md.
+    const read = () =>
+      browser.execute(() => {
+        const dialog = document.querySelector<HTMLElement>('#app-run-dialog')
+        const actions = document.querySelector<HTMLElement>('.app-run-panel .app-run-actions')
+        const title = document.querySelector<HTMLElement>('#app-run-title')
+        if (!dialog || !actions || !title) return null
+        const resolve = (property: string, token: string): string => {
+          const probe = document.createElement('div')
+          probe.style.setProperty(property, `var(${token})`)
+          dialog.append(probe)
+          const value = getComputedStyle(probe).getPropertyValue(property)
+          probe.remove()
+          return value
+        }
+        const style = getComputedStyle(dialog)
+        return {
+          radius: style.borderTopLeftRadius,
+          background: style.backgroundColor,
+          padding: style.paddingTop,
+          actionGap: getComputedStyle(actions).columnGap,
+          titleSize: getComputedStyle(title).fontSize,
+          tokens: {
+            radius: resolve('border-top-left-radius', '--radius-lg'),
+            background: resolve('background-color', '--bg-elevated'),
+            padding: resolve('padding-top', '--spacing-xl'),
+            actionGap: resolve('column-gap', '--spacing-md'),
+            titleSize: resolve('font-size', '--font-size-lg'),
+          },
+        }
+      })
+    const base = await read()
+    expect(base).not.toBeNull()
+    if (!base) return
+    expect(base.radius).toBe(base.tokens.radius)
+    expect(base.background).toBe(base.tokens.background)
+    expect(base.padding).toBe(base.tokens.padding)
+    expect(base.actionGap).toBe(base.tokens.actionGap)
+    expect(base.titleSize).toBe(base.tokens.titleSize)
+    // The dialog focuses its close button on open; drop the ring for the shot.
+    await browser.execute(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
+    await saveElementScreenshot('#app-run-dialog', 'app-run-dialog-chrome.png')
+
+    // Tokens are what carry the interface scale; a raw 20px would not move.
+    await browser.execute(() => {
+      document.documentElement.style.setProperty('--ui-scale', '1.25')
+    })
+    const scaled = await read()
+    await browser.execute(() => {
+      document.documentElement.style.removeProperty('--ui-scale')
+    })
+    expect(scaled?.padding).toBe(`${String(Number.parseFloat(base.padding) * 1.25)}px`)
+    expect(scaled?.actionGap).toBe(`${String(Number.parseFloat(base.actionGap) * 1.25)}px`)
+  })
   it('shows actual operation stage/logs and cancellation', async () => {
     await browser.url('/app-run-fixture.html?mode=android')
     await $('.app-run-run').waitForEnabled()

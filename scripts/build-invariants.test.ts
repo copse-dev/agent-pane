@@ -1,7 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { pointHtmlAtMonacoBase } from './copy-monaco-workers.mts'
 import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 
@@ -19,12 +22,13 @@ import { STANDALONE_MAIN_BUNDLES } from './main-bundles.mts'
 describe('build.mts bundle invariants', () => {
   const build = readFileSync(resolve('scripts/build.mts'), 'utf8')
   const dev = readFileSync(resolve('scripts/dev.mts'), 'utf8')
+  const bundles = readFileSync(resolve('scripts/main-bundles.mts'), 'utf8')
   const rendererHtml = readFileSync(resolve('src/renderer/index.html'), 'utf8')
   const rendererMain = readFileSync(resolve('src/renderer/main.ts'), 'utf8')
 
   /** The `for (…of STANDALONE_MAIN_BUNDLES)` body — everything the emit sees. */
   const standaloneLoop = build.match(
-    /for \(const \{ entry, outfile \} of STANDALONE_MAIN_BUNDLES\) \{[\s\S]*?\n {2}\}/,
+    /for \(const \{ entry, outfile, manifest \} of STANDALONE_MAIN_BUNDLES\) \{[\s\S]*?\n {2}\}/,
   )?.[0]
   /** The shared options the loop spreads; a banner here would reach every bundle. */
   const nodeOpts = build.match(/const nodeOpts = \{[\s\S]*?\n\}/)?.[0]
@@ -68,6 +72,36 @@ describe('build.mts bundle invariants', () => {
       standaloneLoop,
       /assertParses\(outfile\)/,
       "these bundles are only ever exec'd, so the build must verify each one parses",
+    )
+  })
+
+  it('emits a package.json beside every standalone bundle that declares one', () => {
+    // The sandbox-fs worker is exec'd under seatbelt with read access to only
+    // its own directory and the workspace root. With no package.json beside the
+    // bundle, Node's entry-point load walks the ancestor chain probing for one,
+    // an ancestor probe hits EPERM, and the worker dies with
+    // ERR_INVALID_PACKAGE_CONFIG before its code runs (repeated by the one-shot
+    // fallback — dozens of doomed spawns per file-tree walk). Both builders
+    // must honor the `manifest` field or a dev-built dist/ ships without it.
+    assert.match(
+      build,
+      /for \(const \{ entry, outfile, manifest \} of STANDALONE_MAIN_BUNDLES\)/,
+      'build.mts must destructure the manifest field',
+    )
+    assert.match(
+      build,
+      /if \(manifest\) \{[\s\S]*?writeFileSync/,
+      'build.mts must write the manifest beside the bundle',
+    )
+    assert.match(
+      dev,
+      /for \(const \{ outfile, manifest \} of STANDALONE_MAIN_BUNDLES\) \{\s*if \(manifest\) \{\s*writeFileSync\(join\(dirname\(outfile\), 'package\.json'\)/,
+      'dev.mts must emit side files it does not rebuild, cwd-relative like `outfile`',
+    )
+    assert.match(
+      bundles,
+      /entry: 'src\/main\/project-sandbox\/sandbox-fs-worker\.ts',[\s\S]*?manifest: \{ type: 'commonjs' \}/,
+      'the sandbox-fs worker needs its package.json walk terminated inside the sandbox allow-list',
     )
   })
 
@@ -169,4 +203,45 @@ describe('pointHtmlAtMonacoBase', () => {
       /no \.\/monaco\/ reference to repoint/,
     )
   })
+})
+
+describe('sandbox-fs worker manifest', () => {
+  // The regex pins above check that both builders write the manifest; this runs
+  // the failure itself. Electron 44.4.1+ (Node 24.21) treats EPERM on an
+  // ancestor package.json as fatal ERR_INVALID_PACKAGE_CONFIG; 44.3.0 did not.
+  it(
+    'lets Electron-as-Node start under a seatbelt that denies an ancestor package.json',
+    { skip: process.platform !== 'darwin' && 'seatbelt is macOS-only' },
+    () => {
+      const worker = STANDALONE_MAIN_BUNDLES.find(({ entry }) =>
+        entry.endsWith('/sandbox-fs-worker.ts'),
+      )
+      assert.ok(worker?.manifest, 'the sandbox-fs worker must declare a manifest')
+      const electron: unknown = createRequire(import.meta.url)('electron')
+      assert.ok(typeof electron === 'string', 'the electron package resolves to its binary path')
+      const root = realpathSync(mkdtempSync(join(tmpdir(), 'fs-worker-manifest-')))
+      try {
+        const ancestor = join(root, 'package.json')
+        writeFileSync(ancestor, '{}\n')
+        const dir = join(root, 'dist', 'main')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'package.json'), JSON.stringify(worker.manifest))
+        writeFileSync(join(dir, 'worker.js'), "process.stdout.write('started')\n")
+        const profile = `(version 1)(allow default)(deny file-read* (literal ${JSON.stringify(ancestor)}))`
+        // Positive control: without it a profile that denies nothing passes too.
+        const control = spawnSync('/usr/bin/sandbox-exec', ['-p', profile, '/bin/cat', ancestor], {
+          encoding: 'utf8',
+        })
+        assert.match(control.stderr, /Operation not permitted/)
+        const run = spawnSync(
+          '/usr/bin/sandbox-exec',
+          ['-p', profile, electron, join(dir, 'worker.js')],
+          { encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 30_000 },
+        )
+        assert.equal(run.stdout, 'started', run.stderr)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
 })

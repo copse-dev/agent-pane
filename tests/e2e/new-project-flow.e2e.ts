@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 import { composerText } from './helpers/composer.ts'
 
 // Creating a project runs `git init` + writes AGENT.md/README.md, so it needs a
@@ -54,6 +55,39 @@ describe('new project flow', () => {
     expect(radii!.newRadius).toBe(radii!.actionRadius)
     // Guard against regressing to the square UI-kit radius (6px).
     expect(radii!.newRadius).not.toMatch(/^6px/)
+    // Display headings take Averia's only weight; 600 would be a smeared
+    // synthetic bold.
+    const welcomeHeading = await readHeadingStyle('.welcome-heading')
+    expect(welcomeHeading).not.toBeNull()
+    expect(isDisplayFace(welcomeHeading!.family)).toBe(true)
+    expect(welcomeHeading!.weight).toBe('400')
+
+    // New Project is the one filled primary; Open Folder is the outlined
+    // secondary (welcome.css) and must not pick up the brand accent fill.
+    const fills = await browser.execute(() => {
+      const newBtn = document.querySelector('.welcome-new-btn')
+      const openBtn = document.querySelector('.welcome-open-btn')
+      if (!(newBtn instanceof HTMLElement) || !(openBtn instanceof HTMLElement)) {
+        return null
+      }
+      const probe = document.createElement('div')
+      probe.style.backgroundColor = 'var(--accent-fill)'
+      document.body.append(probe)
+      const accentFill = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      const open = getComputedStyle(openBtn)
+      return {
+        accentFill,
+        newBackground: getComputedStyle(newBtn).backgroundColor,
+        openBackground: open.backgroundColor,
+        openBorderWidth: open.borderTopWidth,
+      }
+    })
+    expect(fills).not.toBeNull()
+    expect(fills!.newBackground).toBe(fills!.accentFill)
+    expect(fills!.openBackground).not.toBe(fills!.accentFill)
+    expect(fills!.openBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(fills!.openBorderWidth).toBe('1px')
     await saveAppScreenshot('welcome-empty.png')
 
     await $('.welcome-new-btn').click()
@@ -61,6 +95,10 @@ describe('new project flow', () => {
     await dialog.waitForDisplayed({ timeout: 5_000 })
     await expect($('.new-project-name')).toBeDisplayed()
     await expect($('.new-project-parent')).toBeDisplayed()
+    const dialogTitle = await readHeadingStyle('.new-project-dialog h3')
+    expect(dialogTitle).not.toBeNull()
+    expect(isDisplayFace(dialogTitle!.family)).toBe(true)
+    expect(dialogTitle!.weight).toBe('400')
     await saveAppScreenshot('new-project-dialog.png')
 
     // Cancel returns to the welcome screen.
