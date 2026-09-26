@@ -24,3 +24,26 @@ export async function switchTheme(theme: 'light' | 'dark'): Promise<void> {
     { timeout: 10_000, timeoutMsg: `expected the ${theme} theme to apply` },
   )
 }
+
+/**
+ * The computed value `property: var(token)` resolves to in the live theme, read
+ * off a throwaway probe so it is serialised exactly like the element it is
+ * compared against (Chromium prints a `color-mix()` result as `color(srgb …)`).
+ */
+export async function tokenColour(
+  token: string,
+  property: 'color' | 'background-color' | 'border-top-color' = 'color',
+): Promise<string> {
+  return browser.execute(
+    (name, prop) => {
+      const probe = document.createElement('span')
+      probe.style.setProperty(prop, `var(${name})`)
+      document.body.append(probe)
+      const value = getComputedStyle(probe).getPropertyValue(prop)
+      probe.remove()
+      return value
+    },
+    token,
+    property,
+  )
+}

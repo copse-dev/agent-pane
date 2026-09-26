@@ -74,6 +74,9 @@ choice load-bearing rather than stylistic:
   white on hover and measured 1.86:1. Where a filled chip's hover must hold AA for text, lift it
   with `filter: brightness()`; light's `--accent-fill-hover` darkens the fill and leaves the default
   label at 3.49:1, which is fine for a glyph (3:1) but not for words.
+- **Native checkboxes, radios, and range sliders** are fills too: a checked box is the accent with a
+  mark on it, and Chromium picks the mark's colour from the fill. Their `accent-color` is
+  `--accent-fill` (see "Accent colour versus interface tint").
 - **Everything the accent only tints** — text, links, borders, rails, focus outlines, washes — takes
   `--accent`, which is the tier derived to stay readable.
 - **A state a user has to see** — a selected row, an active tab — should not rest on the accent's
@@ -85,6 +88,22 @@ choice load-bearing rather than stylistic:
 
 `src/renderer/styles/light-contrast.test.ts` pins the first rule mechanically, and holds the light
 syntax-highlighting palette to WCAG AA on the real (tinted) code surface.
+
+#### Change marks and status dots
+
+Git status letters, `+N −M` line stats and the diff editor's washes take the change tokens in
+`tokens.css` — `--change-added` / `-modified` / `-deleted` / `-renamed`, `--diff-insert` /
+`--diff-delete` — never a hex of their own (there were five different "added" greens). They are
+bound to the status hues, not a separate palette; light darkens the letter tier because its status
+hues sit near 4:1 on the tinted panes and these marks are small text. Deleted binds to `--error`,
+not `--danger`, which is too dark to read as 10px text in dark. CI dots are non-text marks and use
+`--success` / `--error` / `--warning` directly. `light-contrast.test.ts` measures all of them in
+both themes on the pane surfaces (4.5:1 for marks you read, 3:1 for dots).
+
+Where a row already carries an inline status, the hue belongs to that status element only; the
+name beside it stays neutral (MCP server rows). A setting shown as a badge — auto-merge — is not a
+status and takes the neutral `.pr-badge` treatment, and summary text such as a schedule is
+`--text-secondary`, not the accent.
 
 ### Decorative motifs
 
@@ -263,11 +282,19 @@ like a browser, without reflowing tokens or writing the interface-scale preferen
 
 | Token          | Base | Token              | Base |
 | -------------- | ---- | ------------------ | ---- |
-| `--spacing-xs` | 4px  | `--radius`         | 6px  |
-| `--spacing-sm` | 8px  | `--radius-lg`      | 8px  |
-| `--spacing-md` | 12px | `--font-size-sm`   | 12px |
-| `--spacing-lg` | 16px | `--font-size-base` | 14px |
-| `--spacing-xl` | 24px | `--font-size-lg`   | 16px |
+| `--spacing-xs` | 4px  | `--font-size-3xs`  | 9px  |
+| `--spacing-sm` | 8px  | `--font-size-2xs`  | 10px |
+| `--spacing-md` | 12px | `--font-size-xs`   | 11px |
+| `--spacing-lg` | 16px | `--font-size-sm`   | 12px |
+| `--spacing-xl` | 24px | `--font-size-base` | 14px |
+| `--radius`     | 6px  | `--font-size-md`   | 15px |
+| `--radius-lg`  | 8px  | `--font-size-lg`   | 16px |
+
+Every renderer `font-size` goes through a `--font-size-*` token, or `calc(Npx * var(--ui-scale))`
+for a one-off display size, so badges, eyebrows and labels grow with the rest of the interface.
+`--font-size-2xs` and `--font-size-3xs` are for micro chrome only: count badges, uppercase tags, and
+dense meta rows. `src/renderer/styles/ui-font-scale.test.ts` fails on a raw `px` font size outside
+`tokens.css`; its short allowlist names the few fixed-pixel controls that must not scale, and why.
 
 Chrome band tokens (not spacing, but reach for these before inventing heights):
 `--chrome-action-band-height`, `--browser-chrome-band-height`.
@@ -277,6 +304,11 @@ Chrome band tokens (not spacing, but reach for these before inventing heights):
   introducing a new magic number. This mirrors what `onboarding.css` already does.
 - Colors: `--bg-base` / `--bg-elevated` / `--bg-hover`, `--text-primary` / `--text-secondary` /
   `--text-muted`, `--border`, `--accent`, and the `--error` / `--success` / `--warning` status hues.
+  There is no `--bg-primary`, `--bg-secondary`, `--bg`, `--radius-md`, or `--transition-*`. A
+  `var()` naming a token that does not exist computes to the initial value — a transparent fill,
+  square corners — without any warning, so
+  [`custom-properties.test.ts`](../src/renderer/styles/custom-properties.test.ts) fails on any
+  fallback-less `var(--x)` whose property no stylesheet declares and no renderer `setProperty` sets.
 - Per user preference: before adding any constant, check whether one already exists to import/use.
 - Column widths in markdown tables are magic numbers too — see **Markdown tables in chat** below.
 
@@ -921,8 +953,9 @@ wash through otherwise neutral surfaces. Derive hover and link shades from the a
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
 
-Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent)` on
-`html, body`, and every checkbox, radio and range input inherits it. Do not restate it per
+Native form controls are part of that rule. `base.css` sets `accent-color: var(--accent-fill)` on
+`html, body`, and every checkbox, radio and range input inherits it. It is the fill tier because a
+checked box is a fill: light's darkened `--accent` would paint it a near-black plum. Do not restate it per
 control: three local copies were all that kept the accent on, and every other checkbox in
 Settings had fallen back to Chromium's default blue (#3065). `modern-css.test.ts` holds the
 declaration to `base.css`.
