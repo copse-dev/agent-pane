@@ -146,6 +146,19 @@ const INVARIANTS: Invariant[] = [
     check: () => expectPlan(['package.json'], 'full'),
   },
   {
+    name: 'shared stylesheet (base, tokens) forces full',
+    check: () =>
+      expectPlan(['src/renderer/styles/global/base.css'], 'full') ??
+      expectPlan(['src/renderer/styles/tokens.css'], 'full'),
+  },
+  {
+    // Feature sheets sit beside the shared ones in styles/global/ but style one
+    // surface. Treating the whole directory as broad ran every shard for a
+    // one-line tweak to a single card.
+    name: 'feature stylesheet is mapped by selector and plans a subset',
+    check: () => expectPlan(['src/renderer/styles/global/pr-link-preview.css'], 'subset'),
+  },
+  {
     name: 'e2e helper change forces full',
     check: () => expectPlan(['tests/e2e/helpers/seed-config.ts'], 'full'),
   },
