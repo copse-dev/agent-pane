@@ -177,6 +177,12 @@ const INVARIANTS: Invariant[] = [
     check: () => expectUnitPlan(['docs/testing-strategy.md'], 'skip'),
   },
   {
+    // scripts/third-party-notices.test.ts parses THIRD_PARTY_NOTICES.md off disk,
+    // so deleting or rewording an entry must still run it.
+    name: 'a THIRD_PARTY_NOTICES.md edit is not docs-only',
+    check: () => expectUnitPlan(['THIRD_PARTY_NOTICES.md'], 'full'),
+  },
+  {
     // sync-site-markdown.test.ts reads site/*.html off disk, so the import graph
     // cannot see the dependency. The page is also the only reviewed copy of what
     // deploys — pages.yml regenerates the Markdown twins from it with nothing
