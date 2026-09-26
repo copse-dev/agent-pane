@@ -62,6 +62,27 @@ describe('stale custom-provider model selection', () => {
     // provider-selection guard. This error-only transcript is the live boundary
     // before any provider client is asked to stream a model response.
     assert.ok(transcript.includes(errorText))
+    // The failure is the app's error callout, not answer prose: no generic
+    // "An error occurred:" lead-in and no second copy of the text outside it.
+    assert.doesNotMatch(transcript, /An error occurred/i)
+    const placement = await browser.execute((text) => {
+      const messages = [...document.querySelectorAll<HTMLElement>('.msg-assistant .message-text')]
+      const callouts = messages.flatMap((message) => [
+        ...message.querySelectorAll<HTMLElement>('blockquote.markdown-alert-caution'),
+      ])
+      const occurrences = messages.reduce(
+        (count, message) => count + message.innerText.split(text).length - 1,
+        0,
+      )
+      return {
+        callouts: callouts.length,
+        calloutHasText: callouts.some((callout) => callout.innerText.includes(text)),
+        occurrences,
+      }
+    }, errorText)
+    assert.equal(placement.callouts, 1)
+    assert.ok(placement.calloutHasText, 'stale-provider guidance should render inside the callout')
+    assert.equal(placement.occurrences, 1)
 
     await expect($('.stop-btn')).not.toBeDisplayed()
     await saveAppScreenshot('provider-settings-invalidated-route.png')
