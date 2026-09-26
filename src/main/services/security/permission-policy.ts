@@ -422,8 +422,7 @@ function truncateGuardedYoloHarmReason(reason: string): string {
 
 /** Advice shown outside the monospaced command block for Guarded YOLO harm prompts. */
 export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
-  const footer =
-    '\n\nGuarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?'
+  const footer = '\n\nGuarded YOLO cannot skip this confirmation. Approve this command once?'
   // `shell-harm.ts` writes most of its own reasons as readable phrases, but the
   // few it shares with the classifier (`REASON_RECURSIVE_DELETE`, …) are
   // identifiers. Resolving them here is what keeps the wording those constants

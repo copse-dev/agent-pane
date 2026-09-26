@@ -397,7 +397,12 @@ While active:
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
-  allows them.
+  allows them. When a classifier connection is chosen under Settings → Classifiers → Safety
+  screening, such a command first gets its second opinion (`tier-screening.ts`). A P(`ask`) of at
+  least 0.5 turns the allow into the harm gate's one-time confirmation. The classifier can only add
+  a prompt: a missing, slow or failing connection leaves the harm gate's allow standing. A command
+  that stays inside the project sandbox is not asked. Every confirmation ends "Approve this command
+  once?", because an ask-once prompt need not be destructive.
 
 Host shutdown/reboot hard denials require a parsed command invocation, including wrappers and
 nested shell payloads. Filenames, ordinary arguments, quoted text, and shell comments are not
@@ -480,6 +485,11 @@ the registry still fails contained and offers to run outside.
   are additionally capped at `read` if a caller reaches the level helper without a sandbox. A
   segment that names a secret file (`secrets.ts`) is never approved, even inside the workspace,
   and `gh auth status --show-token` is not the `gh auth status` read.
+- `tier-screening.ts`: the classifier second opinion. In Guarded YOLO it may add the confirmation
+  above. In standard mode it only records a `tier-shadow` decision, in the background, for each
+  shell prompt: what a local-write blend (deterministic tiers, or P(`read`/`local-write`) ≥ 0.95
+  with a harm-gate allow) would have approved. The shadow record keeps a SHA-256 of the command,
+  not its text. It is evidence for a later decision, and it approves nothing.
 - `host-reach.ts`, `secrets.ts`, `remote-change.ts`: the Guarded YOLO ask-once rules above. The
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on its labelled commands (1,899 in September 2026, and growing); `gates.mjs --check` fails on any change until the snapshot is
