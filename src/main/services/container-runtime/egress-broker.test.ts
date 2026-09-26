@@ -1,5 +1,7 @@
-import { after, before, describe, it } from 'node:test'
+import { after, before, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import dns from 'node:dns'
+import { syncBuiltinESMExports } from 'node:module'
 import { createServer, type Server } from 'node:net'
 import { PassThrough } from 'node:stream'
 import { EgressBroker } from './egress-broker.ts'
@@ -185,5 +187,99 @@ describe('EgressBroker', () => {
     assert.ok(last)
     assert.equal(last.bytesToOrigin, 'count me'.length)
     assert.equal(last.bytesFromOrigin, 'COUNT ME'.length)
+  })
+})
+
+describe('EgressBroker and the host-local alias (A16)', () => {
+  // The guest sends a key over plain http to the alias, so the broker must
+  // only ever dial it on the host's loopback, whoever built the run.
+  const rules = [parseEgressRule('model.copse.internal:1234')]
+
+  it('refuses to broker the alias anywhere but the loopback', () => {
+    for (const resolve of [
+      {},
+      { 'model.copse.internal': '203.0.113.5' },
+      { 'model.copse.internal': '203.0.113.5:1234' },
+      { 'model.copse.internal': 'models.lan:1234' },
+      { 'model.copse.internal': 'localhost.lan' },
+      { 'model.copse.internal': 'localhost.' },
+      { 'model.copse.internal': '127.0.0.2' },
+      { 'model.copse.internal': '0.0.0.0' },
+      { 'MODEL.copse.internal': '127.0.0.1' },
+    ]) {
+      assert.throws(
+        () => new EgressBroker({ rules, resolve }),
+        /model\.copse\.internal .*loopback/,
+        JSON.stringify(resolve),
+      )
+    }
+    assert.throws(
+      () =>
+        new EgressBroker({
+          rules: [parseEgressRule('*.copse.internal:1234')],
+          resolve: { 'model.copse.internal': '203.0.113.5' },
+        }),
+      /loopback/,
+    )
+  })
+
+  it("brokers the alias on the host's loopback, and leaves other remaps alone", () => {
+    for (const dial of [
+      '127.0.0.1',
+      '::1',
+      '127.0.0.1:5555',
+      'localhost',
+      'LOCALHOST:1234',
+      'LocalHost',
+    ]) {
+      const broker = new EgressBroker({ rules, resolve: { 'model.copse.internal': dial } })
+      broker.stop()
+    }
+    const other = new EgressBroker({
+      rules: [parseEgressRule('models.lan:1234')],
+      resolve: { 'models.lan': '203.0.113.5' },
+    })
+    other.stop()
+  })
+
+  it('dials a localhost remap on loopback without asking a resolver', async () => {
+    // A resolver (or /etc/hosts) could send localhost anywhere, so the broker
+    // answers localhost itself. The stand-in resolver records the question and
+    // fails it, so a dial that consulted it never reaches the origin.
+    const origin = await startEchoOrigin()
+    const asked: string[] = []
+    const realLookup = dns.lookup
+    // `net.connect` always calls its lookup with (hostname, options, callback).
+    const failingLookup = (
+      hostname: string,
+      _options: unknown,
+      callback: (error: NodeJS.ErrnoException) => void,
+    ): void => {
+      asked.push(hostname)
+      callback(Object.assign(new Error(`resolver asked for ${hostname}`), { code: 'EASKED' }))
+    }
+    mock.method(dns, 'lookup', failingLookup)
+    syncBuiltinESMExports()
+    const broker = new EgressBroker({
+      rules,
+      resolve: { 'model.copse.internal': `LOCALHOST:${String(origin.port)}` },
+    })
+    const guestToHost = new PassThrough()
+    const hostToGuest = new PassThrough()
+    broker.attach(guestToHost, hostToGuest)
+    const guest = new EgressLink(hostToGuest, guestToHost)
+    try {
+      const answer = await ask(guest, 'model.copse.internal:1234', 'local')
+      assert.ok('stream' in answer, `refused: ${'refused' in answer ? answer.refused : ''}`)
+      answer.stream.destroy()
+      assert.equal(answer.reply, 'LOCAL')
+      assert.deepEqual(asked, [])
+    } finally {
+      mock.restoreAll()
+      syncBuiltinESMExports()
+      assert.equal(dns.lookup, realLookup)
+      broker.stop()
+      origin.close()
+    }
   })
 })

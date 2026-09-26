@@ -132,6 +132,13 @@ export interface BuildFromDescriptionOptions {
   promptCacheKey?: string
   /** Hosts the user approved for custom endpoints; see `assertProviderHostAllowed`. */
   approvedHosts?: readonly string[]
+  /**
+   * The name the container guest dials the desktop's loopback by
+   * (`HOST_LOCAL_ALIAS`), which counts as loopback for the endpoint's URL
+   * rule. Only the guest passes it: there the name reaches nothing but the
+   * host broker, which dials the host's loopback. The desktop never does.
+   */
+  hostLocalAlias?: string
 }
 
 /** The client a description names. Throws when a key it needs is missing. */
@@ -157,6 +164,7 @@ export function buildProviderFromDescription(
         options.approvedHosts ?? [],
         description.params,
         options.promptCacheKey,
+        options.hostLocalAlias !== undefined ? { loopbackAliases: [options.hostLocalAlias] } : {},
       )
     case 'openrouter':
       if (!apiKey) {

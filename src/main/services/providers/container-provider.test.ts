@@ -2,8 +2,10 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { deleteApiKey, setApiKey, setSetting } from '../storage/settings.test-shim.ts'
+import { buildGuestProvider } from '../container-runtime/guest-provider.ts'
 import {
   explainContainerModel,
+  guestFacingEndpoint,
   resolveContainerProvider,
   type ContainerProviderPlan,
 } from './container-provider.ts'
@@ -76,6 +78,22 @@ describe('resolveContainerProvider', () => {
       url(await resolveContainerProvider('lmstudio:qwen3')),
       'http://model.copse.internal:1234/v1',
     )
+    // And the guest can build its client from what it is handed: the alias
+    // keeps the desktop loopback's plain http there, and only there.
+    assert.equal(plan.mode, 'provider')
+    assert.ok(buildGuestProvider(plan.provider, plan.apiKey))
+  })
+
+  it('refuses an endpoint that already names the host-local alias', async () => {
+    // The guest reads the alias as loopback, which holds only while the host's
+    // rewrite of a loopback URL is the one way to be given it.
+    assert.throws(
+      () => guestFacingEndpoint('https://model.copse.internal/v1'),
+      /model\.copse\.internal is reserved/,
+    )
+    assert.throws(() => guestFacingEndpoint('https://MODEL.copse.internal./v1'), /is reserved/)
+    await setSetting('localServerUrl', 'https://model.copse.internal:1234/v1')
+    await assert.rejects(resolveContainerProvider('lmstudio:qwen3'), /is reserved/)
   })
 
   it('routes claude models to Anthropic with the anthropic key', async () => {

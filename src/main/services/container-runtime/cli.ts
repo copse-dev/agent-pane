@@ -17,7 +17,10 @@
  *   --api-key-env <NAME>    host env var holding the provider key (value passed, name kept)
  *   --allow <host:port>     egress origin the broker forwards to (repeatable)
  *   --resolve <host=addr>   dial <addr> on the host for an allowed origin whose name only
- *                           the guest resolves (repeatable; e.g. a local model server)
+ *                           the guest resolves (repeatable; e.g. a local model server).
+ *                           model.copse.internal, if allowed, must map to 127.0.0.1, ::1
+ *                           or localhost (optionally :port); the broker dials localhost
+ *                           on loopback itself, never through the resolver
  *   --ttl <minutes>         wall-clock budget (default 120)
  *   --tokens <n>            token ceiling (default 2,000,000)
  *   --max-steps <n>         cap on agent steps (default: product default)
