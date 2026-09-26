@@ -177,7 +177,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/core.css */
 .streaming-markdown {
   & .stream-pending {
     white-space: pre-wrap;
@@ -248,7 +248,7 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   }
 }
 
-/* node_modules/.pnpm/@copse+streaming-markdown@1.1.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
+/* node_modules/.pnpm/@copse+streaming-markdown@1.2.0_dompurify@3.4.15_entities@8.1.0_highlight.js@11.12.0_katex@0.16.47_mermaid@11.17.2/node_modules/@copse/streaming-markdown/styles/default.css */
 .streaming-markdown {
   line-height: var(--sm-line-height, 1.55);
   word-break: break-word;
@@ -331,11 +331,12 @@ html[data-demo-expanded-pane=browser] .browser-toolbar > .pane-popout-btn {
   & .stream-pending-h6 {
     font-size: 0.67em;
   }
-  & .stream-complete > .stream-pending-block:last-child,
-  & .stream-complete > h2 + .stream-pending-block,
-  & .stream-complete > h3 + .stream-pending-block,
-  & .stream-complete > h4 + .stream-pending-block {
+  & .stream-complete > :is(p, ul, ol, h1, h2, h3, h4, h5, h6) + .stream-pending-paragraph,
+  & .stream-complete > p + .stream-pending-heading {
     margin-top: var(--sm-space-sm, 8px);
+  }
+  & .stream-complete > .stream-pending-block:first-child {
+    margin-top: 0;
   }
   & code {
     font-family: var(--sm-font-mono, ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace);
@@ -4857,19 +4858,6 @@ span.acp-resource-title {
 .streaming-markdown :is(pre, code, table) {
   text-wrap-style: auto;
 }
-.streaming-markdown.is-streaming .stream-complete > .stream-pending-block:last-child {
-  margin-top: 0;
-}
-.streaming-markdown.is-streaming .stream-complete > :is(p, ul, ol, h1, h2, h3, h4, h5, h6) + p.stream-pending-block:last-child,
-.streaming-markdown.is-streaming .stream-complete > p + .stream-pending-heading.stream-pending-block:last-child {
-  margin-top: var(--sm-space-sm, 8px);
-}
-.streaming-markdown.is-streaming .stream-complete > :not(p) + .stream-pending-heading.stream-pending-block:last-child {
-  margin-top: var(--sm-space-md, 12px);
-}
-.streaming-markdown.is-streaming .stream-complete > * + blockquote.stream-pending-block:last-child {
-  margin-top: var(--spacing-sm);
-}
 .message-text:has(th:nth-child(3)) th:first-child,
 .message-text:has(th:nth-child(3)) td:first-child {
   width: 1%;
@@ -5055,6 +5043,9 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   padding: var(--spacing-sm) var(--spacing-md);
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
   color: var(--text-secondary);
+}
+.streaming-markdown blockquote.stream-pending-blockquote {
+  margin: var(--spacing-sm) 0;
 }
 .streaming-markdown blockquote.markdown-alert {
   background: color-mix(in srgb, var(--sev) var(--callout-plate-fill), var(--bg-elevated));
@@ -7145,7 +7136,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .welcome-heading {
   font-size: calc(24px * var(--ui-scale));
-  font-weight: 600;
+  font-weight: 400;
 }
 .welcome-sub {
   color: var(--text-secondary);
@@ -7457,7 +7448,7 @@ dialog.settings-overlay::backdrop {
 .settings-section.active {
   display: block;
 }
-.settings-section h3 {
+.settings-section > h3 {
   font-family: var(--font-display);
   font-size: calc(28px * var(--ui-scale));
   font-weight: 400;
@@ -9329,6 +9320,7 @@ dialog.settings-overlay::backdrop {
   grid-column: 1 / -1;
   margin: 0;
   font-size: var(--font-size-md);
+  font-weight: 600;
 }
 .automation-label {
   display: flex;
@@ -9530,11 +9522,6 @@ dialog.settings-overlay::backdrop {
 }
 .onboarding-body > section > :first-child {
   margin-top: 0;
-}
-.onboarding-body h3 {
-  font-size: calc(18px * var(--ui-scale));
-  font-weight: 600;
-  margin: 0 0 var(--spacing-xs);
 }
 .onboarding-body .settings-section-desc {
   margin-bottom: var(--spacing-md);
@@ -10191,9 +10178,10 @@ dialog.settings-overlay::backdrop {
 .container-run-section {
   margin: 0 0 var(--spacing-md);
 }
-.container-run-section h3 {
+.container-run-section h4 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -10266,7 +10254,7 @@ dialog.settings-overlay::backdrop {
 .new-project-dialog h3 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 400;
 }
 .new-project-dialog .field-hint {
   margin: 0 0 var(--spacing-md);
@@ -10332,7 +10320,7 @@ dialog.settings-overlay::backdrop {
 .create-pr-dialog h3 {
   margin: 0 0 var(--spacing-md);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 400;
 }
 .create-pr-dialog-field {
   display: flex;
@@ -11461,7 +11449,7 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: 400;
 }
 .keyboard-shortcuts-grid {
   display: grid;
@@ -12551,11 +12539,6 @@ dialog.process-manager-overlay {
 }
 .plugin-settings .apple-development-host {
   margin: 0;
-}
-.settings-section .plugin-settings-fold .apple-development-title {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
 }
 @media (max-width: 760px) {
   .apple-development-selection {
