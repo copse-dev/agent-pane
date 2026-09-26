@@ -49,6 +49,16 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
 export const READONLY_MODE_BLOCK_MESSAGE =
   'Blocked in read-only mode. Disable "Read-only agent mode" in Settings → Security to allow writes, shell, and network calls.'
 
+/** Name of the tool a deferred-checkout thread calls to get its own worktree. */
+export const REQUEST_WRITE_ACCESS_TOOL = 'request_write_access'
+
+/**
+ * Returned when a write reaches the project checkout of a thread whose worktree
+ * is still deferred. The tool registry allocates before any write-capable tool
+ * runs, so this is a backstop, not the normal path.
+ */
+export const DEFERRED_CHECKOUT_BLOCK_MESSAGE = `Blocked: this thread is still a read-only view of the user's checkout. Call ${REQUEST_WRITE_ACCESS_TOOL} to get the thread its own worktree, then retry.`
+
 /**
  * MCP tools are only allowed when the server flags them read-only and
  * non-destructive. These hints are advisory and server-controlled, so allowed

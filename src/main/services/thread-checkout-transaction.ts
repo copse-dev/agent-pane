@@ -5,11 +5,13 @@ import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
 import type {
   PreparedThreadCheckout,
   ThreadCheckoutPreview,
+  ThreadDeferredWorktree,
   ThreadWorktree,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
 import { decideThreadWorktreePolicy, settledCheckoutMode } from '@shared/git/worktree-policy.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
+import { isAcpModel } from '@shared/acp.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
@@ -119,6 +121,8 @@ export interface ThreadCheckoutTransactionDependencies {
     prompt: string
     baseBranch: string
     seedFromDirtyProject: boolean
+    /** Name the branch from this instead of the anonymous initial candidate. */
+    branchTitle?: string
   }) => Promise<ThreadWorktree>
   /**
    * Reclaim a linked checkout left behind when allocate succeeded but
@@ -164,11 +168,30 @@ function projectById(projectId: string): Project | null {
 function persistedResult(
   choice: ThreadWorktreeChoice,
   branch: string | undefined,
+  deferredWorktree?: ThreadDeferredWorktree,
 ): PreparedThreadCheckout {
-  return { checkoutMode: 'shared', choice, branch: branch ?? null }
+  return {
+    checkoutMode: 'shared',
+    choice,
+    branch: branch ?? null,
+    ...(deferredWorktree ? { deferredWorktree } : {}),
+  }
 }
 
-async function inspectProject(project: Project, isLocal: boolean): Promise<CheckoutInspection> {
+/**
+ * Whether this run's agent can honour a deferred checkout. Deferral relies on
+ * Copse's own tool registry to allocate before the first write; an ACP agent
+ * edits through its own process whose cwd is fixed at session creation, so it
+ * keeps the eager worktree. An unknown model is treated the same way.
+ */
+function canDeferAllocation(model: string | undefined): boolean {
+  return model !== undefined && !isAcpModel(model)
+}
+
+export async function inspectProject(
+  project: Project,
+  isLocal: boolean,
+): Promise<CheckoutInspection> {
   const isGitRepository = isLocal && (await isInsideGitWorkTree(project.path))
   if (!isGitRepository) {
     return {
@@ -324,7 +347,7 @@ export function createThreadCheckoutTransaction(
         }
       }
       if (thread.worktreeChoice) {
-        return persistedResult(thread.worktreeChoice, thread.gitBranch)
+        return persistedResult(thread.worktreeChoice, thread.gitBranch, thread.deferredWorktree)
       }
 
       // Old conversations predate checkout metadata and must keep their shared
@@ -404,6 +427,21 @@ export function createThreadCheckoutTransaction(
         inspection,
         input.baseBranch,
       )
+      if (decision.deferAllocation && canDeferAllocation(input.model)) {
+        // Isolation is decided now; only the checkout waits. The base is
+        // resolved (and a picked branch validated) here so the eventual
+        // allocation starts where the user asked even if the project checkout
+        // moves in between. The project checkout is not switched: a deferred
+        // thread reads it as-is and never writes to it.
+        const deferredWorktree: ThreadDeferredWorktree = { baseBranch, requestedAt: Date.now() }
+        const branch = inspection.currentBranch
+        await dependencies.updateMeta(input.projectId, input.threadId, {
+          worktreeChoice: input.choice,
+          deferredWorktree,
+          ...(branch ? { gitBranch: branch } : {}),
+        })
+        return persistedResult(input.choice, branch ?? undefined, deferredWorktree)
+      }
       // A prior allocate may have succeeded while meta persistence failed. Prefer
       // reclaiming that registration over a second allocate that would throw
       // "already registered" and strand the thread.
@@ -469,6 +507,104 @@ export function createThreadCheckoutTransaction(
                 dirty: worktree.seededFromDirtyProject,
               },
             }),
+      }
+    })
+}
+
+export interface AllocateDeferredWorktreeInput {
+  projectId: string
+  threadId: string
+  /** Agent-supplied description of the change, used to name the branch. */
+  branchTitle?: string
+}
+
+/**
+ * Allocate the worktree a deferred (`on-write`) thread postponed at its first
+ * message. Serialized with the first-message transaction on the same key, and
+ * idempotent: parallel tool calls in one turn share a single allocation, and a
+ * thread that already owns a worktree just returns it.
+ *
+ * Dirty seeding is decided now rather than at the first message: the deferred
+ * turn has been reading the project checkout live, uncommitted work included,
+ * so the worktree carries that same work whenever the base still matches.
+ */
+export function createDeferredWorktreeAllocation(
+  dependencies: ThreadCheckoutTransactionDependencies,
+): (input: AllocateDeferredWorktreeInput) => Promise<PreparedThreadCheckout> {
+  return (input) =>
+    dependencies.serialize(`thread-checkout:${input.projectId}:${input.threadId}`, async () => {
+      const project = dependencies.getProject(input.projectId)
+      if (!project) throw new Error('Project is no longer available')
+      const thread = await dependencies.getThread(input.projectId, input.threadId)
+      if (!thread) throw new Error('Thread is no longer available')
+      const choice = thread.worktreeChoice ?? 'automatic'
+      if (thread.worktree) {
+        const validated = await dependencies.validate({
+          projectId: input.projectId,
+          threadId: input.threadId,
+          projectRoot: project.path,
+          worktree: thread.worktree,
+        })
+        return {
+          checkoutMode: 'worktree',
+          choice,
+          branch: validated.branch,
+          worktree: { ...thread.worktree, branch: validated.branch },
+        }
+      }
+      const deferred = thread.deferredWorktree
+      if (!deferred) throw new Error('This thread did not defer its worktree')
+
+      const inspection = await dependencies.inspect(project, true)
+      const recovered = await dependencies.recoverUnpersisted({
+        projectId: input.projectId,
+        threadId: input.threadId,
+        projectRoot: project.path,
+        baseBranch: deferred.baseBranch,
+      })
+      const worktree =
+        recovered ??
+        (await dependencies.allocate({
+          projectId: input.projectId,
+          threadId: input.threadId,
+          projectRoot: project.path,
+          prompt: '',
+          baseBranch: deferred.baseBranch,
+          seedFromDirtyProject: inspection.isDirty && inspection.currentBranch !== null,
+          ...(input.branchTitle ? { branchTitle: input.branchTitle } : {}),
+        }))
+      if (recovered) {
+        await dependencies.validate({
+          projectId: input.projectId,
+          threadId: input.threadId,
+          projectRoot: project.path,
+          worktree,
+        })
+      }
+      try {
+        await dependencies.updateMeta(input.projectId, input.threadId, {
+          worktree,
+          gitBranch: worktree.branch,
+        })
+      } catch (error) {
+        if (!worktree.seededFromDirtyProject) {
+          await dependencies
+            .retire({
+              projectId: input.projectId,
+              threadId: input.threadId,
+              projectRoot: project.path,
+              worktree,
+            })
+            .catch(() => undefined)
+        }
+        throw error
+      }
+      return {
+        checkoutMode: 'worktree',
+        choice,
+        branch: worktree.branch,
+        worktree,
+        deferredWorktree: deferred,
       }
     })
 }
@@ -555,6 +691,7 @@ const defaultBranchRenameDependencies: ThreadWorktreeBranchRenameDependencies = 
 
 export const prepareThreadCheckout = createThreadCheckoutTransaction(defaultDependencies)
 export const previewThreadCheckout = createThreadCheckoutPreview(defaultDependencies)
+export const allocateDeferredThreadWorktree = createDeferredWorktreeAllocation(defaultDependencies)
 export const renameThreadWorktreeBranchAfterTitle = createThreadWorktreeBranchRename(
   defaultBranchRenameDependencies,
 )

@@ -90,7 +90,8 @@ import {
   toRelativePathWithinRoot,
 } from '../workspace.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
-import { getThreadExecutionContext } from '../thread-execution-context.ts'
+import { getThreadExecutionContext, isThreadCheckoutDeferred } from '../thread-execution-context.ts'
+import { ensureWritableThreadCheckout } from '../deferred-worktree.ts'
 
 /**
  * Run a turn against an external ACP agent selected as `acp:<id>` in the model
@@ -384,6 +385,11 @@ export async function runAcpAgentFromSettings(
     )
   }
 
+  // An ACP agent edits through its own process, whose cwd and sandbox are
+  // fixed when the session starts, so Copse cannot intercept its first write.
+  // A thread that deferred its worktree under a native model and then switched
+  // to an ACP agent gets the worktree now, before the session sees any root.
+  if (isThreadCheckoutDeferred()) await ensureWritableThreadCheckout()
   const cwd = getAgentExecutionRoot()
   if (!cwd) {
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')

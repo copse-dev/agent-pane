@@ -16,9 +16,11 @@ import { contextLossNotice, contextWasLost } from './context-loss-notice.ts'
 import { recoverAgentHistory } from './history-recovery.ts'
 import {
   prepareThreadExecutionContext,
+  releaseUpgradedThreadExecutionContext,
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
 } from './thread-execution-context.ts'
+import { onDeferredWorktreeAllocated } from './deferred-worktree.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
 import {
   appendMachineContinuation,
@@ -559,6 +561,13 @@ export class AgentDispatcher {
         : {}),
     }
     let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
+    // A deferred-worktree turn may allocate mid-run; the renderer re-roots as
+    // soon as it does rather than at the end of the turn.
+    const stopCheckoutForwarding = executionContext.deferredWorktree
+      ? onDeferredWorktreeAllocated(threadId, (prepared) => {
+          host.emit(threadId, { type: 'thread_checkout', prepared })
+        })
+      : null
     try {
       result = await runWithThreadExecutionContext(executionContext, () =>
         runWithActiveRunIdentity(threadId, () =>
@@ -573,6 +582,8 @@ export class AgentDispatcher {
         ),
       )
     } finally {
+      stopCheckoutForwarding?.()
+      if (executionContext.deferredWorktree) releaseUpgradedThreadExecutionContext(executionContext)
       // Drain before the commit below so no checkpoint can land on top of the
       // turn's authoritative history.
       await checkpoints.close()

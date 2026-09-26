@@ -76,6 +76,9 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   },
   preflight_worktree: { running: 'Checking worktree', done: 'Checked worktree' },
   prepare_worktree: { running: 'Preparing worktree', done: 'Prepared worktree' },
+  // Deliberately ungrouped: the switch from reading the user's checkout to the
+  // thread's own worktree should stand out in the transcript.
+  request_write_access: { running: 'Creating worktree', done: 'Created worktree' },
 }
 
 interface ToolGroupDef {

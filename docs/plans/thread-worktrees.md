@@ -12,7 +12,9 @@ without sharing HEAD, the index, or tracked files. The existing project checkout
 remains the user's checkout. A thread either uses that shared checkout or owns one
 linked worktree for its lifetime.
 
-Allocation is lazy at the first message. The shipped default is:
+Allocation is lazy at the first message. (A prototype `on-write` project mode defers it
+further, to the thread's first write; see [`deferred-thread-worktrees.md`](./deferred-thread-worktrees.md).)
+The shipped default is:
 
 - supported local Git repository: create an isolated worktree, cut from the resolved
   default branch (`origin/<default>` when it can be fetched);

@@ -27,6 +27,7 @@ import {
   addHookCard,
   getThreadById,
   markThreadUnread,
+  applyPreparedThreadCheckout,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
@@ -552,6 +553,10 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
       case 'todo_update': {
         setThreadTodos(store, threadId, chunk.todos)
         activity(threadId)
+        break
+      }
+      case 'thread_checkout': {
+        applyPreparedThreadCheckout(store, threadId, chunk.prepared)
         break
       }
       case 'panel_update': {

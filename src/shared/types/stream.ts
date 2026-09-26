@@ -3,6 +3,7 @@ import type { MachineMessageOrigin, ThreadReviewReport } from './thread.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { CanvasArtefactReference } from './canvas.ts'
 import type { TodoItem } from './todo.ts'
+import type { PreparedThreadCheckout } from './worktree.ts'
 import type { ModelParameters } from '@copse/llm/model-parameters.ts'
 // The provider-emitted chunks are owned by the LLM module; the loop-emitted
 // chunks (provider contract + text rewrites, context pressure, subagents) are
@@ -58,6 +59,12 @@ export type StreamChunk =
       estimatedTokens: number
     }
   | { type: 'todo_update'; todos: TodoItem[] }
+  /**
+   * A deferred-worktree thread allocated its checkout mid-turn. Same payload
+   * as the first-message transaction's result, so the renderer mirrors it the
+   * same way and re-roots the thread's file, changes, and terminal surfaces.
+   */
+  | { type: 'thread_checkout'; prepared: PreparedThreadCheckout }
   | {
       type: 'todo_worker_start'
       todoId: string

@@ -5,8 +5,24 @@ export type ThreadWorktreeChoice = 'automatic' | 'shared' | 'worktree'
  * the repository's default branch, so the old `from-default-branch` mode — which
  * only isolated while the project checkout itself sat on that branch — no longer
  * describes anything distinct and is migrated to `always` on load.
+ *
+ * `on-write` (prototype) isolates too, but defers allocation: the thread starts
+ * read-only against the project checkout and gets its worktree the first time
+ * the agent needs to write. See `docs/plans/deferred-thread-worktrees.md`.
  */
-export type ProjectWorktreeMode = 'always' | 'never'
+export type ProjectWorktreeMode = 'always' | 'never' | 'on-write'
+
+/**
+ * A thread whose worktree allocation was deferred to its first write. While
+ * the thread has no `worktree`, its agent reads the project checkout through a
+ * read-only execution context; `request_write_access` (or any tool that may
+ * write) allocates from `baseBranch` and records the resulting `worktree`.
+ */
+export interface ThreadDeferredWorktree {
+  /** Branch the worktree will be cut from, resolved when the first message was sent. */
+  baseBranch: string
+  requestedAt: number
+}
 
 /** Durable metadata for a linked checkout owned by one thread. */
 export interface ThreadWorktree {
@@ -40,6 +56,8 @@ export interface PreparedThreadCheckout {
   choice: ThreadWorktreeChoice
   branch: string | null
   worktree?: ThreadWorktree
+  /** Allocation deferred to the first write; the run starts read-only. */
+  deferredWorktree?: ThreadDeferredWorktree
   /**
    * Prompt-boundary Git state when the transaction can prove it without
    * another repository read. Fresh worktrees start at `baseCommit`, and only

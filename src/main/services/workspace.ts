@@ -489,6 +489,39 @@ export async function resolveWorkspacePath(
   return resolvePathWithinRoot(path, root, backend)
 }
 
+/**
+ * The project checkout an execution root stands in for, or null. Registered by
+ * the thread execution context (which imports this module, so it cannot be
+ * imported back): a worktree turn's root answers with its project root, and
+ * every other root answers null.
+ */
+type ExecutionRootAliasLookup = (root: string) => string | null
+let executionRootAlias: ExecutionRootAliasLookup | null = null
+
+export function setExecutionRootAliasLookup(lookup: ExecutionRootAliasLookup): void {
+  executionRootAlias = lookup
+}
+
+/**
+ * Map an absolute path in the project checkout onto the same relative path in
+ * the worktree standing in for it. Agents carry absolute paths across a
+ * mid-turn switch into a worktree (and copy them from the user's messages); in
+ * a worktree turn the project checkout is never a valid file-tool target, so
+ * the only useful reading of such a path is the thread's own copy of the file.
+ */
+async function rebaseOntoExecutionRoot(
+  absInput: string,
+  root: string,
+  absRoot: string,
+  backend: PathBackend,
+): Promise<string | null> {
+  const alias = executionRootAlias?.(root)
+  if (!alias) return null
+  const absAlias = await backend.realpath(resolve(alias))
+  if (!isPathInsideRoot(absInput, absAlias)) return null
+  return resolve(absRoot, relative(absAlias, absInput))
+}
+
 /** Resolve a path against an explicit trusted root, with the workspace containment rules. */
 export async function resolvePathWithinRoot(
   path: string,
@@ -498,7 +531,10 @@ export async function resolvePathWithinRoot(
   const absRoot = await backend.realpath(resolve(root))
   let relPath = path
   if (isAbsolute(path)) {
-    const absInput = await resolveThroughExistingPrefix(resolve(path), backend)
+    let absInput = await resolveThroughExistingPrefix(resolve(path), backend)
+    if (!isPathInsideRoot(absInput, absRoot)) {
+      absInput = (await rebaseOntoExecutionRoot(absInput, root, absRoot, backend)) ?? absInput
+    }
     const fromRoot = relative(absRoot, absInput)
     if (!isPathInsideRoot(absInput, absRoot)) {
       throw new Error(
