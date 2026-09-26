@@ -18,7 +18,7 @@ function unreachableMonacoCall(): never {
   throw new Error('loading-state tests must not create a Monaco diff editor')
 }
 
-// The pane only touches setTheme on this list-only path. Satisfy the deliberately
+// The pane never touches Monaco on this list-only path. Satisfy the deliberately
 // narrow GitDiffMonaco boundary so an accidental diff render fails loudly.
 const MONACO_STUB: GitDiffMonaco = {
   KeyCode: { KeyL: 0 },
@@ -26,7 +26,6 @@ const MONACO_STUB: GitDiffMonaco = {
   editor: {
     createDiffEditor: unreachableMonacoCall,
     createModel: unreachableMonacoCall,
-    setTheme: (): void => {},
   },
 }
 
