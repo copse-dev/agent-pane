@@ -208,11 +208,21 @@ function hostControlReasons(argv: readonly string[]): string[] {
   const sub = argv.slice(1).find((arg) => !arg.startsWith('-')) ?? ''
   switch (head) {
     case 'pkill':
-    case 'killall':
+    case 'killall': {
+      // Signal 0 only checks that a process exists, and `killall -l` lists signals.
+      const probes = argv.some(
+        (arg, i) =>
+          /^-(?:0|s0|SIG0|l)$/i.test(arg) ||
+          arg === '--signal=0' ||
+          ((arg === '-s' || arg === '--signal') && argv[i + 1] === '0'),
+      )
       // A pattern cannot be scoped to this agent's processes: `pkill -f "node
       // scripts/watch"` also stops the user's own watcher in another terminal.
       // The agent can stop what it started by PID or job (`kill %1`) without asking.
-      return [`${head} kills every process matching a pattern, not only ones this agent started`]
+      return probes
+        ? []
+        : [`${head} kills every process matching a pattern, not only ones this agent started`]
+    }
     case 'launchctl':
       return LAUNCHCTL_READS.has(sub) ? [] : ['changes launchd services (launchctl)']
     case 'systemctl':
@@ -380,18 +390,32 @@ const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'awk', 'sed'])
  * non-interactive shell), but filtering it for a secret-named word is a search
  * for credentials. Reading the history files themselves asks as a credential store.
  */
-function historySearchReason(segments: readonly (readonly string[])[]): string | null {
-  const argvs = segments.map((argv) => unwrapWrappers(argv))
-  const history = argvs.some((argv) => {
-    const head = commandName(argv[0])
-    return head === 'history' || (head === 'fc' && argv.includes('-l'))
-  })
-  if (!history) return null
-  const searchesForSecrets = argvs.some(
-    (argv) =>
-      SEARCHERS.has(commandName(argv[0])) && argv.slice(1).some((arg) => SECRET_NAME.test(arg)),
-  )
-  return searchesForSecrets ? 'searches shell history for secrets' : null
+function isHistoryStage(argv: readonly string[]): boolean {
+  const head = commandName(argv[0])
+  return head === 'history' || (head === 'fc' && argv.includes('-l'))
+}
+
+function searchesForSecrets(argv: readonly string[]): boolean {
+  return SEARCHERS.has(commandName(argv[0])) && argv.slice(1).some((arg) => SECRET_NAME.test(arg))
+}
+
+/**
+ * Only a search that reads history's output counts: `history | grep -i token`,
+ * not `history; rg token src`. Pipelines are split at `;`, `&&`, `||`, `&` and
+ * newlines, then into stages at `|`; a searcher must follow the history stage.
+ */
+function historySearchReason(command: string): string | null {
+  for (const pipeline of command.split(/\|\||&&|;|\n|(?<![|>&])&(?![&>])/)) {
+    const stages = pipeline.split(/(?<!\|)\|(?!\|)/).map((stage) => {
+      const [argv = []] = shellSegments(stage)
+      return unwrapWrappers(argv)
+    })
+    const history = stages.findIndex(isHistoryStage)
+    if (history !== -1 && stages.slice(history + 1).some(searchesForSecrets)) {
+      return 'searches shell history for secrets'
+    }
+  }
+  return null
 }
 
 /** Every host-reach reason for a shell command line, deduplicated. */
@@ -416,7 +440,7 @@ export function hostReachReasons(command: string, context: HostReachContext): st
   for (const reason of [
     temporaryPathReason(command),
     downloadThenRunReason(segments),
-    historySearchReason(segments),
+    historySearchReason(command),
   ]) {
     if (reason !== null) reasons.add(reason)
   }

@@ -122,6 +122,9 @@ describe('hostReachReasons — the desktop and other processes', () => {
       'defaults read com.apple.dock',
       'kill %1',
       'kill 4321',
+      'pkill -0 -f "node scripts/watch"',
+      'pkill -s 0 vite',
+      'killall -l',
     ]) {
       assert.deepEqual(reasons(command), [], command)
     }
@@ -217,5 +220,8 @@ describe('hostReachReasons — shell history', () => {
     assert.ok(!reaches('history'))
     assert.ok(!reaches('history | grep make'))
     assert.ok(!reaches('grep -rn token src'))
+    assert.ok(!reaches('history; rg token src'))
+    assert.ok(!reaches('history && grep -rn PASSWORD src'))
+    assert.ok(reaches('history 50 | tail -20 | grep -i secret'))
   })
 })

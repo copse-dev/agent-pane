@@ -381,7 +381,8 @@ While active:
     `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
   - test and load runners pointed at a non-loopback URL (`pytest --base-url https://…`,
     `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
-    `pg_restore`, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`) and SQL run
+    `pg_restore` into a database, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`),
+    `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
     from a file (`psql -f`);
   - filtering shell history for a secret-named word (`history | grep -i token`);
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
@@ -393,7 +394,9 @@ While active:
   `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
   text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
   command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
-  or one glued to a substitution (`$(…)/Platforms`) is not executed. Anything run from a temporary
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. A program in command position
+  is inspected however its path is spelled (`$HOME/x.sh`, `"$HOME/x.sh"`, `'/abs/x.sh'`); a spelling
+  the gate cannot match to the parse is inspected rather than skipped. Anything run from a temporary
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
@@ -485,7 +488,12 @@ the registry still fails contained and offers to run outside.
   verdict on its labelled commands (1,899 in September 2026, and growing); `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
-  on Windows and after init failure.
+  on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
+  reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the
+  read-only fs-server overlay: the same read confinement with no write rules. On Linux, a writable
+  overlay makes bubblewrap create empty host placeholders for missing mandatory write-deny paths
+  (`.bashrc`, `.gitconfig`, `.vscode`, ...), and ASRT removes them only once no sandbox is active,
+  so `git status` and the Changes pane would list them as untracked files.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.

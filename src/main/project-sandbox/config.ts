@@ -81,6 +81,35 @@ export function workspaceMandatoryWriteDenyPaths(workspaceRoot: string): string[
 }
 
 /**
+ * Whether a checkout-relative path is one Linux bwrap can materialize for the
+ * mandatory write denies above: a deny target itself, or a directory created
+ * only to hold one (`.claude` for `.claude/agents`).
+ *
+ * bwrap cannot bind over a missing path, so every sandboxed command creates an
+ * empty file or directory at each absent deny target in the real checkout while
+ * it runs. Another process reading the checkout meanwhile sees those as
+ * untracked files. A path match alone is not proof; callers must also check
+ * that the entry is empty.
+ */
+export function isMandatoryWriteDenyMountPath(relativePath: string): boolean {
+  const segments = relativePath.split(/[\\/]+/).filter(Boolean)
+  const last = segments.at(-1)
+  if (last === undefined) return false
+  if (DANGEROUS_CONFIG_FILENAMES.some((fileName) => fileName === last)) return true
+  return DANGEROUS_CONFIG_DIR_NAMES.some((dirName) => {
+    const target = dirName.split('/')
+    // A proper prefix of the target is its materialized parent directory.
+    for (let length = 1; length <= target.length; length += 1) {
+      const tail = segments.slice(-length)
+      if (tail.length === length && tail.every((segment, index) => segment === target[index])) {
+        return true
+      }
+    }
+    return false
+  })
+}
+
+/**
  * User-level git config files git reads on every invocation. They live under
  * the home directory, which the workspace overlay otherwise denies. macOS
  * seatbelt denials surface as EPERM ("Operation not permitted"), which git
@@ -713,6 +742,23 @@ export function fsServerSandboxOverlay(
       denyWrite: [],
     },
   }
+}
+
+/**
+ * Overlay for a one-shot fs worker. Only a write request gets the writable
+ * workspace rules of {@link fsWorkerSandboxOverlay}. A read (the fallback when
+ * the persistent server is unavailable) keeps the server's read-only overlay,
+ * so listing or previewing a checkout never makes Linux bubblewrap create
+ * write-deny placeholders (.bashrc, .vscode, ...) inside it.
+ */
+export function fsWorkerOneShotSandboxOverlay(
+  workspaceRoot: string,
+  workerJsPath: string,
+  access: 'read' | 'write',
+): Partial<SandboxRuntimeConfig> {
+  return access === 'write'
+    ? fsWorkerSandboxOverlay(workspaceRoot, workerJsPath)
+    : fsServerSandboxOverlay(workspaceRoot, workerJsPath)
 }
 
 /**

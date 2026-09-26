@@ -7,7 +7,7 @@ import { resetUserData, seedE2eViewport, seedEmptyProject } from './helpers/seed
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 import { setComposerValue, composerText } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
-import { waitForAgentIdle } from './helpers.ts'
+import { waitForActiveThreadTitle, waitForAgentIdle } from './helpers.ts'
 
 const PROJECT_ID = 'e2e-paste-attachment-project'
 const SCREENSHOT = 'paste-attachment-chip.png'
@@ -39,6 +39,14 @@ async function pasteIntoComposer(text: string): Promise<void> {
     await navigator.clipboard.writeText(t)
   }, text)
   await browser.action('key').down(Key.Ctrl).down('v').up('v').up(Key.Ctrl).perform()
+}
+
+/** A chip's rendered top-left corner radius (the kit's `--radius` is 6px). */
+async function chipCorner(selector: string): Promise<string | null> {
+  return browser.execute((target: string) => {
+    const chip = document.querySelector(target)
+    return chip instanceof HTMLElement ? getComputedStyle(chip).borderTopLeftRadius : null
+  }, selector)
 }
 
 describe('Pasting text into the composer', () => {
@@ -94,6 +102,8 @@ describe('Pasting text into the composer', () => {
     await expect(layout?.prefix).toBe('Summarize this feedback: ')
     // The paste's full body is chip-internal state, never raw composer text.
     await expect(layout?.raw).not.toContain('The opening repeats')
+    // Attachment chips take the kit radius rather than a one-off 10px pill.
+    await expect(await chipCorner('.prompt-input .inline-paste-chip')).toBe('6px')
 
     await saveAppScreenshot(SCREENSHOT)
 
@@ -123,6 +133,11 @@ describe('Pasting text into the composer', () => {
     await sentChip.waitForExist({ timeout: 10_000 })
     await expect(await sentChip.$('svg[data-icon="paste"]').isExisting()).toBe(true)
     await expect(await sentChip.getText()).toContain('Editor feedback summary')
+    await expect(
+      await chipCorner(
+        '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste',
+      ),
+    ).toBe('6px')
     // The object-replacement placeholder that marks the paste position never
     // shows as literal text.
     await expect(await $('.messages-list .msg-user .message-text').getText()).not.toContain('￼')
@@ -133,6 +148,11 @@ describe('Pasting text into the composer', () => {
       { containing: true },
     )
     await scenario.assertComplete()
+    // The stored prompt is the typed text plus the chip's placeholder, and the
+    // mock title model does not match it, so this is the word-slice fallback
+    // title: it must name the prompt's words without the placeholder glyph.
+    await waitForActiveThreadTitle()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Summarize this feedback:')
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 

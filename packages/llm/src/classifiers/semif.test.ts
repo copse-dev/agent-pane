@@ -354,7 +354,10 @@ test(
     const fake = await fakeScorer(`
 const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
 const marker = require('node:path').join(require('node:path').dirname(process.argv[1]), 'processes.json');
-fs.writeFileSync(marker, JSON.stringify({ scorer: process.pid, descendant: child.pid, input }));
+// Write then rename, so the parent's existsSync poll never sees a
+// created-but-not-yet-written marker and exits before the JSON lands.
+fs.writeFileSync(marker + '.tmp', JSON.stringify({ scorer: process.pid, descendant: child.pid, input }));
+fs.renameSync(marker + '.tmp', marker);
 setInterval(() => {}, 1000);
 `)
     const marker = join(fake.directory, 'processes.json')

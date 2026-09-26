@@ -6,7 +6,8 @@ name: Copse review
 #
 # Two jobs, the same split as the GitHub pair: `ground` runs Stage 0 on the
 # pull request head with the runner as the cell and no secrets; `findings`
-# reads the head, never runs it, and posts one review with the model key.
+# reads the head, never runs it, and posts one review with the model key,
+# then keeps the risk-and-overview summary at the bottom of the description.
 # Forgejo Actions has no `workflow_run`, so both are jobs of one workflow on
 # the `pull_request` event and `findings` is gated to pull requests from this
 # repository's own branches: a fork's pull request gets Stage 0 and the
@@ -113,6 +114,7 @@ jobs:
             --model "$REVIEW_MODEL" \
             --lenses "$REVIEW_LENSES" \
             --post-review forgejo \
+            --post-summary forgejo \
             --forge-url "$GITHUB_SERVER_URL" \
             --repo "$GITHUB_REPOSITORY" \
             --pr "$PR_NUMBER" \

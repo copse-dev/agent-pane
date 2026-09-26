@@ -10,6 +10,7 @@ import { waitForAgentIdle, waitForPromptReady } from './helpers.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
+  saveAppScreenshot,
   waitForSettledLayout,
 } from './helpers/screenshot.ts'
 
@@ -35,7 +36,6 @@ const TRANSPARENT_ARTEFACT = `<div id="canvas-background-probe">
     box-sizing: border-box;
     min-height: 100vh;
     padding: 32px;
-    color: white;
   }
 </style>
 `
@@ -55,13 +55,82 @@ const OVERRIDDEN_ARTEFACT = `<div id="canvas-background-probe">
     box-sizing: border-box;
     min-height: 100vh;
     padding: 32px;
-    color: #1e1e1e;
   }
 </style>
 `
 
 // The local mock provider renders through MCP; inline visualization control
 // frames are handled by the ACP executor only.
+
+/** WCAG relative luminance of a computed `rgb()`/`rgba()` colour. */
+function luminance(color: string): number {
+  const channels = (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+  assert.equal(channels.length, 3, `expected a computed colour, got ${color}`)
+  const [red = 0, green = 0, blue = 0] = channels.map((channel) => {
+    const value = channel / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function contrastRatio(a: string, b: string): number {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05)
+}
+
+/**
+ * The probe's text colour inside the active canvas guest, alongside the host
+ * surface it sits on. The fixtures declare no text colour of their own.
+ */
+async function activeGuestText(): Promise<{ guest: string | null; host: string; hostBg: string }> {
+  return browser.execute(async () => {
+    const host = document.querySelector<HTMLElement>(
+      '.browser-tab-panel.is-active .browser-webview-host',
+    )
+    const webview = host?.querySelector('webview') as {
+      executeJavaScript?: (code: string) => Promise<unknown>
+    } | null
+    const guest = await webview
+      ?.executeJavaScript?.(
+        'getComputedStyle(document.getElementById("canvas-background-probe") ?? document.body).color',
+      )
+      .catch(() => null)
+    const hostStyle = host ? getComputedStyle(host) : null
+    return {
+      guest: typeof guest === 'string' ? guest : null,
+      host: hostStyle?.color ?? '',
+      hostBg: hostStyle?.backgroundColor ?? '',
+    }
+  })
+}
+
+/** Brightest pixel in the preview thumbnail: text on the theme surface. */
+async function previewMaxLuminance(title: string): Promise<number> {
+  return browser.execute((expectedTitle) => {
+    const card = Array.from(document.querySelectorAll('.canvas-preview-card')).find(
+      (candidate) =>
+        candidate.querySelector('.canvas-preview-title')?.textContent === expectedTitle,
+    )
+    const image = card?.querySelector<HTMLImageElement>('.canvas-preview-image')
+    if (!image?.complete || !image.naturalWidth) throw new Error('canvas preview is not ready')
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('2D canvas context unavailable')
+    context.drawImage(image, 0, 0)
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+    let max = 0
+    for (let index = 0; index < data.length; index += 4) {
+      const value =
+        0.2126 * (data[index] ?? 0) +
+        0.7152 * (data[index + 1] ?? 0) +
+        0.0722 * (data[index + 2] ?? 0)
+      if (value > max) max = value
+    }
+    return max
+  }, title)
+}
 
 async function resolvedBodyBackgroundPixel(): Promise<number[]> {
   return browser.execute(() => {
@@ -274,6 +343,9 @@ describe('canvas background parity', () => {
         `preview ${JSON.stringify(previewCorner)} should match theme ${JSON.stringify(themePixel)}`,
       )
     }
+    // The headless mirror gives the transparent document the host text colour
+    // too, so the thumbnail shows light text rather than black on dark.
+    expect(await previewMaxLuminance(TITLE)).toBeGreaterThan(150)
     await saveCanvasPreviewScreenshot('canvas-transparent-background-dark.png', TITLE)
 
     await browser.execute((title) => {
@@ -296,6 +368,19 @@ describe('canvas background parity', () => {
       }
     })
     assert.equal(surfaces.canvas, surfaces.app)
+
+    // Host CSS does not inherit into the guest: the transparent artefact takes
+    // the injected host text colour instead of Chromium's default black.
+    let text = await activeGuestText()
+    await browser.waitUntil(
+      async () => {
+        text = await activeGuestText()
+        return text.guest !== null && text.guest === text.host
+      },
+      { timeout: 15_000, timeoutMsg: 'expected the canvas guest to take the host text colour' },
+    )
+    expect(contrastRatio(text.guest ?? '', text.hostBg)).toBeGreaterThan(7)
+    await saveAppScreenshot('canvas-transparent-text-dark.png')
   })
 
   it('lets an artefact override the default canvas background', async function () {
@@ -322,5 +407,14 @@ describe('canvas background parity', () => {
     const preview = await image.getAttribute('src')
     assert.ok(preview?.startsWith('data:image/png;base64,'))
     assert.deepEqual(await previewCornerPixel(OVERRIDE_TITLE), EXPLICIT_BACKGROUND)
+
+    // An artefact that paints its own background keeps the browser's default
+    // text colour: the host colour is only for the surface the host supplies.
+    await $('.browser-tab-panel.is-active webview').waitForExist({ timeout: 20_000 })
+    await browser.waitUntil(async () => (await activeGuestText()).guest !== null, {
+      timeout: 15_000,
+      timeoutMsg: 'expected the explicit-background canvas to load in the Browser pane',
+    })
+    expect((await activeGuestText()).guest).toBe('rgb(0, 0, 0)')
   })
 })

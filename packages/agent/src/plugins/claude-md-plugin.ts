@@ -36,7 +36,7 @@ export const claudeMdPlugin: RegisteredPlugin = definePlugin(
   {
     name: CLAUDE_MD_PLUGIN_ID,
     description:
-      'CLAUDE.md compatibility — supplies native Claude project-instruction sources while Copse retains trust, containment, and prompt rendering.',
+      'Supplies native Claude project-instruction sources while Copse retains trust, containment, and prompt rendering.',
     trust: 'first-party',
     stability: 'stable',
   },
