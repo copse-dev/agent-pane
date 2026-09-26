@@ -5,7 +5,15 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
-import { OPUS_5_RESPONSE_LENGTH_BLOCK, OPUS_5_TONE_REMINDER } from './agent-prompt.ts'
+import {
+  INVESTIGATE_CI_TOOL_LINE,
+  OPUS_5_RESPONSE_LENGTH_BLOCK,
+  OPUS_5_TONE_REMINDER,
+} from './agent-prompt.ts'
+import { setGhAvailableForTest } from './tool-availability.ts'
+import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
+import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
+import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import {
@@ -335,5 +343,68 @@ describe('buildSystemPrompt Git repository root', () => {
     const prompt = await runWithThreadExecutionContext(context({}), () => build())
     assert.ok(!prompt.includes('Git repository root:'))
     assert.ok(prompt.includes(`Working directory: ${tempRoot}`))
+  })
+})
+
+describe('buildSystemPrompt investigate_ci tool line', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    setSetting('skillsEnabled', false)
+    setSetting('skillPluginPaths', [])
+    setSetting('customInstructions', '')
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-ci-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    setDefaultPluginRegistry(null)
+    setGhAvailableForTest(null)
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  function arrange(plugin: boolean, gh: boolean): void {
+    const plugins = createFirstPartyPluginRegistry()
+    if (plugin) plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    else plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(gh)
+  }
+
+  // The line appears only when the turn is offered the tool: plugin on AND gh
+  // usable AND subagents on — the same predicate the CI follow-up reads.
+  for (const plugin of [false, true]) {
+    for (const gh of [false, true]) {
+      for (const subagentsEnabled of [false, true]) {
+        const offered = plugin && gh && subagentsEnabled
+        it(`plugin=${String(plugin)} gh=${String(gh)} subagents=${String(subagentsEnabled)} ${offered ? 'names' : 'omits'} investigate_ci`, async () => {
+          arrange(plugin, gh)
+          const prompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills: [] })
+          assert.equal(prompt.includes(INVESTIGATE_CI_TOOL_LINE), offered)
+          assert.equal(prompt.includes('investigate_ci'), offered)
+          // The explore line is untouched either way in explore mode.
+          assert.equal(prompt.includes('- explore: Explore the codebase'), subagentsEnabled)
+        })
+      }
+    }
+  }
+
+  it('follows the exact offered tool list on a real turn', async () => {
+    arrange(true, true)
+    const withTool = await buildSystemPrompt({
+      subagentsEnabled: true,
+      invokedSkills: [],
+      availableToolNames: ['explore', 'investigate_ci'],
+    })
+    assert.ok(withTool.includes(INVESTIGATE_CI_TOOL_LINE))
+    // e.g. read-only mode filtered it out of this turn's tools.
+    const withoutTool = await buildSystemPrompt({
+      subagentsEnabled: true,
+      invokedSkills: [],
+      availableToolNames: ['explore'],
+    })
+    assert.ok(!withoutTool.includes('investigate_ci'))
   })
 })
