@@ -26232,12 +26232,16 @@ function ensureDialog3() {
   }
   dialog = document.createElement("dialog");
   dialog.className = "attachment-preview-dialog";
-  titleEl = el("div", { class: "attachment-preview-title" });
+  titleEl = el("h2", { class: "attachment-preview-title" });
   bodyEl = el("div", { class: "attachment-preview-body" });
   const closeBtn = el(
     "button",
-    { type: "button", class: "attachment-preview-close", "aria-label": "Close" },
-    "\xD7"
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost attachment-preview-close",
+      "aria-label": "Close"
+    },
+    closeIcon()
   );
   const header = el("div", { class: "attachment-preview-header" }, titleEl, closeBtn);
   dialog.append(header, bodyEl);
@@ -26311,6 +26315,7 @@ var dialog, titleEl, bodyEl, currentCleanup, returnFocus, activeToken;
 var init_attachment_preview = __esm({
   "src/renderer/attachments/attachment-preview.ts"() {
     init_helpers();
+    init_icons();
     dialog = null;
     titleEl = null;
     bodyEl = null;
@@ -44900,9 +44905,7 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         "button",
         {
           type: "button",
-          // `is-group-choice` drops the model list's monospace treatment: these
-          // are prose labels the agent wrote ("High"), not model identifiers.
-          class: "model-picker-option is-group-choice",
+          class: "model-picker-option",
           role: "option",
           "data-value": choice.value,
           "aria-selected": choice.value === activeValue ? "true" : "false",
@@ -44996,7 +44999,10 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
           "data-value": opt.value,
           "aria-selected": opt.value === activeValue ? "true" : "false",
           "aria-current": selected ? "true" : void 0,
-          disabled: opt.disabled ? true : void 0
+          disabled: opt.disabled ? true : void 0,
+          // The label ellipsizes at the menu's width cap; the tooltip keeps the
+          // whole of it reachable.
+          title: opt.label
         },
         el("span", { class: "model-picker-option-label" }, opt.label),
         ...recentMode && selected ? [checkIcon("ui-icon ui-icon-sm model-picker-option-check")] : []
@@ -93179,7 +93185,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
       "aria-label": "Dismiss this container run notice",
       title: "Dismiss"
     },
-    "\xD7"
+    closeIcon()
   );
   const element = el(
     "div",
@@ -93899,6 +93905,7 @@ var init_container_run_control = __esm({
     init_acp_known_agents();
     init_container_acp_agents();
     init_helpers();
+    init_icons();
     init_ui();
     init_model_options();
     init_model_picker();
@@ -93975,54 +93982,66 @@ function mountInputBar(root, store2, api2, opts = {}) {
   const branchWarningText = el("span", { class: "composer-branch-warning-text" });
   const checkoutBranchBtn = el(
     "button",
-    { type: "button", class: "composer-branch-checkout-btn" },
+    { type: "button", class: "composer-branch-checkout-btn composer-banner-action" },
     "Check out"
   );
   const continueBranchBtn = el(
     "button",
-    { type: "button", class: "composer-branch-continue-btn" },
+    { type: "button", class: "composer-branch-continue-btn composer-banner-action" },
     "Continue here"
   );
   const branchWarning = el(
     "div",
-    { class: "composer-branch-warning", role: "status", "aria-live": "polite", hidden: "" },
-    el("span", { class: "composer-branch-warning-icon", "aria-hidden": "true" }, "!"),
+    {
+      class: "composer-branch-warning composer-banner",
+      role: "status",
+      "aria-live": "polite",
+      hidden: ""
+    },
+    el("span", { class: "composer-banner-icon", "aria-hidden": "true" }, "!"),
     branchWarningText,
     checkoutBranchBtn,
     continueBranchBtn
   );
   const dirtyWarningText = el(
     "span",
-    { class: "composer-dirty-warning-text" },
+    { class: "composer-dirty-warning-text composer-banner-text" },
     "This checkout has uncommitted changes. Work will run on top of them."
   );
   const useWorktreeBtn = el(
     "button",
-    { type: "button", class: "composer-dirty-worktree-btn" },
+    { type: "button", class: "composer-dirty-worktree-btn composer-banner-action" },
     "Use an isolated worktree"
   );
   const sendDirtyAnywayBtn = el(
     "button",
-    { type: "button", class: "composer-dirty-send-btn" },
+    { type: "button", class: "composer-dirty-send-btn composer-banner-action" },
     "Send anyway"
   );
   const dirtyWarning = el(
     "div",
-    { class: "composer-dirty-warning", role: "status", "aria-live": "polite", hidden: "" },
-    el("span", { class: "composer-dirty-warning-icon", "aria-hidden": "true" }, "!"),
+    {
+      class: "composer-dirty-warning composer-banner",
+      role: "status",
+      "aria-live": "polite",
+      hidden: ""
+    },
+    el("span", { class: "composer-banner-icon", "aria-hidden": "true" }, "!"),
     dirtyWarningText,
     useWorktreeBtn,
     sendDirtyAnywayBtn
   );
-  const imageCompatibilityText = el("span", { class: "composer-image-warning-text" });
+  const imageCompatibilityText = el("span", {
+    class: "composer-image-warning-text composer-banner-text"
+  });
   const useImageModelBtn = el(
     "button",
-    { type: "button", class: "composer-image-model-btn", hidden: "" },
+    { type: "button", class: "composer-image-model-btn composer-banner-action", hidden: "" },
     "Use image model"
   );
   const describeImagesBtn = el(
     "button",
-    { type: "button", class: "composer-image-describe-btn", hidden: "" },
+    { type: "button", class: "composer-image-describe-btn composer-banner-action", hidden: "" },
     "Describe image"
   );
   const descriptionPickerHost = el("span", { class: "composer-image-description-picker" });
@@ -94034,38 +94053,40 @@ function mountInputBar(root, store2, api2, opts = {}) {
   );
   const sendWithoutImagesBtn = el(
     "button",
-    { type: "button", class: "composer-image-without-btn" },
+    { type: "button", class: "composer-image-without-btn composer-banner-action" },
     "Send without image"
   );
   const imageCompatibilityWarning = el(
     "div",
     {
-      class: "composer-image-warning",
+      class: "composer-image-warning composer-banner",
       role: "status",
       "aria-live": "polite",
       hidden: ""
     },
-    el("span", { class: "composer-image-warning-icon", "aria-hidden": "true" }, "!"),
+    el("span", { class: "composer-banner-icon", "aria-hidden": "true" }, "!"),
     imageCompatibilityText,
     useImageModelBtn,
     descriptionActions,
     sendWithoutImagesBtn
   );
-  const contextFitText = el("span", { class: "composer-context-warning-text" });
+  const contextFitText = el("span", {
+    class: "composer-context-warning-text composer-banner-text"
+  });
   const contextFitModelBtn = el(
     "button",
-    { type: "button", class: "composer-context-model-btn" },
+    { type: "button", class: "composer-context-model-btn composer-banner-action" },
     "Choose another model"
   );
   const contextFitWarning = el(
     "div",
     {
-      class: "composer-context-warning",
+      class: "composer-context-warning composer-banner",
       role: "status",
       "aria-live": "polite",
       hidden: ""
     },
-    el("span", { class: "composer-context-warning-icon", "aria-hidden": "true" }, "!"),
+    el("span", { class: "composer-banner-icon", "aria-hidden": "true" }, "!"),
     contextFitText,
     contextFitModelBtn
   );
@@ -94313,15 +94334,21 @@ function mountInputBar(root, store2, api2, opts = {}) {
   usageBtn.addEventListener("mouseleave", usagePopover.hide);
   usageBtn.addEventListener("focus", usagePopover.show);
   usageBtn.addEventListener("blur", usagePopover.hide);
-  const checkoutErrorText = el("span", { class: "composer-checkout-error-text" });
+  const checkoutErrorText = el("span", {
+    class: "composer-checkout-error-text composer-banner-text"
+  });
   const checkoutRetryBtn = el(
     "button",
-    { type: "button", class: "composer-checkout-retry-btn" },
+    { type: "button", class: "composer-checkout-retry-btn composer-banner-action" },
     "Retry"
   );
   const checkoutError = el(
     "div",
-    { class: "composer-checkout-error", role: "alert", hidden: "" },
+    {
+      class: "composer-checkout-error composer-banner composer-banner-danger",
+      role: "alert",
+      hidden: ""
+    },
     checkoutErrorText,
     checkoutRetryBtn
   );
