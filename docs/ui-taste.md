@@ -318,6 +318,25 @@ A row that needs more air should change the token, not opt out locally. Rows may
 what they stack inside that padding (memories rows are two lines, roadmap rows one).
 Spec: [`tests/e2e/list-row-rhythm.e2e.ts`](../tests/e2e/list-row-rhythm.e2e.ts).
 
+## Decide which label gives way first
+
+When a one-line row runs out of room, pick the part that truncates, and keep a short identifier
+(a chip's `Hooks`, a schedule's name, a branch like `work`) whole. Cutting a short word saves
+almost nothing: `Hoo…` or `CI re…` is as wide as the word minus a letter or two.
+
+- A secondary label that should use only the leftover space gets `flex: 1 1 0; min-width: 0` plus
+  `text-overflow: ellipsis` (the automation owner label `· workspace`). Weighted `flex-shrink`
+  can't order the truncation: the favoured item still loses a fraction of a pixel, and that is
+  enough to ellipsize it.
+- A fixed word that names the element gets `flex-shrink: 0`, and the long text beside it
+  ellipsizes (hook group chips).
+- Ellipsis needs width for at least one letter and the `…`. A label squeezed below that clips to
+  a bare letter, as in the branch chip `w`, so prefer collapsing something else (the footer's
+  compact mode, the Browser's text Go button) over squeezing a label that far.
+
+Specs: `automation-settings-link`, `browser-preview-tool`, `selected-plugin-browser`, and
+`terminal-new-thread` in `tests/e2e/`.
+
 ## Markdown tables in chat
 
 Agent-generated GFM tables live in `.message-text`; styles in

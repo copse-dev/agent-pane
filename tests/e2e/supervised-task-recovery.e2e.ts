@@ -2,6 +2,7 @@ import { $, browser, expect } from '@wdio/globals'
 import type { SupervisedTaskMeta } from '../../src/shared/supervisor/task-schema.ts'
 import { resetUserData, seedEmptyProject, writeSeedSupervisedTask } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { assertFooterBranchWhole } from './helpers/text-fit.ts'
 
 const PROJECT_ID = 'e2e-supervisor-recovery'
 const task: SupervisedTaskMeta = {
@@ -66,6 +67,31 @@ describe('supervised task recovery', function () {
       expect.stringContaining('Attempt 1 of 3'),
     )
     await expect(interrupted.$('.supervised-task-resume')).toBeDisplayed()
+    // The disclosure glyph, title and state share one grid: the state line sits
+    // under the title, not under the glyph (which would widen the glyph column
+    // to the state's width and push the title away from its handle).
+    const summary = await browser.execute(() => {
+      const row = document.querySelector(
+        '.supervised-task-row[data-task-id="interrupted-long-task"]',
+      )
+      const box = row?.querySelector('.supervised-task-summary')
+      const label = box?.querySelector('.supervised-task-label')
+      const state = box?.querySelector('.supervised-task-state')
+      if (!box || !label || !state) return null
+      const labelRect = label.getBoundingClientRect()
+      const stateRect = state.getBoundingClientRect()
+      return {
+        glyphGap: labelRect.left - box.getBoundingClientRect().left,
+        stateLeft: stateRect.left,
+        labelLeft: labelRect.left,
+        stateBelow: stateRect.top >= labelRect.bottom - 0.5,
+      }
+    })
+    expect(summary).not.toBeNull()
+    expect(summary?.glyphGap).toBeLessThan(24)
+    expect(summary?.stateLeft).toBe(summary?.labelLeft)
+    expect(summary?.stateBelow).toBe(true)
+    await assertFooterBranchWhole()
     await saveAppScreenshot('supervised-tasks-resume.png')
     await interrupted.$('.supervised-task-resume').click()
     // The disabled plugin completes the consumer without dispatching a model turn.

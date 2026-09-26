@@ -92,6 +92,19 @@
   white-space: nowrap;
 }
 
+/* A collapsed group's name is the fixed word `Hook`/`Hooks`, the only thing
+   that says what the chip is, so it keeps its width; when a narrow column
+   caps the chip, the counts beside it ellipsize instead. (A single card's
+   name is the hook's own id and may be long, so that one still shrinks.) */
+.hook-card-group > .hook-card-header > .hook-name {
+  flex-shrink: 0;
+}
+.hook-card-group > .hook-card-header > .hook-card-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hook-status-icon {
   display: inline-flex;
   align-items: center;

@@ -7,6 +7,7 @@ import {
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
 
 const PROJECT_ID = 'e2e-automation-settings-link'
 const SCHEDULE_ID = 'schedule-docs-freshness'
@@ -123,6 +124,9 @@ describe('automation setup links', function () {
     await browser.keys('Tab')
     await expect(setup).toBeDisplayed()
     assert.equal(await setup.getAttribute('aria-label'), 'Docs freshness setup')
+    await assertScheduleHeadingKeepsTitle(
+      `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`,
+    )
     await saveElementScreenshot('.automation-threads-group', 'automation-setup-link.png')
 
     await setup.click()

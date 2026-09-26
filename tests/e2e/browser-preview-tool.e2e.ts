@@ -91,5 +91,27 @@ describe('browser preview tool', () => {
       }
     })
     await saveThreePaneScreenshot('browser-preview-tool-visible.png', { filesPaneWidth: 1_040 })
+    // The wide Browser leaves the chat column narrow, which caps each hook
+    // chip. The chip's name (`Hook`/`Hooks`) keeps its width; only the counts
+    // beside it may ellipsize, and nothing spills past the status glyph.
+    const chips = await browser.execute(() =>
+      Array.from(document.querySelectorAll('.hook-card-group > .hook-card-header'), (header) => {
+        const name = header.querySelector('.hook-name')
+        const status = header.querySelector('.hook-card-status')
+        const icon = header.querySelector('.hook-status-icon')
+        return {
+          name: name?.textContent ?? '',
+          nameCut: !name || name.scrollWidth > name.clientWidth,
+          statusRight: status?.getBoundingClientRect().right ?? Infinity,
+          iconLeft: icon?.getBoundingClientRect().left ?? -Infinity,
+        }
+      }),
+    )
+    expect(chips.length).toBeGreaterThan(0)
+    for (const chip of chips) {
+      expect(chip.name).toMatch(/^Hooks?$/)
+      expect(chip.nameCut).toBe(false)
+      expect(chip.statusRight).toBeLessThanOrEqual(chip.iconLeft)
+    }
   })
 })

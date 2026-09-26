@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertFooterBranchWhole } from './helpers/text-fit.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-terminal-new-thread-project'
@@ -76,6 +77,9 @@ describe('terminal after new thread', () => {
       },
     )
 
+    // The terminal narrows the composer; its footer must go compact rather
+    // than squeeze the `work` branch chip to one clipped letter.
+    await assertFooterBranchWhole()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'terminal-new-thread-spawn.png'))
   })
 })

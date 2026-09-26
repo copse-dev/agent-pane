@@ -9,6 +9,7 @@ import {
   seedStableWorkspace,
 } from './helpers/seed-config.ts'
 import { startBrowserPageFixture } from './helpers/browser-page-fixture.ts'
+import { assertBrowserAddressFieldRoomy } from './helpers/text-fit.ts'
 import {
   E2E_SCREENSHOT_DIR,
   prepareE2eScreenshot,
@@ -93,7 +94,11 @@ describe('browser panel display', () => {
     await expect($('.browser-tabs-tab.is-active .browser-tabs-tab-label')).toHaveText('New tab')
     await expect($('.browser-toolbar')).toBeDisplayed()
     await expect($('.browser-nav-btn[aria-label="Back"]')).toBeDisplayed()
-    await expect($('.browser-go-btn')).toBeDisplayed()
+    // Beside the Tabs list the toolbar is narrow, so the text Go button gives
+    // way to the address field (Enter navigates); selected-plugin-browser pins
+    // that geometry.
+    await expect($('.browser-url-input')).toBeDisplayed()
+    await assertBrowserAddressFieldRoomy()
 
     // Tabs header + URL toolbar share `--browser-chrome-band-height` so their
     // bottom borders form one continuous line across the tree resizer.

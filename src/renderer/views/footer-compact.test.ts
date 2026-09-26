@@ -59,4 +59,63 @@ describe('footer compact layout', () => {
       globalThis.ResizeObserver = originalResizeObserver
     }
   })
+
+  it('goes compact when a control fills in without the footer itself resizing', () => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame
+    const originalResizeObserver = globalThis.ResizeObserver
+
+    const observed: Element[] = []
+    let notify: (() => void) | undefined
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        notify = (): void => {
+          callback([], this)
+        }
+      }
+      observe(target: Element): void {
+        observed.push(target)
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+      callback(0)
+      return 1
+    }
+    globalThis.cancelAnimationFrame = (): void => {}
+    globalThis.ResizeObserver = TestResizeObserver
+
+    const footer = document.createElement('div')
+    footer.className = 'input-footer'
+    const branchHost = document.createElement('div')
+    branchHost.className = 'footer-branch-host'
+    footer.append(branchHost)
+    document.body.append(footer)
+
+    // The footer keeps its width; only its content grows once the branch loads.
+    let contentWidth = 200
+    Object.defineProperties(footer, {
+      clientWidth: { configurable: true, get: () => 220 },
+      scrollWidth: { configurable: true, get: () => contentWidth },
+    })
+
+    let binding: ReturnType<typeof bindFooterCompactLayout> | undefined
+    try {
+      binding = bindFooterCompactLayout(footer)
+      assert.equal(binding.isCompact(), false)
+      assert.ok(observed.includes(branchHost), 'footer controls must be observed')
+
+      contentWidth = 300
+      notify?.()
+      assert.equal(binding.isCompact(), true)
+    } finally {
+      binding?.destroy()
+      footer.remove()
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
 })

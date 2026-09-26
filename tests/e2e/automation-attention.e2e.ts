@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { pinTextForCapture, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
+import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
 
 const PROJECT_ID = 'e2e-automation-attention'
 const SCHEDULE_ID = 'schedule-ci-review-attention'
@@ -399,6 +400,9 @@ describe('automation attention grouping', function () {
       '.automation-schedule-runs',
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
+    )
+    await assertScheduleHeadingKeepsTitle(
+      `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`,
     )
     await saveElementScreenshot('.automation-threads-group', 'automation-attention-group.png')
     await restoreRunTime()

@@ -437,13 +437,26 @@
 }
 /* Owning-project label on a workspace-level automation row/heading (#2511):
    same quiet treatment as the PR status chip's neighbours, shrinking before
-   the title does so a long project name never crowds out the schedule name. */
+   the title does so a long project name never crowds out the schedule name.
+   A zero flex basis gives the label only the space left once the title (and
+   the run count) have their natural width, so the label is what ellipsizes;
+   the title only starts to shrink once the label is already gone. Weighted
+   shrink factors can't express that order: they still take a fraction of a
+   pixel from the title, which is enough to ellipsize it. */
 .chat-thread-owner {
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-left: var(--spacing-xs);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   white-space: nowrap;
+}
+/* The label takes the free space instead of the title, so it sits right
+   after the title rather than being pushed to the row's far end. */
+.chat-row .chat-title:has(+ .chat-thread-owner) {
+  flex-grow: 0;
 }
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
@@ -1802,9 +1815,13 @@
 .supervised-task-copy[open] > .supervised-task-summary::before {
   content: '▾';
 }
+/* Both lines sit in the text column. Left to auto-placement, the state lands
+   in the first column under the disclosure glyph, which widens that column to
+   the state's width and pushes the label far from its glyph. */
 .supervised-task-summary .supervised-task-label,
 .supervised-task-summary .supervised-task-state {
   display: block;
+  grid-column: 2;
 }
 .supervised-task-detail,
 .supervised-task-feedback {
@@ -2004,6 +2021,7 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+  container: browser-toolbar / inline-size;
 }
 .browser-nav-btn {
   flex-shrink: 0;
@@ -2051,6 +2069,14 @@
 .browser-go-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+/* Every other toolbar control is a fixed-width icon, so in a narrow pane the
+   address field is the only thing left to give. Drop the text Go button first:
+   Enter in the field does the same, and the field keeps room to read the host. */
+@container browser-toolbar (max-width: 360px) {
+  .browser-go-btn {
+    display: none;
+  }
 }
 .browser-menu-wrap {
   position: relative;
