@@ -109,6 +109,18 @@ describe('@-reference past threads (#644)', () => {
       )
     }
 
+    // The kit radius, like every other attachment/reference chip.
+    const radius = await browser.execute(() => {
+      const inlineChip = document.querySelector('.prompt-input .inline-thread-chip')
+      if (!(inlineChip instanceof HTMLElement)) return null
+      return {
+        chip: getComputedStyle(inlineChip).borderTopLeftRadius,
+        token: getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(),
+      }
+    })
+    assert.ok(radius, 'expected the inline thread chip')
+    assert.equal(radius.chip, radius.token)
+
     await saveAppScreenshot('thread-reference-chip.png')
 
     await browser.execute(() => {

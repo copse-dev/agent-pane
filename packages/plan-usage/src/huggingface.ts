@@ -91,7 +91,7 @@ export async function fetchHuggingFacePlanUsage(
       status: 'unavailable',
       provider: 'huggingface',
       reason:
-        'No Hugging Face token (set HF_TOKEN or run `hf auth login`). A key saved in Copse Settings works in the app, but the probe CLI cannot decrypt Electron safeStorage — export HF_TOKEN to probe from the shell.',
+        'No Hugging Face token (set `HF_TOKEN` or run `hf auth login`). A key saved in Copse Settings works in the app, but the probe CLI cannot decrypt Electron safeStorage — export `HF_TOKEN` to probe from the shell.',
     }
   }
 

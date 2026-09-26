@@ -9,7 +9,11 @@ import { refreshIcon } from '../dom/icons.ts'
 export function createRetryButton(onRetry: () => void): HTMLButtonElement {
   const button = el(
     'button',
-    { type: 'button', class: 'card-retry-button', 'data-tooltip': 'Run this again' },
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact card-retry-button',
+      'data-tooltip': 'Run this again',
+    },
     refreshIcon('ui-icon ui-icon-sm'),
     el('span', {}, 'Retry'),
   )

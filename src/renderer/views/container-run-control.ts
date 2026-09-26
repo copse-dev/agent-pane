@@ -21,6 +21,7 @@ import { parseAcpModel } from '@shared/acp.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import { containerAcpAgentTitles } from '@shared/container-acp-agents.ts'
 import { clear, el } from '../dom/helpers.ts'
+import { closeIcon } from '../dom/icons.ts'
 import { uiActions, uiField } from '../ui/index.ts'
 import {
   fetchModelOptions,
@@ -258,7 +259,7 @@ export function mountContainerRunControl(
       'aria-label': 'Dismiss this container run notice',
       title: 'Dismiss',
     },
-    '×',
+    closeIcon(),
   )
   const element = el(
     'div',
