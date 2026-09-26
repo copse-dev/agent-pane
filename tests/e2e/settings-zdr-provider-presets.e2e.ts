@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import {
+  assertBadgeRecipe,
+  assertNeutralBadge,
+  readBadgeStyles,
+  signalColours,
+} from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -64,6 +70,16 @@ describe('ZDR provider presets', () => {
     assert.equal(details.badgeKind, false)
     assert.match(details.policyHint, /temporarily log inference data/i)
     assert.equal(details.baseUrl, 'https://api.groq.com/openai/v1')
+
+    // The built-in tag and the data-policy badge beside it share one badge
+    // recipe (sentence case, --radius corner, one size); the tag is a neutral label.
+    const [tag] = await readBadgeStyles('#settings-providers-host .provider-form-tag')
+    const [policyBadge] = await readBadgeStyles('#settings-providers-host .provider-privacy-badge')
+    assert.ok(tag, 'built-in tag rendered')
+    assert.ok(policyBadge, 'data-policy badge rendered')
+    assertBadgeRecipe(tag)
+    assertBadgeRecipe(policyBadge)
+    assertNeutralBadge(tag, await signalColours())
 
     await saveElementScreenshot('#settings-dialog', 'settings-zdr-provider-presets.png')
   })

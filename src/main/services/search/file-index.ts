@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { runCommand } from '../exec/command-runner.ts'
+import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { isRgAvailableForTarget } from '../tool-availability.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePathWithinRoot } from '../workspace.ts'
@@ -84,6 +85,11 @@ async function listFilesViaRg(workspaceRoot: string): Promise<Listing> {
   const { stdout, stdoutTruncated } = await runCommand('rg', ['--files', workspaceRoot], {
     ...LIST_CMD_OPTS,
     cwd: workspaceRoot,
+    // A listing only reads. The writable workspace overlay would make Linux
+    // bubblewrap create empty placeholders for every missing mandatory
+    // write-deny path (.bashrc, .gitconfig, .vscode, ...) in the checkout, and
+    // this runs on every workspace open, before the user does anything.
+    sandboxConfig: readOnlyWorkspaceSandboxOverlay(workspaceRoot),
   })
   const paths = await Promise.all(
     stdout

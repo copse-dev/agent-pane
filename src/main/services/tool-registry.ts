@@ -23,7 +23,7 @@ import { describeToolArgError } from './tool-arg-error.ts'
 import { clampNumericRangeArgs, describeClampRepair } from './tool-arg-repair.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isActiveSshWorkspace } from './ssh-workspace/execution-target.ts'
-import { ensureExecutionRootWatched } from './search/execution-root-watcher.ts'
+import { isExecutionRootWatched, watchExecutionRootSoon } from './search/execution-root-watcher.ts'
 import {
   CACHEABLE_TOOLS,
   getCachedToolResult,
@@ -68,13 +68,21 @@ export function setPermissionGateForTests(fn: PermissionGateFn | null): void {
 }
 
 /**
- * Append a hook's current-turn injected context (H2) to a tool result, keeping
- * the result's structured shape (edit stats) intact. A blank line separates the
- * tool output from the injected system-reminder block.
+ * Append Copse-authored system-reminder blocks — the clamp note and a hook's
+ * current-turn injected context (H2) — to a tool result, keeping the result's
+ * structured shape (edit stats) intact. A blank line precedes each block. The
+ * block lengths ride along as display metadata so the transcript can set
+ * exactly these blocks apart from the tool's own output; the text the model
+ * reads is the same either way.
  */
-function appendInjectedContext(result: ToolExecuteResult, block: string): ToolExecuteResult {
-  if (typeof result === 'string') return `${result}\n\n${block}`
-  return { ...result, result: `${result.result}\n\n${block}` }
+function appendSystemReminders(
+  result: ToolExecuteResult,
+  blocks: readonly string[],
+): ToolExecuteResult {
+  const suffix = blocks.map((block) => `\n\n${block}`).join('')
+  const appendedReminderLengths = blocks.map((block) => block.length)
+  if (typeof result === 'string') return { result: `${result}${suffix}`, appendedReminderLengths }
+  return { ...result, result: `${result.result}${suffix}`, appendedReminderLengths }
 }
 
 /** Wrap a result's textual part in the external-content envelope, keeping structured fields. */
@@ -229,15 +237,17 @@ export class ToolRegistry {
         // A tool that can mutate the workspace ran — this thread's cached
         // results may now be stale.
         invalidateThreadToolCache(identity.threadId)
-      } else if (
+      } else if (cacheable && !isActiveSshWorkspace()) {
         // Only cache what we can invalidate. SSH workspaces have no local
         // fs.watch, and a root we failed to watch would be stuck serving stale
-        // results for the rest of the thread.
-        cacheable &&
-        !isActiveSshWorkspace() &&
-        ensureExecutionRootWatched(identity.root)
-      ) {
-        setCachedToolResult(identity, name, parsed, result)
+        // results for the rest of the thread. Arming the watcher walks the whole
+        // checkout synchronously, so it happens after this call returns rather
+        // than inside it; this result goes uncached until then.
+        if (isExecutionRootWatched(identity.root)) {
+          setCachedToolResult(identity, name, parsed, result)
+        } else {
+          watchExecutionRootSoon(identity.root)
+        }
       }
     }
     // Provenance envelope (docs/plans/context-provenance.md): results whose
@@ -256,15 +266,13 @@ export class ToolRegistry {
     // result so the model reads it right after the tool output. The numeric-
     // range repair's clamp note rides the same channel: it is Copse-authored
     // context about the call, not tool output, and the model must read it.
-    const injected =
-      clampedNotes.length > 0 ? formatSystemReminder(describeClampRepair(clampedNotes)) : undefined
-    if (check.injectContext !== undefined && check.injectContext.length > 0) {
-      return appendInjectedContext(
-        result,
-        injected ? `${injected}\n\n${check.injectContext}` : check.injectContext,
-      )
-    }
-    return injected ? appendInjectedContext(result, injected) : result
+    const reminders = [
+      ...(clampedNotes.length > 0 ? [formatSystemReminder(describeClampRepair(clampedNotes))] : []),
+      ...(check.injectContext !== undefined && check.injectContext.length > 0
+        ? [check.injectContext]
+        : []),
+    ]
+    return reminders.length > 0 ? appendSystemReminders(result, reminders) : result
   }
 
   /** Execute and unwrap structured tool results (e.g. file-edit line stats). */
@@ -276,6 +284,7 @@ export class ToolRegistry {
     result: string
     editStats?: { additions: number; deletions: number }
     resultFormat?: 'markdown'
+    appendedReminderLengths?: number[]
     /**
      * Images a tool produced alongside its text (screenshots, generations, frames). Always returned
      * by `normalizeToolExecuteResult`; declared here so callers that can render
