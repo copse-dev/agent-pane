@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { assertBadgeRecipe, readBadgeStyles } from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { tokenColour } from './helpers/theme.ts'
 
 const SERVER_NAME = 'copse-canvas'
 const TOOL_NAME = 'Render Html Artefact'
@@ -84,6 +85,29 @@ describe('settings tool permissions', () => {
     const origins = await readBadgeStyles('#settings-dialog .mcp-origin-chip')
     assert.ok(origins.length > 0, 'an MCP origin chip rendered')
     for (const origin of origins) assertBadgeRecipe(origin)
+
+    // The state is carried by the inline status alone: the name stays in the
+    // row's own text colour and only the badge takes the status hue.
+    const serverRow = mcp.$(
+      `.mcp-server-row:has([aria-label="Manage permissions for ${SERVER_NAME}"])`,
+    )
+    await expect(serverRow).toHaveElementClass('mcp-state-connected')
+    const colours = await browser.execute((serverName) => {
+      const row = document
+        .querySelector(`[aria-label="Manage permissions for ${serverName}"]`)
+        ?.closest('.mcp-server-row')
+      const summary = row?.querySelector('.mcp-server-summary')
+      const badge = summary?.querySelector('.ui-inline-status')
+      if (!row || !summary || !badge) return null
+      return {
+        row: getComputedStyle(row).color,
+        summary: getComputedStyle(summary).color,
+        badge: getComputedStyle(badge).color,
+      }
+    }, SERVER_NAME)
+    assert.ok(colours, 'the connected row must render a summary and an inline status')
+    assert.equal(colours.summary, colours.row, 'the server name must not take the state hue')
+    assert.equal(colours.badge, await tokenColour('--success'))
 
     await mcp.$('.mcp-server-row').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('#settings-dialog', 'settings-mcp-server-row.png')

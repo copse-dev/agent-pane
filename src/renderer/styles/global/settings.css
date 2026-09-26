@@ -614,7 +614,7 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
 }
 .app-icon-label {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .settings-content label select,
 .settings-content label input[type='text'],
@@ -691,7 +691,7 @@ dialog.settings-overlay::backdrop {
   -webkit-app-region: no-drag;
 }
 .key-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .key-status.ok {
@@ -723,7 +723,7 @@ dialog.settings-overlay::backdrop {
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--spacing-sm);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .env-key-provider {
   font-weight: 600;
@@ -732,7 +732,7 @@ dialog.settings-overlay::backdrop {
 .env-key-source {
   color: var(--text-muted);
   font-family: var(--font-mono, monospace);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .env-key-masked {
   color: var(--text-muted);
@@ -894,7 +894,7 @@ dialog.settings-overlay::backdrop {
   width: 100%;
 }
 .provider-model-head {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .provider-model-remove {
@@ -1254,12 +1254,12 @@ dialog.settings-overlay::backdrop {
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   letter-spacing: 0.04em;
 }
 .frontier-tooltip .tt-muted {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .frontier-tooltip .tt-status {
   margin-top: 6px;
@@ -1446,7 +1446,7 @@ dialog.settings-overlay::backdrop {
   font-style: italic;
 }
 .usage-table td code {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   /* Long model ids must wrap inside their fixed-width column, not overflow it. */
   overflow-wrap: anywhere;
 }
@@ -1476,7 +1476,7 @@ dialog.settings-overlay::backdrop {
   margin-bottom: var(--spacing-sm);
 }
 .acp-agent-card-head code {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 .acp-agent-fields {
@@ -1496,7 +1496,7 @@ dialog.settings-overlay::backdrop {
 
 /* ACP known-agent status badge: installed / running state from the last scan. */
 .acp-known-status {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 .acp-known-status.ok {
   color: var(--success, var(--accent));
@@ -1512,14 +1512,14 @@ dialog.settings-overlay::backdrop {
 }
 .acp-cmd-label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   min-width: 52px;
 }
 .acp-cmd {
   flex: 1;
   user-select: all;
-  font-size: 12px;
-  background: var(--bg-subtle, var(--bg));
+  font-size: var(--font-size-sm);
+  background: var(--bg-subtle);
   padding: 2px 6px;
   border-radius: var(--radius);
   overflow-x: auto;
@@ -1603,7 +1603,7 @@ dialog.settings-overlay::backdrop {
   border-color: var(--warning, #d29922);
 }
 .sources-row-error {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--error);
   word-break: break-word;
   margin-top: 2px;
@@ -1651,7 +1651,7 @@ dialog.settings-overlay::backdrop {
   text-decoration: underline;
 }
 .sources-row-detail {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   word-break: break-word;
   margin-top: 2px;
@@ -1665,7 +1665,7 @@ dialog.settings-overlay::backdrop {
   flex: 1 1 0;
   width: 0;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--text-muted);
   white-space: nowrap;
@@ -1723,7 +1723,7 @@ dialog.settings-overlay::backdrop {
 }
 .sources-worktree-action-btn {
   flex: none;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-elevated);
@@ -1768,7 +1768,7 @@ dialog.settings-overlay::backdrop {
    result panel it toggles (summary chips + labeled stdin/stdout/stderr). */
 .sources-hook-test-btn {
   flex: none;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-elevated);
@@ -1796,7 +1796,7 @@ dialog.settings-overlay::backdrop {
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   align-items: center;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .hook-test-summary.hook-test-error {
@@ -1808,12 +1808,12 @@ dialog.settings-overlay::backdrop {
   padding: 1px 6px;
 }
 .hook-test-outcome {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   word-break: break-word;
 }
 .hook-test-stream-label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -1826,7 +1826,7 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 160px;
@@ -2019,7 +2019,7 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-base);
 }
 .plugin-source-status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -2028,7 +2028,7 @@ dialog.settings-overlay::backdrop {
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 3px var(--spacing-sm);
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 .plugin-source-details dt {
   color: var(--text-muted);
@@ -2061,7 +2061,7 @@ dialog.settings-overlay::backdrop {
   gap: var(--spacing-xs);
 }
 .plugin-chip {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -2069,7 +2069,7 @@ dialog.settings-overlay::backdrop {
   padding: 2px var(--spacing-sm);
 }
 .plugin-chips-empty {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -2121,7 +2121,7 @@ dialog.settings-overlay::backdrop {
 /* Names a block *inside* the fold ("Schedules", the Parallel Search key) — the
    summary already names the fold itself, so these stay captions. */
 .plugin-settings-heading {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -2139,14 +2139,14 @@ dialog.settings-overlay::backdrop {
 }
 .plugin-setting-desc {
   grid-column: 1 / -1;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 /* What the selected rule names right now — the one thing a rule hides that a
    pinned model id showed. Hidden when the stored value is already concrete. */
 .plugin-setting-resolved {
   grid-column: 1 / -1;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
@@ -2171,7 +2171,7 @@ dialog.settings-overlay::backdrop {
 }
 .parallel-search-notice {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 .parallel-search-actions {
@@ -2200,7 +2200,7 @@ dialog.settings-overlay::backdrop {
    tinted: the plugin cannot contribute its tool in this state. */
 .plugin-credential-gate {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--warning, #d29922);
 }
 .plugin-toggle-input:disabled + .toggle-switch-track {
@@ -2265,7 +2265,7 @@ dialog.settings-overlay::backdrop {
 .automation-row-last-run,
 .automation-hint {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 .automation-notice {
@@ -2317,11 +2317,8 @@ dialog.settings-overlay::backdrop {
   min-width: 0;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
-}
-.automation-row-schedule {
-  color: var(--accent);
 }
 .automation-row-actions,
 .automation-form-actions {
