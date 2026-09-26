@@ -1,0 +1,205 @@
+name: CLA
+
+# Sets the `CLA` commit status on a pull request head: success when every
+# commit author has signed the Copse Contributor Licence Agreement (CLA.md),
+# failure with a comment explaining how to sign otherwise. Copse is
+# dual-licensed (LICENSING.md), and a commercial licence can only include code
+# whose author granted the rights in CLA.md section 2; the DCO sign-off in
+# CONTRIBUTING.md certifies provenance but grants nothing beyond the AGPL.
+#
+# An author counts as signed when any of these holds:
+#   - they have push access to this repository (the copyright holder and
+#     collaborators, whose terms are settled outside this check);
+#   - their GitHub user id is in .github/cla-signatures.json on the default
+#     branch;
+#   - they have commented the signing sentence on this pull request.
+# Bots, and the AI co-author trailers our own agents add, are not authors for
+# this purpose. A human Co-authored-by trailer must resolve to a signature by
+# email, or by the id in a GitHub noreply address.
+#
+# A commit author or co-author whose email is not linked to any GitHub account
+# cannot be attributed and fails the check, except on a pull request opened by
+# someone with push access: maintainers' own commits and trailers often carry
+# unlinked addresses, and they answer for what they open. Authors that do
+# resolve to an outside account are still checked on those pull requests.
+#
+# `pull_request_target`, because a fork's `pull_request` token cannot set a
+# status or comment. Nothing is checked out and no pull request code runs: the
+# job reads the API only. `issue_comment` re-evaluates when someone posts the
+# signing sentence.
+#
+# Merging is gated only once `CLA` is a required status check in the branch
+# protection for main.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+      contains(github.event.comment.body, 'I have read the Copse CLA Document and I hereby sign the CLA'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+      statuses: write
+    steps:
+      - name: Check CLA signatures
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const PHRASE = 'I have read the Copse CLA Document and I hereby sign the CLA';
+            const MARKER = '<!-- copse-cla-check -->';
+            const SIGNATURES_PATH = '.github/cla-signatures.json';
+            // Trailers our agents and release tooling add. They are tools, not
+            // copyright holders.
+            const NON_AUTHOR_EMAIL =
+              /@anthropic\.com$|@cursor\.com$|^noreply@copse\.dev$|\[bot\]@users\.noreply\.github\.com$/i;
+            const NOREPLY_ID = /^(\d+)\+([^@]+)@users\.noreply\.github\.com$/i;
+
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number ?? context.payload.issue.number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pr.state !== 'open') return;
+
+            const claUrl = `https://github.com/${owner}/${repo}/blob/${pr.base.repo.default_branch}/CLA.md`;
+
+            // Signatures on the default branch — never read from the pull
+            // request, which could add its own author.
+            let signatures = [];
+            try {
+              const { data } = await github.rest.repos.getContent({
+                owner, repo, path: SIGNATURES_PATH, ref: pr.base.repo.default_branch,
+              });
+              const parsed = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+              if (Array.isArray(parsed.signatures)) signatures = parsed.signatures;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const signedIds = new Set(signatures.map((s) => Number(s.id)).filter(Number.isFinite));
+            const signedEmails = new Set(
+              signatures.flatMap((s) => (Array.isArray(s.emails) ? s.emails : [])).map((e) => String(e).toLowerCase()),
+            );
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: number, per_page: 100,
+            });
+            for (const c of comments) {
+              if (c.user && c.body && c.body.includes(PHRASE)) signedIds.add(c.user.id);
+            }
+
+            const pushCache = new Map();
+            async function canPush(login) {
+              if (!pushCache.has(login)) {
+                let ok = false;
+                try {
+                  const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner, repo, username: login,
+                  });
+                  ok = data.permission === 'admin' || data.permission === 'write';
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+                pushCache.set(login, ok);
+              }
+              return pushCache.get(login);
+            }
+
+            const isBot = (user) => user.type === 'Bot' || user.login.endsWith('[bot]');
+            const openedByMaintainer = !isBot(pr.user) && (await canPush(pr.user.login));
+            const unsigned = new Map(); // login -> first sha
+            const unresolved = []; // "email (sha)"
+
+            async function checkUser(user, sha) {
+              if (isBot(user) || signedIds.has(user.id) || (await canPush(user.login))) return;
+              if (!unsigned.has(user.login)) unsigned.set(user.login, sha);
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+            for (const c of commits) {
+              const sha = c.sha.slice(0, 9);
+              if (c.author) {
+                await checkUser(c.author, sha);
+              } else if (!openedByMaintainer) {
+                const email = (c.commit.author?.email ?? '').toLowerCase();
+                if (!signedEmails.has(email)) unresolved.push(`${email || 'no email'} (${sha})`);
+              }
+              for (const m of c.commit.message.matchAll(/^Co-authored-by:.*<([^>]+)>\s*$/gim)) {
+                const email = m[1].toLowerCase();
+                if (NON_AUTHOR_EMAIL.test(email) || signedEmails.has(email)) continue;
+                const noreply = NOREPLY_ID.exec(email);
+                if (noreply) {
+                  if (signedIds.has(Number(noreply[1])) || (await canPush(noreply[2]))) continue;
+                } else if (openedByMaintainer) {
+                  continue;
+                }
+                unresolved.push(`co-author ${email} (${sha})`);
+              }
+            }
+            if (commits.length >= 250) {
+              unresolved.push('more than 250 commits; GitHub lists only the first 250, so split the pull request');
+            }
+
+            const ok = unsigned.size === 0 && unresolved.length === 0;
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: pr.head.sha, context: 'CLA', target_url: claUrl,
+              state: ok ? 'success' : 'failure',
+              description: ok
+                ? 'Every commit author has signed the CLA'
+                : `${unsigned.size + unresolved.length} author(s) need to sign or be identified`,
+            });
+
+            const existing = comments.find((c) => c.user?.type === 'Bot' && c.body?.includes(MARKER));
+            if (ok) {
+              if (existing && !existing.body.includes('All commit authors have signed')) {
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id,
+                  body: `${MARKER}\nAll commit authors have signed the [Copse CLA](${claUrl}). Thank you.`,
+                });
+              }
+              return;
+            }
+
+            const lines = [
+              MARKER,
+              `Thanks for contributing. Copse is dual-licensed, so before this pull request can merge, every commit author needs to sign the [Copse Contributor Licence Agreement](${claUrl}). You keep the copyright in your work.`,
+              '',
+            ];
+            if (unsigned.size > 0) {
+              lines.push(
+                'To sign, read the agreement and post this exact sentence as a comment here:',
+                '',
+                `> ${PHRASE}`,
+                '',
+                'Waiting on:',
+                ...[...unsigned].map(([login, sha]) => `- @${login} (first seen in ${sha})`),
+                '',
+              );
+            }
+            if (unresolved.length > 0) {
+              lines.push(
+                'These authors could not be matched to a GitHub account. Link the email under **Settings → Emails** on GitHub, or rewrite the commits with a linked address, then push again:',
+                ...unresolved.map((u) => `- ${u}`),
+                '',
+              );
+            }
+            const body = lines.join('\n');
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }

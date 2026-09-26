@@ -8,8 +8,10 @@ import {
   ensureExecutionRootWatched,
   handleExecutionRootEvent,
   handleExecutionRootWatchFailure,
+  isExecutionRootWatched,
   stopWatchingExecutionRoot,
   stopAllExecutionRootWatchers,
+  watchExecutionRootSoon,
   watchedExecutionRootsForTest,
 } from './execution-root-watcher.ts'
 import { stopExecutionRootIndexing } from './workspace-indexing.ts'
@@ -103,6 +105,25 @@ describe('execution-root-watcher', () => {
 
     it('reports failure for a root that cannot be watched', () => {
       assert.equal(ensureExecutionRootWatched(join(root, 'does-not-exist')), false)
+      assert.deepEqual(watchedExecutionRootsForTest(), [])
+    })
+
+    // Arming walks the whole checkout synchronously; inside a tool call that
+    // held a millisecond index lookup in `running` past the card auto-reveal.
+    it('arms a queued watch only after the current task returns', async () => {
+      watchExecutionRootSoon(root)
+      watchExecutionRootSoon(root)
+      assert.equal(isExecutionRootWatched(root), false)
+      assert.deepEqual(watchedExecutionRootsForTest(), [])
+      await new Promise((resolve) => setImmediate(resolve))
+      assert.equal(isExecutionRootWatched(root), true)
+      assert.deepEqual(watchedExecutionRootsForTest(), [root])
+    })
+
+    it('drops a queued watch when its root stops being watched first', async () => {
+      watchExecutionRootSoon(root)
+      stopExecutionRootIndexing(root)
+      await new Promise((resolve) => setImmediate(resolve))
       assert.deepEqual(watchedExecutionRootsForTest(), [])
     })
 
