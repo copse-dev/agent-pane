@@ -347,8 +347,8 @@ While active:
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
-    `pkill`/`killall` of a bare name (a path or multi-word command line names the agent's own
-    process and runs);
+    every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
+    `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
   - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
     and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`, which always download.
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the

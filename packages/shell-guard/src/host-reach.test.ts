@@ -114,16 +114,26 @@ describe('hostReachReasons — the desktop and other processes', () => {
     }
   })
 
-  it('leaves reads and agent-specific process management alone', () => {
+  it('leaves reads and process management by PID or job alone', () => {
     for (const command of [
       'launchctl list',
       'systemctl status nginx',
       'crontab -l',
       'defaults read com.apple.dock',
-      'pkill -f "node scripts/watch"',
-      'pkill -f debug/examples/helloworld',
+      'kill %1',
+      'kill 4321',
     ]) {
       assert.deepEqual(reasons(command), [], command)
+    }
+  })
+
+  it('prompts for every pattern kill, which cannot be scoped to the agent', () => {
+    for (const command of [
+      'pkill -f "node scripts/watch"',
+      'pkill -f debug/examples/helloworld',
+      'killall node',
+    ]) {
+      assert.notDeepEqual(reasons(command), [], command)
     }
   })
 })
