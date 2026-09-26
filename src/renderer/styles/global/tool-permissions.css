@@ -64,7 +64,7 @@
 
 .tool-permission-group-chevron {
   flex: none;
-  transition: transform var(--transition-fast);
+  transition: transform 0.15s ease;
 }
 
 .tool-permission-group:not([open]) .tool-permission-group-chevron {

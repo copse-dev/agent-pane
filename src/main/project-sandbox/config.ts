@@ -485,6 +485,46 @@ export function resolveNodeToolchainAllowRead(env: NodeJS.ProcessEnv = process.e
   return [...allow]
 }
 
+/**
+ * Resolve the Rust toolchain rustup installs so sandboxed shells can run `cargo`,
+ * `rustc`, and `rustfmt` the way they run `node`: the proxies in `$CARGO_HOME/bin`,
+ * the toolchains they dispatch to, and the rustup settings that pick one.
+ *
+ * Read-only, and deliberately not the rest of `$CARGO_HOME`: `credentials.toml`
+ * holds registry tokens, `config.toml` can, and the registry and git caches are
+ * downloaded sources rather than a toolchain. A build that needs those still
+ * fails contained and asks to run outside. Paths that do not exist, or an
+ * override that is not absolute, add nothing.
+ */
+export function resolveRustToolchainAllowRead(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
+  const override = (name: string, fallback: string): string | null => {
+    const value = env[name]
+    if (value === undefined || value === '') return fallback
+    return isAbsolute(value) ? value : null
+  }
+  const cargoHome = override('CARGO_HOME', join(home, '.cargo'))
+  const rustupHome = override('RUSTUP_HOME', join(home, '.rustup'))
+  const allow: string[] = []
+  const add = (path: string, tree: boolean): void => {
+    try {
+      accessSync(path)
+    } catch {
+      return
+    }
+    allow.push(path)
+    if (tree) allow.push(`${path}/**`)
+  }
+  if (cargoHome) add(join(cargoHome, 'bin'), true)
+  if (rustupHome) {
+    add(join(rustupHome, 'toolchains'), true)
+    add(join(rustupHome, 'settings.toml'), false)
+  }
+  return allow
+}
+
 /** ASRT native helpers that must remain executable inside a denied home tree. */
 export function sandboxRuntimeHelperAllowReadPaths(
   seccompPath: string | null = process.platform === 'linux' ? getApplySeccompBinaryPath() : null,
@@ -877,7 +917,7 @@ export function readAllowedSandboxOverlay(
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
   const internalRoot = getInternalWorkspaceRootRegistration(root)
-  const toolchainRead = resolveNodeToolchainAllowRead()
+  const toolchainRead = [...resolveNodeToolchainAllowRead(), ...resolveRustToolchainAllowRead()]
   const sandboxRuntimeRead = sandboxRuntimeHelperAllowReadPaths()
   // Prepared worktrees link dependencies and native runtimes into these fixed,
   // Copse-owned caches. Routine tests/builds need only read them; preparation is
