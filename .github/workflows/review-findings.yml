@@ -194,16 +194,21 @@ jobs:
           test "$path" = ".github/workflows/review-ground.yml"
 
           number="$EXPECTED_PR"
-          IFS=$'\t' read -r head base state author_id head_repo_id base_repo_id labelled < <(
+          IFS=$'\t' read -r head base state author_id head_repo_id base_repo_id draft labelled skipped < <(
             gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" \
-              --jq '[.head.sha, .base.ref, .state, .user.id, .head.repo.id, .base.repo.id, ([.labels[].name] | index("copse-review") != null)] | @tsv'
+              --jq '[.head.sha, .base.ref, .state, .user.id, .head.repo.id, .base.repo.id, .draft,
+                ([.labels[].name] | index("copse-review") != null),
+                ([.labels[].name] | index("copse-review-skip") != null)] | @tsv'
           )
           test -n "$number" && test -n "$head" && test -n "$base"
           test "$state" = "open"
           test "$head" = "$EXPECTED_HEAD"
           test "$base" = "$EXPECTED_BASE"
           test "$author_id" = 338988 && test "$head_repo_id" = 1274237362 && test "$base_repo_id" = 1274237362
-          test "$labelled" = true
+          # The same rule as authorize, rechecked here: a ready pull request, or
+          # a draft with the copse-review label, and never copse-review-skip.
+          test "$skipped" = false
+          test "$draft" = false || test "$labelled" = true
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "head=${head}" >> "$GITHUB_OUTPUT"
           echo "base=${base}" >> "$GITHUB_OUTPUT"

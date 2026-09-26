@@ -1,7 +1,12 @@
 import { runValidatedClassifierBatch } from '@copse/llm/classifiers/validated.ts'
 import { parseClassifierRequests } from '@copse/llm/classifiers/validation.ts'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
-import { classifierCredentialId, CLASSIFIER_TEST_REQUEST } from '@copse/llm/classifiers/presets.ts'
+import {
+  classifierCredentialId,
+  classifierEndpointKey,
+  CLASSIFIER_TEST_REQUEST,
+  hostedClassifierPresets,
+} from '@copse/llm/classifiers/presets.ts'
 import type {
   ClassifierCallOptions,
   ClassifierProfile,
@@ -14,7 +19,9 @@ import type {
 import { isLocalBaseUrl } from '@copse/llm/extra-providers.ts'
 import { redactSecrets } from '@copse/llm/redact-secrets.ts'
 import {
+  deleteSetting,
   getSetting,
+  setSetting,
   updateSetting,
   getApiKey,
   hasApiKey,
@@ -38,9 +45,30 @@ interface ClassifierConfiguration {
 
 const EMPTY_CONFIGURATION: ClassifierConfiguration = { version: 1, profiles: [] }
 const CONFIGURATION_KEY = 'classifierProviders'
+const SCREENING_KEY = 'safetyScreeningClassifier'
 
 function configuredProfiles(): ClassifierProfile[] {
   return getSetting<ClassifierConfiguration>(CONFIGURATION_KEY, EMPTY_CONFIGURATION).profiles
+}
+
+/**
+ * SemIf starts its scorer, and loads weights, for every call: it cannot answer
+ * inside the screening budget, and its token limit could cut a snapshot the
+ * verdict must cover in full. Screening therefore uses HTTP connections only.
+ */
+function canScreen(profile: ClassifierProfile): boolean {
+  return profile.connection.type === 'http'
+}
+
+/**
+ * The saved connection that screens shell commands and terminal reads, if one
+ * is chosen. A choice naming a connection that no longer exists, or cannot
+ * screen, reads as none: screening falls back to the safety model.
+ */
+export function screeningClassifierId(): string | null {
+  const id = getSetting<string>(SCREENING_KEY, '')
+  const profile = configuredProfiles().find((entry) => entry.id === id)
+  return profile && canScreen(profile) ? id : null
 }
 
 function credentialForProfile(id: string): string {
@@ -66,15 +94,13 @@ function environmentKeyAllowed(profile: ClassifierProfile): boolean {
   const connection = profile.connection
   if (connection.type !== 'http' || connection.auth === 'none' || !connection.apiKeyEnv) return true
   if (/^COPSE_CLASSIFIER_[A-Z0-9_]+$/.test(connection.apiKeyEnv)) return true
-  const url = new URL(connection.baseUrl)
-  if (url.pathname.replace(/\/+$/, '') !== '/v1') return false
-  return (
-    (connection.apiKeyEnv === 'TYPESAFE_API_KEY' &&
-      connection.protocol === 'systemone' &&
-      url.origin === 'https://api.typesafe.ai') ||
-    (connection.apiKeyEnv === 'FEATHERLESS_API_KEY' &&
-      connection.protocol === 'featherless' &&
-      url.origin === 'https://api.featherless.ai')
+  // A preset's provider variable may only travel to that preset's official endpoint.
+  const endpoint = classifierEndpointKey(connection.baseUrl)
+  return hostedClassifierPresets().some(
+    (preset) =>
+      preset.apiKeyEnv === connection.apiKeyEnv &&
+      preset.protocol === connection.protocol &&
+      classifierEndpointKey(preset.baseUrl) === endpoint,
   )
 }
 
@@ -105,6 +131,25 @@ export function listClassifierProfiles(): ClassifierProfileStatus[] {
     hasKey: hasApiKey(classifierCredentialId(profile.id)) || !!environmentKey(profile),
     encrypted: isApiKeyEncrypted(classifierCredentialId(profile.id)),
   }))
+}
+
+/**
+ * Choose which saved connection screens shell commands and terminal reads, or
+ * pass `null` to hand screening back to the Instruct / safety model. Choosing
+ * makes no inference call; the host was approved when the connection was saved.
+ */
+export async function setScreeningClassifier(id: string | null): Promise<string | null> {
+  if (id === null) {
+    await deleteSetting(SCREENING_KEY)
+    return null
+  }
+  if (!canScreen(getClassifierProfile(id))) {
+    throw new Error(
+      'SemIf starts its scorer for every call and cannot screen within the time limit. Choose an HTTP classifier.',
+    )
+  }
+  await setSetting(SCREENING_KEY, id)
+  return screeningClassifierId()
 }
 
 export async function saveClassifierProfile(
@@ -148,6 +193,8 @@ export async function removeClassifierProfile(id: string): Promise<ClassifierPro
     }),
   )
   deleteApiKey(credential)
+  // Removing the screening connection hands screening back to the safety model.
+  if (getSetting<string>(SCREENING_KEY, '') === id) await deleteSetting(SCREENING_KEY)
   return listClassifierProfiles()
 }
 
@@ -158,7 +205,7 @@ function credentialScope(profile: ClassifierProfile): string {
     : JSON.stringify([
         connection.protocol,
         connection.auth,
-        new URL(connection.baseUrl).href.replace(/\/+$/, ''),
+        classifierEndpointKey(connection.baseUrl),
       ])
 }
 

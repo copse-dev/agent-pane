@@ -1,6 +1,31 @@
 # Fully portable Copse development environment
 
-Status: proposed plan, 2026-09-11. No software or user data has been migrated.
+Status: proposed plan, 2026-09-11; first slice implemented as the Apple Silicon
+preview in [Portable development environment](../portable-development.md).
+No user data has been migrated.
+
+## Implemented boundary (preview)
+
+The preview deliberately narrows the boundary described below. Where this plan
+and the preview disagree, the preview's boundary is current and the rest of this
+plan is the remaining target:
+
+- **Host dependencies:** macOS on Apple Silicon, Apple's Command Line Tools or
+  Xcode (Git, make, `/usr/bin/python3`, the SDK and `xcrun`), macOS Keychain and
+  system utilities. The preview does **not** bundle Git, Python or an Apple
+  compiler/SDK; bundling them remains open work, not a hidden assumption.
+- **On the drive:** pinned Node, Corepack/pnpm, Claude, Codex, ACP adapters and
+  ripgrep; package, Electron, native-header and gortex caches; fresh Copse and
+  agent profiles; optional model weights and pinned standalone llama.cpp/MLX
+  runtimes. Every download is SHA-256 pinned.
+- **Local inference:** the launcher starts drive-owned llama.cpp/MLX engines on
+  loopback for the duration of one Copse launch and never adopts or stops another
+  server. LM Studio is optional and keeps its own host profile.
+- **Routing:** an unconfigured profile's chat, review and routing roles
+  (`roleModels`) go to the first drive engine; a chosen model is never changed.
+- **Not yet covered:** Intel/Linux, paths-with-spaces rebuild validation, secrets
+  portability (see the device-bound encryption plan) and the full two-laptop
+  acceptance run below.
 
 The detailed credential design is now in
 [Device-bound profile encryption](device-bound-profile-encryption.md). It uses
@@ -52,9 +77,10 @@ environment is declared complete.
 Full native dependency rebuilding is a separate acceptance gate from running,
 editing and testing Copse. A prepared installation can do the latter without
 compiling native modules, but reinstalling or changing native dependencies can
-require Python, a compiler and a compatible SDK. Those tools must also be bundled
-and tested as part of complete development portability. Do not quietly depend
-on the laptop's Xcode Command Line Tools.
+require Python, a compiler and a compatible SDK. For complete development
+portability those tools must also be bundled and tested. The preview instead
+declares Xcode Command Line Tools as an explicit host dependency, checked by
+`portable-dev doctor`; it must never be depended on silently.
 
 ## What belongs on the disk
 
@@ -62,7 +88,7 @@ on the laptop's Xcode Command Line Tools.
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Stable Copse application | Keep a known-good packaged app alongside the development build. Support sequential use of the same everyday profile through `make run`; separate test profiles remain optional.           |
 | Complete repositories    | Independent Git object databases, relevant branches, uncommitted/untracked work, submodules and required Git LFS objects.                                                                 |
-| Development runtimes     | Node 24.20.0, pnpm 10.34.5 (including its offline bootstrap), standalone Git, ripgrep and required utilities; Python and native build tools where needed.                                 |
+| Development runtimes     | Node 24.20.0, pnpm 10.34.5 (including its offline bootstrap) and ripgrep on the drive. Git, Python and native build tools come from the host CLT in the preview; bundling them is open.   |
 | Installed dependencies   | Prepared pnpm `node_modules`, Electron, matching Chromedriver, rebuilt node-pty, native `@napi-rs/keyring`, gortex and bundled skills. Keep architecture-specific installations separate. |
 | Offline repair materials | pnpm lockfile/store, package archives/caches, Electron headers and downloads, original installers and a version/checksum manifest. A package cache alone is insufficient.                 |
 | Local inference          | Model server executable, its dependent libraries/resources, model weights, tokenizer/config/template files and tested launch profiles.                                                    |
@@ -104,7 +130,8 @@ CopseKit/
   recovery/
 ```
 
-For the complete supporting-software bundle:
+For the complete supporting-software bundle (target; the preview relies on the
+host CLT for Git, Python and the compiler/SDK):
 
 - Ship standalone Node plus pinned pnpm, Git and its helpers/libraries, ripgrep, Python and
   required build utilities, with their data/configuration and cache directories.
