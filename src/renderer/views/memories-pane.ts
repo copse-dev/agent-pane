@@ -110,15 +110,19 @@ export function mountMemoriesPane(
 
   const saveBtn = el(
     'button',
-    { type: 'submit', class: 'memories-btn memories-btn-primary' },
+    { type: 'submit', class: 'ui-btn ui-btn-primary ui-btn-compact memories-save-btn' },
     'Save',
   )
   const deleteBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn memories-btn-danger' },
+    { type: 'button', class: 'ui-btn ui-btn-danger ui-btn-compact memories-delete-btn' },
     'Delete',
   )
-  const cancelBtn = el('button', { type: 'button', class: 'memories-btn' }, 'Cancel')
+  const cancelBtn = el(
+    'button',
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact memories-cancel-btn' },
+    'Cancel',
+  )
   const actions = el('div', { class: 'memories-actions' }, saveBtn, deleteBtn, cancelBtn)
 
   form.append(

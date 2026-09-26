@@ -523,7 +523,7 @@ export function mountRoadmapPane(
 
   const saveBtn = el(
     'button',
-    { type: 'submit', class: 'memories-btn memories-btn-primary roadmap-save-btn' },
+    { type: 'submit', class: 'ui-btn ui-btn-primary ui-btn-compact roadmap-save-btn' },
     'Save',
   )
   // Runs the jotted prompt: opens a fresh thread with the composer pre-filled
@@ -533,7 +533,7 @@ export function mountRoadmapPane(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-start-btn',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-start-btn',
       title: 'Open a new thread with this prompt in the composer',
     },
     'Start thread',
@@ -545,7 +545,7 @@ export function mountRoadmapPane(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-reopen-btn',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-reopen-btn',
       title: 'Switch to the thread previously started from this item',
     },
     'Reopen thread',
@@ -556,7 +556,7 @@ export function mountRoadmapPane(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-fit-btn',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-fit-btn',
       title: 'Ask the local model whether this prompt would resolve the pinned issue',
     },
     'Check fit',
@@ -565,26 +565,26 @@ export function mountRoadmapPane(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-resolution-btn',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-resolution-btn',
       title: 'Deep resolution check — full commit history since this item was created',
     },
     'Check resolution',
   )
   const deleteBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn memories-btn-danger roadmap-delete-btn' },
+    { type: 'button', class: 'ui-btn ui-btn-danger ui-btn-compact roadmap-delete-btn' },
     'Delete',
   )
   const cancelBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn roadmap-cancel-btn' },
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-cancel-btn' },
     'Cancel',
   )
   const reviewBackBtn = el(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-review-back',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-review-back',
       title: 'Return to the in-progress review results',
     },
     'Back to review',
@@ -627,17 +627,21 @@ export function mountRoadmapPane(
   const importList = el('div', { class: 'roadmap-import-list' })
   const importConfirmBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn memories-btn-primary roadmap-import-confirm' },
+    { type: 'button', class: 'ui-btn ui-btn-primary ui-btn-compact roadmap-import-confirm' },
     'Import selected',
   )
   const importLoadMoreBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn roadmap-import-more', hidden: true },
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-import-more',
+      hidden: true,
+    },
     'Load more',
   )
   const importCancelBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn roadmap-import-cancel' },
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-import-cancel' },
     'Cancel',
   )
   const importView = el(
@@ -655,21 +659,21 @@ export function mountRoadmapPane(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-review-stop',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-review-stop',
       title: 'Stop the in-progress review',
     },
     'Stop',
   )
   const reviewCloseBtn = el(
     'button',
-    { type: 'button', class: 'memories-btn roadmap-review-close' },
+    { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-review-close' },
     'Close',
   )
   const reviewMarkResolvedBtn = el(
     'button',
     {
       type: 'button',
-      class: 'memories-btn memories-btn-primary roadmap-review-mark-resolved',
+      class: 'ui-btn ui-btn-primary ui-btn-compact roadmap-review-mark-resolved',
       title: 'Mark every resolved/likely item as done',
     },
     'Mark resolved done',
@@ -678,7 +682,7 @@ export function mountRoadmapPane(
     'button',
     {
       type: 'button',
-      class: 'memories-btn roadmap-review-archive-resolved',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-review-archive-resolved',
       title: 'Archive every resolved/likely item',
     },
     'Archive resolved',
@@ -2085,7 +2089,7 @@ export function mountRoadmapPane(
       const actions = el('div', { class: 'memories-actions roadmap-review-row-actions' })
       const openBtn = el(
         'button',
-        { type: 'button', class: 'memories-btn roadmap-review-open' },
+        { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-review-open' },
         'Open',
       )
       openBtn.addEventListener('click', () => {
@@ -2096,7 +2100,10 @@ export function mountRoadmapPane(
         pendingResolved++
         const doneBtn = el(
           'button',
-          { type: 'button', class: 'memories-btn memories-btn-primary roadmap-review-mark-done' },
+          {
+            type: 'button',
+            class: 'ui-btn ui-btn-primary ui-btn-compact roadmap-review-mark-done',
+          },
           'Mark done',
         )
         doneBtn.addEventListener('click', () => {
@@ -2104,7 +2111,10 @@ export function mountRoadmapPane(
         })
         const archiveBtn = el(
           'button',
-          { type: 'button', class: 'memories-btn roadmap-review-archive' },
+          {
+            type: 'button',
+            class: 'ui-btn ui-btn-secondary ui-btn-compact roadmap-review-archive',
+          },
           'Archive',
         )
         archiveBtn.addEventListener('click', () => {
