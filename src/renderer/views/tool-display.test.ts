@@ -8,7 +8,6 @@ import {
   addToolCall,
   createThread,
   setMessageToolSummary,
-  setMessageCommandSummary,
   setThreadStatus,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
@@ -20,8 +19,8 @@ import { qsRequired } from '../dom/helpers.ts'
 // Component-level port of tests/e2e/tool-display-rollup.e2e.ts. The grouping /
 // tense / turn-rollup LOGIC is covered in src/shared/tools/tool-display.test.ts;
 // this file asserts the conversation VIEW: one collapsed `.tool-card-rollup`,
-// flat successful tool rows, and the failed read visible outside the rollup.
-// Seeded thread mirrors seedToolDisplayFixture().
+// nested "Read files ×2", and the failed read visible as its own card beside
+// the rollup. Seeded thread mirrors seedToolDisplayFixture().
 
 function fakeApi(): ApiClient {
   return ((): ApiClient => {
@@ -88,27 +87,6 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
-  it('keeps legacy command summaries on the flat shell rollup', () => {
-    const store = createStore()
-    const threadId = createThread(store)
-    const messageId = addMessage(store, threadId, 'assistant', '')
-    for (const id of ['shell-one', 'shell-two']) {
-      addToolCall(store, messageId, {
-        id,
-        name: 'run_shell',
-        args: { command: 'pnpm test' },
-        status: 'done',
-        result: 'passed',
-      })
-    }
-    setMessageCommandSummary(store, messageId, 'Verified the build')
-    const host = document.createElement('div')
-    document.body.append(host)
-    mountConversation(host, store, fakeApi())
-    assert.equal(qsRequired(host, '.tool-card-rollup .tool-name').textContent, 'Verified the build')
-    assert.equal(host.querySelector('.tool-card-group'), null)
-  })
-
   it('keeps fast tools compact instead of flashing their details open', async () => {
     const store = createStore()
     const threadId = createThread(store)
@@ -308,26 +286,55 @@ describe('tool call display (component)', () => {
     assert.equal(failure.open, true)
     assert.match(failure.textContent, /ENOENT/)
   })
-  it('expands directly into successful tools, without another group to open', () => {
+  it('keeps the successful reads grouped inside the rollup and the error beside it', () => {
     mountWithTools()
     const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
     qsRequired(rollup, 'summary').click()
-    assert.equal(rollup.querySelector('.tool-card-group'), null)
-    assert.equal(rollup.querySelectorAll('.tool-rollup-body > .tool-card').length, 2)
+    assert.ok(
+      rollup.querySelector('.tool-rollup-body > .message-reasoning .message-reasoning-text'),
+      'expected reasoning nested in the expanded rollup',
+    )
+    const group = qsRequired(rollup, '.tool-card-group')
+    assert.equal(group.querySelector('.tool-name')?.textContent, 'Read files')
+    assert.equal(group.querySelector('.tool-count')?.textContent, '×2')
+    // The errored read is neither folded into the group nor hidden in the rollup.
     assert.equal(rollup.querySelector('[data-tool-id="tc-read-2"]'), null)
+    const failed = qsRequired(document, '.msg > .tool-card[data-tool-id="tc-read-2"]')
+    assert.equal(failed.querySelector('.tool-name')?.textContent, 'Read file')
+    assert.equal(failed.getAttribute('data-status'), 'error')
   })
-  it('keeps a user-expanded tool open across a tool update', () => {
+
+  it('keeps a user-expanded group item open across a tool update rebuild', async () => {
     const { store, messageId } = mountWithTools()
     const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
-    const item = qsRequired<HTMLDetailsElement>(rollup, '[data-tool-id="tc-read-1"]')
-    qsRequired(rollup, 'summary').click()
-    qsRequired(item, 'summary').click()
-    updateToolCall(store, messageId, 'tc-list-1', { result: 'updated listing' })
+    const group = qsRequired<HTMLDetailsElement>(rollup, '.tool-card-group')
+    const item = qsRequired<HTMLDetailsElement>(group, '[data-tool-id="tc-read-1"]')
+    rollup.querySelector<HTMLElement>(':scope > summary')?.click()
+    group.querySelector<HTMLElement>(':scope > summary')?.click()
+    item.querySelector<HTMLElement>(':scope > summary')?.click()
+    await delay(0)
+
+    // A group member changing patches the existing disclosure shells; every
+    // explicit user choice must survive the status/result update.
+    updateToolCall(store, messageId, 'tc-list-1', {
+      result: 'd main\nf index.ts\nf util.ts',
+    })
+
     assert.strictEqual(document.querySelector('.tool-card-rollup'), rollup)
-    assert.equal(rollup.open, true)
-    assert.equal(item.open, true)
-    assert.equal(qsRequired<HTMLDetailsElement>(rollup, '[data-tool-id="tc-list-1"]').open, false)
+    assert.equal(rollup.open, true, 'rollup should stay open')
+    const groups = rollup.querySelectorAll('.tool-card-group')
+    assert.equal(groups.length, 1, 'rebuild must replace the group card, not duplicate it')
+    const groupAfter = qsRequired<HTMLDetailsElement>(rollup, '.tool-card-group')
+    assert.equal(groupAfter.open, true, 'group should stay open')
+    const itemAfter = qsRequired<HTMLDetailsElement>(groupAfter, '[data-tool-id="tc-read-1"]')
+    assert.equal(itemAfter.open, true, 'expanded item should stay open')
+    // The item the user never touched stays collapsed.
+    assert.equal(
+      qsRequired<HTMLDetailsElement>(groupAfter, '[data-tool-id="tc-list-1"]').open,
+      false,
+    )
   })
+
   it('renders the advisor result as attributed markdown, not raw text', () => {
     const store = createStore()
     const threadId = createThread(store)

@@ -553,6 +553,36 @@ describe('close-orphaned-screenshot-reviews.yml workflow invariants', () => {
   })
 })
 
+describe('cla.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/cla.yml'), 'utf8')
+
+  it('reads the API only, with just enough permission to set the status and comment', () => {
+    assert.match(workflow, /^ {2}pull_request_target:$/m)
+    assert.doesNotMatch(workflow, /uses: actions\/checkout/)
+    assert.match(workflow, /^permissions: \{\}$/m)
+    // createComment on a pull request is refused with pull-requests: read.
+    assert.match(
+      workflow,
+      /^ {4}permissions:\n {6}contents: read\n(?: {6}#.*\n)* {6}pull-requests: write\n {6}issues: write\n {6}statuses: write$/m,
+    )
+  })
+
+  it('attributes agent-authored commits to the pull request opener before trusting c.author', () => {
+    const exemption = workflow.indexOf('if (NON_AUTHOR_EMAIL.test(authorEmail)) {')
+    const linkedAuthor = workflow.indexOf('await checkUser(c.author, sha);')
+    assert.ok(exemption >= 0, 'expected the commit-author agent-email branch')
+    assert.ok(
+      exemption < linkedAuthor,
+      'GitHub links noreply@anthropic.com to @claude, so the email must be tested first',
+    )
+    assert.match(
+      workflow,
+      /if \(NON_AUTHOR_EMAIL\.test\(authorEmail\)\) \{\n(?: {16}\/\/.*\n)* {16}if \(!openedByMaintainer\) await checkUser\(pr\.user, sha\);\n {14}\} else if \(c\.author\) \{/,
+      'an agent email is forgeable, so its commit must still be answered for by a signed person',
+    )
+  })
+})
+
 describe('promote-develop.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
 
@@ -1120,19 +1150,20 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(job, /test "\$author_id" = 338988/)
     assert.match(job, /test "\$skipped" = false/)
     assert.match(job, /test "\$draft" = false \|\| test "\$labelled" = true/)
+    // The description is edited with the job's own workflow token: GitHub
+    // starts no run for an event that token causes, so the `edited` event does
+    // not re-run the whole of ci.yml on the same head, as an App-token edit did.
     assert.match(
       job,
-      /- name: Mint the Copse GitHub App review token\n {8}id: review-app-token\n {8}if: steps\.pr\.outputs\.current == 'true'\n {8}uses: actions\/create-github-app-token@v3/,
+      /^ {4}permissions:\n {6}contents: read\n {6}pull-requests: write$/m,
+      'only the summary job may write, and only pull requests',
     )
-    assert.match(job, /permission-pull-requests: write/)
+    assert.doesNotMatch(job, /create-github-app-token|RELEASE_APP_/)
     const posting = job.slice(job.indexOf('- name: Summarise the pull request and update'))
-    assert.match(
-      posting,
-      /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ steps\.review-app-token\.outputs\.token \}\}/,
-    )
+    assert.match(posting, /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/)
     assert.doesNotMatch(posting, /^\s+GITHUB_TOKEN:/m)
     const fetch = job.indexOf('git fetch')
-    assert.ok(fetch >= 0 && fetch < job.indexOf('- name: Mint the Copse GitHub App review token'))
+    assert.ok(fetch >= 0 && fetch < job.indexOf('- name: Summarise the pull request and update'))
     // The full review rewrites the summary with its evidence.
     assert.match(workflowJobBlock(findingsWorkflow, 'findings'), /--post-summary github/)
   })

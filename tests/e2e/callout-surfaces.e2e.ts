@@ -142,11 +142,18 @@ describe('callout surfaces', () => {
     // Two kinds must not resolve to the same wash, or the hue is doing nothing.
     expect(found['note']?.backgroundColor).not.toBe(found['caution']?.backgroundColor)
 
-    // Reasoning stays unboxed when opened; status annotations keep their texture.
+    // Long reasoning fades its hatch under the center of the glass; short
+    // status annotations retain their even texture.
+    const reasoningImage = found['reasoning']?.backgroundImage ?? ''
     expect({
       borderLeftWidth: found['reasoning']?.borderLeftWidth,
-      backgroundImage: found['reasoning']?.backgroundImage,
-    }).toEqual({ borderLeftWidth: '0px', backgroundImage: 'none' })
+      etched: reasoningImage.includes('linear-gradient'),
+      faded:
+        reasoningImage.includes('radial-gradient') &&
+        reasoningImage.indexOf('radial-gradient') <
+          reasoningImage.indexOf('repeating-linear-gradient'),
+      hatched: reasoningImage.includes('repeating-linear-gradient'),
+    }).toEqual({ borderLeftWidth: '1px', etched: true, faded: true, hatched: true })
     for (const key of ['review', 'comparison'] as const) {
       expect({
         key,
@@ -286,7 +293,7 @@ describe('callout surfaces', () => {
             shadow: style.boxShadow,
           }
         })
-        expect(reasoning).toEqual({ image: 'none', border: '0px', shadow: 'none' })
+        expect(reasoning).toEqual({ image: 'none', border: '1px', shadow: 'none' })
       }
       await saveElementScreenshot('.message-reasoning', 'callout-reasoning-increased-contrast.png')
     } finally {

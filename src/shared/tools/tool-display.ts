@@ -1,7 +1,8 @@
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
-import type { ToolRun } from './tool-runs.ts'
+import type { ToolRun, ToolRunStep } from './tool-runs.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -161,6 +162,17 @@ export type ToolCallDisplayItem =
       children: ToolCallDisplayItem[]
       toolCalls: ToolCall[]
     }
+  // One member message of a cross-message run, nested inside the run's rollup.
+  // Carries its message id so the view can hang that message's reasoning trail
+  // (which streams separately) on the right step.
+  | {
+      type: 'step'
+      key: string
+      label: string
+      messageId: string
+      children: ToolCallDisplayItem[]
+      toolCalls: ToolCall[]
+    }
   | { type: 'group'; key: string; label: string; toolCalls: ToolCall[] }
   | { type: 'individual'; toolCall: ToolCall; label: string }
 
@@ -195,12 +207,12 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
   // Codex reports connection failures as synthetic MCP startup calls. Their
   // server is the useful identity; stripping it makes every failure "Startup".
   if (mcp?.tool === 'startup') return `${mcp.server} startup`
-  if (mcp) return formatToolNameFallback(mcp.tool)
+  if (mcp) return humanizeIdentifier(mcp.tool)
   // Strip known MCP/ACP server prefixes (dot or underscore notation) so the
   // user sees just the tool name, not the internal server alias.
   const stripped = name.replace(/^(?:Mcp\.[^.]+\.|mcp__[^_]+__)/i, '')
-  if (stripped !== name) return formatToolNameFallback(stripped)
-  return formatToolNameFallback(name)
+  if (stripped !== name) return humanizeIdentifier(stripped)
+  return humanizeIdentifier(name)
 }
 
 function stringArg(args: unknown, key: string): string | null {
@@ -350,21 +362,6 @@ export function getToolGroupLabel(key: string, tense: ToolLabelTense = 'done'): 
   return pickLabel(group.label, tense)
 }
 
-/** Words that read as acronyms and stay fully upper case in tool labels. */
-const TOOL_NAME_ACRONYMS = new Set(['gh', 'pr', 'ci', 'url', 'id'])
-
-function formatToolNameFallback(name: string): string {
-  return name
-    .split('_')
-    .filter(Boolean)
-    .map((word) =>
-      TOOL_NAME_ACRONYMS.has(word.toLowerCase())
-        ? word.toUpperCase()
-        : word.charAt(0).toUpperCase() + word.slice(1),
-    )
-    .join(' ')
-}
-
 export function aggregateToolStatus(toolCalls: ToolCall[]): ToolCall['status'] {
   if (toolCalls.some((tc) => tc.status === 'running')) return 'running'
   if (toolCalls.some((tc) => tc.status === 'error')) return 'error'
@@ -471,6 +468,11 @@ export interface ToolDisplayOptions {
   isInterrupted?: (toolCall: ToolCall) => boolean
 }
 
+/** A genuine failure: it stays visible beside the rollup instead of inside it. */
+function isSurfacedFailure(tc: ToolCall, opts: ToolDisplayOptions | undefined): boolean {
+  return tc.status === 'error' && opts?.isInterrupted?.(tc) !== true
+}
+
 /**
  * Build the cards for a message's tool calls. Subagent runs stay as top-level
  * cards (they have their own timeline). Everything else collapses into one
@@ -486,8 +488,7 @@ export function buildToolCallDisplayItems(
   opts?: ToolDisplayOptions,
 ): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
-  const isVisibleFailure = (tc: ToolCall): boolean =>
-    tc.status === 'error' && opts?.isInterrupted?.(tc) !== true
+  const isVisibleFailure = (tc: ToolCall): boolean => isSurfacedFailure(tc, opts)
 
   const subagents: ToolCall[] = []
   const proposals: ToolCall[] = []
@@ -517,10 +518,7 @@ export function buildToolCallDisplayItems(
       label: summarizeToolTurn(regular, grouped),
       // One disclosure for quiet work; failed calls stay visible beside it.
       // A call the user interrupted is not a failure, so it stays folded in.
-      // Individual children keep the expanded list flat from its first tool.
-      children: regular
-        .filter((tc) => !isVisibleFailure(tc))
-        .map((tc) => ({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })),
+      children: buildGroupedDisplayItems(regular.filter((tc) => !isVisibleFailure(tc))),
       toolCalls: regular,
     })
     result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)))
@@ -562,20 +560,60 @@ export function summarizeToolRun(run: ToolRun): string {
   } else {
     parts.push(status === 'running' ? `Using ${String(n)} tools` : `Used ${String(n)} tools`)
   }
+  parts.push(`${String(run.steps.length)} steps`)
   if (failed > 0) parts.push(`${String(failed)} failed`)
   return parts.join(' · ')
 }
 
 /**
- * A run uses the same flat disclosure as its first message. Adding another
- * message changes the count, never adds a layer around existing tool cards.
+ * Heading for one step. Prefers that message's own rollup polish; otherwise the
+ * same canned label a single-message rollup would have shown. A step that
+ * contributed only reasoning has no tools to name.
+ */
+function summarizeToolRunStep(step: ToolRunStep, children: ToolCallDisplayItem[]): string {
+  const polished = step.summary?.trim()
+  if (!polished) return summarizeToolTurn(step.toolCalls, children) || 'Reasoned'
+  // summarizeToolTurn appends the failure count itself; the polished label
+  // replaces it, so carry the failures over rather than losing them.
+  const failed = step.toolCalls.filter((tc) => tc.status === 'error').length
+  return failed > 0 ? `${polished} · ${String(failed)} failed` : polished
+}
+
+/**
+ * Build the cards for a whole presentation run. A single-step run is exactly
+ * the per-message rollup it replaces — the nesting only appears once the run
+ * actually spans more than one assistant message, where each member becomes a
+ * step inside the shared summary. The run rollup is always kept (it hosts the
+ * steps' reasoning trails); failed calls leave their step and sit beside it,
+ * as they do beside a single-message rollup.
+ *
+ * Only the run's *regular* calls are covered here; subagent cards stay on their
+ * own message (see {@link buildSubagentDisplayItems}).
  */
 export function buildToolRunDisplayItems(
   run: ToolRun,
   opts?: ToolDisplayOptions,
 ): ToolCallDisplayItem[] {
   if (run.steps.length < 2) return buildToolCallDisplayItems(run.toolCalls, opts)
-  return buildToolCallDisplayItems(run.toolCalls, { ...opts, forceRollup: true }).map((item) =>
-    item.type === 'rollup' ? { ...item, key: RUN_ROLLUP_KEY, label: summarizeToolRun(run) } : item,
-  )
+  const isVisibleFailure = (tc: ToolCall): boolean => isSurfacedFailure(tc, opts)
+
+  const children: ToolCallDisplayItem[] = run.steps.map((step) => ({
+    type: 'step',
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc) => !isVisibleFailure(tc))),
+    toolCalls: step.toolCalls,
+  }))
+
+  return [
+    {
+      type: 'rollup',
+      key: RUN_ROLLUP_KEY,
+      label: summarizeToolRun(run),
+      children,
+      toolCalls: run.toolCalls,
+    },
+    ...buildGroupedDisplayItems(run.toolCalls.filter(isVisibleFailure)),
+  ]
 }

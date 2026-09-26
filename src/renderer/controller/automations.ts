@@ -1,4 +1,5 @@
 import type { AppStore } from '@shared/store/store.ts'
+import { ipcErrorMessage } from '../ipc-error-message.ts'
 import type { AutomationTriggerEvent, Thread } from '@shared/types'
 import {
   addMessage,
@@ -17,16 +18,8 @@ export interface AutomationControllerApi {
   threads: Pick<ApiClient['threads'], 'loadProject'>
 }
 
-/**
- * Electron prefixes anything thrown inside `ipcMain.handle` with
- * "Error invoking remote method 'x:y': Error: ", which is noise in a
- * transcript. Local copy: `views/automation-plugin-settings.ts` and
- * `views/roadmap-pane.ts` each carry their own, and a controller should not
- * import from a view — worth folding into one shared helper separately.
- */
 function startFailureDetail(error: unknown): string {
-  if (!(error instanceof Error)) return 'the checkout could not be prepared'
-  return error.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
+  return ipcErrorMessage(error, 'the checkout could not be prepared')
 }
 
 function isPendingAutomation(thread: Thread): boolean {

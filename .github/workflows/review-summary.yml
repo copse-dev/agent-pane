@@ -10,9 +10,14 @@ name: Copse review summary
 #
 # Nothing from the pull request is executed. The CLI is this branch's, runs
 # with `--summary-only` (read-only checkouts, one tool-free model turn over the
-# diff) and needs no container, no Stage 0 and no ground run. The model key and
-# the App's `pull-requests: write` token are the only secrets, and both stay in
-# the protected environment's one step.
+# diff) and needs no container, no Stage 0 and no ground run. The model key is
+# the only secret, and it stays in the protected environment's one step.
+#
+# The description is edited with this job's own `GITHUB_TOKEN`, not the Copse
+# App token the review posts with. GitHub starts no workflow run for an event
+# the workflow token causes, so the `edited` event this write fires does not
+# start a second full CI run on the same head (ci.yml subscribes to `edited`
+# for base retargets). An App-token edit did, on every push.
 
 on:
   workflow_dispatch:
@@ -106,6 +111,11 @@ jobs:
     environment: copse-review-models
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Only this job's token may write, and only pull requests: the description
+    # edit needs it (see the header).
+    permissions:
+      contents: read
+      pull-requests: write
     env:
       # The same model route as the review; see review-findings.yml.
       REVIEW_PROFILE: ${{ vars.COPSE_REVIEW_PR_PROFILE || 'openrouter-luna' }}
@@ -176,24 +186,14 @@ jobs:
           echo "number=${number}" >> "$GITHUB_OUTPUT"
           echo "base=${base}" >> "$GITHUB_OUTPUT"
 
-      # Editing the description needs `pull-requests: write`; mint only that,
-      # as the review does, and keep the workflow token read-only.
-      - name: Mint the Copse GitHub App review token
-        id: review-app-token
-        if: steps.pr.outputs.current == 'true'
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-pull-requests: write
-
       - name: Summarise the pull request and update its description
         if: steps.pr.outputs.current == 'true'
         shell: bash
         env:
           OPENROUTER_API_KEY: ${{ secrets.COPSE_REVIEW_OPENROUTER_API_KEY }}
           COPSE_REVIEW_API_KEY: ${{ secrets.COPSE_REVIEW_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
-          COPSE_REVIEW_FORGE_TOKEN: ${{ steps.review-app-token.outputs.token }}
+          # The workflow token, so the edit starts no CI run (see the header).
+          COPSE_REVIEW_FORGE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           BASE_REF: ${{ steps.pr.outputs.base }}
