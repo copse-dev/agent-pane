@@ -71,7 +71,13 @@ const BROAD_PATTERNS: RegExp[] = [
   /^src\/renderer\/(main|app|bootstrap)\.ts$/,
   /^src\/renderer\/demo\//,
   /^src\/shared\/demo-scenarios\.ts$/,
-  /^src\/renderer\/styles\/global\//,
+  // Only the stylesheets every surface depends on: the entry, tokens, themes and
+  // the shared primitives. The per-feature sheets beside them in styles/global/
+  // (roadmap.css, tool-cards.css, …) are mapped by selector like any other file,
+  // and a sheet whose selectors no spec uses is unmapped, so it is LOW confidence
+  // and still runs the full suite.
+  /^src\/renderer\/styles\/(global|tokens|themes)\.css$/,
+  /^src\/renderer\/styles\/global\/(base|icons|ui|layout|forms)\.css$/,
   /^src\/preload\//,
   /^src\/shared\/store\//,
   /^src\/main\/index\.ts$/,
@@ -470,7 +476,15 @@ function resolveImport(fromRel: string, spec: string): string | null {
   return null
 }
 
+// One process never sees a file change under it, so a file's resolved imports
+// are computed once. Without this every `reachableFiles` walk re-read and
+// re-resolved the whole shared graph: `check:oracle`, which calls
+// `computeSelection` once per invariant, took ~3 minutes of every CI precheck.
+const directImportsCache = new Map<string, string[]>()
+
 function directImports(rel: string): string[] {
+  const cached = directImportsCache.get(rel)
+  if (cached) return cached
   const body = read(rel)
   const out: string[] = []
   for (const m of body.matchAll(/(?:from|import\(|require\()\s*['"]([^'"]+)['"]/g)) {
@@ -478,6 +492,7 @@ function directImports(rel: string): string[] {
     const resolved = resolveImport(rel, m[1])
     if (resolved) out.push(resolved)
   }
+  directImportsCache.set(rel, out)
   return out
 }
 
@@ -691,8 +706,8 @@ export type ScreenshotGate = {
  * (`src/**`) and the e2e harness/fixtures/specs (`tests/e2e/**`). Root-level
  * infra — a lockfile bump, tsconfig, build scripts, wdio config — is broad for
  * *test selection* but cannot change a pixel, so it must not demand a full
- * screenshot regen. (A genuinely visual broad change like global CSS or
- * index.html lives under `src/` and still fans out to every shot.)
+ * screenshot regen. (A genuinely visual broad change like the shared base
+ * stylesheets or index.html lives under `src/` and still fans out to every shot.)
  */
 export function computeScreenshotGate(changed: string[], labeled: boolean): ScreenshotGate {
   const renderAffecting = changed.filter(
