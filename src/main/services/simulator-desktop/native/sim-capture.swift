@@ -51,6 +51,9 @@ guard let SimServiceContext = NSClassFromString("SimServiceContext") as? NSObjec
 
 // Resolve developer dir
 func developerDir() -> String {
+    if let override = ProcessInfo.processInfo.environment["DEVELOPER_DIR"], !override.isEmpty {
+        return override
+    }
     let p = Process(); p.launchPath = "/usr/bin/xcode-select"; p.arguments = ["-p"]
     let pipe = Pipe(); p.standardOutput = pipe
     do { try p.run() } catch { return "/Applications/Xcode.app/Contents/Developer" }

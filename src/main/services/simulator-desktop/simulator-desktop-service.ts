@@ -100,9 +100,17 @@ function runToString(
   args: readonly string[],
   environment: NodeJS.ProcessEnv = process.env,
   timeoutMs = NATIVE_HELPER_TIMEOUT_MS,
+  input?: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(file, args, { env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(file, args, {
+      env: environment,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...(signal ? { signal } : {}),
+    })
+    child.stdin.on('error', () => {})
+    child.stdin.end(input)
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -265,6 +273,35 @@ async function compileHelpers(): Promise<NativeHelpers> {
 export class SimulatorDesktopService {
   private readonly connections = new Map<string, ManagedSimulatorConnection>()
   private helpers: Promise<NativeHelpers> | null = null
+
+  /** A discrete, approval-gated agent action; does not enable renderer control. */
+  async agentInput(
+    udid: string,
+    input:
+      | { type: 'tap'; x: number; y: number }
+      | Extract<SimulatorDesktopInput, { type: 'key-tap' | 'button-tap' }>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!(await this.listDevices()).some((device) => device.udid === udid)) {
+      throw new Error('That Simulator is no longer booted')
+    }
+    const attempt = this.helpers ?? compileHelpers()
+    this.helpers = attempt
+    try {
+      const helpers = await attempt
+      await runToString(
+        helpers.input,
+        [udid],
+        process.env,
+        10_000,
+        `${JSON.stringify(input)}\n`,
+        signal,
+      )
+    } catch (error) {
+      if (this.helpers === attempt) this.helpers = null
+      throw error
+    }
+  }
 
   async listDevices(): Promise<SimulatorDesktopDevice[]> {
     if (seededDevices) return seededDevices.map((device) => ({ ...device }))
