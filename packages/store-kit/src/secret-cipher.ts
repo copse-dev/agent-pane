@@ -1,3 +1,5 @@
+import type { SecretRecordIdentity } from './profile-vault-crypto.ts'
+
 // API keys are encrypted at rest by whichever cipher the shell installs —
 // historically Electron's `safeStorage`, which is the only reason `settings.ts`
 // imported `electron` at all. That single import put
@@ -20,9 +22,10 @@
  * hook for format migration (see `keyring-cipher.ts`).
  */
 export interface SecretCipher {
+  readonly protection?: 'device-vault' | undefined
   isEncryptionAvailable(): boolean
-  encryptString(plainText: string): Buffer
-  decryptString(encrypted: Buffer): string
+  encryptString(plainText: string, identity?: SecretRecordIdentity): Buffer
+  decryptString(encrypted: Buffer, identity?: SecretRecordIdentity): string
   /**
    * Whether a blob this cipher just opened should be written back through
    * `encryptString` — true when it is in a format the cipher reads but no

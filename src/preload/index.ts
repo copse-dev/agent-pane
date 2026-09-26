@@ -979,6 +979,11 @@ const api: ApiClient = {
     screening: () => ipcRenderer.invoke('classifiers:screening'),
     setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
   },
+  profileVault: {
+    status: () => ipcRenderer.invoke('profile-vault:status'),
+    run: (action: import('@shared/types/profile-vault.ts').ProfileVaultAction) =>
+      ipcRenderer.invoke('profile-vault:run', action),
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),

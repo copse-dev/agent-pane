@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable, nodeWorkerScript } from '../node-worker-runtime.ts'
 import { createServer, type Server, type Socket } from 'node:net'
 import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -96,7 +97,7 @@ function isAskpassAvailable(): boolean {
 }
 
 function helperScriptPath(): string {
-  return join(__dirname, 'ssh-askpass-helper.js')
+  return nodeWorkerScript(join(__dirname, 'ssh-askpass-helper.js'))
 }
 
 /** Shell wrapper so OpenSSH can exec askpass via Electron's embedded Node. */
@@ -106,8 +107,8 @@ function ensureAskpassWrapper(): string {
   const helper = helperScriptPath()
   const isElectron = typeof process.versions.electron === 'string'
   const runner = isElectron
-    ? `ELECTRON_RUN_AS_NODE=1 exec "${process.execPath}"`
-    : `exec "${process.execPath}"`
+    ? `ELECTRON_RUN_AS_NODE=1 exec "${nodeWorkerExecutable()}"`
+    : `exec "${nodeWorkerExecutable()}"`
   writeFileSync(path, `#!/bin/sh\n${runner} "${helper}" "$@"\n`, { encoding: 'utf8' })
   chmodSync(path, 0o755)
   wrapperPath = path

@@ -5,6 +5,7 @@ import { delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { satisfies, valid, validRange } from 'semver'
 import { errorMessage } from '@shared/errors.ts'
 import { copseCacheDir } from './storage/copse-paths.ts'
+import { nodeWorkerExecutable } from './node-worker-runtime.ts'
 import { emitShellOutput } from './exec/shell-output-context.ts'
 import { envForRendererChildProcess } from './exec/child-process-env.ts'
 import { sfwInstallArgs } from './security/socket-firewall.ts'
@@ -562,8 +563,10 @@ export async function prepareWorktree(
     })
   }
   // Host runtime is only used for fixed file operations; non-Node projects need no Node install.
+  // The packaged macOS app cannot run as Node (RunAsNode fuse off), so this uses
+  // the separately shipped worker interpreter.
   const fileOperation = async (args: string[]): Promise<void> =>
-    run({ command: process.execPath, args }, { ...env, ELECTRON_RUN_AS_NODE: '1' })
+    run({ command: nodeWorkerExecutable(), args }, { ...env, ELECTRON_RUN_AS_NODE: '1' })
   await fileOperation([
     '-e',
     'require("node:fs").mkdirSync(process.argv[1],{recursive:true})',

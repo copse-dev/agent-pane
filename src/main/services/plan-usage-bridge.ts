@@ -15,7 +15,7 @@ import {
   type PlanUsageSnapshot,
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
-import { resolveApiKey } from './storage/settings.ts'
+import { resolveApiKeyIfUnlocked } from './storage/settings.ts'
 import { AsyncTtlCache } from './async-ttl-cache.ts'
 import { firstNonEmptyString, isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
@@ -307,7 +307,7 @@ export async function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
   readKeychain: () => Promise<string | null> = readClaudeKeychainCredentialsJson,
-  resolveHuggingFaceStored: () => string | null = () => resolveApiKey('huggingface'),
+  resolveHuggingFaceStored: () => string | null = () => resolveApiKeyIfUnlocked('huggingface'),
   readCursorKeychain: () => Promise<string | null> = readCursorKeychainAccessToken,
   readCursorStateDb: (dbPath: string) => Promise<string | null> = readCursorAccessTokenFromStateDb,
 ): Promise<PlanUsageCredentials> {

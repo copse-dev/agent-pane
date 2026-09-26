@@ -1,3 +1,4 @@
+import { nodeWorkerExecutable, nodeWorkerScript } from '../services/node-worker-runtime.ts'
 import { join } from 'node:path'
 import { dirname } from 'node:path'
 import { existsSync } from 'node:fs'
@@ -45,7 +46,7 @@ let workerBundleVerified = false
  * without restarting the app.
  */
 export function sandboxFsWorkerPath(): string {
-  const path = join(__dirname, 'sandbox-fs-worker.js')
+  const path = nodeWorkerScript(join(__dirname, 'sandbox-fs-worker.js'))
   if (workerBundleVerified) return path
   if (!existsSync(path)) {
     throw new Error(
@@ -158,7 +159,7 @@ async function invokeWorkerOneShot(
   const requestJson = JSON.stringify(request)
   const sandboxed = useSandboxFsGateway()
   const { stdout, stderr, code } = await runCommand(
-    process.execPath,
+    nodeWorkerExecutable(),
     sandboxed ? [workerPath] : [workerPath, requestJson],
     {
       cwd: root,

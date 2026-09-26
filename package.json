@@ -16,6 +16,7 @@
     "check:e2e-exclusions": "node scripts/check-e2e-exclusions.mts",
     "filter:screenshots": "node scripts/filter-screenshots.mts",
     "build": "node scripts/build.mts",
+    "prepare:vault": "node scripts/prepare-profile-vault.mts",
     "build:demo": "node scripts/build.mts --demo",
     "build:servo": "node scripts/build.mts --servo",
     "servo": "node scripts/run-servo.mts",
@@ -103,11 +104,12 @@
     "sync:model-cards": "node scripts/sync-model-cards.mts",
     "sync:cursor-skills": "node scripts/sync-bundled-cursor-skills.mts",
     "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
-    "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
-    "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
+    "pack:mac": "pnpm run prepare:node && pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "dist:mac": "pnpm run prepare:gortex:mac && pnpm run prepare:node && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
+    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run prepare:node && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "check:local": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-syntax && pnpm run check:e2e-exclusions",
-    "check": "pnpm run check:local && pnpm test"
+    "check": "pnpm run check:local && pnpm test",
+    "prepare:node": "node scripts/prepare-node-runtime.mts"
   },
   "build": {
     "appId": "dev.copse.app",
@@ -123,11 +125,12 @@
       "!**/*.map"
     ],
     "asarUnpack": [
-      "**/node_modules/node-pty/**/*",
-      "**/node_modules/@napi-rs/**/*",
-      "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
-      "**/node_modules/xcodebuildmcp/**/*",
-      "dist/resources/gortex/**"
+      "**/node_modules/**/*",
+      "dist/resources/gortex/**",
+      "dist/resources/profile-vault/**",
+      "dist/resources/node/**",
+      "dist/main/*-worker.js",
+      "dist/main/ssh-askpass-helper.js"
     ],
     "afterPack": "scripts/after-pack.cjs",
     "generateUpdatesFilesForAllChannels": true,
@@ -160,15 +163,19 @@
         }
       ],
       "hardenedRuntime": true,
+      "signIgnore": [
+        "dist/resources/profile-vault/CopseVault$"
+      ],
       "gatekeeperAssess": false,
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Copse discovers nearby computers that advertise VNC screen sharing.",
         "NSBonjourServices": [
           "_rfb._tcp"
-        ]
+        ],
+        "CopseVaultSilentAccess": "1"
       },
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
     },
     "dmg": {
       "icon": "assets/icons/app.icns"
@@ -205,6 +212,7 @@
     "@copse/store-kit": "workspace:*",
     "@copse/streaming-markdown": "^1.2.0",
     "@copse/thread-store": "workspace:*",
+    "@electron/fuses": "2.1.1",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@grpc/grpc-js": "^1.14.5",
