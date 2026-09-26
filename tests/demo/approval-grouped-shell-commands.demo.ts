@@ -19,13 +19,25 @@ describe('browser-hosted grouped shell approval', () => {
     await expect(dialog.$('.approval-approve')).toHaveText('Approve all (3)')
     await expect(dialog.$('.approval-reject')).toHaveText('Reject all (3)')
 
-    const advice = await dialog.$('.approval-advice').getText()
-    assert.equal(
-      advice,
-      'The project sandbox would block this command:\n' +
-        "• Runs a script file from the project, so Copse can't tell what it does\n" +
-        '• Reaches outside the project with a ../ path',
-    )
+    // The shared lead-in stays text; the deduplicated reasons are a real list.
+    // Read the DOM rather than WebDriver's rendered text: drivers disagree on
+    // whether a list-item marker belongs in getText().
+    const advice = await browser.execute(() => {
+      const root = document.querySelector('#approval-dialog .approval-advice')
+      return {
+        text: root?.textContent ?? '',
+        lead: root?.firstChild?.textContent ?? '',
+        reasons: [...(root?.querySelectorAll('ul.approval-reasons > li') ?? [])].map(
+          (item) => item.textContent,
+        ),
+      }
+    })
+    assert.equal(advice.lead, 'The project sandbox would block this command:')
+    assert.deepEqual(advice.reasons, [
+      "Runs a script file from the project, so Copse can't tell what it does",
+      'Reaches outside the project with a ../ path',
+    ])
+    assert.doesNotMatch(advice.text, /\u2022/, 'no hand-drawn bullet characters remain')
     const commands = await dialog.$$('.approval-body').map((body) => body.getText())
     assert.deepEqual(commands, [
       'node .tmp/dep-candidates.mjs',

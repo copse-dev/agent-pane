@@ -893,26 +893,10 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-base);
   color: var(--text-primary);
 }
-.provider-form-tag {
-  font-size: var(--font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-xs);
-}
-/* Data-policy badge in the provider form title: where prompts go by default.
-   Kinds mirror privacyBadge() in @copse/llm/data-policies.ts. */
-.provider-privacy-badge {
-  font-size: var(--font-size-2xs);
-  letter-spacing: 0.02em;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
+/* `.provider-form-tag` (built-in / custom) and `.provider-privacy-badge` take
+   their shape from `.ui-badge`. The data-policy badge says where prompts go by
+   default, which is a status; its kinds mirror privacyBadge() in
+   @copse/llm/data-policies.ts. */
 .provider-privacy-badge.zdr,
 .provider-privacy-badge.local {
   color: var(--success);
@@ -1170,20 +1154,10 @@ dialog.settings-overlay::backdrop {
 .usage-plan-status-error {
   color: var(--danger, #c44);
 }
+/* Look comes from `.ui-btn.ui-btn-primary` (ui.css); this only places it. */
 .usage-plan-signin-btn {
   align-self: flex-start;
   -webkit-app-region: no-drag;
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius);
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.usage-plan-signin-btn:hover {
-  filter: brightness(1.05);
 }
 .usage-plan-window,
 .usage-credit-grant {
@@ -1605,9 +1579,6 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   overflow-x: auto;
 }
-.acp-cmd-copy {
-  flex: none;
-}
 
 /* Sources section — read-only view of everything auto-loaded for the workspace
    (instruction files, skills, Cursor hooks, Cursor plugins). */
@@ -1659,21 +1630,9 @@ dialog.settings-overlay::backdrop {
   text-overflow: ellipsis;
   word-break: normal;
 }
-.sources-badge {
-  flex: none;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px 6px;
-}
-.sources-badge-project {
-  color: var(--warning, #d29922);
-  border-color: var(--warning, #d29922);
-}
+/* `.sources-badge` takes its shape from `.ui-badge`. Scope (`user`, `project`,
+   `bundled`), rule kind, agent container, and a worktree's owner are labels, so
+   they stay neutral; only the modifiers below that report a status are coloured. */
 /* Hooks list states: authoring warnings, unwired events, runtime failures. */
 .sources-badge-warning {
   color: var(--warning, #d29922);
@@ -1701,9 +1660,11 @@ dialog.settings-overlay::backdrop {
   word-break: break-word;
   margin-top: 2px;
 }
-.sources-badge-auto {
-  color: var(--accent, #3b82f6);
-  border-color: var(--accent, #3b82f6);
+/* A nested instruction file the latest turn selected: the accent outline marks
+   "active this turn" (docs/ui-taste.md → "Sources lists"). */
+.sources-badge-active {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 /* Instruction file discovered but inert: untrusted workspace (issue #100 gate). */
 .sources-badge-untrusted {
@@ -2027,41 +1988,27 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+/* The publisher eyebrow is a caption over the name, not a badge: no frame and
+   wide-tracked caps. It is not a status either, so it stays in text colours —
+   Copse's own plugins are told apart by the mark beside them, not by a warning
+   hue on everyone else's. */
 .plugin-badge {
   flex: none;
-  font-size: var(--font-size-xs);
+  align-self: flex-start;
+  font-size: var(--badge-font-size);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px 6px;
-}
-/* The publisher eyebrow is a caption, not a chip: no frame, wide tracking, and
-   it keeps the trust colour that told first-party from user-installed. */
-.plugin-badge-first-party,
-.plugin-badge-user {
-  align-self: flex-start;
-  border: none;
-  padding: 0;
   letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 .plugin-badge-first-party {
   color: var(--text-secondary);
 }
-.plugin-badge-user {
-  color: var(--warning, #d29922);
-}
-/* Cursor-installed: same eyebrow treatment as the trust badges, but muted —
-   it names an owner Copse does not control rather than a trust tier. The row
-   itself is styled identically to every other one: origin belongs in the badge,
-   not in a different-shaped card. */
+/* User-installed and Cursor-installed name an owner Copse does not control. The
+   row itself is styled identically to every other one: origin belongs in the
+   eyebrow, not in a different-shaped card. */
+.plugin-badge-user,
 .plugin-badge-cursor {
-  align-self: flex-start;
-  border: none;
-  padding: 0;
-  letter-spacing: 0.08em;
   color: var(--text-muted);
 }
 .plugin-source-path {
@@ -2127,25 +2074,22 @@ dialog.settings-overlay::backdrop {
 .plugin-source-details dt {
   color: var(--text-muted);
 }
+/* Lists of origins, host names, and command names are code, not prose, so they
+   use the code face like every other command or path in Settings. */
+.settings-code-input {
+  font-family: var(--font-mono);
+}
 .plugin-source-details dd {
   margin: 0;
   color: var(--text-secondary);
+  /* A path and a content hash: code, not prose. */
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
-/* Stability sits next to the plugin's name as a pill in sentence case — a label
-   on the thing, not a shouted status. `plugin.stability` arrives lowercase, so the
-   capital comes from CSS. */
-.plugin-badge-stable,
-.plugin-badge-experimental {
-  border-radius: var(--action-radius);
-  padding: 1px var(--spacing-sm);
-  text-transform: capitalize;
-  letter-spacing: 0;
-}
-.plugin-badge-stable {
-  color: var(--success, #3fb950);
-  border-color: var(--success, #3fb950);
-}
+/* Stability sits next to the plugin's name as a `.ui-badge` — a label on the
+   thing, not a shouted status. `plugin.stability` arrives lowercase; the badge
+   recipe supplies the capital. Stable is the default, so it keeps the quiet
+   neutral outline rather than a success hue. */
 /* Experimental is the one thing on the card you must read before flipping the
    switch, so it takes the interaction accent rather than a status hue — the
    documented exception in docs/ui-taste.md. */
@@ -2352,27 +2296,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   justify-content: space-between;
   gap: var(--spacing-md);
 }
-.automation-add-btn,
-.automation-save-btn,
-.automation-cancel-btn,
-.automation-row-btn {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  cursor: pointer;
-}
-.automation-add-btn:hover:not(:disabled),
-.automation-cancel-btn:hover:not(:disabled),
-.automation-row-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.automation-add-btn:disabled,
-.automation-row-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
 .automation-scope,
 .automation-notice,
 .automation-status,
@@ -2414,7 +2337,9 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-sm);
   background: var(--bg-base);
 }
-.automation-row-paused {
+/* A paused schedule dims its copy only. Its Edit / Run now / Delete stay live,
+   and fading them too dropped the filled Delete label to ~3:1 on its fill. */
+.automation-row-paused .automation-row-copy {
   opacity: 0.7;
 }
 .automation-row-copy {
@@ -2435,19 +2360,12 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
+/* Buttons are kit buttons (`.ui-btn*`, ui.css): row actions compact
+   secondary/danger, the form's Save schedule the primary. */
 .automation-row-actions,
 .automation-form-actions {
   flex: none;
-  gap: var(--spacing-sm);
-}
-.automation-run-btn,
-.automation-save-btn {
-  border-color: var(--accent-fill);
-  background: var(--accent-fill);
-  color: var(--text-on-accent);
-}
-.automation-remove-btn {
-  color: var(--error);
+  gap: var(--spacing-md);
 }
 .automation-form {
   display: grid;

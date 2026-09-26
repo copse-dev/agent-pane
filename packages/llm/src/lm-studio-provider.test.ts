@@ -143,6 +143,21 @@ describe('LMStudioProvider tuned parameters', () => {
     assert.equal(opts['maxTokens'], 81_920)
   })
 
+  it('sends the user-set output cap in place of the card ceiling', async () => {
+    const client = new FakeClient()
+    const provider = new LMStudioProvider('qwen/qwen3.6-35b-a3b', {
+      client,
+      params: { maxOutputTokens: 4_096 },
+    })
+    const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
+    for await (const _ of provider.stream(messages, [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+    const opts = client.modelHandle.opts
+    assert.ok(opts)
+    assert.equal(opts['maxTokens'], 4_096)
+  })
+
   it('sends no ceiling when the model card publishes none', async () => {
     const client = new FakeClient()
     const provider = new LMStudioProvider('some-uncatalogued-model', { client })

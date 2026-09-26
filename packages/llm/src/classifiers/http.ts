@@ -116,10 +116,12 @@ function normalizeAnswer(
     const keys = question.levels.map((_, index) => String(index))
     validateDistribution(answer.probabilities, keys)
     const { legend } = answer
-    // The hosted API's score is the distribution's expected level.
+    // The hosted API's score is the distribution's expected level. Divide by the
+    // total so a distribution inside the rounding tolerance stays on the scale.
+    const total = keys.reduce((sum, key) => sum + (answer.probabilities[key] ?? 0), 0)
     const score =
       answer.score ??
-      keys.reduce((sum, key, index) => sum + index * (answer.probabilities[key] ?? 0), 0)
+      keys.reduce((sum, key, index) => sum + index * (answer.probabilities[key] ?? 0), 0) / total
     if (
       score < 0 ||
       score > question.levels.length - 1 ||

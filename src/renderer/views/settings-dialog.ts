@@ -1,4 +1,5 @@
 import { errorMessage } from '@shared/errors.ts'
+import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import {
   AUTO_APPROVAL_LEVEL_LABELS,
   AUTO_APPROVAL_LEVEL_SETTING,
@@ -36,7 +37,7 @@ import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import { formatByteSize } from '@shared/file-bytes.ts'
 import { openAttachmentPreview } from '../attachments/attachment-preview.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { qsRequired } from '../dom/helpers.ts'
+import { el, qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import {
   fetchDynamicModelOptions,
@@ -133,44 +134,18 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
   value === 'experimental'
 
 /**
- * Segments of a plugin id that are acronyms, and must stay uppercase rather than
- * being sentence-cased. Without this `copse.pii-redaction` reads "Pii
- * redaction" — a machine transformation showing through as user-facing copy.
- */
-const PLUGIN_NAME_ACRONYMS = new Set(['acp', 'api', 'ci', 'llm', 'mcp', 'okf', 'pii', 'ui'])
-
-/**
  * Friendly display name for a plugin row. First-party plugins ship with a
  * `copse.<kebab>` id; rather than showing that machine id verbatim, strip the
- * `copse.` prefix and present the rest space-separated and sentence-cased —
- * only the first word capitalised (e.g. `copse.post-turn-review` → "Post turn
- * review"), with known acronyms left uppercase (`copse.pii-redaction` → "PII
- * redaction"). User plugins with their own human name keep it as-is.
+ * `copse.` prefix and present the rest in sentence case through the shared
+ * identifier humanizer (`copse.post-turn-review` → "Post-turn review",
+ * `copse.pii-redaction` → "PII redaction", `copse.agents-md` → "AGENTS.md").
+ * User plugins with their own human name keep it as-is.
  */
 function pluginDisplayName(plugin: import('@shared/types/plugins.ts').PluginSummary): string {
   const raw = plugin.name || plugin.id
-  if (plugin.trust === 'first-party') {
-    const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
-    const words = stripped
-      .replace(/[-_.]+/g, ' ')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-    if (words.length === 0) return raw
-    const sentence = words
-      .map((word, index) => {
-        const lower = word.toLowerCase()
-        if (PLUGIN_NAME_ACRONYMS.has(lower)) return lower.toUpperCase()
-        // Sentence case: lead word capitalised, the rest lowercase. Plugin ids are
-        // kebab-lowercase already, so the lowercasing only matters for ids that
-        // arrive mixed-case.
-        if (index === 0) return lower.charAt(0).toUpperCase() + lower.slice(1)
-        return lower
-      })
-      .join(' ')
-    return sentence
-  }
-  return raw
+  if (plugin.trust !== 'first-party') return raw
+  const stripped = raw.startsWith('copse.') ? raw.slice('copse.'.length) : raw
+  return stripped ? humanizeIdentifier(stripped) : raw
 }
 
 /**
@@ -872,6 +847,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Trusted commands
                 <textarea
+                  class="settings-code-input"
                   name="trustedShellCommands"
                   rows="5"
                   spellcheck="false"
@@ -959,6 +935,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Allowed websites
                 <textarea
+                  class="settings-code-input"
                   name="webAllowedOrigins"
                   rows="6"
                   spellcheck="false"
@@ -977,6 +954,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label>
                 Allowed provider addresses
                 <textarea
+                  class="settings-code-input"
                   name="approvedProviderHosts"
                   rows="4"
                   spellcheck="false"
@@ -2024,7 +2002,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
     for (const agent of result.agents) {
       const extraBadges: Array<{ text: string; className: string }> = [
-        { text: agent.container, className: 'sources-badge-auto' },
+        // The container is a directory name (`.cursor`, `.claude`): a literal,
+        // shown as written rather than as a sentence-case label.
+        { text: agent.container, className: 'ui-badge-literal' },
       ]
       if (agent.unsupportedFields.length > 0) {
         extraBadges.push({ text: 'partly supported', className: 'sources-badge-unsupported' })
@@ -2037,7 +2017,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .join(' · ')
       rows.push(
         makeSourceRow(agent.name, agent.source, detail || null, {
-          badgeClass: agent.source === 'project' ? 'sources-badge-project' : undefined,
           extraBadges,
           titleAttr: agent.agentPath,
           hoverDetail: agent.agentPath,
@@ -2116,13 +2095,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     header.append(primary)
     if (badge) {
       const badgeEl = document.createElement('span')
-      badgeEl.className = opts.badgeClass ? `sources-badge ${opts.badgeClass}` : 'sources-badge'
+      badgeEl.className = opts.badgeClass
+        ? `ui-badge sources-badge ${opts.badgeClass}`
+        : 'ui-badge sources-badge'
       badgeEl.textContent = badge
       header.append(badgeEl)
     }
     for (const extra of opts.extraBadges ?? []) {
       const badgeEl = document.createElement('span')
-      badgeEl.className = `sources-badge ${extra.className}`
+      badgeEl.className = `ui-badge sources-badge ${extra.className}`
       badgeEl.textContent = extra.text
       header.append(badgeEl)
     }
@@ -2155,7 +2136,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
     const detail = `${familyLabel} · ${h.command}`
     const row = makeSourceRow(title, h.scope, detail, {
-      badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
       extraBadges,
     })
     if (h.lastError) {
@@ -2296,7 +2276,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     w: import('@shared/types/hooks.ts').HookValidationWarning,
   ): HTMLElement {
     const row = makeSourceRow(w.message, w.scope, w.source, {
-      badgeClass: w.scope === 'project' ? 'sources-badge-project' : undefined,
       extraBadges: [{ text: 'warning', className: 'sources-badge-warning' }],
     })
     row.classList.add('sources-row-warning')
@@ -2304,16 +2283,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   function fillSourceList(selector: string, rows: HTMLElement[], emptyText: string): void {
-    const el = qsRequired(overlay, selector)
-    el.innerHTML = ''
+    const list = qsRequired(overlay, selector)
+    list.innerHTML = ''
     if (rows.length === 0) {
       const empty = document.createElement('span')
       empty.className = 'sources-empty'
       empty.textContent = emptyText
-      el.append(empty)
+      list.append(empty)
       return
     }
-    for (const row of rows) el.append(row)
+    for (const row of rows) list.append(row)
   }
 
   /** Coarse "when", accurate enough for a list that is scanned, not audited. */
@@ -2340,7 +2319,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     text: string
     className: string | undefined
   } {
-    if (entry.usage?.running) return { text: 'in use', className: 'sources-badge-project' }
+    if (entry.usage?.running) return { text: 'in use', className: undefined }
     if (!entry.managed) return { text: 'external', className: undefined }
     if (!entry.usage) return { text: 'orphaned', className: 'sources-badge-warning' }
     if (!entry.usage.linked) return { text: 'released', className: 'sources-badge-warning' }
@@ -2578,7 +2557,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               target.row.querySelector('.sources-worktree-changes')?.remove()
               if (result.changedCount !== null && result.changedCount > 0) {
                 const badge = document.createElement('span')
-                badge.className = 'sources-badge sources-badge-warning sources-worktree-changes'
+                badge.className =
+                  'ui-badge sources-badge sources-badge-warning sources-worktree-changes'
                 badge.textContent = `${String(result.changedCount)} uncommitted`
                 target.row.querySelector('.sources-worktree-terminal-btn')?.before(badge)
               }
@@ -2631,14 +2611,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         const shown = preview.directories.slice(0, 12)
         const confirmed = await showConfirmDialog({
           message: `Remove ${String(preview.directories.length)} package director${preview.directories.length === 1 ? 'y' : 'ies'}?`,
-          detail: [
-            ...shown.map((directory) => directory.path),
+          detail: el(
+            'span',
+            {},
+            ...shown.flatMap((directory, index) => [
+              ...(index > 0 ? ['\n'] : []),
+              el('code', {}, directory.path),
+            ]),
             ...(preview.directories.length > shown.length
-              ? [`…and ${String(preview.directories.length - shown.length)} more`]
+              ? [`\n…and ${String(preview.directories.length - shown.length)} more`]
               : []),
-            '',
-            `This will reclaim ${size}. Your package manager can recreate these directories.`,
-          ].join('\n'),
+            `\n\nThis will reclaim ${size}. Your package manager can recreate these directories.`,
+          ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
@@ -2651,11 +2635,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       } else {
         const confirmed = await showConfirmDialog({
           message: `Clean up package directories in ${String(entries.length)} worktrees?`,
-          detail: [
-            'Copse will find and remove ignored package-manager directories such as node_modules and .venv.',
-            'Cleanup starts immediately; reclaimed size is measured as each worktree completes.',
-            'Your package manager can recreate these directories.',
-          ].join('\n\n'),
+          detail: el(
+            'span',
+            {},
+            'Copse will find and remove ignored package-manager directories such as ',
+            el('code', {}, 'node_modules'),
+            ' and ',
+            el('code', {}, '.venv'),
+            '.\n\nCleanup starts immediately; reclaimed size is measured as each worktree completes.' +
+              '\n\nYour package manager can recreate these directories.',
+          ),
           confirmLabel: 'Clean up',
           confirmPendingLabel: 'Cleanup pending…',
           onConfirm: performCleanup,
@@ -3086,13 +3075,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const row = makeSourceRow(file.name, badge, detail, {
       badgeClass: !file.trusted
         ? 'sources-badge-untrusted'
-        : file.scopePath !== undefined
-          ? file.active && file.duplicateOf === undefined
-            ? 'sources-badge-auto'
-            : undefined
-          : file.scope === 'project'
-            ? 'sources-badge-project'
-            : undefined,
+        : file.scopePath !== undefined && file.active && file.duplicateOf === undefined
+          ? 'sources-badge-active'
+          : undefined,
       titleAction: {
         label: `Open ${file.name}`,
         run: () => {
@@ -3159,14 +3144,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           if (r.globs?.length) bits.push(`globs: ${r.globs.join(', ')}`)
           if (r.description) bits.push(r.description)
           bits.push(r.path)
-          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '), {
-            badgeClass:
-              r.kind === 'always'
-                ? 'sources-badge-project'
-                : r.kind === 'auto'
-                  ? 'sources-badge-auto'
-                  : undefined,
-          })
+          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '))
         }),
         'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
@@ -3185,7 +3163,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         '#sources-skills-list',
         skills.map((s) =>
           makeSourceRow(s.name, s.source, s.description || null, {
-            badgeClass: s.source === 'project' ? 'sources-badge-project' : undefined,
             // Keep the resting list uncluttered: path lives on hover (and as a
             // native tooltip fallback). Description stays as the always-visible
             // detail; when a skill has none, the hover line is the only path.
@@ -3333,7 +3310,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       nameLine.append(versionEl)
     }
     const stabilityBadge = document.createElement('span')
-    stabilityBadge.className = `plugin-badge plugin-badge-${plugin.stability}`
+    stabilityBadge.className = `ui-badge plugin-badge-${plugin.stability}`
     stabilityBadge.textContent = plugin.stability
     stabilityBadge.title =
       plugin.stability === 'experimental'
@@ -3492,11 +3469,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const chipRow = document.createElement('div')
       chipRow.className = 'plugin-chips'
       for (const chip of chips) {
-        const el = document.createElement('span')
-        el.className = 'plugin-chip'
-        el.textContent = `${chip.label} × ${String(chip.count)}`
-        if (chip.title) el.title = chip.title
-        chipRow.append(el)
+        const chipEl = document.createElement('span')
+        chipEl.className = 'plugin-chip'
+        chipEl.textContent = `${chip.label} × ${String(chip.count)}`
+        if (chip.title) chipEl.title = chip.title
+        chipRow.append(chipEl)
       }
       row.append(chipRow)
     } else {
@@ -3992,9 +3969,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       'built-in': 'Built in',
     }
     const chip = document.createElement('span')
-    chip.className = `mcp-origin-chip mcp-origin-${s.origin}`
+    // A plugin's id is an identifier, shown as written rather than sentence-cased.
+    const pluginId = s.origin === 'plugin' && s.originDetail ? s.originDetail : undefined
+    chip.className = pluginId
+      ? `ui-badge ui-badge-literal mcp-origin-chip mcp-origin-${s.origin}`
+      : `ui-badge mcp-origin-chip mcp-origin-${s.origin}`
     chip.dataset['mcpOrigin'] = s.origin
-    chip.textContent = s.originDetail && s.origin === 'plugin' ? s.originDetail : labels[s.origin]
+    chip.textContent = pluginId ?? labels[s.origin]
     chip.title = s.originDetail ? `${labels[s.origin]} — ${s.originDetail}` : labels[s.origin]
     return chip
   }
@@ -4155,7 +4136,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.append(`${s.name} (${s.transport}): `, badge)
+      title.append(`${s.name} (${s.transport}) `, badge)
 
       header.append(toggleLabel, title, mcpOriginChip(s))
       const permissionsButton = document.createElement('button')
@@ -4228,10 +4209,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       header.className = 'mcp-server-header'
       const title = document.createElement('div')
       title.className = 'mcp-server-summary'
-      title.append(`${s.name} (${s.transport}): `, inlineStatus('idle', 'not running'))
+      title.append(`${s.name} (${s.transport}) `, inlineStatus('idle', 'not running'))
 
       const chip = document.createElement('span')
-      chip.className = 'mcp-origin-chip mcp-origin-plugin'
+      chip.className = 'ui-badge ui-badge-literal mcp-origin-chip mcp-origin-plugin'
       chip.dataset['mcpOrigin'] = 'plugin'
       chip.textContent = s.pluginId
       chip.title = `Declared by the plugin ${s.pluginId}`

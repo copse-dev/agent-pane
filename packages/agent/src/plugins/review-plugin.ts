@@ -63,7 +63,7 @@ export const reviewPlugin: RegisteredPlugin = definePlugin(
   {
     name: REVIEW_PLUGIN_ID,
     description:
-      'Copse Reviewer — builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. On demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
+      'Builds and tests your changes against their base, has a model review them under a lens, and tries to refute every finding before it reaches you. Runs on demand from the Changes view, the "Review changes" bubble, or the `review_changes` tool.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [REVIEW_TOOL_NAME] },
