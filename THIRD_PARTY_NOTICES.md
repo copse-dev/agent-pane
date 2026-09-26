@@ -18,6 +18,15 @@ checks the real archive again. In the app the files are in
 and `LICENSE.txt`), and **Settings → About** lists every component with its
 licence.
 
+The sections below record how Copse meets each licence that asks for more than
+attribution, or that offers a choice. The build checks them against what it
+ships (`scripts/lib/third-party-notices.mts`) and fails if a component that
+needs an entry lacks one, if an entry quotes a version that no longer ships or
+names a package that no longer ships, if a dual-licensed entry does not say
+which licence Copse elects, or if a "Not shipped" package ships. An entry
+heading ends with the npm package name in parentheses, for example
+`## noVNC (@novnc/novnc)`.
+
 ## Copse interface fonts
 
 - **Pliant:** Jona Saucedo / Non Foundry — bundled as the interface and body
@@ -61,9 +70,28 @@ The MPL applies at file level to noVNC's own files and does not change Copse's
 AGPL-3.0-only license. noVNC's sources carry no "Incompatible With Secondary
 Licenses" notice, so MPL-2.0 section 3.3 permits distributing it as part of a
 Larger Work under the GNU licenses. The build compiles noVNC into the renderer
-bundle, so the packaged app does not contain the npm package or its license
-file. As MPL-2.0 section 3.2 requires, this notice tells recipients of the app
-where to get noVNC's source code: the unmodified upstream release linked above.
+bundle, so the packaged app does not contain the npm package; its license text
+ships in the generated `THIRD_PARTY_LICENSES.txt`. As MPL-2.0 section 3.2
+requires, this notice tells recipients of the app where to get noVNC's source
+code: the unmodified upstream release linked above.
+
+## DOMPurify (dompurify)
+
+- **Project:** DOMPurify — a DOM-only XSS sanitizer for HTML, MathML and SVG.
+- **Authors:** Cure53 and other contributors.
+- **Source:** https://github.com/cure53/DOMPurify
+- **License:** dual-licensed `(MPL-2.0 OR Apache-2.0)`. **Copse elects the
+  Apache-2.0 option.**
+- **Used by:** the conversation markdown sanitizer
+  (`@copse/streaming-markdown`'s DOMPurify backend, loaded lazily by
+  `src/renderer/markdown/sanitizer-backend.ts`), the Mermaid diagram frame, and
+  Monaco. Compiled into the renderer bundles.
+- **Modifications:** none. Version 3.4.15 is bundled as published.
+
+Under the Apache-2.0 option, Copse passes on DOMPurify's copyright notice and
+the license text, which ship in the generated `THIRD_PARTY_LICENSES.txt`.
+DOMPurify has no NOTICE file. Apache-2.0 is compatible with GPLv3, so it may be
+combined into Copse's AGPL-3.0-only work.
 
 ## Forge (node-forge)
 
@@ -85,7 +113,7 @@ license conditions, and disclaimer. They ship with the package in
 endorse or promote itself. The GPL-2.0 option is not used: GPL-2.0-only is not
 compatible with Copse's AGPL-3.0-only license or with a proprietary license.
 
-## Not shipped: sharp and libvips
+## Not shipped: sharp and libvips (sharp, @img/sharp-*)
 
 `pnpm licenses list --prod` reports `sharp` (Apache-2.0) and its native
 `@img/sharp-libvips-*` packages (LGPL-3.0-or-later). **Neither ships in the
@@ -106,9 +134,11 @@ and `app.asar.unpacked`) contains Rampart but no `sharp`, `@img/*`,
 `build` configuration, `optionalDependencies`, and Rampart's resolution have not
 changed in any way that affects this. The 0.1.0-beta.6 release notes and
 [`docs/pii-redaction.md`](docs/pii-redaction.md) record removing the
-Transformers/ONNX runtime from the base installer on purpose, and
-`scripts/release-package-invariants.test.ts` fails if
-`@huggingface/transformers` is added back as a direct optional dependency.
+Transformers/ONNX runtime from the base installer on purpose. Three checks now
+hold it there: the unit test `scripts/third-party-notices.test.ts` and the build
+both fail if any package this heading names joins the shipped set, and
+packaging (`scripts/check-packaged-licenses.mts`) fails if `sharp` or
+`@img/sharp-*` is in the real app archive.
 
 If a future change bundles the contextual PII model (for example, by adding
 `@huggingface/transformers` as a direct dependency or listing it in `asarUnpack`),

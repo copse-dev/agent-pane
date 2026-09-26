@@ -15,6 +15,11 @@ import { copyFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileS
 import { gzipSync } from 'node:zlib'
 import { join } from 'node:path'
 import {
+  findNoticeProblems,
+  formatNoticeProblems,
+  parseNotices,
+} from './lib/third-party-notices.mts'
+import {
   THIRD_PARTY_LICENSE_JSON,
   THIRD_PARTY_LICENSE_TEXT,
   THIRD_PARTY_LICENSES_DIR,
@@ -86,6 +91,18 @@ export function collectLicenseReport(
         '\nAdd the missing text to LICENSE_OVERRIDES (scripts/third-party-vendored.mts), ' +
         'or keep the package out of the app.',
     )
+  }
+  // THIRD_PARTY_NOTICES.md records how Copse meets each non-attribution licence;
+  // this is the one place the complete shipped set exists, bundles included.
+  // Vendored components (fonts, gortex's Go modules) are covered by prose
+  // sections, not per-package entries.
+  const noticeProblems = findNoticeProblems(
+    parseNotices(readFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8')),
+    components.filter((component) => component.shippedAs.some((how) => how !== 'vendored')),
+    { complete: true },
+  )
+  if (noticeProblems.length > 0) {
+    throw new Error(`[licenses] ${formatNoticeProblems(noticeProblems)}`)
   }
   return buildLicenseReport(components)
 }
