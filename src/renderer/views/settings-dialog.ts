@@ -675,8 +675,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="classifiers">
             <h3>Classifiers</h3>
             <p class="settings-section-desc">
-              Connections for classification evals and explicit calls. Copse's built-in classifiers
-              and chat model choices are configured separately.
+              Connections for safety screening, classification evals and explicit calls. Chat model
+              choices are configured separately.
             </p>
             <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
@@ -2199,7 +2199,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (!header) return
     const testBtn = document.createElement('button')
     testBtn.type = 'button'
-    testBtn.className = 'sources-hook-test-btn'
+    // A kit button, so it reads as a control beside the row's status badges
+    // (USER, PROJECT) rather than as one more tracked-caps chip.
+    testBtn.className = 'ui-btn ui-btn-secondary sources-hook-test-btn'
     testBtn.textContent = 'Test'
     testBtn.title = 'Dry-run this hook against a synthetic payload for its event'
     header.append(testBtn)

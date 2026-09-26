@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertLegendInsideCard } from './helpers/settings-geometry.ts'
 
 const LOCAL_MODELS = ['qwen/qwen3.6-35b-a3b', 'google/gemma-4-e4b', 'qwen/qwen3-4b-2507']
 const LM_STUDIO_FIXTURE_PORT = 51234
@@ -209,6 +210,20 @@ describe('settings model routing placement', function () {
     )
     assert.match(reviewAutoLabel, /prefer on-device/)
 
+    // "Advanced routes" wears the app's disclosure chevron, not the UA ▶.
+    const advancedSummary = await browser.execute(() => {
+      const summary = document.querySelector<HTMLElement>('.routing-advanced > summary')
+      if (!summary) return null
+      return {
+        display: getComputedStyle(summary).display,
+        listStyle: getComputedStyle(summary).listStyleType,
+        chevron:
+          summary.querySelector('svg[data-icon="chevron-down"].settings-disclosure-chevron') !==
+          null,
+      }
+    })
+    assert.deepEqual(advancedSummary, { display: 'flex', listStyle: 'none', chevron: true })
+
     await scrollSettingsToLegend('Models')
     await saveElementScreenshot('#settings-dialog', 'settings-general-model-routing.png')
 
@@ -218,6 +233,9 @@ describe('settings model routing placement', function () {
     await expect(settingsSection('general').$('legend=Server connection')).toBeDisplayed()
 
     await scrollSettingsToLegend('Server connection')
+    // Nested cards hold their titles inside their padding (#3065).
+    await assertLegendInsideCard('Server connection')
+    await assertLegendInsideCard('Recommended local models')
     await saveElementScreenshot('#settings-dialog', 'settings-local-models-connection.png')
   })
 })
