@@ -1065,4 +1065,32 @@ describe('worktree manager', () => {
     assert.equal(await readFile(join(untracked.path, 'new.txt'), 'utf-8'), 'untracked\n')
     assert.equal(git(ahead.path, ['log', '-1', '--format=%s']).trim(), 'unmerged work')
   })
+
+  it("releases a deleted thread's checkout when inspecting it fails", async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-unreadable',
+      projectRoot: repo,
+      prompt: 'Unreadable index',
+      baseBranch: 'main',
+    })
+    // A corrupt index makes `git status` fail after validation has already
+    // granted the checkout internal-root authority.
+    const gitDir = git(worktree.path, ['rev-parse', '--absolute-git-dir']).trim()
+    await writeFile(join(gitDir, 'index'), 'not an index')
+
+    await assert.rejects(
+      retireDeletedThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-unreadable',
+        projectRoot: repo,
+        worktree,
+      }),
+      /Cannot inspect thread worktree/,
+    )
+    assert.equal(getInternalWorkspaceRootRegistration(worktree.path), null)
+    assert.ok((await listProjectWorktrees(repo)).some((record) => record.path === worktree.path))
+    assert.notEqual(git(repo, ['branch', '--list', worktree.branch]).trim(), '')
+  })
 })

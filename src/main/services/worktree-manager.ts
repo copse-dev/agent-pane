@@ -1228,10 +1228,20 @@ export async function retireDeletedThreadWorktree(
 ): Promise<DeletedThreadWorktreeResult> {
   const location = await repositoryLocation(input.projectRoot)
   const projectRoot = location.repositoryRoot
+  const executionRoot = resolve(input.worktree.path, location.projectRelativePath)
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
-    const retired = await retireThreadWorktree(input)
+    let retired: RetireWorktreeResult
+    try {
+      retired = await retireThreadWorktree(input)
+    } catch (error) {
+      // Validation may already have granted authority (and indexing may be
+      // watching) before inspection or removal failed; a half-removed checkout
+      // must not keep a recursive watcher either.
+      releaseWorktreeRoot(executionRoot)
+      throw error
+    }
     if (retired.status !== 'removed') {
-      releaseWorktreeRoot(resolve(input.worktree.path, location.projectRelativePath))
+      releaseWorktreeRoot(executionRoot)
       return retired
     }
     const deleted = await git(projectRoot, ['branch', '-d', retired.branch])
