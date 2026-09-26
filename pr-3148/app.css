@@ -3232,6 +3232,11 @@ input:focus,
 textarea:focus {
   border-color: var(--accent);
 }
+input[aria-invalid=true],
+textarea[aria-invalid=true],
+select[aria-invalid=true] {
+  border-color: var(--error);
+}
 select {
   appearance: none;
   background-image: var(--select-chevron);
@@ -7300,7 +7305,7 @@ dialog.settings-overlay {
   padding: 0;
   border: none;
   color: inherit;
-  overflow: hidden;
+  overflow: clip;
 }
 dialog.settings-overlay::backdrop {
   background: var(--bg-base);
@@ -7351,7 +7356,7 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 .settings-nav {
   width: calc(240px * var(--ui-scale));
@@ -7391,15 +7396,17 @@ dialog.settings-overlay::backdrop {
   padding: var(--spacing-xs) 0;
 }
 .settings-nav-subheading {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  align-content: center;
   gap: var(--spacing-sm);
   text-align: left;
   min-height: calc(30px * var(--ui-scale));
   padding: var(--spacing-xs) var(--spacing-md) var(--spacing-xs) calc(var(--spacing-xl) + var(--spacing-xs));
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: 400;
 }
 .settings-nav-subheading::before {
   content: "\21b3";
@@ -7485,9 +7492,6 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-md);
   max-width: 62ch;
   margin-bottom: calc(var(--spacing-xl) + var(--spacing-sm));
-}
-.settings-content legend + .field-hint {
-  margin-bottom: var(--spacing-lg);
 }
 .settings-field-label {
   display: block;
@@ -7605,10 +7609,14 @@ dialog.settings-overlay::backdrop {
 }
 .settings-section > fieldset,
 .settings-section > .settings-mount > fieldset,
-.settings-search-results > fieldset {
+.settings-search-results > fieldset,
+.usage-section-root > fieldset {
   background: none;
   padding: 0;
   margin-bottom: calc(var(--spacing-xl) * 2);
+}
+.usage-section-root > fieldset {
+  margin-bottom: 0;
 }
 .settings-content legend {
   padding: 0;
@@ -7618,12 +7626,22 @@ dialog.settings-overlay::backdrop {
 }
 .settings-section > fieldset > legend,
 .settings-section > .settings-mount > fieldset > legend,
-.settings-search-results > fieldset > legend {
+.settings-search-results > fieldset > legend,
+.usage-section-root > fieldset > legend {
   font-family: var(--font-display);
   font-size: calc(20px * var(--ui-scale));
   font-weight: 400;
   line-height: var(--line-height-base);
   margin-bottom: var(--spacing-md);
+}
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .usage-section-root > fieldset) > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: var(--spacing-md);
+}
+.settings-content fieldset:not(.settings-section > fieldset, .settings-section > .settings-mount > fieldset, .settings-search-results > fieldset, .usage-section-root > fieldset) > legend ~ * {
+  clear: both;
 }
 .settings-content fieldset label {
   margin-bottom: calc(var(--spacing-lg) + var(--spacing-sm));
@@ -7740,14 +7758,20 @@ dialog.settings-overlay::backdrop {
 .settings-content label select,
 .settings-content label input[type=text],
 .settings-content label input[type=password],
-.settings-content label input[type=number] {
+.settings-content label input[type=number],
+.settings-content label input[type=url],
+.settings-content label input[type=email],
+.settings-content label input[type=search] {
   width: 100%;
   max-width: 480px;
   min-height: var(--action-min-height);
 }
 .settings-content label input[type=text],
 .settings-content label input[type=password],
-.settings-content label input[type=number] {
+.settings-content label input[type=number],
+.settings-content label input[type=url],
+.settings-content label input[type=email],
+.settings-content label input[type=search] {
   padding-inline: var(--spacing-md);
 }
 .settings-content label select {
@@ -8048,12 +8072,7 @@ dialog.settings-overlay::backdrop {
 .provider-add-model {
   align-self: flex-start;
 }
-.provider-advanced summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.provider-advanced[open] summary {
+.provider-advanced[open] > summary {
   margin-bottom: var(--spacing-sm);
 }
 .routing-advanced {
@@ -8061,12 +8080,7 @@ dialog.settings-overlay::backdrop {
   flex-direction: column;
   gap: var(--spacing-sm);
 }
-.routing-advanced summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.routing-advanced[open] summary {
+.routing-advanced[open] > summary {
   margin-bottom: var(--spacing-sm);
 }
 .usage-section-root {
@@ -8080,6 +8094,10 @@ dialog.settings-overlay::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+.usage-plan-section > .settings-fieldset-desc,
+.usage-worth-section > .settings-fieldset-desc {
+  margin-bottom: 0;
 }
 .usage-plan-heading,
 .usage-worth-heading,
@@ -8803,22 +8821,7 @@ dialog.settings-overlay::backdrop {
 }
 .sources-hook-test-btn {
   flex: none;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1px var(--spacing-sm);
-  cursor: pointer;
-}
-.sources-hook-test-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.sources-hook-test-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+  padding-block: var(--spacing-xs);
 }
 .hook-test {
   margin-top: var(--spacing-sm);
@@ -9085,7 +9088,8 @@ dialog.settings-overlay::backdrop {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--spacing-sm);
 }
-.plugin-settings-summary {
+.plugin-settings-summary,
+.settings-disclosure-summary {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -9098,20 +9102,28 @@ dialog.settings-overlay::backdrop {
   cursor: pointer;
   list-style: none;
 }
-.plugin-settings-summary::-webkit-details-marker {
+.plugin-settings-summary::-webkit-details-marker,
+.settings-disclosure-summary::-webkit-details-marker {
   display: none;
 }
-.plugin-settings-summary:hover {
+.plugin-settings-summary:hover,
+.settings-disclosure-summary:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.plugin-settings-chevron {
+.plugin-settings-chevron,
+.settings-disclosure-chevron {
   width: 16px;
   height: 16px;
+  flex: none;
   transition: transform 0.15s ease;
 }
-.plugin-settings-fold[open] .plugin-settings-chevron {
+.plugin-settings-fold[open] .plugin-settings-chevron,
+details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   transform: rotate(180deg);
+}
+.settings-disclosure-summary {
+  width: fit-content;
 }
 .plugin-settings {
   display: flex;
