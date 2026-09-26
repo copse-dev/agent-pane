@@ -39,7 +39,10 @@ describe('read access outside the project approval', () => {
     )
     const advice = await dialog.$('.approval-advice').getText()
     expect(advice).toContain('~/.copse')
-    expect(advice).toContain('read from sensitive locations on your computer')
+    expect(advice).toContain('• ~/.copse')
+    expect(advice).toContain('A listed directory can contain sensitive files')
+    const footer = await dialog.$('.approval-footer').getText()
+    expect(footer).toContain('Other paths ask again')
 
     // Collapsed: the command is in the DOM but not shown, and the per-command
     // button waits for the details it refers to.

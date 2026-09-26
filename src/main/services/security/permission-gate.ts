@@ -279,8 +279,8 @@ async function requestEscalationApproval(
  * Returns null when the command is not that shape, so the caller falls through
  * to its normal prompt. Otherwise the thread's standing grant answers it, or the
  * user is asked with the narrower read-access wording — where the primary button
- * grants the shape for the rest of the thread and the secondary one approves
- * just this command.
+ * grants the named paths (and descendants of any directories) for the rest
+ * of the thread; the secondary button approves just this command.
  *
  * Every outcome lands in the durable decision log, naming the paths that were at
  * stake. The grant itself is held in memory (`read-outside-grant.ts`) and dies
@@ -305,7 +305,7 @@ async function resolveReadOutsideProject(
   const reasons = [`reads outside the project: ${analysis.targets.join(', ')}`]
 
   const threadId = getActiveRunThread()
-  if (hasReadOutsideProjectGrant(threadId)) {
+  if (hasReadOutsideProjectGrant(threadId, analysis.resolvedTargets)) {
     recordDecision({
       kind: 'shell',
       actor: 'user',
@@ -339,7 +339,9 @@ async function resolveReadOutsideProject(
   )
   // A handler with no thread (headless/ACP) can hold no grant, so its approval
   // covers this command only.
-  if (approved && remember && threadId) grantReadOutsideProject(threadId)
+  if (approved && remember && threadId) {
+    grantReadOutsideProject(threadId, analysis.resolvedTargets)
+  }
   return approved
 }
 

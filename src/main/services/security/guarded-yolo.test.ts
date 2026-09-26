@@ -58,26 +58,30 @@ describe('Guarded YOLO implied outside-read grant', () => {
   it('counts an active YOLO thread as holding the read grant until disabled', () => {
     clearReadOutsideProjectGrants()
     disableGuardedYolo('thread-read')
-    assert.equal(hasReadOutsideProjectGrant('thread-read'), false)
+    assert.equal(hasReadOutsideProjectGrant('thread-read', ['/home/dev/notes']), false)
 
     armGuardedYolo('thread-read')
-    assert.equal(hasReadOutsideProjectGrant('thread-read'), false, 'armed is not yet active')
+    assert.equal(
+      hasReadOutsideProjectGrant('thread-read', ['/home/dev/notes']),
+      false,
+      'armed is not yet active',
+    )
 
     assert.equal(activateGuardedYoloForRun('thread-read'), true)
-    assert.equal(hasReadOutsideProjectGrant('thread-read'), true)
+    assert.equal(hasReadOutsideProjectGrant('thread-read', ['/home/dev/notes']), true)
 
     disableGuardedYolo('thread-read')
-    assert.equal(hasReadOutsideProjectGrant('thread-read'), false)
+    assert.equal(hasReadOutsideProjectGrant('thread-read', ['/home/dev/notes']), false)
   })
 
   it('keeps an explicit approval grant after YOLO is disabled', () => {
     clearReadOutsideProjectGrants()
     disableGuardedYolo('thread-keep')
-    grantReadOutsideProject('thread-keep')
+    grantReadOutsideProject('thread-keep', ['/home/dev/notes'])
     armGuardedYolo('thread-keep')
     activateGuardedYoloForRun('thread-keep')
     disableGuardedYolo('thread-keep')
-    assert.equal(hasReadOutsideProjectGrant('thread-keep'), true)
+    assert.equal(hasReadOutsideProjectGrant('thread-keep', ['/home/dev/notes']), true)
     clearReadOutsideProjectGrants()
   })
 })
