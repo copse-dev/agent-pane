@@ -16,13 +16,13 @@ import { withoutCheckoutWrites, workspaceSandboxOverlay } from './config.ts'
 import { clearAllowedWorkspaceRootsForTest } from '../services/workspace.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
 
-const gitEnv: NodeJS.ProcessEnv = {
-  ...process.env,
+const gitIdentity: NodeJS.ProcessEnv = {
   GIT_AUTHOR_NAME: 'Copse Test',
   GIT_AUTHOR_EMAIL: 'copse@example.invalid',
   GIT_COMMITTER_NAME: 'Copse Test',
   GIT_COMMITTER_EMAIL: 'copse@example.invalid',
 }
+const gitEnv: NodeJS.ProcessEnv = { ...process.env, ...gitIdentity }
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf-8', env: gitEnv })
@@ -35,7 +35,10 @@ async function shell(
 ): Promise<{ output: string; code: number }> {
   const child = await spawnShellInProjectSandbox(command, {
     cwd,
-    env: gitEnv,
+    // Only what the command needs on top of the spawn's own environment. The
+    // host's full env would override the sandbox's $TMPDIR with a directory
+    // the sandbox cannot see (it did on Linux CI), unlike the real shell tool.
+    env: gitIdentity,
     stdio: ['pipe', 'pipe', 'pipe'],
     ...(readonlyCheckout ? { readonlyCheckout } : {}),
   })
@@ -123,8 +126,13 @@ describe('read-only checkout shell sandbox', () => {
 
     // Scratch space outside the checkout stays writable, so tools that stage
     // through $TMPDIR keep working.
-    const scratch = await shell('echo ok > "$TMPDIR/copse-readonly-probe" && echo done', repo, true)
+    const scratch = await shell(
+      'echo "TMPDIR=$TMPDIR" && echo ok > "$TMPDIR/copse-readonly-probe"',
+      repo,
+      true,
+    )
     assert.equal(scratch.code, 0, scratch.output)
+    assert.ok(!scratch.output.includes(`TMPDIR=${repo}`), 'scratch must live outside the checkout')
 
     // Every way of writing the checkout is refused, and nothing lands.
     const overwrite = await shell('echo agent > tracked.txt', repo, true)
