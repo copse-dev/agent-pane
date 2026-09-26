@@ -756,7 +756,7 @@ export function mountPrPane(
       el(
         'div',
         { class: 'pr-viewer-title-row' },
-        el('h3', { class: 'pr-viewer-title' }, prDetails.title),
+        el('h4', { class: 'pr-viewer-title' }, prDetails.title),
         badges,
       ),
       el(
@@ -971,7 +971,7 @@ export function mountPrPane(
         el(
           'div',
           { class: 'pr-viewer-title-row' },
-          el('h3', { class: 'pr-viewer-title' }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`),
+          el('h4', { class: 'pr-viewer-title' }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`),
         ),
         el(
           'div',
