@@ -3,8 +3,35 @@
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
 to add a TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
-answer and duration. These profiles are available for explicit calls and evals; they do not select
-models for Copse's permission policy, model routing, or agent loop.
+answer and duration. These profiles are available for safety screening, explicit calls and evals;
+they never appear as chat models or change model routing or the agent loop.
+
+## Safety screening
+
+**Settings → Classifiers → Safety screening** chooses what screens shell commands and terminal reads:
+the Instruct / safety model (the default, set under Models) or one saved HTTP connection. SemIf is
+not offered: it starts its scorer for every call, which cannot fit the budget, and its token limit
+could cut a snapshot the verdict must cover in full. Choosing makes no inference call. The choice
+is its own `safetyScreeningClassifier` setting, so builds that predate it still read the profiles;
+a choice naming a removed connection reads as none, and removing the chosen connection clears it.
+**Settings → Permissions → Check commands for danger** still turns screening on or off for both.
+
+The classifier answers one two-way choice question — `sandbox` / `external` for a command, `safe` /
+`risky` for a terminal snapshot — with the same rules the safety model's prompt states. Verdicts are
+read from the returned probabilities, never from the provider's `choice`:
+
+- A terminal snapshot is shared without asking only when P(`safe`) is at least 0.80. Anything less
+  is flagged and the user is asked. (The chat path's 0.5 floor is on a model's self-reported
+  confidence; on a two-way distribution the chosen side always clears 0.5.)
+- A command's scope is the likelier side, with a tie reading as `external`. Its probability is the
+  confidence strict mode compares with `safetyExternalDenyThreshold`.
+
+Each call has the safety model's 8-second budget, and a connection that keeps missing it is skipped
+for a while, like a slow safety model. A timeout, connection failure, missing key, removed
+connection, or malformed answer yields no verdict, which asks the user; lasting faults are recorded
+once per thread in the decision log. A hosted classifier receives the command or terminal text,
+with known saved keys redacted. See [`shell-permissions.md`](shell-permissions.md) for where
+screening can and cannot affect a decision.
 
 Remote HTTP profiles use an HTTPS endpoint and, when configured, a bearer key. Loopback HTTP is
 supported for local servers. Copse requests approval for new remote hosts. Keys use Copse's existing
@@ -15,11 +42,41 @@ Changing an existing profile's HTTP destination, protocol, or authentication mod
 key before applying the change. Save a replacement key or select a named environment variable for
 the new destination. Classifier credential IDs are reserved from custom chat-provider IDs.
 
-Saved Copse profiles can use `TYPESAFE_API_KEY` only with the official TypeSafe endpoint and
-`FEATHERLESS_API_KEY` only with the official Featherless endpoint. Custom saved profiles use a
+Saved Copse profiles can use a hosted preset's variable (`TYPESAFE_API_KEY`, `FEATHERLESS_API_KEY`)
+only with that preset's own endpoint; the rule is derived from `CLASSIFIER_PRESETS`. Custom saved profiles use a
 dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
 environment variable supplied by the caller.
+
+## Self-hosted systemone servers
+
+Several open classifiers serve TypeSafe's `POST /v1/systemone` format, so each is one profile
+with `protocol: "systemone"` and a `baseUrl` ending in `/v1`. Start the server, then run an eval
+with its example profile. Model names and ports below are the projects' documented defaults
+(checked 2026-09-25); adjust the profile if you start a server differently.
+
+| Classifier    | Start the server                                                                                                                                                               | Example profile                                          | Notes                                                                                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kev           | `uv sync --extra serve`, then `uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009`                                                                  | [`kev.json`](../benchmarks/classifiers/kev.json)         | Pass `--port 8009`; the code defaults to 8008. Binds 127.0.0.1. Verified 2026-09-25 on MLX (M1 Max): batches concurrent requests.                                                                                             |
+| Winnow-12B    | `python3 scripts/serve.py` in EldanRing/winnow-inference                                                                                                                       | [`winnow.json`](../benchmarks/classifiers/winnow.json)   | Port 8091; 2–64 options. llama.cpp with Metal or CUDA.                                                                                                                                                                        |
+| reflex 4B     | `uv sync --no-sources`, then `uv run --no-sync reflex-serve --stable --device mps --dtype float16 --port 8008` on a Mac                                                        | [`reflex.json`](../benchmarks/classifiers/reflex.json)   | Up to 26 options. Use `main`: the `stable` tag's code has no MPS path, and `--stable` on `main` reads the same configuration. Verified 2026-09-25.                                                                            |
+| decider-4b    | `DECIDER_MODEL=Mapika/decider-4b DECIDER_DEVICE=mps uvicorn decider.serve:app --host 127.0.0.1 --port 8000` after `pip install "decider-ai[serve,metal]" "transformers>=5.17"` | [`decider.json`](../benchmarks/classifiers/decider.json) | Verified 2026-09-25 (tag `v2`, M1 Max, MPS float16): warm calls 0.7–1.2 s, every field the hosted API sends. `scripts/serve.sh` binds `0.0.0.0` with no authentication; bind `127.0.0.1` as shown.                            |
+| metask-jev-4b | `python serve.py --port 8000 --model wayfind/metask-jev-4b-policy-mix` with `inference/` on `PYTHONPATH`                                                                       | [`metask.json`](../benchmarks/classifiers/metask.json)   | Omits `model` and `choice` (derived). `serve.py` hardcodes `0.0.0.0` with no authentication; change `app.run` to `127.0.0.1`. Send one request at a time on MPS: concurrent requests crashed the server. Verified 2026-09-25. |
+
+JevK5 and Jobe also serve `/v1/systemone`, but their servers are CUDA-only. Hopper answers one
+question per request and its weights are for non-commercial use. djev serves `/v1/request` rather
+than `/v1/systemone` and needs a B200-class GPU. None of these has a preset.
+
+Self-hosted servers often omit fields the hosted API always sends. The adapter derives them rather
+than rejecting the answer, and lists each one in the result's `metadata.derivedFields`:
+
+- a missing top-level `model` is reported as the requested model;
+- a missing `choice` is the likeliest option, the first offered on a tie (the answer also carries
+  `derived: true`);
+- a missing `score` is the distribution's expected level, and a missing `legend` is skipped.
+
+Fields that are present are still validated in full, and the distribution must still cover exactly
+the offered options.
 
 ## Run an eval
 
