@@ -65988,6 +65988,25 @@ var init_attention = __esm({
   }
 });
 
+// packages/thread-store/src/prompt-placeholders.ts
+function stripPastePlaceholders(content) {
+  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
+  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
+}
+var PASTE_PLACEHOLDER;
+var init_prompt_placeholders = __esm({
+  "packages/thread-store/src/prompt-placeholders.ts"() {
+    PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
+  }
+});
+
 // src/shared/git/worktree-policy.ts
 function slugPrompt(prompt) {
   const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
@@ -66019,17 +66038,20 @@ var init_worktree_policy = __esm({
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
-    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && m2.content.trim()
+    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
 }
 function firstWords(text2, n2 = 6) {
   return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
+function promptWords(message2) {
+  return stripPastePlaceholders(message2.content);
+}
 function namingInput(userMessages) {
   const first = userMessages[0];
   if (!first) return "";
   const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m2) => m2.content.trim().slice(0, 300)).join("\n\n");
+  return [first, ...recent].map((m2) => promptWords(m2).slice(0, 300)).join("\n\n");
 }
 function owningProjectId(store2, threadId) {
   const background = backgroundProjectOf(store2, threadId);
@@ -66079,7 +66101,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(first.content) : current.title;
+    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -66091,6 +66113,7 @@ var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
     init_unknown_value3();
+    init_prompt_placeholders2();
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
@@ -75383,6 +75406,48 @@ var init_tool_error_format = __esm({
   }
 });
 
+// packages/agent/src/hooks/inject-context.ts
+var SYSTEM_REMINDER_TAG;
+var init_inject_context = __esm({
+  "packages/agent/src/hooks/inject-context.ts"() {
+    init_nullish();
+    SYSTEM_REMINDER_TAG = "system-reminder";
+  }
+});
+
+// src/renderer/views/tool-result-reminders.ts
+function splitAppendedReminders(result, lengths) {
+  const raw = { output: result, reminders: [] };
+  if (lengths === void 0 || lengths.length === 0) return raw;
+  let end = result.length;
+  const reminders = [];
+  for (let index = lengths.length - 1; index >= 0; index -= 1) {
+    const length = lengths[index];
+    if (length === void 0 || !Number.isSafeInteger(length) || length < 0) return raw;
+    const start = end - length;
+    if (start < SEPARATOR.length) return raw;
+    const block = result.slice(start, end);
+    if (!block.startsWith(OPEN) || !block.endsWith(CLOSE) || block.length < OPEN.length + CLOSE.length) {
+      return raw;
+    }
+    if (result.slice(start - SEPARATOR.length, start) !== SEPARATOR) return raw;
+    reminders.unshift(block.slice(OPEN.length, block.length - CLOSE.length));
+    end = start - SEPARATOR.length;
+  }
+  return { output: result.slice(0, end), reminders };
+}
+var OPEN, CLOSE, SEPARATOR;
+var init_tool_result_reminders = __esm({
+  "src/renderer/views/tool-result-reminders.ts"() {
+    init_inject_context();
+    OPEN = `<${SYSTEM_REMINDER_TAG}>
+`;
+    CLOSE = `
+</${SYSTEM_REMINDER_TAG}>`;
+    SEPARATOR = "\n\n";
+  }
+});
+
 // src/renderer/controller/thread-proposals.ts
 async function startProposedThread(store2, api2, sourceThreadId, proposal, options) {
   const projectId = store2.getState().activeProjectId;
@@ -75679,25 +75744,6 @@ var init_render_signature = __esm({
     FNV_OFFSET = 2166136261;
     MIX_PRIME = 2246822507;
     MIX_OFFSET = 3266489909;
-  }
-});
-
-// packages/thread-store/src/prompt-placeholders.ts
-function stripPastePlaceholders(content) {
-  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
-  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
-}
-var PASTE_PLACEHOLDER;
-var init_prompt_placeholders = __esm({
-  "packages/thread-store/src/prompt-placeholders.ts"() {
-    PASTE_PLACEHOLDER = "\uFFFC";
-  }
-});
-
-// src/shared/threads/prompt-placeholders.ts
-var init_prompt_placeholders2 = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
-    init_prompt_placeholders();
   }
 });
 
@@ -76293,26 +76339,35 @@ function createToolArgsSection(args) {
     el("pre", {}, rendered)
   );
 }
-function createToolResultSection(result, status, format, showEmptyState = false) {
+function createToolResultSection(result, status, format, showEmptyState = false, appendedReminderLengths) {
   if (!result) {
     return showEmptyState ? el("div", { class: "tool-result tool-result-empty" }, "No tool details were provided.") : el("div", { class: "tool-result" });
   }
-  const errorMessage2 = status === "error" ? mcpErrorMessage(result) : null;
+  const { output: output2, reminders } = splitAppendedReminders(result, appendedReminderLengths);
+  const notes = reminders.map((reminder) => el("p", { class: "tool-result-note" }, reminder));
+  const errorMessage2 = status === "error" ? mcpErrorMessage(output2) : null;
   if (errorMessage2) {
     const paragraphs = errorMessage2.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
     return el(
       "div",
       { class: "tool-result tool-result-error-message" },
-      ...paragraphs.map((line) => el("p", {}, line))
+      ...paragraphs.map((line) => el("p", {}, line)),
+      ...notes
     );
   }
   if (format === "markdown") {
     const wrap = el("div", { class: "tool-result tool-result-markdown message-text" });
-    wrap.innerHTML = renderMarkdown(result);
+    wrap.innerHTML = renderMarkdown(output2);
     attachCodeBlockCopyButtons(wrap);
+    wrap.append(...notes);
     return wrap;
   }
-  return el("div", { class: "tool-result" }, el("pre", {}, renderToolArgs(result)));
+  return el(
+    "div",
+    { class: "tool-result" },
+    ...output2.length > 0 || notes.length === 0 ? [el("pre", {}, renderToolArgs(output2))] : [],
+    ...notes
+  );
 }
 function createToolLocationsSection(locations) {
   if (!locations?.length) return null;
@@ -76401,7 +76456,8 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
         tc2.result,
         tc2.status,
         tc2.resultFormat,
-        argsSection === null && tc2.status !== "running"
+        argsSection === null && tc2.status !== "running",
+        tc2.appendedReminderLengths
       ),
       ...appendIfPresent(createToolLocationsSection(tc2.locations))
     );
@@ -79408,6 +79464,7 @@ var init_conversation = __esm({
     init_review_actions();
     init_tool_args_format();
     init_tool_error_format();
+    init_tool_result_reminders();
     init_thread_proposal_tool_card();
     init_render_signature();
     init_message_queue();
@@ -112750,6 +112807,28 @@ var init_roadmap_pane = __esm({
   }
 });
 
+// src/shared/canvas/guest-surface.ts
+function canvasGuestTextCss(color) {
+  if (!COMPUTED_COLOR_RE.test(color.trim())) return null;
+  return `:where(:root) { color: ${color.trim()}; }`;
+}
+var CANVAS_TRANSPARENT_ROOT_PROBE, COMPUTED_COLOR_RE;
+var init_guest_surface = __esm({
+  "src/shared/canvas/guest-surface.ts"() {
+    CANVAS_TRANSPARENT_ROOT_PROBE = `(() => {
+  const paints = (element) => {
+    if (!element) return false
+    const style = getComputedStyle(element)
+    if (style.backgroundImage !== 'none') return true
+    const alpha = /^rgba\\((?:[^,]+,){3}\\s*([\\d.]+)\\s*\\)$/.exec(style.backgroundColor)
+    return alpha ? Number(alpha[1]) > 0 : style.backgroundColor !== 'transparent'
+  }
+  return !paints(document.documentElement) && !paints(document.body)
+})()`;
+    COMPUTED_COLOR_RE = /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/;
+  }
+});
+
 // src/shared/types/main-window.ts
 var MAX_RESTORED_BROWSER_TABS;
 var init_main_window = __esm({
@@ -113247,6 +113326,13 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       syncWebviewSize2(tab);
     });
   }
+  function applyCanvasGuestText(tab, webview) {
+    if (!tab.artefactTitle || !webview.getURL().startsWith("data:text/html")) return;
+    const css2 = canvasGuestTextCss(getComputedStyle(tab.webviewHost).color);
+    if (!css2 || !webview.executeJavaScript || !webview.insertCSS) return;
+    const insertCSS = webview.insertCSS.bind(webview);
+    void webview.executeJavaScript(CANVAS_TRANSPARENT_ROOT_PROBE).then((transparent) => transparent === true ? insertCSS(css2) : void 0).catch(() => void 0);
+  }
   function ensureWebview(tab) {
     if (tab.webview) return tab.webview;
     const webview = createWebview(tab.partition, resolveWorkspacePreview);
@@ -113272,6 +113358,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       tab.webviewReady = true;
       syncAddressBar(tab);
       syncWebviewSize2(tab);
+      applyCanvasGuestText(tab, webview);
       if (tab.pendingUrl) {
         const url2 = tab.pendingUrl;
         tab.pendingUrl = null;
@@ -114102,6 +114189,7 @@ var init_browser_pane = __esm({
     init_pane_popout_seed();
     init_browser_url();
     init_artefact();
+    init_guest_surface();
     init_browser_session();
     init_unknown_value3();
     init_panels();
@@ -133562,6 +133650,7 @@ function startAgentController(store2, api2) {
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
             ...chunk.resultFormat ? { resultFormat: chunk.resultFormat } : {},
+            ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
           if (chunk.toolCallId && !chunk.isError) {
@@ -133676,6 +133765,7 @@ function startAgentController(store2, api2) {
             status: chunk.isError ? "error" : "done",
             result: chunk.result,
             ...chunk.editStats ? { editStats: chunk.editStats } : {},
+            ...chunk.appendedReminderLengths ? { appendedReminderLengths: chunk.appendedReminderLengths } : {},
             ...chunk.images ? { images: chunk.images } : {}
           });
         }
