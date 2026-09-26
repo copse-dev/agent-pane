@@ -1,5 +1,6 @@
 import { after, before, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { z } from 'zod'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
@@ -54,7 +55,7 @@ describe('reloadMcpServersForPluginToggle', () => {
     plugins.disable(MCP_UI_CANVAS_PLUGIN_ID)
     const statuses = await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
 
-    assert.ok(statuses, 'the canvas toggle reloads MCP servers')
+    assert.ok(statuses, 'the canvas toggle resyncs the bundled server')
     assert.equal(tools.has(RENDER_TOOL), false)
     assert.equal(
       statuses.some((status) => status.name === CANVAS_SERVER_NAME),
@@ -70,11 +71,35 @@ describe('reloadMcpServersForPluginToggle', () => {
     plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
     const statuses = await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
 
-    assert.ok(statuses, 'the canvas toggle reloads MCP servers')
+    assert.ok(statuses, 'the canvas toggle resyncs the bundled server')
     assert.equal(tools.has(RENDER_TOOL), true)
     const canvas = statuses.find((status) => status.name === CANVAS_SERVER_NAME)
     assert.equal(canvas?.state, 'connected')
     assert.ok(canvas.tools.includes('render_html_artefact'))
+  })
+
+  it("keeps other MCP servers' tools registered across a canvas toggle", async () => {
+    plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+    await loadMcpServers(tools)
+    // Stands in for a configured server's tool: a full teardown unregisters
+    // every MCP-prefixed tool, so this only survives a bundled-only resync.
+    const otherTool = mcpToolName('configured-server', 'ping')
+    tools.register({
+      name: otherTool,
+      description: 'configured server tool',
+      parameters: z.object({}),
+      execute: async () => 'pong',
+    })
+
+    plugins.disable(MCP_UI_CANVAS_PLUGIN_ID)
+    await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+    assert.equal(tools.has(RENDER_TOOL), false)
+    assert.equal(tools.has(otherTool), true)
+
+    plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+    await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+    assert.equal(tools.has(RENDER_TOOL), true)
+    assert.equal(tools.has(otherTool), true)
   })
 
   it('leaves MCP servers alone for a plugin that gates no bundled server', async () => {

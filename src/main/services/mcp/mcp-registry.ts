@@ -759,22 +759,46 @@ export async function reloadMcpServers(registry: ToolRegistry): Promise<McpServe
 }
 
 /**
- * Reload MCP servers after a live toggle of a first-party plugin that gates a
- * bundled in-process server, so the server's tools follow the toggle without a
- * restart. Returns the new statuses, or `null` (and does nothing) for any other
- * plugin.
+ * Reconnect only Copse's bundled in-process servers so they match the current
+ * plugin state. Configured (user/project) clients, their tools, their statuses
+ * and any calls in flight to them are left alone — a full
+ * {@link reloadMcpServers} would close and reconnect every one of them.
+ */
+async function resyncBundledServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
+  const bundled = activeServers.filter((server) => server.config.transport === 'in-process')
+  const bundledNames = new Set(bundled.map((server) => server.config.name))
+  for (const [toolName, meta] of toolMeta) {
+    if (meta.bundled !== true || !bundledNames.has(meta.server)) continue
+    registry.unregister(toolName)
+    toolMeta.delete(toolName)
+  }
+  await Promise.allSettled(bundled.map((server) => server.client.close()))
+  const configured = activeServers.filter((server) => server.config.transport !== 'in-process')
+  activeServers.length = 0
+  activeServers.push(...configured)
+  const configuredStatuses = serverStatuses.filter((status) => status.transport !== 'in-process')
+  const bundledStatuses = await connectBundledServers(registry, loadGeneration)
+  serverStatuses = [...bundledStatuses, ...configuredStatuses]
+  return getMcpServerStatuses()
+}
+
+/**
+ * Follow a live toggle of a first-party plugin that gates a bundled in-process
+ * server, so the server's tools track the toggle without a restart. Returns the
+ * new statuses, or `null` (and does nothing) for any other plugin.
  *
  * `copse.mcp-ui-canvas` is the one today: {@link connectBundledServers} reads its
- * capability. Without a reload, disabling it would leave `render_html_artefact`
+ * capability. Without this, disabling it would leave `render_html_artefact`
  * registered while tool results stop being summarised — so the raw HTML body
  * would reach the model — and enabling it would offer no tool until restart.
+ * Only the bundled servers are reconnected; configured servers stay connected.
  */
 export async function reloadMcpServersForPluginToggle(
   registry: ToolRegistry,
   pluginId: string,
 ): Promise<McpServerStatus[] | null> {
   if (pluginId !== MCP_UI_CANVAS_PLUGIN_ID) return null
-  return reloadMcpServers(registry)
+  return resyncBundledServers(registry)
 }
 
 export async function shutdownMcpServers(): Promise<void> {
