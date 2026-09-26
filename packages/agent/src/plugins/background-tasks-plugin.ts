@@ -74,7 +74,7 @@ export const backgroundTasksPlugin: RegisteredPlugin = definePlugin(
   {
     name: BACKGROUND_TASKS_PLUGIN_ID,
     description:
-      'Background tasks — run long-lived or bounded asynchronous commands (dev servers, watchers, builds, tests, and evals) via the `run_background` tool. Tasks stay alive across turns and can wake the agent once on completion instead of being polled. A task can opt into binding a local port (reporting its http://localhost:<port> URL), which relaxes the sandbox to allow loopback binding, gated by a per-project permission grant.',
+      'Background tasks — run long-lived or bounded asynchronous commands (dev servers, watchers, builds, tests, and evals) via the `run_background` tool. Tasks stay alive across turns and can wake the agent once on completion instead of being polled. A task can opt into binding a local port (reporting its `http://localhost:<port>` URL), which relaxes the sandbox to allow loopback binding, gated by a per-project permission grant.',
     trust: 'first-party',
     stability: 'stable',
     tools: { native: [BACKGROUND_TASKS_TOOL_NAME] },

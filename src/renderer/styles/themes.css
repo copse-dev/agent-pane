@@ -100,6 +100,17 @@
      rule above: the dark pair sits at ~0.55 luminance and washes out here. */
   --info: #0969da;
   --important: #8250df;
+  /* The status hues above are tuned for chips and callouts and measure ~4:1 on
+     the tinted light panes; change letters and +/- stats are small text, so
+     they take a darker step of the same hue (>= 4.9:1 on every pane surface,
+     pinned in light-contrast.test.ts). The diff washes sit under code, so
+     light keeps them faint enough for near-black tokens to read on. */
+  --change-added: color-mix(in srgb, var(--success) 80%, black);
+  --change-modified: color-mix(in srgb, var(--warning) 80%, black);
+  --change-deleted: color-mix(in srgb, var(--error) 80%, black);
+  --change-renamed: color-mix(in srgb, var(--info) 80%, black);
+  --diff-insert: color-mix(in srgb, var(--success) 16%, transparent);
+  --diff-delete: color-mix(in srgb, var(--danger) 14%, transparent);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.14);
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);

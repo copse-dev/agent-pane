@@ -112,16 +112,20 @@ export function removeHost(list: SshWorkspaceHost[], id: string): SshWorkspaceHo
 
 export type ParseSshHostDraftResult =
   | { ok: true; host: SshWorkspaceHost }
-  | { ok: false; error: string }
+  /** `fields` names the draft fields the error is about, so a form can mark them invalid. */
+  | { ok: false; error: string; fields: readonly (keyof SshHostDraft)[] }
 
 /** Validate draft fields and build a persisted host entry. */
 export function parseSshHostDraft(draft: SshHostDraft): ParseSshHostDraftResult {
   const id = draft.id.trim() || slugifyHostId(draft.label || draft.host)
   if (!SSH_HOST_ID_RE.test(id)) {
-    return { ok: false, error: 'Host id must be a lowercase slug (a-z, 0-9, -).' }
+    return { ok: false, error: 'Host id must be a lowercase slug (a-z, 0-9, -).', fields: ['id'] }
   }
   if (!draft.label.trim() || !draft.host.trim()) {
-    return { ok: false, error: 'Label and host are required.' }
+    const fields: (keyof SshHostDraft)[] = []
+    if (!draft.label.trim()) fields.push('label')
+    if (!draft.host.trim()) fields.push('host')
+    return { ok: false, error: 'Label and host are required.', fields }
   }
   const host: SshWorkspaceHost = {
     id,
@@ -133,7 +137,7 @@ export function parseSshHostDraft(draft: SshHostDraft): ParseSshHostDraftResult 
   if (portText) {
     const port = Number(portText)
     if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65_535) {
-      return { ok: false, error: 'Port must be a whole number from 1 to 65535.' }
+      return { ok: false, error: 'Port must be a whole number from 1 to 65535.', fields: ['port'] }
     }
     host.port = port
   }
