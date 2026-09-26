@@ -851,6 +851,14 @@ export interface ApiClient {
   appIcon: {
     apply: () => Promise<void>
   }
+  about: {
+    /** The app version and the third-party licence report the build shipped. */
+    getInfo: () => Promise<import('@shared/third-party-licenses.mts').AboutInfo>
+    /** Open one of the shipped licence files in the system's default viewer. */
+    openLicenseFile: (
+      kind: import('@shared/third-party-licenses.mts').LicenseFileKind,
+    ) => Promise<void>
+  }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>

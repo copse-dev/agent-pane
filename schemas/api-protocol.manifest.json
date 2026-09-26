@@ -3,6 +3,20 @@
   "version": 17,
   "channels": {
     "invoke": {
+      "about:get-info": {
+        "api": "about.getInfo",
+        "args": [
+          0,
+          0
+        ]
+      },
+      "about:open-license-file": {
+        "api": "about.openLicenseFile",
+        "args": [
+          1,
+          1
+        ]
+      },
       "acp:auto-setup": {
         "api": "acp.autoSetup",
         "args": [
