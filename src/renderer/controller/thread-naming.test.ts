@@ -154,6 +154,58 @@ test('maybeNameThread falls back to first words when suggestTitle fails', async 
   assert.equal(requireThread(store, 't-fallback').title, 'Fix the flicker please now')
 })
 
+// Inline paste and thread-reference chips are stored as U+FFFC placeholders in
+// the message content. They are transcript markup, not words: neither the
+// naming model nor the word-slice fallback may carry one into the title, where
+// it renders as a boxed "OBJ" glyph.
+test('maybeNameThread keeps chip placeholders out of the title and the naming input', async () => {
+  const store = createStore({
+    threads: [
+      newThread('t-chips', [
+        userMessage('Summarize this feedback: ￼'),
+        userMessage('Compare ￼ with ￼ please'),
+        userMessage('￼'),
+      ]),
+    ],
+    activeThreadId: 't-chips',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => {
+    throw new Error('no small-tasks model')
+  })
+
+  maybeNameThread(store, api, 't-chips')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.equal(requireThread(store, 't-chips').title, 'Summarize this feedback:')
+  assert.deepEqual(titleCalls, ['Summarize this feedback:\n\nCompare with please'])
+})
+
+// A chip-only prompt has no words to name the thread by. It must not spend
+// naming pass 0 (which would leave the thread titled "New Thread" until the
+// third message), so the next real prompt still names the thread.
+test('maybeNameThread waits past a chip-only first prompt without spending a pass', async () => {
+  const store = createStore({
+    threads: [newThread('t-only-chip', [userMessage('\uFFFC')])],
+    activeThreadId: 't-only-chip',
+  })
+  const { api, titleCalls } = apiWithTitle(async () => 'Review The Pasted Log')
+
+  maybeNameThread(store, api, 't-only-chip')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, [])
+  assert.equal(requireThread(store, 't-only-chip').title, 'New Thread')
+  assert.equal(requireThread(store, 't-only-chip').autoTitleCount, undefined)
+
+  addUserMessages(store, 't-only-chip', ['What does this log say went wrong?'])
+  maybeNameThread(store, api, 't-only-chip')
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, ['What does this log say went wrong?'])
+  assert.equal(requireThread(store, 't-only-chip').title, 'Review The Pasted Log')
+  assert.equal(requireThread(store, 't-only-chip').autoTitleCount, 1)
+})
+
 test('maybeNameThread is a no-op when the title is already set', async () => {
   const named = newThread('t-named', [userMessage('Already named')])
   named.title = 'Custom Title'

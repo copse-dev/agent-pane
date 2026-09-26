@@ -1,6 +1,12 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { requestUserAnswers, setAskUserHandler, type AskUserRequest } from './ask-user.ts'
+import {
+  createWindowAskUserHandler,
+  requestUserAnswers,
+  setAskUserHandler,
+  type AskUserRequest,
+  type AskUserResult,
+} from './ask-user.ts'
 import {
   registerRunDeadline,
   resetRunDeadlinesForTest,
@@ -32,11 +38,113 @@ describe('requestUserAnswers pluggable transport', () => {
     assert.deepEqual(seen, [req])
   })
 
+  it('marks the answers cancelled when the run already stopped', async () => {
+    let asked = false
+    setAskUserHandler(async () => {
+      asked = true
+      return { answers: ['x', 'y'] }
+    })
+    const controller = new AbortController()
+    controller.abort()
+
+    assert.deepEqual(await requestUserAnswers(req, controller.signal), {
+      answers: ['', ''],
+      cancelled: true,
+    })
+    assert.equal(asked, false)
+  })
+
+  it('marks the answers cancelled when the run stops mid-question', async () => {
+    setAskUserHandler(() => new Promise(() => {}))
+    const controller = new AbortController()
+    const pending = requestUserAnswers(req, controller.signal)
+
+    controller.abort()
+
+    assert.deepEqual(await pending, { answers: ['', ''], cancelled: true })
+  })
+
+  it('keeps an answer that arrived in the same turn as the stop', async () => {
+    let fulfill: (answers: string[]) => void = () => {}
+    const answered = new Promise<string[]>((resolve) => {
+      fulfill = resolve
+    })
+    // An async handler adds promise hops between the answer and the result.
+    setAskUserHandler(async () => ({ answers: await answered }))
+    const controller = new AbortController()
+    const pending = requestUserAnswers(req, controller.signal)
+
+    fulfill(['Postgres', 'Yes'])
+    controller.abort()
+
+    assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
+  })
+
   it('reverts to blank answers once the handler is cleared', async () => {
     setAskUserHandler(async () => ({ answers: ['x', 'y'] }))
     assert.deepEqual((await requestUserAnswers(req)).answers, ['x', 'y'])
     setAskUserHandler(null)
     assert.deepEqual((await requestUserAnswers(req)).answers, ['', ''])
+  })
+})
+
+function fakeWindowDeps(): {
+  sent: string[]
+  answer: (answers: string[]) => void
+  deps: Parameters<typeof createWindowAskUserHandler>[0]
+} {
+  const sent: string[] = []
+  const pending = new Map<string, (result: AskUserResult) => void>()
+  const settle = (id: string, result: AskUserResult): void => {
+    const resolve = pending.get(id)
+    if (!resolve) return
+    pending.delete(id)
+    resolve(result)
+  }
+  return {
+    sent,
+    answer: (answers): void => {
+      for (const id of [...pending.keys()]) settle(id, { answers })
+    },
+    deps: {
+      send: (channel): void => {
+        sent.push(channel)
+      },
+      register: (id, resolve): void => {
+        pending.set(id, resolve)
+      },
+      settle,
+      alertUser: () => () => {},
+    },
+  }
+}
+
+describe('window ask_user handler', () => {
+  afterEach(() => {
+    setAskUserHandler(null)
+  })
+
+  it('returns what the user answered in the window', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const pending = requestUserAnswers(req, new AbortController().signal)
+
+    window.answer(['Postgres', 'Yes'])
+
+    assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
+    assert.deepEqual(window.sent, ['agent:ask-user-request'])
+  })
+
+  it('withdraws an open question as cancelled when the run stops', async () => {
+    const window = fakeWindowDeps()
+    setAskUserHandler(createWindowAskUserHandler(window.deps))
+    const controller = new AbortController()
+    const pending = requestUserAnswers(req, controller.signal)
+
+    controller.abort()
+
+    assert.deepEqual(await pending, { answers: ['', ''], cancelled: true })
+    assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
   })
 })
 
