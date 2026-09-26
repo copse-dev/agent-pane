@@ -15,10 +15,7 @@ import {
   type MaterialisedCheckouts,
   type PinnedWorktree,
 } from './checkouts.ts'
-import {
-  renderPullRequestConversation,
-  type PullRequestConversation,
-} from './pr-conversation.ts'
+import { renderPullRequestConversation, type PullRequestConversation } from './pr-conversation.ts'
 
 export type FileDiffStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'binary'
 

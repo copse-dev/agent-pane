@@ -123,44 +123,50 @@ describe('supported reproducer runner', () => {
     const tools = executor()
     const signal = new AbortController().signal
     assert.match(
-      toolText(await tools.execute(
-        'write_reproducer',
-        {
-          path: '../escaped.ts',
-          content: 'throw 1',
-          argv: ['copse-test'],
-        },
-        signal,
-        'escape',
-      )),
+      toolText(
+        await tools.execute(
+          'write_reproducer',
+          {
+            path: '../escaped.ts',
+            content: 'throw 1',
+            argv: ['copse-test'],
+          },
+          signal,
+          'escape',
+        ),
+      ),
       /must live under/,
     )
     assert.match(
-      toolText(await tools.execute(
-        'write_reproducer',
-        {
-          path: '.copse-review/test.ts',
-          content: 'throw 1',
-          argv: ['copse-test', '../escaped.ts'],
-        },
-        signal,
-        'extra-path',
-      )),
+      toolText(
+        await tools.execute(
+          'write_reproducer',
+          {
+            path: '.copse-review/test.ts',
+            content: 'throw 1',
+            argv: ['copse-test', '../escaped.ts'],
+          },
+          signal,
+          'extra-path',
+        ),
+      ),
       /path comes from path/,
     )
     assert.equal(tools.reproducer(), null)
     const denied = executor('deny')
     assert.match(
-      toolText(await denied.execute(
-        'write_reproducer',
-        {
-          path: '.copse-review/denied.ts',
-          content: 'throw 1',
-          argv: ['copse-test'],
-        },
-        signal,
-        'denied',
-      )),
+      toolText(
+        await denied.execute(
+          'write_reproducer',
+          {
+            path: '.copse-review/denied.ts',
+            content: 'throw 1',
+            argv: ['copse-test'],
+          },
+          signal,
+          'denied',
+        ),
+      ),
       /commands cannot run/,
     )
     assert.equal(denied.reproducer(), null)

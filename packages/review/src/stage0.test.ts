@@ -178,7 +178,10 @@ describe('runStage0', () => {
         toolText(await executor.execute('search_code', { pattern: 'a - b' }, signal, 'search')),
         /src\/math.js/,
       )
-      assert.doesNotMatch(toolText(await executor.execute('list_dir', {}, signal, 'list')), /generated.js/)
+      assert.doesNotMatch(
+        toolText(await executor.execute('list_dir', {}, signal, 'list')),
+        /generated.js/,
+      )
       assert.match(
         toolText(await executor.execute('git_diff', { path: 'src/math.js' }, signal, 'diff')),
         /a - b/,

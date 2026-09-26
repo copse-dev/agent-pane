@@ -126,7 +126,9 @@ export interface ReviewerToolHost {
 }
 
 /** A tool's text, and any images to put in front of the model with it. */
-export type ReviewerToolOutput = string | { readonly result: string; readonly images: ToolResultImage[] }
+export type ReviewerToolOutput =
+  | string
+  | { readonly result: string; readonly images: ToolResultImage[] }
 
 function candidateFindingParameters(): Record<string, unknown> {
   return {

@@ -93,9 +93,12 @@ describe('view_image', () => {
     )
     assert.ok(typeof head !== 'string' && typeof base !== 'string')
     assert.match(head.result, /^<external_content source="view_image">/)
-    assert.equal(head.images[0]?.name, 'shots/toolbar.png (head)')
-    assert.equal(base.images[0]?.dataUrl, `data:image/png;base64,${png(1).toString('base64')}`)
-    assert.equal(head.images[0]?.dataUrl, `data:image/png;base64,${png(2).toString('base64')}`)
+    const [headImage] = head.images
+    const [baseImage] = base.images
+    assert.ok(headImage && baseImage)
+    assert.equal(headImage.name, 'shots/toolbar.png (head)')
+    assert.equal(baseImage.dataUrl, `data:image/png;base64,${png(1).toString('base64')}`)
+    assert.equal(headImage.dataUrl, `data:image/png;base64,${png(2).toString('base64')}`)
     assert.match(
       toolText(
         await tools.execute('view_image', { path: 'shots/new.png', side: 'base' }, signal, 'v3'),

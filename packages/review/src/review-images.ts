@@ -107,7 +107,10 @@ function hostAllowed(ref: PullRequestRef, host: string, extra: readonly string[]
   const web = webOrigin(ref).hostname
   if (host === web || extra.includes(host)) return true
   // GitHub serves raw files, attachments and camo proxies from these.
-  return web === 'github.com' && (host === 'githubusercontent.com' || host.endsWith('.githubusercontent.com'))
+  return (
+    web === 'github.com' &&
+    (host === 'githubusercontent.com' || host.endsWith('.githubusercontent.com'))
+  )
 }
 
 const COMMIT = /^[0-9a-f]{7,40}$/
@@ -147,7 +150,8 @@ async function readCapped(
   url: string,
 ): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length') ?? '0')
-  if (declared > MAX_IMAGE_BYTES) throw new Error(`${url} is larger than ${String(MAX_IMAGE_BYTES)} bytes`)
+  if (declared > MAX_IMAGE_BYTES)
+    throw new Error(`${url} is larger than ${String(MAX_IMAGE_BYTES)} bytes`)
   const bytes = new Uint8Array(await response.arrayBuffer())
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
     throw new Error(`${url} is larger than ${String(MAX_IMAGE_BYTES)} bytes`)
@@ -187,7 +191,9 @@ export function createRemoteImageFetcher(
       }
       // Forgejo serves attachments from its own origin, which the token belongs to.
       const sameForgejo =
-        ref.forge === 'forgejo' && ref.token !== undefined && current.origin === webOrigin(ref).origin
+        ref.forge === 'forgejo' &&
+        ref.token !== undefined &&
+        current.origin === webOrigin(ref).origin
       const response = await fetchImpl(current.href, {
         method: 'GET',
         headers: {

@@ -381,8 +381,9 @@ export function extractImages(
       images.push(image)
       return `[image ${handle(image)}]`
     }
-    let rewritten = line.replace(MARKDOWN_IMAGE, (match, alt: string, url: string, offset: number) =>
-      replace(match, alt, url, offset),
+    let rewritten = line.replace(
+      MARKDOWN_IMAGE,
+      (match, alt: string, url: string, offset: number) => replace(match, alt, url, offset),
     )
     rewritten = rewritten.replace(HTML_IMAGE, (tag: string, offset: number) => {
       const src = htmlAttribute(tag, 'src')
