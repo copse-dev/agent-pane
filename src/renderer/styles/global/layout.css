@@ -658,7 +658,7 @@
 .orphans-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin-top: var(--spacing-sm);
   padding: var(--spacing-sm);
   border-top: 1px solid var(--border, var(--border-subtle));
@@ -674,16 +674,49 @@
   color: var(--warning, #d29922);
   flex-shrink: 0;
 }
+.orphans-hint {
+  margin: 0 0 2px 22px;
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+}
 .orphan-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 0 2px 22px;
+  padding: 4px 0 4px 22px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
-.orphan-recover-btn {
+.orphan-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.orphan-name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orphan-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orphan-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+.orphan-recover-btn,
+.orphan-dismiss-btn {
   flex-shrink: 0;
   padding: 2px 8px;
   font-size: var(--font-size-sm);
@@ -692,7 +725,11 @@
   border: 1px solid var(--border, var(--border-subtle));
   border-radius: 4px;
 }
-.orphan-recover-btn:hover {
+.orphan-dismiss-btn {
+  color: var(--text-secondary);
+}
+.orphan-recover-btn:hover,
+.orphan-dismiss-btn:hover {
   background: var(--bg-selected);
 }
 .pane-chat {

@@ -9,6 +9,10 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
+import {
+  clickActiveConfirmDialogConfirm,
+  mountConfirmDialog,
+} from './confirm-dialog.ts'
 
 function thread(id: string, title: string): Thread {
   return {
@@ -35,7 +39,15 @@ describe('projects pane remove-from-sidebar (component)', () => {
     return host
   }
 
-  function makeApi(orphans: OrphanProjectStore[] = []): ApiClient {
+  function makeApi(
+    orphans: OrphanProjectStore[] = [],
+    opts: {
+      storage?: Record<string, unknown>
+      onStorageSet?: (key: string, value: unknown) => void
+      workspaceOpen?: () => Promise<string | null>
+    } = {},
+  ): ApiClient {
+    const storage: Record<string, unknown> = { ...(opts.storage ?? {}) }
     return ((): ApiClient => {
       const base = createFakeApi()
       return {
@@ -43,12 +55,15 @@ describe('projects pane remove-from-sidebar (component)', () => {
         workspace: {
           ...base['workspace'],
           set: async (path: string): Promise<string> => path,
-          open: async (): Promise<string | null> => null,
+          open: opts.workspaceOpen ?? (async (): Promise<string | null> => null),
         },
         storage: {
           ...base['storage'],
-          get: async (): Promise<unknown> => null,
-          set: async (): Promise<void> => undefined,
+          get: async (key: string): Promise<unknown> => storage[key] ?? null,
+          set: async (key: string, value: unknown): Promise<void> => {
+            storage[key] = value
+            opts.onStorageSet?.(key, value)
+          },
         },
         threads: {
           ...base['threads'],
@@ -154,7 +169,17 @@ describe('projects pane remove-from-sidebar (component)', () => {
       threads: [thread('t-a', 'Thread A')],
       activeThreadId: 't-a',
     })
-    mount(store, makeApi([{ id: 'orphan', threadCount: 2 }]))
+    mount(
+      store,
+      makeApi([
+        {
+          id: 'orphan',
+          threadCount: 2,
+          sampleTitles: ['Planning notes', 'Follow-up'],
+          updatedAt: 100,
+        },
+      ]),
+    )
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     const missingRow = document.querySelector<HTMLButtonElement>('.project-row.missing')
@@ -169,7 +194,93 @@ describe('projects pane remove-from-sidebar (component)', () => {
     )
     assert.equal(document.querySelector('.project-missing-btn')?.textContent, 'Relocate…')
     assert.equal(document.querySelector('.orphans-heading')?.textContent, 'Recoverable threads')
-    assert.equal(document.querySelector('.orphan-name')?.textContent, '2 threads')
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Planning notes')
+    assert.match(document.querySelector('.orphan-meta')?.textContent ?? '', /2 threads/)
     assert.equal(document.querySelector('.orphan-recover-btn')?.textContent, 'Recover…')
+    assert.equal(document.querySelector('.orphan-dismiss-btn')?.textContent, 'Dismiss')
+  })
+
+  it('dismisses an orphan row and persists the store id', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t-a', 'Thread A')],
+      activeThreadId: 't-a',
+    })
+    const writes: Array<{ key: string; value: unknown }> = []
+    mount(
+      store,
+      makeApi(
+        [
+          {
+            id: 'stale-store',
+            threadCount: 1,
+            sampleTitles: ['Old notes'],
+            updatedAt: 50,
+          },
+        ],
+        {
+          onStorageSet: (key, value) => {
+            writes.push({ key, value })
+          },
+        },
+      ),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelectorAll('.orphan-row').length, 1)
+    document.querySelector<HTMLButtonElement>('.orphan-dismiss-btn')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelectorAll('.orphan-row').length, 0)
+    assert.deepEqual(writes, [{ key: 'dismissedOrphanStores', value: ['stale-store'] }])
+  })
+
+  it('shows orphan thread titles before opening the folder picker on recover', async () => {
+    mountConfirmDialog()
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t-a', 'Thread A')],
+      activeThreadId: 't-a',
+    })
+    let opened = 0
+    mount(
+      store,
+      makeApi(
+        [
+          {
+            id: 'recover-me',
+            threadCount: 1,
+            sampleTitles: ['Recovered planning notes'],
+            updatedAt: 90,
+          },
+        ],
+        {
+          workspaceOpen: async () => {
+            opened += 1
+            return '/recovered'
+          },
+        },
+      ),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    document.querySelector<HTMLButtonElement>('.orphan-recover-btn')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(opened, 0, 'folder picker waits for confirm')
+    assert.match(
+      document.querySelector('.confirm-dialog-message')?.textContent ?? '',
+      /Recovered planning notes/,
+    )
+    assert.match(
+      document.querySelector('.confirm-dialog-detail')?.textContent ?? '',
+      /Recovered planning notes/,
+    )
+    clickActiveConfirmDialogConfirm()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(opened, 1)
+    assert.ok(store.getState().projects.some((p) => p.id === 'recover-me' && p.path === '/recovered'))
   })
 })

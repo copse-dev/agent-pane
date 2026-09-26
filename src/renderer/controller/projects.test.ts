@@ -10,7 +10,11 @@ import {
   getSidebarThreads,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
+  dismissOrphanProject,
+  listOrphanProjects,
+  parseDismissedOrphanStores,
   removeProject,
+  recoverOrphanProject,
   relocateProject,
   resetProjectSwitchStateForTest,
   restoreProject,
@@ -54,6 +58,9 @@ function makeApi(handlers: {
   settingsGet?: (key: string) => Promise<unknown>
   sshStates?: () => Promise<SshConnectionState[]>
   sshConnect?: (hostId: string) => Promise<void>
+  listOrphans?: () => Promise<
+    import('@shared/types').OrphanProjectStore[]
+  >
 }): ApiClient {
   return ((): ApiClient => {
     const base = createFakeApi()
@@ -81,7 +88,7 @@ function makeApi(handlers: {
         updateMeta: async (): Promise<void> => undefined,
         delete: async (): Promise<void> => undefined,
         catalog: async (): Promise<never[]> => [],
-        listOrphans: async (): Promise<never[]> => [],
+        listOrphans: handlers.listOrphans ?? (async (): Promise<never[]> => []),
       },
       settings: {
         ...base['settings'],
@@ -1117,6 +1124,95 @@ test('paginateSidebarThreads expands through the final partial page', () => {
   assert.equal(result.visibleCount, 15)
   assert.equal(result.hasMore, false)
 })
+
+test('parseDismissedOrphanStores keeps unique string ids only', () => {
+  assert.deepEqual(parseDismissedOrphanStores(['a', '', 'a', 1, 'b']), ['a', 'b'])
+  assert.deepEqual(parseDismissedOrphanStores(null), [])
+})
+
+test('listOrphanProjects hides dismissed store ids', async () => {
+  const api = makeApi({
+    listOrphans: async () => [
+      { id: 'keep', threadCount: 1, sampleTitles: ['Keep me'], updatedAt: 2 },
+      { id: 'gone', threadCount: 2, sampleTitles: ['Hide me'], updatedAt: 1 },
+    ],
+    storageGet: async (key) => (key === 'dismissedOrphanStores' ? ['gone'] : null),
+  })
+  const orphans = await listOrphanProjects(api)
+  assert.deepEqual(
+    orphans.map((o) => o.id),
+    ['keep'],
+  )
+})
+
+test('dismissOrphanProject appends the store id once', async () => {
+  const writes: Array<{ key: string; value: unknown }> = []
+  let dismissed: string[] = ['already']
+  const api = makeApi({
+    storageGet: async (key) => (key === 'dismissedOrphanStores' ? dismissed : null),
+    storageSet: async (key, value) => {
+      writes.push({ key, value })
+      if (key === 'dismissedOrphanStores' && Array.isArray(value)) {
+        dismissed = value.filter((id): id is string => typeof id === 'string')
+      }
+    },
+  })
+  await dismissOrphanProject(api, 'already')
+  await dismissOrphanProject(api, 'new-one')
+  assert.deepEqual(writes, [{ key: 'dismissedOrphanStores', value: ['already', 'new-one'] }])
+})
+
+test('recoverOrphanProject confirms, attaches the store, and clears dismiss', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    threads: [],
+  })
+  const writes: Array<{ key: string; value: unknown }> = []
+  let confirmed = false
+  const api = makeApi({
+    workspaceOpen: async () => '/recovered',
+    workspaceSet: async (path) => path,
+    loadProjectThreads: async () => [thread('t-orphan', 'Recovered')],
+    storageGet: async (key) => (key === 'dismissedOrphanStores' ? ['orphan'] : null),
+    storageSet: async (key, value) => {
+      writes.push({ key, value })
+    },
+  })
+  const ok = await recoverOrphanProject(store, api, 'orphan', async () => {
+    confirmed = true
+    return true
+  })
+  assert.equal(ok, true)
+  assert.equal(confirmed, true)
+  assert.ok(store.getState().projects.some((p) => p.id === 'orphan' && p.path === '/recovered'))
+  assert.deepEqual(
+    writes.filter((w) => w.key === 'dismissedOrphanStores'),
+    [{ key: 'dismissedOrphanStores', value: [] }],
+  )
+})
+
+test('recoverOrphanProject skips the folder picker when confirm returns false', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    threads: [],
+  })
+  let opened = 0
+  const api = makeApi({
+    workspaceOpen: async () => {
+      opened += 1
+      return '/nope'
+    },
+  })
+  const ok = await recoverOrphanProject(store, api, 'orphan', async () => false)
+  assert.equal(ok, false)
+  assert.equal(opened, 0)
+  assert.equal(store.getState().projects.length, 1)
+})
+
 
 test('paginateSidebarThreads hides Show more when all threads fit', () => {
   const threads = Array.from({ length: 8 }, (_, i) => thread(`t-${String(i)}`))

@@ -647,4 +647,11 @@ export interface OrphanProjectStore {
   id: string
   /** How many thread directories the store holds. */
   threadCount: number
+  /**
+   * Up to a few recent thread titles from the store catalog, newest first.
+   * Empty when the catalog has no usable titles yet.
+   */
+  sampleTitles: string[]
+  /** Newest catalog `updatedAt` in the store, or null when unknown. */
+  updatedAt: number | null
 }

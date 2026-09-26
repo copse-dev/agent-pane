@@ -35,6 +35,7 @@ import {
   createNewProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
+  dismissOrphanProject,
   listOrphanProjects,
   paginateSidebarThreads,
   projectDisplayName,
@@ -47,6 +48,7 @@ import {
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
 import { createThreadFilter } from '../controller/thread-filter.ts'
@@ -493,6 +495,51 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   // Orphaned thread stores (dirs with threads but no project entry) surfaced so
   // they can be re-attached instead of recovered by hand (#997).
+  function orphanPrimaryLabel(orphan: OrphanProjectStore): string {
+    const lead = orphan.sampleTitles[0]?.trim()
+    if (lead) return lead
+    const count = orphan.threadCount
+    return `${String(count)} thread${count === 1 ? '' : 's'}`
+  }
+
+  function orphanSubtitle(orphan: OrphanProjectStore): string {
+    const count = orphan.threadCount
+    const countLabel = `${String(count)} thread${count === 1 ? '' : 's'}`
+    const extra = orphan.sampleTitles.slice(1).filter((title) => title.trim().length > 0)
+    if (extra.length === 0) return countLabel
+    const shown = extra.slice(0, 2).join(' · ')
+    const more = orphan.threadCount > orphan.sampleTitles.length
+      ? ` · +${String(orphan.threadCount - orphan.sampleTitles.length)} more`
+      : ''
+    return `${countLabel} · ${shown}${more}`
+  }
+
+  function orphanRecoverDetail(orphan: OrphanProjectStore): string {
+    const lines: string[] = [
+      'Choose the folder this conversation belonged to. Copse will attach the saved threads to that project.',
+    ]
+    if (orphan.sampleTitles.length > 0) {
+      lines.push('')
+      lines.push('Threads in this store:')
+      for (const title of orphan.sampleTitles) {
+        lines.push(`• ${title}`)
+      }
+      if (orphan.threadCount > orphan.sampleTitles.length) {
+        lines.push(
+          `• …and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`,
+        )
+      }
+    } else {
+      lines.push('')
+      lines.push(
+        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? '' : 's'}.`,
+      )
+    }
+    lines.push('')
+    lines.push(`Store id: ${orphan.id}`)
+    return lines.join('\n')
+  }
+
   function renderOrphansSection(): HTMLElement {
     const section = el('div', { class: 'orphans-section' })
     section.append(
@@ -502,21 +549,67 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         warningIcon('ui-icon ui-icon-sm'),
         el('span', {}, 'Recoverable threads'),
       ),
+      el(
+        'p',
+        { class: 'orphans-hint' },
+        'Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk).',
+      ),
     )
     for (const orphan of orphans) {
-      const count = orphan.threadCount
+      const primary = orphanPrimaryLabel(orphan)
+      const subtitle = orphanSubtitle(orphan)
       const row = el(
         'div',
-        { class: 'orphan-row', title: `Store ${orphan.id}` },
-        el('span', { class: 'orphan-name' }, `${String(count)} thread${count === 1 ? '' : 's'}`),
+        {
+          class: 'orphan-row',
+          title: `Store ${orphan.id}`,
+          'data-orphan-id': orphan.id,
+        },
+        el(
+          'div',
+          { class: 'orphan-copy' },
+          el('span', { class: 'orphan-name' }, primary),
+          el('span', { class: 'orphan-meta' }, subtitle),
+        ),
       )
+      const actions = el('div', { class: 'orphan-actions' })
+      const dismissBtn = el(
+        'button',
+        { type: 'button', class: 'orphan-dismiss-btn', title: 'Hide this store from the list' },
+        'Dismiss',
+      )
+      dismissBtn.addEventListener('click', () => {
+        void dismissOrphanProject(api, orphan.id)
+          .then(() => {
+            orphans = orphans.filter((entry) => entry.id !== orphan.id)
+            render()
+            showToast('Recoverable threads hidden. They remain on disk.')
+          })
+          .catch((err: unknown) => {
+            showErrorToast('Could not dismiss recoverable threads', err)
+          })
+      })
       const recoverBtn = el('button', { type: 'button', class: 'orphan-recover-btn' }, 'Recover…')
       recoverBtn.addEventListener('click', () => {
-        void recoverOrphanProject(store, api, orphan.id).catch((err: unknown) => {
-          showErrorToast('Could not recover threads', err)
-        })
+        void recoverOrphanProject(store, api, orphan.id, () =>
+          showConfirmDialog({
+            message: `Recover “${primary}”?`,
+            detail: orphanRecoverDetail(orphan),
+            confirmLabel: 'Choose folder…',
+            cancelLabel: 'Cancel',
+          }),
+        )
+          .then((recovered) => {
+            if (!recovered) return
+            orphans = orphans.filter((entry) => entry.id !== orphan.id)
+            render()
+          })
+          .catch((err: unknown) => {
+            showErrorToast('Could not recover threads', err)
+          })
       })
-      row.append(recoverBtn)
+      actions.append(dismissBtn, recoverBtn)
+      row.append(actions)
       section.append(row)
     }
     return section
@@ -529,7 +622,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           next.length !== orphans.length ||
           next.some((o, i) => {
             const prev = orphans[i]
-            return !prev || o.id !== prev.id || o.threadCount !== prev.threadCount
+            return (
+              !prev ||
+              o.id !== prev.id ||
+              o.threadCount !== prev.threadCount ||
+              o.updatedAt !== prev.updatedAt ||
+              o.sampleTitles.join('\0') !== prev.sampleTitles.join('\0')
+            )
           })
         orphans = next
         if (changed) render()

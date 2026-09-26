@@ -15,6 +15,12 @@
  * read and overwrite in `config.json`, so keep the list to state the renderer
  * genuinely owns.
  */
-export const RENDERER_STORAGE_KEYS = ['projects', 'projectGroups', 'activeProjectId'] as const
+export const RENDERER_STORAGE_KEYS = [
+  'projects',
+  'projectGroups',
+  'activeProjectId',
+  // Orphan store ids the user hid from the Recoverable threads list (still on disk).
+  'dismissedOrphanStores',
+] as const
 
 export type RendererStorageKey = (typeof RENDERER_STORAGE_KEYS)[number]

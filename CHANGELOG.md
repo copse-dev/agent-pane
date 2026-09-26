@@ -8,6 +8,11 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
+- Recoverable threads in the projects sidebar are easier to deal with when a
+  store no longer matters. Each row shows a recent thread title instead of only
+  a count, Recover… opens a short summary before the folder picker, and Dismiss
+  hides the row while leaving the chats on disk.
+
 - The update prompt now lists what changed in every release since the one you
   are running, newest first, instead of only naming the new version. Skipping a
   few weekly betas no longer means missing their notes; an "All release notes"
