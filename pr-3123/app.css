@@ -1576,7 +1576,9 @@ copse-ui-field input[type=password],
 }
 .file-tree-host {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg-elevated);
   min-height: 0;
 }
@@ -2826,9 +2828,6 @@ copse-ui-field input[type=password],
   border-right: 1px solid var(--border);
   background: var(--bg-elevated);
 }
-.sidebar-header-compact {
-  justify-content: flex-end;
-}
 .sidebar-refresh {
   display: inline-flex;
   align-items: center;
@@ -2837,6 +2836,7 @@ copse-ui-field input[type=password],
 }
 .file-tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--spacing-xs) 0;
 }

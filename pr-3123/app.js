@@ -89429,7 +89429,8 @@ function mountFileTree(root, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "pane-header sidebar-header-compact" },
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Explorer"),
     panePopoutButton(store2, api2, "explorer", "explorer"),
     paneMaximizeButton(store2, "explorer"),
     refreshBtn
