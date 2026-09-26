@@ -24952,16 +24952,6 @@ function warningIcon(className = DEFAULT) {
     className
   );
 }
-function lockIcon(className = DEFAULT) {
-  return outlineIcon(
-    "lock",
-    [
-      "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z",
-      "M7 11V7a5 5 0 0 1 10 0v4"
-    ],
-    className
-  );
-}
 function searchIcon(className = DEFAULT) {
   return outlineIcon(
     "search",
@@ -28098,6 +28088,30 @@ var init_demo_scenarios = __esm({
         vncDiscoveredPorts: [5900, 5901, 5902]
       },
       {
+        id: "vnc-saved-login",
+        label: "Remote desktop device with a saved login in a narrow rail",
+        project: project("demo-vnc-saved-login-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          vncEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-vnc-saved-login-thread",
+            title: "Remote desktop",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        vncDiscoveredPorts: [5900],
+        vncSavedLogin: { username: "saved-user" }
+      },
+      {
         id: "inline-thread-reference",
         label: "Inline thread reference chip geometry",
         project: project("demo-inline-thread-project"),
@@ -29106,10 +29120,10 @@ function createDemoApi(scenario, options = {}) {
       discover: () => resolved([...scenario.vncDiscoveredPorts ?? []]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
-      getUsername: () => resolved(null),
+      getUsername: () => resolved(scenario.vncSavedLogin?.username ?? null),
       getPassword: () => resolved(null),
-      hasPassword: () => resolved(false),
-      canStoreCredentials: () => resolved(false),
+      hasPassword: () => resolved(scenario.vncSavedLogin !== void 0),
+      canStoreCredentials: () => resolved(scenario.vncSavedLogin !== void 0),
       rememberUsername: () => resolved(false),
       rememberPassword: () => resolved(false),
       forgetPassword: resolvedVoid,
@@ -59150,7 +59164,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
 }
 function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.replaceChildren();
-  const heading = document.createElement("h3");
+  const heading = document.createElement("h4");
   heading.className = "usage-plan-heading";
   heading.textContent = "Subscription plan limits";
   host.append(heading);
@@ -59188,7 +59202,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
 }
 function renderPlanWorthItSection(host, payload, error62, opts) {
   host.replaceChildren();
-  const heading = document.createElement("h3");
+  const heading = document.createElement("h4");
   heading.className = "usage-worth-heading";
   heading.textContent = "Is your plan worth it?";
   host.append(heading);
@@ -59370,7 +59384,7 @@ function createUsageSection(api2, store2, onRequestClose) {
     <div class="usage-plan-section" id="usage-plan-section"></div>
     <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
-      <h3 class="usage-ledger-heading">Local usage ledger</h3>
+      <h4 class="usage-ledger-heading">Local usage ledger</h4>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
         <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
         <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
@@ -59982,7 +59996,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
-  const formTitle = el("h3", { class: "automation-form-title" }, "New automation");
+  const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -93055,7 +93069,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-warnings" },
-          el("h3", {}, "Needs your attention"),
+          el("h4", {}, "Needs your attention"),
           el("ul", {}, ...run2.warnings.map((warning) => el("li", {}, warning)))
         )
       );
@@ -93076,7 +93090,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-egress" },
-          el("h3", {}, "Egress"),
+          el("h4", {}, "Egress"),
           el(
             "ul",
             {},
@@ -93099,7 +93113,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-deferrals" },
-          el("h3", {}, `Waiting for your review (${String(result.deferrals.length)})`),
+          el("h4", {}, `Waiting for your review (${String(result.deferrals.length)})`),
           el(
             "ul",
             {},
@@ -93120,7 +93134,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-denials" },
-          el("h3", {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el("h4", {}, `Refused by the container policy (${String(result.denials.length)})`),
           el(
             "ul",
             {},
@@ -93142,7 +93156,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           "section",
           { class: "container-run-section container-run-commits" },
           el(
-            "h3",
+            "h4",
             {},
             run2.record?.carryOut.ref === null || run2.record?.carryOut.ref === void 0 ? "Commits the guest made (not fetched)" : `Commits on ${run2.record.carryOut.ref}`
           ),
@@ -93155,13 +93169,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section" },
-          el("h3", {}, "The agent said"),
+          el("h4", {}, "The agent said"),
           el("p", {}, result.finalText)
         )
       );
     }
     const log = el("pre", { class: "container-run-log" }, run2.log.join("\n"));
-    sections.push(el("section", { class: "container-run-section" }, el("h3", {}, "Log"), log));
+    sections.push(el("section", { class: "container-run-section" }, el("h4", {}, "Log"), log));
     const close = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-secondary container-run-close" },
@@ -108570,7 +108584,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       el(
         "div",
         { class: "pr-viewer-title-row" },
-        el("h3", { class: "pr-viewer-title" }, prDetails.title),
+        el("h4", { class: "pr-viewer-title" }, prDetails.title),
         badges
       ),
       el(
@@ -108765,7 +108779,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el(
           "div",
           { class: "pr-viewer-title-row" },
-          el("h3", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
+          el("h4", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
         ),
         el(
           "div",
@@ -128223,9 +128237,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   const authPanel = el(
     "div",
     { class: "vnc-auth-panel", "aria-label": "Screen Sharing authentication", hidden: true },
-    // Gutter marker. The panel used to be edged with an accent rail; the icon
-    // column replaces it, so the title and the body start at the same inset.
-    lockIcon("ui-icon vnc-auth-icon"),
+    // Gutter marker: the same severity dot as the status line below, so
+    // "Authentication required" and "Authentication failed" read as one
+    // recipe. Decorative — the title says the same thing.
+    el("span", { class: "vnc-status-dot", "aria-hidden": "true" }),
     el("div", { class: "vnc-auth-title" }, "Authentication required"),
     authDescription,
     usernameField,
@@ -128247,9 +128262,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "button",
     {
       type: "button",
-      class: "vnc-setup-forget-login"
+      class: "ui-btn ui-btn-ghost vnc-setup-forget-login"
     },
-    "Forget login"
+    "Forget saved login"
   );
   const savedLoginCopy = el("span", { class: "vnc-saved-login-copy" });
   const savedLoginDetails = el(
