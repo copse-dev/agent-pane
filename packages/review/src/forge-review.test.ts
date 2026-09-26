@@ -596,3 +596,158 @@ it('keeps reported hosting providers inside review details and does not infer mi
   })
   assert.match(withoutHosts.body, /Hosting provider: not reported by the service/)
 })
+
+describe('posting only what is new', () => {
+  interface Call {
+    readonly method: string
+    readonly url: string
+    readonly body: unknown
+  }
+
+  // A GitHub where PR #50 is open and already carries a bot comment raising
+  // `anchored` in other words; a human quoted the same text on PR #51.
+  function github(options: { failLookup?: boolean; humanOnly?: boolean } = {}): {
+    fetch: FetchLike
+    calls: Call[]
+  } {
+    const calls: Call[] = []
+    const json = (value: unknown, status = 200): ReturnType<FetchLike> =>
+      Promise.resolve({ status, text: () => Promise.resolve(JSON.stringify(value)) })
+    // Rendered exactly as posted, with the claim worded as another run might word it.
+    const raised = (claim: string, pr: number, type: string): Record<string, unknown> => ({
+      path: 'src/math.ts',
+      html_url: `https://github.com/copse-dev/agent-pane/pull/${String(pr)}#discussion_r1`,
+      pull_request_url: `https://api.github.com/repos/copse-dev/agent-pane/pulls/${String(pr)}`,
+      user: { type },
+      body: renderFindingComment({ ...anchored, claim }),
+    })
+    const fetch: FetchLike = (url, init) => {
+      calls.push({
+        method: init.method,
+        url,
+        body: init.body === undefined ? undefined : JSON.parse(init.body),
+      })
+      if (init.method === 'GET' && url.includes('/pulls?state=open')) {
+        return options.failLookup
+          ? json({ message: 'nope' }, 500)
+          : json([{ number: 50 }, { number: 51 }, { number: 42 }])
+      }
+      if (init.method === 'GET' && url.includes('/pulls/comments?')) {
+        if (options.humanOnly === true) return json([raised(anchored.claim, 51, 'User')])
+        return json([
+          raised(
+            'The add function subtracts its second argument rather than adding it.',
+            50,
+            'Bot',
+          ),
+          raised('Unrelated: the logger drops its last line on exit.', 50, 'Bot'),
+          raised(unanchored.claim, 51, 'User'),
+        ])
+      }
+      if (init.method === 'GET' && /\/pulls\/42\/reviews\?/.test(url)) {
+        return json([
+          {
+            id: 1,
+            user: { login: 'copse-bot[bot]', type: 'Bot' },
+            body: `old <!-- copse-review:${'c'.repeat(40)} -->`,
+          },
+          {
+            id: 2,
+            user: { login: 'someone', type: 'User' },
+            body: `quote <!-- copse-review:${'c'.repeat(40)} -->`,
+          },
+        ])
+      }
+      if (init.method === 'POST' && url.endsWith('/reviews')) {
+        return json({
+          id: 9,
+          html_url: 'https://github.com/r/pull/42#pullrequestreview-9',
+          user: { login: 'copse-bot[bot]' },
+        })
+      }
+      return json([])
+    }
+    return { fetch, calls }
+  }
+
+  const post = (calls: readonly Call[]): Call | undefined =>
+    calls.find((call) => call.method === 'POST' && call.url.endsWith('/pulls/42/reviews'))
+
+  it('leaves out a finding another open pull request already raised, and says where', async () => {
+    const { fetch, calls } = github()
+    const posted = await postForgeReview(target, report(), {
+      toolVersion: 'test',
+      fetch,
+      skipWhenEmpty: true,
+      skipRaisedElsewhere: true,
+      now: () => Date.parse('2026-09-25T18:00:00Z'),
+    })
+    assert.equal(posted.repeatedElsewhere, 1)
+    assert.equal(posted.notPosted, undefined)
+    const body = JSON.stringify(post(calls)?.body)
+    assert.doesNotMatch(body, /add subtracts/, 'the repeated finding is not posted again')
+    assert.match(body, /pnpm run test/, 'an unrelated finding is kept')
+    assert.match(body, /1 more already raised on \[#50\]/)
+    assert.ok(calls.some((call) => call.url.includes('since=2026-08-26T18:00:00.000Z')))
+  })
+
+  it('posts nothing when nothing is left, and marks earlier reviews resolved only after a complete run', async () => {
+    const complete = github()
+    const onlyRepeated = report({ findings: [anchored] })
+    const resolved = await postForgeReview(target, onlyRepeated, {
+      toolVersion: 'test',
+      fetch: complete.fetch,
+      skipWhenEmpty: true,
+      skipRaisedElsewhere: true,
+    })
+    assert.equal(resolved.notPosted, 'no findings')
+    assert.equal(post(complete.calls), undefined)
+    assert.equal(resolved.superseded, 1)
+    const edits = complete.calls.filter((call) => call.method === 'PUT')
+    assert.deepEqual(
+      edits.map((call) => call.url.split('/').pop()),
+      ['1'],
+      'only the bot review',
+    )
+    assert.match(
+      JSON.stringify(edits[0]?.body),
+      /Resolved: a newer review of `b{12}` raised no new issues/,
+    )
+
+    const failed = github()
+    const incomplete = report({
+      findings: [],
+      reviews: report().reviews.map((review) => ({ ...review, outcome: 'failed' })),
+    })
+    const kept = await postForgeReview(target, incomplete, {
+      toolVersion: 'test',
+      fetch: failed.fetch,
+      skipWhenEmpty: true,
+    })
+    assert.equal(kept.notPosted, 'no findings')
+    assert.equal(kept.superseded, undefined)
+    assert.deepEqual(failed.calls, [], 'a failed run neither posts nor hides earlier findings')
+  })
+
+  it("never lets a person's comment suppress a finding, however closely it quotes one", async () => {
+    const { fetch, calls } = github({ humanOnly: true })
+    const posted = await postForgeReview(target, report(), {
+      toolVersion: 'test',
+      fetch,
+      skipRaisedElsewhere: true,
+    })
+    assert.equal(posted.repeatedElsewhere, undefined)
+    assert.match(JSON.stringify(post(calls)?.body), /add subtracts/)
+  })
+
+  it('keeps every finding when the lookup of other pull requests fails', async () => {
+    const { fetch, calls } = github({ failLookup: true })
+    const posted = await postForgeReview(target, report(), {
+      toolVersion: 'test',
+      fetch,
+      skipRaisedElsewhere: true,
+    })
+    assert.match(posted.repeatLookupError ?? '', /500/)
+    assert.match(JSON.stringify(post(calls)?.body), /add subtracts/)
+  })
+})
