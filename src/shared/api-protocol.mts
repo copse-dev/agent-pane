@@ -47,4 +47,7 @@
 // v20 conservatively versions the optional appended system-reminder lengths on tool
 // results (`tool_result` chunks and thread tool calls). v18 and v19 are claimed by
 // open PRs, so this skips them to avoid a collision whichever lands first.
-export const API_PROTOCOL_VERSION = 20 as const
+// v25 conservatively versions deferred thread worktrees: the optional `deferredWorktree` on
+// threads and prepared checkouts, the `on-write` project mode, and the `thread_checkout`
+// agent chunk. v21–v24 are claimed by open PRs, so this skips them.
+export const API_PROTOCOL_VERSION = 25 as const
