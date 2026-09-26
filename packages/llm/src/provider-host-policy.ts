@@ -12,11 +12,13 @@ import {
 } from './credential-url.ts'
 import { BUILTIN_EXTRA_PROVIDERS, isLocalBaseUrl } from './extra-providers.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
+import { hostedClassifierPresets } from './classifiers/presets.ts'
 
-/** Hardcoded first-party provider hosts (not part of BUILTIN_EXTRA_PROVIDERS). */
+/**
+ * Hardcoded first-party provider hosts (not part of BUILTIN_EXTRA_PROVIDERS).
+ * Hosted classifier presets are added from their own definitions.
+ */
 const FIRST_PARTY_PROVIDER_HOSTS = [
-  'api.typesafe.ai',
-  'api.featherless.ai',
   'api.anthropic.com',
   'api.openai.com',
   'api.cursor.com',
@@ -71,6 +73,9 @@ export function builtinProviderHosts(): Set<string> {
   }
   for (const host of FIRST_PARTY_PROVIDER_HOSTS) {
     hosts.add(normalizeHostname(host))
+  }
+  for (const connection of hostedClassifierPresets()) {
+    hosts.add(providerHostKey(connection.baseUrl))
   }
   return hosts
 }
