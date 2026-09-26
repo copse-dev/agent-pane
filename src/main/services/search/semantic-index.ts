@@ -4,7 +4,7 @@ import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { getBundledGortexPath } from './bundled-semantic.ts'
 import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
-import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
+import { computeGitIgnoreExcludes, redundantExcludePatterns } from './git-derived-excludes.ts'
 import {
   isCommandTimeoutError,
   runCommand,
@@ -279,6 +279,12 @@ function gortexRunOpts(
 
 /** How long to wait for a freshly-spawned daemon to bind its socket. */
 const DAEMON_READY_TIMEOUT_MS = 10_000
+/**
+ * Ceiling on `daemon restart`: its stop half blocks until the old daemon has
+ * written its final snapshot and released the store lock, which takes longer
+ * than a search for a multi-GB daemon.
+ */
+const DAEMON_RESTART_TIMEOUT_MS = 5 * 60_000
 /** Poll interval while waiting for the daemon socket after `daemon start`. */
 const DAEMON_READY_POLL_MS = 250
 
@@ -518,6 +524,48 @@ export function parseGortexExcludes(configYaml: string): string[] {
   return out
 }
 
+/**
+ * Drop the given patterns from the top-level `exclude:` block, leaving every
+ * other line (repos, other keys, exclude entries not named) byte-for-byte.
+ */
+export function removeGortexExcludes(configYaml: string, remove: ReadonlySet<string>): string {
+  let inExclude = false
+  return configYaml
+    .split('\n')
+    .filter((line) => {
+      if (/^\S/.test(line)) {
+        inExclude = /^exclude:\s*$/.test(line)
+        return true
+      }
+      if (!inExclude) return true
+      const match = line.match(/^\s*-\s*(.+?)\s*$/)
+      return !(match?.[1] && remove.has(match[1].trim()))
+    })
+    .join('\n')
+}
+
+/**
+ * Remove exclude entries a wildcard entry already covers (see
+ * {@link redundantExcludePatterns}), rewriting `config.yaml` atomically.
+ *
+ * @returns how many entries were removed
+ */
+async function pruneRedundantGortexExcludes(): Promise<number> {
+  const configPath = join(gortexHomeDir(), '.gortex', 'config.yaml')
+  let raw: string
+  try {
+    raw = await readFile(configPath, 'utf8')
+  } catch {
+    return 0
+  }
+  const redundant = new Set(redundantExcludePatterns(parseGortexExcludes(raw)))
+  if (redundant.size === 0) return 0
+  const tmpPath = `${configPath}.copse-prune`
+  await writeFile(tmpPath, removeGortexExcludes(raw, redundant), 'utf8')
+  await rename(tmpPath, configPath)
+  return redundant.size
+}
+
 async function readGortexExcludes(): Promise<Set<string>> {
   try {
     return new Set(
@@ -659,6 +707,25 @@ async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
     // otherwise the daemon needn't re-index at all.
     if (missing.length > 0) {
       await resetPreExcludeIndex(workspaceRoot)
+    }
+    // Earlier builds wrote one exclude per uniquely-named scratch dir; now that
+    // the covering glob is in place, drop them. gortex compiles its watcher and
+    // indexer matchers once at daemon start (`daemon reload` only re-reads the
+    // repo list), so a live daemon keeps matching every event against the old
+    // list until it restarts. Restart it once, here, rather than waiting for a
+    // reboot: `restart` keeps tracked repos and warm-starts from its snapshot.
+    const pruned = await pruneRedundantGortexExcludes().catch(() => 0)
+    if (pruned > 0 && (await verifiedGortexDaemonPid()) !== null) {
+      console.info(
+        `[copse-panel] pruned ${String(pruned)} redundant gortex excludes; restarting daemon`,
+      )
+      await runCommand(
+        gortexCmd(),
+        ['daemon', 'restart', '--no-progress'],
+        gortexRunOpts(workspaceRoot, { timeout_ms: DAEMON_RESTART_TIMEOUT_MS }),
+      ).catch(() => undefined)
+      gortexDaemonReady = null
+      await ensureGortexDaemon(workspaceRoot)
     }
   })()
 

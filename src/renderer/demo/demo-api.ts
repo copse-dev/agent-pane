@@ -676,7 +676,19 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     },
     updatePrompt: {
       respond: resolvedVoid,
-      onRequest: subscribe,
+      onRequest: (handler) => {
+        for (const { changelog, buttons, ...rest } of scenario.updatePromptRequests ?? []) {
+          const request = {
+            ...structuredClone(rest),
+            buttons: [...buttons],
+            ...(changelog ? { changelog: changelog.map((entry) => ({ ...entry })) } : {}),
+          }
+          setTimeout(() => {
+            handler(request)
+          }, 0)
+        }
+        return (): void => undefined
+      },
       onDevNotice: subscribe,
     },
     closeConfirm: {

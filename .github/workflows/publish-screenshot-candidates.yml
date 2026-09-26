@@ -19,6 +19,13 @@ name: Publish screenshot candidates
 # the full reference set; the result reaches this workflow like any other
 # candidate set. No code path here opens a PR or mints an App token.
 #
+# Review is blocking. Every eligible head gets a `Screenshot review` commit
+# status, which the default-branch ruleset requires: pending while candidates
+# await a decision, success when there are none. The `accept-screenshots` and
+# `decline-screenshots` labels record the decision
+# (screenshot-review-labels.yml); a push starts a new review, because statuses
+# belong to one SHA.
+#
 # `workflow_run` is deliberately used instead of adding a
 # write token to the job that executes pull-request code. Nothing from the
 # checkout is ever executed here; the candidate PNGs are validated as data.
@@ -51,6 +58,7 @@ jobs:
       actions: read
       contents: write
       pull-requests: write
+      statuses: write
     steps:
       - name: Resolve the live parent PR and exact artifact
         id: discover
@@ -82,6 +90,17 @@ jobs:
             const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const sameRepository = parent.head.repo?.full_name === `${owner}/${repo}`;
             const integrationHead = parent.head.ref === 'main' || parent.head.ref === 'release';
+            // Promotion and merge-back PRs carry commits whose screenshots were
+            // reviewed on their source PRs; their review gate passes unasked.
+            if (
+              parent.state === 'open' &&
+              sameRepository &&
+              integrationHead &&
+              parent.head.sha === runHeadSha
+            ) {
+              core.setOutput('gate-sha', runHeadSha);
+              core.setOutput('integration', 'true');
+            }
             if (
               parent.state !== 'open' ||
               !sameRepository ||
@@ -113,6 +132,7 @@ jobs:
             core.setOutput('eligible', 'true');
             core.setOutput('parent-number', String(number));
             core.setOutput('head-sha', runHeadSha);
+            core.setOutput('gate-sha', runHeadSha);
             // A separate prefix: `screenshots/pr-<N>/` belonged to the retired
             // review PRs, whose legacy cleanup still matches on it.
             core.setOutput(
@@ -219,7 +239,8 @@ jobs:
                   echo "::error::Invalid screenshot candidate path: $relative"
                   exit 1
                 fi
-                size="$(stat -c '%s' "$path")"
+                # wc -c, not GNU stat -c, so the step's unit test also runs on macOS.
+                size="$(wc -c < "$path" | tr -d ' ')"
                 signature="$(head -c 8 "$path" | od -An -t x1 | tr -d ' \n')"
                 if [ "$signature" != '89504e470d0a1a0a' ]; then
                   echo "::error::Candidate is not a PNG: $relative"
@@ -344,6 +365,68 @@ jobs:
           # The parent comment pins its "after" images to this immutable commit.
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
+      # The blocking review gate, set before the best-effort cleanup below so a
+      # cleanup error cannot leave the head without it. Statuses belong to one
+      # SHA, so no decision outlives the head it was made on. A decision already
+      # recorded for this head is kept: the `labeled` event that carried it
+      # re-runs CI on the same head, and that run's candidates must not reopen
+      # the review. The last step below fails the gate closed if this job
+      # breaks before reaching here.
+      - name: Gate the parent on screenshot review
+        id: gate
+        if: steps.discover.outputs.gate-sha != ''
+        uses: actions/github-script@v9
+        env:
+          PARENT_NUMBER: ${{ steps.discover.outputs.parent-number }}
+          GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
+          INTEGRATION: ${{ steps.discover.outputs.integration }}
+          CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const statusContext = 'Screenshot review';
+            const sha = process.env.GATE_SHA;
+            const count = Number(process.env.CANDIDATE_COUNT) || 0;
+            const number = Number(process.env.PARENT_NUMBER);
+            const setStatus = (state, description) =>
+              github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha,
+                state,
+                context: statusContext,
+                description,
+                ...(number > 0 ? { target_url: `https://github.com/${owner}/${repo}/pull/${number}` } : {}),
+              });
+
+            if (process.env.INTEGRATION === 'true') {
+              await setStatus('success', 'Integration branch: screenshots were reviewed on the source PRs');
+              return;
+            }
+            // Newest first, so the first match is the current state.
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner,
+              repo,
+              ref: sha,
+              per_page: 100,
+            });
+            const latest = statuses.find((status) => status.context === statusContext);
+            if (latest?.state === 'success' && /^(?:Accepted|Declined) by @/.test(latest.description ?? '')) {
+              core.info(`Keeping the recorded decision: ${latest.description}`);
+              core.setOutput('decision', latest.description);
+              return;
+            }
+            if (count === 0) {
+              await setStatus('success', 'No changed reference screenshots');
+              return;
+            }
+            const noun = count === 1 ? 'screenshot awaits' : 'screenshots await';
+            await setStatus(
+              'pending',
+              `${count} changed ${noun} review: label accept-screenshots or decline-screenshots`,
+            );
+            core.setOutput('pending', 'true');
+
       # Legacy cleanup. Earlier versions of this workflow opened PNG review PRs
       # from `screenshots/pr-<N>/` branches; nothing creates them any more, so
       # close any still open once the parent has a newer successful render.
@@ -452,6 +535,8 @@ jobs:
           COMPARE_COMMIT: ${{ steps.compare.outputs.commit }}
           CANDIDATE_NAMES: ${{ steps.candidates.outputs.names }}
           CANDIDATE_COUNT: ${{ steps.candidates.outputs.count }}
+          REVIEW_DECISION: ${{ steps.gate.outputs.decision }}
+          REVIEW_PENDING: ${{ steps.gate.outputs.pending }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         with:
@@ -576,6 +661,32 @@ jobs:
               : 'To re-render every reference into the compare branch, add `update-screenshots`, ' +
                 'then remove it after that run to avoid repeating full runs.';
             const commit = process.env.COMPARE_COMMIT || '';
+            const acceptable = compareUrl !== '' && /^[0-9a-f]{40}$/.test(commit);
+            // The blocking gate's state for this head, from the gate step.
+            // screenshot-review-labels.yml rewrites the text between the
+            // markers when a label records a decision.
+            const decision = (process.env.REVIEW_DECISION || '').replace(/[<>`]/g, '');
+            const reviewState = decision
+              ? [`**Reviewed:** ${decision}.`]
+              : process.env.REVIEW_PENDING === 'true'
+                ? [
+                    '**Review required.** The `Screenshot review` check blocks merging until a maintainer adds one label:',
+                    ...(acceptable
+                      ? [
+                          '- `accept-screenshots` commits every candidate: the PR branch is fast-forwarded to the ' +
+                            'compare commit, and CI re-runs on it without e2e.',
+                        ]
+                      : []),
+                    '- `decline-screenshots` passes the check and commits nothing. Use it for unrelated drift, or for ' +
+                      'references that belong in another PR.',
+                    '',
+                    'Committing reviewed PNGs yourself also works: a screenshot-only commit re-runs CI without e2e. ' +
+                      'Any push starts a new review.',
+                  ]
+                : [];
+            const review = reviewState.length
+              ? ['<!-- copse-screenshot-review-state -->', ...reviewState, '<!-- /copse-screenshot-review-state -->', '']
+              : [];
             let body;
             if (process.env.ARTIFACT_ID) {
               const artifactUrl = `${process.env.RUN_URL}/artifacts/${process.env.ARTIFACT_ID}`;
@@ -585,7 +696,8 @@ jobs:
                 marker,
                 '### Screenshot evidence',
                 '',
-                ...(compareUrl && /^[0-9a-f]{40}$/.test(commit)
+                ...review,
+                ...(acceptable
                   ? [
                       `**[View the changed reference screenshots](${compareUrl})** for \`${sha12}\` in ` +
                         'GitHub’s image diff (2-up, swipe, onion skin).',
@@ -593,7 +705,7 @@ jobs:
                         'head and is never merged.',
                       ...table,
                       '',
-                      'To accept every candidate, cherry-pick the compare commit onto the PR branch:',
+                      'To accept every candidate locally instead, cherry-pick the compare commit onto the PR branch:',
                       '',
                       '```sh',
                       `git fetch origin ${process.env.COMPARE_BRANCH} && git cherry-pick ${commit}`,
@@ -639,3 +751,25 @@ jobs:
                 body,
               });
             }
+
+      # Fail the gate closed: a head whose evidence could not be validated or
+      # linked must not look reviewable, and a missing status reads as "waiting"
+      # rather than broken. `decline-screenshots` can still override it.
+      - name: Fail the screenshot review closed
+        if: failure() && steps.discover.outputs.gate-sha != '' && steps.gate.outcome != 'success'
+        uses: actions/github-script@v9
+        env:
+          GATE_SHA: ${{ steps.discover.outputs.gate-sha }}
+          PUBLISHER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: process.env.GATE_SHA,
+              state: 'error',
+              context: 'Screenshot review',
+              description: 'Screenshot evidence could not be published; see the publisher run',
+              target_url: process.env.PUBLISHER_RUN_URL,
+            });
