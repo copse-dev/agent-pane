@@ -28024,6 +28024,57 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "update-prompt-changelog",
+        label: "Update prompt listing every missed release",
+        project: project("demo-update-prompt-changelog-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-update-prompt-changelog-thread",
+            title: "Weekly release cadence",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        updatePromptRequests: [
+          {
+            id: "demo-update-prompt-changelog",
+            message: "Copse 0.1.0-beta.11 is available",
+            detail: "Download the update now? You can install it immediately once downloaded.",
+            changelog: [
+              {
+                version: "0.1.0-beta.11",
+                notes: [
+                  "- The Browser pane restores its tabs when Copse is reopened.",
+                  "- Tool calls that miss a numeric bound run at the cap instead of failing.",
+                  "",
+                  "## Known issues",
+                  "",
+                  "- Restored tabs do not keep their scroll position."
+                ].join("\n")
+              },
+              {
+                version: "0.1.0-beta.10",
+                // Release notes arrive over the network: markup must render inert.
+                notes: '- Faster `find_files` on large repositories.\n- <img src="x" onerror="document.body.dataset.pwned=1"><script>document.body.dataset.pwned=1<\/script>Hardened update checks.'
+              },
+              { version: "0.1.0-beta.9", notes: "" }
+            ],
+            changelogUrl: "https://github.com/copse-dev/copse-releases/releases",
+            buttons: ["Download", "Later"],
+            defaultIndex: 0,
+            cancelIndex: 1
+          }
+        ]
+      },
+      {
         id: "vnc-discovered-ports",
         label: "Remote desktop discovered-port list with one selected",
         project: project("demo-vnc-discovered-ports-project"),
@@ -28731,7 +28782,19 @@ function createDemoApi(scenario, options = {}) {
     },
     updatePrompt: {
       respond: resolvedVoid,
-      onRequest: subscribe,
+      onRequest: (handler) => {
+        for (const { changelog, buttons, ...rest } of scenario.updatePromptRequests ?? []) {
+          const request = {
+            ...structuredClone(rest),
+            buttons: [...buttons],
+            ...changelog ? { changelog: changelog.map((entry) => ({ ...entry })) } : {}
+          };
+          setTimeout(() => {
+            handler(request);
+          }, 0);
+        }
+        return () => void 0;
+      },
       onDevNotice: subscribe
     },
     closeConfirm: {
@@ -44484,7 +44547,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${current} (no key)` });
+      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
   const concreteCount = options.filter(
@@ -59087,7 +59150,7 @@ function renderPlanProvider(host, result, onClaudeSignIn) {
 }
 function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
   host.replaceChildren();
-  const heading = document.createElement("h3");
+  const heading = document.createElement("h4");
   heading.className = "usage-plan-heading";
   heading.textContent = "Subscription plan limits";
   host.append(heading);
@@ -59125,7 +59188,7 @@ function renderPlanSection(host, snapshot, error62, onClaudeSignIn) {
 }
 function renderPlanWorthItSection(host, payload, error62, opts) {
   host.replaceChildren();
-  const heading = document.createElement("h3");
+  const heading = document.createElement("h4");
   heading.className = "usage-worth-heading";
   heading.textContent = "Is your plan worth it?";
   host.append(heading);
@@ -59307,7 +59370,7 @@ function createUsageSection(api2, store2, onRequestClose) {
     <div class="usage-plan-section" id="usage-plan-section"></div>
     <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
-      <h3 class="usage-ledger-heading">Local usage ledger</h3>
+      <h4 class="usage-ledger-heading">Local usage ledger</h4>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
         <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
         <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
@@ -59919,7 +59982,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
-  const formTitle = el("h3", { class: "automation-form-title" }, "New automation");
+  const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -92992,7 +93055,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-warnings" },
-          el("h3", {}, "Needs your attention"),
+          el("h4", {}, "Needs your attention"),
           el("ul", {}, ...run2.warnings.map((warning) => el("li", {}, warning)))
         )
       );
@@ -93013,7 +93076,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-egress" },
-          el("h3", {}, "Egress"),
+          el("h4", {}, "Egress"),
           el(
             "ul",
             {},
@@ -93036,7 +93099,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-deferrals" },
-          el("h3", {}, `Waiting for your review (${String(result.deferrals.length)})`),
+          el("h4", {}, `Waiting for your review (${String(result.deferrals.length)})`),
           el(
             "ul",
             {},
@@ -93057,7 +93120,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section container-run-denials" },
-          el("h3", {}, `Refused by the container policy (${String(result.denials.length)})`),
+          el("h4", {}, `Refused by the container policy (${String(result.denials.length)})`),
           el(
             "ul",
             {},
@@ -93079,7 +93142,7 @@ function mountContainerRunControl(api2, context, onStateChanged) {
           "section",
           { class: "container-run-section container-run-commits" },
           el(
-            "h3",
+            "h4",
             {},
             run2.record?.carryOut.ref === null || run2.record?.carryOut.ref === void 0 ? "Commits the guest made (not fetched)" : `Commits on ${run2.record.carryOut.ref}`
           ),
@@ -93092,13 +93155,13 @@ function mountContainerRunControl(api2, context, onStateChanged) {
         el(
           "section",
           { class: "container-run-section" },
-          el("h3", {}, "The agent said"),
+          el("h4", {}, "The agent said"),
           el("p", {}, result.finalText)
         )
       );
     }
     const log = el("pre", { class: "container-run-log" }, run2.log.join("\n"));
-    sections.push(el("section", { class: "container-run-section" }, el("h3", {}, "Log"), log));
+    sections.push(el("section", { class: "container-run-section" }, el("h4", {}, "Log"), log));
     const close = el(
       "button",
       { type: "button", class: "ui-btn ui-btn-secondary container-run-close" },
@@ -108507,7 +108570,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       el(
         "div",
         { class: "pr-viewer-title-row" },
-        el("h3", { class: "pr-viewer-title" }, prDetails.title),
+        el("h4", { class: "pr-viewer-title" }, prDetails.title),
         badges
       ),
       el(
@@ -108702,7 +108765,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
         el(
           "div",
           { class: "pr-viewer-title-row" },
-          el("h3", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
+          el("h4", { class: "pr-viewer-title" }, `#${String(ref.number)} ${ref.owner}/${ref.repo}`)
         ),
         el(
           "div",
@@ -130957,8 +131020,16 @@ var init_ssh_prompt_dialog = __esm({
 function mountUpdatePromptDialog(api2) {
   const messageEl = el("h3", { class: "update-prompt-message" });
   const detailEl = el("p", { class: "update-prompt-detail" });
+  const changelogEl = el("section", { class: "update-prompt-changelog" });
   const buttonsEl = uiActions({ className: "update-prompt-buttons" });
-  const dialog2 = el("dialog", { id: "update-prompt-dialog" }, messageEl, detailEl, buttonsEl);
+  const dialog2 = el(
+    "dialog",
+    { id: "update-prompt-dialog" },
+    messageEl,
+    detailEl,
+    changelogEl,
+    buttonsEl
+  );
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
@@ -130983,6 +131054,8 @@ function mountUpdatePromptDialog(api2) {
       detailEl.textContent = "";
       detailEl.hidden = true;
     }
+    renderChangelog(changelogEl, active2);
+    dialog2.classList.toggle("has-changelog", !changelogEl.hidden);
     const defaultIndex = active2.defaultIndex ?? 0;
     buttonsEl.replaceChildren(
       ...active2.buttons.map((label, index) => {
@@ -131022,8 +131095,51 @@ function mountUpdatePromptDialog(api2) {
     );
   });
 }
+function renderChangelog(host, req) {
+  const entries2 = req.changelog ?? [];
+  if (entries2.length === 0) {
+    host.replaceChildren();
+    host.hidden = true;
+    return;
+  }
+  const heading = entries2.length === 1 ? "What's new" : `What's new in ${String(entries2.length)} releases`;
+  const list = el("div", { class: "update-prompt-changelog-list" });
+  for (const entry of entries2) {
+    const notes = el("div", { class: "update-prompt-notes message-text streaming-markdown" });
+    notes.innerHTML = renderMarkdown(entry.notes || "_No notes for this release._");
+    list.append(
+      el(
+        "article",
+        { class: "update-prompt-release", "data-version": entry.version },
+        el("h4", { class: "update-prompt-version" }, entry.version),
+        notes
+      )
+    );
+  }
+  const children = [
+    el("h4", { class: "update-prompt-changelog-title" }, heading),
+    list
+  ];
+  if (req.changelogUrl?.startsWith("https://") === true) {
+    children.push(
+      el(
+        "a",
+        {
+          class: "update-prompt-all-notes",
+          href: req.changelogUrl,
+          target: "_blank",
+          rel: "noopener noreferrer"
+        },
+        "All release notes"
+      )
+    );
+  }
+  host.replaceChildren(...children);
+  host.hidden = false;
+}
 var init_update_prompt_dialog = __esm({
   "src/renderer/views/update-prompt-dialog.ts"() {
+    init_dist();
     init_helpers();
     init_ui();
     init_toast();
