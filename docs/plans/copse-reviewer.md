@@ -1400,8 +1400,12 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
 - **Shape.** `packages/review/src/pr-summary.ts` renders a `> [!NOTE]` block between
   `<!-- copse-review-summary -->` and `<!-- /copse-review-summary -->`: **Low**, **Medium**
   or **High risk** and the reason, **Overview** as up to five points, and a footer naming the
-  commit and, when a review accompanies it, how many issues that review reported. Only a
-  complete marker pair is replaced, so an author who deletes the end marker never loses text.
+  commit and, when a review accompanies it, how many issues that review reported.
+- **Ownership.** Only the block the tool wrote is replaced: the last start marker whose next
+  marker is the end marker, each a whole line outside fenced code, with exactly the rendered
+  shape between them. A marker quoted in prose or a code fence, a marker pair the author
+  wrote, or a block the author edited is the author's text and is kept, and a new block is
+  appended at the bottom. Nothing else in the description changes.
 - **Generation.** One tool-free model turn over the Stage 1 context that must end in
   `write_summary`, with one repair turn if it ends in prose. The prompt tells the model to
   describe, not review. It reuses the review's model route; it adds no new trust boundary.

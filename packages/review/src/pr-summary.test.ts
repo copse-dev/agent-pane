@@ -179,11 +179,71 @@ describe('upsertSummaryBlock', () => {
     const second = upsertSummaryBlock(first, newer)
     assert.equal(second, `Text.\n\n${newer}`)
     assert.equal(upsertSummaryBlock(second, newer), second)
+    // Every shape the renderer writes is recognised as its own block.
+    const raised = renderSummaryBlock(applyEvidenceFloor(summary, report([finding('high')])), {
+      headCommit: null,
+      toolVersion: '1',
+      report: report([finding('high'), finding('low')]),
+    })
+    assert.equal(
+      upsertSummaryBlock(upsertSummaryBlock('Text.', raised), block),
+      `Text.\n\n${block}`,
+    )
   })
 
   it('keeps text after a start marker whose end marker the author deleted', () => {
     const edited = 'Text.\n\n<!-- copse-review-summary -->\nMy own notes.'
     assert.equal(upsertSummaryBlock(edited, block), `${edited}\n\n${block}`)
+  })
+
+  const START = '<!-- copse-review-summary -->'
+  const END = '<!-- /copse-review-summary -->'
+  const older = renderSummaryBlock(
+    { ...summary, risk: 'medium' },
+    { headCommit: 'c'.repeat(40), toolVersion: '1', report: null },
+  )
+
+  it('keeps an inline mention of the start marker and the text after it', () => {
+    const prose = `The summary sits between \`${START}\` markers.\n\n## Validation\n\nRan the tests.`
+    assert.equal(upsertSummaryBlock(`${prose}\n\n${older}`, block), `${prose}\n\n${block}`)
+  })
+
+  it('keeps an example block quoted in a code fence', () => {
+    for (const fence of ['```', '~~~~']) {
+      const prose = `Example:\n\n${fence}markdown\n${older}\n${fence}\n\n## Risk\n\nLow.`
+      assert.equal(upsertSummaryBlock(prose, block), `${prose}\n\n${block}`)
+      assert.equal(upsertSummaryBlock(`${prose}\n\n${older}`, block), `${prose}\n\n${block}`)
+    }
+  })
+
+  it('keeps text between a stray marker pair the author wrote', () => {
+    const prose = `Intro.\n${START}\nAuthor notes that must survive.\n${END}\nOutro.`
+    assert.equal(upsertSummaryBlock(prose, block), `${prose}\n\n${block}`)
+    assert.equal(upsertSummaryBlock(`${prose}\n\n${older}`, block), `${prose}\n\n${block}`)
+  })
+
+  it('keeps an author-edited block and the text between two start markers', () => {
+    const edited = older.replace('> **Overview**', '> My note inside the block.\n>\n> **Overview**')
+    assert.equal(upsertSummaryBlock(`Text.\n\n${edited}`, block), `Text.\n\n${edited}\n\n${block}`)
+    const stray = `Text.\n${START}\nMine.\n\n${older}`
+    assert.equal(upsertSummaryBlock(stray, block), `Text.\n${START}\nMine.\n\n${block}`)
+  })
+
+  it('replaces only the last bot block and keeps author text written after it', () => {
+    const body = `Text.\n\n${older}\n\nAdded later.`
+    assert.equal(upsertSummaryBlock(body, block), `Text.\n\nAdded later.\n\n${block}`)
+    const twice = `${older}\n\nMiddle.\n\n${older}`
+    assert.equal(upsertSummaryBlock(twice, block), `${older}\n\nMiddle.\n\n${block}`)
+    const pairAfter = `\n${START}\nMine.\n${END}`
+    assert.equal(
+      upsertSummaryBlock(`Text.\n\n${older}${pairAfter}`, block),
+      `Text.\n\n${pairAfter.trimStart()}\n\n${block}`,
+    )
+  })
+
+  it('finds its block in a description the web editor saved with CRLF', () => {
+    const crlf = `Text.\r\n\r\n${older.replaceAll('\n', '\r\n')}`
+    assert.equal(upsertSummaryBlock(crlf, block), `Text.\n\n${block}`)
   })
 })
 

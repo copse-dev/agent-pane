@@ -169,8 +169,9 @@ shell's hand-offs (Phase 4).
 - **`pr-summary.ts`** — the pull request's description summary (B4 as amended): one
   tool-free model turn over the Stage 1 context that must end in `write_summary` (a risk
   level, a one-sentence reason and a short overview), rendered as a `[!NOTE]` block between
-  `<!-- copse-review-summary -->` markers at the bottom of the description and replaced in
-  place. A surfaced high-severity finding raises the risk to High, and any finding raises Low
+  `<!-- copse-review-summary -->` markers at the bottom of the description. Each run
+  replaces only a block it wrote (whole-line markers outside code fences, the exact rendered
+  shape between them) and leaves the rest of the description untouched. A surfaced high-severity finding raises the risk to High, and any finding raises Low
   to Medium; the evidence never lowers it. Model prose is inert markdown, as in reviews, so a
   diff cannot forge the end marker. Posting reads the description and writes it back, and
   leaves a pull request whose head has moved past the summarised commit alone.
