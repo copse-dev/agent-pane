@@ -44492,7 +44492,7 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${current} (no key)` });
+      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
   const concreteCount = options.filter(
