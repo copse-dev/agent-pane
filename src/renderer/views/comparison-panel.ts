@@ -43,7 +43,7 @@ function createDismissButton(onDismiss: () => void): HTMLButtonElement {
     'button',
     {
       type: 'button',
-      class: 'card-dismiss-button',
+      class: 'ui-btn ui-btn-secondary ui-btn-compact card-dismiss-button',
       'data-tooltip': 'Dismiss',
       'aria-label': 'Dismiss',
     },

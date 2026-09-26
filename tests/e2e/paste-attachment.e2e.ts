@@ -41,6 +41,14 @@ async function pasteIntoComposer(text: string): Promise<void> {
   await browser.action('key').down(Key.Ctrl).down('v').up('v').up(Key.Ctrl).perform()
 }
 
+/** A chip's rendered top-left corner radius (the kit's `--radius` is 6px). */
+async function chipCorner(selector: string): Promise<string | null> {
+  return browser.execute((target: string) => {
+    const chip = document.querySelector(target)
+    return chip instanceof HTMLElement ? getComputedStyle(chip).borderTopLeftRadius : null
+  }, selector)
+}
+
 describe('Pasting text into the composer', () => {
   let workspaceRoot = ''
 
@@ -94,6 +102,8 @@ describe('Pasting text into the composer', () => {
     await expect(layout?.prefix).toBe('Summarize this feedback: ')
     // The paste's full body is chip-internal state, never raw composer text.
     await expect(layout?.raw).not.toContain('The opening repeats')
+    // Attachment chips take the kit radius rather than a one-off 10px pill.
+    await expect(await chipCorner('.prompt-input .inline-paste-chip')).toBe('6px')
 
     await saveAppScreenshot(SCREENSHOT)
 
@@ -123,6 +133,11 @@ describe('Pasting text into the composer', () => {
     await sentChip.waitForExist({ timeout: 10_000 })
     await expect(await sentChip.$('svg[data-icon="paste"]').isExisting()).toBe(true)
     await expect(await sentChip.getText()).toContain('Editor feedback summary')
+    await expect(
+      await chipCorner(
+        '.messages-list .msg-user .transcript-attachment-chip.transcript-attachment-paste',
+      ),
+    ).toBe('6px')
     // The object-replacement placeholder that marks the paste position never
     // shows as literal text.
     await expect(await $('.messages-list .msg-user .message-text').getText()).not.toContain('￼')
