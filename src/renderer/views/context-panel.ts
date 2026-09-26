@@ -21,6 +21,7 @@ import {
 } from '../monaco/git-diff-viewer.ts'
 import type { MonacoSelectionSource, MonacoShortcutSource } from '../monaco/selection-to-chat.ts'
 import { showErrorToast } from './toast.ts'
+import { COPSE_MONACO_THEME } from '../dom/editor-theme.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import { canOpenWorkspaceFileInBrowser, openWorkspaceFileInBrowser } from '../controller/files.ts'
@@ -63,7 +64,6 @@ export interface ContextPanelMonaco extends GitDiffMonaco {
       options: Monaco.editor.IStandaloneDiffEditorConstructionOptions,
     ): GitDiffEditor
     createModel(value: string, language?: string, uri?: { toString(): string }): ContextPanelModel
-    setTheme(theme: string): void
   }
   KeyCode: { KeyL: number; KeyS: number }
   KeyMod: { CtrlCmd: number }
@@ -166,7 +166,6 @@ export function mountContextPanel(
             diffContainer,
             monaco,
             scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
-            store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
           )
           diffEditor = created
           registerMonacoSelectionToChatShortcut(created.getOriginalEditor(), monaco, () => {
@@ -277,7 +276,7 @@ export function mountContextPanel(
     automaticLayout: true,
     scrollBeyondLastLine: false,
     fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
-    theme: store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
+    theme: COPSE_MONACO_THEME,
   })
 
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -383,9 +382,6 @@ export function mountContextPanel(
         void api.fs.watch(owner.projectId, owner.threadId, openFile.path)
         watched = { ...owner, path: openFile.path }
       }
-    }),
-    store.on('theme_changed', (theme) => {
-      monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
   ]
 

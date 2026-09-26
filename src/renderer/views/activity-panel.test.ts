@@ -523,8 +523,16 @@ describe('activity panel', () => {
     review('approval:install')
     const view = qsRequired(rowFor('approval:install'), '.activity-review')
     assert.equal(qsRequired(view, '.activity-review-title').textContent, 'Run package install?')
-    assert.equal(qsRequired(view, '.approval-advice').textContent, advice)
-    assert.equal(qsRequired(view, '.approval-advice-item').textContent.startsWith('• '), true)
+    // The prompt's own rendering: the lead line as text, each reason a list item.
+    const adviceView = qsRequired(view, '.approval-advice')
+    assert.equal(
+      adviceView.firstChild?.textContent,
+      'The project sandbox would block this command:',
+    )
+    assert.deepEqual(
+      [...adviceView.querySelectorAll('.approval-reasons li')].map((item) => item.textContent),
+      ['Installs or updates packages, which downloads and runs code from the internet'],
+    )
     assert.equal(qsRequired(view, '.approval-body').textContent, 'npm install')
     assert.equal(qsRequired(view, '.approval-footer').textContent, 'Allow this install?')
   })
