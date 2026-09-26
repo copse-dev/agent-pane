@@ -50,6 +50,9 @@ describe('Process manager agent activity', function () {
       await dialog.$(`.process-manager-rows tr[data-thread-id="${threadId}"]`).isExisting(),
       false,
     )
+    // The chip is rounded with the base radius; it used to name `--radius-md`,
+    // which is not a token and computed to square corners (#3065).
+    assert.equal((await activity.getCSSProperty('border-top-left-radius')).value, '6px')
     await saveAppScreenshot('process-manager-agent-working.png')
 
     await dialog.$('[aria-label="Close process manager"]').click()
