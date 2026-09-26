@@ -144,6 +144,7 @@ const toolCallSchema = z.object({
   editStats: z.object({ additions: z.number(), deletions: z.number() }).optional(),
   kind: z.string().optional(),
   resultFormat: z.literal('markdown').optional(),
+  appendedReminderLengths: z.array(z.number().int().nonnegative()).min(1).optional(),
 })
 
 const messageSchema = z.object({
@@ -161,12 +162,15 @@ export function decodeGuestTranscript(value: unknown): SubagentMessage[] | null 
   if (!parsed.success) return null
   return parsed.data.map(({ createdAt, reasoning, toolCalls, ...message }) => ({
     ...message,
-    toolCalls: toolCalls.map(({ editStats, kind, resultFormat, ...toolCall }) => ({
-      ...toolCall,
-      ...(editStats !== undefined ? { editStats } : {}),
-      ...(kind !== undefined ? { kind } : {}),
-      ...(resultFormat !== undefined ? { resultFormat } : {}),
-    })),
+    toolCalls: toolCalls.map(
+      ({ editStats, kind, resultFormat, appendedReminderLengths, ...toolCall }) => ({
+        ...toolCall,
+        ...(editStats !== undefined ? { editStats } : {}),
+        ...(kind !== undefined ? { kind } : {}),
+        ...(resultFormat !== undefined ? { resultFormat } : {}),
+        ...(appendedReminderLengths !== undefined ? { appendedReminderLengths } : {}),
+      }),
+    ),
     ...(createdAt !== undefined ? { createdAt } : {}),
     ...(reasoning !== undefined ? { reasoning } : {}),
   }))
