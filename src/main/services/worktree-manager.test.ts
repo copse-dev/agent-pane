@@ -537,6 +537,51 @@ describe('worktree manager', () => {
     assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
   })
 
+  it('does not seed from the empty mount points another sandboxed command left behind', async () => {
+    const { repo } = await setup()
+    // What a concurrent Linux bwrap command materializes in the shared checkout.
+    await writeFile(join(repo, '.bashrc'), '')
+    await writeFile(join(repo, '.vscode'), '')
+    await mkdir(join(repo, '.claude'))
+    await writeFile(join(repo, '.claude', 'agents'), '')
+    const beforeStatus = git(repo, ['status', '--porcelain=v1', '-z'])
+    assert.notEqual(beforeStatus, '', 'fixture must look dirty to git')
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-mount-points',
+      projectRoot: repo,
+      prompt: 'Start from the clean project',
+      baseBranch: 'main',
+    })
+
+    assert.equal(worktree.seededFromDirtyProject, false)
+    await assert.rejects(lstat(join(worktree.path, '.bashrc')))
+    await assert.rejects(lstat(join(worktree.path, '.claude')))
+    assert.equal(git(repo, ['status', '--porcelain=v1', '-z']), beforeStatus)
+  })
+
+  it('still seeds real work stored beside or under a sandbox deny path', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.bashrc'), '')
+    await mkdir(join(repo, '.claude'))
+    await writeFile(join(repo, '.claude', 'settings.json'), '{"model":"local"}\n')
+
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-real-config',
+      projectRoot: repo,
+      prompt: 'Keep the local settings',
+      baseBranch: 'main',
+    })
+
+    assert.equal(worktree.seededFromDirtyProject, true)
+    assert.equal(
+      await readFile(join(worktree.path, '.claude', 'settings.json'), 'utf-8'),
+      '{"model":"local"}\n',
+    )
+  })
+
   it('refuses to seed dirty content the caller says belongs to another branch', async () => {
     const { repo } = await setup()
     await writeFile(join(repo, 'unstaged.txt'), 'work from another branch\n')
