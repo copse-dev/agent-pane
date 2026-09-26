@@ -120,6 +120,19 @@ describe('shared UI polish', () => {
     await expect(reasoning.$('.message-reasoning-title')).toHaveText('Reasoning…')
     await expect(reasoning.$('[data-icon="reasoning-activity"]')).toExist()
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    // Hiding the row starts its 0.2s collapse (conversation.css). WebDriver
+    // calls it hidden once its opacity reaches 0 at 0.15s, but `display` is a
+    // discrete transition that stays `flex` until 0.2s, so its spiral keeps a
+    // layout box for the last 50ms. Wait for the collapse to finish so the
+    // icon count below sees the settled transcript instead of that tail.
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const row = document.querySelector('.messages-list > .agent-activity')
+          return row !== null && row.getClientRects().length === 0
+        }),
+      { timeout: 10_000, timeoutMsg: 'the hidden activity row must finish collapsing' },
+    )
     // Freeze the animation through one cycle. Its dash pattern must be longer
     // than the path so retraction cannot wrap a repeated dash back onto the
     // beginning while the tail is still visible.
