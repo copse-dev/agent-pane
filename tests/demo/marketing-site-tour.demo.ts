@@ -40,6 +40,8 @@ describe('marketing site Tour anchor', () => {
     await expect($('.hero-copy a[href="https://github.com/copse-dev/agent-pane"]')).toBeDisplayed()
     await expect($('footer a[href="https://github.com/copse-dev/agent-pane"]')).toBeDisplayed()
     await expect($('.hero-badges .mode-source-live-only')).toHaveText('Free & open source')
+    // Its pre-launch twin stays hidden even though the badge rule sets a display.
+    await expect($('.hero-badges .mode-source-private-only')).not.toBeDisplayed()
 
     // The pre-launch stages stay wired, so putting the attribute back still
     // withholds every source link.
@@ -97,6 +99,36 @@ describe('marketing site Tour anchor', () => {
     await browser.saveScreenshot(
       join(E2E_SCREENSHOT_DIR, 'marketing-site-downloads-live-source-private.png'),
     )
+  })
+
+  it('keeps the hero icons icon-sized before styles.css applies', async () => {
+    await browser.setWindowSize(1280, 800)
+    await browser.url('/marketing/index.html')
+    await $('.hero-copy').waitForDisplayed()
+
+    // Firefox paints before a pending <head> stylesheet applies. The inline
+    // script after the link holds the parser until it does.
+    const guarded = await browser.execute(
+      () => document.querySelector('head link[href="styles.css"] + script:not([src])') !== null,
+    )
+    expect(guarded).toBe(true)
+
+    // Anything that still paints unstyled must not blow up to the viewport.
+    const unstyledIcons = await browser.execute(() => {
+      const sheets = Array.from(document.styleSheets).filter((sheet) =>
+        sheet.href?.endsWith('/styles.css'),
+      )
+      for (const sheet of sheets) sheet.disabled = true
+      const sizes = Array.from(document.querySelectorAll('body svg')).map((svg) => {
+        const rect = svg.getBoundingClientRect()
+        return Math.max(rect.width, rect.height)
+      })
+      for (const sheet of sheets) sheet.disabled = false
+      return { disabled: sheets.length, sizes }
+    })
+    expect(unstyledIcons.disabled).toBe(1)
+    expect(unstyledIcons.sizes.length).toBeGreaterThan(0)
+    for (const size of unstyledIcons.sizes) expect(size).toBeLessThanOrEqual(14)
   })
 
   it('places the floating nav just above the demo with the hero copy out of view', async () => {
