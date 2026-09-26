@@ -14,11 +14,16 @@ interface UiScaleSnapshot {
   spacingSmPx: string
   /** Resolved --font-size-2xs; no 10px surface is on screen in this fixture. */
   fontSize2xsPx: string
+  /** Resolved --font-size-sm (12px): pane-header titles, which this fixture does not open. */
+  fontSizeSmPx: string
   /** Composer footer (branch, context meter): an 11px chip before #3065. */
   inputFooterFontSize: string | null
   /** To-do card "3/3 done" summary: 11px. */
   todoSummaryFontSize: string | null
-  /** To-do card "TO-DOS" eyebrow: 12px. */
+  /**
+   * To-do card "TO-DOS" eyebrow: an in-pane group header, so it takes
+   * --group-header-font-size (--font-size-xs, 11px) per docs/ui-taste.md.
+   */
   todoHeaderFontSize: string | null
 }
 
@@ -34,6 +39,8 @@ async function uiScaleSnapshot(): Promise<UiScaleSnapshot | null> {
     probe.style.fontSize = 'var(--font-size-2xs)'
     const spacingSmPx = getComputedStyle(probe).width
     const fontSize2xsPx = getComputedStyle(probe).fontSize
+    probe.style.fontSize = 'var(--font-size-sm)'
+    const fontSizeSmPx = getComputedStyle(probe).fontSize
     probe.remove()
     const fontSizeOf = (selector: string): string | null => {
       const node = document.querySelector(selector)
@@ -44,6 +51,7 @@ async function uiScaleSnapshot(): Promise<UiScaleSnapshot | null> {
       bodyFontSize: getComputedStyle(body).fontSize,
       spacingSmPx,
       fontSize2xsPx,
+      fontSizeSmPx,
       inputFooterFontSize: fontSizeOf('.input-footer'),
       todoSummaryFontSize: fontSizeOf('.plugin-panel-summary'),
       todoHeaderFontSize: fontSizeOf('.plugin-panel-header'),
@@ -101,9 +109,10 @@ describe('interface scale (--ui-scale)', () => {
     expect(defaults?.bodyFontSize).toBe('14px')
     expect(defaults?.spacingSmPx).toBe('8px')
     expect(defaults?.fontSize2xsPx).toBe('10px')
+    expect(defaults?.fontSizeSmPx).toBe('12px')
     expect(defaults?.inputFooterFontSize).toBe('11px')
     expect(defaults?.todoSummaryFontSize).toBe('11px')
-    expect(defaults?.todoHeaderFontSize).toBe('12px')
+    expect(defaults?.todoHeaderFontSize).toBe('11px')
 
     const visualViewport = await visualViewportSnapshot()
     expect(visualViewport).not.toBeNull()
@@ -155,7 +164,8 @@ describe('interface scale (--ui-scale)', () => {
     // 12px * 1.25 = 15px, 10px * 1.25 = 12.5px. Raw px sizes stayed at 11/12/10.
     expect(scaled?.inputFooterFontSize).toBe('13.75px')
     expect(scaled?.todoSummaryFontSize).toBe('13.75px')
-    expect(scaled?.todoHeaderFontSize).toBe('15px')
+    expect(scaled?.todoHeaderFontSize).toBe('13.75px')
+    expect(scaled?.fontSizeSmPx).toBe('15px')
     expect(scaled?.fontSize2xsPx).toBe('12.5px')
     await saveAppScreenshot('ui-scale-125.png')
     await saveElementScreenshot('.input-footer', 'ui-scale-125-composer-footer.png')

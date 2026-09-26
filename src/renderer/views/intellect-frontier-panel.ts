@@ -42,6 +42,7 @@ import {
   listIntellectScoredModelIds,
   resolveIntellectModelId,
   INTELLECT_ATTRIBUTION,
+  type IntellectDerivationStep,
 } from '@copse/llm/model-intellect.ts'
 import { liveIntellectCandidates, type LiveAaModel } from '@copse/llm/live-intellect.ts'
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
@@ -284,6 +285,20 @@ function formatReset(resetsAt: string | null): string {
 }
 
 /**
+ * One score-derivation step as hover-card copy. The step ids (`measured`,
+ * `equated`) are data labels, and the equating detail already opens with its
+ * verb, so prefixing the id would print "equated: equated v4.3→v4.1".
+ */
+function derivationStepCopy(step: IntellectDerivationStep): string {
+  if (step.step === 'measured') return `Measured ${step.detail}`
+  if (step.detail.toLowerCase().startsWith(step.step.toLowerCase())) {
+    return step.detail.charAt(0).toUpperCase() + step.detail.slice(1)
+  }
+  const label = step.step.charAt(0).toUpperCase() + step.step.slice(1)
+  return `${label}: ${step.detail}`
+}
+
+/**
  * Rich hover card for a plotted point: bold identity, the score's full
  * derivation, every known price for the same weights, and frontier status.
  */
@@ -307,7 +322,7 @@ export function pointTooltipContent(
       ),
     )
     for (const step of explanation.steps) {
-      root.append(ttRow('tt-muted', `${step.step}: ${step.detail}`))
+      root.append(ttRow('tt-muted', derivationStepCopy(step)))
     }
   } else {
     root.append(
@@ -431,7 +446,7 @@ export function unpricedTooltipContent(u: CanonicalScoredModel): HTMLElement {
   const explanation = explainIntellectScore(u.id)
   root.append(ttRow('tt-line', el('strong', {}, `${u.estimated ? '~' : ''}${String(u.intellect)}`)))
   for (const step of explanation?.steps ?? []) {
-    root.append(ttRow('tt-muted', `${step.step}: ${step.detail}`))
+    root.append(ttRow('tt-muted', derivationStepCopy(step)))
   }
   appendCardSection(root, u.id)
   root.append(ttRow('tt-status', 'No price data yet — position on intellect only.'))
@@ -738,7 +753,7 @@ export function renderFrontierSvg(
   const xAxisLabel =
     costAxis === 'perTask'
       ? 'AA cost per Intelligence Index task ($) — local/plan models plot at $0'
-      : 'blended price, $/MTok (80% in / 20% out) — local models plot at $0'
+      : 'Blended price, $/MTok (80% in / 20% out) — local models plot at $0'
   const ariaLabel =
     costAxis === 'perTask'
       ? 'Model intellect versus AA cost per Intelligence Index task, with the Pareto frontier'
@@ -827,7 +842,7 @@ export function renderFrontierSvg(
         'font-size': '9',
         fill: 'var(--text-secondary)',
       },
-      'intellect',
+      'Intellect',
     ),
   )
 
@@ -2018,20 +2033,42 @@ export function createIntellectFrontierPanel(
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches
-      const staleNote =
-        stale.length > 0
-          ? ` ${String(stale.length)} curated value${stale.length === 1 ? '' : 's'} look stale next to the live feed (${stale
-              .map(
-                (m) =>
-                  `${displayModelLabel(m.modelId)} map ${String(m.canonical)} / live ${String(m.live)}`,
-              )
-              .join(
-                '; ',
-              )}) — a maintainer can refresh them with npm run sync:intellect -- --from-api.`
-          : ''
       liveNoteParts.push(
-        `Live points from the Artificial Analysis API, verified against ${String(live.verification.agreeingAnchors)} curated anchors. ${INTELLECT_ATTRIBUTION}.${staleNote}`,
+        `Live points from the Artificial Analysis API, verified against ${String(live.verification.agreeingAnchors)} curated anchors. ${INTELLECT_ATTRIBUTION}.`,
       )
+      if (stale.length > 0) {
+        // Stale curated values are a maintainer's to-do, not the user's: keep
+        // the headline to what the map shows, with the detail and the refresh
+        // command behind the same disclosure the scale-check branch uses.
+        liveNoteParts.push(
+          el(
+            'details',
+            { class: 'frontier-stale-anchors' },
+            el(
+              'summary',
+              {},
+              `${String(stale.length)} curated value${stale.length === 1 ? '' : 's'} look${stale.length === 1 ? 's' : ''} stale next to the live feed`,
+            ),
+            el(
+              'p',
+              {},
+              `${stale
+                .map(
+                  (m) =>
+                    `${displayModelLabel(m.modelId)} (map ${String(m.canonical)}, live ${String(m.live)})`,
+                )
+                .join('; ')}.`,
+            ),
+            el(
+              'p',
+              {},
+              'A maintainer can refresh them by running ',
+              el('code', {}, 'pnpm run sync:intellect -- --from-api'),
+              ' and reviewing the result.',
+            ),
+          ),
+        )
+      }
     } else if (liveFetch.models.length > 0) {
       // The refusal is working as designed, so keep the headline calm and put
       // the diagnosis (and the maintainer command) behind a disclosure.
@@ -2068,7 +2105,7 @@ export function createIntellectFrontierPanel(
           'p',
           {},
           'A maintainer can adopt the new data by running ',
-          el('code', {}, 'npm run sync:intellect -- --from-api'),
+          el('code', {}, 'pnpm run sync:intellect -- --from-api'),
           ' and reviewing the result.',
         ),
       )
