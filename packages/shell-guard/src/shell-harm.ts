@@ -965,8 +965,43 @@ const TEMPORARY_ROOTS = [
   '/dev/shm',
 ]
 
-function isTemporaryPath(resolved: string): boolean {
-  return TEMPORARY_ROOTS.some((root) => isAtOrAbove(root, resolved))
+/**
+ * Home-directory places toolchains install programs: version managers, language
+ * package managers' bin directories, and Xcode's build products.
+ */
+const HOME_PROGRAM_DIRS = [
+  '.cargo/bin',
+  '.rustup/toolchains',
+  '.local/bin',
+  'go/bin',
+  '.bun/bin',
+  '.deno/bin',
+  '.volta',
+  '.nvm/versions',
+  '.fnm',
+  '.local/share/fnm',
+  '.local/share/mise',
+  '.asdf',
+  '.pyenv',
+  '.rbenv',
+  '.sdkman',
+  '.dotnet/tools',
+  '.npm-global/bin',
+  'Library/pnpm',
+  'Library/Developer',
+  'bin',
+]
+
+/** Whether a program lives where programs are installed rather than where files are dropped. */
+function isInstalledProgramPath(resolved: string, context: ShellHarmContext): boolean {
+  if (TEMPORARY_ROOTS.some((root) => isAtOrAbove(root, resolved))) return false
+  if (INSTALLED_PROGRAM_ROOTS.some((root) => resolved.startsWith(root))) return true
+  return HOME_PROGRAM_DIRS.some((dir) => {
+    const path = isWindowsPath(context.homeDir)
+      ? win32.join(context.homeDir, dir)
+      : `${context.homeDir}/${dir}`
+    return isAtOrAbove(path, resolved)
+  })
 }
 
 /**
@@ -976,7 +1011,11 @@ function isTemporaryPath(resolved: string): boolean {
  * binaries, which let `/tmp/tool` and another checkout's `deploy.sh` run
  * uninspected; {@link inspectInterpreter} now reads them.
  */
-function directExecutionOperand(argv: string[]): string | null {
+function directExecutionOperand(
+  argv: string[],
+  parsedHeads: ReadonlySet<string>,
+  context: ShellHarmContext,
+): string | null {
   const head = argv[0]
   // A word starting with `#` in command position opens a comment; the shell runs
   // nothing. A heredoc body's `#!/bin/sh` line reached here through the
@@ -985,8 +1024,26 @@ function directExecutionOperand(argv: string[]): string | null {
   if (!head || !head.includes('/') || isWindowsPath(head) || !isExecutablePathShape(head)) {
     return null
   }
-  if (isAbsolute(head) && INSTALLED_PROGRAM_ROOTS.some((root) => head.startsWith(root))) return null
+  if (isAbsolute(head)) {
+    if (isInstalledProgramPath(expandPathToken(head, context), context)) return null
+    // The line-splitting fallback lexer cuts quoted text at `|` and newlines, so
+    // `sed -n "s|/etc/hosts|x|p"` hands it a phantom `/etc/hosts` head. Only a
+    // head the real shell parse also puts in command position is executed.
+    if (!parsedHeads.has(head)) return null
+  }
   return head
+}
+
+/**
+ * Whether `word` appears where a command starts rather than glued to what came
+ * before: shell-quote reads `ls $(xcode-select -p)/Platforms` as ending a
+ * substitution and then running `/Platforms`.
+ */
+function startsACommand(text: string, word: string): boolean {
+  for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + 1)) {
+    if (at === 0 || /[\s;&|(`]/.test(text[at - 1] ?? '')) return true
+  }
+  return false
 }
 
 /**
@@ -1057,10 +1114,11 @@ function inspectInterpreter(
   out: MutableDecision,
   depth: number,
   seenScripts: Set<string>,
+  parsedHeads: ReadonlySet<string>,
 ): void {
   const head = commandName(argv[0])
   const isInterpreter = CODE_INTERPRETERS.has(head)
-  const directExecution = directExecutionOperand(argv)
+  const directExecution = directExecutionOperand(argv, parsedHeads, context)
   // Only an interpreter's *arguments* can name a script. Scanning every command's
   // arguments meant any absolute-path invocation with a script-shaped argument
   // prompted spuriously: `/usr/bin/git add build.sh` reported "script contents
@@ -1105,22 +1163,6 @@ function inspectInterpreter(
     context.workspaceRoot !== null &&
     isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
     context.isCompiledProgram?.(resolved) === true
-  ) {
-    return
-  }
-  // An absolute path outside the workspace and the temporary directories is an
-  // installed program unless it reads as a script: inspect a script's text, and
-  // let a binary (or a path that does not exist) through as before. Anything run
-  // from a temporary directory is inspected or prompts, like a workspace file.
-  if (
-    !isInterpreter &&
-    isAbsolute(operand) &&
-    !isTemporaryPath(resolved) &&
-    !(
-      context.workspaceRoot !== null &&
-      isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved)
-    ) &&
-    (contents === null || scriptContentsLookBinary(contents))
   ) {
     return
   }
@@ -1664,6 +1706,11 @@ function inspectCommandLine(
 
   const nestedCommands: string[][] = []
   const argvs: string[][] = []
+  const parsedHeads = new Set(
+    shellSegments(expanded, false)
+      .map((segment) => unwrapWrappers(segment)[0] ?? '')
+      .filter((head) => !isAbsolute(head) || startsACommand(expanded, head)),
+  )
   for (const segment of shellSegments(expanded)) {
     const argv = unwrapWrappers(segment)
     if (argv.length === 0) continue
@@ -1687,7 +1734,7 @@ function inspectCommandLine(
     inspectArgumentWrites(argv, context, out)
     inspectMirrorDeletion(argv, context, out)
     inspectProcessKill(argv, out)
-    inspectInterpreter(argv, context, out, depth, seenScripts)
+    inspectInterpreter(argv, context, out, depth, seenScripts, parsedHeads)
     nestedCommands.push(...findExecPayloads(argv))
     // `eval "rm -rf /"` hands a string to the shell. Unlike the pass-through
     // wrappers, its argument is code, not argv, so it has to be re-assessed.
