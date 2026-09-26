@@ -25,21 +25,43 @@ export function resolveSmallTasksModelId(): string {
   return configured || AUTO_LOCAL_DEFAULT
 }
 
-/** Provider for thread titles, follow-ups, and other lightweight prompts. */
-export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
+/** A built small-tasks provider and the model it will actually call. */
+export interface SmallTasksRoute {
+  provider: LLMProvider
+  /**
+   * The model this provider calls: the small-tasks model, or the chat model
+   * when the small-tasks model could not be built. Usage belongs to this id.
+   */
+  model: string
+}
+
+/**
+ * Resolve the small-tasks provider together with the model it routes to, so a
+ * caller can attribute usage to the model that answered rather than to the
+ * configured small-tasks model it fell back from.
+ */
+export async function resolveSmallTasksRoute(): Promise<SmallTasksRoute | null> {
   // Scenario fixtures own their chat replies. Auxiliary labels use the callers'
   // normal heuristic fallbacks instead of consuming a conversation response.
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return null
   const modelId = resolveSmallTasksModelId()
   try {
-    return await buildProvider(modelId, undefined, SMALL_TASK_OPTIONS)
+    return { provider: await buildProvider(modelId, undefined, SMALL_TASK_OPTIONS), model: modelId }
   } catch {
     const chatModel = getSetting<string>('model', DEFAULT_APP_CHAT_MODEL)
     if (chatModel === modelId) return null
     try {
-      return await buildProvider(chatModel, undefined, SMALL_TASK_OPTIONS)
+      return {
+        provider: await buildProvider(chatModel, undefined, SMALL_TASK_OPTIONS),
+        model: chatModel,
+      }
     } catch {
       return null
     }
   }
+}
+
+/** Provider for thread titles, follow-ups, and other lightweight prompts. */
+export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
+  return (await resolveSmallTasksRoute())?.provider ?? null
 }

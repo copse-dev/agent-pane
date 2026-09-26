@@ -35,12 +35,20 @@ function usageFromChunk(chunk: Extract<StreamChunk, { type: 'usage' }>): ModelUs
   )
 }
 
+/**
+ * Called once per completion with the usage it accumulated — on success, and
+ * also when the call fails or times out after the provider already reported
+ * tokens (a failed call is still billed for what it consumed).
+ */
+export type CompletionUsageListener = (usage: ModelUsage) => void
+
 /** Run a one-shot provider stream and return text plus accumulated token usage. */
 export async function completeMessagesWithUsage(
   provider: LLMProvider,
   messages: LLMMessage[],
   timeoutMs: number,
   signal?: AbortSignal,
+  onUsage?: CompletionUsageListener,
 ): Promise<{ text: string; usage: ModelUsage }> {
   let text = ''
   let usage = { ...EMPTY_USAGE }
@@ -76,10 +84,16 @@ export async function completeMessagesWithUsage(
     if (!usage.inputTokens && !usage.outputTokens && hasLastUsage(provider) && provider.lastUsage) {
       usage = { ...provider.lastUsage }
     }
+  } catch (error) {
+    // Only what the stream itself reported: `provider.lastUsage` may describe an
+    // earlier call on the same instance, so it is not trusted on a failure.
+    onUsage?.(usage)
+    throw error
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', abortFromCaller)
   }
+  onUsage?.(usage)
   return { text, usage }
 }
 
@@ -88,6 +102,13 @@ export function completeTextWithUsage(
   provider: LLMProvider,
   prompt: string,
   timeoutMs: number,
+  onUsage?: CompletionUsageListener,
 ): Promise<{ text: string; usage: ModelUsage }> {
-  return completeMessagesWithUsage(provider, [{ role: 'user', content: prompt }], timeoutMs)
+  return completeMessagesWithUsage(
+    provider,
+    [{ role: 'user', content: prompt }],
+    timeoutMs,
+    undefined,
+    onUsage,
+  )
 }
