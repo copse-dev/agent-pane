@@ -33,7 +33,8 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   )
   const header = el(
     'div',
-    { class: 'sidebar-header sidebar-header-compact' },
+    { class: 'pane-header' },
+    el('span', { class: 'pane-header-title' }, 'Explorer'),
     panePopoutButton(store, api, 'explorer', 'explorer'),
     paneMaximizeButton(store, 'explorer'),
     refreshBtn,
