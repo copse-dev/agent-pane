@@ -501,6 +501,16 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /git cherry-pick \$\{commit\}/)
   })
 
+  it('gates the parent head on a blocking screenshot review status', () => {
+    assert.match(
+      workflow,
+      /^ {4}permissions:\n {6}actions: read\n {6}contents: write\n {6}pull-requests: write\n {6}statuses: write$/m,
+    )
+    assert.match(workflow, /const statusContext = 'Screenshot review';/)
+    assert.match(workflow, /- name: Fail the screenshot review closed\n {8}if: failure\(\)/)
+    assert.ok(existsSync(resolve('.github/workflows/screenshot-review-labels.yml')))
+  })
+
   it('pushes a view-only compare branch with the job token', () => {
     // Every eligible run with candidates gets a compare view. GITHUB_TOKEN
     // pushes start no workflows, so the branch never runs CI.

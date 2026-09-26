@@ -3,7 +3,7 @@ import RFB from '@novnc/novnc'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
-import { closeIcon, lockIcon, monitorIcon, plusIcon, refreshIcon } from '../dom/icons.ts'
+import { closeIcon, monitorIcon, plusIcon, refreshIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type {
@@ -348,9 +348,10 @@ function mountVncSession(
   const authPanel = el(
     'div',
     { class: 'vnc-auth-panel', 'aria-label': 'Screen Sharing authentication', hidden: true },
-    // Gutter marker. The panel used to be edged with an accent rail; the icon
-    // column replaces it, so the title and the body start at the same inset.
-    lockIcon('ui-icon vnc-auth-icon'),
+    // Gutter marker: the same severity dot as the status line below, so
+    // "Authentication required" and "Authentication failed" read as one
+    // recipe. Decorative — the title says the same thing.
+    el('span', { class: 'vnc-status-dot', 'aria-hidden': 'true' }),
     el('div', { class: 'vnc-auth-title' }, 'Authentication required'),
     authDescription,
     usernameField,
@@ -372,9 +373,9 @@ function mountVncSession(
     'button',
     {
       type: 'button',
-      class: 'vnc-setup-forget-login',
+      class: 'ui-btn ui-btn-ghost vnc-setup-forget-login',
     },
-    'Forget login',
+    'Forget saved login',
   )
   const savedLoginCopy = el('span', { class: 'vnc-saved-login-copy' })
   const savedLoginDetails = el(

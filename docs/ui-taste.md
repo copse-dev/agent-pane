@@ -30,7 +30,10 @@ landing page's decorative density.
   styled `<span>`, as Plugins' Active/Inactive headings do. Group headings on a destination surface
   may opt in explicitly (Settings' top-level `<legend>`s), but utility headings, field labels, and
   nested card titles stay in Pliant, so the serif marks the top two tiers of a page rather than
-  every heading on it.
+  every heading on it. A side pane is not a page: its titles (the PR viewer's) are utility
+  headings. `src/renderer/styles/display-headings.test.ts` fails any rule that asks an `h1`–`h3`
+  in the display face for a bold weight, and holds Settings' masthead rule to
+  `.settings-section > h3` so it cannot restyle card titles mounted deeper in a section.
 - Code, commands, paths, hashes, and terminal content use `--font-mono`.
 - Use the exact Copse glyph and wordmark assets rather than approximating them with text or
   redrawing the mark.
@@ -203,7 +206,9 @@ own.
 - Password inputs retain native `type="password"` semantics and use Chromium’s filled-disc mask
   (`-webkit-text-security: disc`). At compact UI sizes, use a large enough system-font mask that the
   glyphs read as circles rather than tiny periods; do not replace the secure control with a fake
-  text-field overlay.
+  text-field overlay. The system font is for the mask alone: reset the field's `::placeholder` to
+  `--font-family` so the text it shows matches the fields beside it (the VNC auth fields do this;
+  a username or account field is interface text, not `--font-mono`).
 
 ### Permission / approval prompts
 
@@ -1056,10 +1061,13 @@ tool rollup. Give it `--spacing-md` vertical and `--spacing-lg` horizontal paddi
 remove the surface's inset or pull its summary into the padding. Only the closed, untextured
 disclosure label aligns flush with neighboring tool rows.
 
-The VNC pane takes a **gutter**: a 24px icon column in the authentication panel and a compact 6px
-status-dot column in status rows. It is a separate pane with its own chrome, and its status hue
-has to survive on a single line where a plate would just box three of them. These columns do not
-currently align across states; the shared gutter in the prototype remains a polish option.
+The VNC pane takes a **gutter**: one 6px severity-dot column shared by the authentication panel and
+the status rows, with the dot and the title painted in the state's hue. It is a separate pane with
+its own chrome, and its status hue has to survive on a single line where a plate would just box
+three of them. One recipe for every state: "Authentication required" is a blocking ask, so it takes
+`--warning`; "Authentication failed" and other failures take `--error`. Do not reach for the accent
+(or a second marker shape such as a lock icon) for either — the panel's wash stays neutral and the
+dot and title carry the severity.
 
 **Selection is the fill alone.** See "Sidebar selections" below.
 
