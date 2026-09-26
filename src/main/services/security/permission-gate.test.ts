@@ -1886,7 +1886,7 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
     const many = formatGuardedYoloHarmPromptAdvice(Array.from({ length: 12 }, (_, i) => huge(i)))
     assert.equal(many.length, 1200)
     assert.ok(many.includes('…'))
-    assert.ok(many.endsWith('Approve this bounded destructive action once?'))
+    assert.ok(many.endsWith('Approve this command once?'))
   })
 })
 

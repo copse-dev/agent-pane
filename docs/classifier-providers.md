@@ -26,6 +26,21 @@ read from the returned probabilities, never from the provider's `choice`:
 - A command's scope is the likelier side, with a tie reading as `external`. Its probability is the
   confidence strict mode compares with `safetyExternalDenyThreshold`.
 
+The chosen connection is also asked the escalation-review **tier question**, word for word
+(`read` … `ask`, see `benchmarks/escalation-review/rubric.md`), as a second opinion. It never
+authorizes anything:
+
+- **Guarded YOLO:** when the harm gate would auto-run a command without a sandbox around it, a
+  P(`ask`) of at least 0.5 turns that into the harm gate's one-time confirmation. A missing, slow
+  or failing connection leaves the harm gate's decision as it was. Contained commands are not
+  asked. On the command test set, Winnow-12B at this threshold would have caught 54 of the 56
+  `ask` commands the harm gate let through before its rules were fixed. It prompts on about 1.7%
+  of the real commands the harm gate allows.
+- **Standard mode (shadow):** when a shell command is about to prompt, the question is asked in the
+  background and a `tier-shadow` decision records whether P(`read` or `local-write`) ≥ 0.95 and a
+  harm-gate allow would have auto-approved it at local-write. The prompt never waits and nothing
+  changes. The record holds a SHA-256 of the command, never its text.
+
 Each call has the safety model's 8-second budget, and a connection that keeps missing it is skipped
 for a while, like a slow safety model. A timeout, connection failure, missing key, removed
 connection, or malformed answer yields no verdict, which asks the user; lasting faults are recorded
