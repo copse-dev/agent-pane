@@ -123,6 +123,7 @@ function copyMessage(message: Message): Message {
     id: _id,
     hookCards: _hookCards,
     review: _review,
+    reviewReport: _reviewReport,
     toolCalls,
     images,
     canvasArtefacts,

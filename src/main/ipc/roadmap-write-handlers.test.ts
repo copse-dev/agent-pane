@@ -83,4 +83,66 @@ describe('roadmap write handlers without Electron', () => {
     assert.equal(h.deleted.length, 1)
     assert.equal(h.notes.get(note.id), note)
   })
+
+  it('broadcasts roadmap:changed after an update and a delete, so mirrors drop stale titles', () => {
+    const h = roadmapWriteHarness()
+    const note = h.handlers.create('Rename me')
+    h.changes.length = 0
+    h.handlers.update(note.id, note.body, 'notes only', 'ready')
+    assert.deepEqual(h.changes, ['roadmap:changed'])
+
+    h.changes.length = 0
+    assert.equal(h.handlers.remove(note.id), true)
+    assert.equal(h.notes.has(note.id), false)
+    assert.deepEqual(h.deleted, [`all:${note.id}`])
+    assert.deepEqual(h.changes, ['roadmap:changed'])
+
+    h.changes.length = 0
+    assert.equal(h.handlers.remove(note.id), false, 'a missing item is not deleted again')
+    assert.deepEqual(h.changes, [], 'no broadcast when nothing changed')
+  })
+
+  it('refuses to delete a non-roadmap note', () => {
+    const h = roadmapWriteHarness()
+    const note = h.handlers.create('Keep me')
+    h.notes.set(note.id, { ...note, type: 'Memory' })
+    h.changes.length = 0
+    assert.equal(h.handlers.remove(note.id), false)
+    assert.equal(h.notes.has(note.id), true)
+    assert.deepEqual(h.changes, [])
+  })
+
+  it('stamps the started thread, broadcasts, and resolves it back through findByThread', () => {
+    const h = roadmapWriteHarness()
+    const first = h.handlers.create('First item')
+    const second = h.handlers.create('Second item')
+    h.changes.length = 0
+
+    assert.equal(h.handlers.setThread(first.id, ' thread-1 ')?.fields['thread'], 'thread-1')
+    assert.deepEqual(h.changes, ['roadmap:changed'])
+    assert.deepEqual(h.handlers.findByThread('thread-1'), { id: first.id, title: first.title })
+    assert.equal(h.handlers.findByThread('thread-2'), null)
+    assert.equal(h.notes.get(second.id)?.fields['thread'], undefined)
+
+    // Restamping points the item at the newer thread; the older one stops resolving.
+    h.handlers.setThread(first.id, 'thread-2')
+    assert.equal(h.handlers.findByThread('thread-1'), null)
+    assert.deepEqual(h.handlers.findByThread('thread-2'), { id: first.id, title: first.title })
+
+    // An empty id clears the tracking.
+    assert.equal(h.handlers.setThread(first.id, '')?.fields['thread'], undefined)
+    assert.equal(h.handlers.findByThread('thread-2'), null)
+  })
+
+  it('ignores non-roadmap notes in findByThread and rejects invalid ids', () => {
+    const h = roadmapWriteHarness()
+    const note = h.handlers.create('Item')
+    h.notes.set(note.id, { ...note, type: 'Memory', fields: { thread: 'thread-1' } })
+    assert.equal(h.handlers.findByThread('thread-1'), null)
+    assert.equal(h.handlers.setThread(note.id, 'thread-1'), null)
+    assert.equal(h.handlers.setThread('missing', 'thread-1'), null)
+    assert.throws(() => h.handlers.findByThread(''))
+    assert.throws(() => h.handlers.findByThread('x'.repeat(129)))
+    assert.throws(() => h.handlers.setThread('', 'thread-1'))
+  })
 })

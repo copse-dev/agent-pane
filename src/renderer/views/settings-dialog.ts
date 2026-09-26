@@ -311,6 +311,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // On by default: clicked links open in the in-app browser pane. Off routes
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
+  { name: 'animateAgentAvatars', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnInteraction', kind: 'checkbox', default: true, save: true },
   { name: 'alertOnThreadFinished', kind: 'checkbox', default: true, save: true },
   { name: 'alertSystemNotification', kind: 'checkbox', default: true, save: true },
@@ -669,8 +670,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="classifiers">
             <h3>Classifiers</h3>
             <p class="settings-section-desc">
-              Connections for classification evals and explicit calls. Copse's built-in classifiers
-              and chat model choices are configured separately.
+              Connections for safety screening, classification evals and explicit calls. Chat model
+              choices are configured separately.
             </p>
             <div id="settings-classifiers-host" class="settings-mount"></div>
           </section>
@@ -1271,6 +1272,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="alertBounce" />
                 Dock or taskbar animation
               </label>
+            </fieldset>
+
+            <fieldset data-testid="settings-agent-motion">
+              <legend>Agent icons</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="animateAgentAvatars" aria-describedby="agent-motion-hint" />
+                Animate agent icons
+              </label>
+              <p class="field-hint" id="agent-motion-hint">
+                Subtle motion while a remote or named agent is working. Turn off to keep the
+                icons still. Always respects your system's reduced-motion preference.
+              </p>
             </fieldset>
 
             <fieldset>
@@ -4796,6 +4809,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
+        animateAgentAvatars: data.get('animateAgentAvatars') === 'on',
         developerMode,
         settings: { ...store.getState().settings, model },
       })

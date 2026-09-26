@@ -1,4 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import {
@@ -6,6 +8,8 @@ import {
   resetUserData,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
+import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { switchTheme, tokenColour } from './helpers/theme.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -37,6 +41,7 @@ describe('git changes viewer', function () {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     repoRoot = seedGitChangesFixture()
+    writeFileSync(join(repoRoot, '.bashrc'), 'export COPSE_DOTFILE_PROOF=1\n')
     await browser.reloadSession()
     await waitForWorkspace()
     await waitForComposer()
@@ -88,6 +93,26 @@ describe('git changes viewer', function () {
     await expect(paths).toContain('unstaged.ts')
     await expect(paths).toContain('untracked.ts')
     await expect(paths).toContain('committed.ts')
+    await expect(paths).toContain('.bashrc')
+
+    const dotfileBidi = await browser.execute(() => {
+      const path = Array.from(document.querySelectorAll<HTMLElement>('.git-change-path')).find(
+        (element) => element.textContent?.trim() === '.bashrc',
+      )
+      if (!path) return null
+      const codePoints = (content: string): number[] =>
+        Array.from(content, (character) => character.codePointAt(0) ?? -1)
+      return {
+        text: path.textContent?.trim() ?? '',
+        before: codePoints(getComputedStyle(path, '::before').content),
+        after: codePoints(getComputedStyle(path, '::after').content),
+      }
+    })
+    assert.ok(dotfileBidi, 'expected the real dotfile row')
+    assert.equal(dotfileBidi.text, '.bashrc')
+    assert.ok(dotfileBidi.before.includes(0x200e), 'dotfile needs a leading LTR mark')
+    assert.ok(dotfileBidi.after.includes(0x200e), 'dotfile needs a trailing LTR mark')
+    await saveElementScreenshot('#git-changes-host', 'git-changes-dotfile-path.png')
 
     const untrackedBadge = await $('.git-change-status-untracked')
     await expect(untrackedBadge).toHaveText('?')
@@ -193,5 +218,71 @@ describe('git changes viewer', function () {
     )
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-committed-diff.png'))
+  })
+
+  it('paints change letters and diff washes from the status tokens in both themes', async () => {
+    // Add the two statuses the fixture lacks: a staged rename and a deletion.
+    // `after` resets the fixture (`checkout -f HEAD` + `clean -fd`), undoing both.
+    execFileSync('git', ['mv', 'staged.ts', 'staged-moved.ts'], { cwd: repoRoot, stdio: 'pipe' })
+    // Deleting the committed file leaves its Committed row (branch vs main) and
+    // adds an unstaged deletion beside it.
+    rmSync(join(repoRoot, 'committed.ts'))
+    await (await $('.git-changes-refresh-btn')).click()
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector('.git-change-status-renamed') !== null &&
+            document.querySelector('.git-change-status-deleted') !== null,
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected renamed and deleted rows after the refresh' },
+    )
+    // Re-select the committed file so every diff line is an insert.
+    await $('.git-change-row-committed').click()
+    await $('#git-diff-viewer-host .line-insert').waitForExist({ timeout: 15_000 })
+
+    const expected: [string, string][] = [
+      ['modified', '--change-modified'],
+      ['added', '--change-added'],
+      ['untracked', '--change-added'],
+      ['deleted', '--change-deleted'],
+      ['renamed', '--change-renamed'],
+    ]
+    for (const theme of ['dark', 'light'] as const) {
+      if (theme === 'light') await switchTheme('light')
+      const painted = await browser.execute(
+        (statuses) => {
+          const read = (selector: string, property: string): string | null => {
+            const element = document.querySelector(selector)
+            return element ? getComputedStyle(element).getPropertyValue(property) : null
+          }
+          return {
+            letters: statuses.map((status) => read(`.git-change-status-${status}`, 'color')),
+            font: read('.git-change-status', 'font-family'),
+            insert: read('#git-diff-viewer-host .line-insert', 'background-color'),
+          }
+        },
+        expected.map(([status]) => status),
+      )
+      for (const [index, [status, token]] of expected.entries()) {
+        assert.equal(
+          painted.letters[index],
+          await tokenColour(token),
+          `${theme}: the ${status} letter must be ${token}`,
+        )
+      }
+      assert.equal(painted.insert, await tokenColour('--diff-insert', 'background-color'))
+      const mono = await browser.execute(() => {
+        const probe = document.createElement('span')
+        probe.style.fontFamily = 'var(--font-mono)'
+        document.body.append(probe)
+        const family = getComputedStyle(probe).fontFamily
+        probe.remove()
+        return family
+      })
+      assert.equal(painted.font, mono, 'status letters use the mono token, not bare monospace')
+    }
+
+    await saveElementScreenshot('#git-changes-host', 'git-changes-list-light.png')
   })
 })

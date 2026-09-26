@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -436,14 +436,12 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(
       workflow,
       /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
-      'fork runs receive secrets on workflow_run and must be rejected before token minting',
+      'fork runs receive secrets on workflow_run and must be rejected before any write',
     )
     assert.match(
       workflow,
       /^permissions:\n {2}actions: read\n {2}contents: read\n {2}pull-requests: read$/m,
     )
-    assert.match(workflow, /permission-contents: write/)
-    assert.match(workflow, /permission-pull-requests: write/)
   })
 
   it('binds publication to one open parent at the exact rendered head', () => {
@@ -457,8 +455,8 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /persist-credentials: false/)
     assert.match(
       workflow,
-      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA[\s\S]*?state: 'closed'/,
-      'a parent-head race after child creation must close the stale review PR',
+      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA\) \{\n {14}if \(compareUrl\) \{[\s\S]*?deleteRef[\s\S]*?return;/,
+      'a parent-head race must remove the just-pushed compare branch and post nothing',
     )
   })
 
@@ -468,21 +466,90 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\*\\\.png\$/)
     assert.match(workflow, /89504e470d0a1a0a/)
     assert.match(workflow, /"\$size" -gt 16777216/)
-    assert.match(workflow, /"\$count" -gt 512/)
-    assert.match(workflow, /"\$total" -gt 268435456/)
+    assert.match(workflow, /"\$count" -gt 2048/)
+    assert.match(workflow, /"\$total" -gt 536870912/)
     assert.match(workflow, /Unexpected file in screenshot candidate artifact/)
   })
 
-  it('opens a bot-owned child PR into the source branch and links it from the parent', () => {
-    assert.match(workflow, /uses: peter-evans\/create-pull-request@v8/)
-    assert.match(workflow, /base: \$\{\{ steps\.discover\.outputs\.head-ref \}\}/)
-    assert.match(workflow, /branch: \$\{\{ steps\.discover\.outputs\.review-branch \}\}/)
-    assert.match(workflow, /add-paths: tests\/e2e\/screenshots\//)
-    assert.doesNotMatch(workflow, /^ {10}base: main$/m)
+  it('budgets for a full refresh of every committed reference with headroom', () => {
+    // `update-screenshots` renders every reference into the candidate artifact,
+    // so a budget below the reference set fails every labelled refresh.
+    const count = Number(/"\$count" -gt (\d+)/.exec(workflow)?.[1])
+    const total = Number(/"\$total" -gt (\d+)/.exec(workflow)?.[1])
+    const references = readdirSync('tests/e2e/screenshots').filter((name) => name.endsWith('.png'))
+    const bytes = references.reduce(
+      (sum, name) => sum + statSync(resolve('tests/e2e/screenshots', name)).size,
+      0,
+    )
+    assert.ok(
+      count >= 2 * references.length,
+      `count budget ${String(count)} < 2 × ${String(references.length)}`,
+    )
+    assert.ok(total >= 2 * bytes, `size budget ${String(total)} < 2 × ${String(bytes)} bytes`)
+  })
+
+  it('never opens a PR or mints an App token; screenshot changes are viewed via the compare branch', () => {
+    // `update-screenshots` only makes CI render the full reference set. An App
+    // token's pushes and PRs start workflows, and a child PR is review noise,
+    // so the publisher must not regain either.
+    assert.doesNotMatch(workflow, /create-pull-request|create-github-app-token|app-token/)
+    assert.doesNotMatch(workflow, /secrets\./)
+    assert.doesNotMatch(workflow, /rest\.pulls\.create\b/)
+    assert.doesNotMatch(workflow, /review-branch|create-review/)
     assert.match(workflow, /<!-- copse-e2e-screenshot-review -->/)
-    assert.match(workflow, /REVIEW_URL: \$\{\{ steps\.review-pr\.outputs\.pull-request-url \}\}/)
-    assert.match(workflow, /Review GitHub’s image diffs in \[screenshot PR #/)
-    assert.match(workflow, /Close superseded screenshot review PRs/)
+    assert.match(workflow, /Close legacy screenshot review PRs/)
+    assert.match(workflow, /git cherry-pick \$\{commit\}/)
+  })
+
+  it('gates the parent head on a blocking screenshot review status', () => {
+    assert.match(
+      workflow,
+      /^ {4}permissions:\n {6}actions: read\n {6}contents: write\n {6}pull-requests: write\n {6}statuses: write$/m,
+    )
+    assert.match(workflow, /const statusContext = 'Screenshot review';/)
+    assert.match(workflow, /- name: Fail the screenshot review closed\n {8}if: failure\(\)/)
+    assert.ok(existsSync(resolve('.github/workflows/screenshot-review-labels.yml')))
+  })
+
+  it('pushes a view-only compare branch with the job token', () => {
+    // Every eligible run with candidates gets a compare view. GITHUB_TOKEN
+    // pushes start no workflows, so the branch never runs CI.
+    assert.match(workflow, /\/\^\[0-9a-f\]\{40\}\$\/\.test\(runHeadSha/)
+    assert.match(
+      workflow,
+      /`screenshot-compare\/pr-\$\{number\}\/\$\{runHeadSha\.slice\(0, 12\)\}`/,
+    )
+    assert.match(workflow, /PUSH_TOKEN: \$\{\{ github\.token \}\}/)
+    assert.doesNotMatch(workflow, /persist-credentials: true/)
+    assert.match(workflow, /fetch-depth: 1\n/)
+    assert.match(
+      workflow,
+      /compare\/\$\{process\.env\.EXPECTED_HEAD_SHA\}\.\.\.\$\{process\.env\.COMPARE_BRANCH\}/,
+    )
+    assert.match(
+      workflow,
+      /parent\.head\.sha !== process\.env\.EXPECTED_HEAD_SHA\) \{\n {14}if \(process\.env\.COMPARE_PUSHED === 'true'\) await deleteBranch\(current\);/,
+      'a stale publisher may delete only the compare branch it pushed',
+    )
+  })
+})
+
+describe('close-orphaned-screenshot-reviews.yml workflow invariants', () => {
+  const workflow = readFileSync(
+    resolve('.github/workflows/close-orphaned-screenshot-reviews.yml'),
+    'utf8',
+  )
+
+  it('cleans up every review PR and compare branch for a closed same-repo parent', () => {
+    assert.match(workflow, /^ {2}pull_request:\n {4}types: \[closed\]$/m)
+    assert.doesNotMatch(workflow, /^ +pull_request_target:|uses: actions\/checkout/m)
+    assert.match(
+      workflow,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+    )
+    assert.match(workflow, /const prefix = `screenshots\/pr-\$\{parentNumber\}\/`/)
+    assert.match(workflow, /const comparePrefix = `screenshot-compare\/pr-\$\{parentNumber\}\/`/)
+    assert.match(workflow, /github\.rest\.git\.listMatchingRefs/)
   })
 })
 
@@ -572,6 +639,60 @@ describe('release-cut.yml workflow invariants', () => {
     // a full sign-and-notarize cycle first.
     assert.match(workflow, /release-channel\.mts --channel/)
     assert.match(workflow, /release-notes\.mts/)
+  })
+
+  it('validates notes for a new tag but not for an already-released version', () => {
+    // Versions released before notes were kept per version have no section, so
+    // an ordinary no-op promotion must not fail on them. A tag at this exact
+    // commit is a recovery run and is validated like a new one.
+    assert.match(
+      workflow,
+      /if \[ -z "\$existing" \] \|\| \[ "\$existing" = "\$RELEASE_SHA" \]; then\n\s+node scripts\/release-notes\.mts "\$version"/,
+    )
+  })
+})
+
+describe('release-bump.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/release-bump.yml'), 'utf8')
+
+  it('runs weekly, ahead of the daily promotion', () => {
+    assert.match(workflow, /^ {4}- cron: '37 5 \* \* 1'$/m)
+    const promotion = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
+    assert.match(
+      promotion,
+      /^ {4}- cron: '17 8 \* \* \*'$/m,
+      'move the bump if the promotion moves',
+    )
+  })
+
+  it('bumps main through a PR, never by pushing to main or release', () => {
+    // The bump must pass the same `CI Passed` gate as any other change to main.
+    assert.match(workflow, /peter-evans\/create-pull-request@/)
+    assert.match(workflow, /^ {10}base: main$/m)
+    assert.match(workflow, /^ {10}branch: chore\/release-bump$/m)
+    assert.doesNotMatch(workflow, /git push/)
+    assert.match(workflow, /gh pr merge "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --auto --squash/)
+  })
+
+  it('opens the PR as the release App so CI runs on it', () => {
+    // A GITHUB_TOKEN PR triggers no workflows, so it could never go green.
+    assert.match(workflow, /token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
+    assert.match(workflow, /^ {2}contents: read$/m)
+    assert.doesNotMatch(workflow, /^ {2}(contents|pull-requests): write$/m)
+  })
+
+  it('keeps one release in flight and skips an empty week', () => {
+    // Bumping past an unpublished version would drop its notes from CHANGELOG.md.
+    const published = workflow.indexOf('gh release view "v$current" --repo "$RELEASE_REPOSITORY"')
+    const bump = workflow.indexOf('node scripts/release-bump.mts')
+    assert.ok(published >= 0 && bump > published, 'the publication check must precede the bump')
+    assert.match(workflow, /args=\(--skip-if-empty\)/)
+  })
+
+  it('passes the dispatch version through the environment, not the script text', () => {
+    // An expression interpolated into `run:` is shell injection from the dispatch form.
+    assert.match(workflow, /REQUESTED_VERSION: \$\{\{ inputs\.version \}\}/)
+    assert.equal(workflow.split('${{ inputs.version }}').length - 1, 1)
   })
 })
 
@@ -794,6 +915,10 @@ describe('Copse Reviewer workflow invariants', () => {
     'utf8',
   )
   const reviewCellDockerfile = readFileSync(resolve('packages/review/Dockerfile.cell'), 'utf8')
+  const groundCellScript = readFileSync(
+    resolve('packages/review/ci/ground-as-cell-user.sh'),
+    'utf8',
+  )
   const forgeReview = readFileSync(resolve('packages/review/src/forge-review.ts'), 'utf8')
 
   function workflowJobBlock(workflow: string, name: string): string {
@@ -806,12 +931,39 @@ describe('Copse Reviewer workflow invariants', () => {
   }
 
   it('executes pull-request code only in credential-free execution cells', () => {
-    assert.match(triggerWorkflow, /^ {2}pull_request_target:\n {4}types: \[labeled\]$/m)
+    assert.match(
+      triggerWorkflow,
+      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled\]$/m,
+    )
+    assert.doesNotMatch(triggerWorkflow, /synchronize/, 'a push must not post another review')
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
     assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
     const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
-    assert.match(dispatcher, /github\.event\.label\.name == 'copse-review'/)
+    // Ready pull requests by default; a draft only with the label; never with the opt-out.
+    assert.match(
+      dispatcher,
+      /github\.event\.action == 'labeled' && github\.event\.label\.name == 'copse-review'/,
+    )
+    assert.match(
+      dispatcher,
+      /github\.event\.action != 'labeled' && !github\.event\.pull_request\.draft/,
+    )
+    assert.match(
+      dispatcher,
+      /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'copse-review-skip'\)/,
+    )
+    assert.match(dispatcher, /if \[ "\$skipped" = "true" \]/)
+    assert.match(dispatcher, /if \[ "\$draft" = "true" \] && \[ "\$labelled" != "true" \]/)
+    // The findings job re-resolves the pull request and must apply the same rule;
+    // a label-only recheck here failed every default-on review closed.
+    const findingsJob = workflowJobBlock(findingsWorkflow, 'findings')
+    assert.match(findingsJob, /test "\$skipped" = false/)
+    assert.match(findingsJob, /test "\$draft" = false \|\| test "\$labelled" = true/)
+    assert.doesNotMatch(findingsJob, /^\s*test "\$labelled" = true$/m)
+    const authorize = workflowJobBlock(findingsWorkflow, 'authorize')
+    assert.match(authorize, /labels\.includes\('copse-review-skip'\)/)
+    assert.match(authorize, /pull\.draft && !labels\.includes\('copse-review'\)/)
     assert.match(dispatcher, /github\.actor_id == '338988'/)
     assert.match(dispatcher, /github\.event\.pull_request\.user\.id == 338988/)
     assert.match(dispatcher, /github\.event\.pull_request\.head\.repo\.id == 1274237362/)
@@ -833,10 +985,26 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.doesNotMatch(job, /\$\{\{\s*secrets\./)
       assert.match(job, /ref: \$\{\{ github\.(?:sha|event\.repository\.default_branch) \}\}/)
       assert.match(job, /persist-credentials: false/)
-      assert.match(job, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
-      assert.match(job, /--backend ephemeral-runner/)
-      assert.match(job, /--scratch-parent "\$RUNNER_TEMP"/)
+      assert.match(job, /bash packages\/review\/ci\/ground-as-cell-user\.sh/)
+      assert.doesNotMatch(job, /--backend ephemeral-runner/, 'never as the runner user')
     }
+    // Pull-request code runs as a user that can reach nothing a later step
+    // executes with the job's Actions runtime token.
+    assert.match(groundCellScript, /refs\/pull\/\$\{PR_NUMBER\}\/head/)
+    assert.match(groundCellScript, /--backend ephemeral-runner/)
+    assert.match(groundCellScript, /--scratch-parent "\$cell_home\/scratch"/)
+    assert.match(groundCellScript, /sudo useradd [^\n]*"\$cell_user"/)
+    assert.match(groundCellScript, /sudo chmod 0700 "\$HOME"/)
+    assert.match(groundCellScript, /sudo -u "\$cell_user" -- env -i \\/)
+    assert.match(groundCellScript, /sudo usermod --lock --expiredate 1 "\$cell_user"/)
+    assert.match(groundCellScript, /sudo pkill -KILL -u "\$cell_user"/)
+    const cli = groundCellScript.indexOf('--backend ephemeral-runner')
+    assert.ok(groundCellScript.indexOf('sudo chmod 0700 "$HOME"') < cli)
+    assert.ok(groundCellScript.lastIndexOf('as_cell ', cli) < cli, 'the CLI runs as the cell user')
+    assert.ok(cli < groundCellScript.indexOf('sudo pkill'))
+    assert.ok(
+      groundCellScript.indexOf('sudo pkill') < groundCellScript.indexOf('> "$OUT_DIR/report.json"'),
+    )
 
     const handoff = workflowJobBlock(groundWorkflow, 'handoff')
     assert.match(handoff, /needs: \[reuse, ground\]/)
@@ -947,17 +1115,22 @@ describe('Copse Reviewer workflow invariants', () => {
 
   it('primes the isolated checks from data-only files at the exact pull-request head', () => {
     for (const workflow of [groundWorkflow, nightlyWorkflow]) {
-      const job = workflowJobBlock(workflow, 'ground')
-      assert.match(job, /git show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
-      assert.match(job, /git archive --format=tar "\$HEAD_SHA" patches/)
-      assert.match(job, /pnpm fetch --frozen-lockfile --dir "\$dependency_seed"/)
-      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
-      assert.ok(job.indexOf('test "$(git rev-parse') < job.indexOf('pnpm fetch'))
-      assert.ok(job.indexOf('pnpm fetch') < job.indexOf('--backend ephemeral-runner'))
+      assert.match(workflowJobBlock(workflow, 'ground'), /ground-as-cell-user\.sh/)
+    }
+    {
+      const job = groundCellScript
+      assert.match(job, /git -C "\$GITHUB_WORKSPACE" show "\$\{HEAD_SHA\}:pnpm-lock\.yaml"/)
+      assert.match(job, /git -C "\$GITHUB_WORKSPACE" archive --format=tar "\$HEAD_SHA" patches/)
       assert.match(
         job,
-        /--trusted-prepare "\$GITHUB_WORKSPACE\/scripts\/prepare-review-stage0\.mts"/,
+        /pnpm fetch --frozen-lockfile --dir "\$dependency_seed" --store-dir "\$store"/,
       )
+      assert.doesNotMatch(job, /pnpm fetch[^\n]*--dir [^"$]/)
+      const fetch = job.indexOf('pnpm fetch --frozen-lockfile')
+      assert.ok(job.indexOf('rev-parse "refs/remotes/pr/') < fetch)
+      assert.ok(fetch < job.indexOf('--backend ephemeral-runner'))
+      assert.match(job, /--store "\$store"/)
+      assert.match(job, /--trusted-prepare "\$trusted\/scripts\/prepare-review-stage0\.mts"/)
     }
 
     for (const workflow of [findingsWorkflow, nightlyWorkflow]) {
@@ -989,8 +1162,8 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(job, /export PATH="\$\{setup_node_bin\}:\/usr\/bin:\$\{PATH\}"/)
       assert.match(job, /test "\$\(command -v cargo\)" = \/usr\/bin\/cargo/)
       assert.match(job, /test "\$\(command -v node\)" = "\$\{setup_node_bin\}\/node"/)
-      assert.ok(job.indexOf('apt-get install') < job.indexOf('refs/pull/'))
-      assert.ok(job.indexOf('export PATH=') < job.indexOf('--backend ephemeral-runner'))
+      assert.ok(job.indexOf('apt-get install') < job.indexOf('ground-as-cell-user.sh'))
+      assert.ok(job.indexOf('export PATH=') < job.indexOf('ground-as-cell-user.sh'))
     }
   })
 
@@ -1157,7 +1330,7 @@ describe('Copse Reviewer workflow invariants', () => {
     }
   })
 
-  it('samples at most one recent same-repository PR, including drafts, and has an explicit opt-out', () => {
+  it('samples at most one recent same-repository draft PR and has an explicit opt-out', () => {
     assert.match(nightlyWorkflow, /^ {2}schedule:$/m)
     assert.match(nightlyWorkflow, /^ {2}workflow_dispatch:$/m)
     assert.match(nightlyWorkflow, /pull\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
@@ -1165,8 +1338,9 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review'\)/)
     assert.match(nightlyWorkflow, /!labels\.includes\('copse-review-skip'\)/)
     assert.match(nightlyWorkflow, /selected = candidates\[utcDay % candidates\.length\]/)
-    assert.doesNotMatch(nightlyWorkflow, /!pull\.draft/)
-    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/)
+    // Ready pull requests are reviewed on becoming ready; the sample covers drafts.
+    assert.match(nightlyWorkflow, /pull\.draft === true/)
+    assert.doesNotMatch(nightlyWorkflow, /selected\.draft/, 'a dispatched PR may be either')
     assert.doesNotMatch(nightlyWorkflow, /^ {2}pull_request:/m)
   })
 

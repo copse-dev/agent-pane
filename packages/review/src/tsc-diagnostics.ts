@@ -7,7 +7,8 @@
 //   src/a.ts:12:5 - error TS2322: Type 'x' is not assignable to type 'y'.
 //
 // Everything else in the output (the `pretty` context lines, summaries) is
-// ignored. The parser is deliberately dumb: it never executes, never follows
+// ignored. A path may hold parentheses (Next.js route groups such as
+// `app/(auth)/page.tsx`); the location suffix is what ends it. The parser is deliberately dumb: it never executes, never follows
 // paths, and treats the text as data.
 
 export interface TscDiagnostic {
@@ -19,7 +20,7 @@ export interface TscDiagnostic {
 }
 
 const DIAGNOSTIC_PATTERN =
-  /^(?<path>[^\s(:][^(:]*?)(?:\((?<line1>\d+),(?<col1>\d+)\):|:(?<line2>\d+):(?<col2>\d+) -) error (?<code>TS\d+): (?<message>.+)$/
+  /^(?<path>\S.*?)(?:\((?<line1>\d+),(?<col1>\d+)\):|:(?<line2>\d+):(?<col2>\d+) -) error (?<code>TS\d+): (?<message>.+)$/
 
 function stripAnsi(text: string): string {
   return text.replace(/\u001b\[[0-9;]*m/g, '')

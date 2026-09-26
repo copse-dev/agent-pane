@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { HEADLESS_EXIT, headlessEventSchema } from '@copse/agent/headless-contract.ts'
-import { main, reviewPermissionProfile } from './cli.ts'
+import { main, resolveForgeTarget, reviewPermissionProfile } from './cli.ts'
 import { decodeFindings } from './finding.ts'
 import { createEphemeralRunnerBackend } from './host-process-backend.ts'
 import type { IsolationBackend } from './isolation.ts'
@@ -540,6 +540,7 @@ describe('copse-review CLI', () => {
     )
     const importedEvents = join(dir, 'imported.events.jsonl')
     const posts: { url: string; body: string }[] = []
+    const lookups: string[] = []
     let out = ''
     let err = ''
     const code = await main(
@@ -575,7 +576,12 @@ describe('copse-review CLI', () => {
         env: { PATH: process.env['PATH'], GITHUB_TOKEN: 'ghs_test' },
         cwd: repo.root,
         fetch: (url, init) => {
-          posts.push({ url, body: init.body })
+          // No other open pull request carries these findings.
+          if (init.method === 'GET') {
+            lookups.push(url)
+            return Promise.resolve({ status: 200, text: () => Promise.resolve('[]') })
+          }
+          posts.push({ url, body: init.body ?? '' })
           return Promise.resolve({ status: 200, text: () => Promise.resolve('') })
         },
       },
@@ -591,6 +597,7 @@ describe('copse-review CLI', () => {
     assert.match(post.body, /Executed in the `ephemeral-runner` backend/)
     assert.match(post.body, /pnpm run test|check\.cjs/)
     assert.equal(posts.length, 1)
+    assert.ok(lookups.some((url) => url.includes('/pulls?state=open')))
     assert.match(err, /1 inline comment\(s\), 1 folded into the body/)
     const payload: unknown = JSON.parse(post.body)
     assert.ok(typeof payload === 'object' && payload !== null)
@@ -753,6 +760,27 @@ describe('copse-review CLI', () => {
     ])
     assert.equal(container.code, HEADLESS_EXIT.APPROVAL_REQUIRED)
     assert.match(container.err, /no container backend for copse-review-test:never-built/)
+  })
+
+  it('treats a blank forge token as unset and rejects a pull request number with junk', () => {
+    const flags = { 'post-review': 'github', repo: 'a/b', pr: '7' }
+    // CI expands a missing secret to "", which must not shadow GITHUB_TOKEN.
+    const target = resolveForgeTarget(flags, {
+      COPSE_REVIEW_FORGE_TOKEN: '',
+      GITHUB_TOKEN: 'ghs_fallback',
+    })
+    assert.equal(target?.number, 7)
+    assert.throws(
+      () => resolveForgeTarget(flags, { COPSE_REVIEW_FORGE_TOKEN: '  ', GITHUB_TOKEN: '' }),
+      /needs a token/,
+    )
+    for (const pr of ['3x', '1.5', '0', '-1', '07']) {
+      assert.throws(
+        () => resolveForgeTarget({ ...flags, pr }, { GITHUB_TOKEN: 't' }),
+        /--pr must be a positive integer/,
+        pr,
+      )
+    }
   })
 
   it('cancels Stage 0 without running the next check', { timeout: 15000 }, async () => {

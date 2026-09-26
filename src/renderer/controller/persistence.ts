@@ -515,9 +515,32 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       schedule()
     }),
     // Same for the review report: a dismissed finding or a cleared card is a
-    // metadata-only change on an idle thread.
-    store.on('review_report_changed', () => {
-      schedule()
+    // metadata-only change on an idle thread. A report anchored to a message
+    // lives on that message's spine line instead, so re-finalize the message:
+    // a standalone review (Changes view "Review") ends with a `done` that has
+    // no streaming message, so no `message_done` would ever carry it to disk.
+    store.on('review_report_changed', (threadId, messageId) => {
+      if (messageId === null) {
+        schedule()
+        return
+      }
+      const message = getThreadById(store, threadId)?.messages.find(
+        (candidate) => candidate.id === messageId,
+      )
+      if (!message) return
+      // A `running` card is transient; the settled report (or error) replaces
+      // it. Persisting it would leave a card spinning forever after a crash.
+      // A message still streaming a tool is finalized by its own
+      // `message_done`; the v1 spine has no running tool status.
+      if (message.reviewReport?.status === 'running') return
+      if (message.toolCalls.some((toolCall) => toolCall.status === 'running')) return
+      const backgroundProjectId = backgroundProjectOf(store, threadId)
+      if (backgroundProjectId) {
+        persistBackgroundMessage(backgroundProjectId, threadId, messageId)
+        return
+      }
+      const { activeProjectId } = store.getState()
+      if (activeProjectId) persistMessage(activeProjectId, threadId, messageId)
     }),
     store.on('projects_changed', () => {
       projectsDirty = true

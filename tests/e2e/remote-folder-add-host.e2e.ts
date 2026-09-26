@@ -50,6 +50,9 @@ describe('Open remote folder — add host inline', () => {
     )
 
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-add-host.png')
+    // Save host is the filled primary; Import is a quiet kit button (#3065).
+    await expect(dialog.$('.remote-folder-save-host')).toHaveElementClass('ui-btn-primary')
+    await expect(dialog.$('.remote-folder-import-config')).toHaveElementClass('ui-btn')
     await dialog.$('.remote-folder-cancel').click()
     await expect(dialog).not.toBeDisplayed()
   })

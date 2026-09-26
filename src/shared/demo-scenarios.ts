@@ -68,6 +68,12 @@ export interface DemoScenario {
    */
   vncDiscoveredPorts?: readonly number[]
   /**
+   * A login the browser demo's credential store already holds for every
+   * desktop target. The demo has no OS keychain, so this is what reaches the
+   * selected device's "Signed in as …" details and its forget action.
+   */
+  vncSavedLogin?: { readonly username: string }
+  /**
    * A container run already attached to the first thread, so the composer
    * banner and the run dialog's status face render without Docker.
    */
@@ -84,6 +90,17 @@ export interface DemoScenario {
   }[]
   /** Browser-hosted state for the first-party Apple Development panel. */
   appleDevelopmentState?: AppleProjectState
+  /** Seed auto-update prompts so a browser spec can inspect the real dialog. */
+  updatePromptRequests?: readonly {
+    id: string
+    message: string
+    detail?: string
+    changelog?: readonly { version: string; notes: string }[]
+    changelogUrl?: string
+    buttons: readonly string[]
+    defaultIndex?: number
+    cancelIndex?: number
+  }[]
 }
 
 export const FOOTER_COMPACT_EXPECTATIONS = {
@@ -972,6 +989,58 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'update-prompt-changelog',
+    label: 'Update prompt listing every missed release',
+    project: project('demo-update-prompt-changelog-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-update-prompt-changelog-thread',
+        title: 'Weekly release cadence',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    updatePromptRequests: [
+      {
+        id: 'demo-update-prompt-changelog',
+        message: 'Copse 0.1.0-beta.11 is available',
+        detail: 'Download the update now? You can install it immediately once downloaded.',
+        changelog: [
+          {
+            version: '0.1.0-beta.11',
+            notes: [
+              '- The Browser pane restores its tabs when Copse is reopened.',
+              '- Tool calls that miss a numeric bound run at the cap instead of failing.',
+              '',
+              '## Known issues',
+              '',
+              '- Restored tabs do not keep their scroll position.',
+            ].join('\n'),
+          },
+          {
+            version: '0.1.0-beta.10',
+            // Release notes arrive over the network: markup must render inert.
+            notes:
+              '- Faster `find_files` on large repositories.\n- <img src="x" onerror="document.body.dataset.pwned=1"><script>document.body.dataset.pwned=1</script>Hardened update checks.',
+          },
+          { version: '0.1.0-beta.9', notes: '' },
+        ],
+        changelogUrl: 'https://github.com/copse-dev/copse-releases/releases',
+        buttons: ['Download', 'Later'],
+        defaultIndex: 0,
+        cancelIndex: 1,
+      },
+    ],
+  },
+  {
     id: 'vnc-discovered-ports',
     label: 'Remote desktop discovered-port list with one selected',
     project: project('demo-vnc-discovered-ports-project'),
@@ -993,6 +1062,30 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
     vncDiscoveredPorts: [5900, 5901, 5902],
+  },
+  {
+    id: 'vnc-saved-login',
+    label: 'Remote desktop device with a saved login in a narrow rail',
+    project: project('demo-vnc-saved-login-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      vncEnabled: true,
+    },
+    threads: [
+      {
+        id: 'demo-vnc-saved-login-thread',
+        title: 'Remote desktop',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+    vncDiscoveredPorts: [5900],
+    vncSavedLogin: { username: 'saved-user' },
   },
   {
     id: 'inline-thread-reference',

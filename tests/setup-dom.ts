@@ -51,6 +51,10 @@ Object.assign(globalThis, {
   // Node carries the nodeType constants (Node.TEXT_NODE, …) that DOM-walking
   // renderer code (e.g. the composer editor's serializer) compares against.
   Node: win.Node,
+  // NodeFilter carries the SHOW_TEXT/FILTER_ACCEPT constants that
+  // createTreeWalker callers (e.g. the in-conversation find bar) compare
+  // against.
+  NodeFilter: win.NodeFilter,
   // MutationObserver is used by long-lived views to tear down when a host is
   // cleared without an explicit destroy (model picker remounts, follow-ups).
   MutationObserver: win.MutationObserver,

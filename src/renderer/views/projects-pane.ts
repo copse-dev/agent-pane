@@ -49,6 +49,8 @@ import { openSettingsDialog } from './settings-dialog.ts'
 import { hasAutomationDialog, openAutomationDialog } from './automation-dialog.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { forkThread } from '../controller/fork-thread.ts'
+import { createThreadFilter } from '../controller/thread-filter.ts'
+import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
 import { sidebarPrRefs, type SidebarThread } from '../controller/sidebar-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
@@ -212,10 +214,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // (which render() clears on every update) so its focus and value survive
   // re-renders while the user is typing.
   let threadFilter = ''
+  const contentFilter = createThreadFilter(store, api, () => {
+    render()
+  })
   const searchInput = el('input', {
     type: 'text',
     class: 'projects-search-input',
-    placeholder: 'Filter threads…',
+    placeholder: 'Filter titles and requests…',
     'aria-label': 'Filter threads',
     spellcheck: 'false',
     autocomplete: 'off',
@@ -223,6 +228,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const searchRow = el('div', { class: 'projects-search-row', hidden: true }, searchInput)
 
   const closeThreadFilter = (): void => {
+    contentFilter.cancel()
     searchInput.value = ''
     threadFilter = ''
     searchRow.hidden = true
@@ -241,6 +247,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
   searchInput.addEventListener('input', () => {
     threadFilter = searchInput.value.trim().toLowerCase()
+    contentFilter.search(threadFilter)
     render()
   })
   searchInput.addEventListener('keydown', (e) => {
@@ -1349,14 +1356,24 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       if (!isExpanded) return entry
 
-      const sidebarThreads = getSidebarThreads(store, project.id)
-      // When a filter is active it narrows the list by thread title and shows
-      // every match (pagination is suppressed so a match can't hide behind
-      // "Show more").
-      const isFiltering = threadFilter.length > 0
+      const isFiltering = threadFilter.length > 0 && project.id === activeProjectId
+      const sidebarThreads = isFiltering
+        ? sortThreadsNewestFirst(store.getState().threads).filter(
+            (thread) => thread.archivedAt == null,
+          )
+        : getSidebarThreads(store, project.id)
+      // Title matches appear immediately; user-request matches arrive in date
+      // order. Search is scoped to the open workspace and bypasses pagination.
       const matchingThreads = isFiltering
-        ? sidebarThreads.filter((t) =>
-            (t.title || 'New Thread').toLowerCase().includes(threadFilter),
+        ? sidebarThreads.filter(
+            (t) =>
+              (t.title || 'New Thread').toLowerCase().includes(threadFilter) ||
+              contentFilter.matches.has(t.id) ||
+              t.messages?.some(
+                (message) =>
+                  isHumanUserPrompt(message) &&
+                  message.content.toLowerCase().includes(threadFilter),
+              ),
           )
         : sidebarThreads
       // Automation runs are collated in the workspace-level Automations section
@@ -1400,6 +1417,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const chats = el('div', { class: 'chats-list' })
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store, project.id)) {
         chats.append(el('div', { class: 'sidebar-empty chats-loading' }, 'Loading…'))
+      } else if (isFiltering && contentFilter.pending) {
+        chats.append(
+          el(
+            'div',
+            { class: 'sidebar-empty thread-filter-status', role: 'status' },
+            'Searching user requests…',
+          ),
+        )
+      } else if (isFiltering && contentFilter.failed) {
+        chats.append(
+          el(
+            'div',
+            { class: 'sidebar-empty thread-filter-status', role: 'status' },
+            'Some threads could not be searched',
+          ),
+        )
       } else if (isFiltering && matchingThreads.length === 0) {
         chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
@@ -1455,11 +1488,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   const unsubs = [
     store.on('projects_changed', render),
+    // Streaming and hydration must not restart the disk scan. Resident human
+    // requests are matched in render(), so new prompts still appear immediately.
     store.on('threads_changed', render),
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', render),
     store.on('workspace_changed', () => {
+      closeThreadFilter()
       // Drop cached PR lifecycles when the workspace changes so we don't paint
       // another project's GitHub state onto the new sidebar.
       prStatusGeneration += 1
@@ -1476,6 +1512,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   render()
   refreshOrphans()
   return () => {
+    contentFilter.cancel()
     prStatusGeneration += 1
     dismissContextMenu()
     renaming = null

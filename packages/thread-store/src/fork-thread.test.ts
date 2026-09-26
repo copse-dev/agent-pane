@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Message, Thread } from './thread-types.ts'
+import type { Message, Thread, ThreadReviewReport } from './thread-types.ts'
 import { buildForkedThread, forkThreadTitle } from './fork-thread.ts'
 
 function userMessage(id: string, content: string, extra: Partial<Message> = {}): Message {
@@ -257,9 +257,28 @@ describe('buildForkedThread', () => {
   })
 
   it('drops derived per-message state that belongs to the source run', () => {
+    const report: ThreadReviewReport = {
+      status: 'done',
+      startedAt: 10,
+      models: { reviewer: 'gpt-5', challenger: null },
+      lenses: [],
+      baseRef: 'main',
+      headCommit: 'abc',
+      dirtyWorkingTree: false,
+      execution: { backend: '', strength: 'none', executed: false, reason: 'unavailable' },
+      checks: [],
+      notChecked: [],
+      findings: [],
+      appendix: 0,
+      refuted: 0,
+      reviewers: [],
+      verification: null,
+      durationMs: 12,
+    }
     const source = thread([
       assistantMessage('m1', 'Done', {
         review: { status: 'done', summary: 'looks good' },
+        reviewReport: report,
         hookCards: [
           {
             id: 'h1',
@@ -279,6 +298,7 @@ describe('buildForkedThread', () => {
 
     assert.ok(forked)
     assert.equal(forked.messages[0]?.review, undefined)
+    assert.equal(forked.messages[0]?.reviewReport, undefined)
     assert.equal(forked.messages[0]?.hookCards, undefined)
   })
 })

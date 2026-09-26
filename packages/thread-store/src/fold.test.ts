@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { deepStrictEqual, ok, strictEqual, throws } from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Message, Thread } from './thread-types.ts'
+import type { Message, Thread, ThreadReviewReport } from './thread-types.ts'
 import {
   attachHookCards,
   explodeThread,
@@ -120,6 +120,46 @@ test('round-trips a message-anchored post-turn review', () => {
       toolCalls: [],
       review: { status: 'done', summary: '1 likely bug: off-by-one in the loop.' },
       createdAt: 7,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
+test('round-trips separate Copse Reviewer reports on their assistant messages', () => {
+  const report: ThreadReviewReport = {
+    status: 'done',
+    startedAt: 10,
+    models: { reviewer: 'gpt-5', challenger: null },
+    lenses: ['correctness'],
+    baseRef: 'main',
+    headCommit: 'abc',
+    dirtyWorkingTree: false,
+    execution: { backend: '', strength: 'none', executed: false, reason: 'unavailable' },
+    checks: [],
+    notChecked: ['Tests'],
+    findings: [],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 12,
+  }
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'First',
+      toolCalls: [],
+      createdAt: 1,
+      reviewReport: report,
+    },
+    {
+      id: 'a2',
+      role: 'assistant',
+      content: 'Second',
+      toolCalls: [],
+      createdAt: 2,
+      reviewReport: { ...report, startedAt: 20, note: 'Second review' },
     },
   ]
   deepStrictEqual(roundTrip(messages).messages, messages)

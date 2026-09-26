@@ -7,6 +7,7 @@ import {
   createThread,
   setThreadComparison,
   setThreadReviewReport,
+  setMessageReviewReport,
   setMessageReview,
 } from '@shared/store/thread-helpers.ts'
 import type { ThreadReviewReport } from '@shared/types'
@@ -64,6 +65,50 @@ afterEach(() => {
 })
 
 describe('review report renders inline in the transcript (component)', () => {
+  it('keeps two new reports beside their own messages as later turns arrive', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const firstId = addMessage(store, threadId, 'assistant', 'First change.')
+    addMessage(store, threadId, 'user', 'Please revise it.')
+    const secondId = addMessage(store, threadId, 'assistant', 'Second change.')
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    setMessageReviewReport(store, threadId, firstId, report())
+    setMessageReviewReport(store, threadId, secondId, {
+      ...report(),
+      startedAt: 2,
+      note: 'Second review',
+    })
+    addMessage(store, threadId, 'user', 'Another request.')
+
+    const list = document.querySelector('.messages-list')
+    assert.ok(list)
+    const children = [...list.children]
+    const firstMessage = children.findIndex(
+      (child) => child.getAttribute('data-message-id') === firstId,
+    )
+    const firstReport = children.findIndex(
+      (child) => child.getAttribute('data-review-report-for') === firstId,
+    )
+    const secondMessage = children.findIndex(
+      (child) => child.getAttribute('data-message-id') === secondId,
+    )
+    const secondReport = children.findIndex(
+      (child) => child.getAttribute('data-review-report-for') === secondId,
+    )
+    assert.equal(firstReport, firstMessage + 1)
+    assert.equal(secondReport, secondMessage + 1)
+    assert.ok(firstReport < secondMessage)
+    assert.equal(list.querySelectorAll('[data-review-report-card]').length, 2)
+
+    setMessageReviewReport(store, threadId, firstId, report('error'))
+    assert.equal(list.querySelectorAll('[data-review-report-card]').length, 2)
+    assert.ok(list.querySelector(`[data-review-report-for="${secondId}"]`))
+  })
+
   it('mounts the findings card as the last child of .messages-list', () => {
     const store = createStore()
     const threadId = createThread(store)

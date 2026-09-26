@@ -28,6 +28,17 @@ describe('parseTscDiagnostics', () => {
     ])
   })
 
+  it('keeps paths that contain parentheses, such as Next.js route groups', () => {
+    const output = [
+      'app/(auth)/page.tsx(3,7): error TS2322: bad',
+      "app/(marketing)/layout.tsx:9:2 - error TS2304: Cannot find name 'y'.",
+    ].join('\n')
+    assert.deepEqual(
+      parseTscDiagnostics(output).map((d) => `${d.path}:${String(d.line)}:${String(d.column)}`),
+      ['app/(auth)/page.tsx:3:7', 'app/(marketing)/layout.tsx:9:2'],
+    )
+  })
+
   it('returns nothing for output with no diagnostics', () => {
     assert.deepEqual(parseTscDiagnostics('all good\n'), [])
     assert.deepEqual(parseTscDiagnostics(''), [])

@@ -55,6 +55,11 @@ describe('roadmap start-thread tracking and reopen', () => {
     await expect($('.prompt-input')).toHaveText(PROMPT)
     await $('.roadmap-reopen-btn').waitForDisplayed({ timeout: 15_000 })
     await $('.roadmap-thread-chip').waitForDisplayed({ timeout: 15_000 })
+    // The new thread carries a back-link chip in the chat header pointing at
+    // the roadmap item that started it (#2501).
+    const originChip = $('.thread-roadmap-origin')
+    await originChip.waitForDisplayed({ timeout: 15_000 })
+    await expect($('.thread-roadmap-origin-title')).toHaveText(PROMPT)
     await browser.execute(() => {
       const viewer = document.querySelector<HTMLElement>('.memories-viewer-host')
       if (viewer) viewer.scrollTop = viewer.scrollHeight
@@ -71,6 +76,17 @@ describe('roadmap start-thread tracking and reopen', () => {
     assert.equal(actionRowBounds.right, true, 'all roadmap actions should fit horizontally')
     assert.equal(actionRowBounds.bottom, true, 'the scrolled action row should be fully visible')
     await saveAppScreenshot('roadmap-thread-reopen-tracked.png')
+
+    // Clear the roadmap editor's selection, then use the chat header's chip
+    // to jump straight back to the item it points at (#2501).
+    await $('.roadmap-new-btn').click()
+    await expect($('.roadmap-prompt-input')).toHaveValue('')
+    await originChip.click()
+    const selectedTitle = $('.roadmap-row.is-selected .roadmap-row-title')
+    await selectedTitle.waitForDisplayed({ timeout: 10_000 })
+    await expect(selectedTitle).toHaveText(PROMPT)
+    await expect($('.roadmap-prompt-input')).toHaveValue(PROMPT)
+    await saveAppScreenshot('roadmap-thread-origin-chip.png')
 
     // Switch away to a fresh thread — the composer clears.
     await $('.project-new-thread-btn').click()

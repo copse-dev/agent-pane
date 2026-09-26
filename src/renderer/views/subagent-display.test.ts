@@ -196,6 +196,57 @@ describe('subagent display (component)', () => {
     )
   })
 
+  it('marks the subagent row with a leading glyph that survives collapse', () => {
+    mountWithSubagent()
+
+    const card = document.querySelector('.tool-card-subagent')
+    assert.ok(card)
+    assert.equal(card.hasAttribute('open'), false, 'collapsed by default — the state #2452 reports')
+    const header = card.querySelector('summary.tool-card-header')
+    assert.ok(header)
+    const marker = header.querySelector('.tool-subagent-marker')
+    assert.ok(marker, 'expected a distinguishing marker on the collapsed subagent row')
+    assert.equal(marker.getAttribute('aria-label'), 'Subagent')
+    // Leading: ahead of the label, not trailing after it.
+    const name = header.querySelector('.tool-name')
+    assert.ok(name)
+    assert.equal(
+      marker.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  it('does not mark an ordinary parent-level rollup with the subagent glyph', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, {
+      id: 'tc-parent-read',
+      name: 'read_file',
+      args: { path: 'a.ts' },
+      status: 'done',
+      result: 'a',
+    })
+    addToolCall(store, messageId, {
+      id: 'tc-parent-shell',
+      name: 'run_shell',
+      args: { command: 'ls' },
+      status: 'done',
+      result: 'a.ts',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const rollup = host.querySelector('.tool-card-rollup')
+    assert.ok(rollup, 'expected the two parent tool calls to collapse into one rollup')
+    assert.equal(
+      rollup.querySelector('.tool-subagent-marker'),
+      null,
+      'a parent-only rollup must not carry the subagent mark',
+    )
+  })
+
   it('renders the expanded explore message and nested inner tool', () => {
     mountWithSubagent()
 

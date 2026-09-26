@@ -14,6 +14,7 @@ export interface StartupSettings {
   openLinksInBuiltInBrowser: unknown
   theme: unknown
   fontSize: unknown
+  animateAgentAvatars: unknown
   uiScale: unknown
   uiAccentColor: unknown
   uiTintColor: unknown
@@ -39,6 +40,7 @@ export async function loadStartupSettings(
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
+    animateAgentAvatars,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -53,6 +55,7 @@ export async function loadStartupSettings(
     settings.get('openLinksInBuiltInBrowser'),
     settings.get('theme'),
     settings.get('fontSize'),
+    settings.get('animateAgentAvatars'),
     settings.get('uiScale'),
     settings.get('uiAccentColor'),
     settings.get('uiTintColor'),
@@ -69,6 +72,7 @@ export async function loadStartupSettings(
     openLinksInBuiltInBrowser,
     theme,
     fontSize,
+    animateAgentAvatars,
     uiScale,
     uiAccentColor,
     uiTintColor,
