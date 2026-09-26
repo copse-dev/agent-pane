@@ -657,6 +657,15 @@ input[type=password] {
   gap: 4px;
   vertical-align: middle;
 }
+.ui-inline-status[data-status-kind=error] {
+  color: var(--error);
+}
+.ui-inline-status[data-status-kind=ok] {
+  color: var(--success);
+}
+.ui-inline-status[data-status-kind=warn] {
+  color: var(--warning);
+}
 @keyframes ui-inline-status-spin {
   to {
     transform: rotate(360deg);
@@ -676,12 +685,14 @@ input[type=password] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-lg);
   border-radius: var(--radius);
   border: 1px solid transparent;
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
+  white-space: nowrap;
   cursor: pointer;
   color: var(--text-primary);
   background: var(--bg-elevated);
@@ -8582,9 +8593,6 @@ dialog.settings-overlay::backdrop {
   padding: 2px 6px;
   border-radius: var(--radius);
   overflow-x: auto;
-}
-.acp-cmd-copy {
-  flex: none;
 }
 .sources-group {
   display: flex;
