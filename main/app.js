@@ -24952,16 +24952,6 @@ function warningIcon(className = DEFAULT) {
     className
   );
 }
-function lockIcon(className = DEFAULT) {
-  return outlineIcon(
-    "lock",
-    [
-      "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z",
-      "M7 11V7a5 5 0 0 1 10 0v4"
-    ],
-    className
-  );
-}
 function searchIcon(className = DEFAULT) {
   return outlineIcon(
     "search",
@@ -28098,6 +28088,30 @@ var init_demo_scenarios = __esm({
         vncDiscoveredPorts: [5900, 5901, 5902]
       },
       {
+        id: "vnc-saved-login",
+        label: "Remote desktop device with a saved login in a narrow rail",
+        project: project("demo-vnc-saved-login-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          vncEnabled: true
+        },
+        threads: [
+          {
+            id: "demo-vnc-saved-login-thread",
+            title: "Remote desktop",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ],
+        vncDiscoveredPorts: [5900],
+        vncSavedLogin: { username: "saved-user" }
+      },
+      {
         id: "inline-thread-reference",
         label: "Inline thread reference chip geometry",
         project: project("demo-inline-thread-project"),
@@ -29106,10 +29120,10 @@ function createDemoApi(scenario, options = {}) {
       discover: () => resolved([...scenario.vncDiscoveredPorts ?? []]),
       discoverNearby: emptyArray,
       resolveSshHosts: emptyArray,
-      getUsername: () => resolved(null),
+      getUsername: () => resolved(scenario.vncSavedLogin?.username ?? null),
       getPassword: () => resolved(null),
-      hasPassword: () => resolved(false),
-      canStoreCredentials: () => resolved(false),
+      hasPassword: () => resolved(scenario.vncSavedLogin !== void 0),
+      canStoreCredentials: () => resolved(scenario.vncSavedLogin !== void 0),
       rememberUsername: () => resolved(false),
       rememberPassword: () => resolved(false),
       forgetPassword: resolvedVoid,
@@ -128223,9 +128237,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   const authPanel = el(
     "div",
     { class: "vnc-auth-panel", "aria-label": "Screen Sharing authentication", hidden: true },
-    // Gutter marker. The panel used to be edged with an accent rail; the icon
-    // column replaces it, so the title and the body start at the same inset.
-    lockIcon("ui-icon vnc-auth-icon"),
+    // Gutter marker: the same severity dot as the status line below, so
+    // "Authentication required" and "Authentication failed" read as one
+    // recipe. Decorative — the title says the same thing.
+    el("span", { class: "vnc-status-dot", "aria-hidden": "true" }),
     el("div", { class: "vnc-auth-title" }, "Authentication required"),
     authDescription,
     usernameField,
@@ -128247,9 +128262,9 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     "button",
     {
       type: "button",
-      class: "vnc-setup-forget-login"
+      class: "ui-btn ui-btn-ghost vnc-setup-forget-login"
     },
-    "Forget login"
+    "Forget saved login"
   );
   const savedLoginCopy = el("span", { class: "vnc-saved-login-copy" });
   const savedLoginDetails = el(
