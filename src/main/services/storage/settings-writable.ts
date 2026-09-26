@@ -171,6 +171,9 @@ export const webAllowedOriginsSchema = z
 
 export const trustedShellCommandsSchema = z.array(z.string().min(1).max(128)).max(500)
 
+/** Hosts trusted with ssh/scp/rsync under Guarded YOLO (see @copse/shell-guard/trusted-ssh-hosts.ts). */
+export const trustedSshHostsSchema = z.array(z.string().min(1).max(253)).max(200)
+
 /** Highest auto-approval tier honoured for shell commands (see @shared/auto-approval.ts). */
 export const autoApprovalLevelSchema = z.enum(AUTO_APPROVAL_LEVELS)
 
@@ -405,6 +408,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
       }),
     )
     .max(64),
+  // Hosts Guarded YOLO may ssh/scp/rsync to without a confirmation (Settings →
+  // Permissions). Written on its own through `settings:set`, not the security
+  // bundle, so the IPC protocol does not change shape.
+  trustedSshHosts: trustedSshHostsSchema,
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS

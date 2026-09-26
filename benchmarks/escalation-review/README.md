@@ -106,7 +106,8 @@ Conclusions:
 - **local-write:** feasible. A confident model gated by the harm gate covered 77% of eligible
   prompts with no must-ask approvals.
 - **outside-read:** feasible, but only with a secrets guard in front. The credential-read deny
-  has holes (see the `gy-ssh-key-list-redirect` and `gy-no-workspace-credential-read` cases).
+  had holes when this ran (`gy-ssh-key-list-redirect`, `gy-no-workspace-credential-read`); both
+  are enforced cases now.
 - **remote-write and outside-write:** undecided. The combined approver made no must-ask
   approvals in either mode. But there are only 17 remote-write and 25 outside-write reference
   commands, and lowering the threshold to 0.5 already let 3 must-ask commands through in
