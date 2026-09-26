@@ -132,11 +132,6 @@ export type Verdict = {
  * merging" uses. Zero means the tested merge result is still the merge result.
  * A positive count is reported as exactly that — the branch is behind — and
  * deliberately makes no claim about which base CI merged (see the header).
- * It is `neutral`, not `failure`: every push to the base makes every open pull
- * request behind, and a red check there invites a base merge on each one,
- * which re-runs its whole CI and restarts its reviews for no finding. This
- * context is advisory and never required, so `neutral` passing a required
- * check does not apply.
  *
  * Being behind alone is `neutral`, not `failure`: every push to the base makes
  * every open pull request behind, and a red check there invites a base merge on
