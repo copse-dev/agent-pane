@@ -496,7 +496,9 @@ Two consequences of running e2e on those PRs, both intended:
   view-only `screenshot-compare/pr-<N>/<sha12>` branch. The comment links
   GitHub's compare view of that commit, whose image diffs need no download,
   and previews up to 20 before/after pairs inline from raw URLs pinned to
-  commit SHAs (they render because the repository is public). A `GITHUB_TOKEN`
+  commit SHAs (they render because the repository is public). Screenshots the
+  PR touches (reference PNGs it changes, or names its changed specs mention)
+  lead the preview, so unrelated drift cannot crowd them out. A `GITHUB_TOKEN`
   push starts no workflows, so that branch runs no CI. It is never merged. A
   newer successful head deletes it, and so does closing the parent. No run
   opens a PR for screenshots. Accepting references means committing them to
