@@ -370,7 +370,12 @@ writable. Linux and Windows are unchanged.
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
   are additionally capped at `read` if a caller reaches the level helper without a sandbox.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
-  on Windows and after init failure.
+  on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
+  reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the
+  read-only fs-server overlay: the same read confinement with no write rules. On Linux, a writable
+  overlay makes bubblewrap create empty host placeholders for missing mandatory write-deny paths
+  (`.bashrc`, `.gitconfig`, `.vscode`, ...), and ASRT removes them only once no sandbox is active,
+  so `git status` and the Changes pane would list them as untracked files.
 
 `permission-platform.test.ts` pins the platform matrix; `permission-gate.test.ts` and
 `auto-approval-config.test.ts` pin gate wiring, the sandbox auto-approval gate, and MCP decisions.

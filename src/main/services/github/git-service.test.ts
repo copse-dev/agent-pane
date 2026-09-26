@@ -1,4 +1,4 @@
-import { describe, it, before, after, afterEach } from 'node:test'
+import { describe, it, before, after, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -16,6 +16,11 @@ import {
   getGitShowText,
   getGitStatus,
   getGitWorkingFileDiff,
+  getAheadBehind,
+  getCurrentBranchName,
+  getGitLogText,
+  getGitStatusText,
+  getGithubRepoSlug,
   invalidateGitWorkTreeProbe,
   isInsideGitWorkTree,
   parseAheadBehind,
@@ -35,6 +40,8 @@ import {
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
+import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { setProjectSandboxEnabled } from '../../project-sandbox/enabled.ts'
 
 describe('parseAheadBehind', () => {
   it('reads the "<behind>\\t<ahead>" left-right count', () => {
@@ -1346,5 +1353,94 @@ describe('git reads on a deleted checkout', { skip: !gitOk && 'git not installed
     await rm(repo, { recursive: true, force: true })
     assert.equal(await isInsideGitWorkTree(repo), false)
     assert.equal(await getGitStatus(repo), null)
+  })
+})
+
+// Linux bubblewrap creates an empty host placeholder for every missing path in
+// a writable overlay's denyWrite (.bashrc, .gitconfig, .vscode, ...) and keeps
+// it until no sandbox is active. A Git read under that overlay therefore puts
+// untracked files into the very checkout it inspects: the Changes pane loading
+// a diff, or the HEAD read every submit makes before a worktree is allocated.
+describe('Git reads under the project sandbox', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+  const overlays: (Partial<SandboxRuntimeConfig> | undefined)[] = []
+
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await realpath(await mkdtemp(join(tmpdir(), 'copse-git-sandboxed-reads-')))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'tracked.txt'), 'one\n')
+    git('add', 'tracked.txt')
+    git('commit', '-qm', 'init')
+    await writeFile(join(repo, 'tracked.txt'), 'two\n')
+    await writeFile(join(repo, 'fresh.txt'), 'brand new\n')
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+    invalidateGitWorkTreeProbe()
+    resetDefaultBranchCache()
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {})
+    mock.method(
+      SandboxManager,
+      'wrapWithSandboxArgv',
+      (command: string, _shell?: string, customConfig?: Partial<SandboxRuntimeConfig>) => {
+        overlays.push(customConfig)
+        // Run the real Git command unconfined; only the overlay is under test.
+        return Promise.resolve({ argv: ['/bin/sh', '-c', command], env: { ...process.env } })
+      },
+    )
+    setProjectSandboxEnabled(true)
+  })
+
+  after(async () => {
+    setProjectSandboxEnabled(false)
+    mock.restoreAll()
+    setGitAvailableForTest(null)
+    invalidateGitWorkTreeProbe()
+    resetDefaultBranchCache()
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  afterEach(() => {
+    for (const overlay of overlays) {
+      const filesystem = overlay?.filesystem
+      assert.ok(filesystem)
+      assert.deepEqual(filesystem.allowWrite, [])
+      assert.deepEqual(filesystem.denyWrite, [])
+    }
+  })
+
+  it('reads prompt state, branch, and default-branch facts read-only', async () => {
+    overlays.length = 0
+    const head = git('rev-parse', 'HEAD').stdout.trim()
+    assert.deepEqual(await getGitPromptState(), { startingCommit: head, dirty: true })
+    assert.equal(await getCurrentBranchName(), 'main')
+    assert.deepEqual(
+      (await getBranches()).map((branch) => branch.name),
+      ['main'],
+    )
+    assert.equal(await getDefaultBranch(), 'main')
+    assert.deepEqual(await getAheadBehind('main'), { ahead: 0, behind: 0 })
+    assert.equal(await getGithubRepoSlug(), null)
+    assert.ok(overlays.length >= 8, `expected sandboxed Git reads, saw ${String(overlays.length)}`)
+  })
+
+  it('reads diffs, blobs, status, and history read-only', async () => {
+    overlays.length = 0
+    const fileDiff = await getGitFileDiff('tracked.txt', false)
+    assert.ok(fileDiff)
+    assert.equal(fileDiff.before, 'one\n')
+    assert.equal(fileDiff.after, 'two\n')
+    assert.match(await getGitDiffText(), /brand new/)
+    assert.match(await getGitStatusText(), /fresh\.txt/)
+    assert.match(await getGitShowText('HEAD', 'tracked.txt'), /one/)
+    assert.match(await getGitLogText(5), /init/)
+    assert.ok(overlays.length >= 5, `expected sandboxed Git reads, saw ${String(overlays.length)}`)
   })
 })
