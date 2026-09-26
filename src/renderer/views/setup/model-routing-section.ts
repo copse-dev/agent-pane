@@ -5,6 +5,7 @@ import { DEFAULT_SAFETY_MODEL, lmStudioChatModelValue } from '@shared/lm-studio-
 import { fetchRoleModelOptions, localModelOptions, type ModelOption } from '../model-options.ts'
 import { mountModelSelectPicker } from '../model-picker.ts'
 import { el } from '../../dom/helpers.ts'
+import { disclosureSummary } from '../../dom/disclosure-summary.ts'
 import { optionalString, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { uiField } from '../../ui/index.ts'
 
@@ -49,11 +50,11 @@ export function createModelRoutingSection(
     el(
       'details',
       { class: 'routing-advanced' },
-      el('summary', {}, 'Advanced routes'),
+      disclosureSummary('Advanced routes'),
       routingField(
         'Instruct / safety model',
         safetyModel,
-        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does — a cloud choice sends that screening content to its provider.',
+        'Classifies shell commands and screens terminal reads. Defaults to the best model on this device that clears a minimum intelligence score, and to the cheapest cloud route that clears it when no local model does — a cloud choice sends that screening content to its provider. A classifier chosen under Classifiers → Safety screening replaces it.',
       ),
       routingField('Post-turn review model', reviewModel, 'Reviews the diff after an editing turn'),
     ),
