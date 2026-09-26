@@ -241,6 +241,16 @@ describe('upsertSummaryBlock', () => {
     )
   })
 
+  it('closes a fence the description leaves open so the block renders outside it', () => {
+    for (const fence of ['```', '~~~~']) {
+      const open = `Example:\n\n${fence}ts\nconst x = 1;`
+      const first = upsertSummaryBlock(open, older)
+      assert.equal(first, `${open}\n${fence}\n\n${older}`)
+      // The next run finds that block outside the now-closed fence and replaces it.
+      assert.equal(upsertSummaryBlock(first, block), `${open}\n${fence}\n\n${block}`)
+    }
+  })
+
   it('finds its block in a description the web editor saved with CRLF', () => {
     const crlf = `Text.\r\n\r\n${older.replaceAll('\n', '\r\n')}`
     assert.equal(upsertSummaryBlock(crlf, block), `Text.\n\n${block}`)

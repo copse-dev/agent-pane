@@ -239,14 +239,23 @@ function bareLine(line: string): string {
   return line.replace(/[ \t\r]+$/, '')
 }
 
+/** An opening code fence: its character, its length and the line it starts on. */
+interface OpenFence {
+  readonly char: string
+  readonly length: number
+  readonly from: number
+}
+
 /**
- * Indices of the lines inside a closed fenced code block. An unclosed fence
- * runs to the end of the description in rendered Markdown, but it is ignored
- * here: otherwise every run would append a block the next run cannot see.
+ * The lines inside closed fenced code blocks, and the fence still open at the
+ * end of the description, if any.
  */
-function fencedLines(lines: readonly string[]): ReadonlySet<number> {
+function scanFences(lines: readonly string[]): {
+  readonly fenced: ReadonlySet<number>
+  readonly open: OpenFence | null
+} {
   const fenced = new Set<number>()
-  let open: { readonly char: string; readonly length: number; readonly from: number } | null = null
+  let open: OpenFence | null = null
   for (const [index, line] of lines.entries()) {
     const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(bareLine(line))
     if (open === null) {
@@ -262,7 +271,17 @@ function fencedLines(lines: readonly string[]): ReadonlySet<number> {
       open = null
     }
   }
-  return fenced
+  return { fenced, open }
+}
+
+/**
+ * Indices of the lines inside a closed fenced code block. An unclosed fence
+ * runs to the end of the description in rendered Markdown, but it is ignored
+ * here: `upsertSummaryBlock` closes it before appending, so the block it writes
+ * is always outside.
+ */
+function fencedLines(lines: readonly string[]): ReadonlySet<number> {
+  return scanFences(lines).fenced
 }
 
 /**
@@ -321,7 +340,8 @@ function findBotBlock(
  * `body` with its summary block replaced by `block`, or `block` appended when
  * there was none. Only a block this tool wrote is removed (see `findBotBlock`);
  * every other character of the description is kept, and the new block always
- * goes at the bottom.
+ * goes at the bottom. A fence left open at the end is closed first, or the
+ * block would render as code.
  */
 export function upsertSummaryBlock(body: string | null, block: string): string {
   const lines = (body ?? '').split('\n')
@@ -336,7 +356,13 @@ export function upsertSummaryBlock(body: string | null, block: string): string {
       .trimEnd()
     kept = before.length === 0 || after.length === 0 ? before + after : `${before}\n\n${after}`
   }
-  return kept.length === 0 ? block : `${kept}\n\n${block}`
+  if (kept.length === 0) return block
+  // A description that ends inside an open fence would swallow the block as
+  // code, so close the fence first. The closing line then belongs to the
+  // author's text and the fence stays closed on later runs.
+  const { open } = scanFences(kept.split('\n'))
+  const close = open === null ? '' : `\n${open.char.repeat(open.length)}`
+  return `${kept}${close}\n\n${block}`
 }
 
 const pullSchema = z.object({
