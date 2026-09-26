@@ -7117,7 +7117,7 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 }
 .welcome-heading {
   font-size: calc(24px * var(--ui-scale));
-  font-weight: 600;
+  font-weight: 400;
 }
 .welcome-sub {
   color: var(--text-secondary);
@@ -7431,7 +7431,7 @@ dialog.settings-overlay::backdrop {
 .settings-section.active {
   display: block;
 }
-.settings-section h3 {
+.settings-section > h3 {
   font-family: var(--font-display);
   font-size: calc(28px * var(--ui-scale));
   font-weight: 400;
@@ -9308,6 +9308,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   grid-column: 1 / -1;
   margin: 0;
   font-size: var(--font-size-md);
+  font-weight: 600;
 }
 .automation-label {
   display: flex;
@@ -9509,11 +9510,6 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 }
 .onboarding-body > section > :first-child {
   margin-top: 0;
-}
-.onboarding-body h3 {
-  font-size: calc(18px * var(--ui-scale));
-  font-weight: 600;
-  margin: 0 0 var(--spacing-xs);
 }
 .onboarding-body .settings-section-desc {
   margin-bottom: var(--spacing-md);
@@ -10170,9 +10166,10 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .container-run-section {
   margin: 0 0 var(--spacing-md);
 }
-.container-run-section h3 {
+.container-run-section h4 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-sm);
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -10245,7 +10242,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .new-project-dialog h3 {
   margin: 0 0 var(--spacing-xs);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 400;
 }
 .new-project-dialog .field-hint {
   margin: 0 0 var(--spacing-md);
@@ -10311,7 +10308,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .create-pr-dialog h3 {
   margin: 0 0 var(--spacing-md);
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: 400;
 }
 .create-pr-dialog-field {
   display: flex;
@@ -11440,7 +11437,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--border);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: 400;
 }
 .keyboard-shortcuts-grid {
   display: grid;
@@ -12530,11 +12527,6 @@ dialog.process-manager-overlay {
 }
 .plugin-settings .apple-development-host {
   margin: 0;
-}
-.settings-section .plugin-settings-fold .apple-development-title {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
 }
 @media (max-width: 760px) {
   .apple-development-selection {
