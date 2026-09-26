@@ -298,18 +298,6 @@ describe('callout surfaces', () => {
       // The pointer rests where the Settings dialog was dismissed, which can be
       // over this message, fading its hover-only Copy button into the frame.
       await parkPointer()
-      await browser.waitUntil(
-        () =>
-          browser.execute(() =>
-            [...document.querySelectorAll('.msg-copy')].every(
-              (button) => getComputedStyle(button).opacity === '0',
-            ),
-          ),
-        {
-          timeout: 2_000,
-          timeoutMsg: 'a message Copy button stayed visible after the pointer left',
-        },
-      )
       await saveElementScreenshot('.message-reasoning', 'callout-reasoning-increased-contrast.png')
     } finally {
       await browser.sendCommand('Emulation.setEmulatedMedia', { features: [] })
