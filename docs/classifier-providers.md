@@ -63,6 +63,20 @@ with its example profile. Model names and ports below are the projects' document
 | decider-4b    | `DECIDER_MODEL=Mapika/decider-4b DECIDER_DEVICE=mps uvicorn decider.serve:app --host 127.0.0.1 --port 8000` after `pip install "decider-ai[serve,metal]" "transformers>=5.17"` | [`decider.json`](../benchmarks/classifiers/decider.json) | Verified 2026-09-25 (tag `v2`, M1 Max, MPS float16): warm calls 0.7–1.2 s, every field the hosted API sends. `scripts/serve.sh` binds `0.0.0.0` with no authentication; bind `127.0.0.1` as shown.                            |
 | metask-jev-4b | `python serve.py --port 8000 --model wayfind/metask-jev-4b-policy-mix` with `inference/` on `PYTHONPATH`                                                                       | [`metask.json`](../benchmarks/classifiers/metask.json)   | Omits `model` and `choice` (derived). `serve.py` hardcodes `0.0.0.0` with no authentication; change `app.run` to `127.0.0.1`. Send one request at a time on MPS: concurrent requests crashed the server. Verified 2026-09-25. |
 
+Kev and Winnow can also be set up and started from a persistent cache at pinned revisions:
+
+```bash
+COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- kev
+COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- winnow
+```
+
+The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
+about 12.5 GB text-only). Every later run reuses the cache and downloads nothing. The checkout,
+virtual environment or native build, uv package cache (`UV_CACHE_DIR`), Hugging Face cache
+(`HF_HOME`) and model files all live under `COPSE_CLASSIFIER_CACHE`, which defaults to
+`~/.copse/cache/classifiers` (or `$COPSE_DIR/cache/classifiers`). Point it at a large volume when
+the internal disk is short. `--setup-only` prepares the cache without starting the server.
+
 JevK5 and Jobe also serve `/v1/systemone`, but their servers are CUDA-only. Hopper answers one
 question per request and its weights are for non-commercial use. djev serves `/v1/request` rather
 than `/v1/systemone` and needs a B200-class GPU. None of these has a preset.
