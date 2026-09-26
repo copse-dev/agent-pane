@@ -38,7 +38,7 @@ export const longHorizonTasksPlugin: RegisteredPlugin = definePlugin(
   {
     name: LONG_HORIZON_TASKS_PLUGIN_ID,
     description:
-      'Long-horizon tasks — a durable, resumable checklist for a grind task within a PR (clearing a lint/type backlog, a deep research pass) via the `track_long_task` tool, with done/remaining state that survives across sessions.',
+      'Keeps a durable, resumable checklist for a grind task within a PR (clearing a lint/type backlog, a deep research pass) via the `track_long_task` tool, with done/remaining state that survives across sessions.',
     trust: 'first-party',
     stability: 'experimental',
     tools: { native: [LONG_HORIZON_TASKS_TOOL_NAME] },

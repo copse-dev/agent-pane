@@ -149,6 +149,10 @@ describe('settings → Storage → worktree actions', function () {
     await expect(confirm.$('.confirm-dialog-detail')).toHaveText(
       expect.stringContaining('node_modules'),
     )
+    // Each directory path is code, not prose.
+    const pathCodes = await confirm.$$('.confirm-dialog-detail code').map((code) => code.getText())
+    assert.equal(pathCodes.length, 1)
+    assert.match(pathCodes[0] ?? '', /node_modules$/)
     await saveAppScreenshot('settings-worktree-cleanup-confirm.png')
     await confirm.$('.confirm-dialog-cancel').click()
 
@@ -207,6 +211,10 @@ describe('settings → Storage → worktree actions', function () {
     )
     await expect(confirm.$('.confirm-dialog-detail')).toHaveText(
       expect.stringContaining('Cleanup starts immediately'),
+    )
+    assert.deepEqual(
+      await confirm.$$('.confirm-dialog-detail code').map((code) => code.getText()),
+      ['node_modules', '.venv'],
     )
     await confirm.$('.confirm-dialog-confirm').click()
     await browser.waitUntil(
