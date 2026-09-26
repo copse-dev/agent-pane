@@ -93,6 +93,41 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
+    // Group headers take the shared in-pane recipe from tokens.css (size,
+    // tracking, weight), the same as roadmap categories and the Terminal rail
+    // sections; the pane header sits on the shared header band.
+    const chrome = await browser.execute(() => {
+      const title = document.querySelector<HTMLElement>('.git-changes-section-title')
+      const header = document.querySelector<HTMLElement>('#git-changes-host .pane-header')
+      if (!title || !header) return null
+      const probe = document.createElement('div')
+      probe.style.cssText =
+        'position:absolute;visibility:hidden;font-size:var(--group-header-font-size);' +
+        'letter-spacing:var(--group-header-letter-spacing);' +
+        'font-weight:var(--group-header-font-weight);height:var(--pane-header-band-height)'
+      document.body.append(probe)
+      const expected = getComputedStyle(probe)
+      const style = getComputedStyle(title)
+      const result = {
+        title: {
+          fontSize: style.fontSize,
+          letterSpacing: style.letterSpacing,
+          fontWeight: style.fontWeight,
+        },
+        expected: {
+          fontSize: expected.fontSize,
+          letterSpacing: expected.letterSpacing,
+          fontWeight: expected.fontWeight,
+        },
+        headerHeight: header.getBoundingClientRect().height,
+        band: probe.getBoundingClientRect().height,
+      }
+      probe.remove()
+      return result
+    })
+    expect(chrome).not.toBeNull()
+    expect(chrome?.title).toEqual(chrome?.expected)
+    expect(chrome?.headerHeight).toBe(chrome?.band)
     // Rows render before the auto-selected staged.ts diff attaches; without
     // this wait the screenshot can catch the viewer still "Loading changes…".
     await waitForDiffOf('staged.ts')
