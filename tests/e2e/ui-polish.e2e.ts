@@ -119,7 +119,23 @@ describe('shared UI polish', () => {
     await reasoning.waitForDisplayed({ timeout: 10_000 })
     await expect(reasoning.$('.message-reasoning-title')).toHaveText('Reasoning…')
     await expect(reasoning.$('[data-icon="reasoning-activity"]')).toExist()
+    // The standalone row hands over to the disclosure title by collapsing: its
+    // height, padding and opacity transition, and `display: none` only lands
+    // when the discrete display transition ends. WebdriverIO calls the row
+    // hidden as soon as its opacity reaches 0, while its spiral is still laid
+    // out, so wait for the row to leave layout before counting icons below.
     await activity.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const row = document.querySelector<HTMLElement>('.messages-list > .agent-activity')
+          return row !== null && row.hidden && row.getClientRects().length === 0
+        }),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'the activity row must finish collapsing once the reasoning title takes over',
+      },
+    )
     // Freeze the animation through one cycle. Its dash pattern must be longer
     // than the path so retraction cannot wrap a repeated dash back onto the
     // beginning while the tail is still visible.
