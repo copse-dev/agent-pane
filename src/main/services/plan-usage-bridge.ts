@@ -1,23 +1,23 @@
 import { execFile } from 'node:child_process'
-import { existsSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
+  fetchClaudePlanUsageFromCredentials,
   getPlanUsageSnapshot,
   orderClaudeOAuthCredentials,
   parseCodexAuthJson,
   parseCursorSessionToken,
   parseHuggingFaceToken,
-  type ClaudeRefreshedToken,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { resolveApiKey } from './storage/settings.ts'
 import { AsyncTtlCache } from './async-ttl-cache.ts'
-import { firstNonEmptyString, isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -48,9 +48,7 @@ const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
  * it is honoured on every platform here: on macOS the Keychain candidate is
  * still preferred by `orderClaudeOAuthCredentials`, so respecting the override
  * costs a miss on a file that isn't there and gains the users who relocated
- * their config anyway. Reading the wrong path is not a harmless miss — a
- * write-back would create a credentials file the CLI never reads while its real
- * one keeps the superseded token.
+ * their config anyway.
  */
 export function claudeCredentialsPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
   const configDir = env['CLAUDE_CONFIG_DIR']?.trim()
@@ -97,114 +95,6 @@ export async function readClaudeKeychainCredentialsJson(): Promise<string | null
     return raw || null
   } catch {
     return null
-  }
-}
-
-/**
- * Merge refreshed tokens into the existing credential JSON, preserving every
- * other field (`scopes`, `subscriptionType`, …) exactly as Claude Code wrote
- * it. Returns `null` when the payload isn't the shape we expect, so we never
- * clobber an unfamiliar credential store.
- */
-export function updateClaudeOAuthJson(
-  rawJson: string | null,
-  refreshed: ClaudeRefreshedToken,
-): string | null {
-  if (!rawJson) return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(rawJson)
-  } catch {
-    return null
-  }
-  if (!isRecord(parsed)) return null
-  const oauth = parsed['claudeAiOauth']
-  if (!isRecord(oauth)) return null
-  oauth['accessToken'] = refreshed.accessToken
-  if (refreshed.refreshToken) oauth['refreshToken'] = refreshed.refreshToken
-  if (refreshed.expiresAt !== null) oauth['expiresAt'] = refreshed.expiresAt
-  return JSON.stringify(parsed)
-}
-
-/** The account (`-a`) on the Keychain item, needed to update it in place. */
-async function readClaudeKeychainAccount(): Promise<string | null> {
-  if (process.platform !== 'darwin') return null
-  try {
-    // Attributes only (no `-w`/`-g`), so the password never hits our buffer.
-    const attrs = await runCommand('security', [
-      'find-generic-password',
-      '-s',
-      CLAUDE_KEYCHAIN_SERVICE,
-    ])
-    const match = /"acct"<blob>="([^"]*)"/.exec(attrs)
-    return match?.[1] ?? null
-  } catch {
-    return null
-  }
-}
-
-/** Update the `claude /login` Keychain item in place with a refreshed payload. */
-export async function writeClaudeKeychainCredentialsJson(json: string): Promise<void> {
-  if (process.platform !== 'darwin') return
-  const account = (await readClaudeKeychainAccount()) ?? process.env['USER'] ?? ''
-  await runCommand('security', [
-    'add-generic-password',
-    '-U',
-    '-s',
-    CLAUDE_KEYCHAIN_SERVICE,
-    '-a',
-    account,
-    '-w',
-    json,
-  ])
-}
-
-/** Atomic, owner-only write so a concurrent reader never sees a half-written file. */
-function atomicWriteFile(path: string, data: string): void {
-  const tmp = `${path}.copse-${String(process.pid)}.tmp`
-  writeFileSync(tmp, data, { mode: 0o600 })
-  renameSync(tmp, path)
-}
-
-/**
- * Persist a refreshed Claude token back to the store it came from, mirroring
- * what the `claude` CLI does on its own refresh so both stay in sync. Rotated
- * refresh tokens must be saved or the next refresh fails. Best-effort — any
- * failure (Keychain ACL prompt denied, read-only FS) is swallowed; the fresh
- * in-memory token still served the current fetch.
- */
-export async function persistRefreshedClaudeToken(
-  source: string | undefined,
-  refreshed: ClaudeRefreshedToken,
-  home = homedir(),
-  readKeychain: () => Promise<string | null> = readClaudeKeychainCredentialsJson,
-  writeKeychain: (json: string) => Promise<void> = writeClaudeKeychainCredentialsJson,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<void> {
-  try {
-    if (source === 'credentials.json') {
-      // Must resolve the same way the read did, or a `CLAUDE_CONFIG_DIR` user
-      // gets their rotated token written to a file the CLI never reads.
-      const path = claudeCredentialsPath(home, env)
-      const next = updateClaudeOAuthJson(await readTextFile(path), refreshed)
-      if (next) atomicWriteFile(path, next)
-      return
-    }
-    if (source === 'keychain') {
-      const next = updateClaudeOAuthJson(await readKeychain(), refreshed)
-      if (next) await writeKeychain(next)
-    }
-    // 'env' / unknown: nothing to persist (env is process-scoped).
-  } catch (err) {
-    // Non-fatal: the fresh token still served the current fetch. But log it —
-    // if the server rotated the refresh token and we failed to save it, the
-    // stored one is now stale and the next refresh will need a re-login, so
-    // this shouldn't pass unnoticed.
-    console.warn(
-      `[plan-usage] could not persist refreshed Claude token to the ${source ?? 'unknown'} store; ` +
-        'a rotated refresh token may be lost and require re-running `claude /login`:',
-      err instanceof Error ? err.message : err,
-    )
   }
 }
 
@@ -322,26 +212,12 @@ export async function discoverPlanUsageCredentials(
 
   const credentials: PlanUsageCredentials = {
     // Keep the flat token list for back-compat; `claudeCredentials` carries the
-    // refresh tokens the fetch needs to self-heal an expired access token.
+    // expiry so a lapsed token reads as "waiting on Claude Code", not a sign-in.
     claudeOAuthTokens: claudeCredentials.map((c) => c.accessToken),
     claudeCredentials: claudeCredentials.map((c) => ({
       accessToken: c.accessToken,
-      refreshToken: c.refreshToken,
       expiresAt: c.expiresAt,
-      source: c.source,
     })),
-    // `env` is threaded through so the write-back resolves `CLAUDE_CONFIG_DIR`
-    // exactly as the read above did; the Keychain writer is named explicitly
-    // only because it sits between `home` and `env` in the parameter list.
-    onClaudeTokenRefreshed: (credential, refreshed) =>
-      persistRefreshedClaudeToken(
-        credential.source,
-        refreshed,
-        home,
-        readKeychain,
-        writeClaudeKeychainCredentialsJson,
-        env,
-      ),
   }
   if (parsedCodex) {
     credentials.codex = {
@@ -542,10 +418,23 @@ function mockAuthErrorSnapshot(): PlanUsageSnapshot {
   }
 }
 
+/**
+ * A lapsed Claude access token, run through the real package path (it returns
+ * before any network call) so the fixture shows the copy users actually see.
+ */
+async function mockClaudeTokenExpiredSnapshot(): Promise<PlanUsageSnapshot> {
+  const claude = await fetchClaudePlanUsageFromCredentials([
+    { accessToken: 'sk-ant-oat01-mock', expiresAt: 0 },
+  ])
+  return { checkedAt: new Date().toISOString(), providers: [claude] }
+}
+
 async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
   try {
     if (process.env[MOCK_ENV] === '1') return mockSnapshot()
     if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
+    if (process.env[MOCK_ENV] === 'claude-token-expired')
+      return await mockClaudeTokenExpiredSnapshot()
 
     const credentials = await discoverPlanUsageCredentials()
     return await getPlanUsageSnapshot(credentials, {
