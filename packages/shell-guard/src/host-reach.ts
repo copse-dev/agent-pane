@@ -208,11 +208,21 @@ function hostControlReasons(argv: readonly string[]): string[] {
   const sub = argv.slice(1).find((arg) => !arg.startsWith('-')) ?? ''
   switch (head) {
     case 'pkill':
-    case 'killall':
+    case 'killall': {
+      // Signal 0 only checks that a process exists, and `killall -l` lists signals.
+      const probes = argv.some(
+        (arg, i) =>
+          /^-(?:0|s0|SIG0|l)$/i.test(arg) ||
+          arg === '--signal=0' ||
+          ((arg === '-s' || arg === '--signal') && argv[i + 1] === '0'),
+      )
       // A pattern cannot be scoped to this agent's processes: `pkill -f "node
       // scripts/watch"` also stops the user's own watcher in another terminal.
       // The agent can stop what it started by PID or job (`kill %1`) without asking.
-      return [`${head} kills every process matching a pattern, not only ones this agent started`]
+      return probes
+        ? []
+        : [`${head} kills every process matching a pattern, not only ones this agent started`]
+    }
     case 'launchctl':
       return LAUNCHCTL_READS.has(sub) ? [] : ['changes launchd services (launchctl)']
     case 'systemctl':
