@@ -159,6 +159,15 @@ describe('settings plugins (about:addons)', function () {
     await expect(backgroundTasksRow).toBeDisplayed()
     await expect(backgroundTasksRow.$('.plugin-badge-stable')).toHaveText('Stable')
     assert.equal(await backgroundTasksRow.getAttribute('data-enabled'), 'true')
+    // The description is rendered as markdown; the `<port>` placeholder sits in
+    // inline code so the sanitizer cannot eat it and the rest of the copy.
+    const backgroundTasksDesc = backgroundTasksRow.$('.plugin-row-desc')
+    const backgroundTasksCode = await backgroundTasksDesc.$$('code').map((code) => code.getText())
+    assert.ok(
+      backgroundTasksCode.includes('http://localhost:<port>'),
+      backgroundTasksCode.join(', '),
+    )
+    assert.match(await backgroundTasksDesc.getText(), /gated by a per-project permission grant\.$/)
     await backgroundTasksRow.scrollIntoView()
     await saveElementScreenshot(
       '.plugin-row[data-plugin-id="copse.background-tasks"]',
