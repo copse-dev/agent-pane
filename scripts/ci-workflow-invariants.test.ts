@@ -69,6 +69,28 @@ describe('ci.yml workflow invariants', () => {
     return next >= 0 ? rest.slice(0, next) : rest
   }
 
+  it('fetches one commit history instead of every branch and tag', () => {
+    // `fetch-depth: 0` fetched ~575 branches (mostly screenshot-compare/*) and
+    // every tag: 2.3 GB, against ~1 GB for the checked-out commit's history.
+    assert.doesNotMatch(workflow, /^ +fetch-depth: 0$/m)
+    for (const job of ['precheck', 'autoformat', 'screenshot-artifacts'])
+      assert.match(
+        jobBlock(job),
+        /git fetch --no-tags --quiet --unshallow origin "\$\(git rev-parse HEAD\)"/,
+        `${job} needs its full history for the diffs it takes against a base`,
+      )
+    // The autofix diff is `BASE_SHA...HEAD` on the head branch, and the
+    // screenshot filter scopes against origin/main: both need that branch too.
+    assert.match(
+      jobBlock('autoformat'),
+      /"\+refs\/heads\/\$\{BASE_REF\}:refs\/remotes\/origin\/\$\{BASE_REF\}"/,
+    )
+    assert.match(
+      jobBlock('screenshot-artifacts'),
+      /'\+refs\/heads\/main:refs\/remotes\/origin\/main'/,
+    )
+  })
+
   it('skips the e2e job when the oracle plans zero shards (empty matrix is a GHA failure)', () => {
     // GitHub Actions treats `strategy.matrix: []` as job failure, not skipped.
     // Zero-shard plans (mode=skip / empty subset) must therefore gate the job
@@ -877,8 +899,12 @@ describe('runner-routing invariants across every workflow', () => {
 describe('codeql.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/codeql.yml'), 'utf8')
 
-  it('scans trusted main and schedule events on a runner that always resolves', () => {
+  it('scans main on a daily schedule on a runner that always resolves', () => {
     assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
+    // Per-push scanning produced a SARIF artifact nobody is notified of, ~30
+    // times a day. The daily scan is the whole trigger surface now.
+    assert.doesNotMatch(workflow, /^ {2}push:/m)
+    assert.match(workflow, /^ {4}- cron: '\d+ \d+ \* \* \*'$/m)
     // Previously `${{ vars.CHECKS_RUNNER }}` with no fallback: with the
     // variable unset this rendered an empty `runs-on` and the job errored
     // rather than running anywhere. Hosted minutes are free on a public repo,
