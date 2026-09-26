@@ -374,6 +374,13 @@
           1
         ]
       },
+      "browser:scroll-position": {
+        "api": "browser.scrollPosition",
+        "args": [
+          1,
+          1
+        ]
+      },
       "browser:share-page-text": {
         "api": "browser.sharePageText",
         "args": [

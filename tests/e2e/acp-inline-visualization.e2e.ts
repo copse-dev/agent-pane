@@ -347,6 +347,8 @@ describe('ACP inline visualization reference', () => {
         )) === 'false',
       { timeout: 5_000, timeoutMsg: 'expected Browser annotation mode to deactivate after Send' },
     )
+    // Sending keeps the marks where they were drawn: the mode leaves, the
+    // layer stays visible, and the mark count is unchanged.
     const sentState = await browser.execute(() => {
       const root = document.querySelector<HTMLElement>(
         '.browser-tab-panel.is-active .annotation-layer',
@@ -354,11 +356,52 @@ describe('ACP inline visualization reference', () => {
       const surface = root?.querySelector('.annotation-layer-svg')
       return { hidden: root?.hidden ?? false, marks: surface?.childElementCount ?? -1 }
     })
-    expect(sentState).toEqual({ hidden: true, marks: 0 })
+    expect(sentState).toEqual({ hidden: false, marks: 1 })
+    await saveAppScreenshot('browser-canvas-annotation-after-send.png')
     await expect($('.attachment-chips .image-chip img')).toHaveAttribute(
       'src',
       expect.stringContaining('data:image/png;base64,'),
     )
+
+    // Marks are anchored to the page, not the viewport: scrolling the guest
+    // shifts the drawing surface's viewBox by the same offsets. (The fixture
+    // artefact is short; scroll it in the guest and confirm the surface's
+    // viewBox moved from its pre-scroll value.)
+    const readViewBox = (): Promise<string | null> =>
+      browser.execute(
+        () =>
+          document
+            .querySelector('.browser-tab-panel.is-active .annotation-layer-svg')
+            ?.getAttribute('viewBox') ?? null,
+      )
+    const beforeScroll = await readViewBox()
+    const beforeParts = beforeScroll?.split(/\s+/).map(Number) ?? []
+    expect(beforeParts).toHaveLength(4)
+    expect(beforeParts.every(Number.isFinite)).toBe(true)
+    expect(beforeParts[2]).toBeGreaterThan(0)
+    expect(beforeParts[3]).toBeGreaterThan(0)
+    await browser.execute(async () => {
+      const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
+        executeJavaScript?: (source: string) => Promise<unknown>
+      } | null
+      await webview?.executeJavaScript?.(
+        'document.documentElement.style.height = "2000px"; window.scrollTo(0, 240)',
+      )
+    })
+    await browser.waitUntil(
+      async () => {
+        const current = await readViewBox()
+        return current !== null && current !== beforeScroll
+      },
+      { timeout: 5_000, timeoutMsg: 'expected the annotation viewBox to follow the guest scroll' },
+    )
+    const afterScroll = await readViewBox()
+    const afterParts = afterScroll?.split(/\s+/).map(Number) ?? []
+    expect(afterParts).toHaveLength(4)
+    expect(afterParts.every(Number.isFinite)).toBe(true)
+    expect(afterParts[1]).toBeGreaterThanOrEqual(240)
+    expect(afterParts.slice(2)).toEqual(beforeParts.slice(2))
+    await saveAppScreenshot('browser-canvas-annotation-scrolled.png')
     await assertNoErrorToasts('canvas annotation')
   })
 })

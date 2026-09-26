@@ -10,6 +10,7 @@ import { el } from '../dom/helpers.ts'
 import { maximizeIcon, penLineIcon, spinnerIcon } from '../dom/icons.ts'
 import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
 import { attachAnnotation } from '../drawing/attach-annotation.ts'
+import { trackGuestScroll, type GuestScrollTracker } from '../drawing/scroll-tracker.ts'
 import {
   getArtefactContent,
   getArtefactPreview,
@@ -208,36 +209,67 @@ export function createInlineArtefact(
     'Annotate',
   )
   let annotation: AnnotationLayer | null = null
+  let annotationScroll: GuestScrollTracker | null = null
   let inlineWebview: HTMLElement | null = null
   let disposed = false
   let firstMountFrame: number | null = null
   let stableMountFrame: number | null = null
-  // A live guest is captured through the same IPC as a Browser pane tab; a
-  // card still on its snapshot falls back to that snapshot.
-  const captureBase = async (): Promise<string | null> => {
+  /** The guest's webContents id, when the card is showing a live interactive guest. */
+  const inlineWebContentsId = (): number | null => {
     const getId: unknown = inlineWebview
       ? Reflect.get(inlineWebview, 'getWebContentsId')
       : undefined
-    if (typeof getId === 'function' && card.dataset['canvasState'] === 'interactive') {
-      const contentsId: unknown = Reflect.apply(getId, inlineWebview, [])
-      if (typeof contentsId === 'number') {
-        return (await api.browser.captureScreenshot(contentsId)).dataUrl
-      }
+    if (typeof getId !== 'function' || card.dataset['canvasState'] !== 'interactive') return null
+    const contentsId: unknown = Reflect.apply(getId, inlineWebview, [])
+    return typeof contentsId === 'number' ? contentsId : null
+  }
+  // A live guest is captured through the same IPC as a Browser pane tab; a
+  // card still on its snapshot falls back to that snapshot.
+  const captureBase = async (): Promise<string | null> => {
+    const contentsId = inlineWebContentsId()
+    if (contentsId !== null) {
+      return (await api.browser.captureScreenshot(contentsId)).dataUrl
     }
     return getArtefactPreview(threadId, title) ?? null
   }
+  /** Poll the guest only while there are marks to keep anchored or the layer is in use. */
+  const syncAnnotationScroll = (): void => {
+    annotationScroll?.setEnabled(
+      annotation !== null && (annotation.active || !annotation.isEmpty()),
+    )
+  }
   annotate.addEventListener('click', () => {
-    annotation ??= mountAnnotationLayer(stage, {
-      label: title,
-      captureBase,
-      onSend: (payload): boolean => {
-        return attachAnnotation(payload, title)
-      },
-      onDeactivate: (): void => {
-        annotate.setAttribute('aria-pressed', 'false')
-      },
-    })
+    if (!annotation) {
+      annotation = mountAnnotationLayer(stage, {
+        label: title,
+        captureBase,
+        onSend: (payload): boolean => {
+          return attachAnnotation(payload, title)
+        },
+        onDeactivate: (): void => {
+          annotate.setAttribute('aria-pressed', 'false')
+          syncAnnotationScroll()
+        },
+      })
+      // Page-anchored marks track the artefact's own scrolling too.
+      const layer = annotation
+      annotationScroll = trackGuestScroll({
+        wheelTarget: stage,
+        fetchPosition: async () => {
+          const contentsId = inlineWebContentsId()
+          if (contentsId === null) return null
+          return await api.browser.scrollPosition(contentsId)
+        },
+        onScroll: (position) => {
+          layer.setScrollOffset(position.x, position.y)
+        },
+      })
+    }
     annotate.setAttribute('aria-pressed', String(annotation.toggle()))
+    // Enabling reads the guest's current offsets straight away, so the first
+    // stroke on an already-scrolled artefact lands where the page is now.
+    syncAnnotationScroll()
+    annotationScroll?.kick()
   })
 
   const card = el(
@@ -263,6 +295,8 @@ export function createInlineArtefact(
     disposed = true
     if (firstMountFrame !== null) cancelAnimationFrame(firstMountFrame)
     if (stableMountFrame !== null) cancelAnimationFrame(stableMountFrame)
+    annotationScroll?.dispose()
+    annotationScroll = null
     annotation?.dispose()
     annotation = null
   })
