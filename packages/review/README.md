@@ -101,7 +101,8 @@ shell's hand-offs (Phase 4).
   onto the headless contract's `turn_start … turn_end` event envelope; `runReviewers` fans
   out every model over every lens, a few at a time, over one serialised cell. Each role's
   report includes wall time in tools and outside tools. The latter includes model calls,
-  API retries and orchestration; it is not a pure inference measurement.
+  API retries and orchestration; it is not a pure inference measurement. Every role's system
+  prompt states today's (UTC) date, so a past timestamp is not reasoned about as a future one.
 - **`cluster.ts`** — Stage 3: two candidates are one finding when their anchors overlap
   (with a few lines of slack) and their claims share enough content words. The first keeps
   its identity; the rest corroborate it. Thresholds are exported for `bench:review` to tune.
@@ -139,6 +140,10 @@ shell's hand-offs (Phase 4).
   OpenRouter's reported hosting provider travels with each response's usage;
   per-turn JSON summaries and collapsed review details list the observed hosts.
   Missing metadata stays unknown rather than being inferred from a model ID.
+  When a provider's own retries are exhausted on a retryable failure (an upstream rate
+  limit, say) before anything but progress has streamed, `provider-backoff.ts` replays the
+  request after about one and then two minutes, so many reviews started together degrade to
+  slower rather than to "Review stopped early".
   Parallel pass durations overlap and must not be summed; tool time includes
   waiting for the shared execution lane.
 - **`report-text.ts`** — the terminal projection. "Clean." is a complete answer only when
@@ -151,7 +156,12 @@ shell's hand-offs (Phase 4).
   commit, the rest in the body. On GitHub a re-run marks the same identity's earlier Copse
   reviews superseded (a submitted review cannot be deleted: its body becomes a link to the new
   one and its inline comments are hidden as outdated, keeping replies); a failure there leaves
-  them as they were and does not fail the run. GitHub and Forgejo; a line the forge refuses is folded
+  them as they were and does not fail the run. The CLI posts only when there is a finding to
+  raise: a complete review with none marks earlier Copse reviews resolved instead, and an
+  incomplete one leaves them. On GitHub it also leaves out a finding a bot comment on another
+  open pull request already raises (same path and class, and a claim Stage 3 would cluster),
+  naming that pull request; stacked branches otherwise received the same finding each. If that
+  lookup fails, every finding is kept. GitHub and Forgejo; a line the forge refuses is folded
   into the body rather than lost. The claim and confirmation status stay visible;
   supporting reasoning and evidence use a collapsed `details` section. Run metadata and
   per-role timing live under `Review details`. Incomplete reviews and missing checks keep

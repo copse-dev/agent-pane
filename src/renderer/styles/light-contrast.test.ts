@@ -265,6 +265,197 @@ describe('light theme: primary fills use --accent-fill (issue #2488)', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// Change-status colours (issue #3065). The git status letters, the +/- line
+// stats, the PR CI dots and the diff editor's washes each carried their own raw
+// hex — five different "added" greens — and the letters measured 1.55:1 on the
+// light pane. They now bind to tokens, so the contrast is measured on the token
+// values each theme actually resolves, on the surfaces the marks sit on.
+// ---------------------------------------------------------------------------
+
+/** WCAG 1.4.11: a status dot carries meaning without text, so 3:1. */
+const AA_NON_TEXT = 3
+
+/** Custom-property declarations of the first flat `selector { … }` block. */
+function declarationsOf(css: string, selector: string): Map<string, string> {
+  const start = css.indexOf(`${selector} {`)
+  assert.ok(start >= 0, `could not find ${selector}`)
+  const body = css.slice(start, css.indexOf('\n}', start))
+  return new Map(
+    [...body.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)].map((match) => [
+      match[1] ?? '',
+      (match[2] ?? '').trim(),
+    ]),
+  )
+}
+
+type ThemeName = 'dark' | 'light'
+
+/**
+ * Resolves a custom property the way the root element would for one theme:
+ * the theme block wins over `:root`, and `var()`, `calc()` products and
+ * `color-mix(in srgb, …)` are evaluated. A mix with `transparent` is returned
+ * with its portion so the caller can composite it over a surface.
+ */
+function themeResolver(theme: ThemeName): {
+  colour: (name: string) => Rgb
+  wash: (name: string) => { colour: Rgb; portion: number }
+} {
+  const strip = (name: string): string =>
+    readFileSync(resolve(STYLES, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const root = declarationsOf(strip('tokens.css'), ':root')
+  const themed = declarationsOf(strip('themes.css'), `[data-theme='${theme}']`)
+  const raw = (name: string): string => {
+    const value = themed.get(name) ?? root.get(name)
+    assert.ok(value, `${theme} does not resolve ${name}`)
+    return value
+  }
+  const reference = (value: string): string | undefined =>
+    /^var\((--[\w-]+)\)$/.exec(value.trim())?.[1]
+  const number = (value: string): number => {
+    const referenced = reference(value)
+    if (referenced) return number(raw(referenced))
+    const product = /^calc\((.+?)\s*\*\s*(.+)\)$/.exec(value.trim())
+    if (product) return number(product[1] ?? '') * number(product[2] ?? '')
+    const parsed = Number.parseFloat(value)
+    assert.ok(Number.isFinite(parsed), `could not read a number from ${value}`)
+    return parsed
+  }
+  const mixParts = (value: string): [string, number, string] | null => {
+    const found = /^color-mix\(in srgb,\s*(\S+)\s+(.+?),\s*(.+)\)$/.exec(value.trim())
+    if (!found) return null
+    return [found[1] ?? '', number(found[2] ?? '') / 100, (found[3] ?? '').trim()]
+  }
+  const colourOf = (value: string): Rgb => {
+    const trimmed = value.trim()
+    if (trimmed === 'black') return [0, 0, 0]
+    if (trimmed === 'white') return [255, 255, 255]
+    const referenced = reference(trimmed)
+    if (referenced) return colourOf(raw(referenced))
+    const parts = mixParts(trimmed)
+    if (parts) return mix(colourOf(parts[0]), parts[1], colourOf(parts[2]))
+    return parseHex(trimmed)
+  }
+  return {
+    colour: (name): Rgb => colourOf(raw(name)),
+    wash: (name): { colour: Rgb; portion: number } => {
+      const parts = mixParts(raw(name))
+      assert.ok(parts && parts[2] === 'transparent', `${name} must be a wash over transparent`)
+      return { colour: colourOf(parts[0]), portion: parts[1] }
+    },
+  }
+}
+
+/** Surfaces a change row sits on: the side panes at rest and under the pointer. */
+const PANE_SURFACES = ['--bg-base', '--bg-elevated', '--bg-hover'] as const
+
+describe('change-status colours are tokens that stay readable (issue #3065)', () => {
+  const sheet = (name: string): Rule[] =>
+    rules(
+      name,
+      readFileSync(resolve(STYLES, 'global', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
+    )
+  const colourOf = (found: Rule[], selector: string, property: string): string => {
+    const rule = found.find((candidate) => candidate.selector.split(/,\s*/).includes(selector))
+    assert.ok(rule, `missing a rule for ${selector}`)
+    const value = new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+)`).exec(rule.body)?.[1]?.trim()
+    assert.ok(value, `${rule.file}:${String(rule.line)} ${selector} declares no ${property}`)
+    return value
+  }
+
+  it('binds every change mark to the shared tokens rather than a raw hue', () => {
+    const layout = sheet('layout.css')
+    const expected: [Rule[], string, string, string][] = [
+      [layout, '.git-change-status-modified', 'color', 'var(--change-modified)'],
+      [layout, '.git-change-status-added', 'color', 'var(--change-added)'],
+      [layout, '.git-change-status-untracked', 'color', 'var(--change-added)'],
+      [layout, '.git-change-status-deleted', 'color', 'var(--change-deleted)'],
+      [layout, '.git-change-status-removed', 'color', 'var(--change-deleted)'],
+      [layout, '.git-change-status-renamed', 'color', 'var(--change-renamed)'],
+      [layout, '.pr-list-ci-success', 'background', 'var(--success)'],
+      [layout, '.pr-list-ci-failure', 'background', 'var(--error)'],
+      [layout, '.pr-list-ci-pending', 'background', 'var(--warning)'],
+      [layout, '.git-diff-editor-wrap .line-insert', 'background-color', 'var(--diff-insert)'],
+      [layout, '.git-diff-editor-wrap .gutter-insert', 'background-color', 'var(--diff-insert)'],
+      [layout, '.git-diff-editor-wrap .line-delete', 'background-color', 'var(--diff-delete)'],
+      [layout, '.git-diff-editor-wrap .gutter-delete', 'background-color', 'var(--diff-delete)'],
+      [sheet('tool-cards.css'), '.tool-stat-add', 'color', 'var(--change-added)'],
+      [sheet('tool-cards.css'), '.tool-stat-del', 'color', 'var(--change-deleted)'],
+      [sheet('composer-extras.css'), '.follow-up-stat-add', 'color', 'var(--change-added)'],
+      [sheet('composer-extras.css'), '.follow-up-stat-del', 'color', 'var(--change-deleted)'],
+    ]
+    for (const [found, selector, property, value] of expected) {
+      assert.equal(
+        colourOf(found, selector, property).replace(/\s*!important$/, ''),
+        value,
+        selector,
+      )
+    }
+  })
+
+  for (const theme of ['dark', 'light'] as const) {
+    const tokens = themeResolver(theme)
+
+    it(`keeps change letters and +/- stats at text contrast in ${theme}`, () => {
+      const failures: string[] = []
+      for (const token of [
+        '--change-added',
+        '--change-modified',
+        '--change-deleted',
+        '--change-renamed',
+      ]) {
+        for (const surface of PANE_SURFACES) {
+          const ratio = contrastRatio(tokens.colour(token), tokens.colour(surface))
+          if (ratio < AA_BODY_TEXT) failures.push(`${token} on ${surface}: ${ratio.toFixed(2)}:1`)
+        }
+        // A selected row keeps its letter legible as a mark, if not as body text:
+        // dark's selection wash is light enough to pull the letters toward 4:1.
+        const selected = contrastRatio(tokens.colour(token), tokens.colour('--bg-selected'))
+        if (selected < AA_NON_TEXT)
+          failures.push(`${token} on --bg-selected: ${selected.toFixed(2)}:1`)
+      }
+      assert.deepEqual(failures, [], `${theme}: change marks fall below their bar`)
+    })
+
+    it(`keeps PR CI dots at non-text contrast in ${theme}`, () => {
+      const failures: string[] = []
+      for (const token of ['--success', '--error', '--warning']) {
+        for (const surface of [...PANE_SURFACES, '--bg-selected']) {
+          const ratio = contrastRatio(tokens.colour(token), tokens.colour(surface))
+          if (ratio < AA_NON_TEXT) failures.push(`${token} on ${surface}: ${ratio.toFixed(2)}:1`)
+        }
+      }
+      assert.deepEqual(failures, [], `${theme}: CI dots fall below ${String(AA_NON_TEXT)}:1`)
+    })
+
+    it(`keeps code readable on the stacked diff washes in ${theme}`, () => {
+      // Monaco's own editor surface and default foreground for `vs` / `vs-dark`.
+      // A changed character carries both the line wash and the char wash.
+      const editor: Rgb = theme === 'light' ? [255, 255, 254] : [30, 30, 30]
+      const code: Rgb = theme === 'light' ? [0, 0, 0] : [212, 212, 212]
+      for (const token of ['--diff-insert', '--diff-delete']) {
+        const { colour, portion } = tokens.wash(token)
+        const stacked = mix(colour, portion, mix(colour, portion, editor))
+        const ratio = contrastRatio(code, stacked)
+        assert.ok(
+          ratio >= AA_BODY_TEXT,
+          `${theme}: code on ${token} is ${ratio.toFixed(2)}:1 — the wash is too strong`,
+        )
+      }
+    })
+  }
+
+  it('would have failed on the raw light-pane hues it replaced (guards the guard)', () => {
+    const surface = themeResolver('light').colour('--bg-elevated')
+    for (const colour of ['#e2b340', '#73c991', '#75beff', '#3dd68c', '#f07178']) {
+      assert.ok(
+        contrastRatio(parseHex(colour), surface) < AA_NON_TEXT,
+        `${colour} was expected to be unreadable on the light pane`,
+      )
+    }
+  })
+})
+
 describe('light theme: syntax highlighting is readable (issue #2486)', () => {
   it('overrides every .hljs- token the vendored Dark+ palette defines', () => {
     // The package ships a Dark+ palette and documents that the host should

@@ -1,0 +1,330 @@
+name: Screenshot review decision
+
+# Turns a maintainer's label into a decision on the blocking `Screenshot review`
+# commit status that publish-screenshot-candidates.yml sets on a PR head:
+#
+#   accept-screenshots   fast-forward the PR branch to the view-only compare
+#                        commit (every validated candidate PNG, parented on the
+#                        exact reviewed head) and record the review as accepted.
+#   decline-screenshots  record the review as declined and commit nothing: for
+#                        unrelated rendering drift, or references that belong
+#                        in another PR.
+#
+# Labels act as buttons. This job removes the label once it has acted, and the
+# decision lives in the commit status of the head it was made on, so any later
+# push starts a new review. A refused label is removed too, with a comment
+# saying why.
+#
+# The fast-forward uses the release App token, not GITHUB_TOKEN: a GITHUB_TOKEN
+# push starts no workflows, and the new head needs its own `CI Passed`. The
+# compare commit adds only PNGs, so CI's screenshot-only escape skips e2e on
+# it. The token reaches one API call; nothing is checked out and no PR code
+# runs here. Before that call, the compare commit is checked to be a single
+# commit on the live head whose tree differs only in tests/e2e/screenshots/*.png.
+#
+# `pull_request`, not `pull_request_target`, like
+# close-orphaned-screenshot-reviews.yml: forks never get a compare branch or a
+# review status, and their authors cannot label.
+#
+# Adding any label also re-runs CI on the same head, because ci.yml subscribes
+# to `labeled`. For accept the fast-forward supersedes that run. For decline it
+# repeats the head's CI, and the publisher keeps the recorded decision when that
+# run lands.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshot-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    if: >-
+      (github.event.label.name == 'accept-screenshots' ||
+      github.event.label.name == 'decline-screenshots') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    steps:
+      # Read-only: every write happens in the last step, so a refusal and a
+      # decision take the same path.
+      - name: Validate the decision against the live head
+        id: validate
+        uses: actions/github-script@v9
+        env:
+          LABEL: ${{ github.event.label.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const label = process.env.LABEL;
+            const number = Number(process.env.PR_NUMBER);
+            const statusContext = 'Screenshot review';
+            const refuse = (reason) => {
+              core.setOutput('outcome', 'refuse');
+              core.setOutput('reason', reason);
+              core.notice(reason);
+            };
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const head = pr.head.sha;
+            if (
+              pr.state !== 'open' ||
+              pr.head.repo?.full_name !== `${owner}/${repo}` ||
+              !/^[0-9a-f]{40}$/.test(head)
+            ) {
+              refuse('only an open same-repository PR has a screenshot review.');
+              return;
+            }
+            core.setOutput('head-sha', head);
+            const sha12 = head.slice(0, 12);
+
+            // Newest first, so the first match is the current state.
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner,
+              repo,
+              ref: head,
+              per_page: 100,
+            });
+            const review = statuses.find((status) => status.context === statusContext);
+            if (!review) {
+              refuse(
+                `no screenshot evidence has been published for \`${sha12}\` yet. ` +
+                  'Add the label again once the `Screenshot review` check appears.',
+              );
+              return;
+            }
+
+            if (label === 'decline-screenshots') {
+              if (review.state === 'success') {
+                refuse(`the \`Screenshot review\` check for \`${sha12}\` has already passed: ${review.description}.`);
+                return;
+              }
+              core.setOutput('outcome', 'decline');
+              return;
+            }
+
+            // accept-screenshots: the compare branch is named after the live
+            // head, so it can only ever hold evidence rendered from that head.
+            const branch = `screenshot-compare/pr-${number}/${sha12}`;
+            let compareCommit;
+            try {
+              const { data: ref } = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+              compareCommit = ref.object.sha;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              refuse(
+                `\`${sha12}\` has no compare commit to accept. Commit the reviewed PNGs yourself, ` +
+                  'or add `decline-screenshots`.',
+              );
+              return;
+            }
+            const { data: commit } = await github.rest.git.getCommit({
+              owner,
+              repo,
+              commit_sha: compareCommit,
+            });
+            if (commit.parents.length !== 1 || commit.parents[0].sha !== head) {
+              refuse(`the compare commit is not a single commit on \`${sha12}\`.`);
+              return;
+            }
+
+            // Walk tests/e2e/screenshots one tree level at a time: everything
+            // beside the path must be identical, and inside it only flat
+            // regular-file PNGs may be added or changed.
+            const { data: headCommit } = await github.rest.git.getCommit({ owner, repo, commit_sha: head });
+            const readTree = async (treeSha) => {
+              const { data } = await github.rest.git.getTree({ owner, repo, tree_sha: treeSha });
+              if (data.truncated) throw new Error(`Tree ${treeSha} is truncated.`);
+              return new Map(data.tree.map((entry) => [entry.path, entry]));
+            };
+            const same = (a, b) => a?.mode === b?.mode && a?.type === b?.type && a?.sha === b?.sha;
+            let before = headCommit.tree.sha;
+            let after = commit.tree.sha;
+            for (const [depth, name] of ['tests', 'e2e', 'screenshots'].entries()) {
+              const [a, b] = await Promise.all([readTree(before), readTree(after)]);
+              const where = ['tests', 'e2e', 'screenshots'].slice(0, depth).join('/');
+              for (const path of new Set([...a.keys(), ...b.keys()])) {
+                if (path !== name && !same(a.get(path), b.get(path))) {
+                  refuse(`the compare commit changes \`${where ? `${where}/` : ''}${path}\`, outside tests/e2e/screenshots/.`);
+                  return;
+                }
+              }
+              if (a.get(name)?.type !== 'tree' || b.get(name)?.type !== 'tree') {
+                refuse('the compare commit has no tests/e2e/screenshots/ tree to accept.');
+                return;
+              }
+              before = a.get(name).sha;
+              after = b.get(name).sha;
+            }
+            const [a, b] = await Promise.all([readTree(before), readTree(after)]);
+            let changed = 0;
+            for (const path of new Set([...a.keys(), ...b.keys()])) {
+              const entry = b.get(path);
+              if (same(a.get(path), entry)) continue;
+              if (
+                entry?.type !== 'blob' ||
+                entry.mode !== '100644' ||
+                !/^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/.test(path)
+              ) {
+                refuse(`the compare commit changes \`tests/e2e/screenshots/${path}\`, which is not an added or updated PNG.`);
+                return;
+              }
+              changed += 1;
+            }
+            if (changed === 0) {
+              refuse('the compare commit changes no screenshot.');
+              return;
+            }
+            core.setOutput('outcome', 'accept');
+            core.setOutput('compare-commit', compareCommit);
+            core.setOutput('head-ref', pr.head.ref);
+            core.setOutput('changed', String(changed));
+
+      # continue-on-error: a missing or broken App credential leaves the token
+      # empty, and the last step refuses with the manual cherry-pick route.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: steps.validate.outputs.outcome == 'accept'
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      # Not forced: if the branch moved after validation, GitHub refuses the
+      # update because it is no longer a fast-forward.
+      - name: Fast-forward the PR branch to the compare commit
+        id: fast-forward
+        if: steps.validate.outputs.outcome == 'accept' && steps.app-token.outputs.token != ''
+        continue-on-error: true
+        uses: actions/github-script@v9
+        env:
+          HEAD_REF: ${{ steps.validate.outputs.head-ref }}
+          COMPARE_COMMIT: ${{ steps.validate.outputs.compare-commit }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.git.updateRef({
+              owner,
+              repo,
+              ref: `heads/${process.env.HEAD_REF}`,
+              sha: process.env.COMPARE_COMMIT,
+              force: false,
+            });
+            core.setOutput('pushed', 'true');
+
+      - name: Record the decision
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          LABEL: ${{ github.event.label.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTOR: ${{ github.event.sender.login }}
+          OUTCOME: ${{ steps.validate.outputs.outcome }}
+          REASON: ${{ steps.validate.outputs.reason }}
+          HEAD_SHA: ${{ steps.validate.outputs.head-sha }}
+          COMPARE_COMMIT: ${{ steps.validate.outputs.compare-commit }}
+          CHANGED: ${{ steps.validate.outputs.changed }}
+          TOKEN_MINTED: ${{ steps.app-token.outputs.token != '' }}
+          PUSHED: ${{ steps.fast-forward.outputs.pushed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PR_NUMBER);
+            const label = process.env.LABEL;
+            const actor = process.env.ACTOR;
+            const sha = process.env.HEAD_SHA || '';
+            const sha12 = sha.slice(0, 12);
+            const outcome = process.env.OUTCOME || 'refuse';
+            const marker = '<!-- copse-e2e-screenshot-review -->';
+            const stateStart = '<!-- copse-screenshot-review-state -->';
+            const stateEnd = '<!-- /copse-screenshot-review-state -->';
+            // The publisher keeps a status whose description starts this way.
+            const setDecision = (description) =>
+              github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha,
+                state: 'success',
+                context: 'Screenshot review',
+                description,
+                target_url: `https://github.com/${owner}/${repo}/pull/${number}`,
+              });
+
+            let decision = '';
+            let refusal = '';
+            if (outcome === 'decline') {
+              const description = `Declined by @${actor}; no candidate committed`;
+              await setDecision(description);
+              decision = `**Reviewed:** ${description} for \`${sha12}\`. Any push starts a new review.`;
+            } else if (outcome === 'accept' && process.env.PUSHED === 'true') {
+              const commit12 = (process.env.COMPARE_COMMIT || '').slice(0, 12);
+              const count = Number(process.env.CHANGED) || 0;
+              // Recorded on the reviewed head for the audit trail; the new head
+              // gets its own status once CI runs on it.
+              await setDecision(`Accepted by @${actor}; committed as ${commit12}`);
+              decision =
+                `**Reviewed:** accepted by @${actor}. The PR branch was fast-forwarded from \`${sha12}\` to ` +
+                `\`${commit12}\`, committing ${count} screenshot${count === 1 ? '' : 's'}; CI re-runs on it without e2e.`;
+            } else if (outcome === 'accept') {
+              refusal =
+                process.env.TOKEN_MINTED === 'true'
+                  ? 'the PR branch could not be fast-forwarded. It may have moved since the evidence was published.'
+                  : 'the release App token is unavailable, and a push with the job token would start no CI. ' +
+                    'Cherry-pick the compare commit with the command in the screenshot evidence comment instead.';
+            } else {
+              refusal = process.env.REASON || 'the decision could not be evaluated.';
+            }
+
+            try {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: label });
+            } catch (error) {
+              core.info(`Could not remove ${label}: ${error.message}`);
+            }
+
+            if (refusal) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: number,
+                body: `\`${label}\` was not applied: ${refusal} ([workflow run](${process.env.RUN_URL}))`,
+              });
+              core.notice(refusal);
+              return;
+            }
+
+            // Replace the evidence comment's review block with the decision, so
+            // it no longer asks for one. The publisher writes the same block
+            // from the recorded status when it next rewrites the comment.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: number,
+              per_page: 100,
+            });
+            const evidence = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (!evidence) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body: decision });
+              return;
+            }
+            const start = evidence.body.indexOf(stateStart);
+            const end = evidence.body.indexOf(stateEnd, start);
+            const block = `${stateStart}\n${decision}\n${stateEnd}`;
+            const body =
+              start >= 0 && end > start
+                ? `${evidence.body.slice(0, start)}${block}${evidence.body.slice(end + stateEnd.length)}`
+                : `${evidence.body.trimEnd()}\n\n${block}`;
+            await github.rest.issues.updateComment({ owner, repo, comment_id: evidence.id, body });
