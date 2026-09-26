@@ -1311,7 +1311,7 @@ span.acp-resource-title {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg-elevated, var(--bg));
+  background: var(--bg-elevated);
 }
 .canvas-preview-image {
   display: block;
@@ -1321,7 +1321,7 @@ span.acp-resource-title {
   max-height: 260px;
   object-fit: cover;
   object-position: top center;
-  background: var(--bg);
+  background: var(--bg-base);
 }
 .canvas-preview-footer {
   display: flex;

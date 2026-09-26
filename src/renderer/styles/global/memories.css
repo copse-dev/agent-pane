@@ -89,7 +89,7 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-input, var(--bg-secondary));
+  background: var(--bg-input);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-family: inherit;
@@ -121,7 +121,7 @@
   padding: 4px 12px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   cursor: pointer;
