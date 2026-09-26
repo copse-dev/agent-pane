@@ -292,7 +292,8 @@ describe('settings styling', function () {
 
   it('renders plugins as cards with a publisher eyebrow and a labelled toggle', async () => {
     await $('.settings-nav-btn[data-section="customise"]').click()
-    await $('.plugin-row').waitForDisplayed({ timeout: 30_000 })
+    // Registry plugins carry no origin; Cursor and bundled-skill rows sort in beside them.
+    await $('.plugin-row:not([data-plugin-origin])').waitForDisplayed({ timeout: 30_000 })
     // The scrollport is shared between sections, so start this one at the top.
     await browser.execute(() => {
       const content = document.querySelector<HTMLElement>('.settings-content')
@@ -301,7 +302,7 @@ describe('settings styling', function () {
 
     const plugins = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>('#plugins-list')
-      const row = list?.querySelector<HTMLElement>('.plugin-row')
+      const row = list?.querySelector<HTMLElement>('.plugin-row:not([data-plugin-origin])')
       const name = row?.querySelector<HTMLElement>('.plugin-name')
       const eyebrow = row?.querySelector<HTMLElement>(
         '.plugin-badge-first-party, .plugin-badge-user',
@@ -354,8 +355,9 @@ describe('settings styling', function () {
         markRendered: (mark?.getBoundingClientRect().width ?? 0) > 0 && mark.naturalWidth > 0,
         brandedRows: list.querySelectorAll('.plugin-icon-copse').length,
         firstPartyRows: list.querySelectorAll('.plugin-badge-first-party').length,
-        // The experimental marker takes the interaction accent, in a pill, in
-        // sentence case — the mockup's treatment.
+        // The experimental marker takes the interaction accent, in the shared
+        // badge recipe: sentence case and a --radius corner (docs/ui-taste.md →
+        // "Badges are labels").
         experimental: (() => {
           const badge = list.querySelector<HTMLElement>('.plugin-badge-experimental')
           if (!badge) return null
@@ -372,6 +374,7 @@ describe('settings styling', function () {
             color: style.color,
             accentRgb,
             transform: style.textTransform,
+            firstLetterTransform: getComputedStyle(badge, '::first-letter').textTransform,
             radius: Number.parseFloat(style.borderTopLeftRadius),
           }
         })(),
@@ -416,11 +419,15 @@ describe('settings styling', function () {
       plugins.experimental.accentRgb,
       'experimental takes the interaction accent',
     )
-    assert.equal(plugins.experimental.transform, 'capitalize')
-    assert.ok(plugins.experimental.radius >= 12, 'the stability badge is a pill')
+    // Sentence case: the recipe capitalises only the first letter.
+    assert.equal(plugins.experimental.transform, 'none')
+    assert.equal(plugins.experimental.firstLetterTransform, 'uppercase')
+    assert.equal(plugins.experimental.radius, 6, 'the stability badge takes --radius, not a pill')
 
     await browser.execute(() => {
-      document.querySelector<HTMLElement>('.plugin-row')?.scrollIntoView({ block: 'center' })
+      document
+        .querySelector<HTMLElement>('.plugin-row:not([data-plugin-origin])')
+        ?.scrollIntoView({ block: 'center' })
     })
     await saveElementScreenshot('#settings-dialog', 'settings-styling-plugins.png')
   })

@@ -260,15 +260,11 @@ export function mountPrPane(
   }
 
   function ensureDiffEditor(): GitDiffEditor {
-    if (!diffEditor) {
-      const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
-      diffEditor = createGitChangesDiffEditor(
-        diffWrap,
-        monaco,
-        scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
-        theme,
-      )
-    }
+    diffEditor ??= createGitChangesDiffEditor(
+      diffWrap,
+      monaco,
+      scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
+    )
     return diffEditor
   }
 
@@ -300,6 +296,11 @@ export function mountPrPane(
         ? 'Sign in with `gh auth login` to browse pull requests here.'
         : 'Install GitHub CLI (`gh`) to browse pull requests in Copse.')
     listBody.append(el('div', { class: 'git-changes-empty pr-empty-state' }, message))
+    renderGhUnavailableViewer()
+  }
+
+  /** The viewer half of {@link renderGhUnavailable}, for when nothing is selected. */
+  function renderGhUnavailableViewer(): void {
     clear(metaHost)
     clear(sectionsHost)
     activityHost.hidden = true
@@ -580,7 +581,11 @@ export function mountPrPane(
     confirmMessage: string,
     run: (ref: PrRef) => Promise<PrActionResult>,
   ): HTMLButtonElement {
-    const btn = el('button', { type: 'button', class: 'pr-action-btn' }, label)
+    const btn = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-secondary ui-btn-compact pr-action-btn' },
+      label,
+    )
     btn.addEventListener('click', () => {
       const ref = selectedPr
       if (!ref) return
@@ -613,7 +618,7 @@ export function mountPrPane(
       'button',
       {
         type: 'button',
-        class: 'pr-open-external-btn',
+        class: 'ui-btn ui-btn-ghost ui-btn-compact pr-open-external-btn',
         'data-tooltip': 'Open this pull request on GitHub',
       },
       el('span', {}, 'Open on GitHub'),
@@ -632,7 +637,7 @@ export function mountPrPane(
           'button',
           {
             type: 'button',
-            class: 'pr-open-thread-btn',
+            class: 'ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn',
             'data-tooltip': `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`,
           },
           el('span', {}, `Open ${agentProviderLabel(agent.provider)} agent thread`),
@@ -650,7 +655,7 @@ export function mountPrPane(
       'button',
       {
         type: 'button',
-        class: 'pr-new-thread-btn',
+        class: 'ui-btn ui-btn-ghost ui-btn-compact pr-new-thread-btn',
         'data-tooltip': 'Open a new thread about this pull request',
       },
       el('span', {}, 'New thread'),
@@ -1086,6 +1091,9 @@ export function mountPrPane(
         state: 'OPEN',
       }))
       renderList()
+      // With chat-linked rows to list, renderList() leaves the viewer alone, so
+      // it would keep the cold-start "Loading pull requests…" status forever.
+      if (!selectedPr) renderGhUnavailableViewer()
       return
     }
 
@@ -1227,9 +1235,6 @@ export function mountPrPane(
     store.on('pr_open_requested', (owner, repo, number) => {
       pendingOpen = { owner, repo, number }
       if (prsModeActive(store)) void refresh()
-    }),
-    store.on('theme_changed', (theme) => {
-      monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
     api.gh.onListsTick(() => {
       if (prsModeActive(store)) void refresh({ reason: 'poll' })

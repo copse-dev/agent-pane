@@ -32,6 +32,26 @@ async function readGitChangePaths(): Promise<string[]> {
   )
 }
 
+/**
+ * Wait until the diff viewer shows `path` itself. The viewer deliberately keeps
+ * the previous file's diff on screen until the next one is attached, so waiting
+ * only for "some insert decoration" is satisfied by the outgoing file and
+ * captures it under the new selection. Monaco stamps each editor with its
+ * model's URI, which ends in the path the pane attached.
+ */
+async function waitForDiffOf(path: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((suffix) => {
+        const modified = document.querySelector(
+          '#git-diff-viewer-host .modified-in-monaco-diff-editor[data-uri]',
+        )
+        return modified?.getAttribute('data-uri')?.endsWith(suffix) === true
+      }, `/modified/${path}`),
+    { timeout: 15_000, timeoutMsg: `expected the diff viewer to show ${path}` },
+  )
+}
+
 describe('git changes viewer', function () {
   this.timeout(120_000)
 
@@ -73,6 +93,20 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected at least 3 changed-file rows',
     })
+    // Rows render before the auto-selected staged.ts diff attaches; without
+    // this wait the screenshot can catch the viewer still "Loading changes…".
+    await waitForDiffOf('staged.ts')
+    await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector(
+              '#git-diff-viewer-host .line-insert, #git-diff-viewer-host .char-insert',
+            ) != null,
+        ),
+      { timeout: 15_000, timeoutMsg: 'expected the staged.ts diff to show its change' },
+    )
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-list.png'))
 
     // Section titles reflect staged vs unstaged counts. CSS uppercases the text,
@@ -206,6 +240,9 @@ describe('git changes viewer', function () {
 
     const diffViewer = await $('#git-diff-viewer-host .monaco-diff-editor')
     await diffViewer.waitForDisplayed({ timeout: 30_000 })
+    // The staged.ts diff from the previous test also has inserts; wait for the
+    // committed file's own models before judging its decorations.
+    await waitForDiffOf('committed.ts')
     // The file exists only in the commit, so the base side is empty and every
     // line reads as an insert.
     await browser.waitUntil(

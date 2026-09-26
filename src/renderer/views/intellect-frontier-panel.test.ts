@@ -17,7 +17,11 @@ import {
 } from './intellect-frontier-panel.ts'
 import { clearResolvedModelCards, setResolvedModelCard } from './model-card-cache.ts'
 import { TRACKED_MODELS } from '@copse/llm/model-catalog.ts'
-import { getIntellectScore } from '@copse/llm/model-intellect.ts'
+import {
+  explainIntellectScore,
+  getIntellectScore,
+  listIntellectScoredModelIds,
+} from '@copse/llm/model-intellect.ts'
 import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
 import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
@@ -408,6 +412,40 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(details.textContent, /scale check failed/)
     assert.match(details.textContent, /Diverging anchors/)
     assert.ok(details.querySelector('code'))
+  })
+
+  it('keeps stale curated values behind a maintainer disclosure on a verified feed', async () => {
+    // Enough agreeing canonical anchors that one diverging value is a minority
+    // the gate reports as stale rather than a renormalised feed it refuses.
+    const anchors = listIntellectScoredModelIds()
+      .map((id) => ({ id, score: getIntellectScore(id) }))
+      .filter(({ score }) => score !== null && score.estimated !== true)
+      .slice(0, 8)
+      .map(({ id, score }) => ({ id, intellect: score?.value ?? 0 }))
+    const [first, ...rest] = anchors
+    assert.ok(first)
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({ ok: true, models: [{ ...first, intellect: first.intellect + 20 }, ...rest] }),
+    )
+    await panel.refresh()
+    const notes = panel.root.querySelector('.frontier-live-notes')
+    assert.ok(notes)
+    assert.match(notes.textContent, /verified against/)
+    const details = notes.querySelector('details.frontier-stale-anchors')
+    assert.ok(details, notes.textContent)
+    assert.match(details.querySelector('summary')?.textContent ?? '', /1 curated value looks stale/)
+    assert.equal(
+      details.querySelector('code')?.textContent,
+      'pnpm run sync:intellect -- --from-api',
+    )
+    // The maintainer command is never part of the always-visible headline.
+    const headline = [...notes.childNodes]
+      .filter((node) => node !== details)
+      .map((node) => node.textContent)
+      .join('')
+    assert.doesNotMatch(headline, /sync:intellect|maintainer/)
   })
 
   it('lists unpriced models always, and overlays the gutter only when toggled on', async () => {
@@ -880,7 +918,7 @@ describe('createIntellectFrontierPanel', () => {
     let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
     assert.equal(svg.getAttribute('data-cost-axis'), 'blended')
-    assert.match(svg.textContent || '', /blended price, \$\/MTok/)
+    assert.match(svg.textContent || '', /Blended price, \$\/MTok/)
     taskBtn.click()
     svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
@@ -1117,6 +1155,29 @@ describe('plan coverage on the map', () => {
     assert.equal(
       panel.root.querySelector('circle.frontier-point.plan[data-model-id="gpt-6-astra"]'),
       null,
+    )
+  })
+
+  it('tooltip derivation rows read as sentences, not step ids', () => {
+    // `equated: equated v4.3→v4.1` repeated the data label in front of a detail
+    // that already opens with the verb.
+    const id = listIntellectScoredModelIds().find((candidate) =>
+      explainIntellectScore(candidate)?.steps.some((step) => step.step === 'equated'),
+    )
+    assert.ok(id, 'expected at least one model scored through an index-version equating')
+    const card = pointTooltipContent({ id, intellect: 40, costPerMTok: 1, onFrontier: true })
+    const rows = [...card.querySelectorAll('.tt-muted')].map((row) => row.textContent)
+    assert.ok(
+      rows.some((row) => /^Measured \d/.test(row)),
+      rows.join(' | '),
+    )
+    assert.ok(
+      rows.some((row) => /^Equated v/.test(row)),
+      rows.join(' | '),
+    )
+    assert.ok(
+      rows.every((row) => !/^(measured|equated):/i.test(row)),
+      rows.join(' | '),
     )
   })
 
