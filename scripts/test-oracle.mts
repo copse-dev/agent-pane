@@ -71,13 +71,16 @@ const BROAD_PATTERNS: RegExp[] = [
   /^src\/renderer\/(main|app|bootstrap)\.ts$/,
   /^src\/renderer\/demo\//,
   /^src\/shared\/demo-scenarios\.ts$/,
-  // Only the stylesheets every surface depends on: the entry, tokens, themes and
-  // the shared primitives. The per-feature sheets beside them in styles/global/
-  // (roadmap.css, tool-cards.css, …) are mapped by selector like any other file,
-  // and a sheet whose selectors no spec uses is unmapped, so it is LOW confidence
-  // and still runs the full suite.
+  // Only the stylesheets every surface depends on: the entry, tokens, themes, the
+  // shared primitives, and brand.css (bare h1-h3 rules plus the shared button
+  // recipe, loaded last to override component geometry). Element selectors are
+  // invisible to the selector vocabulary, so a sheet like that must be listed
+  // here. The per-feature sheets beside them in styles/global/ (roadmap.css,
+  // tool-cards.css, …) are mapped by selector like any other file, and a sheet
+  // whose selectors no spec uses is unmapped, so it is LOW confidence and still
+  // runs the full suite.
   /^src\/renderer\/styles\/(global|tokens|themes)\.css$/,
-  /^src\/renderer\/styles\/global\/(base|icons|ui|layout|forms)\.css$/,
+  /^src\/renderer\/styles\/global\/(base|brand|icons|ui|layout|forms)\.css$/,
   /^src\/preload\//,
   /^src\/shared\/store\//,
   /^src\/main\/index\.ts$/,

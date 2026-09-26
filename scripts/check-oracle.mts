@@ -146,9 +146,10 @@ const INVARIANTS: Invariant[] = [
     check: () => expectPlan(['package.json'], 'full'),
   },
   {
-    name: 'shared stylesheet (base, tokens) forces full',
+    name: 'shared stylesheet (base, brand, tokens) forces full',
     check: () =>
       expectPlan(['src/renderer/styles/global/base.css'], 'full') ??
+      expectPlan(['src/renderer/styles/global/brand.css'], 'full') ??
       expectPlan(['src/renderer/styles/tokens.css'], 'full'),
   },
   {
