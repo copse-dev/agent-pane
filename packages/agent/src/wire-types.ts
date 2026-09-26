@@ -336,6 +336,8 @@ export type AgentStreamChunk =
       result: string
       isError: boolean
       editStats?: { additions: number; deletions: number }
+      /** Forwarded from the inner `tool_result`; see {@link ToolCall.appendedReminderLengths}. */
+      appendedReminderLengths?: number[]
       images?: ToolResultImage[]
     }
   | { type: 'subagent_done'; parentToolCallId: string; summary: string; usage?: ModelUsage }
