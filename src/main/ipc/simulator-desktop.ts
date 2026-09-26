@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { SimulatorDesktopOwner } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { getSimulatorDesktopService } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { getSetting } from '../services/storage/settings.ts'
+import { DESKTOP_VIEWER_SETTING_LOCATION } from '@shared/desktop-viewer.ts'
 import { AndroidDesktopService } from '../services/android-desktop/android-desktop-service.ts'
 import { assertMainFrameSender, parseIpcArgs } from './ipc-guards.ts'
 
@@ -39,7 +40,7 @@ function ownerFor(contents: WebContents): SimulatorDesktopOwner {
 
 function requireDesktopEnabled(): void {
   if (!getSetting<boolean>('vncEnabled', false)) {
-    throw new Error('Desktop viewer is disabled in Settings')
+    throw new Error(`The Desktop viewer is off. Turn it on in ${DESKTOP_VIEWER_SETTING_LOCATION}.`)
   }
 }
 

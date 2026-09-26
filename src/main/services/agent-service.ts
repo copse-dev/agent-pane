@@ -60,8 +60,7 @@ import {
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
-import { isXcodeBuildMcpToolName } from './apple-development/xcodebuildmcp.ts'
-import { isAppleDevelopmentProjectEnrolled } from './apple-development/apple-development-service.ts'
+import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
@@ -352,9 +351,9 @@ function parentTools(
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   const executionContext = getThreadExecutionContext()
-  if (!executionContext || !isAppleDevelopmentProjectEnrolled(executionContext.projectId)) {
-    tools = tools.filter((tool) => !isXcodeBuildMcpToolName(tool.name))
-  }
+  tools = tools.filter((tool) =>
+    isAppleDevelopmentToolOffered(tool.name, executionContext?.projectId),
+  )
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
@@ -1961,6 +1960,15 @@ export async function runAgent(
           signal: AbortSignal,
           toolCallId: string,
         ): Promise<ToolExecuteResult> => {
+          // `parentTools` only narrows what the model is offered; a model can still
+          // name any registered tool (e.g. through prompt injection). The registry
+          // is process-wide, so refuse Apple tools here as the ACP bridge does.
+          if (!isAppleDevelopmentToolOffered(name, getThreadExecutionContext()?.projectId)) {
+            throw new Error(
+              `Tool "${name}" is not available in this project. Apple Development tools run ` +
+                'only in a project enrolled in Apple Development on a local Mac.',
+            )
+          }
           const instructionContextPaths = instructionContextPathsForTool(name, args)
           if (instructionContextPaths.length > 0) {
             const activation = await activateNestedInstructionSources(

@@ -4,6 +4,7 @@ import { getSetting } from '../services/storage/settings.ts'
 import { getSimulatorDesktopService } from '../services/simulator-desktop/simulator-desktop-service.ts'
 import { showSimulatorDesktop } from '../services/simulator-desktop/simulator-desktop-panel.ts'
 import { APPLE_DEVELOPMENT_TOOL_NAMES } from '@copse/agent/plugins/apple-development-plugin.ts'
+import { DESKTOP_VIEWER_SETTING_LOCATION } from '@shared/desktop-viewer.ts'
 
 export const OPEN_SIMULATOR_DESKTOP_TOOL_NAME = APPLE_DEVELOPMENT_TOOL_NAMES[0]
 
@@ -19,7 +20,11 @@ export const openSimulatorDesktopTool = defineTool({
   }),
   async execute({ udid }) {
     if (!getSetting<boolean>('vncEnabled', false)) {
-      throw new Error('Enable the Desktop viewer in Settings before opening a Simulator')
+      throw new Error(
+        'The Desktop viewer is off, so Copse cannot show the Simulator. Ask the user to turn on ' +
+          `${DESKTOP_VIEWER_SETTING_LOCATION}, then call ${OPEN_SIMULATOR_DESKTOP_TOOL_NAME} again. ` +
+          'Do not retry before they confirm.',
+      )
     }
     const devices = await getSimulatorDesktopService().listDevices()
     const device = udid ? devices.find((candidate) => candidate.udid === udid) : devices[0]

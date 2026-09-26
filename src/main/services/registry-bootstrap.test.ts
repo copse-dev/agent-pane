@@ -208,15 +208,28 @@ describe('syncAppleDevelopmentTools', () => {
     const registry = new ToolRegistry()
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
 
     plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+  })
+
+  it('never registers the Simulator tool on a host without Xcode', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+
+    syncAppleDevelopmentTools(registry, 'linux')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
   })
 })

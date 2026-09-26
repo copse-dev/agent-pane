@@ -27,6 +27,7 @@ import {
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 import { BRIDGE_MCP_SERVER_NAME, matchesBridgedToolName } from './acp-bridge-name.ts'
+import { isAppleDevelopmentToolOffered } from '../apple-development/apple-development-tool-scope.ts'
 
 export { BRIDGE_MCP_SERVER_NAME }
 
@@ -146,7 +147,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
  * alongside the existing hooks, read-only checks, and permission gate.
  */
 export function activeBridgeToolNames(
-  _projectId?: string,
+  projectId?: string,
   registry?: ToolRegistry,
 ): readonly string[] {
   const mcpTools = registry?.names().filter((name) => name.startsWith('mcp__')) ?? []
@@ -156,7 +157,7 @@ export function activeBridgeToolNames(
       ...getDefaultPluginRegistry().activeAcpToolNames(),
       ...mcpTools,
     ]),
-  ]
+  ].filter((name) => isAppleDevelopmentToolOffered(name, projectId))
 }
 
 // Permission requests arrive on the ACP client channel without a reference to

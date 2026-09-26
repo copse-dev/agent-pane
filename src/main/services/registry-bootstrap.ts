@@ -229,9 +229,16 @@ export function syncImageGenerationTools(registry: ToolRegistry): void {
   }
 }
 
-/** Keep the Simulator panel bridge aligned with the experimental Apple plugin. */
-export function syncAppleDevelopmentTools(registry: ToolRegistry): void {
-  if (getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID)) {
+/**
+ * Keep the Simulator panel bridge aligned with the experimental Apple plugin.
+ * It is only registered on macOS; per-project enrollment is applied per turn by
+ * `isAppleDevelopmentToolOffered`, since this registry is shared by every thread.
+ */
+export function syncAppleDevelopmentTools(
+  registry: ToolRegistry,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (platform === 'darwin' && getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID)) {
     if (!registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)) {
       registry.register(openSimulatorDesktopTool)
     }
