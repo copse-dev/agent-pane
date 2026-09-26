@@ -87,7 +87,7 @@ function where(finding: Finding): string {
  * team gets a zero-width space. Code spans are kept as written — neither
  * renders inside one.
  */
-function inertMarkdown(text: string): string {
+export function inertMarkdown(text: string): string {
   const inert = (prose: string): string =>
     prose
       .replaceAll('\\', '\\\\')
@@ -382,10 +382,15 @@ export type FetchLike = (
   init: { method: string; headers: Record<string, string>; body?: string },
 ) => Promise<{ status: number; text(): Promise<string> }>
 
-function reviewsUrl(target: ForgeTarget): string {
+/** The pull request itself: `GET` reads its head and description, `PATCH` edits them. */
+export function pullRequestUrl(target: ForgeTarget): string {
   const base = target.apiBase.replace(/\/+$/, '')
-  const path = `repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${String(target.number)}/reviews`
+  const path = `repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${String(target.number)}`
   return target.forge === 'github' ? `${base}/${path}` : `${base}/api/v1/${path}`
+}
+
+function reviewsUrl(target: ForgeTarget): string {
+  return `${pullRequestUrl(target)}/reviews`
 }
 
 function reviewPayload(target: ForgeTarget, review: ForgeReview): Record<string, unknown> {
@@ -415,7 +420,7 @@ function reviewPayload(target: ForgeTarget, review: ForgeReview): Record<string,
   }
 }
 
-function headers(target: ForgeTarget): Record<string, string> {
+export function forgeHeaders(target: ForgeTarget): Record<string, string> {
   return target.forge === 'github'
     ? {
         Accept: 'application/vnd.github+json',
@@ -484,7 +489,7 @@ function githubRequest(target: ForgeTarget, fetchImpl: FetchLike): GithubRequest
   return async (method, requestUrl, body) => {
     const response = await fetchImpl(requestUrl, {
       method,
-      headers: headers(target),
+      headers: forgeHeaders(target),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
     const text = await response.text()
@@ -632,7 +637,7 @@ function raisedAs(
   )
 }
 
-const ERROR_EXCERPT_CHARS = 512
+export const ERROR_EXCERPT_CHARS = 512
 
 /**
  * Check anchors against full diffs before posting so one invalid location does
@@ -706,7 +711,7 @@ export async function postForgeReview(
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
-        headers: headers(target),
+        headers: forgeHeaders(target),
         body: JSON.stringify(reviewPayload(target, review)),
       })
       if (response.status >= 200 && response.status < 300) return await response.text()
