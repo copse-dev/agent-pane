@@ -119,6 +119,17 @@ describe('ask_user dialog', () => {
         })) === 'error',
       { timeout: 10_000, timeoutMsg: 'expected the stopped ask_user call to be marked cancelled' },
     )
+    // A tool that runs past the reveal delay opens its card while it runs, and
+    // the transcript folds it again shortly after the run goes quiet. Capture
+    // the settled transcript, not whichever side of that fold the abort landed on.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector('details.tool-card[open]:not([data-status="error"])') === null,
+        ),
+      { timeout: 10_000, timeoutMsg: 'expected the stopped ask_user card to fold' },
+    )
     await saveAppScreenshot('ask-user-dialog-cancelled.png')
   })
 
