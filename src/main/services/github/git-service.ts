@@ -73,6 +73,15 @@ async function runGit(
   return runCommand('git', args, { cwd, ...options })
 }
 
+/**
+ * Every Git command that only reads goes through here. The read-only overlay
+ * keeps the workspace's read confinement but has no write rules, so Linux
+ * bubblewrap creates no placeholders for the mandatory write-deny paths
+ * (.bashrc, .gitconfig, .vscode, ...) in the checkout being inspected. Those
+ * placeholders stay on the host while any sandbox is active, and the Changes
+ * pane or `git status` would report them as untracked files. Keep {@link runGit}
+ * for commands that write.
+ */
 async function runGitRead(
   args: string[],
   root: string | null = getAgentExecutionRoot(),
@@ -340,7 +349,7 @@ async function readGitBlob(
   path: string,
   root?: string | null,
 ): Promise<GitBlobResult> {
-  const { stdout, code } = await runGit(['show', await gitObjectSpec(ref, path, root)], root)
+  const { stdout, code } = await runGitRead(['show', await gitObjectSpec(ref, path, root)], root)
   return classifyGitBlob(stdout, code)
 }
 
@@ -622,9 +631,9 @@ export async function getGithubRepoSlug(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!(await isGitAvailableForTarget()) || !root) return null
-  const inside = await runGit(['rev-parse', '--is-inside-work-tree'], root)
+  const inside = await runGitRead(['rev-parse', '--is-inside-work-tree'], root)
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
-  const { stdout, code } = await runGit(['remote', 'get-url', 'origin'], root)
+  const { stdout, code } = await runGitRead(['remote', 'get-url', 'origin'], root)
   if (code !== 0 || !stdout.trim()) return null
   return parseGithubRepoSlug(stdout.trim())
 }
@@ -768,7 +777,7 @@ export async function pruneWorktreeBackups(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<void> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return
-  const { stdout, code } = await runGit(
+  const { stdout, code } = await runGitRead(
     ['for-each-ref', '--format=%(refname)', 'refs/copse/backups'],
     root,
   )
@@ -1098,7 +1107,7 @@ export async function getBranches(
       { name: DEFAULT_GIT_BRANCH, lastCommitDate: '2020-01-01 00:00:00 +0000' },
     ]
   }
-  const { stdout, code } = await runGit(
+  const { stdout, code } = await runGitRead(
     [
       'for-each-ref',
       '--sort=-committerdate',
@@ -1149,7 +1158,7 @@ export async function getAheadBehind(
 ): Promise<{ ahead: number; behind: number } | null> {
   if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree(root))) return null
   for (const ref of [`origin/${base}`, base]) {
-    const { stdout, code } = await runGit(
+    const { stdout, code } = await runGitRead(
       ['rev-list', '--left-right', '--count', `${ref}...HEAD`],
       root,
     )
@@ -1209,7 +1218,7 @@ export async function getCurrentBranchName(
   if (!root) return null
   const override = e2eBranchOverride()
   if (override) return override
-  const { stdout, code } = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], root)
+  const { stdout, code } = await runGitRead(['rev-parse', '--abbrev-ref', 'HEAD'], root)
   if (code !== 0) return null
   const branch = stdout.trim()
   return branch && branch !== 'HEAD' ? branch : null
@@ -1220,7 +1229,7 @@ export async function getCurrentCommitHash(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!root) return null
-  const { stdout, code } = await runGit(['rev-parse', 'HEAD'], root)
+  const { stdout, code } = await runGitRead(['rev-parse', 'HEAD'], root)
   if (code !== 0) return null
   const hash = stdout.trim()
   return hash || null
@@ -1308,12 +1317,15 @@ export async function getDefaultBranch(
  * callers that turn a branch name into real Git work need the ref checked.
  */
 export async function localBranchExists(root: string, branch: string): Promise<boolean> {
-  const { code } = await runGit(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], root)
+  const { code } = await runGitRead(
+    ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`],
+    root,
+  )
   return code === 0
 }
 
 async function resolveDefaultBranch(root: string): Promise<string | null> {
-  const { stdout: originHeadStdout, code: originHeadCode } = await runGit(
+  const { stdout: originHeadStdout, code: originHeadCode } = await runGitRead(
     ['symbolic-ref', 'refs/remotes/origin/HEAD'],
     root,
   )
@@ -1322,7 +1334,7 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
     if (fromOriginHead) return fromOriginHead
   }
 
-  const { stdout: remoteStdout, code: remoteCode } = await runGit(
+  const { stdout: remoteStdout, code: remoteCode } = await runGitRead(
     ['remote', 'show', 'origin', '-n'],
     root,
   )
@@ -1339,7 +1351,7 @@ async function resolveDefaultBranch(root: string): Promise<string | null> {
   // branch is deliberately not a fallback: this function also defines trunk
   // semantics for merge status and the Changes UI, so a feature checkout must
   // not silently become the repository default.
-  const { stdout: configStdout, code: configCode } = await runGit(
+  const { stdout: configStdout, code: configCode } = await runGitRead(
     ['config', '--get', 'init.defaultBranch'],
     root,
   )
@@ -1461,7 +1473,7 @@ export async function getGitFileDiff(
 
   if (before === after) {
     const diffArgs = ['diff', ...(staged ? ['--cached'] : []), '--', path]
-    const { stdout } = await runGit(diffArgs, root)
+    const { stdout } = await runGitRead(diffArgs, root)
     if (stdout.trim()) {
       if (staged) {
         before = normalizeGitDiffText((await readGitBlob('HEAD', path, root)).content)
@@ -1514,7 +1526,7 @@ export async function getGitStatusText(
 ): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
-  const { stdout, stderr, code } = await runGit(['status', '--short'], root)
+  const { stdout, stderr, code } = await runGitRead(['status', '--short'], root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no output)'
 }
@@ -1525,7 +1537,7 @@ async function getUntrackedDiff(paths: string[], root: string): Promise<string> 
   for (const p of paths) {
     const rhs = p.startsWith('-') ? `./${p}` : p
     // --no-index always exits 1 when files differ; ignore the code, use the output.
-    const { stdout } = await runGit(['diff', '--no-index', '/dev/null', rhs], root)
+    const { stdout } = await runGitRead(['diff', '--no-index', '/dev/null', rhs], root)
     if (stdout.trim()) diffs.push(stdout.trimEnd())
   }
   return diffs.join('\n')
@@ -1539,7 +1551,7 @@ export async function getGitDiffText(
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!root) return 'No workspace open.'
   const args = ['diff', ...(staged ? ['--cached'] : []), '--', ...(path ? [path] : [])]
-  const { stdout, stderr, code } = await runGit(args, root)
+  const { stdout, stderr, code } = await runGitRead(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
 
   let combined = stdout.trimEnd()
@@ -1605,7 +1617,7 @@ export async function getGitShowText(
       return errorMessage(err)
     }
   }
-  const { stdout, stderr, code } = await runGit(args, root)
+  const { stdout, stderr, code } = await runGitRead(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   if (path !== undefined) return stdout
   return stdout.trim() || '(no output)'
@@ -1625,7 +1637,7 @@ export async function getGitLogText(
     '--',
     ...(path ? [path] : []),
   ]
-  const { stdout, stderr, code } = await runGit(args, root)
+  const { stdout, stderr, code } = await runGitRead(args, root)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no output)'
 }
@@ -1640,7 +1652,7 @@ export async function getGitLogSinceText(
   const args = ['log', `--max-count=${String(maxCount)}`, '--oneline']
   if (since) args.push(`--since=${since}`)
   args.push('--', ...(path ? [path] : []))
-  const { stdout, stderr, code } = await runGit(args)
+  const { stdout, stderr, code } = await runGitRead(args)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no commits in this window)'
 }
