@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, $$, browser, expect } from '@wdio/globals'
+import { $, browser, expect } from '@wdio/globals'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -71,11 +71,19 @@ describe('Changes pane thread retention', function () {
     await $('#git-diff-viewer-host .monaco-diff-editor').waitForDisplayed({ timeout: 30_000 })
 
     writeFileSync(join(repoRoot, 'retention-external.ts'), 'export const stillWatching = true\n')
+    // Read every path in one in-page snapshot. The watcher refresh this waits
+    // for re-renders the list, so collecting `$$()` handles and then reading
+    // each one races it: a handle goes stale mid-map and WebdriverIO throws
+    // "Index out of bounds" instead of letting the poll retry.
     await browser.waitUntil(
       async () =>
-        (await $$('.git-change-path').map((element) => element.getText())).includes(
-          'retention-external.ts',
-        ),
+        (
+          await browser.execute(() =>
+            Array.from(document.querySelectorAll('.git-change-path'), (element) =>
+              (element.textContent ?? '').trim(),
+            ),
+          )
+        ).includes('retention-external.ts'),
       { timeout: 15_000, timeoutMsg: 'working-tree updates should still refresh cached rows' },
     )
     await expect($('.git-change-row.is-selected .git-change-path')).toHaveText('unstaged.ts')
