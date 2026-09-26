@@ -293,9 +293,18 @@ const UNIT_SPECS_MAX_CHARS = 16_000
  */
 const DOCS_ONLY_PATTERNS: RegExp[] = [/^docs\//, /\.md$/, /^LICENSE$/, /^\.github\/[A-Z_]+\.md$/]
 
+/**
+ * Markdown a unit test parses (scripts/third-party-notices.test.ts checks the
+ * notices against the shipped dependency set), so an edit to it is not docs-only.
+ */
+const TEST_READ_DOCS: ReadonlySet<string> = new Set(['THIRD_PARTY_NOTICES.md'])
+
 /** True when every changed file is documentation the unit suite cannot observe. */
 export function isDocsOnlyChange(changed: string[]): boolean {
-  return changed.length > 0 && changed.every((f) => DOCS_ONLY_PATTERNS.some((re) => re.test(f)))
+  return (
+    changed.length > 0 &&
+    changed.every((f) => !TEST_READ_DOCS.has(f) && DOCS_ONLY_PATTERNS.some((re) => re.test(f)))
+  )
 }
 
 /**

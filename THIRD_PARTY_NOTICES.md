@@ -3,6 +3,30 @@
 Copse is licensed under AGPL-3.0-only. It also bundles or optionally loads
 third-party components whose licenses require attribution. Those are listed here.
 
+## The complete list ships with the app
+
+Every build generates the full notice set from what it actually ships
+(`scripts/write-third-party-licenses.mts`): packages esbuild compiles into the
+bundles (read from the esbuild metafiles), the production `node_modules`
+electron-builder copies into app.asar, and the vendored components (these fonts,
+the gortex binary and the Go modules compiled into it, the Cursor skills snapshot,
+copied source, and the Electron runtime). The build fails if any of them lacks its
+licence text or is GPL-family only, and packaging (`scripts/after-pack.cjs`)
+checks the real archive again. In the app the files are in
+`Copse.app/Contents/Resources/app.asar.unpacked/dist/resources/licenses/`
+(`THIRD_PARTY_LICENSES.txt`, `LICENSES.chromium.html.gz` for Chromium and Node.js,
+and `LICENSE.txt`), and **Settings → About** lists every component with its
+licence.
+
+The sections below record how Copse meets each licence that asks for more than
+attribution, or that offers a choice. The build checks them against what it
+ships (`scripts/lib/third-party-notices.mts`) and fails if a component that
+needs an entry lacks one, if an entry quotes a version that no longer ships or
+names a package that no longer ships, if a dual-licensed entry does not say
+which licence Copse elects, or if a "Not shipped" package ships. An entry
+heading ends with the npm package name in parentheses, for example
+`## noVNC (@novnc/novnc)`.
+
 ## Copse interface fonts
 
 - **Pliant:** Jona Saucedo / Non Foundry — bundled as the interface and body
@@ -22,8 +46,8 @@ third-party components whose licenses require attribution. Those are listed here
 - **License:** Creative Commons Attribution 4.0 International (CC BY 4.0) —
   https://creativecommons.org/licenses/by/4.0/
 - **Used by:** the experimental on-device PII redaction feature
-  (`src/main/services/pii-redactor.ts`). Optional dependency; loaded only when
-  the user enables PII redaction in Settings → Experimental.
+  (`src/main/services/security/pii-redactor.ts`). Optional dependency; loaded
+  only when the user enables the PII redaction plugin in Settings → Plugins.
 - **Modifications:** none. The package and its model are used as published.
 
 CC BY 4.0 is a permissive, attribution-only license. It is not copyleft, and the
@@ -40,10 +64,85 @@ and note any changes — which this notice does.
   https://www.mozilla.org/MPL/2.0/
 - **Used by:** the opt-in, read-only Remote Desktop pane. Copse supplies an
   IPC-backed channel; noVNC decodes and paints the RFB stream in the renderer.
-- **Modifications:** none. Version 1.5.0 is bundled as published.
+- **Modifications:** none. Version 1.7.0 is bundled as published.
 
 The MPL applies at file level to noVNC's own files and does not change Copse's
 AGPL-3.0-only license. noVNC's sources carry no "Incompatible With Secondary
 Licenses" notice, so MPL-2.0 section 3.3 permits distributing it as part of a
-Larger Work under the GNU licenses. The package's complete license text ships
-with the package.
+Larger Work under the GNU licenses. The build compiles noVNC into the renderer
+bundle, so the packaged app does not contain the npm package; its license text
+ships in the generated `THIRD_PARTY_LICENSES.txt`. As MPL-2.0 section 3.2
+requires, this notice tells recipients of the app where to get noVNC's source
+code: the unmodified upstream release linked above.
+
+## DOMPurify (dompurify)
+
+- **Project:** DOMPurify — a DOM-only XSS sanitizer for HTML, MathML and SVG.
+- **Authors:** Cure53 and other contributors.
+- **Source:** https://github.com/cure53/DOMPurify
+- **License:** dual-licensed `(MPL-2.0 OR Apache-2.0)`. **Copse elects the
+  Apache-2.0 option.**
+- **Used by:** the conversation markdown sanitizer
+  (`@copse/streaming-markdown`'s DOMPurify backend, loaded lazily by
+  `src/renderer/markdown/sanitizer-backend.ts`), the Mermaid diagram frame, and
+  Monaco. Compiled into the renderer bundles.
+- **Modifications:** none. Version 3.4.15 is bundled as published.
+
+Under the Apache-2.0 option, Copse passes on DOMPurify's copyright notice and
+the license text, which ship in the generated `THIRD_PARTY_LICENSES.txt`.
+DOMPurify has no NOTICE file. Apache-2.0 is compatible with GPLv3, so it may be
+combined into Copse's AGPL-3.0-only work.
+
+## Forge (node-forge)
+
+- **Project:** Forge — a native JavaScript implementation of TLS and related
+  cryptography tools.
+- **Author:** Digital Bazaar, Inc.
+- **Source:** https://github.com/digitalbazaar/forge
+- **License:** dual-licensed `(BSD-3-Clause OR GPL-2.0)`. **Copse elects the
+  BSD-3-Clause option** and does not distribute Forge under GPL-2.0.
+- **Used by:** `@anthropic-ai/sandbox-runtime`, a runtime dependency. The
+  sandbox's network proxy uses Forge to create its local TLS certificate
+  authority and leaf certificates. Shipped in the app archive under
+  `node_modules/node-forge/`.
+- **Modifications:** none. Version 1.4.0 is shipped as published.
+
+Under the BSD-3-Clause option, Copse keeps Digital Bazaar's copyright notice,
+license conditions, and disclaimer. They ship with the package in
+`node_modules/node-forge/LICENSE`. Copse does not use Digital Bazaar's name to
+endorse or promote itself. The GPL-2.0 option is not used: GPL-2.0-only is not
+compatible with Copse's AGPL-3.0-only license or with a proprietary license.
+
+## Not shipped: sharp and libvips (sharp, @img/sharp-*)
+
+`pnpm licenses list --prod` reports `sharp` (Apache-2.0) and its native
+`@img/sharp-libvips-*` packages (LGPL-3.0-or-later). **Neither ships in the
+packaged app**, so they do not need a notice here. They appear in the report
+because of this dependency chain:
+
+- `@nationaldesignstudio/rampart` is an optional dependency that ships.
+- Rampart declares `@huggingface/transformers` only as an _optional peer_
+  dependency. It has no `dependencies` or `optionalDependencies` of its own.
+- pnpm auto-installs that optional peer, and `@huggingface/transformers`
+  depends on `sharp` and `onnxruntime-node`. pnpm counts that chain as
+  production, but electron-builder does not follow peer dependencies when it
+  collects `node_modules` into the app archive.
+
+Evidence: the 0.1.0-beta.8 release archive (`Copse.app/Contents/Resources/app.asar`
+and `app.asar.unpacked`) contains Rampart but no `sharp`, `@img/*`,
+`@huggingface/transformers`, or `onnxruntime-*` files. Since that release the
+`build` configuration, `optionalDependencies`, and Rampart's resolution have not
+changed in any way that affects this. The 0.1.0-beta.6 release notes and
+[`docs/pii-redaction.md`](docs/pii-redaction.md) record removing the
+Transformers/ONNX runtime from the base installer on purpose. Three checks now
+hold it there: the unit test `scripts/third-party-notices.test.ts` and the build
+both fail if any package this heading names joins the shipped set, and
+packaging (`scripts/check-packaged-licenses.mts`) fails if `sharp` or
+`@img/sharp-*` is in the real app archive.
+
+If a future change bundles the contextual PII model (for example, by adding
+`@huggingface/transformers` as a direct dependency or listing it in `asarUnpack`),
+this section must become a full entry before release. LGPL-3.0 section 4 would
+then require all of the following: libvips must stay a separately loaded shared
+library that the user can replace, its license text must ship with the app, and
+this file must include a source offer for it.

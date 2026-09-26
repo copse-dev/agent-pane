@@ -2559,3 +2559,96 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .sources-worktrees-fieldset {
   min-inline-size: 0;
 }
+
+/* Settings → About: the shipped third-party licence report. One flat list of
+   native disclosures; the text of a licence is only built when its row opens. */
+.about-licenses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.about-licenses-filter {
+  width: 100%;
+  min-height: var(--action-min-height);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+.about-licenses-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.about-licenses-filter::placeholder {
+  color: var(--text-muted);
+}
+.about-licenses-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.about-licenses-list > li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+.about-license-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+.about-license-summary:hover {
+  background: var(--bg-hover);
+}
+.about-license-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.about-license-version {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+.about-license-id {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+.about-license-body {
+  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-md);
+}
+.about-license-meta,
+.about-license-note {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.about-license-file-name {
+  margin-top: var(--spacing-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+.about-license-text {
+  max-height: 20rem;
+  overflow: auto;
+  margin: var(--spacing-xs) 0 0;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
