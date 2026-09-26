@@ -51,16 +51,30 @@ export function bindFooterCompactLayout(
 
   const observer = new ResizeObserver(sync)
   observer.observe(footer)
-  // The footer's own box is sized by the composer, so it does not resize when
-  // the model or branch label fills in after mount. Watch the controls too, or
-  // the footer keeps the roomy layout it measured while they were still empty
-  // and squeezes the branch chip to a character instead of going compact.
-  // Measuring restores every style it touches before layout. Toggling
-  // `is-compact` does resize the usage group, but the re-run measures the same
-  // natural width (usage forced visible), so it settles after one pass.
+  // Watch the controls too: a control that appears, disappears or changes size
+  // (a font or UI-scale change) moves the natural width.
+  // Toggling `is-compact` does resize the usage group, but the re-run measures
+  // the same natural width (usage forced visible), so it settles after one pass.
   for (const control of footer.children) observer.observe(control)
   const inputBar = footer.closest('#input-bar')
   if (inputBar) observer.observe(inputBar)
+  // No box resizes when a label's text changes after mount (the model name, the
+  // branch loaded asynchronously): the footer is sized by the composer, and a
+  // host already squeezed to its share keeps that width while its label clips.
+  // Only the DOM change itself says the natural width moved, so re-measure on
+  // any text or `hidden` change under the footer. This covers every writer
+  // without each one having to know about the footer. `sync` coalesces bursts
+  // into one measurement per frame. Measuring writes only inline `style`, and
+  // compacting only the footer's `class`; neither is watched, so a
+  // measurement cannot re-trigger this observer.
+  const mutations = new MutationObserver(sync)
+  mutations.observe(footer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['hidden'],
+  })
   window.addEventListener('resize', sync, { passive: true })
   sync()
 
@@ -69,6 +83,7 @@ export function bindFooterCompactLayout(
     destroy: (): void => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      mutations.disconnect()
       window.removeEventListener('resize', sync)
     },
   }
