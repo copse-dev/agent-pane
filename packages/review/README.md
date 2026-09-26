@@ -305,9 +305,11 @@ dispatches `review-summary.yml` when a pull request the review would accept is o
 reopened, marked ready or labelled, and on every push to one. That workflow authorizes like
 the findings workflow, then runs the default branch's CLI with `--summary-only
 --post-summary github`: read-only checkouts, no Stage 0, no container and nothing executed,
-with the same model route and the same App token. The findings job also passes
-`--post-summary github`, so a finished review rewrites the summary with its evidence unless
-a newer push has moved the pull request on. Forgejo's findings job does the same on each
+with the same model route. It edits the description with the job's own `GITHUB_TOKEN`
+rather than the App token: GitHub starts no workflow run for an event that token causes,
+whereas an App-token edit fires `edited` and CI re-ran in full on the same head. The findings
+job also passes `--post-summary github`, so a finished review rewrites the summary with its
+evidence unless a newer push has moved the pull request on. Forgejo's findings job does the same on each
 labelled push.
 
 `.github/workflows/review-nightly.yml` samples at most one recent branch from this repository
