@@ -283,6 +283,25 @@ describe('classifier connections settings', () => {
     )
     assert.equal(lastAuthorization, undefined, 'keyless profiles must send no Authorization header')
     assert.equal(requests, 4)
+
+    // Route safety screening to the saved Kev connection through the real IPC.
+    const screening = host.$('[name="classifierScreening"]')
+    await screening.scrollIntoView({ block: 'center' })
+    await expect(screening).toHaveValue('')
+    await screening.selectByVisibleText('Kev fixture')
+    await browser.waitUntil(
+      async () =>
+        /Safety screening now uses Kev fixture/.test(await host.$('.classifier-status').getText()),
+      { timeout: 10_000, timeoutMsg: 'screening choice did not save' },
+    )
+    const screeningId: unknown = await browser.execute(async () =>
+      window.api.classifiers.screening(),
+    )
+    assert.ok(typeof screeningId === 'string' && screeningId.startsWith('kev-'))
+    await expect(screening).toHaveValue(screeningId)
+    assert.equal(requests, 4, 'choosing a screening classifier must not call inference')
+    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-screening.png')
+
     fail = true
     await clickAction('test')
     await browser.waitUntil(
@@ -295,6 +314,9 @@ describe('classifier connections settings', () => {
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 1, {
       timeout: 10_000,
     })
+    // Removing the screening connection hands screening back to the safety model.
+    await expect(screening).toHaveValue('')
+    assert.equal(await browser.execute(async () => window.api.classifiers.screening()), null)
     await clickAction('remove')
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
       timeout: 10_000,
