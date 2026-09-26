@@ -56,6 +56,44 @@ function hangingProvider(recorded: Recorded): LLMProvider {
   }
 }
 
+/**
+ * A provider that ends its stream cleanly on abort with the partial text it had,
+ * like the native LM Studio client answering a cancel with `userStopped`.
+ */
+function cleanStopProvider(recorded: Recorded): LLMProvider {
+  return {
+    async *stream(_messages, _tools, signal): AsyncGenerator<ProviderStreamChunk> {
+      recorded.signals.push(signal)
+      yield { type: 'text' as const, text: 'Partial adv' }
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) resolve()
+        else
+          signal?.addEventListener(
+            'abort',
+            () => {
+              resolve()
+            },
+            { once: true },
+          )
+      })
+      yield { type: 'usage' as const, model: 'claude-opus-4-8', inputTokens: 100, outputTokens: 5 }
+      yield { type: 'done' as const }
+    },
+  }
+}
+
+/** A provider that finishes its answer, but Stop lands before the stream closes. */
+function stoppedAtCompletionProvider(controller: AbortController): LLMProvider {
+  return {
+    async *stream(): AsyncGenerator<ProviderStreamChunk> {
+      yield { type: 'text' as const, text: 'Complete advice.' }
+      yield { type: 'usage' as const, model: 'claude-opus-4-8', inputTokens: 100, outputTokens: 20 }
+      controller.abort(new Error('user stopped'))
+      yield { type: 'done' as const }
+    },
+  }
+}
+
 function deps(
   recorded: Recorded,
   provider: LLMProvider,
@@ -136,6 +174,54 @@ describe('advisor runner', () => {
     const forwarded = recorded.signals[0]
     assert.ok(forwarded, 'the provider receives a signal')
     assert.equal(forwarded.aborted, true)
+  })
+
+  it('rejects when Stop ends the stream cleanly, instead of returning partial advice', async () => {
+    const recorded = fresh()
+    const run = createAdvisorRunner(
+      context(recorded, [{ role: 'user', content: 'Task' }]),
+      deps(recorded, cleanStopProvider(recorded)),
+    )
+    const controller = new AbortController()
+    const pending = run(controller.signal)
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+    controller.abort(new Error('user stopped'))
+    await assert.rejects(pending, /user stopped/)
+    assert.equal(
+      recorded.chunks.some((chunk) => chunk.type === 'usage'),
+      false,
+      'a stopped consult reports no advisor usage line, like a transport that rejects',
+    )
+  })
+
+  it('rejects when Stop races the completion of a cloud consult', async () => {
+    const recorded = fresh()
+    const controller = new AbortController()
+    const run = createAdvisorRunner(
+      context(recorded, [{ role: 'user', content: 'Task' }]),
+      deps(recorded, stoppedAtCompletionProvider(controller)),
+    )
+    await assert.rejects(run(controller.signal), /user stopped/)
+    assert.equal(recorded.chunks.length, 0)
+  })
+
+  it('rejects when Stop lands after an ACP consult has returned', async () => {
+    const recorded = fresh()
+    const controller = new AbortController()
+    const run = createAdvisorRunner(context(recorded, [{ role: 'user', content: 'Task' }]), {
+      ...deps(recorded, answeringProvider(recorded), 'acp:claude-code'),
+      runAcpPrompt: () => {
+        // ACP answers a cancel with a normal `cancelled` turn carrying the partial text.
+        controller.abort(new Error('user stopped'))
+        return Promise.resolve({
+          text: 'Partial ACP advice',
+          usage: { inputTokens: 10, outputTokens: 2 },
+        })
+      },
+    })
+    await assert.rejects(run(controller.signal), /user stopped/)
+    assert.equal(recorded.chunks.length, 0)
   })
 
   it('forwards a capped transcript that keeps the most recent context', async () => {

@@ -193,8 +193,9 @@ export interface BuildProviderOptions {
   /**
    * Ceiling on output tokens for this call only, for callers with a fixed output
    * budget — the advisor consult is capped at `DEFAULT_ADVISOR_MAX_TOKENS`. Lowers
-   * the user's saved cap and the model card's recommended ceiling; never raises
-   * either. Sent by the transports that carry an output cap (Anthropic, Chat
+   * the user's saved cap, never raises it. With no saved cap it stands in for the
+   * model card's recommended ceiling (`resolvedOutputCeiling` prefers an explicit
+   * cap), so it only lowers that ceiling while the card's is larger. Sent by the transports that carry an output cap (Anthropic, Chat
    * Completions, OpenRouter, LM Studio); the Responses transports send none.
    */
   maxOutputTokens?: number

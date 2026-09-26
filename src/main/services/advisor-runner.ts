@@ -178,6 +178,13 @@ export function createAdvisorRunner(
         signal,
       ))
     }
+    // Stop must win even when the consult settled without rejecting: the native
+    // LM Studio client ends a cancelled stream cleanly (`userStopped`), an ACP
+    // cancel returns a normal `cancelled` turn, and Stop can land between the
+    // last chunk and this line. Partial text must not reach the executor as
+    // advice, and — matching the transports that reject on abort — a stopped
+    // consult reports no advisor usage line.
+    signal.throwIfAborted()
     // Advisor tokens are billed at the advisor model's rate on a dedicated
     // usage line (usageSource: 'advisor'), mirroring the native
     // `usage.iterations[].advisor_message` — see advisor-usage.ts (#566).
