@@ -277,8 +277,22 @@ plan alone does not require `update-screenshots`; reserve that label for an inte
 refresh. The standalone `pnpm run check:screenshots` command reports stale references as a local
 diagnostic and is not part of `pnpm run check`.
 
-Accepting references means committing the PNGs to the PR branch. The comment gives the exact
-command: `git fetch origin screenshot-compare/pr-<N>/<sha12> && git cherry-pick <compare-commit>`
+Screenshot review blocks merging. The publisher sets a `Screenshot review` commit status on every
+same-repository PR head, which the default-branch ruleset requires beside `CI Passed`. It is pending
+while candidates await a decision and passes when there are none. A maintainer decides with a label,
+which `.github/workflows/screenshot-review-labels.yml` acts on and then removes:
+`accept-screenshots` fast-forwards the PR branch to the compare commit, after checking that it is
+one commit on the live head that only adds or updates PNGs under `tests/e2e/screenshots/`. It
+pushes with the release App token so CI runs on the new head, and CI skips e2e there because the
+commit only changes screenshots. `decline-screenshots` passes the check and commits nothing, for
+unrelated drift or references that belong in another PR. A refused label is removed with a comment
+saying why. The decision belongs to the head it was made on, so any push starts a new review.
+Adding a label also re-runs CI on that head. After an accept, the fast-forward supersedes that run;
+after a decline it is a repeat, and the publisher keeps the decision when the run lands. Promotion
+and merge-back PRs from `main` or `release` pass the check without a decision.
+
+Accepting references means committing the PNGs to the PR branch. Besides the label, the comment
+gives the exact command: `git fetch origin screenshot-compare/pr-<N>/<sha12> && git cherry-pick <compare-commit>`
 applies every candidate, and `git checkout <compare-commit> -- tests/e2e/screenshots/<name>.png`
 after the fetch takes only some. When the whole reference set should be re-rendered, add
 `update-screenshots`: CI runs the complete e2e reference set and the publisher pushes all of it to
