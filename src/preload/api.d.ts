@@ -408,6 +408,14 @@ export interface ApiClient {
   }
   alerts: {
     threadFinished: (threadId: string, title: string) => Promise<void>
+    /**
+     * A system notification about a thread was clicked: open it. `projectId` is
+     * the thread store's owner, or null when main could not resolve one.
+     * Returns an unsubscribe.
+     */
+    onOpenThread: (
+      handler: (target: { threadId: string; projectId: string | null }) => void,
+    ) => () => void
   }
   sshPrompt: {
     respond: (id: string, value: string, remember?: boolean) => Promise<void>

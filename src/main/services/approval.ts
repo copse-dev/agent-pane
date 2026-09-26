@@ -819,8 +819,9 @@ export function initApproval(
         dest.send('agent:approval-request', { id, threadId, ...req })
         // Deliver the user's configured native alert channels. A repeating
         // Dock/taskbar animation stops on focus and also when this approval
-        // settles for any reason.
-        const stopAlert = alertUser('interaction', req.title)
+        // settles for any reason. `dest` goes along so a notification click
+        // surfaces the pop-out that holds this prompt, not the main window.
+        const stopAlert = alertUser('interaction', req.title, threadId, dest)
         // No wall-clock timeout: the prompt stays until the user answers, the
         // window closes, or the caller's abort signal fires (Stop / cancel).
         // Auto-deny after 5 minutes previously let the agent keep turning under

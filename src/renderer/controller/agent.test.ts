@@ -183,6 +183,7 @@ function setup(
         threadFinished: async (threadId: string, title: string): Promise<void> => {
           finishedAlerts.push({ threadId, title })
         },
+        onOpenThread: () => () => undefined,
       },
     } satisfies ApiClient
   })()

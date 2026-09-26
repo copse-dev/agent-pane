@@ -86,4 +86,9 @@ if (process.env.COPSE_E2E_SECRET_STORAGE === 'unavailable') {
   }
 }
 
+// Notifications, the Dock badge and window hiding are OS chrome; see the fixture.
+if (process.env.COPSE_E2E_NATIVE_ALERTS) {
+  require('./native-alerts-fixture.cjs').install(process.env.COPSE_E2E_NATIVE_ALERTS)
+}
+
 require('../../../dist/main/index.js')
