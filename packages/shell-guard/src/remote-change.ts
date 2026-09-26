@@ -472,15 +472,28 @@ function remoteWorkflowReason(head: string, argv: readonly string[]): string | n
 const DATABASE_LOADERS = new Set([
   'pgloader',
   'pg_loader',
-  'pg_restore',
   'mongorestore',
   'mongoimport',
   'mysqlimport',
-  'influx',
 ])
+
+/** `influx` verbs that write, delete or reconfigure; `query`, `ping` and `version` do not. */
+const INFLUX_WRITE_VERB =
+  /^(?:write|delete|restore|setup|create|update|import|apply|remove|rm|run|retry|replay)$/
 
 function databaseLoadReason(head: string, argv: readonly string[]): string | null {
   if (DATABASE_LOADERS.has(head)) return `loads data into a database (${head})`
+  if (head === 'pg_restore') {
+    // With -f/--file or -l/--list and no target database, pg_restore writes a SQL
+    // script or prints the archive's table of contents instead of restoring.
+    const toDatabase = argv.some((arg) => /^(?:-d|--dbname)(?:=|$)|^-d./.test(arg))
+    const toFileOrList = argv.some((arg) => /^(?:-f|--file|-l|--list)(?:=|$)|^-f./.test(arg))
+    return toDatabase || !toFileOrList ? 'loads data into a database (pg_restore)' : null
+  }
+  if (head === 'influx') {
+    const verb = nonFlagWords(argv).find((word) => INFLUX_WRITE_VERB.test(word))
+    return verb ? `changes database data (influx ${verb})` : null
+  }
   if (
     (head === 'psql' || head === 'mysql' || head === 'mariadb') &&
     argv.some((arg) => /^(?:-f|--file(?:=|$))/.test(arg))
