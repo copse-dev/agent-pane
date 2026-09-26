@@ -8,6 +8,7 @@ import {
   seedPrPanelChatFixture,
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import { isDisplayFace, readHeadingStyle } from './helpers/heading-style.ts'
 
 describe('PR panel (mock gh)', () => {
   before(async function () {
@@ -137,6 +138,14 @@ describe('PR panel (mock gh)', () => {
       },
       { timeout: 15_000, timeoutMsg: 'expected auto-selected mock PR viewer' },
     )
+
+    // The PR title is a utility heading in a dense pane, not a page masthead:
+    // Pliant 600 rather than the h1–h3 display face.
+    const viewerTitle = await readHeadingStyle('.pr-viewer-title')
+    expect(viewerTitle).not.toBeNull()
+    expect(viewerTitle!.tag).toBe('H4')
+    expect(isDisplayFace(viewerTitle!.family)).toBe(false)
+    expect(viewerTitle!.weight).toBe('600')
 
     await saveElementScreenshot('#pane-files', 'pr-panel-linked-list.png')
     await expect(await $('.pr-viewer-description')).toHaveText(expect.stringContaining('PRs'))

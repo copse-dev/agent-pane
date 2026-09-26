@@ -1,0 +1,16 @@
+[
+  [
+    "en",
+    {
+      "langKey": "en",
+      "displayName": "Metal llama.cpp",
+      "description": "Apple Metal accelerated llama.cpp engine",
+      "releaseNotes": [
+        {
+          "version": "2.34.0",
+          "releaseNotes": "- llama.cpp release b10864 (commit 5d806aa25)\n"
+        }
+      ]
+    }
+  ]
+]

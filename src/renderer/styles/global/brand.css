@@ -138,7 +138,6 @@ h3 {
    danger fill; it still takes the shared pill geometry from the list above. */
 :is(
   .welcome-new-btn,
-  .welcome-open-btn,
   .submit-btn,
   .settings-buttons button[type='submit'],
   .onboarding-primary,
@@ -153,7 +152,6 @@ h3 {
 
 :is(
   .welcome-new-btn,
-  .welcome-open-btn,
   .submit-btn,
   .settings-buttons button[type='submit'],
   .onboarding-primary,
