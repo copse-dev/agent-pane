@@ -1,6 +1,8 @@
 import { decodeWithSchema, safeJsonParse } from '@copse/std/safe-json.ts'
 import { z } from 'zod'
+import { readResponseTextWithin } from '@copse/std/bounded-response.ts'
 import { redactSecrets } from '../redact-secrets.ts'
+import { classifierDeadline, interruption } from './deadline.ts'
 import { ClassifierError } from './error.ts'
 import { parseClassifierBatch } from './validation.ts'
 import type {
@@ -129,46 +131,10 @@ function encodeQuestion(question: ClassifierQuestion): object {
 }
 
 async function readResponse(response: Response, signal: AbortSignal): Promise<string> {
-  const declared = Number(response.headers.get('content-length') ?? 0)
-  if (declared > MAX_RESPONSE_BYTES) {
-    await response.body?.cancel()
+  const text = await readResponseTextWithin(response, MAX_RESPONSE_BYTES, signal)
+  if (text === null)
     throw new ClassifierError('invalid-response', 'Classifier response exceeded the size limit.')
-  }
-  if (!response.body)
-    throw new ClassifierError('invalid-response', 'Classifier returned an empty response.')
-  const reader = response.body.getReader()
-  const cancelReader = (): void => {
-    void reader.cancel().catch(() => undefined)
-  }
-  signal.addEventListener('abort', cancelReader, { once: true })
-  if (signal.aborted) cancelReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  try {
-    for (;;) {
-      const next = await reader.read()
-      if (next.done) break
-      size += next.value.byteLength
-      if (size > MAX_RESPONSE_BYTES) {
-        await reader.cancel()
-        throw new ClassifierError(
-          'invalid-response',
-          'Classifier response exceeded the size limit.',
-        )
-      }
-      chunks.push(next.value)
-    }
-  } finally {
-    signal.removeEventListener('abort', cancelReader)
-    reader.releaseLock()
-  }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.length
-  }
-  return new TextDecoder().decode(bytes)
+  return text
 }
 
 function httpError(status: number): ClassifierError {
@@ -233,27 +199,8 @@ export async function classifyHttpValidated(
       'Classifier timeout must be between 1 and 600000 milliseconds.',
     )
   if (options.signal?.aborted) throw new ClassifierError('cancelled', 'Classifier call cancelled.')
-  const controller = new AbortController()
-  const abort = (): void => {
-    controller.abort(new ClassifierError('cancelled', 'Classifier call cancelled.'))
-  }
-  options.signal?.addEventListener('abort', abort, { once: true })
-  const timer = setTimeout(() => {
-    controller.abort(new ClassifierError('timeout', 'Classifier call timed out.'))
-  }, timeoutMs)
+  const deadline = classifierDeadline(timeoutMs, options.signal)
   const started = performance.now()
-  let rejectAborted: (() => void) | undefined
-  const interrupted = new Promise<never>((_, reject) => {
-    rejectAborted = (): void => {
-      const reason: unknown = controller.signal.reason
-      reject(
-        reason instanceof ClassifierError
-          ? reason
-          : new ClassifierError('cancelled', 'Classifier call cancelled.'),
-      )
-    }
-    controller.signal.addEventListener('abort', rejectAborted, { once: true })
-  })
   const call = async (): Promise<ClassifierResult> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -265,7 +212,7 @@ export async function classifyHttpValidated(
       method: 'POST',
       headers,
       redirect: 'manual',
-      signal: controller.signal,
+      signal: deadline.signal,
       body: JSON.stringify({
         model: profile.model,
         state: request.state,
@@ -279,7 +226,7 @@ export async function classifyHttpValidated(
       throw httpError(response.status)
     }
     const decoded = safeJsonParse(
-      await readResponse(response, controller.signal),
+      await readResponse(response, deadline.signal),
       decodeWithSchema(responseSchema),
     )
     if (!decoded || !sameKeys(decoded.answers, Object.keys(request.questions)))
@@ -336,15 +283,12 @@ export async function classifyHttpValidated(
     }
   }
   try {
-    return await Promise.race([call(), interrupted])
+    return await Promise.race([call(), deadline.interrupted])
   } catch (error) {
     if (error instanceof ClassifierError) throw error
-    if (controller.signal.aborted && controller.signal.reason instanceof ClassifierError)
-      throw controller.signal.reason
+    if (deadline.signal.aborted) throw interruption(deadline.signal)
     throw new ClassifierError('connectivity', 'Could not connect to the classifier endpoint.')
   } finally {
-    clearTimeout(timer)
-    options.signal?.removeEventListener('abort', abort)
-    if (rejectAborted) controller.signal.removeEventListener('abort', rejectAborted)
+    deadline.dispose()
   }
 }
