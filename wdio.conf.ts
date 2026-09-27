@@ -25,6 +25,17 @@ import {
   E2E_DEVICE_SCALE_FACTOR,
 } from './tests/e2e/helpers/screenshot.ts'
 
+/**
+ * A fresh session can start with the pointer over the transcript: references
+ * such as markdown-text-wrap-pretty caught a message's hover-only Copy button
+ * without a single click. Start every session, and every reloadSession, with
+ * WebDriver's pointer in the window's top-left corner; a spec that wants hover
+ * moves the pointer itself.
+ */
+async function parkSessionPointer(): Promise<void> {
+  await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+}
+
 /** Cap how long afterTest may talk to a possibly-dead Electron session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
@@ -115,6 +126,10 @@ export const config: Options.Testrunner = {
           // outcome on Linux and the persisted one on macOS. Giving the runner
           // a fake secret store would only have made it lie to the test.
           '--password-store=basic',
+          // Dates and times in reference PNGs format in the app locale. Pin it,
+          // with `TZ` in beforeSession, so a capture renders the same text on a
+          // developer's machine as on CI (docs/testing-strategy.md).
+          '--lang=en-US',
         ],
       },
     },
@@ -137,6 +152,10 @@ export const config: Options.Testrunner = {
     // a control clear at click time; see helpers/settings-action-bar-click.ts.
     installSettingsActionBarClickSafety(browser)
     await assertE2eDeviceScaleFactor()
+    await parkSessionPointer()
+  },
+  async onReload() {
+    await parkSessionPointer()
   },
   afterTest: async (test, _context, result) => {
     // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
@@ -218,6 +237,9 @@ export const config: Options.Testrunner = {
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,
+      // Seeded timestamps render in local time; pin the zone so a reference
+      // shows the same clock time on every host. `--lang` pins the format.
+      TZ: 'UTC',
       // Shells tabs spawn `$SHELL`. Point it at a wrapper that runs bash with no
       // rc files and a fixed `$ ` prompt, so terminal captures never carry the
       // runner's `user@host:~/path` prompt (a new hostname on every CI run).
