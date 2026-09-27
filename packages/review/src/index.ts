@@ -35,6 +35,8 @@ export * from './forge-review.ts'
 
 // The measurement: a review scored against known defects.
 export * from './eval.ts'
+// The risk-rating eval: the summary's Low / Medium / High level scored against outcomes.
+export * from './risk-eval.ts'
 
 // Backends and the helper every backend shares.
 export * from './host-process-backend.ts'
