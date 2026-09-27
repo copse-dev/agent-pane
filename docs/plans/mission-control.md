@@ -26,9 +26,11 @@ What is in:
   approval or `ask_user` question, longest-waiting first) → **Working** (running, newest run
   first) → **Recently finished** (runs this session saw end or that ended unseen; failed
   before finished, capped at 10 with the full count).
-  Each row: an outline glyph plus a text label (never colour alone), what it wants (the
-  approval's title and command, or the question), thread, project and age. Opened with
-  Cmd/Ctrl+Shift+A, the sidebar header bell, or the command palette's **Activity**.
+  A list on the left, the selected thread in full on the right. Each row is two lines: an
+  outline glyph, the thread name and its age, then a state word (never colour alone), what
+  it wants or is doing (the command, the question, the latest activity) and the project.
+  Opened with Cmd/Ctrl+Shift+A, the sidebar header bell, or the command palette's
+  **Activity**.
 - `src/renderer/controller/activity-model.ts` — pure derivation over thread **metadata**
   (id, title, status, `unreadAt`), the live request queues, and run timings observed from
   `thread_status_changed` / `agent_activity`. It never reads `messages`; tests pin that with
@@ -41,24 +43,27 @@ What is in:
   no task lease; anything broader is still answered on the prompt itself. It returns false
   and sends nothing when the request is no longer pending, so a double click, a stale row, or
   a request answered on the prompt or cancelled by main is harmless.
-- **Approve requires the full request to be visible.** A collapsed row is for scanning —
-  its title and command are truncated — so it offers only **Review** and **Reject** (which
-  can only narrow). Review expands the row into the request exactly as the approval prompt
-  presents it, rendered by the prompt's own `approvalRequestDetails`: full title, advice,
-  the whole untruncated body (monospaced for shell, wrapping and scrolling, never cut) and
-  the footer. **Approve once** exists only in that expanded view, and opening it arms the
-  settle window below, so a request cannot be approved from a view that shows less than
-  the prompt would.
-- The approval dialog's clickjack guard carries over: when the Needs-you list changes while
-  the panel is open, Approve pauses for `APPROVAL_SETTLE_MS`; Reject stays live.
+- **Approve requires the full request to be visible.** A list row is for scanning — its
+  command is truncated — so it carries no answer at all. The detail pane shows the selected
+  request exactly as the approval prompt presents it, rendered by the prompt's own
+  `approvalRequestDetails`: full title, advice, the whole untruncated body (monospaced for
+  shell, wrapping and scrolling, never cut) and the footer. **Approve once** and **Reject**
+  exist only in that pane's action bar, beside **Open thread**, so a request cannot be
+  approved from a view that shows less than the prompt would.
+- The approval dialog's clickjack guard carries over: Approve pauses for
+  `APPROVAL_SETTLE_MS` whenever a request it has not shown yet takes the detail pane (on
+  open, on selecting another request, or when an answered one hands over to the next) and
+  when the Needs-you list changes while the panel is open; Reject stays live.
 - **Questions go to their thread.** `mountAskUserDialog` returns a read-only
-  `AskUserRequests` handle. A question row's **Answer…** opens its thread, where the existing
-  ask dialog surfaces it — the dialog stays the only thing that answers.
+  `AskUserRequests` handle. The detail lists every question, and **Answer in thread** opens
+  its thread, where the existing ask dialog surfaces it — the dialog stays the only thing
+  that answers.
 - Re-rendering is throttled to one pass per 250ms, ages refresh every 30s while open, and
-  focus is kept on the same row (or its place in the list) across re-renders.
-- Keyboard: arrows/Home/End move between rows (roving tab stop), Enter opens the thread,
-  Tab reaches a row's Approve once / Reject, Esc closes. Each list is labelled by its group
-  heading and each row's accessible name leads with its state.
+  the selection and focus stay on the same row (or its place in the list) across
+  re-renders. The panel has a fixed height, so a new selection never resizes it.
+- Keyboard: arrows/Home/End move the selection (roving tab stop) and the detail follows,
+  Tab reaches the detail's Open thread / Reject / Approve once, Esc closes. Each list is
+  labelled by its group heading and each row's accessible name leads with its state.
 - The empty state explains what the panel will show.
 
 Evidence: `activity-model.test.ts`, `activity-panel.test.ts`,

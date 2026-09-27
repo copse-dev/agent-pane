@@ -143,6 +143,19 @@ function key(target: HTMLElement, name: string): void {
   target.dispatchEvent(new window.KeyboardEvent('keydown', { key: name, bubbles: true }))
 }
 
+function detail(): HTMLElement {
+  return qsRequired(document, '#activity-panel .activity-detail')
+}
+
+function openers(): HTMLButtonElement[] {
+  return [...document.querySelectorAll<HTMLButtonElement>('#activity-panel .activity-row-open')]
+}
+
+function selectedKey(): string | undefined {
+  return document.querySelector<HTMLElement>('#activity-panel .activity-row[data-selected]')
+    ?.dataset['rowKey']
+}
+
 describe('activity panel', () => {
   let store: AppStore
   let panel: ActivityPanel
@@ -222,11 +235,11 @@ describe('activity panel', () => {
     )
   }
 
-  /** Open a row's review, then let its settle window pass so Approve is live. */
+  /** Select a row, then let its settle window pass so Approve is live. */
   function review(rowKey: string): HTMLButtonElement {
-    qsRequired<HTMLButtonElement>(rowFor(rowKey), '.activity-review-toggle').click()
+    qsRequired<HTMLButtonElement>(rowFor(rowKey), '.activity-row-open').click()
     time.advance(APPROVAL_SETTLE_MS)
-    return qsRequired<HTMLButtonElement>(rowFor(rowKey), '.activity-approve')
+    return qsRequired<HTMLButtonElement>(detail(), '.activity-approve')
   }
 
   const shell = (id: string, threadId: string, command = `printf ${id}`): ApprovalEvent => ({
@@ -279,6 +292,10 @@ describe('activity panel', () => {
     )
     assert.deepEqual(rowKeys('needs-you'), ['approval:req-auth'])
     assert.deepEqual(rowKeys('working'), ['thread:deps'])
+    assert.equal(
+      qsRequired(document, '#activity-panel .activity-panel-summary').textContent,
+      '1 needs you · 1 working',
+    )
 
     // Each list is named by its group heading, so a screen reader hears the group.
     const needsList = qsRequired(groups[0] ?? document, '.activity-rows')
@@ -286,16 +303,17 @@ describe('activity panel', () => {
     assert.match(heading?.textContent ?? '', /^Needs you/)
     assert.equal(needsList.getAttribute('role'), 'list')
 
+    // Two lines: the thread leads, then the state word and what it wants.
     const approvalRow = rowFor('approval:req-auth')
     const opener = qsRequired(approvalRow, '.activity-row-open')
-    assert.equal(qsRequired(approvalRow, '.activity-state').textContent, 'Approve')
-    assert.equal(qsRequired(approvalRow, '.activity-want-code').textContent, 'printf auth-approved')
     assert.equal(qsRequired(approvalRow, '.activity-thread').textContent, 'Refactor auth')
+    assert.equal(qsRequired(approvalRow, '.activity-state').textContent, 'Approval')
+    assert.equal(qsRequired(approvalRow, '.activity-want-code').textContent, 'printf auth-approved')
     assert.equal(qsRequired(approvalRow, '.activity-project').textContent, 'workspace')
     assert.equal(qsRequired(approvalRow, '.activity-age').textContent, 'now')
-    assert.match(
-      opener.getAttribute('aria-label') ?? '',
-      /^Needs approval: Run shell command\? — printf auth-approved\. Refactor auth, workspace\. waiting just now\. Open thread$/,
+    assert.equal(
+      opener.getAttribute('aria-label'),
+      'Needs approval: Run shell command? — printf auth-approved. Refactor auth, workspace. waiting just now',
     )
     const workingRow = rowFor('thread:deps')
     assert.equal(qsRequired(workingRow, '.activity-state').textContent, 'Running')
@@ -314,6 +332,43 @@ describe('activity panel', () => {
     panel.open()
     assert.deepEqual(rowKeys('needs-you'), ['approval:req'])
     assert.deepEqual(rowKeys('working'), ['thread:deps'])
+    // Selecting the running thread shows its state without its transcript.
+    qsRequired<HTMLButtonElement>(rowFor('thread:deps'), '.activity-row-open').click()
+    assert.equal(detail().dataset['rowKey'], 'thread:deps')
+  })
+
+  it('opens on the most urgent row and shows it in full beside the list', () => {
+    mount([thread('focused'), thread('auth', { title: 'Refactor auth' }), thread('deps')])
+    setThreadStatus(store, 'deps', 'running')
+    store.emit('agent_activity', 'deps', 'Reasoning…')
+    emitApproval(shell('req-auth', 'auth', 'printf auth-approved'))
+    panel.open()
+
+    assert.equal(selectedKey(), 'approval:req-auth')
+    assert.equal(
+      qsRequired(rowFor('approval:req-auth'), '.activity-row-open').getAttribute('aria-current'),
+      'true',
+    )
+    assert.equal(qsRequired(detail(), '.activity-detail-title').textContent, 'Refactor auth')
+    assert.equal(qsRequired(detail(), '.activity-detail-state').textContent, 'Needs approval')
+    assert.equal(qsRequired(detail(), '.approval-body').textContent, 'printf auth-approved')
+    // One action bar: open the thread on one side, the answers on the other.
+    assert.deepEqual(
+      [...detail().querySelectorAll<HTMLElement>('.activity-detail-actions [data-control]')].map(
+        (control) => control.dataset['control'],
+      ),
+      ['open-thread', 'reject', 'approve'],
+    )
+
+    qsRequired<HTMLButtonElement>(rowFor('thread:deps'), '.activity-row-open').click()
+    assert.equal(selectedKey(), 'thread:deps')
+    assert.equal(qsRequired(detail(), '.activity-detail-state').textContent, 'Running')
+    assert.equal(qsRequired(detail(), '.activity-detail-text').textContent, 'Reasoning…')
+    assert.equal(detail().querySelector('.activity-approve'), null)
+    assert.equal(detail().querySelector('.activity-reject'), null)
+    qsRequired<HTMLButtonElement>(detail(), '.activity-open-thread').click()
+    assert.equal(panel.isOpen(), false)
+    assert.equal(store.getState().activeThreadId, 'deps')
   })
 
   it('approves a background thread once, routed to its own request id, without switching', () => {
@@ -330,14 +385,16 @@ describe('activity panel', () => {
     assert.equal(store.getState().activeThreadId, 'focused', 'the user stays where they were')
     assert.match(qsRequired(document, '.activity-panel-status').textContent, /Approved once/)
 
+    // The answered row leaves; the next request takes its place in the detail.
     time.advance(ACTIVITY_RENDER_INTERVAL_MS)
     assert.deepEqual(rowKeys('needs-you'), ['approval:req-other'])
-
-    // Reject lives on the collapsed row: it only narrows, so it needs no review.
-    const rest = rowFor('approval:req-other')
-    assert.equal(rest.querySelector('.activity-approve'), null)
-    assert.equal(qsRequired<HTMLButtonElement>(rest, '.activity-reject').disabled, false)
-    qsRequired<HTMLButtonElement>(rest, '.activity-reject').click()
+    assert.equal(selectedKey(), 'approval:req-other')
+    // A request that just arrived in the detail pane is not approvable yet;
+    // Reject only narrows, so it is live at once.
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, true)
+    const reject = qsRequired<HTMLButtonElement>(detail(), '.activity-reject')
+    assert.equal(reject.disabled, false)
+    reject.click()
     assert.deepEqual(responses.at(-1), {
       id: 'req-other',
       approved: false,
@@ -347,6 +404,11 @@ describe('activity panel', () => {
     time.advance(ACTIVITY_RENDER_INTERVAL_MS)
     assert.deepEqual(rowKeys('needs-you'), [])
     assert.match(qsRequired(document, '.activity-quiet').textContent, /Nothing needs you/)
+    assert.equal(
+      qsRequired(document, '#activity-panel .activity-panel-summary').textContent,
+      'Nothing needs you · 1 working',
+    )
+    assert.equal(selectedKey(), 'thread:deps')
   })
 
   it('never answers twice, and says so when the request was settled elsewhere', () => {
@@ -360,10 +422,13 @@ describe('activity panel', () => {
     approve.click()
     assert.equal(responses.length, 1)
     assert.equal(approve.disabled, true)
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-reject').disabled, true)
 
     // Main cancelled the other request (its turn was stopped) before a render.
+    time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+    assert.equal(selectedKey(), 'approval:req-other')
     cancelApproval('req-other')
-    qsRequired<HTMLButtonElement>(rowFor('approval:req-other'), '.activity-reject').click()
+    qsRequired<HTMLButtonElement>(detail(), '.activity-reject').click()
     assert.equal(responses.length, 1)
     assert.match(qsRequired(document, '.activity-panel-status').textContent, /already answered/)
     time.advance(ACTIVITY_RENDER_INTERVAL_MS)
@@ -374,28 +439,27 @@ describe('activity panel', () => {
     mount([thread('focused'), thread('a'), thread('b')])
     emitApproval(shell('first', 'a'))
     panel.open()
-    // Opening a review pauses Approve for the same window an append does.
-    qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-review-toggle').click()
-    assert.equal(
-      qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-approve').disabled,
-      true,
-    )
+    // The request opened in the detail pane: Approve waits for the settle window.
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, true)
     time.advance(APPROVAL_SETTLE_MS)
     assert.equal(
-      qsRequired<HTMLButtonElement>(rowFor('approval:first'), '.activity-approve').disabled,
+      qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled,
       false,
       'live once the request has been on screen for the settle window',
     )
 
     emitApproval(shell('second', 'b'))
     time.advance(ACTIVITY_RENDER_INTERVAL_MS)
-    for (const button of document.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
-      assert.equal(button.disabled, true)
-    }
+    assert.equal(selectedKey(), 'approval:first', 'the selection stays put')
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, true)
     time.advance(APPROVAL_SETTLE_MS)
-    for (const button of document.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
-      assert.equal(button.disabled, false)
-    }
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, false)
+
+    // Moving to another request re-arms the window: it has not been read yet.
+    qsRequired<HTMLButtonElement>(rowFor('approval:second'), '.activity-row-open').click()
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, true)
+    time.advance(APPROVAL_SETTLE_MS)
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, false)
   })
 
   it('coalesces a burst of changes into one re-render per interval', () => {
@@ -413,15 +477,12 @@ describe('activity panel', () => {
     assert.equal(rowKeys('needs-you').length, 12)
   })
 
-  it('is keyboard operable: arrows move between rows, Enter opens the thread', () => {
+  it('is keyboard operable: arrows choose a row, Tab reaches its actions', () => {
     mount([thread('focused'), thread('auth', { title: 'Refactor auth' }), thread('deps')])
     setThreadStatus(store, 'deps', 'running')
     emitApproval(shell('req-auth', 'auth'))
     panel.open()
 
-    const openers = (): HTMLButtonElement[] => [
-      ...document.querySelectorAll<HTMLButtonElement>('#activity-panel .activity-row-open'),
-    ]
     assert.equal(document.activeElement, openers()[0], 'opening focuses the most urgent row')
     assert.deepEqual(
       openers().map((opener) => opener.tabIndex),
@@ -429,6 +490,7 @@ describe('activity panel', () => {
     )
     key(openers()[0] ?? document.body, 'ArrowDown')
     assert.equal(document.activeElement, openers()[1])
+    assert.equal(selectedKey(), 'thread:deps', 'the detail follows the arrow keys')
     assert.deepEqual(
       openers().map((opener) => opener.tabIndex),
       [-1, 0],
@@ -437,24 +499,19 @@ describe('activity panel', () => {
     assert.equal(document.activeElement, openers()[1], 'the last row holds')
     key(openers()[1] ?? document.body, 'Home')
     assert.equal(document.activeElement, openers()[0])
+    assert.equal(selectedKey(), 'approval:req-auth')
     key(openers()[0] ?? document.body, 'End')
     assert.equal(document.activeElement, openers()[1])
-    // From an action button, arrows still move by row.
-    const toggle = qsRequired<HTMLButtonElement>(
-      rowFor('approval:req-auth'),
-      '.activity-review-toggle',
-    )
-    toggle.focus()
-    key(toggle, 'ArrowDown')
-    assert.equal(document.activeElement, openers()[1])
 
-    // Enter on a native <button> activates it: jump to the thread and close.
-    openers()[0]?.click()
+    // Enter on a row only selects it; the thread opens from the detail's action bar.
+    openers()[1]?.click()
+    assert.equal(panel.isOpen(), true)
+    qsRequired<HTMLButtonElement>(detail(), '.activity-open-thread').click()
     assert.equal(panel.isOpen(), false)
-    assert.equal(store.getState().activeThreadId, 'auth')
+    assert.equal(store.getState().activeThreadId, 'deps')
   })
 
-  it('keeps focus in place when the focused row is answered', () => {
+  it('keeps focus in place when the focused request is answered', () => {
     mount([thread('focused'), thread('a'), thread('b')])
     emitApproval(shell('first', 'a'))
     emitApproval(shell('second', 'b'))
@@ -467,7 +524,7 @@ describe('activity panel', () => {
     assert.equal(document.activeElement, opener)
   })
 
-  it('offers no Approve until the whole command, including its tail, is on screen', () => {
+  it('offers Approve only beside the whole command, including its tail', () => {
     const tail = '; rm -rf ./build'
     const command = `printf '${'x'.repeat(400 - tail.length - 9)}'${tail}`
     assert.equal(command.length, 400)
@@ -475,38 +532,31 @@ describe('activity panel', () => {
     emitApproval(shell('long', 'auth', command))
     panel.open()
 
+    // The list row is for scanning: truncated, and never answerable.
     const row = rowFor('approval:long')
-    // Collapsed: the scan line is truncated, so there is nothing to approve.
-    assert.equal(row.querySelector('.activity-approve'), null)
-    assert.equal(document.querySelector('#activity-panel .activity-approve'), null)
-    assert.ok(!row.textContent.includes(tail), 'the collapsed row hides the tail')
-    const toggle = qsRequired<HTMLButtonElement>(row, '.activity-review-toggle')
-    assert.equal(toggle.getAttribute('aria-expanded'), 'false')
-
-    toggle.click()
-    const expanded = rowFor('approval:long')
+    assert.ok(!row.textContent.includes(tail), 'the list row hides the tail')
     assert.equal(
-      qsRequired(expanded, '.activity-review-toggle').getAttribute('aria-expanded'),
-      'true',
+      document.querySelector(
+        '#activity-panel .activity-list .activity-approve, #activity-panel .activity-list .activity-reject',
+      ),
+      null,
     )
-    const body = qsRequired(expanded, '.activity-review .approval-body')
+    // The detail pane holds the request verbatim, and Approve sits only there.
+    const body = qsRequired(detail(), '.activity-review .approval-body')
     assert.equal(body.textContent, command, 'the full command, verbatim')
     assert.ok(body.classList.contains('approval-body-code'), 'shell is monospaced')
-    // Only now does Approve exist — and it waits out the settle window.
-    const approve = qsRequired<HTMLButtonElement>(expanded, '.activity-review .activity-approve')
-    assert.equal(approve.disabled, true)
+    const approves = [
+      ...document.querySelectorAll<HTMLButtonElement>('#activity-panel .activity-approve'),
+    ]
+    assert.equal(approves.length, 1)
+    const approve = qsRequired<HTMLButtonElement>(detail(), '.activity-approve')
+    assert.equal(approves[0], approve)
+    assert.equal(approve.disabled, true, 'and it waits out the settle window')
     time.advance(APPROVAL_SETTLE_MS)
-    assert.equal(
-      qsRequired<HTMLButtonElement>(rowFor('approval:long'), '.activity-approve').disabled,
-      false,
-    )
-
-    // Collapsing again removes it.
-    qsRequired<HTMLButtonElement>(rowFor('approval:long'), '.activity-review-toggle').click()
-    assert.equal(rowFor('approval:long').querySelector('.activity-approve'), null)
+    assert.equal(qsRequired<HTMLButtonElement>(detail(), '.activity-approve').disabled, false)
   })
 
-  it('shows the advice and footer the prompt would show, in the review', () => {
+  it('shows the advice and footer the prompt would show, in the detail', () => {
     mount([thread('focused'), thread('auth')])
     const advice =
       'The project sandbox would block this command:\n• Installs or updates packages, which downloads and runs code from the internet'
@@ -520,8 +570,7 @@ describe('activity panel', () => {
       type: 'shell',
     })
     panel.open()
-    review('approval:install')
-    const view = qsRequired(rowFor('approval:install'), '.activity-review')
+    const view = qsRequired(detail(), '.activity-review')
     assert.equal(qsRequired(view, '.activity-review-title').textContent, 'Run package install?')
     // The prompt's own rendering: the lead line as text, each reason a list item.
     const adviceView = qsRequired(view, '.approval-advice')
@@ -542,13 +591,22 @@ describe('activity panel', () => {
     emitAsk({
       id: 'ask-1',
       threadId: 'schema',
-      questions: [{ question: 'Which migration order?' }],
+      questions: [{ question: 'Which migration order?' }, { question: 'Keep the old column?' }],
     })
     panel.open()
     const row = rowFor('question:ask-1')
-    assert.equal(qsRequired(row, '.activity-state').textContent, 'Answer')
-    assert.equal(qsRequired(row, '.activity-want-text').textContent, 'Which migration order?')
-    qsRequired<HTMLButtonElement>(row, '.activity-answer').click()
+    assert.equal(qsRequired(row, '.activity-state').textContent, 'Question')
+    assert.equal(
+      qsRequired(row, '.activity-want-text').textContent,
+      'Which migration order? (+1 more)',
+    )
+    // The detail lists every question; answering happens in the thread.
+    assert.deepEqual(
+      [...detail().querySelectorAll('.activity-questions li')].map((item) => item.textContent),
+      ['Which migration order?', 'Keep the old column?'],
+    )
+    assert.equal(detail().querySelector('.activity-approve'), null)
+    qsRequired<HTMLButtonElement>(detail(), '.activity-answer').click()
     assert.equal(panel.isOpen(), false)
     assert.equal(store.getState().activeThreadId, 'schema')
     assert.deepEqual(askResponses, [], 'the ask dialog, not the panel, owns the answer')
@@ -565,5 +623,7 @@ describe('activity panel', () => {
     assert.deepEqual(rowKeys('recent'), ['thread:broken', 'thread:done'])
     assert.equal(qsRequired(rowFor('thread:broken'), '.activity-state').textContent, 'Failed')
     assert.equal(qsRequired(rowFor('thread:done'), '.activity-state').textContent, 'Done')
+    assert.equal(qsRequired(detail(), '.activity-detail-state').textContent, 'Failed')
+    assert.equal(qsRequired(detail(), '.activity-detail-text').textContent, 'Ended with an error')
   })
 })

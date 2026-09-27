@@ -161,10 +161,9 @@ describe('Activity panel', function () {
     const needsRow = $(rowSelector('needs-you', AUTH_THREAD))
     await needsRow.waitForDisplayed({ timeout: 10_000 })
     await expect(needsRow).toHaveAttribute('data-state', 'needs-approval')
-    await expect(needsRow.$('.activity-state')).toHaveText('Approve')
-    await expect(needsRow.$('.activity-want-text')).toHaveText('Run shell command?')
-    await expect(needsRow.$('.activity-want-code')).toHaveText(AUTH_COMMAND)
     await expect(needsRow.$('.activity-thread')).toHaveText('Refactor auth')
+    await expect(needsRow.$('.activity-state')).toHaveText('Approval')
+    await expect(needsRow.$('.activity-want-code')).toHaveText(AUTH_COMMAND)
     await expect(needsRow.$('.activity-project')).toHaveText('workspace')
     const workingRow = $(rowSelector('working', AUDIT_THREAD))
     await expect(workingRow).toBeDisplayed()
@@ -173,39 +172,40 @@ describe('Activity panel', function () {
       await $$('#activity-panel .activity-group').map((group) => group.getAttribute('data-group')),
       ['needs-you', 'working'],
     )
-    // The most urgent row has keyboard focus, and its label carries group-free state.
+    // The most urgent row is selected and focused; its label leads with its state.
+    await expect(needsRow).toHaveAttribute('data-selected', 'true')
     await expect(needsRow.$('.activity-row-open')).toBeFocused()
     const label = await needsRow.$('.activity-row-open').getAttribute('aria-label')
     assert.match(label ?? '', /^Needs approval: Run shell command\? — printf/)
 
-    // A collapsed row only scans: it offers Review and Reject, never Approve.
-    await expect(needsRow.$('.activity-approve')).not.toBeExisting()
-    await expect(needsRow.$('.activity-reject')).toBeDisplayed()
-    const toggle = needsRow.$('.activity-review-toggle')
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    // Expanded: the request exactly as the prompt shows it, then Approve once.
-    const review = needsRow.$('.activity-review')
-    await review.waitForDisplayed({ timeout: 5_000 })
-    await expect(review.$('.activity-review-title')).toHaveText('Run shell command?')
-    const fullBody = await browser.execute(
-      (selector: string) => document.querySelector(selector)?.textContent ?? null,
-      `${rowSelector('needs-you', AUTH_THREAD)} .activity-review .approval-body`,
+    // The list only scans; the detail beside it shows the request exactly as the
+    // prompt does, and Approve once exists only there.
+    await expect($('#activity-panel .activity-list .activity-approve')).not.toBeExisting()
+    const detail = $('#activity-panel .activity-detail')
+    await expect(detail).toHaveAttribute(
+      'data-row-key',
+      `approval:${await needsRow.getAttribute('data-request-id')}`,
     )
-    assert.equal(fullBody, AUTH_COMMAND, 'the review shows the full command verbatim')
-    const approve = review.$('.activity-approve')
+    await expect(detail.$('.activity-detail-title')).toHaveText('Refactor auth')
+    await expect(detail.$('.activity-review-title')).toHaveText('Run shell command?')
+    const fullBody = await browser.execute(
+      () =>
+        document.querySelector('#activity-panel .activity-detail .approval-body')?.textContent ??
+        null,
+    )
+    assert.equal(fullBody, AUTH_COMMAND, 'the detail shows the full command verbatim')
+    const approve = detail.$('.activity-approve')
     await approve.waitForEnabled({ timeout: 5_000 })
-    // The review fits the panel: nothing is clipped or scrolled off sideways.
+    // The detail fits the panel: nothing is clipped or scrolled off sideways.
     const fits = await browser.execute(() => {
-      const body = document.querySelector<HTMLElement>('#activity-panel .activity-panel-body')
+      const pane = document.querySelector<HTMLElement>('#activity-panel .activity-detail-body')
       const view = document.querySelector<HTMLElement>('#activity-panel .activity-review')
-      if (!body || !view) return null
-      const bodyRect = body.getBoundingClientRect()
+      if (!pane || !view) return null
+      const paneRect = pane.getBoundingClientRect()
       const viewRect = view.getBoundingClientRect()
       return {
-        noSideScroll: body.scrollWidth <= body.clientWidth,
-        inside: viewRect.right <= bodyRect.right + 0.5,
+        noSideScroll: pane.scrollWidth <= pane.clientWidth,
+        inside: viewRect.right <= paneRect.right + 0.5,
       }
     })
     assert.deepEqual(fits, { noSideScroll: true, inside: true })
@@ -244,13 +244,26 @@ describe('Activity panel', function () {
       timeout: 10_000,
       timeoutMsg: 'expected B to settle into Recently finished',
     })
-    // Keyboard only from here: Home to the top row, arrows down to A, Enter opens it.
+    // Keyboard only from here: Home to the top row, arrows down to A (the detail
+    // follows), then Tab to its Open thread and Enter.
+    const focusedRow = (): Promise<{ group: string | null; thread: string | null }> =>
+      browser.execute(() => {
+        const row = document.activeElement?.closest<HTMLElement>('.activity-row')
+        return {
+          group: row?.closest<HTMLElement>('.activity-group')?.dataset['group'] ?? null,
+          thread: row?.dataset['threadId'] ?? null,
+        }
+      })
     await browser.keys('Home')
-    const authOpener = $(`${rowSelector('recent', AUTH_THREAD)} .activity-row-open`)
-    for (let i = 0; i < 4 && !(await authOpener.isFocused()); i++) {
+    for (let i = 0; i < 4; i++) {
+      const at = await focusedRow()
+      if (at.group === 'recent' && at.thread === AUTH_THREAD) break
       await browser.keys('ArrowDown')
     }
-    await expect(authOpener).toBeFocused()
+    assert.deepEqual(await focusedRow(), { group: 'recent', thread: AUTH_THREAD })
+    await expect($('#activity-panel .activity-detail')).toHaveAttribute('data-state', 'finished')
+    await browser.keys('Tab')
+    await expect($('#activity-panel .activity-detail .activity-open-thread')).toBeFocused()
     await browser.keys('Enter')
     await $('#activity-panel').waitForDisplayed({ reverse: true, timeout: 5_000 })
     await $(`.chat-row[data-thread-id="${AUTH_THREAD}"].selected`).waitForExist({

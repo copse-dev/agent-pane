@@ -64,9 +64,10 @@ export interface ActivityPanel {
   isOpen: () => boolean
 }
 
+/** The word beside each row's glyph: state is never carried by colour alone. */
 const STATE_SHORT: Record<ActivityRowState, string> = {
-  'needs-approval': 'Approve',
-  'needs-answer': 'Answer',
+  'needs-approval': 'Approval',
+  'needs-answer': 'Question',
   working: 'Running',
   failed: 'Failed',
   finished: 'Done',
@@ -134,7 +135,7 @@ export function mountActivityPanel(
     className: 'activity-panel-overlay',
   })
   dialog.setAttribute('aria-labelledby', 'activity-panel-title')
-  dialog.setAttribute('aria-describedby', 'activity-panel-subtitle')
+  dialog.setAttribute('aria-describedby', 'activity-panel-summary')
 
   const closeButton = el(
     'button',
@@ -147,7 +148,13 @@ export function mountActivityPanel(
   )
   closeButton.addEventListener('click', close)
 
-  const body = el('div', { class: 'activity-panel-body' })
+  const summary = el('p', { id: 'activity-panel-summary', class: 'activity-panel-summary' })
+  const list = el('nav', { class: 'activity-list', 'aria-label': 'Threads' })
+  const detail = el('section', {
+    class: 'activity-detail',
+    'aria-labelledby': 'activity-detail-title',
+  })
+  const body = el('div', { class: 'activity-panel-body' }, list, detail)
   const status = el('p', {
     class: 'activity-panel-status',
     role: 'status',
@@ -160,24 +167,16 @@ export function mountActivityPanel(
       el(
         'header',
         { class: 'activity-panel-header' },
-        el(
-          'div',
-          {},
-          el('h2', { id: 'activity-panel-title' }, 'Activity'),
-          el(
-            'p',
-            { id: 'activity-panel-subtitle', class: 'activity-panel-subtitle' },
-            'Threads in the projects open this session, most urgent first.',
-          ),
-        ),
+        el('h2', { id: 'activity-panel-title' }, 'Activity'),
+        summary,
         closeButton,
       ),
       body,
-      status,
       el(
         'footer',
         { class: 'activity-panel-footer' },
-        el('span', {}, '↑ ↓ move · Enter opens the thread · Esc closes'),
+        el('span', {}, '↑ ↓ choose · Tab to act · Esc closes'),
+        status,
       ),
     ),
   )
@@ -190,8 +189,12 @@ export function mountActivityPanel(
   let needsYouSignature: string | null = null
   let cancelSettle: (() => void) | null = null
   let settling = false
-  // Approval rows the user has expanded to review, by row key.
-  const expanded = new Set<string>()
+  // The row whose request or state the detail pane shows, and its place in the
+  // list, so a row that leaves (answered, finished) hands selection to the next.
+  let selectedKey: string | null = null
+  let selectedIndex = 0
+  // The row the detail pane last drew: a different one there has not been read.
+  let shownKey: string | null = null
 
   function canOpen(row: ActivityRow): boolean {
     if (!row.threadId || !row.projectId) return false
@@ -205,28 +208,34 @@ export function mountActivityPanel(
     switchProjectThread(store, api, row.projectId, row.threadId)
   }
 
-  function rowLabel(row: ActivityRow, ageLong: string | null): string {
+  function ageText(row: ActivityRow, at: number): string | null {
+    if (row.since === null) return null
+    const long = formatAgeLong(Math.max(0, at - row.since))
+    const verb = AGE_VERB[row.state]
+    return long === 'just now' ? `${verb} just now` : `${verb} ${long} ago`
+  }
+
+  function rowLabel(row: ActivityRow, at: number): string {
     const want = row.detail ? `${row.want} — ${row.detail}` : row.want
     const parts = [
       `${STATE_LONG[row.state]}: ${want}`,
       row.projectName ? `${row.threadTitle}, ${row.projectName}` : row.threadTitle,
     ]
-    if (ageLong) {
-      const verb = AGE_VERB[row.state]
-      parts.push(ageLong === 'just now' ? `${verb} just now` : `${verb} ${ageLong} ago`)
-    }
-    if (canOpen(row)) parts.push('Open thread')
+    const age = ageText(row, at)
+    if (age) parts.push(age)
     return parts.join('. ')
   }
 
   /**
-   * Answer from the panel through the approval dialog's own queue. The row's
+   * Answer from the panel through the approval dialog's own queue. The detail's
    * buttons go inert at once, so a second click cannot send a second answer;
    * `answerOnce` reports false when the request was already settled elsewhere.
    */
-  function answerApproval(row: ActivityRow, approved: boolean, buttons: HTMLButtonElement[]): void {
+  function answerApproval(row: ActivityRow, approved: boolean): void {
     if (!row.requestId) return
-    for (const button of buttons) {
+    for (const button of detail.querySelectorAll<HTMLButtonElement>(
+      '.activity-approve, .activity-reject',
+    )) {
       button.disabled = true
       button.dataset['answered'] = 'true'
     }
@@ -239,182 +248,185 @@ export function mountActivityPanel(
     scheduleRender()
   }
 
-  /**
-   * A collapsed approval row is for scanning: its text is truncated, so it
-   * offers Review (to see the request in full) and Reject (which only narrows).
-   * Approve once lives solely in the expanded review, beside the untruncated
-   * request — see {@link reviewFor}.
-   */
-  function actionsFor(row: ActivityRow): HTMLElement | null {
-    if (row.state === 'needs-approval') {
-      const open = expanded.has(row.key)
-      const toggle = el(
-        'button',
-        {
-          type: 'button',
-          class: 'ui-btn ui-btn-secondary activity-review-toggle',
-          'data-control': 'review',
-          'aria-expanded': open ? 'true' : 'false',
-          'aria-controls': reviewId(row),
-          'aria-label': `${open ? 'Hide' : 'Review'} request: ${row.want} (${row.threadTitle})`,
-        },
-        open ? 'Hide' : 'Review',
-      )
-      toggle.addEventListener('click', () => {
-        if (expanded.has(row.key)) expanded.delete(row.key)
-        else {
-          expanded.add(row.key)
-          // The full request just appeared: give it the same settle window an
-          // append gets on the prompt, so Approve cannot be clicked unread.
-          armSettle()
-        }
-        renderNow()
-      })
-      const reject = el(
-        'button',
-        {
-          type: 'button',
-          class: 'ui-btn ui-btn-secondary activity-reject',
-          'data-control': 'reject',
-          'aria-label': `Reject: ${row.want} (${row.threadTitle})`,
-        },
-        'Reject',
-      )
-      reject.addEventListener('click', () => {
-        if (reject.disabled) return
-        answerApproval(row, false, rowButtons(reject))
-      })
-      return el('div', { class: 'activity-row-actions' }, toggle, reject)
-    }
-    if (row.state === 'needs-answer') {
-      const answer = el(
-        'button',
-        {
-          type: 'button',
-          class: 'ui-btn ui-btn-secondary activity-answer',
-          'data-control': 'answer',
-          'aria-label': `Answer in thread: ${row.threadTitle}`,
-        },
-        'Answer…',
-      )
-      if (row.threadId === null) {
-        // A question tied to no run is already on screen behind this panel.
-        answer.addEventListener('click', close)
-      } else if (canOpen(row)) {
-        answer.addEventListener('click', () => {
-          openThread(row)
-        })
-      } else {
-        answer.disabled = true
-      }
-      return el('div', { class: 'activity-row-actions' }, answer)
-    }
-    return null
-  }
-
-  function reviewId(row: ActivityRow): string {
-    return `activity-review-${row.requestId ?? row.key}`
-  }
-
-  /** Every answer button on the same row, so one answer disables them all. */
-  function rowButtons(from: HTMLElement): HTMLButtonElement[] {
-    const item = from.closest('.activity-row')
-    return item
-      ? [...item.querySelectorAll<HTMLButtonElement>('.activity-approve, .activity-reject')]
-      : []
-  }
-
-  /**
-   * The expanded review: the request exactly as the approval prompt shows it —
-   * full title, advice, the whole body and the footer, rendered by the prompt's
-   * own `approvalRequestDetails` — and the only place Approve once exists.
-   */
-  function reviewFor(row: ActivityRow): HTMLElement | null {
-    const request = row.approval
-    if (!request || !expanded.has(row.key)) return null
-    const approve = el(
+  function button(
+    className: string,
+    control: string,
+    label: string,
+    onClick: () => void,
+    ariaLabel?: string,
+  ): HTMLButtonElement {
+    const node = el(
       'button',
       {
         type: 'button',
-        class: 'ui-btn ui-btn-primary activity-approve',
-        'data-control': 'approve',
-        'aria-label': `Approve once: ${request.title} (${row.threadTitle})`,
+        class: `ui-btn ${className}`,
+        'data-control': control,
+        ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
       },
-      'Approve once',
+      label,
     )
-    approve.disabled = settling
-    approve.addEventListener('click', () => {
-      // Honour the settle guard even for a synthetic/keyboard activation.
-      if (approve.disabled) return
-      answerApproval(row, true, rowButtons(approve))
+    node.addEventListener('click', () => {
+      // Honour a disabled state even for a synthetic/keyboard activation.
+      if (!node.disabled) onClick()
     })
-    const actions: HTMLElement[] = [approve]
-    if (canOpen(row)) {
-      const openInThread = el(
-        'button',
-        {
-          type: 'button',
-          class: 'ui-btn ui-btn-ghost activity-review-open',
-          'data-control': 'open-thread',
-        },
-        'Open in thread',
-      )
-      openInThread.addEventListener('click', () => {
-        openThread(row)
-      })
-      actions.push(openInThread)
+    return node
+  }
+
+  function openThreadButton(row: ActivityRow): HTMLButtonElement {
+    const node = button('ui-btn-ghost activity-open-thread', 'open-thread', 'Open thread', () => {
+      openThread(row)
+    })
+    node.disabled = !canOpen(row)
+    return node
+  }
+
+  /**
+   * What the selected row is about, in full. For an approval that is the
+   * request exactly as the approval prompt shows it — full title, advice, the
+   * whole body and the footer, rendered by the prompt's own
+   * `approvalRequestDetails` — and this pane is the only place Approve once
+   * exists, so a request is never approved from a view that shows less.
+   */
+  function detailContent(row: ActivityRow): HTMLElement[] {
+    if (row.state === 'needs-approval' && row.approval) {
+      const request = row.approval
+      return [
+        el(
+          'div',
+          {
+            class: 'activity-review',
+            role: 'region',
+            'aria-label': `Approval request: ${request.title}`,
+          },
+          el('p', { class: 'activity-review-title' }, request.title),
+          ...approvalRequestDetails(request),
+        ),
+      ]
     }
-    return el(
-      'div',
-      {
-        id: reviewId(row),
-        class: 'activity-review',
-        role: 'region',
-        'aria-label': `Approval request: ${request.title}`,
-      },
-      el('p', { class: 'activity-review-title' }, request.title),
-      ...approvalRequestDetails(request),
-      el('div', { class: 'activity-review-actions' }, ...actions),
+    if (row.state === 'needs-answer') {
+      const asked = sources.questions.pending().find((request) => request.id === row.requestId)
+      const questions = asked?.questions ?? [row.want]
+      return [
+        el(
+          'ol',
+          { class: 'activity-questions' },
+          ...questions.map((question) => el('li', {}, question)),
+        ),
+        el(
+          'p',
+          { class: 'activity-detail-note' },
+          'Answer in the thread, where the question is waiting for you.',
+        ),
+      ]
+    }
+    if (row.state === 'working') {
+      return [
+        el('p', { class: 'activity-detail-label' }, 'Latest activity'),
+        el('p', { class: 'activity-detail-text' }, row.want),
+      ]
+    }
+    return [el('p', { class: 'activity-detail-text' }, row.want)]
+  }
+
+  function detailActions(row: ActivityRow): HTMLElement {
+    const actions: HTMLElement[] = [openThreadButton(row), el('span', { class: 'activity-spacer' })]
+    if (row.state === 'needs-approval' && row.approval) {
+      const title = row.approval.title
+      actions.push(
+        button(
+          'ui-btn-secondary activity-reject',
+          'reject',
+          'Reject',
+          () => {
+            answerApproval(row, false)
+          },
+          `Reject: ${title} (${row.threadTitle})`,
+        ),
+      )
+      const approve = button(
+        'ui-btn-primary activity-approve',
+        'approve',
+        'Approve once',
+        () => {
+          answerApproval(row, true)
+        },
+        `Approve once: ${title} (${row.threadTitle})`,
+      )
+      approve.disabled = settling
+      actions.push(approve)
+    } else if (row.state === 'needs-answer') {
+      const answer = button('ui-btn-primary activity-answer', 'answer', 'Answer in thread', () => {
+        // A question tied to no run is already on screen behind this panel.
+        if (row.threadId === null) close()
+        else openThread(row)
+      })
+      answer.disabled = row.threadId !== null && !canOpen(row)
+      actions.push(answer)
+    }
+    return el('div', { class: 'activity-detail-actions' }, ...actions)
+  }
+
+  function renderDetail(row: ActivityRow | undefined, at: number): void {
+    if (!row) {
+      detail.replaceChildren()
+      detail.hidden = true
+      return
+    }
+    detail.hidden = false
+    detail.dataset['rowKey'] = row.key
+    detail.dataset['state'] = row.state
+    const meta = [row.projectName, ageText(row, at)].filter((part) => part !== null).join(' · ')
+    detail.replaceChildren(
+      el(
+        'header',
+        { class: 'activity-detail-header' },
+        el(
+          'p',
+          { class: 'activity-detail-meta' },
+          el('span', { class: 'activity-detail-state' }, STATE_LONG[row.state]),
+          meta,
+        ),
+        el('h3', { id: 'activity-detail-title', class: 'activity-detail-title' }, row.threadTitle),
+      ),
+      el('div', { class: 'activity-detail-body' }, ...detailContent(row)),
+      detailActions(row),
     )
   }
 
   function rowElement(row: ActivityRow, at: number): HTMLLIElement {
     const elapsed = row.since === null ? null : Math.max(0, at - row.since)
-    const openable = canOpen(row)
-    const want = el(
+    const selected = row.key === selectedKey
+    const second = el(
       'span',
-      { class: 'activity-want' },
-      el('span', { class: 'activity-want-text' }, row.want),
+      { class: 'activity-row-second' },
+      el('span', { class: 'activity-state' }, STATE_SHORT[row.state]),
     )
-    if (row.detail) {
-      want.append(
+    if (row.state !== 'failed' && row.state !== 'finished') {
+      second.append(
         el(
           'span',
           {
             class:
-              row.requestType === 'shell'
-                ? 'activity-want-detail activity-want-code'
-                : 'activity-want-detail',
+              row.requestType === 'shell' && row.detail
+                ? 'activity-want-text activity-want-code'
+                : 'activity-want-text',
           },
-          row.detail,
+          row.requestType === 'shell' && row.detail ? row.detail : row.want,
         ),
       )
     }
-    const openButton = el(
+    const opener = el(
       'button',
       {
         type: 'button',
         class: 'activity-row-open',
         'data-control': 'open',
-        tabindex: '-1',
-        'aria-label': rowLabel(row, elapsed === null ? null : formatAgeLong(elapsed)),
-        ...(openable ? {} : { 'aria-disabled': 'true' }),
+        tabindex: selected ? '0' : '-1',
+        'aria-label': rowLabel(row, at),
+        ...(selected ? { 'aria-current': 'true' } : {}),
       },
       stateGlyph(row.state),
-      el('span', { class: 'activity-state' }, STATE_SHORT[row.state]),
-      want,
       el('span', { class: 'activity-thread', title: row.threadTitle }, row.threadTitle),
-      el('span', { class: 'activity-project' }, row.projectName ?? '—'),
       elapsed === null || row.since === null
         ? el('span', { class: 'activity-age' })
         : el(
@@ -422,25 +434,24 @@ export function mountActivityPanel(
             { class: 'activity-age', datetime: new Date(row.since).toISOString() },
             formatAge(elapsed),
           ),
+      second,
+      el('span', { class: 'activity-project' }, row.projectName ?? ''),
     )
-    openButton.addEventListener('click', () => {
-      openThread(row)
+    opener.addEventListener('click', () => {
+      select(row.key)
     })
-    const item = el(
+    return el(
       'li',
       {
         class: 'activity-row',
         'data-row-key': row.key,
         'data-state': row.state,
+        ...(selected ? { 'data-selected': 'true' } : {}),
         ...(row.threadId ? { 'data-thread-id': row.threadId } : {}),
         ...(row.requestId ? { 'data-request-id': row.requestId } : {}),
       },
-      openButton,
+      opener,
     )
-    item.append(actionsFor(row) ?? el('div', { class: 'activity-row-actions' }))
-    const review = reviewFor(row)
-    if (review) item.append(review)
-    return item
   }
 
   function groupElement(group: ActivityGroup, at: number): HTMLElement {
@@ -480,63 +491,60 @@ export function mountActivityPanel(
     )
   }
 
-  interface FocusSpot {
-    key: string
-    control: string
-    index: number
-  }
-
   function rowOpeners(): HTMLButtonElement[] {
-    return [...body.querySelectorAll<HTMLButtonElement>('.activity-row-open')]
+    return [...list.querySelectorAll<HTMLButtonElement>('.activity-row-open')]
   }
 
-  function captureFocus(): FocusSpot | null {
+  function selectedOpener(): HTMLButtonElement | undefined {
+    return rowOpeners().find((opener) => opener.getAttribute('aria-current') === 'true')
+  }
+
+  /** Where focus was, so a re-render can put it back: the list, or a detail control. */
+  function captureFocus():
+    | { area: 'list' }
+    | { area: 'detail'; key: string; control: string }
+    | null {
     const active = document.activeElement
-    if (!(active instanceof HTMLElement) || !body.contains(active)) return null
-    const row = active.closest<HTMLElement>('.activity-row')
-    const key = row?.dataset['rowKey']
-    if (!row || !key) return null
-    const opener = row.querySelector<HTMLButtonElement>('.activity-row-open')
-    return {
-      key,
-      control: active.dataset['control'] ?? 'open',
-      index: opener ? rowOpeners().indexOf(opener) : 0,
+    if (!(active instanceof HTMLElement)) return null
+    if (list.contains(active)) return { area: 'list' }
+    if (detail.contains(active)) {
+      return {
+        area: 'detail',
+        key: detail.dataset['rowKey'] ?? '',
+        control: active.dataset['control'] ?? '',
+      }
     }
+    return null
   }
 
-  function setRovingTarget(target: HTMLButtonElement | undefined): void {
-    for (const opener of rowOpeners()) opener.tabIndex = opener === target ? 0 : -1
-  }
-
-  function restoreFocus(spot: FocusSpot | null): void {
-    const openers = rowOpeners()
-    if (!spot) {
-      setRovingTarget(openers[0])
-      return
+  function restoreFocus(spot: ReturnType<typeof captureFocus>): void {
+    if (!spot) return
+    if (spot.area === 'detail' && spot.key === selectedKey) {
+      const control = detail.querySelector<HTMLButtonElement>(`[data-control="${spot.control}"]`)
+      if (control && !control.disabled) {
+        control.focus()
+        return
+      }
     }
-    const row = [...body.querySelectorAll<HTMLElement>('.activity-row')].find(
-      (candidate) => candidate.dataset['rowKey'] === spot.key,
-    )
-    const control = row?.querySelector<HTMLButtonElement>(`[data-control="${spot.control}"]`)
-    const opener = row?.querySelector<HTMLButtonElement>('.activity-row-open')
     // The row that had focus went away (answered, finished): stay at its place
     // in the list rather than throwing focus back to the top of the dialog.
-    const fallback = openers[Math.min(spot.index, openers.length - 1)]
-    const target = control && !control.disabled ? control : (opener ?? fallback)
-    setRovingTarget(opener ?? fallback)
-    if (target) target.focus({ preventScroll: false })
+    const opener = selectedOpener()
+    if (opener) opener.focus()
     else closeButton.focus()
   }
 
   function armSettle(): void {
     cancelSettle?.()
     settling = true
+    for (const approve of detail.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
+      approve.disabled = true
+    }
     cancelSettle = setTimer(() => {
       cancelSettle = null
       settling = false
-      for (const button of body.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
-        // A row already answered keeps its inert buttons.
-        if (!button.dataset['answered']) button.disabled = false
+      for (const approve of detail.querySelectorAll<HTMLButtonElement>('.activity-approve')) {
+        // A request already answered keeps its inert buttons.
+        if (!approve.dataset['answered']) approve.disabled = false
       }
     }, APPROVAL_SETTLE_MS)
   }
@@ -554,33 +562,69 @@ export function mountActivityPanel(
       runs: timings.runs,
     })
     const needsYou = groups.find((group) => group.id === 'needs-you')
+    const working = groups.find((group) => group.id === 'working')
     const signature = needsYou?.rows.map((row) => row.key).join('\n') ?? ''
     // Rows moving under a pointer are how a click meant for one approval lands
     // on another. When the waiting list changes after the user has seen it,
     // Approve pauses exactly as the approval dialog's does after an append;
     // Reject stays live, since a mis-click there can only deny.
-    if (needsYouSignature !== null && signature !== needsYouSignature) armSettle()
+    const listChanged = needsYouSignature !== null && signature !== needsYouSignature
     needsYouSignature = signature
-    // A review stays open across re-renders only while its request is pending.
-    const pendingKeys = new Set(needsYou?.rows.map((row) => row.key))
-    for (const key of [...expanded]) if (!pendingKeys.has(key)) expanded.delete(key)
+
+    const rows = groups.flatMap((group) => group.rows)
+    let selected = rows.find((row) => row.key === selectedKey)
+    if (!selected) {
+      selected = rows[Math.min(selectedIndex, rows.length - 1)]
+      selectedKey = selected?.key ?? null
+    }
+    selectedIndex = selected ? rows.indexOf(selected) : 0
+    // A different request in the detail pane has not been read yet.
+    if (listChanged || (selectedKey !== shownKey && selected?.state === 'needs-approval')) {
+      armSettle()
+    }
+    shownKey = selectedKey
+
+    const needCount = needsYou?.total ?? 0
+    const workCount = working?.total ?? 0
+    summary.textContent =
+      needCount === 0 && workCount === 0
+        ? 'Threads in the projects open this session, most urgent first.'
+        : `${needCount === 0 ? 'Nothing needs' : `${String(needCount)} ${needCount === 1 ? 'needs' : 'need'}`} you · ${String(workCount)} working`
 
     const populated = groups.filter((group) => group.rows.length > 0)
     if (populated.length === 0) {
-      body.replaceChildren(emptyState())
+      list.hidden = true
+      list.replaceChildren()
+      body.dataset['empty'] = 'true'
+      detail.hidden = false
+      detail.replaceChildren(emptyState())
+      delete detail.dataset['rowKey']
+      delete detail.dataset['state']
     } else {
+      list.hidden = false
+      delete body.dataset['empty']
       const children: HTMLElement[] = []
       if (!needsYou || needsYou.rows.length === 0) {
         children.push(el('p', { class: 'activity-quiet' }, 'Nothing needs you right now.'))
       }
       children.push(...populated.map((group) => groupElement(group, at)))
-      body.replaceChildren(...children)
+      list.replaceChildren(...children)
+      renderDetail(selected, at)
     }
-    dialog.dataset['needsYou'] = String(needsYou?.total ?? 0)
+    dialog.dataset['needsYou'] = String(needCount)
     restoreFocus(focus)
   }
 
-  /** Redraw at once, for the user's own action (expanding a review). */
+  /** Show a row in the detail pane (a click, or the arrow keys). */
+  function select(rowKey: string): void {
+    if (rowKey !== selectedKey) {
+      selectedKey = rowKey
+      renderNow()
+    }
+    selectedOpener()?.focus()
+  }
+
+  /** Redraw at once, for the user's own action. */
   function renderNow(): void {
     cancelRender?.()
     render()
@@ -604,12 +648,12 @@ export function mountActivityPanel(
     }, ACTIVITY_AGE_REFRESH_MS)
   }
 
-  function moveFocus(event: KeyboardEvent): void {
+  function moveSelection(event: KeyboardEvent): void {
     const openers = rowOpeners()
     if (openers.length === 0) return
-    const row = event.target instanceof Element ? event.target.closest('.activity-row') : null
-    const current = row?.querySelector<HTMLButtonElement>('.activity-row-open')
-    const index = current ? openers.indexOf(current) : -1
+    const current = event.target instanceof Element ? event.target.closest('.activity-row') : null
+    const opener = current?.querySelector<HTMLButtonElement>('.activity-row-open')
+    const index = opener ? openers.indexOf(opener) : -1
     let next: number
     switch (event.key) {
       case 'ArrowDown':
@@ -628,11 +672,10 @@ export function mountActivityPanel(
         return
     }
     event.preventDefault()
-    const target = openers[next]
-    setRovingTarget(target)
-    target?.focus()
+    const target = openers[next]?.closest<HTMLElement>('.activity-row')?.dataset['rowKey']
+    if (target) select(target)
   }
-  body.addEventListener('keydown', moveFocus)
+  list.addEventListener('keydown', moveSelection)
 
   const onChange = (): void => {
     scheduleRender()
@@ -654,7 +697,9 @@ export function mountActivityPanel(
     cancelSettle = null
     settling = false
     needsYouSignature = null
-    expanded.clear()
+    selectedKey = null
+    selectedIndex = 0
+    shownKey = null
     status.textContent = ''
   })
 
@@ -662,11 +707,15 @@ export function mountActivityPanel(
     open: () => {
       if (isOpen()) return
       open()
-      // A fresh look: every row starts collapsed, so nothing is approvable until
-      // the user opens its review (which arms the settle window).
+      // A fresh look starts on the most urgent row. If that is an approval, its
+      // request has not been read yet: render() arms the settle window, so
+      // nothing is approvable until it has been on screen.
       needsYouSignature = null
+      selectedKey = null
+      selectedIndex = 0
+      shownKey = null
       render()
-      const first = rowOpeners()[0]
+      const first = selectedOpener()
       if (first) first.focus()
       else closeButton.focus()
       tickAges()
