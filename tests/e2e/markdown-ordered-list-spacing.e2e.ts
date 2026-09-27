@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedGitSummaryMarkdownFixture } from './helpers/seed-config.ts'
+import { parkPointer } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const SCREENSHOT_NAME =
@@ -79,6 +80,8 @@ describe('markdown ordered list spacing', () => {
       const userMsg = document.querySelector('[data-message-id="msg-user-git-summary"]')
       userMsg?.scrollIntoView({ block: 'start' })
     })
+    // A fresh session's pointer can rest over the answer and show its Copy button.
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, `${SCREENSHOT_NAME}.png`))
   })
 })

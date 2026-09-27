@@ -14,7 +14,7 @@ import {
   seedGitImageChangesFixture,
 } from './helpers/seed-config.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveElementScreenshot, waitForImagesSettled } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -213,10 +213,16 @@ describe('git changes image preview', function () {
     )
 
     await clickChange('unstaged.png')
-    await $('#git-diff-viewer-host .git-image-diff').waitForDisplayed({ timeout: 30_000 })
+    // staged.png's previews are still displayed until the new selection's diff
+    // attaches; wait for unstaged.png's own pair, or the capture can show the
+    // staged images (red → blue) under the unstaged row.
+    await $(
+      '#git-diff-viewer-host .git-image-diff-img[alt="unstaged.png (after)"]',
+    ).waitForDisplayed({ timeout: 30_000 })
     await expect($$('#git-diff-viewer-host .git-image-diff-img')).toBeElementsArrayOfSize({
       gte: 2,
     })
+    await waitForImagesSettled('#git-diff-viewer-host', { minImages: 2 })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-image-unstaged.png'))
 
     await clickChange('new.png')

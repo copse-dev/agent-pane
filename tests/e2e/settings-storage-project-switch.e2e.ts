@@ -4,7 +4,11 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinProfilePathForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 // The Storage → Worktrees section lists checkouts for one project at a time.
 // Before the picker, that project was always whichever thread the sidebar
@@ -110,7 +114,9 @@ describe('settings → Storage → project picker', function () {
     await expect($$('.sources-row[data-worktree-path]')).toBeElementsArrayOfSize(1)
     await expect(rowA.$('.sources-row-title')).toHaveText(BRANCH_A)
 
+    const restoreProfilePathA = await pinProfilePathForCapture('#settings-dialog')
     await saveElementScreenshot('#settings-dialog', 'settings-storage-project-a-worktrees.png')
+    await restoreProfilePathA()
 
     // Switch the picker to the project the active thread is NOT pointed at.
     await select.selectByAttribute('value', PROJECT_B_ID)
@@ -127,7 +133,9 @@ describe('settings → Storage → project picker', function () {
       'switching projects replaces the list rather than appending to it',
     )
 
+    const restoreProfilePathB = await pinProfilePathForCapture('#settings-dialog')
     await saveElementScreenshot('#settings-dialog', 'settings-storage-project-b-worktrees.png')
+    await restoreProfilePathB()
 
     // Delete the checkout for the *selected* project (B), while the active
     // project remains A. If the action targeted the active thread's project
