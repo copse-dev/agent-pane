@@ -137,15 +137,18 @@ describe('ACP tool diff', () => {
     assert.notEqual(background('acp-diff-add'), background('acp-diff-context'))
     assert.ok(rows.every((row) => row.whiteSpace === 'pre'))
     // The +/- sign is aria-hidden; each changed row names itself in text that
-    // is read aloud but takes no visible space.
-    await expect(diff.$('.acp-diff-add .acp-diff-sr')).toHaveElementProperty(
-      'textContent',
-      'Added: ',
-    )
-    await expect(diff.$('.acp-diff-del .acp-diff-sr')).toHaveElementProperty(
-      'textContent',
-      'Deleted: ',
-    )
+    // is read aloud but takes no visible space. Read the text raw: the trailing
+    // space keeps the label apart from the line it names, and
+    // toHaveElementProperty trims the actual value (not the expected one), so
+    // it could never match it.
+    const srLabels = await browser.execute((messageId) => {
+      const host = document.querySelector(`[data-message-id="${messageId}"] .acp-tool-diff`)
+      return [
+        host?.querySelector('.acp-diff-add .acp-diff-sr')?.textContent,
+        host?.querySelector('.acp-diff-del .acp-diff-sr')?.textContent,
+      ]
+    }, MESSAGE_ID)
+    assert.deepEqual(srLabels, ['Added: ', 'Deleted: '])
     expect((await diff.$('.acp-diff-add .acp-diff-sr').getSize()).width).toBeLessThanOrEqual(1)
 
     await diff.scrollIntoView()
