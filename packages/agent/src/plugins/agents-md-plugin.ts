@@ -115,7 +115,7 @@ export const agentsMdPlugin: RegisteredPlugin = definePlugin(
   {
     name: AGENTS_MD_PLUGIN_ID,
     description:
-      'AGENTS.md compatibility — reads AGENTS.md like Claude Code reads CLAUDE.md, with a four-mode Project instructions policy.',
+      'Reads AGENTS.md like Claude Code reads CLAUDE.md, with a four-mode Project instructions policy.',
     trust: 'first-party',
     stability: 'stable',
     settings: {

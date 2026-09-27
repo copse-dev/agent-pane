@@ -68,7 +68,7 @@ export const mcpUiCanvasPlugin: RegisteredPlugin = definePlugin(
   {
     name: MCP_UI_CANVAS_PLUGIN_ID,
     description:
-      'MCP-UI artefacts (canvas) — render self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), ship a bundled canvas server with a render_html_artefact tool for demos, charts, and small interactive UIs, and steer prototype requests onto it.',
+      'Renders self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), ships a bundled canvas server with a `render_html_artefact` tool for demos, charts, and small interactive UIs, and steers prototype requests onto it.',
     trust: 'first-party',
     stability: 'experimental',
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],

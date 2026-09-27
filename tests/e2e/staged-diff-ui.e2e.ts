@@ -107,6 +107,52 @@ describe('staged diff approval UI', () => {
     if (!editorRect || !acceptRect) throw new Error('missing diff editor or accept button rect')
     await expect(acceptRect.top >= editorRect.bottom).toBe(true)
 
+    // Accept/Reject are yes/no chrome, so they use the kit (Accept = primary,
+    // Reject = secondary), never the --success / --error status hues (#3065).
+    await expect(acceptBtn).toHaveElementClass('ui-btn')
+    await expect(acceptBtn).toHaveElementClass('ui-btn-primary')
+    await expect(rejectBtn).toHaveElementClass('ui-btn')
+    await expect(rejectBtn).toHaveElementClass('ui-btn-secondary')
+    await expect($('#git-diff-viewer-host copse-ui-actions.diff-approval-bar')).toBeDisplayed()
+    const approvalPaint = await browser.execute(() => {
+      const bar = document.querySelector<HTMLElement>('#git-diff-viewer-host .diff-approval-bar')
+      const accept = bar?.querySelector<HTMLElement>('.diff-accept-btn')
+      const reject = bar?.querySelector<HTMLElement>('.diff-reject-btn')
+      if (!bar || !accept || !reject) return null
+      // Resolve tokens through the cascade with a probe in the bar's scope.
+      const probe = document.createElement('span')
+      bar.append(probe)
+      const tokenColor = (token: string): string => {
+        probe.style.color = `var(${token})`
+        return getComputedStyle(probe).color
+      }
+      probe.style.columnGap = 'var(--spacing-md)'
+      const spacingMd = getComputedStyle(probe).columnGap
+      const acceptRect = accept.getBoundingClientRect()
+      const rejectRect = reject.getBoundingClientRect()
+      const paint = {
+        acceptBg: getComputedStyle(accept).backgroundColor,
+        rejectBg: getComputedStyle(reject).backgroundColor,
+        gap: getComputedStyle(bar).columnGap,
+        spacingMd,
+        heightsMatch: acceptRect.height === rejectRect.height,
+        accentFill: tokenColor('--accent-fill'),
+        successHue: tokenColor('--success'),
+        errorHue: tokenColor('--error'),
+      }
+      probe.remove()
+      return paint
+    })
+    if (!approvalPaint) throw new Error('missing diff approval bar buttons')
+    await expect(approvalPaint.acceptBg).toBe(approvalPaint.accentFill)
+    await expect(approvalPaint.rejectBg).toBe('rgba(0, 0, 0, 0)')
+    for (const fill of [approvalPaint.acceptBg, approvalPaint.rejectBg]) {
+      await expect(fill).not.toBe(approvalPaint.successHue)
+      await expect(fill).not.toBe(approvalPaint.errorHue)
+    }
+    await expect(approvalPaint.gap).toBe(approvalPaint.spacingMd)
+    await expect(approvalPaint.heightsMatch).toBe(true)
+
     await saveAppScreenshot('staged-diff-single.png')
 
     await writeProposedFile(

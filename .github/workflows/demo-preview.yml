@@ -42,6 +42,9 @@ on:
   push:
     branches-ignore:
       - demo-previews
+      # The promotion head (promote-develop.yml) is an earlier `main` commit,
+      # already published at /demo/main/; a PR preview of it would duplicate that.
+      - promote/main
   workflow_dispatch:
 
 # No pages/id-token here any more: nothing in this workflow deploys. The deploy

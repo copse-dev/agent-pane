@@ -28,25 +28,37 @@ export const APPROVAL_COALESCE_MS = 120
 export const APPROVAL_SETTLE_MS = 500
 
 /** Marker `permission-policy.ts` prefixes each reason line with. */
-const ADVICE_BULLET = '\u2022 '
+const REASON_BULLET = '\u2022 '
 
 /**
- * Advice text, with each reason bullet as its own inline-block so a line too long
- * for the dialog hangs under its own text instead of returning to the left margin,
- * where it reads as another bullet.
- *
- * The newlines stay as text nodes between the spans, so the element's
- * `textContent` is still exactly the string the main process sent.
+ * Approval copy (advice or footer) from the main process's plain-text form. A
+ * run of `• ` lines is a list of reasons, so it renders as a real `<ul>` — each
+ * reason its own item, wrapping under its own marker — while the lines around
+ * it stay text in the block's `pre-wrap` flow.
  */
-function adviceElement(advice: string): HTMLElement {
-  const children: (Node | string)[] = []
-  advice.split('\n').forEach((line, index) => {
-    if (index > 0) children.push('\n')
-    children.push(
-      line.startsWith(ADVICE_BULLET) ? el('span', { class: 'approval-advice-item' }, line) : line,
-    )
-  })
-  return el('div', { class: 'approval-advice' }, ...children)
+function approvalCopyElement(className: string, text: string): HTMLElement {
+  const root = el('div', { class: className })
+  let list: HTMLUListElement | null = null
+  let lines: string[] = []
+  const flushLines = (): void => {
+    if (lines.length > 0) root.append(lines.join('\n'))
+    lines = []
+  }
+  for (const line of text.split('\n')) {
+    if (line.startsWith(REASON_BULLET)) {
+      flushLines()
+      if (!list) {
+        list = el('ul', { class: 'approval-reasons' })
+        root.append(list)
+      }
+      list.append(el('li', {}, line.slice(REASON_BULLET.length)))
+    } else {
+      list = null
+      lines.push(line)
+    }
+  }
+  flushLines()
+  return root
 }
 
 /**
@@ -364,7 +376,7 @@ export function mountApprovalDialog(
         }
         const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice))
         if (advice) {
-          rowChildren.push(adviceElement(advice))
+          rowChildren.push(approvalCopyElement('approval-advice', advice))
         }
         if (collapseDetails) rowChildren.push(detailsToggle())
         if (group.length > 1) {
@@ -385,7 +397,7 @@ export function mountApprovalDialog(
           rowChildren.push(requestBody(firstRequest))
         }
         if (firstRequest.bodyFooter) {
-          rowChildren.push(el('div', { class: 'approval-footer' }, firstRequest.bodyFooter))
+          rowChildren.push(approvalCopyElement('approval-footer', firstRequest.bodyFooter))
         }
         return el('div', { class: 'approval-item' }, ...rowChildren)
       }),

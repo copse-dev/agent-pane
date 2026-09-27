@@ -292,12 +292,14 @@ describe('approval dialog coalescing', () => {
     ])
     assert.equal(dialog.querySelectorAll('.approval-item').length, 1)
     assert.equal(dialog.querySelectorAll('.approval-body-list').length, 1)
+    assert.equal(dialog.querySelectorAll('.approval-advice').length, 1)
+    const advice = qsRequired(dialog, '.approval-advice')
+    assert.equal(advice.firstChild?.textContent, 'The project sandbox would block this command:')
     assert.deepEqual(
-      [...dialog.querySelectorAll('.approval-advice')].map((node) => node.textContent),
+      [...advice.querySelectorAll('ul.approval-reasons > li')].map((node) => node.textContent),
       [
-        'The project sandbox would block this command:\n' +
-          '• Runs a project script whose effects are unknown\n' +
-          '• Reaches outside the project with a ../ path',
+        'Runs a project script whose effects are unknown',
+        'Reaches outside the project with a ../ path',
       ],
     )
     assert.equal(dialog.querySelectorAll('.approval-footer').length, 1)
@@ -331,10 +333,10 @@ describe('approval dialog coalescing', () => {
     assert.deepEqual(responses, [{ id: 'read-access', approved: true, remember: true }])
   })
 
-  it('keeps a multi-reason advice block on one line per reason', () => {
-    // `formatExternalSandboxPromptParts` sends the reasons as a bulleted block;
-    // `.approval-advice` is `white-space: pre-wrap`, so the newlines survive to
-    // the user as separate lines inside a single advice element.
+  it('renders a multi-reason advice block as a real list', () => {
+    // `formatExternalSandboxPromptParts` sends the reasons as `• ` lines. They
+    // render as list items — each wrapping under its own marker — with the
+    // lead-in line kept as text and no literal bullet characters left behind.
     emit({
       id: 'outside-sandbox',
       title: 'Run outside sandbox?',
@@ -342,27 +344,34 @@ describe('approval dialog coalescing', () => {
       bodyAdvice:
         'The project sandbox would block this command:\n' +
         '• Downloads from the internet (curl/wget)\n' +
-        '• Reads or writes in your home directory, outside the project',
-      bodyFooter: 'Allow running it once outside the sandbox?',
+        '• Reads or writes in your home directory, outside the project\n' +
+        '\n' +
+        'It is asking to run outside the sandbox up front.',
+      bodyFooter:
+        'Why this needs approval:\n• Auto-run for sandbox commands is disabled in Settings',
     })
     fireWindow()
     const advice = qsRequired(dialog, '.approval-advice')
     assert.equal(dialog.querySelectorAll('.approval-advice').length, 1)
-    assert.deepEqual(advice.textContent.split('\n'), [
-      'The project sandbox would block this command:',
-      '• Downloads from the internet (curl/wget)',
-      '• Reads or writes in your home directory, outside the project',
-    ])
-
-    // Each bullet is its own box so a reason too long for the dialog wraps with a
-    // hanging indent; the lead-in line is not one. The newlines live between them,
-    // so the advice element's text is still exactly what the main process sent.
+    assert.equal(advice.firstChild?.textContent, 'The project sandbox would block this command:')
     assert.deepEqual(
-      [...advice.querySelectorAll('.approval-advice-item')].map((node) => node.textContent),
+      [...advice.querySelectorAll('ul.approval-reasons > li')].map((node) => node.textContent),
       [
-        '• Downloads from the internet (curl/wget)',
-        '• Reads or writes in your home directory, outside the project',
+        'Downloads from the internet (curl/wget)',
+        'Reads or writes in your home directory, outside the project',
       ],
+    )
+    assert.equal(
+      advice.lastChild?.textContent,
+      '\nIt is asking to run outside the sandbox up front.',
+    )
+    assert.doesNotMatch(advice.textContent, /\u2022/)
+
+    const footer = qsRequired(dialog, '.approval-footer')
+    assert.equal(footer.firstChild?.textContent, 'Why this needs approval:')
+    assert.deepEqual(
+      [...footer.querySelectorAll('ul.approval-reasons > li')].map((node) => node.textContent),
+      ['Auto-run for sandbox commands is disabled in Settings'],
     )
   })
 
