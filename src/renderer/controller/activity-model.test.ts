@@ -85,6 +85,7 @@ describe('deriveActivity', () => {
       ['old-run', { startedAt: 100 }],
       ['new-run', { startedAt: 300 }],
       ['done', { startedAt: 10, endedAt: 50 }],
+      ['broken', { startedAt: 20, endedAt: 60 }],
     ])
     const groups = deriveActivity(
       input({
@@ -136,6 +137,27 @@ describe('deriveActivity', () => {
       [
         ['watched', 'finished', 900],
         ['unseen', 'finished', 700],
+      ],
+    )
+  })
+
+  it('shows a failure only when this session saw it end or it failed unseen', () => {
+    // The stored status outlives a restart; an old error alone is not recent.
+    const groups = deriveActivity(
+      input({
+        threads: [
+          info('watched', { status: 'error' }),
+          info('unseen', { status: 'error', unreadAt: 700 }),
+          info('stale', { status: 'error' }),
+        ],
+        runs: new Map([['watched', { startedAt: 1, endedAt: 900 }]]),
+      }),
+    )
+    assert.deepEqual(
+      group(groups, 'recent').rows.map((row) => [row.threadId, row.state, row.since]),
+      [
+        ['watched', 'failed', 900],
+        ['unseen', 'failed', 700],
       ],
     )
   })

@@ -196,13 +196,17 @@ export function deriveActivity(input: ActivityInput): ActivityGroup[] {
           run?.startedAt ?? null,
         ),
       )
-    } else if (thread.status === 'error') {
-      recent.push(threadRow(thread, 'failed', 'Ended with an error', run?.endedAt ?? null))
     } else {
-      // A clean finish is "recent" only when something says so: this session
-      // watched it end, or it completed unseen while another thread was open.
+      // An ended run is "recent" only when something says so: this session
+      // watched it end, or it ended unseen while another thread was open. The
+      // stored status outlives restarts, so an old error alone is not recent.
       const endedAt = run?.endedAt ?? thread.unreadAt
-      if (endedAt !== undefined) recent.push(threadRow(thread, 'finished', 'Finished', endedAt))
+      if (endedAt === undefined) continue
+      recent.push(
+        thread.status === 'error'
+          ? threadRow(thread, 'failed', 'Ended with an error', endedAt)
+          : threadRow(thread, 'finished', 'Finished', endedAt),
+      )
     }
   }
 

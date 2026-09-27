@@ -24,7 +24,8 @@ What is in:
 
 - `src/renderer/views/activity-panel.ts` — the overlay. Groups: **Needs you** (pending
   approval or `ask_user` question, longest-waiting first) → **Working** (running, newest run
-  first) → **Recently finished** (failed before finished, capped at 10 with the full count).
+  first) → **Recently finished** (runs this session saw end or that ended unseen; failed
+  before finished, capped at 10 with the full count).
   Each row: an outline glyph plus a text label (never colour alone), what it wants (the
   approval's title and command, or the question), thread, project and age. Opened with
   Cmd/Ctrl+Shift+A, the sidebar header bell, or the command palette's **Activity**.
