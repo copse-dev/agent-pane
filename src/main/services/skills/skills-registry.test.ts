@@ -513,6 +513,7 @@ description: Bundled skill for tests
       listSkills().some((skill) => skill.source === 'bundled'),
       false,
     )
+    await assert.rejects(readSkill('demo-plugin'), /bundled plugin that is switched off/)
 
     await rm(bundledRoot, { recursive: true, force: true })
   })

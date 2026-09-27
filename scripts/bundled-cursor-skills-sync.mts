@@ -161,9 +161,16 @@ const SCRIPT_PROJECT_MARKERS = [
  */
 function belongsToScriptProject(path: string, skillFiles: ReadonlySet<string>): boolean {
   const parts = path.split('/')
-  for (let depth = 1; depth < parts.length; depth++) {
+  for (let depth = 0; depth < parts.length; depth++) {
     const dir = parts.slice(0, depth).join('/')
-    if (SCRIPT_PROJECT_MARKERS.some((marker) => skillFiles.has(`${dir}/${marker}`))) return true
+    const prefix = dir ? `${dir}/` : ''
+    if (SCRIPT_PROJECT_MARKERS.some((marker) => `${prefix}${marker}` === path)) return true
+    if (
+      /\.(?:c|m)?(?:js|ts|jsx|tsx)$/.test(path) &&
+      SCRIPT_PROJECT_MARKERS.some((marker) => skillFiles.has(`${prefix}${marker}`))
+    ) {
+      return true
+    }
   }
   return false
 }

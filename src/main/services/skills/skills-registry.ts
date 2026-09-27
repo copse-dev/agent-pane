@@ -259,8 +259,9 @@ async function collectDiscoveryTargets(): Promise<{
     if (await pathExists(root)) targets.push({ kind: 'root', path: root, source: 'user' })
   }
 
+  const bundledPluginRoots = await listBundledCursorPluginRoots()
   if (getSetting<boolean>(BUNDLED_CURSOR_SKILLS_SETTING, true)) {
-    for (const pluginRoot of await listBundledCursorPluginRoots()) {
+    for (const pluginRoot of bundledPluginRoots) {
       const skillsDir = await resolvePluginSkillsDir(pluginRoot)
       if (!skillsDir) continue
       const plugin = await readCursorPluginName(pluginRoot)
@@ -269,6 +270,10 @@ async function collectDiscoveryTargets(): Promise<{
         continue
       }
       targets.push({ kind: 'root', path: skillsDir, source: 'bundled', plugin })
+    }
+  } else {
+    for (const pluginRoot of bundledPluginRoots) {
+      switchedOffPlugins.push(await readCursorPluginName(pluginRoot))
     }
   }
 
@@ -545,7 +550,8 @@ function pluginNameError(name: string): Error | null {
   if (activeSwitchedOffPlugins().includes(plugin)) {
     return new Error(
       `"${plugin}" is a bundled plugin that is switched off, so its skills are not loaded. ` +
-        'The user can turn it on in Settings → Customise → Plugins; continue without it.',
+        'The user can turn bundled skills on in Settings → Agent → Skills or enable this plugin ' +
+        'in Settings → Customise → Plugins; continue without it.',
     )
   }
   const pluginSkills = activeSkills().filter((skill) => skill.plugin === name)

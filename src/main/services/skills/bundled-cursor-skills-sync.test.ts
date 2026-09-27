@@ -23,7 +23,7 @@ const SKILL_FILES: Readonly<Record<string, string>> = {
   'references/sources/slack.md': '# Slack',
   'references/unreferenced.md': '# Never named',
   'scripts/cli.ts': 'import { main } from "./cli/index.ts"',
-  'scripts/package.json': '{}',
+  'package.json': '{}',
 }
 
 describe('bundled-cursor-skills-sync', () => {
