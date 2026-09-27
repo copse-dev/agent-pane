@@ -101,6 +101,28 @@ export async function saveThreePaneScreenshot(
   await body.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
+/**
+ * Move the pointer to the window's top-left corner, clear of the transcript,
+ * and wait for hover-only chrome to go: every message's Copy button and the
+ * app tooltip. WebDriver leaves the pointer wherever the last click landed (a
+ * fresh session's can start over the transcript), so a capture could
+ * otherwise catch that chrome on one run and not the next.
+ */
+export async function parkPointer(): Promise<void> {
+  await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () =>
+          document.getElementById('app-tooltip')?.hidden !== false &&
+          [...document.querySelectorAll('.msg-copy')].every(
+            (button) => getComputedStyle(button).opacity === '0',
+          ),
+      ),
+    { timeout: 2_000, timeoutMsg: 'hover-only chrome stayed visible after the pointer left' },
+  )
+}
+
 /** Capture the app shell at the fixed viewport (excludes OS chrome). */
 export async function saveAppScreenshot(
   filename: string,
@@ -392,4 +414,15 @@ export async function pinTextForCapture(
       delete win.__copsePinnedText
     })
   }
+}
+
+/**
+ * Pin the random suffix `mkdtemp` gives the e2e profile directory
+ * (`.wdio-profile-ajUEZS`) wherever `selector` prints a path under it.
+ * Fixtures that the app only accepts inside its own profile — thread
+ * worktrees, a storage root — cannot pick a fixed path, and Settings prints
+ * those paths in full. Same contract as {@link pinTextForCapture}.
+ */
+export function pinProfilePathForCapture(selector: string): Promise<() => Promise<void>> {
+  return pinTextForCapture(selector, /\.wdio-profile-[^/\s]+/g, '.wdio-profile-XXXXXX')
 }

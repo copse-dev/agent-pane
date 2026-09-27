@@ -12,6 +12,7 @@ import {
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
+  pinProfilePathForCapture,
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -156,7 +157,9 @@ describe('settings → Storage → worktree actions', function () {
     assert.equal(changes.color, warning, 'uncommitted work keeps the warning hue')
     assertBadgeRecipe(changes)
 
+    const restoreProfilePath = await pinProfilePathForCapture('#settings-dialog')
     await saveElementScreenshot('#settings-dialog', 'settings-worktree-actions.png')
+    await restoreProfilePath()
 
     await row.$('.sources-worktree-terminal-btn').click()
     await expect($('#sources-worktrees-status')).toHaveText(

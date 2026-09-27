@@ -6,6 +6,7 @@ import {
   resetUserData,
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
+import { parkPointer } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -165,6 +166,9 @@ describe('git changes embed alongside pop-out (#1753)', function () {
       timeoutMsg: `docked pane lost decorations after re-selection: ${await describeViewer()}`,
     })
     await waitForFixtureRows()
+    // The pointer is still on the staged.ts row just clicked, whose tooltip
+    // would otherwise sit over the Unstaged header.
+    await parkPointer()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-embed-docked.png'))
 
     // And the pop-out still shows them too.

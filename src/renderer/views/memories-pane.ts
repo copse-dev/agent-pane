@@ -49,9 +49,9 @@ export function mountMemoriesPane(
   let loading = false
 
   // --- list column ----------------------------------------------------------
-  const listHeader = el('div', { class: 'git-changes-header' })
+  const listHeader = el('div', { class: 'pane-header' })
   listHeader.append(
-    el('span', { class: 'git-changes-title' }, 'Memories'),
+    el('span', { class: 'pane-header-title' }, 'Memories'),
     panePopoutButton(store, api, 'memories', 'memories'),
     paneMaximizeButton(store, 'memories'),
     el(

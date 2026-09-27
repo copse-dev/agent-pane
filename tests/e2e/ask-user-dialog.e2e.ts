@@ -108,6 +108,17 @@ describe('ask_user dialog', () => {
 
     await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
     await expect(dialog).not.toBeDisplayed()
+    // Stopping the run withdraws the question. Its card must record that, not
+    // show the success check of a question the user answered.
+    await waitForAgentIdle(30_000)
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => {
+          const calls = document.querySelectorAll<HTMLElement>('.messages-list [data-tool-id]')
+          return calls[calls.length - 1]?.dataset['status'] ?? ''
+        })) === 'error',
+      { timeout: 10_000, timeoutMsg: 'expected the stopped ask_user call to be marked cancelled' },
+    )
     // A tool that runs past the reveal delay opens its card while it runs, and
     // the transcript folds it again shortly after the run goes quiet. Capture
     // the settled transcript, not whichever side of that fold the abort landed on.
