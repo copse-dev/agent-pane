@@ -66847,7 +66847,7 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     className: "activity-panel-overlay"
   });
   dialog2.setAttribute("aria-labelledby", "activity-panel-title");
-  dialog2.setAttribute("aria-describedby", "activity-panel-subtitle");
+  dialog2.setAttribute("aria-describedby", "activity-panel-summary");
   const closeButton = el(
     "button",
     {
@@ -66858,7 +66858,13 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     closeIcon()
   );
   closeButton.addEventListener("click", close);
-  const body = el("div", { class: "activity-panel-body" });
+  const summary = el("p", { id: "activity-panel-summary", class: "activity-panel-summary" });
+  const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
+  const detail = el("section", {
+    class: "activity-detail",
+    "aria-labelledby": "activity-detail-title"
+  });
+  const body = el("div", { class: "activity-panel-body" }, list, detail);
   const status = el("p", {
     class: "activity-panel-status",
     role: "status",
@@ -66871,24 +66877,16 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       el(
         "header",
         { class: "activity-panel-header" },
-        el(
-          "div",
-          {},
-          el("h2", { id: "activity-panel-title" }, "Activity"),
-          el(
-            "p",
-            { id: "activity-panel-subtitle", class: "activity-panel-subtitle" },
-            "Threads in the projects open this session, most urgent first."
-          )
-        ),
+        el("h2", { id: "activity-panel-title" }, "Activity"),
+        summary,
         closeButton
       ),
       body,
-      status,
       el(
         "footer",
         { class: "activity-panel-footer" },
-        el("span", {}, "\u2191 \u2193 move \xB7 Enter opens the thread \xB7 Esc closes")
+        el("span", {}, "\u2191 \u2193 choose \xB7 Tab to act \xB7 Esc closes"),
+        status
       )
     )
   );
@@ -66899,7 +66897,9 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
   let needsYouSignature = null;
   let cancelSettle = null;
   let settling = false;
-  const expanded = /* @__PURE__ */ new Set();
+  let selectedKey = null;
+  let selectedIndex = 0;
+  let shownKey = null;
   function canOpen(row2) {
     if (!row2.threadId || !row2.projectId) return false;
     const { projectId } = row2;
@@ -66910,204 +66910,213 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     close();
     switchProjectThread(store2, api2, row2.projectId, row2.threadId);
   }
-  function rowLabel(row2, ageLong) {
+  function ageText(row2, at3) {
+    if (row2.since === null) return null;
+    const long = formatAgeLong(Math.max(0, at3 - row2.since));
+    const verb = AGE_VERB[row2.state];
+    return long === "just now" ? `${verb} just now` : `${verb} ${long} ago`;
+  }
+  function rowLabel(row2, at3) {
     const want = row2.detail ? `${row2.want} \u2014 ${row2.detail}` : row2.want;
     const parts = [
       `${STATE_LONG[row2.state]}: ${want}`,
       row2.projectName ? `${row2.threadTitle}, ${row2.projectName}` : row2.threadTitle
     ];
-    if (ageLong) {
-      const verb = AGE_VERB[row2.state];
-      parts.push(ageLong === "just now" ? `${verb} just now` : `${verb} ${ageLong} ago`);
-    }
-    if (canOpen(row2)) parts.push("Open thread");
+    const age = ageText(row2, at3);
+    if (age) parts.push(age);
     return parts.join(". ");
   }
-  function answerApproval(row2, approved, buttons) {
+  function answerApproval(row2, approved) {
     if (!row2.requestId) return;
-    for (const button of buttons) {
-      button.disabled = true;
-      button.dataset["answered"] = "true";
+    for (const button2 of detail.querySelectorAll(
+      ".activity-approve, .activity-reject"
+    )) {
+      button2.disabled = true;
+      button2.dataset["answered"] = "true";
     }
     const sent = sources3.approvals.answerOnce(row2.requestId, approved);
     status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
     scheduleRender();
   }
-  function actionsFor(row2) {
-    if (row2.state === "needs-approval") {
-      const open3 = expanded.has(row2.key);
-      const toggle = el(
-        "button",
-        {
-          type: "button",
-          class: "ui-btn ui-btn-secondary activity-review-toggle",
-          "data-control": "review",
-          "aria-expanded": open3 ? "true" : "false",
-          "aria-controls": reviewId(row2),
-          "aria-label": `${open3 ? "Hide" : "Review"} request: ${row2.want} (${row2.threadTitle})`
-        },
-        open3 ? "Hide" : "Review"
-      );
-      toggle.addEventListener("click", () => {
-        if (expanded.has(row2.key)) expanded.delete(row2.key);
-        else {
-          expanded.add(row2.key);
-          armSettle();
-        }
-        renderNow();
-      });
-      const reject = el(
-        "button",
-        {
-          type: "button",
-          class: "ui-btn ui-btn-secondary activity-reject",
-          "data-control": "reject",
-          "aria-label": `Reject: ${row2.want} (${row2.threadTitle})`
-        },
-        "Reject"
-      );
-      reject.addEventListener("click", () => {
-        if (reject.disabled) return;
-        answerApproval(row2, false, rowButtons(reject));
-      });
-      return el("div", { class: "activity-row-actions" }, toggle, reject);
-    }
-    if (row2.state === "needs-answer") {
-      const answer = el(
-        "button",
-        {
-          type: "button",
-          class: "ui-btn ui-btn-secondary activity-answer",
-          "data-control": "answer",
-          "aria-label": `Answer in thread: ${row2.threadTitle}`
-        },
-        "Answer\u2026"
-      );
-      if (row2.threadId === null) {
-        answer.addEventListener("click", close);
-      } else if (canOpen(row2)) {
-        answer.addEventListener("click", () => {
-          openThread(row2);
-        });
-      } else {
-        answer.disabled = true;
-      }
-      return el("div", { class: "activity-row-actions" }, answer);
-    }
-    return null;
-  }
-  function reviewId(row2) {
-    return `activity-review-${row2.requestId ?? row2.key}`;
-  }
-  function rowButtons(from) {
-    const item = from.closest(".activity-row");
-    return item ? [...item.querySelectorAll(".activity-approve, .activity-reject")] : [];
-  }
-  function reviewFor(row2) {
-    const request = row2.approval;
-    if (!request || !expanded.has(row2.key)) return null;
-    const approve = el(
+  function button(className, control, label, onClick, ariaLabel) {
+    const node2 = el(
       "button",
       {
         type: "button",
-        class: "ui-btn ui-btn-primary activity-approve",
-        "data-control": "approve",
-        "aria-label": `Approve once: ${request.title} (${row2.threadTitle})`
+        class: `ui-btn ${className}`,
+        "data-control": control,
+        ...ariaLabel ? { "aria-label": ariaLabel } : {}
       },
-      "Approve once"
+      label
     );
-    approve.disabled = settling;
-    approve.addEventListener("click", () => {
-      if (approve.disabled) return;
-      answerApproval(row2, true, rowButtons(approve));
+    node2.addEventListener("click", () => {
+      if (!node2.disabled) onClick();
     });
-    const actions = [approve];
-    if (canOpen(row2)) {
-      const openInThread = el(
-        "button",
-        {
-          type: "button",
-          class: "ui-btn ui-btn-ghost activity-review-open",
-          "data-control": "open-thread"
-        },
-        "Open in thread"
-      );
-      openInThread.addEventListener("click", () => {
-        openThread(row2);
-      });
-      actions.push(openInThread);
+    return node2;
+  }
+  function openThreadButton(row2) {
+    const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
+      openThread(row2);
+    });
+    node2.disabled = !canOpen(row2);
+    return node2;
+  }
+  function detailContent(row2) {
+    if (row2.state === "needs-approval" && row2.approval) {
+      const request = row2.approval;
+      return [
+        el(
+          "div",
+          {
+            class: "activity-review",
+            role: "region",
+            "aria-label": `Approval request: ${request.title}`
+          },
+          el("p", { class: "activity-review-title" }, request.title),
+          ...approvalRequestDetails(request)
+        )
+      ];
     }
-    return el(
-      "div",
-      {
-        id: reviewId(row2),
-        class: "activity-review",
-        role: "region",
-        "aria-label": `Approval request: ${request.title}`
-      },
-      el("p", { class: "activity-review-title" }, request.title),
-      ...approvalRequestDetails(request),
-      el("div", { class: "activity-review-actions" }, ...actions)
+    if (row2.state === "needs-answer") {
+      const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
+      const questions = asked?.questions ?? [row2.want];
+      return [
+        el(
+          "ol",
+          { class: "activity-questions" },
+          ...questions.map((question) => el("li", {}, question))
+        ),
+        el(
+          "p",
+          { class: "activity-detail-note" },
+          "Answer in the thread, where the question is waiting for you."
+        )
+      ];
+    }
+    if (row2.state === "working") {
+      return [
+        el("p", { class: "activity-detail-label" }, "Latest activity"),
+        el("p", { class: "activity-detail-text" }, row2.want)
+      ];
+    }
+    return [el("p", { class: "activity-detail-text" }, row2.want)];
+  }
+  function detailActions(row2) {
+    const actions = [openThreadButton(row2), el("span", { class: "activity-spacer" })];
+    if (row2.state === "needs-approval" && row2.approval) {
+      const title = row2.approval.title;
+      actions.push(
+        button(
+          "ui-btn-secondary activity-reject",
+          "reject",
+          "Reject",
+          () => {
+            answerApproval(row2, false);
+          },
+          `Reject: ${title} (${row2.threadTitle})`
+        )
+      );
+      const approve = button(
+        "ui-btn-primary activity-approve",
+        "approve",
+        "Approve once",
+        () => {
+          answerApproval(row2, true);
+        },
+        `Approve once: ${title} (${row2.threadTitle})`
+      );
+      approve.disabled = settling;
+      actions.push(approve);
+    } else if (row2.state === "needs-answer") {
+      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
+        if (row2.threadId === null) close();
+        else openThread(row2);
+      });
+      answer.disabled = row2.threadId !== null && !canOpen(row2);
+      actions.push(answer);
+    }
+    return el("div", { class: "activity-detail-actions" }, ...actions);
+  }
+  function renderDetail(row2, at3) {
+    if (!row2) {
+      detail.replaceChildren();
+      detail.hidden = true;
+      return;
+    }
+    detail.hidden = false;
+    detail.dataset["rowKey"] = row2.key;
+    detail.dataset["state"] = row2.state;
+    const meta3 = [row2.projectName, ageText(row2, at3)].filter((part) => part !== null).join(" \xB7 ");
+    detail.replaceChildren(
+      el(
+        "header",
+        { class: "activity-detail-header" },
+        el(
+          "p",
+          { class: "activity-detail-meta" },
+          el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
+          meta3
+        ),
+        el("h3", { id: "activity-detail-title", class: "activity-detail-title" }, row2.threadTitle)
+      ),
+      el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
+      detailActions(row2)
     );
   }
   function rowElement(row2, at3) {
     const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
-    const openable = canOpen(row2);
-    const want = el(
+    const selected = row2.key === selectedKey;
+    const second = el(
       "span",
-      { class: "activity-want" },
-      el("span", { class: "activity-want-text" }, row2.want)
+      { class: "activity-row-second" },
+      el("span", { class: "activity-state" }, STATE_SHORT[row2.state])
     );
-    if (row2.detail) {
-      want.append(
+    if (row2.state !== "failed" && row2.state !== "finished") {
+      second.append(
         el(
           "span",
           {
-            class: row2.requestType === "shell" ? "activity-want-detail activity-want-code" : "activity-want-detail"
+            class: row2.requestType === "shell" && row2.detail ? "activity-want-text activity-want-code" : "activity-want-text"
           },
-          row2.detail
+          row2.requestType === "shell" && row2.detail ? row2.detail : row2.want
         )
       );
     }
-    const openButton = el(
+    const opener = el(
       "button",
       {
         type: "button",
         class: "activity-row-open",
         "data-control": "open",
-        tabindex: "-1",
-        "aria-label": rowLabel(row2, elapsed === null ? null : formatAgeLong(elapsed)),
-        ...openable ? {} : { "aria-disabled": "true" }
+        tabindex: selected ? "0" : "-1",
+        "aria-label": rowLabel(row2, at3),
+        ...selected ? { "aria-current": "true" } : {}
       },
       stateGlyph(row2.state),
-      el("span", { class: "activity-state" }, STATE_SHORT[row2.state]),
-      want,
       el("span", { class: "activity-thread", title: row2.threadTitle }, row2.threadTitle),
-      el("span", { class: "activity-project" }, row2.projectName ?? "\u2014"),
       elapsed === null || row2.since === null ? el("span", { class: "activity-age" }) : el(
         "time",
         { class: "activity-age", datetime: new Date(row2.since).toISOString() },
         formatAge(elapsed)
-      )
+      ),
+      second,
+      el("span", { class: "activity-project" }, row2.projectName ?? "")
     );
-    openButton.addEventListener("click", () => {
-      openThread(row2);
+    opener.addEventListener("click", () => {
+      select(row2.key);
     });
-    const item = el(
+    return el(
       "li",
       {
         class: "activity-row",
         "data-row-key": row2.key,
         "data-state": row2.state,
+        ...selected ? { "data-selected": "true" } : {},
         ...row2.threadId ? { "data-thread-id": row2.threadId } : {},
         ...row2.requestId ? { "data-request-id": row2.requestId } : {}
       },
-      openButton
+      opener
     );
-    item.append(actionsFor(row2) ?? el("div", { class: "activity-row-actions" }));
-    const review = reviewFor(row2);
-    if (review) item.append(review);
-    return item;
   }
   function groupElement(group, at3) {
     const titleId = `activity-group-${group.id}`;
@@ -67142,49 +67151,48 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     );
   }
   function rowOpeners() {
-    return [...body.querySelectorAll(".activity-row-open")];
+    return [...list.querySelectorAll(".activity-row-open")];
+  }
+  function selectedOpener() {
+    return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
   }
   function captureFocus() {
     const active2 = document.activeElement;
-    if (!(active2 instanceof HTMLElement) || !body.contains(active2)) return null;
-    const row2 = active2.closest(".activity-row");
-    const key = row2?.dataset["rowKey"];
-    if (!row2 || !key) return null;
-    const opener = row2.querySelector(".activity-row-open");
-    return {
-      key,
-      control: active2.dataset["control"] ?? "open",
-      index: opener ? rowOpeners().indexOf(opener) : 0
-    };
-  }
-  function setRovingTarget(target) {
-    for (const opener of rowOpeners()) opener.tabIndex = opener === target ? 0 : -1;
+    if (!(active2 instanceof HTMLElement)) return null;
+    if (list.contains(active2)) return { area: "list" };
+    if (detail.contains(active2)) {
+      return {
+        area: "detail",
+        key: detail.dataset["rowKey"] ?? "",
+        control: active2.dataset["control"] ?? ""
+      };
+    }
+    return null;
   }
   function restoreFocus(spot) {
-    const openers = rowOpeners();
-    if (!spot) {
-      setRovingTarget(openers[0]);
-      return;
+    if (!spot) return;
+    if (spot.area === "detail" && spot.key === selectedKey) {
+      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      if (control && !control.disabled) {
+        control.focus();
+        return;
+      }
     }
-    const row2 = [...body.querySelectorAll(".activity-row")].find(
-      (candidate) => candidate.dataset["rowKey"] === spot.key
-    );
-    const control = row2?.querySelector(`[data-control="${spot.control}"]`);
-    const opener = row2?.querySelector(".activity-row-open");
-    const fallback = openers[Math.min(spot.index, openers.length - 1)];
-    const target = control && !control.disabled ? control : opener ?? fallback;
-    setRovingTarget(opener ?? fallback);
-    if (target) target.focus({ preventScroll: false });
+    const opener = selectedOpener();
+    if (opener) opener.focus();
     else closeButton.focus();
   }
   function armSettle() {
     cancelSettle?.();
     settling = true;
+    for (const approve of detail.querySelectorAll(".activity-approve")) {
+      approve.disabled = true;
+    }
     cancelSettle = setTimer(() => {
       cancelSettle = null;
       settling = false;
-      for (const button of body.querySelectorAll(".activity-approve")) {
-        if (!button.dataset["answered"]) button.disabled = false;
+      for (const approve of detail.querySelectorAll(".activity-approve")) {
+        if (!approve.dataset["answered"]) approve.disabled = false;
       }
     }, APPROVAL_SETTLE_MS);
   }
@@ -67201,24 +67209,53 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       runs: timings.runs
     });
     const needsYou = groups.find((group) => group.id === "needs-you");
+    const working = groups.find((group) => group.id === "working");
     const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
-    if (needsYouSignature !== null && signature !== needsYouSignature) armSettle();
+    const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
     needsYouSignature = signature;
-    const pendingKeys = new Set(needsYou?.rows.map((row2) => row2.key));
-    for (const key of [...expanded]) if (!pendingKeys.has(key)) expanded.delete(key);
+    const rows = groups.flatMap((group) => group.rows);
+    let selected = rows.find((row2) => row2.key === selectedKey);
+    if (!selected) {
+      selected = rows[Math.min(selectedIndex, rows.length - 1)];
+      selectedKey = selected?.key ?? null;
+    }
+    selectedIndex = selected ? rows.indexOf(selected) : 0;
+    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+      armSettle();
+    }
+    shownKey = selectedKey;
+    const needCount = needsYou?.total ?? 0;
+    const workCount = working?.total ?? 0;
+    summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
     const populated = groups.filter((group) => group.rows.length > 0);
     if (populated.length === 0) {
-      body.replaceChildren(emptyState());
+      list.hidden = true;
+      list.replaceChildren();
+      body.dataset["empty"] = "true";
+      detail.hidden = false;
+      detail.replaceChildren(emptyState());
+      delete detail.dataset["rowKey"];
+      delete detail.dataset["state"];
     } else {
+      list.hidden = false;
+      delete body.dataset["empty"];
       const children = [];
       if (!needsYou || needsYou.rows.length === 0) {
         children.push(el("p", { class: "activity-quiet" }, "Nothing needs you right now."));
       }
       children.push(...populated.map((group) => groupElement(group, at3)));
-      body.replaceChildren(...children);
+      list.replaceChildren(...children);
+      renderDetail(selected, at3);
     }
-    dialog2.dataset["needsYou"] = String(needsYou?.total ?? 0);
+    dialog2.dataset["needsYou"] = String(needCount);
     restoreFocus(focus);
+  }
+  function select(rowKey2) {
+    if (rowKey2 !== selectedKey) {
+      selectedKey = rowKey2;
+      renderNow();
+    }
+    selectedOpener()?.focus();
   }
   function renderNow() {
     cancelRender?.();
@@ -67238,12 +67275,12 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       tickAges();
     }, ACTIVITY_AGE_REFRESH_MS);
   }
-  function moveFocus(event) {
+  function moveSelection(event) {
     const openers = rowOpeners();
     if (openers.length === 0) return;
-    const row2 = event.target instanceof Element ? event.target.closest(".activity-row") : null;
-    const current = row2?.querySelector(".activity-row-open");
-    const index = current ? openers.indexOf(current) : -1;
+    const current = event.target instanceof Element ? event.target.closest(".activity-row") : null;
+    const opener = current?.querySelector(".activity-row-open");
+    const index = opener ? openers.indexOf(opener) : -1;
     let next;
     switch (event.key) {
       case "ArrowDown":
@@ -67262,11 +67299,10 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
         return;
     }
     event.preventDefault();
-    const target = openers[next];
-    setRovingTarget(target);
-    target?.focus();
+    const target = openers[next]?.closest(".activity-row")?.dataset["rowKey"];
+    if (target) select(target);
   }
-  body.addEventListener("keydown", moveFocus);
+  list.addEventListener("keydown", moveSelection);
   const onChange = () => {
     scheduleRender();
   };
@@ -67286,7 +67322,9 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
     cancelSettle = null;
     settling = false;
     needsYouSignature = null;
-    expanded.clear();
+    selectedKey = null;
+    selectedIndex = 0;
+    shownKey = null;
     status.textContent = "";
   });
   const panel = {
@@ -67294,8 +67332,11 @@ function mountActivityPanel(api2, store2, sources3, deps = {}) {
       if (isOpen()) return;
       open2();
       needsYouSignature = null;
+      selectedKey = null;
+      selectedIndex = 0;
+      shownKey = null;
       render();
-      const first = rowOpeners()[0];
+      const first = selectedOpener();
       if (first) first.focus();
       else closeButton.focus();
       tickAges();
@@ -67318,8 +67359,8 @@ var init_activity_panel = __esm({
     ACTIVITY_RENDER_INTERVAL_MS = 250;
     ACTIVITY_AGE_REFRESH_MS = 3e4;
     STATE_SHORT = {
-      "needs-approval": "Approve",
-      "needs-answer": "Answer",
+      "needs-approval": "Approval",
+      "needs-answer": "Question",
       working: "Running",
       failed: "Failed",
       finished: "Done"
