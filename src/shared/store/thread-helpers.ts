@@ -26,6 +26,7 @@ import type {
   Thread,
   ThreadReview,
   ThreadReviewReport,
+  ReviewerInputAnswer,
 } from '@shared/types'
 import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/worktree.ts'
 import {
@@ -1084,6 +1085,23 @@ export function setThreadProposalDecision(
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
     threadProposals: recordThreadProposalDecision(t.threadProposals, decision),
+    updatedAt: Date.now(),
+  }))
+  store.emit('threads_changed')
+}
+
+/** One answer per saved review question. The ordinary user message carries it to the model. */
+export function setReviewerInputAnswer(
+  store: AppStore,
+  threadId: string,
+  answer: ReviewerInputAnswer,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    reviewerInputAnswers: [
+      ...(thread.reviewerInputAnswers ?? []).filter((entry) => entry.id !== answer.id),
+      answer,
+    ],
     updatedAt: Date.now(),
   }))
   store.emit('threads_changed')

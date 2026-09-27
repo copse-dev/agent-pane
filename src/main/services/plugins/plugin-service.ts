@@ -37,6 +37,7 @@ import {
   EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS,
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
@@ -134,6 +135,7 @@ const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearch
 
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
+const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
 
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
@@ -313,6 +315,15 @@ function migrateArtifactCheckpointEnablement(): void {
   disabled.add(ARTIFACT_CHECKPOINT_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/** Existing profiles own their disabled list, so add this new experiment off once. */
+function migrateReviewerInputEnablement(): void {
+  if (storageGet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(REVIEWER_INPUT_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -869,6 +880,7 @@ export function getPluginService(): PluginService {
   migrateAutomationsEnablement()
   migrateParallelSearchEnablement()
   migrateArtifactCheckpointEnablement()
+  migrateReviewerInputEnablement()
   migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()
   migrateAppleDevelopmentEnablement()

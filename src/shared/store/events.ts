@@ -34,6 +34,8 @@ export interface StoreEvents {
   thread_status_changed: [threadId: string, status: ThreadStatus]
   agent_activity: [threadId: string, label: string | null]
   threads_changed: []
+  reviewer_input_open: [requestId: string]
+  reviewer_input_jump: [messageId: string, requestId: string]
   // Draft composer text changed for a thread. Kept separate from
   // `threads_changed` so high-cost listeners (e.g. the conversation rebuild)
   // are not re-run on every keystroke while the user is typing.
