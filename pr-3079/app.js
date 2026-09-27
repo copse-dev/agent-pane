@@ -23008,21 +23008,20 @@ function userRunDone(report) {
   return report?.initiator === "user" && report.status === "done" ? report : null;
 }
 function reviewReportsAwaitingModel(thread) {
+  const repliedAfter = (report, anchorId) => thread.messages.some(
+    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
+  );
   const awaiting = [];
   const legacy = userRunDone(thread.reviewReport);
-  if (legacy && !thread.messages.some(
-    (message2) => message2.role === "assistant" && message2.createdAt >= legacy.startedAt
-  )) {
-    awaiting.push(legacy);
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
+  const anchored = [];
+  for (const message2 of thread.messages) {
+    if (message2.role !== "assistant") continue;
+    const report = userRunDone(message2.reviewReport);
+    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
   }
-  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
-    const message2 = thread.messages[i2];
-    if (message2?.role !== "assistant") continue;
-    const anchored = userRunDone(message2.reviewReport);
-    if (anchored) awaiting.push(anchored);
-    break;
-  }
-  return awaiting;
+  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
+  return [...awaiting, ...anchored];
 }
 function clip(text2, max) {
   const flat = text2.replace(/\s+/g, " ").trim();
