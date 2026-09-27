@@ -78312,7 +78312,10 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = scrollTop;
       return;
     }
-    if (scrollTop < lastScrollTop - 1) {
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    if (clamped) {
+    } else if (dropped) {
       userScrolledUpAt = Date.now();
       pinnedToBottom = false;
     } else if (isNearBottom()) {
