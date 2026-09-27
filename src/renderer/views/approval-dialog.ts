@@ -61,18 +61,6 @@ function approvalCopyElement(className: string, text: string): HTMLElement {
   return root
 }
 
-/** Keep the full plain-text advice visible in the Activity review. */
-export function adviceElement(advice: string): HTMLElement {
-  const children: (Node | string)[] = []
-  advice.split('\n').forEach((line, index) => {
-    if (index > 0) children.push('\n')
-    children.push(
-      line.startsWith(REASON_BULLET) ? el('span', { class: 'approval-advice-item' }, line) : line,
-    )
-  })
-  return el('div', { class: 'approval-advice' }, ...children)
-}
-
 /**
  * One request exactly as a single-request prompt presents it, fully expanded:
  * the advice, the whole body (monospaced for shell), then the footer. Shared
@@ -86,7 +74,7 @@ export function approvalRequestDetails(req: {
   type: string
 }): HTMLElement[] {
   const parts: HTMLElement[] = []
-  if (req.bodyAdvice) parts.push(adviceElement(req.bodyAdvice))
+  if (req.bodyAdvice) parts.push(approvalCopyElement('approval-advice', req.bodyAdvice))
   parts.push(
     el(
       'div',
@@ -94,7 +82,7 @@ export function approvalRequestDetails(req: {
       req.body,
     ),
   )
-  if (req.bodyFooter) parts.push(el('div', { class: 'approval-footer' }, req.bodyFooter))
+  if (req.bodyFooter) parts.push(approvalCopyElement('approval-footer', req.bodyFooter))
   return parts
 }
 
