@@ -1,5 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const PROSE = '.messages-list > .msg-assistant > .message-body > .message-text'
 
@@ -78,6 +78,9 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(metrics.codeLineHeight).toBeCloseTo(22, 1)
     expect(metrics.nestedIndent).toBeGreaterThan(20)
     expect(await $$(`${PROSE} table tbody tr`).length).toBe(3)
+    // The hover test above leaves the pointer over the transcript, which shows
+    // the message's Copy button here and the code block's Run/Copy below.
+    await parkPointer()
     await saveAppScreenshot('chat-reading-layout-dark.png')
     await $(`${PROSE} table`).scrollIntoView({ block: 'center', inline: 'nearest' })
     await saveElementScreenshot(`${PROSE} table`, 'chat-reading-layout-table.png')
@@ -204,6 +207,9 @@ describe('assistant Reading layout in the real renderer', () => {
     if (!final) throw new Error('Missing completed answer')
     await expect(final).toHaveText(expect.stringContaining('deterministic layout fixture'))
     expect((await readProseMetrics(`${PROSE}:not(.is-streaming)`)).fontSize).toBe(16)
+    // Both CI renders caught the answer's hover-only Copy button with the
+    // pointer left where the Send click landed.
+    await parkPointer()
     await saveAppScreenshot('chat-reading-layout-complete.png')
   })
 })
