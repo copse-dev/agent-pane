@@ -1,5 +1,5 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const PROSE = '.messages-list > .msg-assistant > .message-body > .message-text'
 
@@ -78,12 +78,45 @@ describe('assistant Reading layout in the real renderer', () => {
     expect(metrics.codeLineHeight).toBeCloseTo(22, 1)
     expect(metrics.nestedIndent).toBeGreaterThan(20)
     expect(await $$(`${PROSE} table tbody tr`).length).toBe(3)
+    // The hover test above leaves the pointer over the transcript, which shows
+    // the message's Copy button here and the code block's Run/Copy below.
+    await parkPointer()
     await saveAppScreenshot('chat-reading-layout-dark.png')
     await $(`${PROSE} table`).scrollIntoView({ block: 'center', inline: 'nearest' })
     await saveElementScreenshot(`${PROSE} table`, 'chat-reading-layout-table.png')
     await $(`${PROSE} pre`).scrollIntoView({ block: 'center', inline: 'nearest' })
     await saveElementScreenshot(`${PROSE} pre`, 'chat-reading-layout-code.png')
     await scrollToStart()
+  })
+
+  it('marks the user prompt with its tinted fill alone, without a hairline border', async () => {
+    const readBubble = () =>
+      browser.execute(() => {
+        const bubble = document.querySelector('.messages-list > .msg-user')
+        const list = document.querySelector('.messages-list')
+        if (!bubble || !list) throw new Error('Missing user prompt')
+        const style = getComputedStyle(bubble)
+        return {
+          borderWidth: style.borderTopWidth,
+          borderStyle: style.borderTopStyle,
+          background: style.backgroundColor,
+          listBackground: getComputedStyle(list).backgroundColor,
+        }
+      })
+    for (const theme of ['dark', 'light']) {
+      await browser.execute((next) => {
+        document.documentElement.dataset.theme = next
+      }, theme)
+      const bubble = await readBubble()
+      expect(bubble.borderStyle).toBe('none')
+      expect(bubble.borderWidth).toBe('0px')
+      expect(bubble.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(bubble.background).not.toBe(bubble.listBackground)
+      await saveElementScreenshot('.messages-list > .msg-user', `user-prompt-fill-${theme}.png`)
+    }
+    await browser.execute(() => {
+      document.documentElement.dataset.theme = 'dark'
+    })
   })
 
   it('wraps in a light narrow split while code keeps its own horizontal scroll', async () => {
@@ -174,6 +207,9 @@ describe('assistant Reading layout in the real renderer', () => {
     if (!final) throw new Error('Missing completed answer')
     await expect(final).toHaveText(expect.stringContaining('deterministic layout fixture'))
     expect((await readProseMetrics(`${PROSE}:not(.is-streaming)`)).fontSize).toBe(16)
+    // Both CI renders caught the answer's hover-only Copy button with the
+    // pointer left where the Send click landed.
+    await parkPointer()
     await saveAppScreenshot('chat-reading-layout-complete.png')
   })
 })

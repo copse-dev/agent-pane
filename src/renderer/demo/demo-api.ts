@@ -676,7 +676,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     approval: { respond: resolvedVoid },
     review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
-    alerts: { threadFinished: resolvedVoid },
+    alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
       respond: resolvedVoid,
       onRequest: subscribe,

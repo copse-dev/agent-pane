@@ -135,6 +135,13 @@ returned model identities, provider timing/usage when reported, and available ch
 Missing usage/confidence/cost stays absent. No retries or model substitutions occur. Error output
 omits provider response bodies and process logs, which can contain submitted content.
 
+## Local GLiNER2.5-Decide
+
+`benchmarks/classifiers/gliner-decide/server.py` serves Fastino's GLiNER2.5-Decide encoder over the
+`systemone` protocol on loopback; `benchmarks/classifiers/gliner-decide.json` points
+`eval:classifier` at it. Zero-shot it did not separate shell-scope or escalation-tier answers; the
+setup and measurements are in that directory's README.
+
 ## SemIf runtime
 
 Install [SemIf](https://github.com/TheoLeeCJ/SemIf#quick-start) separately, prepare its Python/backend
