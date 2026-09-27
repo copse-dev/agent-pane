@@ -110,6 +110,11 @@ let serverStatuses: McpServerStatus[] = []
 // mutating the shared registry/state, or it orphans a child process and
 // re-registers tools the newer teardown already cleared.
 let loadGeneration = 0
+// Bumped whenever the bundled in-process servers are reconnected: by a plugin
+// toggle's resync, a full load, teardown and shutdown. A bundled connect started
+// under an older value is superseded and must not register tools or publish its
+// status — otherwise a quick enable→disable leaves the canvas tool registered.
+let bundledGeneration = 0
 
 export function getMcpServerStatuses(): McpServerStatus[] {
   return serverStatuses.map((s) => ({ ...s }))
@@ -412,9 +417,21 @@ async function registerClientTools(
   registry: ToolRegistry,
   client: Client,
   server: Omit<McpPermissionTarget, 'toolName'>,
-  bundled = false,
 ): Promise<string[]> {
   const { tools } = await client.listTools()
+  return registerListedTools(registry, client, server, tools, false)
+}
+
+type ListedTools = Awaited<ReturnType<Client['listTools']>>['tools']
+
+/** Register tools already listed from a client; synchronous so callers can check staleness first. */
+function registerListedTools(
+  registry: ToolRegistry,
+  client: Client,
+  server: Omit<McpPermissionTarget, 'toolName'>,
+  tools: ListedTools,
+  bundled: boolean,
+): string[] {
   const toolNames: string[] = []
   for (const tool of tools) {
     const fullName = mcpToolName(server.serverName, tool.name)
@@ -494,22 +511,27 @@ async function registerClientTools(
  */
 async function connectBundledServers(
   registry: ToolRegistry,
-  generation: number,
+  isCurrent: () => boolean,
 ): Promise<McpServerStatus[]> {
   if (!getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
   const bundled = await createBundledMcpServers()
-  if (generation !== loadGeneration) {
-    await Promise.allSettled(bundled.map((b) => b.client.close()))
-    return []
-  }
   const statuses: McpServerStatus[] = []
-  for (const { name, client } of bundled) {
+  for (const [index, { name, client }] of bundled.entries()) {
     try {
+      const listed = isCurrent() ? (await client.listTools()).tools : null
+      // Superseded while starting or listing: close this and every later client
+      // without touching the registry. Servers this call already registered stay
+      // in activeServers, where the newer reconnect removes them.
+      if (listed === null || !isCurrent()) {
+        await Promise.allSettled(bundled.slice(index).map((b) => b.client.close()))
+        return []
+      }
       activeServers.push({ config: { name, transport: 'in-process' }, client })
-      const tools = await registerClientTools(
+      const tools = registerListedTools(
         registry,
         client,
         { serverName: name, origin: 'built-in' },
+        listed,
         true,
       )
       statuses.push({
@@ -625,6 +647,7 @@ async function teardown(registry: ToolRegistry): Promise<void> {
   // Invalidate any in-flight load so its connects close themselves rather than
   // re-registering into the set we are clearing.
   loadGeneration++
+  bundledGeneration++
   for (const name of registry.names()) {
     if (name.startsWith(MCP_TOOL_PREFIX)) registry.unregister(name)
   }
@@ -636,6 +659,15 @@ async function teardown(registry: ToolRegistry): Promise<void> {
 
 export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const generation = ++loadGeneration
+  const bundledRun = ++bundledGeneration
+  const bundledCurrent = (): boolean =>
+    generation === loadGeneration && bundledRun === bundledGeneration
+  // A plugin toggle can reconnect the bundled servers while this load is still
+  // connecting configured ones; publish the toggle's bundled statuses then.
+  const publishedBundled = (): McpServerStatus[] =>
+    bundledRun === bundledGeneration
+      ? bundledStatuses
+      : serverStatuses.filter((status) => status.transport === 'in-process')
   // E2e profiles are isolated from real user state. When a spec writes the
   // supported user-data mcp.json surface, load only that file; otherwise retain
   // the ordinary in-process bundled-server coverage and skip configured servers.
@@ -652,7 +684,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   // make the canvas untestable in the only tier that can render it — and the gate
   // above still applies, so a run whose profile leaves the plugin off connects
   // nothing at all.
-  const bundledStatuses = e2eMcpFixture ? [] : await connectBundledServers(registry, generation)
+  const bundledStatuses = e2eMcpFixture ? [] : await connectBundledServers(registry, bundledCurrent)
   // Skip *configured* MCP server connections under agent-eval and e2e. e2e mocks
   // the LLM and must not reach the network — a curated HTTP server (e.g. the MDN
   // server at https://mcp.mdn.mozilla.net/) would block the awaited startup
@@ -664,7 +696,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
     (process.env['COPSE_E2E'] === '1' && !e2eMcpFixture)
   ) {
     if (generation === loadGeneration) {
-      serverStatuses = bundledStatuses
+      serverStatuses = publishedBundled()
       await migrateLegacyMcpToolGrants()
     }
     return
@@ -672,7 +704,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const { active, untrusted } = e2eMcpFixtureConfig ?? (await collectConfigs())
   if (generation !== loadGeneration) return // superseded while reading config
   const userDisabled = getUserDisabledServerNames()
-  if (active.length === 0 && untrusted.length === 0 && bundledStatuses.length === 0) {
+  if (active.length === 0 && untrusted.length === 0 && publishedBundled().length === 0) {
     serverStatuses = []
     await migrateLegacyMcpToolGrants()
     return
@@ -685,7 +717,7 @@ export async function loadMcpServers(registry: ToolRegistry): Promise<void> {
   const untrustedStatuses = untrusted.map((cfg) => untrustedStatus(cfg, userDisabled))
   // Only publish statuses if a newer load hasn't started in the meantime.
   if (generation === loadGeneration) {
-    serverStatuses = [...bundledStatuses, ...connected, ...untrustedStatuses]
+    serverStatuses = [...publishedBundled(), ...connected, ...untrustedStatuses]
     await migrateLegacyMcpToolGrants()
   }
 }
@@ -765,6 +797,7 @@ export async function reloadMcpServers(registry: ToolRegistry): Promise<McpServe
  * {@link reloadMcpServers} would close and reconnect every one of them.
  */
 async function resyncBundledServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
+  const run = ++bundledGeneration
   const bundled = activeServers.filter((server) => server.config.transport === 'in-process')
   const bundledNames = new Set(bundled.map((server) => server.config.name))
   for (const [toolName, meta] of toolMeta) {
@@ -776,8 +809,10 @@ async function resyncBundledServers(registry: ToolRegistry): Promise<McpServerSt
   const configured = activeServers.filter((server) => server.config.transport !== 'in-process')
   activeServers.length = 0
   activeServers.push(...configured)
+  const bundledStatuses = await connectBundledServers(registry, () => run === bundledGeneration)
+  // A newer toggle took over while this one connected; it publishes instead.
+  if (run !== bundledGeneration) return getMcpServerStatuses()
   const configuredStatuses = serverStatuses.filter((status) => status.transport !== 'in-process')
-  const bundledStatuses = await connectBundledServers(registry, loadGeneration)
   serverStatuses = [...bundledStatuses, ...configuredStatuses]
   return getMcpServerStatuses()
 }
@@ -803,6 +838,7 @@ export async function reloadMcpServersForPluginToggle(
 
 export async function shutdownMcpServers(): Promise<void> {
   loadGeneration++ // invalidate any in-flight load
+  bundledGeneration++
   await Promise.allSettled(activeServers.map((s) => s.client.close()))
   activeServers.length = 0
   toolMeta.clear()

@@ -102,6 +102,34 @@ describe('reloadMcpServersForPluginToggle', () => {
     assert.equal(tools.has(otherTool), true)
   })
 
+  it('does not let a superseded enable register the canvas tool after a disable', async () => {
+    // Toggle on, then back off while the enable's bundled-server start is still
+    // in flight. The in-process start settles within microtasks, so the disable
+    // is placed after 0, 1, 2 … microtask hops; every placement must leave the
+    // tool unregistered.
+    const hop = (): Promise<void> => Promise.resolve()
+    for (let turns = 0; turns <= 200; turns++) {
+      await shutdownMcpServers()
+      tools = new ToolRegistry()
+      plugins.disable(MCP_UI_CANVAS_PLUGIN_ID)
+      await loadMcpServers(tools)
+
+      plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+      const enabling = reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+      for (let i = 0; i < turns; i++) await hop()
+      plugins.disable(MCP_UI_CANVAS_PLUGIN_ID)
+      const disabling = reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+      const [, statuses] = await Promise.all([enabling, disabling])
+
+      assert.equal(tools.has(RENDER_TOOL), false, `tool registered after ${String(turns)} hops`)
+      assert.equal(
+        statuses?.some((status) => status.name === CANVAS_SERVER_NAME),
+        false,
+        `status reported after ${String(turns)} hops`,
+      )
+    }
+  })
+
   it('leaves MCP servers alone for a plugin that gates no bundled server', async () => {
     plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
     await loadMcpServers(tools)
