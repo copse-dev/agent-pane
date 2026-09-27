@@ -700,6 +700,9 @@ describe('VNC viewer', function () {
       )
       await $('.toast').waitForDisplayed()
       assert.match(await $('.toast').getText(), /forgot the saved desktop login/i)
+      // Let it go before the shared-screen capture, which one of three CI runs
+      // caught with this toast still stacked above its own.
+      await $('.toast').waitForExist({ reverse: true, timeout: 10_000 })
     }
 
     const sampled = await browser.execute(() => {
