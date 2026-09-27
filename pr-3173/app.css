@@ -1264,11 +1264,17 @@ copse-ui-field input[type=password],
   white-space: nowrap;
 }
 .chat-thread-owner {
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-left: var(--spacing-xs);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   white-space: nowrap;
+}
+.chat-row .chat-title:has(+ .chat-thread-owner) {
+  flex-grow: 0;
 }
 .automation-schedule-toggle .chat-thread-owner {
   margin-left: 0;
@@ -2490,6 +2496,7 @@ copse-ui-field input[type=password],
 .supervised-task-summary .supervised-task-label,
 .supervised-task-summary .supervised-task-state {
   display: block;
+  grid-column: 2;
 }
 .supervised-task-detail,
 .supervised-task-feedback {
@@ -2673,6 +2680,7 @@ copse-ui-field input[type=password],
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+  container: browser-toolbar / inline-size;
 }
 .browser-nav-btn {
   flex-shrink: 0;
@@ -2716,6 +2724,11 @@ copse-ui-field input[type=password],
 .browser-go-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+@container browser-toolbar (max-width: 360px) {
+  .browser-go-btn {
+    display: none;
+  }
 }
 .browser-menu-wrap {
   position: relative;
@@ -5608,6 +5621,14 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
   color: var(--text-secondary);
   white-space: nowrap;
 }
+.hook-card-group > .hook-card-header > .hook-name {
+  flex-shrink: 0;
+}
+.hook-card-group > .hook-card-header > .hook-card-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .hook-status-icon {
   display: inline-flex;
   align-items: center;
@@ -6313,13 +6334,16 @@ html.mark-external-links .browser-links-scope a[href^=http]:not([data-file-refer
 .portrait-panel-overflow-item.is-active {
   color: var(--accent);
 }
-.footer-model-host {
+.footer-model-host,
+.footer-branch-host {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: max-content;
+}
+.footer-model-host .model-picker {
   max-width: min(220px, 40vw);
 }
-.footer-branch-host {
-  min-width: 0;
-  flex-shrink: 1;
+.footer-branch-host .branch-picker {
   max-width: min(200px, 30vw);
 }
 .footer-checkout-host {
@@ -14470,7 +14494,13 @@ html.is-popout .roadmap-thread-indicator {
   text-overflow: ellipsis;
 }
 .popout-titlebar .popout-panel-bar {
-  margin-left: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: flex-end;
+  -webkit-app-region: drag;
+}
+.popout-titlebar .popout-panel-bar .portrait-panel-overflow {
+  -webkit-app-region: no-drag;
 }
 .popout-titlebar .popout-panel-bar .titlebar-text-btn,
 .popout-titlebar .popout-panel-bar .portrait-panel-btn {
