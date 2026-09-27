@@ -638,13 +638,24 @@
 .portrait-panel-overflow-item.is-active {
   color: var(--accent);
 }
-.footer-model-host {
+/* The model and branch pickers share whatever the fixed controls leave, each
+   up to its own width: zero basis plus `max-width: max-content`. A short
+   branch like `work` takes its whole width and the long model name gives way,
+   and when both are long they split the room evenly. Plain shrinking took
+   from both in proportion to their width, which cut a four-letter branch
+   while the model name still had plenty to spare. The caps sit on the pickers
+   so each host's max-content already honours them. `footer-compact.ts`
+   measures the natural width with the basis back at `auto`. */
+.footer-model-host,
+.footer-branch-host {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: max-content;
+}
+.footer-model-host .model-picker {
   max-width: min(220px, 40vw);
 }
-.footer-branch-host {
-  min-width: 0;
-  flex-shrink: 1;
+.footer-branch-host .branch-picker {
   max-width: min(200px, 30vw);
 }
 .footer-checkout-host {
