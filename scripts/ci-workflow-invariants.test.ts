@@ -594,31 +594,87 @@ describe('close-orphaned-screenshot-reviews.yml workflow invariants', () => {
 
 describe('cla.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/cla.yml'), 'utf8')
+  const JOB_PERMISSIONS =
+    /^ {4}permissions:\n {6}contents: read\n(?: {6}#.*\n)* {6}pull-requests: write\n {6}issues: write\n {6}statuses: write$/gm
 
-  it('reads the API only, with just enough permission to set the status and comment', () => {
+  it('never checks out or runs pull request code, and holds just enough permission', () => {
     assert.match(workflow, /^ {2}pull_request_target:$/m)
-    assert.doesNotMatch(workflow, /uses: actions\/checkout/)
     assert.match(workflow, /^permissions: \{\}$/m)
     // createComment on a pull request is refused with pull-requests: read.
-    assert.match(
+    assert.equal(workflow.match(JOB_PERMISSIONS)?.length, 2, 'both jobs, and nothing broader')
+    assert.doesNotMatch(workflow, /^ +run:/m, 'no shell step; the script only reads the API')
+    assert.doesNotMatch(
       workflow,
-      /^ {4}permissions:\n {6}contents: read\n(?: {6}#.*\n)* {6}pull-requests: write\n {6}issues: write\n {6}statuses: write$/m,
+      /github\.event\.pull_request\.head|github\.head_ref|refs\/pull\//,
+      'under pull_request_target the head is attacker-controlled',
+    )
+    const checkouts = workflow.match(/uses: actions\/checkout@.*\n(?: {8}.*\n)+/g) ?? []
+    assert.equal(checkouts.length, 2)
+    const check = checkouts.at(0) ?? ''
+    const backfill = checkouts.at(1) ?? ''
+    // github.sha is the base branch tip under pull_request_target.
+    assert.match(check, /^ {10}ref: \$\{\{ github\.sha \}\}$/m)
+    // Under workflow_dispatch github.sha is the dispatched ref, which any
+    // writer controls; the backfill always runs main's script.
+    assert.match(backfill, /^ {10}ref: main$/m)
+    for (const checkout of checkouts) {
+      assert.match(checkout, /^ {10}persist-credentials: false$/m)
+      assert.match(checkout, /^ {10}sparse-checkout: scripts\/cla-check\.mts$/m)
+    }
+  })
+
+  it('refuses a backfill dispatched from any branch but main', () => {
+    const job = workflow.slice(workflow.indexOf('\n  backfill:\n'))
+    const refusal = job.indexOf("if (context.ref !== 'refs/heads/main') {")
+    assert.ok(refusal > 0, 'the backfill checks the ref it was started from')
+    assert.match(job.slice(refusal), /^ {14}core\.setFailed\(/m)
+    assert.ok(
+      refusal < job.indexOf('await import('),
+      'the refusal comes before the script is loaded',
     )
   })
 
-  it('attributes agent-authored commits to the pull request opener before trusting c.author', () => {
-    const exemption = workflow.indexOf('if (NON_AUTHOR_EMAIL.test(authorEmail)) {')
-    const linkedAuthor = workflow.indexOf('await checkUser(c.author, sha);')
-    assert.ok(exemption >= 0, 'expected the commit-author agent-email branch')
-    assert.ok(
-      exemption < linkedAuthor,
-      'GitHub links noreply@anthropic.com to @claude, so the email must be tested first',
+  it('shares one evaluation between the event path and the backfill', () => {
+    assert.doesNotMatch(workflow, /createCommitStatus/, 'the rules live in scripts/cla-check.mts')
+    assert.match(workflow, /const \{ evaluatePullRequest \} = await import\(/)
+    assert.match(workflow, /const \{ evaluateOpenPullRequests \} = await import\(/)
+    assert.equal(
+      workflow.match(/`\$\{process\.env\.GITHUB_WORKSPACE\}\/scripts\/cla-check\.mts`/g)?.length,
+      2,
     )
+  })
+
+  it('backfills heads no pull request event reached, and results an older rule computed', () => {
+    // CLA is a required status. A head moved with the default GITHUB_TOKEN
+    // raises no event, a pull request opened before the workflow existed never
+    // had one, and a signature or rule change must reach every open head.
+    const push = workflow.match(/^ {2}push:\n(?: {4}.*\n)+/m)?.[0] ?? ''
+    assert.match(push, /^ {4}branches: \[main\]$/m)
+    for (const path of [
+      '.github/cla-signatures.json',
+      '.github/workflows/cla.yml',
+      'scripts/cla-check.mts',
+    ]) {
+      assert.ok(
+        push.includes(`      - ${path}\n`),
+        `a change to ${path} must re-evaluate every open head`,
+      )
+    }
+    // A stacked pull request retargeted onto main carries whatever its old
+    // base's workflow set; a cosmetic edit must not re-run the check.
+    assert.match(workflow, /^ {4}types: \[[^\]]*\bedited\b[^\]]*\]$/m)
     assert.match(
       workflow,
-      /if \(NON_AUTHOR_EMAIL\.test\(authorEmail\)\) \{\n(?: {16}\/\/.*\n)* {16}if \(!openedByMaintainer\) await checkUser\(pr\.user, sha\);\n {14}\} else if \(c\.author\) \{/,
-      'an agent email is forgeable, so its commit must still be answered for by a signed person',
+      /github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null/,
     )
+    assert.match(workflow, /^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '[^']+'$/m)
+    assert.match(workflow, /^ {2}workflow_dispatch:$/m)
+    assert.match(
+      workflow,
+      /github\.event_name == 'push' \|\| github\.event_name == 'schedule' \|\|\n\s+github\.event_name == 'workflow_dispatch'/,
+    )
+    assert.match(workflow, /ONLY_CHANGED: \$\{\{ github\.event_name == 'schedule' \}\}/)
+    assert.match(workflow, /\{ onlyChanged: process\.env\.ONLY_CHANGED === 'true' \}/)
   })
 })
 
