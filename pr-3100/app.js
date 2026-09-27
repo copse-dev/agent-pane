@@ -870,7 +870,8 @@ var init_model_parameters = __esm({
         // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
         // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
         // for the model in general; we keep `medium` for this scenario on our own
-        // evidence, and the row stays opt-in and experimental because that evidence is
+        // evidence. Like every recipe it applies by default (a user-set field replaces
+        // its value), but the row stays labelled experimental because that evidence is
         // one benchmark on one host.
         params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
       },
@@ -21373,6 +21374,11 @@ var init_unknown_value = __esm({
 });
 
 // packages/agent/src/parse-agent-run-payload.ts
+function parseReviewContext(value) {
+  if (typeof value !== "string" || value.trim() === "") return void 0;
+  return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}
+[review summary truncated]`;
+}
 function parseAgentRunPayload(rawPrompt) {
   try {
     const parsed2 = JSON.parse(rawPrompt);
@@ -21383,6 +21389,7 @@ function parseAgentRunPayload(rawPrompt) {
       }
       const invokedSkills = external_exports.array(external_exports.string()).safeParse(parsed2["invokedSkills"]);
       const priorTodos = external_exports.array(todoSchema).safeParse(parsed2["priorTodos"]);
+      const reviewContext = parseReviewContext(parsed2["reviewContext"]);
       const normalizedTodos = priorTodos.success ? priorTodos.data.map((todo) => ({
         id: todo.id,
         content: todo.content,
@@ -21399,7 +21406,8 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed2["model"] === "string" && parsed2["model"] ? { model: parsed2["model"] } : {},
         ...isReasoningLevel(parsed2["reasoning"]) ? { reasoning: parsed2["reasoning"] } : {},
         ...typeof parsed2["turnTreeId"] === "string" && parsed2["turnTreeId"] ? { turnTreeId: parsed2["turnTreeId"] } : {},
-        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {}
+        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {},
+        ...reviewContext !== void 0 ? { reviewContext } : {}
       };
     }
     const content = userContentSchema.safeParse(parsed2);
@@ -21412,7 +21420,7 @@ function parseAgentRunPayload(rawPrompt) {
     return { userContent: rawPrompt, invokedSkills: [], priorTodos: [] };
   }
 }
-var userContentSchema, todoSchema;
+var userContentSchema, todoSchema, REVIEW_CONTEXT_CHAR_CAP;
 var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
@@ -21443,6 +21451,7 @@ var init_parse_agent_run_payload = __esm({
       ]).optional(),
       assignedModel: external_exports.enum(["cloud", "local"]).optional()
     });
+    REVIEW_CONTEXT_CHAR_CAP = 2e4;
   }
 });
 
@@ -22990,6 +22999,100 @@ var init_persistence = __esm({
   }
 });
 
+// src/shared/store/review-reports.ts
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function userRunDone(report) {
+  return report?.initiator === "user" && report.status === "done" ? report : null;
+}
+function reviewReportsAwaitingModel(thread) {
+  const repliedAfter = (report, anchorId) => thread.messages.some(
+    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
+  );
+  const awaiting = [];
+  const legacy = userRunDone(thread.reviewReport);
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
+  const anchored = [];
+  for (const message2 of thread.messages) {
+    if (message2.role !== "assistant") continue;
+    const report = userRunDone(message2.reviewReport);
+    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
+  }
+  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
+  return [...awaiting, ...anchored];
+}
+function clip(text2, max) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+function reviewedLine(report) {
+  const parts = ["Copse Reviewer"];
+  if (report.baseRef !== "") {
+    const head = report.dirtyWorkingTree ? "the working tree" : `HEAD${report.headCommit !== null ? ` (${report.headCommit.slice(0, 10)})` : ""}`;
+    parts.push(`reviewed ${head} against ${report.baseRef}`);
+  }
+  if (report.models.reviewer !== "") parts.push(`with ${report.models.reviewer}`);
+  return `${parts.join(" ")}.`;
+}
+function groundLine(report) {
+  if (!report.execution.executed) {
+    return report.execution.reason === "" ? "Read-only review: nothing was executed." : `Read-only review: nothing was executed (${report.execution.reason}).`;
+  }
+  const checks = report.checks.map((check2) => `${check2.kind} ${check2.verdict}`);
+  const notChecked = report.notChecked.map((note) => `not checked: ${note}`);
+  const all = [...checks, ...notChecked];
+  return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
+}
+function findingLine(finding, index) {
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+}
+function reportContextText(report) {
+  const lines = [reviewedLine(report)];
+  const ground = groundLine(report);
+  if (ground !== null) lines.push(ground);
+  if (report.note !== void 0) lines.push(report.note);
+  const live = report.findings.filter((finding) => finding.dismissed !== true);
+  const dismissed = report.findings.length - live.length;
+  const dismissedNote = dismissed > 0 ? ` (${String(dismissed)} more dismissed by the user and left out)` : "";
+  if (live.length === 0) {
+    lines.push(report.findings.length === 0 ? "No findings." : `No open findings${dismissedNote}.`);
+  } else {
+    lines.push(`${String(live.length)} finding(s)${dismissedNote}:`);
+    live.slice(0, MAX_CONTEXT_FINDINGS).forEach((finding, index) => {
+      lines.push(findingLine(finding, index));
+    });
+    if (live.length > MAX_CONTEXT_FINDINGS) {
+      lines.push(`\u2026and ${String(live.length - MAX_CONTEXT_FINDINGS)} more on the card.`);
+    }
+  }
+  if (report.appendix > 0) {
+    lines.push(`${String(report.appendix)} lower-ranked finding(s) fell below the report's cut.`);
+  }
+  return lines.join("\n");
+}
+function reviewReportModelContext(reports) {
+  if (reports.length === 0) return void 0;
+  const shown = reports.slice(-MAX_CONTEXT_REPORTS);
+  const omitted = reports.length - shown.length;
+  const intro = reports.length === 1 ? "Since your last reply the user ran Copse Reviewer on this thread\u2019s changes. You did not start this review; the user sees its report as a card in the conversation." : `Since your last reply the user ran Copse Reviewer ${String(reports.length)} times on this thread\u2019s changes, oldest first. You did not start these reviews; the user sees each report as a card in the conversation.` + (omitted > 0 ? ` Only the latest ${String(shown.length)} are summarised here.` : "");
+  const body = [intro, ...shown.map(reportContextText)].join("\n\n");
+  return `<${REVIEW_CONTEXT_TAG}>
+${body}
+</${REVIEW_CONTEXT_TAG}>`;
+}
+var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
+var init_review_reports = __esm({
+  "src/shared/store/review-reports.ts"() {
+    MAX_CONTEXT_REPORTS = 3;
+    MAX_CONTEXT_FINDINGS = 12;
+    MAX_CONTEXT_CLAIM_CHARS = 400;
+    REVIEW_CONTEXT_TAG = "copse_review_report";
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical = CANONICAL_WORDS.get(word);
@@ -23925,10 +24028,12 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshPayload(store2, threadId, payload) {
+function refreshPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
   const thread = getThreadById(store2, threadId);
+  const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   return {
     ...payload,
+    ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
     // Send the per-thread model so the run uses the picker's selection rather
@@ -24230,6 +24335,7 @@ var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
+    init_review_reports();
     init_agent_activity();
     init_continuation_budget();
     init_thread_hydration();
@@ -37598,7 +37704,7 @@ var init_demo_api = __esm({
         stability: "stable",
         name: "Todos",
         version: "1.0.0",
-        description: "Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
+        description: "Plan and track multi-step work inside a thread. Adds the `todo_write` tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
         enabled: true,
         contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["todo_write", "todo_read"] },
         settings: []
@@ -37617,7 +37723,7 @@ var init_demo_api = __esm({
             id: "maxReviewCycles",
             kind: "number",
             title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn.",
+            description: "How many times a failing review may buy the agent another turn. `0` turns retries off.",
             default: 2,
             value: 2
           }
@@ -56791,29 +56897,59 @@ function readNumberInput(input2) {
 function formatNumber(value) {
   return value === void 0 ? "" : String(value);
 }
-function createModelParametersSection(api2) {
+function samplingPlaceholder(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : String(recipeValue);
+}
+function blankHint(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : `Blank sends the recommended ${String(recipeValue)}.`;
+}
+function createModelParametersSection(api2, options = {}) {
   const fields = el("div", { class: "model-parameter-fields" });
-  const recommendBtn = el(
-    "button",
-    { type: "button", class: "provider-secondary", "data-testid": "model-parameter-recommend" },
-    "Use recommended"
+  const modelSelect = el("select", {
+    id: "settings-model-parameters-model",
+    "data-testid": "model-parameter-model"
+  });
+  const modelField = uiField({
+    label: "Model to tune",
+    control: modelSelect,
+    hint: "Any model you can pick. Changing this does not change your chat model."
+  });
+  const customisedList = el("div", { class: "provider-chips model-parameter-customised" });
+  const customisedRow = el(
+    "div",
+    { class: "model-parameter-customised-row", "data-testid": "model-parameter-customised" },
+    el("span", { class: "field-hint" }, "Customised:"),
+    customisedList
   );
   const recommendNote = el("p", { class: "field-hint model-parameter-recommend-note" });
   const recommendRow = el(
     "div",
-    { class: "model-parameter-recommend", hidden: "" },
-    recommendBtn,
+    { class: "model-parameter-recommend", "data-testid": "model-parameter-recommend" },
     recommendNote
   );
+  const resetBtn = el("button", {
+    type: "button",
+    class: "provider-secondary",
+    "data-testid": "model-parameter-reset"
+  });
   const note = el("p", { class: "settings-fieldset-desc model-parameter-note" });
   const root = el(
     "div",
     { class: "model-parameter-section", "data-testid": "model-parameters" },
-    el("h4", { class: "model-role-heading" }, "Model parameters"),
-    note,
-    recommendRow,
-    fields
+    // Which model, and what it runs on before any field is touched.
+    el(
+      "div",
+      { class: "model-parameter-header", "data-testid": "model-parameter-header" },
+      el("h4", { class: "model-role-heading" }, "Model parameters"),
+      modelField,
+      customisedRow,
+      note,
+      recommendRow
+    ),
+    fields,
+    resetBtn
   );
+  const picker = options.mountModelPicker?.(modelSelect);
   const reasoningSelect = el("select", {
     name: "modelReasoning",
     "data-testid": "model-parameter-reasoning"
@@ -56861,15 +56997,47 @@ function createModelParametersSection(api2) {
   function selected() {
     return stored[current] ?? {};
   }
+  function recipe() {
+    return recommendedModelParameters(current)?.params ?? {};
+  }
   function commit(next) {
     dirty = true;
     const sanitized = sanitizeModelParameters(next, current);
     if (isEmptyModelParameters(sanitized)) {
       const { [current]: _cleared, ...rest } = stored;
       stored = rest;
-      return;
+    } else {
+      stored = { ...stored, [current]: sanitized };
     }
-    stored = { ...stored, [current]: sanitized };
+    renderCustomised();
+    renderReset();
+  }
+  function renderCustomised() {
+    const models = Object.keys(stored);
+    customisedRow.hidden = models.length === 0;
+    customisedList.replaceChildren(
+      ...models.map((model) => {
+        const chip2 = el(
+          "button",
+          {
+            type: "button",
+            class: model === current ? "provider-chip active" : "provider-chip",
+            "aria-pressed": String(model === current),
+            "data-model": model
+          },
+          modelDisplayLabel(model)
+        );
+        chip2.addEventListener("click", () => {
+          selectModel(model);
+          void picker?.refresh(model);
+        });
+        return chip2;
+      })
+    );
+  }
+  function renderReset() {
+    resetBtn.hidden = stored[current] === void 0;
+    resetBtn.textContent = recommendedModelParameters(current) === null ? "Clear custom values" : "Reset to recommended";
   }
   function renderRecommendation() {
     const recommendation = recommendedModelParameters(current);
@@ -56885,9 +57053,11 @@ function createModelParametersSection(api2) {
       recommendation.sourceLabel ?? "model card"
     );
     recommendNote.replaceChildren(
-      document.createTextNode(`${recommendation.label} \u2014 fills the fields below from its `),
+      document.createTextNode(`Applied by default: ${recommendation.label}, from its `),
       link,
-      document.createTextNode(". Change or clear them afterwards like any other value.")
+      document.createTextNode(
+        ". Blank fields use it; a value you enter replaces the recommended one."
+      )
     );
   }
   function ceilingHint(gated) {
@@ -56899,14 +57069,17 @@ function createModelParametersSection(api2) {
   function render() {
     const support = modelParameterSupport(current);
     const params = selected();
+    const defaults = recipe();
     fields.replaceChildren();
     renderRecommendation();
-    if (support.unavailableReason) {
-      note.textContent = support.unavailableReason;
+    renderCustomised();
+    renderReset();
+    if (!current) {
+      note.textContent = "Choose a model to tune how it runs, wherever it is used.";
       return;
     }
-    if (!current) {
-      note.textContent = "Choose a chat model above to tune how it runs.";
+    if (support.unavailableReason) {
+      note.textContent = support.unavailableReason;
       return;
     }
     const parts = [
@@ -56919,7 +57092,11 @@ function createModelParametersSection(api2) {
     note.textContent = parts.join(" ");
     if (support.reasoning.length > 0) {
       reasoningSelect.replaceChildren(
-        el("option", { value: "" }, DEFAULT_OPTION_LABEL),
+        el(
+          "option",
+          { value: "" },
+          defaults.reasoning === void 0 ? DEFAULT_OPTION_LABEL : `Recommended (${REASONING_LABELS[defaults.reasoning]})`
+        ),
         ...support.reasoning.map(
           (level) => el("option", { value: level }, REASONING_LABELS[level])
         )
@@ -56940,11 +57117,15 @@ function createModelParametersSection(api2) {
     }
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens);
+      maxOutputTokensInput.placeholder = samplingPlaceholder(
+        defaults.maxOutputTokens,
+        "Provider default"
+      );
       fields.append(
         uiField({
           label: "Maximum output tokens",
           control: maxOutputTokensInput,
-          hint: "Per response, including hidden reasoning. Blank uses the provider default; a low cap can truncate a tool call."
+          hint: `Per response, including hidden reasoning. ${blankHint(defaults.maxOutputTokens, "Blank uses the provider default.")} A low cap can truncate a tool call.`
         })
       );
     }
@@ -56955,11 +57136,13 @@ function createModelParametersSection(api2) {
       const max = field === "temperature" ? support.temperatureMax : SAMPLING_BOUNDS[field].max;
       input2.max = String(max);
       input2.value = formatNumber(params[field]);
+      input2.placeholder = samplingPlaceholder(defaults[field], "Model default");
+      const blank = blankHint(defaults[field], "Blank uses the model\u2019s own default.");
       fields.append(
         uiField({
           label: spec.label,
           control: input2,
-          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} Blank uses the model\u2019s own default.`
+          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} ${blank}`
         })
       );
     }
@@ -56969,24 +57152,39 @@ function createModelParametersSection(api2) {
     const { reasoning: _dropped, ...rest } = selected();
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest);
   });
-  recommendBtn.addEventListener("click", () => {
-    const recommendation = recommendedModelParameters(current);
-    if (!recommendation) return;
-    commit({ ...selected(), ...recommendation.params });
+  resetBtn.addEventListener("click", () => {
+    commit({});
     render();
   });
-  function setModel(model) {
+  modelSelect.addEventListener("change", () => {
+    selectModel(modelSelect.value);
+  });
+  function selectModel(model) {
     current = model.trim();
+    if (current && ![...modelSelect.options].some((option) => option.value === current)) {
+      modelSelect.append(el("option", { value: current }, modelDisplayLabel(current)));
+    }
+    modelSelect.value = current;
     render();
   }
-  async function refresh(model) {
+  function setModel(chatModel) {
+    const model = chatModel.trim();
+    if (!model || modelParameterSupport(model).unavailableReason) {
+      render();
+      return;
+    }
+    selectModel(model);
+    void picker?.refresh(current);
+  }
+  async function refresh(chatModel) {
     try {
       stored = decodeModelParametersMap(await api2.get("modelParameters"));
     } catch {
       stored = {};
     }
     dirty = false;
-    setModel(model);
+    setModel(chatModel);
+    await picker?.refresh(current);
   }
   async function save() {
     if (!dirty) return;
@@ -61256,7 +61454,7 @@ var init_apple_development_plugin = __esm({
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
-    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop"];
+    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -62940,8 +63138,8 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 When a project is on a remote machine, start the agent there, next to the code,
-                instead of leaving it unavailable. The agent has to be installed and signed in on
-                that machine already.
+                instead of leaving it unavailable. If the agent is not installed there, Copse asks
+                before installing it; you sign in on that machine yourself.
               </p>
             </fieldset>
           </section>
@@ -62957,11 +63155,13 @@ function mountSettingsDialog(store2, api2) {
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
-                Show the read-only Desktop pane
+                Show the Desktop pane
               </label>
               <p class="field-hint">
-                View a VNC server on this machine or through the active SSH workspace's encrypted
-                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+                View a VNC desktop on this machine, on a saved SSH machine, or found nearby on your
+                network, plus booted iOS Simulators and Android emulators. Connections start
+                view-only; turn on control to send keyboard and pointer input. Clipboard is not
+                shared.
               </p>
             </fieldset>
 
@@ -63036,8 +63236,8 @@ function mountSettingsDialog(store2, api2) {
                 Enable developer mode
               </label>
               <p class="field-hint">
-                Shows Hooks in Sources and the conversation diagnostics menu. The optional
-                <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
+                Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
+                Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
           </section>
@@ -63123,7 +63323,13 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
   const modelRoutingSection = createModelRoutingSection(api2, { modelScope: "all" });
   qsRequired(overlay, "#settings-model-routing-host").append(modelRoutingSection.root);
-  const modelParametersSection = createModelParametersSection(api2.settings);
+  const modelParametersSection = createModelParametersSection(api2.settings, {
+    mountModelPicker: (select) => mountModelSelectPicker(select, {
+      loadOptions: (current) => fetchModelOptions(api2, current),
+      ariaLabel: "Model to tune",
+      loadOnMount: false
+    })
+  });
   qsRequired(overlay, "#settings-model-parameters-host").append(modelParametersSection.root);
   const settingsModelPickers = {
     model: mountModelSelectPicker(qsRequired(overlay, 'select[name="model"]'), {
@@ -64682,7 +64888,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (field.description) {
       const hint = document.createElement("span");
       hint.className = "plugin-setting-desc";
-      hint.textContent = field.description;
+      hint.innerHTML = renderMarkdown(field.description);
       label.append(hint);
     }
     if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput));
@@ -64822,7 +65028,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (plugin.description) {
       const desc = document.createElement("div");
       desc.className = "plugin-row-desc";
-      desc.textContent = plugin.description;
+      desc.innerHTML = renderMarkdown(plugin.description);
       row2.append(desc);
     }
     const chips = document.createElement("div");
@@ -74797,7 +75003,7 @@ function statusLabel3(report) {
       return "Review";
   }
 }
-function findingLocation(finding) {
+function findingLocation2(finding) {
   if (finding.startLine === void 0) return finding.path;
   const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
   return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
@@ -74867,7 +75073,7 @@ function findingEl(finding, actions) {
   summary.append(
     el("span", { class: "review-finding-severity" }, finding.severity),
     el("span", { class: "review-finding-class" }, finding.class),
-    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("code", { class: "review-finding-location" }, findingLocation2(finding)),
     el("span", { class: "review-finding-claim" }, finding.claim),
     el(
       "span",
@@ -75180,6 +75386,7 @@ function startReview(store2, api2, threadId, messageId) {
   const runningReport = {
     status: "running",
     startedAt: Date.now(),
+    initiator: "user",
     models: { reviewer: thread?.model ?? "", challenger: null },
     lenses: [],
     baseRef: "",
@@ -78312,7 +78519,10 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = scrollTop;
       return;
     }
-    if (scrollTop < lastScrollTop - 1) {
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    if (clamped) {
+    } else if (dropped) {
       userScrolledUpAt = Date.now();
       pinnedToBottom = false;
     } else if (isNearBottom()) {
@@ -91926,16 +92136,16 @@ var init_context_wheel = __esm({
 // src/renderer/views/footer-compact.ts
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
-  const previousShrink = [...items].map((el3) => el3.style.flexShrink);
+  const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
   items.forEach((el3) => {
-    el3.style.flexShrink = "0";
+    el3.style.flex = "0 0 auto";
   });
   if (usage) usage.style.display = "inline";
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
-    el3.style.flexShrink = previousShrink[index] ?? "";
+    el3.style.flex = previousFlex[index] ?? "";
   });
   if (usage) usage.style.display = previousUsageDisplay ?? "";
   return width;
@@ -91959,8 +92169,17 @@ function bindFooterCompactLayout(footer, onChange) {
   };
   const observer = new ResizeObserver(sync);
   observer.observe(footer);
+  for (const control of footer.children) observer.observe(control);
   const inputBar = footer.closest("#input-bar");
   if (inputBar) observer.observe(inputBar);
+  const mutations = new MutationObserver(sync);
+  mutations.observe(footer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
   window.addEventListener("resize", sync, { passive: true });
   sync();
   return {
@@ -91968,6 +92187,7 @@ function bindFooterCompactLayout(footer, onChange) {
     destroy: () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       window.removeEventListener("resize", sync);
     }
   };
