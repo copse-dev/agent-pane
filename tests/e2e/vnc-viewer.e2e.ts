@@ -685,7 +685,7 @@ describe('VNC viewer', function () {
     assert.equal(await controlButton.isDisplayed(), true)
     assert.equal(await controlButton.getText(), 'Control desktop')
     assert.equal(await controlButton.getAttribute('aria-pressed'), 'false')
-    assert.equal(await $('.vnc-controls-host .git-changes-title').isDisplayed(), true)
+    assert.equal(await $('.vnc-controls-host .pane-header-title').isDisplayed(), true)
     assert.equal(await $('.vnc-tab.is-active .vnc-tab-label').getText(), 'This machine')
 
     if (secureCredentialStorage) {
@@ -700,6 +700,9 @@ describe('VNC viewer', function () {
       )
       await $('.toast').waitForDisplayed()
       assert.match(await $('.toast').getText(), /forgot the saved desktop login/i)
+      // Let it go before the shared-screen capture, which one of three CI runs
+      // caught with this toast still stacked above its own.
+      await $('.toast').waitForExist({ reverse: true, timeout: 10_000 })
     }
 
     const sampled = await browser.execute(() => {

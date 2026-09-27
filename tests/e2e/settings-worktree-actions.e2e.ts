@@ -3,9 +3,16 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import {
+  assertBadgeRecipe,
+  assertNeutralBadge,
+  readBadgeStyles,
+  signalColours,
+} from './helpers/badge-style.ts'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
+  pinProfilePathForCapture,
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -122,7 +129,9 @@ describe('settings → Storage → worktree actions', function () {
     )
 
     const thread = row.$('.sources-worktree-thread-btn')
-    await expect(thread).toHaveText('THREAD')
+    // Sentence case comes from the badge recipe's `::first-letter`, which
+    // WebDriver's text does not report; the recipe assertion below checks it.
+    await expect(thread).toHaveText('thread', { ignoreCase: true })
     await expect(thread).toHaveAttribute('aria-label', 'Open thread Dependency cleanup demo')
     await expect(row.$('.sources-worktree-terminal-btn')).toBeClickable()
     await expect(row.$('.sources-worktree-cleanup-btn')).toBeClickable()
@@ -135,7 +144,22 @@ describe('settings → Storage → worktree actions', function () {
     assert.equal(heightOnHover, heightAtRest, 'hover must not change the worktree row height')
     assert.equal((await row.$('.sources-row-title').getCSSProperty('white-space')).value, 'nowrap')
 
+    // The owner badge is a neutral label; only uncommitted work warns.
+    const signals = await signalColours()
+    const warning = signals.find((signal) => signal.token === '--warning')?.value
+    const rowSelector = `.sources-row[data-worktree-path="${worktreeRoot}"]`
+    const [owner] = await readBadgeStyles(`${rowSelector} .sources-worktree-thread-btn`)
+    assert.ok(owner)
+    assertNeutralBadge(owner, signals)
+    assertBadgeRecipe(owner)
+    const [changes] = await readBadgeStyles(`${rowSelector} .sources-worktree-changes`)
+    assert.ok(changes, 'uncommitted work is badged')
+    assert.equal(changes.color, warning, 'uncommitted work keeps the warning hue')
+    assertBadgeRecipe(changes)
+
+    const restoreProfilePath = await pinProfilePathForCapture('#settings-dialog')
     await saveElementScreenshot('#settings-dialog', 'settings-worktree-actions.png')
+    await restoreProfilePath()
 
     await row.$('.sources-worktree-terminal-btn').click()
     await expect($('#sources-worktrees-status')).toHaveText(
@@ -234,7 +258,7 @@ describe('settings → Storage → worktree actions', function () {
     assert.equal(existsSync(join(worktreeRoot, 'draft.txt')), true)
     await expect(
       $(`.sources-row[data-worktree-path="${worktreeRoot}"] .sources-worktree-changes`),
-    ).toHaveText('1 UNCOMMITTED')
+    ).toHaveText('1 uncommitted', { ignoreCase: true })
     await expect(
       $(`.sources-row[data-worktree-path="${secondWorktreeRoot}"] .sources-worktree-changes`),
     ).not.toExist()

@@ -66,7 +66,20 @@ function main(): void {
     return
   }
 
-  const gate = computeScreenshotGate(changedFiles(base), labeled)
+  const changed = changedFiles(base)
+  if (changed === null) {
+    // No merge-base: which shots the change affects is unknown. Say so rather
+    // than report "none affected" from an empty diff; the hard gate fails closed.
+    const why = `screenshot plan: no merge-base with ${base} — cannot tell which reference shots are affected`
+    if (argv.includes('--plan')) {
+      emitOutput('needs-regen', 'true')
+      console.log(`::warning::${why}`)
+      return
+    }
+    console.error(`✗ ${why}. Fetch the base unshallowed or pass --base <ref>.`)
+    process.exit(1)
+  }
+  const gate = computeScreenshotGate(changed, labeled)
 
   // Regenerate when the change touches reference shots and they aren't already
   // all refreshed in the diff — or whenever the label forces a refresh.
