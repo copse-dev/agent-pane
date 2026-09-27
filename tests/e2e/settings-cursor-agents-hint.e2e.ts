@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { CURSOR_AGENTS_WEB_URL } from '../../src/shared/remote-agent.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 import { assertLegendInsideCard } from './helpers/settings-geometry.ts'
 
 describe('Cursor Cloud Agent settings list hint', () => {
@@ -49,8 +50,20 @@ describe('Cursor Cloud Agent settings list hint', () => {
     await expect(link).toHaveAttribute('href', CURSOR_AGENTS_WEB_URL)
     await expect(link).toHaveAttribute('target', '_blank')
 
+    // Install / sign-in command rows: Copy is a kit chip like "Re-scan device".
+    await assertKitButtonChrome('#settings-dialog .acp-cmd-copy', 'secondary')
     // The nested auth card's title sits inside the card, not on its top edge.
     await assertLegendInsideCard('Cursor authentication')
+
+    // The Cursor agent's setup note names its commands as inline code rather
+    // than showing raw backtick delimiters.
+    const note = general.$('.acp-known-agent-note')
+    await expect(note).toBeDisplayed()
+    assert.doesNotMatch(await note.getText(), /`/)
+    assert.deepEqual(await note.$$('code').map((code) => code.getText()), [
+      'cursor-agent acp',
+      'cursor-agent login',
+    ])
 
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')

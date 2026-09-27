@@ -87,7 +87,7 @@ export function resolveMaxReviewCycles(raw: unknown): number {
 export const postTurnReviewPlugin: RegisteredPlugin = definePlugin({
   name: POST_TURN_REVIEW_PLUGIN_ID,
   description:
-    'Post-turn review — reads the working diff after each editing turn with a subagent and applies its todo remediation, gated by a per-chat spend approval for billable review models.',
+    'Reads the working diff after each editing turn with a subagent and applies its todo remediation, gated by a per-chat spend approval for billable review models.',
   trust: 'first-party',
   stability: 'stable',
   storage: { namespace: POST_TURN_REVIEW_PLUGIN_ID },
