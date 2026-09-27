@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
+import {
+  assertBadgeRecipe,
+  assertNeutralBadge,
+  readBadgeStyles,
+  signalColours,
+} from './helpers/badge-style.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
@@ -16,7 +22,11 @@ describe('settings sources cursor rules (#636)', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-cursor-rules-'))
+    // A fixed path, not mkdtemp: the Sources list prints it, and a random
+    // suffix made every capture differ.
+    workspaceRoot = join(tmpdir(), 'copse-e2e', 'cursor-rules')
+    rmSync(workspaceRoot, { recursive: true, force: true })
+    mkdirSync(workspaceRoot, { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'AGENTS.md'),
       'Use the project-specific release checklist before shipping.\n',
@@ -113,6 +123,17 @@ describe('settings sources cursor rules (#636)', function () {
     assert.match(text, /agent/i)
     assert.match(text, /manual/i)
     assert.match(text, /\*\*\/\*\.ts|globs:/)
+
+    // A rule's kind says when it applies, not how it is doing: all four kinds
+    // wear the same neutral badge (`always` used to borrow the warning hue and
+    // `auto` the accent).
+    const signals = await signalColours()
+    const kinds = await readBadgeStyles('#sources-cursor-rules-list .sources-badge')
+    assert.deepEqual(kinds.map((kind) => kind.text).sort(), ['agent', 'always', 'auto', 'manual'])
+    for (const kind of kinds) {
+      assertNeutralBadge(kind, signals)
+      assertBadgeRecipe(kind)
+    }
 
     await browser.execute(() => {
       const list = document.querySelector('#sources-cursor-rules-list')

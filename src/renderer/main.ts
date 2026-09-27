@@ -57,6 +57,7 @@ import {
 import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
+import { mountAlertThreadNavigation } from './controller/alert-navigation.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
 import { registerUiKit } from './ui/index.ts'
@@ -252,6 +253,8 @@ async function boot(): Promise<void> {
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
+  // A clicked notification about a thread opens it here (main picks the window).
+  mountAlertThreadNavigation(store, api)
   mountSshPromptDialog(api)
   mountUpdatePromptDialog(api)
   mountConfirmDialog()

@@ -69,6 +69,40 @@ describe('ci.yml workflow invariants', () => {
     return next >= 0 ? rest.slice(0, next) : rest
   }
 
+  it('fetches one commit history instead of every branch and tag', () => {
+    // `fetch-depth: 0` fetched ~575 branches (mostly screenshot-compare/*) and
+    // every tag: 2.3 GB, against ~1 GB for the checked-out commit's history.
+    assert.doesNotMatch(workflow, /^ +fetch-depth: 0$/m)
+    for (const job of ['precheck', 'autoformat', 'screenshot-artifacts'])
+      assert.match(
+        jobBlock(job),
+        /git fetch --no-tags --quiet --unshallow origin "\$\(git rev-parse HEAD\)"/,
+        `${job} needs its full history for the diffs it takes against a base`,
+      )
+    // The autofix diff is `BASE_SHA...HEAD` on the head branch, and the
+    // screenshot filter scopes against origin/main: both need that branch too.
+    assert.match(
+      jobBlock('autoformat'),
+      /"\+refs\/heads\/\$\{BASE_REF\}:refs\/remotes\/origin\/\$\{BASE_REF\}"/,
+    )
+    assert.match(
+      jobBlock('screenshot-artifacts'),
+      /'\+refs\/heads\/main:refs\/remotes\/origin\/main'/,
+    )
+  })
+
+  it('fetches the oracle base unshallowed so a force-pushed `before` keeps its merge-base', () => {
+    // `--depth=1` into the full history marks BASE_SHA a shallow boundary: a
+    // push whose `before` was force-replaced then shares no merge-base with
+    // HEAD. The oracle fails closed on that (full plan), but a normal fetch
+    // keeps such a push scoped at the cost of only the replaced commits.
+    const precheck = jobBlock('precheck')
+    assert.doesNotMatch(precheck, /git fetch[^\n]*--depth[^\n]*"\$BASE_SHA"/)
+    const fetch = precheck.indexOf('git fetch --no-tags origin "$BASE_SHA"')
+    const oracle = precheck.indexOf('node scripts/test-oracle.mts --plan --base "$BASE_SHA"')
+    assert.ok(fetch >= 0 && oracle > fetch, 'the plan step must fetch BASE_SHA before the oracle')
+  })
+
   it('skips the e2e job when the oracle plans zero shards (empty matrix is a GHA failure)', () => {
     // GitHub Actions treats `strategy.matrix: []` as job failure, not skipped.
     // Zero-shard plans (mode=skip / empty subset) must therefore gate the job
@@ -343,6 +377,11 @@ describe('ci.yml workflow invariants', () => {
     assert.match(aggregate, /needs: \[[^\]]*review-cell[^\]]*\]/)
   })
 
+  it('never pushes a format commit to a promotion into release', () => {
+    // The promotion head, promote/main, must hold only commits already on main.
+    assert.match(jobBlock('autoformat'), /^ {4}if: .*github\.base_ref != 'release'$/m)
+  })
+
   it('decides autofix has work to do before paying for the dependency install', () => {
     // The install is minutes; the autofix is seconds. Ordering them the other
     // way round means a diff with no formattable file pays the whole install to
@@ -448,7 +487,7 @@ describe('publish-screenshot-candidates.yml workflow invariants', () => {
     assert.match(workflow, /candidates\.length !== 1/)
     assert.match(workflow, /parent\.state !== 'open'/)
     assert.match(workflow, /parent\.head\.repo\?\.full_name === `\$\{owner\}\/\$\{repo\}`/)
-    assert.match(workflow, /parent\.head\.ref === 'main' \|\| parent\.head\.ref === 'release'/)
+    assert.match(workflow, /\['main', 'promote\/main', 'release'\]\.includes\(parent\.head\.ref\)/)
     assert.match(workflow, /parent\.head\.sha !== runHeadSha/)
     assert.match(workflow, /artifact\.name === artifactName && !artifact\.expired/)
     assert.match(workflow, /ref: \$\{\{ steps\.discover\.outputs\.head-sha \}\}/)
@@ -553,18 +592,112 @@ describe('close-orphaned-screenshot-reviews.yml workflow invariants', () => {
   })
 })
 
+describe('cla.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/cla.yml'), 'utf8')
+  const JOB_PERMISSIONS =
+    /^ {4}permissions:\n {6}contents: read\n(?: {6}#.*\n)* {6}pull-requests: write\n {6}issues: write\n {6}statuses: write$/gm
+
+  it('never checks out or runs pull request code, and holds just enough permission', () => {
+    assert.match(workflow, /^ {2}pull_request_target:$/m)
+    assert.match(workflow, /^permissions: \{\}$/m)
+    // createComment on a pull request is refused with pull-requests: read.
+    assert.equal(workflow.match(JOB_PERMISSIONS)?.length, 2, 'both jobs, and nothing broader')
+    assert.doesNotMatch(workflow, /^ +run:/m, 'no shell step; the script only reads the API')
+    assert.doesNotMatch(
+      workflow,
+      /github\.event\.pull_request\.head|github\.head_ref|refs\/pull\//,
+      'under pull_request_target the head is attacker-controlled',
+    )
+    const checkouts = workflow.match(/uses: actions\/checkout@.*\n(?: {8}.*\n)+/g) ?? []
+    assert.equal(checkouts.length, 2)
+    const check = checkouts.at(0) ?? ''
+    const backfill = checkouts.at(1) ?? ''
+    // github.sha is the base branch tip under pull_request_target.
+    assert.match(check, /^ {10}ref: \$\{\{ github\.sha \}\}$/m)
+    // Under workflow_dispatch github.sha is the dispatched ref, which any
+    // writer controls; the backfill always runs main's script.
+    assert.match(backfill, /^ {10}ref: main$/m)
+    for (const checkout of checkouts) {
+      assert.match(checkout, /^ {10}persist-credentials: false$/m)
+      assert.match(checkout, /^ {10}sparse-checkout: scripts\/cla-check\.mts$/m)
+    }
+  })
+
+  it('refuses a backfill dispatched from any branch but main', () => {
+    const job = workflow.slice(workflow.indexOf('\n  backfill:\n'))
+    const refusal = job.indexOf("if (context.ref !== 'refs/heads/main') {")
+    assert.ok(refusal > 0, 'the backfill checks the ref it was started from')
+    assert.match(job.slice(refusal), /^ {14}core\.setFailed\(/m)
+    assert.ok(
+      refusal < job.indexOf('await import('),
+      'the refusal comes before the script is loaded',
+    )
+  })
+
+  it('shares one evaluation between the event path and the backfill', () => {
+    assert.doesNotMatch(workflow, /createCommitStatus/, 'the rules live in scripts/cla-check.mts')
+    assert.match(workflow, /const \{ evaluatePullRequest \} = await import\(/)
+    assert.match(workflow, /const \{ evaluateOpenPullRequests \} = await import\(/)
+    assert.equal(
+      workflow.match(/`\$\{process\.env\.GITHUB_WORKSPACE\}\/scripts\/cla-check\.mts`/g)?.length,
+      2,
+    )
+  })
+
+  it('backfills heads no pull request event reached, and results an older rule computed', () => {
+    // CLA is a required status. A head moved with the default GITHUB_TOKEN
+    // raises no event, a pull request opened before the workflow existed never
+    // had one, and a signature or rule change must reach every open head.
+    const push = workflow.match(/^ {2}push:\n(?: {4}.*\n)+/m)?.[0] ?? ''
+    assert.match(push, /^ {4}branches: \[main\]$/m)
+    for (const path of [
+      '.github/cla-signatures.json',
+      '.github/workflows/cla.yml',
+      'scripts/cla-check.mts',
+    ]) {
+      assert.ok(
+        push.includes(`      - ${path}\n`),
+        `a change to ${path} must re-evaluate every open head`,
+      )
+    }
+    // A stacked pull request retargeted onto main carries whatever its old
+    // base's workflow set; a cosmetic edit must not re-run the check.
+    assert.match(workflow, /^ {4}types: \[[^\]]*\bedited\b[^\]]*\]$/m)
+    assert.match(
+      workflow,
+      /github\.event\.action != 'edited' \|\| github\.event\.changes\.base != null/,
+    )
+    assert.match(workflow, /^ {2}schedule:\n(?: {4}#.*\n)* {4}- cron: '[^']+'$/m)
+    assert.match(workflow, /^ {2}workflow_dispatch:$/m)
+    assert.match(
+      workflow,
+      /github\.event_name == 'push' \|\| github\.event_name == 'schedule' \|\|\n\s+github\.event_name == 'workflow_dispatch'/,
+    )
+    assert.match(workflow, /ONLY_CHANGED: \$\{\{ github\.event_name == 'schedule' \}\}/)
+    assert.match(workflow, /\{ onlyChanged: process\.env\.ONLY_CHANGED === 'true' \}/)
+  })
+})
+
 describe('promote-develop.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
 
   it('runs daily and only opens a PR when trunk has commits to promote', () => {
     assert.match(workflow, /- cron: '[^']+ \* \* \*'/)
     assert.match(workflow, /const base = 'release'/)
-    assert.match(workflow, /const head = 'main'/)
+    assert.match(workflow, /const source = 'main'/)
+    assert.match(workflow, /const head = 'promote\/main'/)
 
     const noChangesExit = workflow.indexOf('comparison.data.ahead_by === 0')
+    const pin = workflow.indexOf('github.rest.git.createRef')
     const pullRequestLookup = workflow.indexOf('github.paginate')
     assert.match(workflow, /compare\/\{basehead\}/)
+    assert.match(
+      workflow,
+      /basehead: `\$\{base\}\.\.\.\$\{sha\}`/,
+      'compare the commit being pinned',
+    )
     assert.ok(noChangesExit >= 0, 'expected an explicit no-unpromoted-commits exit')
+    assert.ok(noChangesExit < pin, 'the no-changes exit must run before pinning promote/main')
     assert.ok(
       noChangesExit < pullRequestLookup,
       'the no-changes exit must run before looking up or creating a promotion PR',
@@ -574,6 +707,17 @@ describe('promote-develop.yml workflow invariants', () => {
       /commit\.tree\.sha/,
       'tree equality must not hide commits discarded by a squash merge',
     )
+  })
+
+  it('pins the promotion head by fast-forward only', () => {
+    // A pinned head stops trunk merges cancelling the promotion's CI. It must
+    // only ever hold `main` commits: forcing it could carry a commit pushed to
+    // the branch by hand into `release`.
+    assert.match(
+      workflow,
+      /updateRef\(\{ owner, repo, ref: `heads\/\$\{head\}`, sha, force: false \}\)/,
+    )
+    assert.doesNotMatch(workflow, /force: true/)
   })
 
   it('enables merge-commit auto-merge through the existing required CI gate', () => {
@@ -847,8 +991,12 @@ describe('runner-routing invariants across every workflow', () => {
 describe('codeql.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/codeql.yml'), 'utf8')
 
-  it('scans trusted main and schedule events on a runner that always resolves', () => {
+  it('scans main on a daily schedule on a runner that always resolves', () => {
     assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
+    // Per-push scanning produced a SARIF artifact nobody is notified of, ~30
+    // times a day. The daily scan is the whole trigger surface now.
+    assert.doesNotMatch(workflow, /^ {2}push:/m)
+    assert.match(workflow, /^ {4}- cron: '\d+ \d+ \* \* \*'$/m)
     // Previously `${{ vars.CHECKS_RUNNER }}` with no fallback: with the
     // variable unset this rendered an empty `runs-on` and the job errored
     // rather than running anywhere. Hosted minutes are free on a public repo,
@@ -909,6 +1057,7 @@ describe('Copse Reviewer workflow invariants', () => {
   const triggerWorkflow = readFileSync(resolve('.github/workflows/review-trigger.yml'), 'utf8')
   const groundWorkflow = readFileSync(resolve('.github/workflows/review-ground.yml'), 'utf8')
   const findingsWorkflow = readFileSync(resolve('.github/workflows/review-findings.yml'), 'utf8')
+  const summaryWorkflow = readFileSync(resolve('.github/workflows/review-summary.yml'), 'utf8')
   const nightlyWorkflow = readFileSync(resolve('.github/workflows/review-nightly.yml'), 'utf8')
   const modelBenchWorkflow = readFileSync(
     resolve('.github/workflows/review-model-bench.yml'),
@@ -933,13 +1082,27 @@ describe('Copse Reviewer workflow invariants', () => {
   it('executes pull-request code only in credential-free execution cells', () => {
     assert.match(
       triggerWorkflow,
-      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled\]$/m,
+      /^ {2}pull_request_target:\n {4}types: \[opened, reopened, ready_for_review, labeled, synchronize\]$/m,
     )
-    assert.doesNotMatch(triggerWorkflow, /synchronize/, 'a push must not post another review')
     assert.doesNotMatch(triggerWorkflow, /actions\/checkout/)
     assert.doesNotMatch(triggerWorkflow, /git fetch/)
     assert.doesNotMatch(triggerWorkflow, /--backend ephemeral-runner/)
     const dispatcher = workflowJobBlock(triggerWorkflow, 'dispatch')
+    // A push must not post another review: only the summary follows the head.
+    assert.match(dispatcher, /github\.event\.action != 'synchronize' &&/)
+    const summariser = workflowJobBlock(triggerWorkflow, 'summary')
+    assert.match(summariser, /gh workflow run review-summary\.yml/)
+    assert.doesNotMatch(summariser, /review-ground|review-findings/)
+    assert.match(summariser, /github\.actor_id == '338988'/)
+    assert.match(summariser, /github\.event\.pull_request\.user\.id == 338988/)
+    assert.match(summariser, /github\.event\.pull_request\.head\.repo\.id == 1274237362/)
+    assert.match(
+      summariser,
+      /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'copse-review-skip'\)/,
+    )
+    assert.match(summariser, /if \[ "\$skipped" = "true" \]/)
+    assert.match(summariser, /if \[ "\$draft" = "true" \] && \[ "\$labelled" != "true" \]/)
+    assert.equal(triggerWorkflow.match(/gh workflow run review-ground\.yml/g)?.length, 1)
     // Ready pull requests by default; a draft only with the label; never with the opt-out.
     assert.match(
       dispatcher,
@@ -1074,6 +1237,53 @@ describe('Copse Reviewer workflow invariants', () => {
     assert.match(findingsWorkflow, /pulls\/\$\{number\}/)
     assert.match(findingsWorkflow, /HEAD_SHA: \$\{\{ steps\.pr\.outputs\.head \}\}/)
     assert.match(findingsWorkflow, /run-id: \$\{\{ inputs\.ground_run_id \}\}/)
+  })
+
+  it('summarises on every push without executing pull-request code', () => {
+    assert.match(summaryWorkflow, /^on:\n {2}workflow_dispatch:$/m)
+    assert.doesNotMatch(
+      summaryWorkflow,
+      /^ {2}(?:pull_request|pull_request_target|workflow_run|push):/m,
+    )
+    assert.match(
+      summaryWorkflow,
+      /^permissions:\n {2}contents: read\n {2}pull-requests: read$/m,
+      'the default workflow token must not retain write permission',
+    )
+    assert.match(summaryWorkflow, /^ {2}group: copse-review-summary-\$\{\{ inputs\.pr \}\}$/m)
+    const authorize = workflowJobBlock(summaryWorkflow, 'authorize')
+    assert.match(authorize, /labels\.includes\('copse-review-skip'\)/)
+    assert.match(authorize, /pull\.draft && !labels\.includes\('copse-review'\)/)
+    assert.match(authorize, /pull\.head\.sha !== process\.env\.EXPECTED_HEAD/)
+    const job = workflowJobBlock(summaryWorkflow, 'summary')
+    assert.match(job, /^ {4}needs: authorize$/m)
+    assert.match(job, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+    assert.match(job, /filter: blob:none/)
+    assert.match(job, /persist-credentials: false/)
+    // Read-only by construction: no Stage 0, no cell, no review.
+    assert.match(job, /--summary-only/)
+    assert.match(job, /--post-summary github/)
+    assert.doesNotMatch(job, /--stage0-json|--backend|--post-review|--trusted-prepare|pnpm fetch/)
+    assert.doesNotMatch(job, /docker|download-artifact/)
+    assert.match(job, /test "\$author_id" = 338988/)
+    assert.match(job, /test "\$skipped" = false/)
+    assert.match(job, /test "\$draft" = false \|\| test "\$labelled" = true/)
+    // The description is edited with the job's own workflow token: GitHub
+    // starts no run for an event that token causes, so the `edited` event does
+    // not re-run the whole of ci.yml on the same head, as an App-token edit did.
+    assert.match(
+      job,
+      /^ {4}permissions:\n {6}contents: read\n {6}pull-requests: write$/m,
+      'only the summary job may write, and only pull requests',
+    )
+    assert.doesNotMatch(job, /create-github-app-token|RELEASE_APP_/)
+    const posting = job.slice(job.indexOf('- name: Summarise the pull request and update'))
+    assert.match(posting, /COPSE_REVIEW_FORGE_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/)
+    assert.doesNotMatch(posting, /^\s+GITHUB_TOKEN:/m)
+    const fetch = job.indexOf('git fetch')
+    assert.ok(fetch >= 0 && fetch < job.indexOf('- name: Summarise the pull request and update'))
+    // The full review rewrites the summary with its evidence.
+    assert.match(workflowJobBlock(findingsWorkflow, 'findings'), /--post-summary github/)
   })
 
   it('posts GitHub reviews as the least-privilege Copse App identity', () => {
@@ -1302,7 +1512,14 @@ describe('Copse Reviewer workflow invariants', () => {
         /secrets(?:\.OPENROUTER_API_KEY|\[['"]OPENROUTER_API_KEY['"]\])/,
         name,
       )
-      if (!['review-model-bench.yml', 'review-findings.yml', 'review-nightly.yml'].includes(name)) {
+      if (
+        ![
+          'review-model-bench.yml',
+          'review-findings.yml',
+          'review-nightly.yml',
+          'review-summary.yml',
+        ].includes(name)
+      ) {
         assert.ok(!workflow.includes(secret), name)
       }
     }
@@ -1328,6 +1545,15 @@ describe('Copse Reviewer workflow invariants', () => {
       assert.match(findings, /test "\$head_repo_id" = 1274237362/)
       assert.match(findings, /test "\$base_repo_id" = 1274237362/)
     }
+    const summary = workflowJobBlock(summaryWorkflow, 'summary')
+    assert.equal(summaryWorkflow.split(secret).length - 1, 1)
+    assert.match(summary, /^ {4}environment: copse-review-models$/m)
+    assert.ok(
+      summary.indexOf('- name: Summarise the pull request and update its description') <
+        summary.indexOf(secret),
+    )
+    assert.match(summary, /unset COPSE_REVIEW_API_KEY SCW_DEFAULT_PROJECT_ID/)
+    assert.match(summary, /configured\) unset OPENROUTER_API_KEY/)
   })
 
   it('samples at most one recent same-repository draft PR and has an explicit opt-out', () => {

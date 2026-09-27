@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import { createWorkerHandout } from './worker-handout.ts'
+import { installMonacoEditorTheme } from '../dom/editor-theme.ts'
 
 declare global {
   // Monaco's ESM worker loader joins `vs/...` module ids against this root.
@@ -200,6 +201,9 @@ export function loadMonaco(): Promise<typeof Monaco> {
   monacoPromise = loadMonacoBundle().then(async (monaco) => {
     configureMonacoFileRoot()
     configureMonacoLanguageDefaults(monaco)
+    // Every editor is created with COPSE_MONACO_THEME; register it before any
+    // pane mounts. Lives for the window, like the Monaco namespace itself.
+    installMonacoEditorTheme(monaco)
     // Monaco calls getWorker for language services too; each label needs its own
     // ESM worker or requests such as TypeScript diagnostics hit the editor worker.
     window.MonacoEnvironment = {

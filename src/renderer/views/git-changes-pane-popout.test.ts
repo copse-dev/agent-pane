@@ -69,7 +69,6 @@ function makeMonacoStub(counters: Counters): GitDiffMonaco {
         counters.createModel++
         return { dispose(): void {}, getValue: () => value }
       },
-      setTheme(): void {},
     },
     KeyCode: { KeyL: 42 },
   }
