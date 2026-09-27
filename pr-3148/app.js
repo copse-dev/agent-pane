@@ -66337,19 +66337,9 @@ function approvalCopyElement(className, text2) {
   flushLines();
   return root;
 }
-function adviceElement(advice) {
-  const children = [];
-  advice.split("\n").forEach((line, index) => {
-    if (index > 0) children.push("\n");
-    children.push(
-      line.startsWith(REASON_BULLET) ? el("span", { class: "approval-advice-item" }, line) : line
-    );
-  });
-  return el("div", { class: "approval-advice" }, ...children);
-}
 function approvalRequestDetails(req) {
   const parts = [];
-  if (req.bodyAdvice) parts.push(adviceElement(req.bodyAdvice));
+  if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
   parts.push(
     el(
       "div",
@@ -66357,7 +66347,7 @@ function approvalRequestDetails(req) {
       req.body
     )
   );
-  if (req.bodyFooter) parts.push(el("div", { class: "approval-footer" }, req.bodyFooter));
+  if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
   return parts;
 }
 function mergeApprovalAdvice(values) {
