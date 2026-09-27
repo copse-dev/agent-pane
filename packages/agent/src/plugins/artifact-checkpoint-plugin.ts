@@ -19,7 +19,7 @@ export const artifactCheckpointPlugin: RegisteredPlugin = definePlugin(
   {
     name: ARTIFACT_CHECKPOINT_PLUGIN_ID,
     description:
-      'Artifact checkpoint — once a longer-running agent task crosses the configured delay, ask it to preserve the best runnable artifact before further exploration and use the remaining time for focused validation.',
+      'Once a longer-running agent task crosses the configured delay, asks it to preserve the best runnable artifact before further exploration and use the remaining time for focused validation.',
     trust: 'first-party',
     stability: 'experimental',
     settings: {

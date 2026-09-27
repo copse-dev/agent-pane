@@ -42,7 +42,8 @@
   justify-content: space-between;
   width: 100%;
   min-width: 0;
-  padding: 6px var(--spacing-xs) 6px var(--spacing-sm);
+  padding: var(--list-row-padding-block) var(--spacing-xs) var(--list-row-padding-block)
+    var(--spacing-sm);
   color: var(--text-muted);
   font-size: var(--font-size-xs);
   text-align: left;

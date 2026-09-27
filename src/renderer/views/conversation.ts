@@ -125,6 +125,7 @@ import {
 } from '../controller/review-actions.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import { mcpErrorMessage } from './tool-error-format.ts'
+import { splitAppendedReminders } from './tool-result-reminders.ts'
 import {
   createThreadProposalToolCard,
   isThreadProposalCall,
@@ -245,13 +246,19 @@ function createToolResultSection(
   status: ToolCall['status'],
   format?: 'markdown',
   showEmptyState = false,
+  appendedReminderLengths?: readonly number[],
 ): HTMLElement {
   if (!result) {
     return showEmptyState
       ? el('div', { class: 'tool-result tool-result-empty' }, 'No tool details were provided.')
       : el('div', { class: 'tool-result' })
   }
-  const errorMessage = status === 'error' ? mcpErrorMessage(result) : null
+  // Copse appends model-facing notes (clamped arguments, hook context) as
+  // system-reminder blocks whose lengths the registry records; show exactly
+  // those as notes, not raw tags, and never reinterpret the tool's own text.
+  const { output, reminders } = splitAppendedReminders(result, appendedReminderLengths)
+  const notes = reminders.map((reminder) => el('p', { class: 'tool-result-note' }, reminder))
+  const errorMessage = status === 'error' ? mcpErrorMessage(output) : null
   if (errorMessage) {
     const paragraphs = errorMessage
       .split(/\n+/)
@@ -261,6 +268,7 @@ function createToolResultSection(
       'div',
       { class: 'tool-result tool-result-error-message' },
       ...paragraphs.map((line) => el('p', {}, line)),
+      ...notes,
     )
   }
   // ACP tool output is agent-authored Markdown — render it through the same
@@ -268,11 +276,17 @@ function createToolResultSection(
   // instead of literal backticks. Built-in results stay in a plain `<pre>`.
   if (format === 'markdown') {
     const wrap = el('div', { class: 'tool-result tool-result-markdown message-text' })
-    wrap.innerHTML = renderMarkdown(result)
+    wrap.innerHTML = renderMarkdown(output)
     attachCodeBlockCopyButtons(wrap)
+    wrap.append(...notes)
     return wrap
   }
-  return el('div', { class: 'tool-result' }, el('pre', {}, renderToolArgs(result)))
+  return el(
+    'div',
+    { class: 'tool-result' },
+    ...(output.length > 0 || notes.length === 0 ? [el('pre', {}, renderToolArgs(output))] : []),
+    ...notes,
+  )
 }
 
 function createToolLocationsSection(locations: ToolCall['locations']): HTMLElement | null {
@@ -411,6 +425,7 @@ function appendStandardToolSections(
         tc.status,
         tc.resultFormat,
         argsSection === null && tc.status !== 'running',
+        tc.appendedReminderLengths,
       ),
       ...appendIfPresent(createToolLocationsSection(tc.locations)),
     )

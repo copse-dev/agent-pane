@@ -1,0 +1,141 @@
+name: CLA
+
+# Sets the required `CLA` commit status on pull request heads. The rules (who
+# counts as signed, how agent and bot commits are attributed, trusted openers,
+# promotions) live in scripts/cla-check.mts, shared by both jobs below. A
+# trusted opener is a person with push access, or copse-release-bot or
+# Dependabot (TRUSTED_AUTOMATION, by account id) opening from a branch in this
+# repository; any other bot or App is untrusted wherever its branch lives. Only
+# a person with push access answers for an author address linked to no GitHub
+# account: on an automation pull request it must be in .github/cla-signatures.json.
+#
+#   check     one pull request, on its own events. `pull_request_target`,
+#             because a fork's `pull_request` token cannot set a status or
+#             comment; `issue_comment` re-evaluates when someone posts the
+#             signing sentence.
+#   backfill  every open pull request. A head moved with the default
+#             GITHUB_TOKEN starts no workflow, so it never gets a status from
+#             `check`, and a status computed under an older rule or before a
+#             signature landed is never recomputed by one. Runs when
+#             main's signatures, this workflow or the script change (all heads
+#             recomputed and rewritten), on dispatch (the same), and on a
+#             schedule (all heads recomputed, success included, and written
+#             only where the verdict changed; about 3 API requests a head). A
+#             change to those files pushed with GITHUB_TOKEN starts no push
+#             run, so the schedule is what corrects a success computed under
+#             the older rule. The two jobs run in different concurrency
+#             groups, so a backfill can overlap a signing comment's run; the
+#             script drops a failure if anyone signed meanwhile, re-evaluates
+#             once if a signature lands just after it writes one, and the
+#             schedule recomputes any verdict left stale.
+#
+# No pull request code is checked out or run. Both jobs check out only
+# scripts/cla-check.mts. `check` takes it at `github.sha`: under
+# `pull_request_target` the base branch tip (the same trust as this workflow
+# file), under `issue_comment` the default branch. `backfill` always takes it
+# from main, and refuses to run when started from any other ref: under
+# `workflow_dispatch` `github.sha` is whatever branch the dispatcher picked. The
+# script reads the API only.
+on:
+  pull_request_target:
+    # `edited` for a retarget: a stacked pull request moved onto main keeps the
+    # status its old base's workflow set (or none), and needs main's verdict.
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  issue_comment:
+    types: [created]
+  push:
+    branches: [main]
+    paths:
+      - .github/cla-signatures.json
+      - .github/workflows/cla.yml
+      - scripts/cla-check.mts
+  schedule:
+    # Off the hour; picks up heads no event reached and verdicts gone stale.
+    - cron: '41 */2 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number || 'backfill' }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # A title or body edit changes nothing the check reads; only a retarget.
+    if: >-
+      (github.event_name == 'pull_request_target' &&
+      (github.event.action != 'edited' || github.event.changes.base != null)) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      contains(github.event.comment.body, 'I have read the Copse CLA Document and I hereby sign the CLA'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # Commenting on a pull request through the issues API needs both.
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      - name: Check out the CLA script from the trusted base
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/cla-check.mts
+          sparse-checkout-cone-mode: false
+      - name: Check CLA signatures
+        uses: actions/github-script@v9
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        with:
+          script: |
+            const { evaluatePullRequest } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/cla-check.mts`
+            );
+            await evaluatePullRequest(
+              { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info },
+              Number(process.env.PR_NUMBER),
+            );
+
+  backfill:
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Commenting on a pull request through the issues API needs both.
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      - name: Check out the CLA script from main
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: scripts/cla-check.mts
+          sparse-checkout-cone-mode: false
+      - name: Re-evaluate every open pull request
+        uses: actions/github-script@v9
+        env:
+          ONLY_CHANGED: ${{ github.event_name == 'schedule' }}
+        with:
+          script: |
+            // Schedule and push runs start from main. A dispatch from another
+            // branch evaluates nothing.
+            if (context.ref !== 'refs/heads/main') {
+              core.setFailed(
+                `The CLA backfill runs only from refs/heads/main, not ${context.ref}; nothing was evaluated. Dispatch it on main.`,
+              );
+              return;
+            }
+            const { evaluateOpenPullRequests } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/cla-check.mts`
+            );
+            await evaluateOpenPullRequests(
+              { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info },
+              { onlyChanged: process.env.ONLY_CHANGED === 'true' },
+            );

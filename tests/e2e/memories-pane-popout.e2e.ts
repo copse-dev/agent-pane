@@ -1,8 +1,10 @@
+import assert from 'node:assert/strict'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, seedMemoryNotes } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { assertKitButtonRow, measureKitButtonRow } from './helpers/kit-buttons.ts'
 
 // The Memories pane is gated on the `copse.okf-memories` first-party plugin, so
 // unlike the other right-panel panes it needs the plugin seeded on and a couple of
@@ -120,6 +122,17 @@ describe('Memories pane pop-out', () => {
     )
     await expect(await $('.memories-meta')).toHaveText(
       expect.stringContaining('saved with external content in context'),
+    )
+
+    // Save / Delete / Cancel are compact kit buttons, not a `.memories-btn` stack (#3065).
+    const actions = assertKitButtonRow(
+      await measureKitButtonRow('.memories-form .memories-actions'),
+      'memories editor',
+      { compact: true, minButtons: 3 },
+    )
+    assert.deepEqual(
+      actions.buttons.map((button) => button.label),
+      ['Save', 'Delete', 'Cancel'],
     )
 
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-memories.png'))

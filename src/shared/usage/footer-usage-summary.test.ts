@@ -157,6 +157,46 @@ describe('resolveFooterUsage', () => {
     })
   })
 
+  it('keeps a container run in the headline instead of folding it out as a subagent', () => {
+    // The run's usage is added to the thread's counter when it settles; the
+    // card that shows the run carries the same total on its session, which
+    // is not delegated work to subtract.
+    const messages: Message[] = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        createdAt: 1,
+        toolCalls: [
+          {
+            id: 'container-run:t1:1',
+            name: 'container_run',
+            args: {},
+            status: 'done',
+            result: 'finished',
+            subagent: {
+              id: 'run-1',
+              kind: 'container',
+              status: 'done',
+              prompt: 'Clear the lint backlog',
+              summary: null,
+              messages: [],
+              usage: { inputTokens: 412_310, outputTokens: 38_902 },
+            },
+          },
+        ],
+      },
+    ]
+
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 412_310, outputTokens: 38_902 },
+      running: false,
+      messages,
+    })
+
+    assert.deepEqual(resolved, { inputTokens: 412_310, outputTokens: 38_902, estimated: false })
+  })
+
   it('never goes negative when a subagent somehow out-totals the measured usage', () => {
     const messages: Message[] = [
       {

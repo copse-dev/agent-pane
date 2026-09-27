@@ -55,6 +55,16 @@ describe('Cursor Cloud Agent settings list hint', () => {
     // The nested auth card's title sits inside the card, not on its top edge.
     await assertLegendInsideCard('Cursor authentication')
 
+    // The Cursor agent's setup note names its commands as inline code rather
+    // than showing raw backtick delimiters.
+    const note = general.$('.acp-known-agent-note')
+    await expect(note).toBeDisplayed()
+    assert.doesNotMatch(await note.getText(), /`/)
+    assert.deepEqual(await note.$$('code').map((code) => code.getText()), [
+      'cursor-agent acp',
+      'cursor-agent login',
+    ])
+
     await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-cursor-agents-hint.png')
   })
