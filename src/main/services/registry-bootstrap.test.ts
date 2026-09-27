@@ -5,11 +5,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   createRegistry,
+  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
   syncGhTools,
   syncImageGenerationTools,
+  syncModelClassifierTools,
   syncOkfMemoryTools,
+  syncOrchestrationStrategyTools,
   syncParallelSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -202,7 +205,7 @@ describe('syncAppleDevelopmentTools', () => {
     setDefaultPluginRegistry(null)
   })
 
-  it('keeps the visible Simulator tool aligned with the Apple plugin', () => {
+  it('keeps Simulator and Device Hub tools aligned with the Apple plugin', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
@@ -210,14 +213,17 @@ describe('syncAppleDevelopmentTools', () => {
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
     syncAppleDevelopmentTools(registry)
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+    assert.equal(registry.has('device_hub'), false)
 
     plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
     syncAppleDevelopmentTools(registry)
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+    assert.equal(registry.has('device_hub'), true)
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
     syncAppleDevelopmentTools(registry)
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+    assert.equal(registry.has('device_hub'), false)
   })
 })
 
@@ -319,5 +325,69 @@ describe('syncParallelSearchTools', () => {
     plugins.disable(PARALLEL_SEARCH_PLUGIN_ID)
     syncParallelSearchTools(registry)
     assert.equal(registry.has('parallel_search'), false)
+  })
+})
+
+describe('experimental setting tool syncs', () => {
+  afterEach(() => {
+    setSetting('modelClassifierEnabled', false)
+    setSetting('orchestrationStrategyEnabled', false)
+  })
+
+  const cases = [
+    { setting: 'modelClassifierEnabled', tool: 'suggest_model', sync: syncModelClassifierTools },
+    {
+      setting: 'orchestrationStrategyEnabled',
+      tool: 'delegate_step',
+      sync: syncOrchestrationStrategyTools,
+    },
+  ] as const
+
+  for (const { setting, tool, sync } of cases) {
+    it(`${tool} follows ${setting} live in both directions`, () => {
+      setSetting(setting, false)
+      const registry = createRegistry()
+      assert.equal(registry.has(tool), false, 'off at boot')
+
+      // The Settings checkbox writes the setting; settings:set then resyncs.
+      setSetting(setting, true)
+      sync(registry)
+      assert.equal(registry.has(tool), true, 'on without a restart')
+
+      // Idempotent while on.
+      sync(registry)
+      assert.equal(registry.has(tool), true)
+
+      setSetting(setting, false)
+      sync(registry)
+      assert.equal(registry.has(tool), false, 'off without a restart')
+    })
+
+    it(`createRegistry registers ${tool} when ${setting} is on at boot`, () => {
+      setSetting(setting, true)
+      assert.equal(createRegistry().has(tool), true)
+    })
+  }
+})
+
+describe('pluginEnableRefusal', () => {
+  afterEach(() => {
+    deleteApiKey('parallel')
+  })
+
+  it('refuses to enable Parallel Search without a resolvable key', () => {
+    deleteApiKey('parallel')
+    assert.match(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true) ?? '', /Parallel API key/)
+  })
+
+  it('allows enabling Parallel Search once a key is stored', () => {
+    setApiKey('parallel', 'test-key')
+    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, true), null)
+  })
+
+  it('never blocks disabling, and ignores other plugins', () => {
+    deleteApiKey('parallel')
+    assert.equal(pluginEnableRefusal(PARALLEL_SEARCH_PLUGIN_ID, false), null)
+    assert.equal(pluginEnableRefusal(OKF_MEMORIES_PLUGIN_ID, true), null)
   })
 })

@@ -18,12 +18,25 @@ import {
 
 export interface ModelParametersSection {
   root: HTMLElement
-  /** Load the saved map from settings and render it for `model`. */
-  refresh: (model: string) => Promise<void>
-  /** Re-render for a newly picked model without re-reading settings. */
-  setModel: (model: string) => void
+  /** Load the saved map from settings and start on the chat model, when it is tunable. */
+  refresh: (chatModel: string) => Promise<void>
+  /**
+   * Follow a newly picked chat model. A rule or agent selection has no
+   * parameters of its own, so it leaves whatever model is being tuned in place.
+   */
+  setModel: (chatModel: string) => void
   /** Persist the map when the user changed something; a no-op otherwise. */
   save: () => Promise<void>
+}
+
+/** The searchable picker Settings mounts over the section's native select. */
+interface ModelPickerHandle {
+  refresh: (current?: string) => Promise<void>
+}
+
+export interface ModelParametersSectionOptions {
+  /** Mount a picker over the native select; without one the select is used as is. */
+  mountModelPicker?: (select: HTMLSelectElement) => ModelPickerHandle
 }
 
 const REASONING_LABELS: Record<ReasoningLevel, string> = {
@@ -99,15 +112,30 @@ function formatNumber(value: number | undefined): string {
   return value === undefined ? '' : String(value)
 }
 
+/** The recipe value itself, in placeholder grey; the fields are too narrow for a label. */
+function samplingPlaceholder(recipeValue: number | undefined, fallback: string): string {
+  return recipeValue === undefined ? fallback : String(recipeValue)
+}
+
+function blankHint(recipeValue: number | undefined, fallback: string): string {
+  return recipeValue === undefined
+    ? fallback
+    : `Blank sends the recommended ${String(recipeValue)}.`
+}
+
 /**
- * Per-model generation parameters, shown under the chat-model picker in
- * Settings → Models.
+ * Per-model generation parameters, in Settings → Models.
  *
- * The parameters belong to the *model*, not to this field: the same knobs apply
- * wherever that model runs, exactly as an ACP agent's model and permission mode
- * are configured once on the agent. So the section edits one entry of a
- * selection-keyed map and re-renders whenever the picker above it changes,
- * rather than owning a single global set of values.
+ * The parameters belong to the *model*, not to the chat-model field: the same
+ * knobs apply wherever that model runs, exactly as an ACP agent's model and
+ * permission mode are configured once on the agent. So the section has its own
+ * model picker and edits one entry of a selection-keyed map. It starts on the
+ * chat model, but tuning a model never changes the default — the default is
+ * often a rule (`auto:balanced`) that has no parameters to tune at all.
+ *
+ * A model with a curated recipe runs on it unless told otherwise, so the
+ * recipe's values sit in the fields as placeholders and anything typed replaces
+ * that one value (see `resolveModelParameters`).
  *
  * Which controls appear is decided by the model, not by us: the newest Claude
  * models reject `temperature`/`top_p` outright and the older ones have no
@@ -117,31 +145,58 @@ function formatNumber(value: number | undefined): string {
  */
 export function createModelParametersSection(
   api: Pick<ApiClient['settings'], 'get' | 'set'>,
+  options: ModelParametersSectionOptions = {},
 ): ModelParametersSection {
   const fields = el('div', { class: 'model-parameter-fields' })
-  // Offered, never applied: the button fills the visible fields so the recipe
-  // is on screen and editable before anything is saved or sent.
-  const recommendBtn = el(
-    'button',
-    { type: 'button', class: 'provider-secondary', 'data-testid': 'model-parameter-recommend' },
-    'Use recommended',
+  // No `name`: the model being tuned is not a setting, so the settings form's
+  // FormData must not pick it up.
+  const modelSelect = el('select', {
+    id: 'settings-model-parameters-model',
+    'data-testid': 'model-parameter-model',
+  })
+  const modelField = uiField({
+    label: 'Model to tune',
+    control: modelSelect,
+    hint: 'Any model you can pick. Changing this does not change your chat model.',
+  })
+  // Models the user has saved values for, so they can be found again without
+  // remembering which ones they touched.
+  const customisedList = el('div', { class: 'provider-chips model-parameter-customised' })
+  const customisedRow = el(
+    'div',
+    { class: 'model-parameter-customised-row', 'data-testid': 'model-parameter-customised' },
+    el('span', { class: 'field-hint' }, 'Customised:'),
+    customisedList,
   )
   const recommendNote = el('p', { class: 'field-hint model-parameter-recommend-note' })
   const recommendRow = el(
     'div',
-    { class: 'model-parameter-recommend', hidden: '' },
-    recommendBtn,
+    { class: 'model-parameter-recommend', 'data-testid': 'model-parameter-recommend' },
     recommendNote,
   )
+  const resetBtn = el('button', {
+    type: 'button',
+    class: 'provider-secondary',
+    'data-testid': 'model-parameter-reset',
+  })
   const note = el('p', { class: 'settings-fieldset-desc model-parameter-note' })
   const root = el(
     'div',
     { class: 'model-parameter-section', 'data-testid': 'model-parameters' },
-    el('h4', { class: 'model-role-heading' }, 'Model parameters'),
-    note,
-    recommendRow,
+    // Which model, and what it runs on before any field is touched.
+    el(
+      'div',
+      { class: 'model-parameter-header', 'data-testid': 'model-parameter-header' },
+      el('h4', { class: 'model-role-heading' }, 'Model parameters'),
+      modelField,
+      customisedRow,
+      note,
+      recommendRow,
+    ),
     fields,
+    resetBtn,
   )
+  const picker = options.mountModelPicker?.(modelSelect)
 
   const reasoningSelect = el('select', {
     name: 'modelReasoning',
@@ -197,6 +252,11 @@ export function createModelParametersSection(
     return stored[current] ?? {}
   }
 
+  /** What the model runs on when a field is left blank. */
+  function recipe(): ModelParameters {
+    return recommendedModelParameters(current)?.params ?? {}
+  }
+
   function commit(next: ModelParameters): void {
     dirty = true
     const sanitized = sanitizeModelParameters(next, current)
@@ -205,9 +265,41 @@ export function createModelParametersSection(
       // object, so the settings file stays a record of what was actually tuned.
       const { [current]: _cleared, ...rest } = stored
       stored = rest
-      return
+    } else {
+      stored = { ...stored, [current]: sanitized }
     }
-    stored = { ...stored, [current]: sanitized }
+    renderCustomised()
+    renderReset()
+  }
+
+  function renderCustomised(): void {
+    const models = Object.keys(stored)
+    customisedRow.hidden = models.length === 0
+    customisedList.replaceChildren(
+      ...models.map((model) => {
+        const chip = el(
+          'button',
+          {
+            type: 'button',
+            class: model === current ? 'provider-chip active' : 'provider-chip',
+            'aria-pressed': String(model === current),
+            'data-model': model,
+          },
+          modelDisplayLabel(model),
+        )
+        chip.addEventListener('click', () => {
+          selectModel(model)
+          void picker?.refresh(model)
+        })
+        return chip
+      }),
+    )
+  }
+
+  function renderReset(): void {
+    resetBtn.hidden = stored[current] === undefined
+    resetBtn.textContent =
+      recommendedModelParameters(current) === null ? 'Clear custom values' : 'Reset to recommended'
   }
 
   function renderRecommendation(): void {
@@ -226,9 +318,11 @@ export function createModelParametersSection(
     // Name the source rather than asserting the numbers are right: the recipe
     // is only as current as the version it was read against.
     recommendNote.replaceChildren(
-      document.createTextNode(`${recommendation.label} — fills the fields below from its `),
+      document.createTextNode(`Applied by default: ${recommendation.label}, from its `),
       link,
-      document.createTextNode('. Change or clear them afterwards like any other value.'),
+      document.createTextNode(
+        '. Blank fields use it; a value you enter replaces the recommended one.',
+      ),
     )
   }
 
@@ -254,15 +348,18 @@ export function createModelParametersSection(
   function render(): void {
     const support = modelParameterSupport(current)
     const params = selected()
+    const defaults = recipe()
     fields.replaceChildren()
     renderRecommendation()
+    renderCustomised()
+    renderReset()
 
-    if (support.unavailableReason) {
-      note.textContent = support.unavailableReason
+    if (!current) {
+      note.textContent = 'Choose a model to tune how it runs, wherever it is used.'
       return
     }
-    if (!current) {
-      note.textContent = 'Choose a chat model above to tune how it runs.'
+    if (support.unavailableReason) {
+      note.textContent = support.unavailableReason
       return
     }
 
@@ -281,7 +378,13 @@ export function createModelParametersSection(
 
     if (support.reasoning.length > 0) {
       reasoningSelect.replaceChildren(
-        el('option', { value: '' }, DEFAULT_OPTION_LABEL),
+        el(
+          'option',
+          { value: '' },
+          defaults.reasoning === undefined
+            ? DEFAULT_OPTION_LABEL
+            : `Recommended (${REASONING_LABELS[defaults.reasoning]})`,
+        ),
         ...support.reasoning.map((level) =>
           el('option', { value: level }, REASONING_LABELS[level]),
         ),
@@ -305,11 +408,15 @@ export function createModelParametersSection(
 
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens)
+      maxOutputTokensInput.placeholder = samplingPlaceholder(
+        defaults.maxOutputTokens,
+        'Provider default',
+      )
       fields.append(
         uiField({
           label: 'Maximum output tokens',
           control: maxOutputTokensInput,
-          hint: 'Per response, including hidden reasoning. Blank uses the provider default; a low cap can truncate a tool call.',
+          hint: `Per response, including hidden reasoning. ${blankHint(defaults.maxOutputTokens, 'Blank uses the provider default.')} A low cap can truncate a tool call.`,
         }),
       )
     }
@@ -325,11 +432,13 @@ export function createModelParametersSection(
       const max = field === 'temperature' ? support.temperatureMax : SAMPLING_BOUNDS[field].max
       input.max = String(max)
       input.value = formatNumber(params[field])
+      input.placeholder = samplingPlaceholder(defaults[field], 'Model default')
+      const blank = blankHint(defaults[field], 'Blank uses the model’s own default.')
       fields.append(
         uiField({
           label: spec.label,
           control: input,
-          hint: `${String(SAMPLING_BOUNDS[field].min)}–${String(max)}. ${spec.hint} Blank uses the model’s own default.`,
+          hint: `${String(SAMPLING_BOUNDS[field].min)}–${String(max)}. ${spec.hint} ${blank}`,
         }),
       )
     }
@@ -340,26 +449,45 @@ export function createModelParametersSection(
     const { reasoning: _dropped, ...rest } = selected()
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest)
   })
-  recommendBtn.addEventListener('click', () => {
-    const recommendation = recommendedModelParameters(current)
-    if (!recommendation) return
-    commit({ ...selected(), ...recommendation.params })
+  resetBtn.addEventListener('click', () => {
+    commit({})
     render()
   })
+  modelSelect.addEventListener('change', () => {
+    selectModel(modelSelect.value)
+  })
 
-  function setModel(model: string): void {
+  function selectModel(model: string): void {
     current = model.trim()
+    // Without a mounted picker the native select is the control, and it can
+    // only show a value it has an option for.
+    if (current && ![...modelSelect.options].some((option) => option.value === current)) {
+      modelSelect.append(el('option', { value: current }, modelDisplayLabel(current)))
+    }
+    modelSelect.value = current
     render()
   }
 
-  async function refresh(model: string): Promise<void> {
+  function setModel(chatModel: string): void {
+    const model = chatModel.trim()
+    // A rule or an agent has nothing to tune; keep the model the user is on.
+    if (!model || modelParameterSupport(model).unavailableReason) {
+      render()
+      return
+    }
+    selectModel(model)
+    void picker?.refresh(current)
+  }
+
+  async function refresh(chatModel: string): Promise<void> {
     try {
       stored = decodeModelParametersMap(await api.get('modelParameters'))
     } catch {
       stored = {}
     }
     dirty = false
-    setModel(model)
+    setModel(chatModel)
+    await picker?.refresh(current)
   }
 
   async function save(): Promise<void> {

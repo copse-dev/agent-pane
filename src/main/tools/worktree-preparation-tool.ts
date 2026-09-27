@@ -11,7 +11,7 @@ import {
 export const preflightWorktreeTool = defineTool({
   name: 'preflight_worktree',
   description:
-    'Read-only project readiness check. Detects npm, pnpm, Yarn (Classic and modern), Bun, locked uv Python projects, and Go modules/workspaces. Other ecosystems and optional native setup use .copse/worktree-preparation.json. Reports runtime requirements, dependency state, declared checks, exact setup commands, and a plan fingerprint. Unknown or conflicting projects get configuration guidance. Checks run offline in the OS sandbox with disposable scratch; the project and shared caches remain read-only.',
+    'Read-only project readiness check. Run it before the first typecheck, test, or build in a fresh worktree: missing dependencies there produce unresolved-module and missing-type errors that are not code defects. Detects npm, pnpm, Yarn (Classic and modern), Bun, locked uv Python projects, Go modules/workspaces, and locked Cargo projects. Other ecosystems and optional native setup use .copse/worktree-preparation.json. Reports runtime requirements, dependency state, declared checks, exact setup commands, and a plan fingerprint. Unknown or conflicting projects get configuration guidance. Checks run offline in the OS sandbox with disposable scratch; the project and shared caches remain read-only.',
   parameters: z.object({
     directory: z
       .string()
