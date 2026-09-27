@@ -21373,6 +21373,11 @@ var init_unknown_value = __esm({
 });
 
 // packages/agent/src/parse-agent-run-payload.ts
+function parseReviewContext(value) {
+  if (typeof value !== "string" || value.trim() === "") return void 0;
+  return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}
+[review summary truncated]`;
+}
 function parseAgentRunPayload(rawPrompt) {
   try {
     const parsed2 = JSON.parse(rawPrompt);
@@ -21383,6 +21388,7 @@ function parseAgentRunPayload(rawPrompt) {
       }
       const invokedSkills = external_exports.array(external_exports.string()).safeParse(parsed2["invokedSkills"]);
       const priorTodos = external_exports.array(todoSchema).safeParse(parsed2["priorTodos"]);
+      const reviewContext = parseReviewContext(parsed2["reviewContext"]);
       const normalizedTodos = priorTodos.success ? priorTodos.data.map((todo) => ({
         id: todo.id,
         content: todo.content,
@@ -21399,7 +21405,8 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed2["model"] === "string" && parsed2["model"] ? { model: parsed2["model"] } : {},
         ...isReasoningLevel(parsed2["reasoning"]) ? { reasoning: parsed2["reasoning"] } : {},
         ...typeof parsed2["turnTreeId"] === "string" && parsed2["turnTreeId"] ? { turnTreeId: parsed2["turnTreeId"] } : {},
-        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {}
+        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {},
+        ...reviewContext !== void 0 ? { reviewContext } : {}
       };
     }
     const content = userContentSchema.safeParse(parsed2);
@@ -21412,7 +21419,7 @@ function parseAgentRunPayload(rawPrompt) {
     return { userContent: rawPrompt, invokedSkills: [], priorTodos: [] };
   }
 }
-var userContentSchema, todoSchema;
+var userContentSchema, todoSchema, REVIEW_CONTEXT_CHAR_CAP;
 var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
@@ -21443,6 +21450,7 @@ var init_parse_agent_run_payload = __esm({
       ]).optional(),
       assignedModel: external_exports.enum(["cloud", "local"]).optional()
     });
+    REVIEW_CONTEXT_CHAR_CAP = 2e4;
   }
 });
 
@@ -23271,6 +23279,100 @@ var init_persistence = __esm({
   }
 });
 
+// src/shared/store/review-reports.ts
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function userRunDone(report) {
+  return report?.initiator === "user" && report.status === "done" ? report : null;
+}
+function reviewReportsAwaitingModel(thread) {
+  const repliedAfter = (report, anchorId) => thread.messages.some(
+    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
+  );
+  const awaiting = [];
+  const legacy = userRunDone(thread.reviewReport);
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
+  const anchored = [];
+  for (const message2 of thread.messages) {
+    if (message2.role !== "assistant") continue;
+    const report = userRunDone(message2.reviewReport);
+    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
+  }
+  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
+  return [...awaiting, ...anchored];
+}
+function clip(text2, max) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+function reviewedLine(report) {
+  const parts = ["Copse Reviewer"];
+  if (report.baseRef !== "") {
+    const head = report.dirtyWorkingTree ? "the working tree" : `HEAD${report.headCommit !== null ? ` (${report.headCommit.slice(0, 10)})` : ""}`;
+    parts.push(`reviewed ${head} against ${report.baseRef}`);
+  }
+  if (report.models.reviewer !== "") parts.push(`with ${report.models.reviewer}`);
+  return `${parts.join(" ")}.`;
+}
+function groundLine(report) {
+  if (!report.execution.executed) {
+    return report.execution.reason === "" ? "Read-only review: nothing was executed." : `Read-only review: nothing was executed (${report.execution.reason}).`;
+  }
+  const checks = report.checks.map((check2) => `${check2.kind} ${check2.verdict}`);
+  const notChecked = report.notChecked.map((note) => `not checked: ${note}`);
+  const all = [...checks, ...notChecked];
+  return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
+}
+function findingLine(finding, index) {
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+}
+function reportContextText(report) {
+  const lines = [reviewedLine(report)];
+  const ground = groundLine(report);
+  if (ground !== null) lines.push(ground);
+  if (report.note !== void 0) lines.push(report.note);
+  const live = report.findings.filter((finding) => finding.dismissed !== true);
+  const dismissed = report.findings.length - live.length;
+  const dismissedNote = dismissed > 0 ? ` (${String(dismissed)} more dismissed by the user and left out)` : "";
+  if (live.length === 0) {
+    lines.push(report.findings.length === 0 ? "No findings." : `No open findings${dismissedNote}.`);
+  } else {
+    lines.push(`${String(live.length)} finding(s)${dismissedNote}:`);
+    live.slice(0, MAX_CONTEXT_FINDINGS).forEach((finding, index) => {
+      lines.push(findingLine(finding, index));
+    });
+    if (live.length > MAX_CONTEXT_FINDINGS) {
+      lines.push(`\u2026and ${String(live.length - MAX_CONTEXT_FINDINGS)} more on the card.`);
+    }
+  }
+  if (report.appendix > 0) {
+    lines.push(`${String(report.appendix)} lower-ranked finding(s) fell below the report's cut.`);
+  }
+  return lines.join("\n");
+}
+function reviewReportModelContext(reports) {
+  if (reports.length === 0) return void 0;
+  const shown = reports.slice(-MAX_CONTEXT_REPORTS);
+  const omitted = reports.length - shown.length;
+  const intro = reports.length === 1 ? "Since your last reply the user ran Copse Reviewer on this thread\u2019s changes. You did not start this review; the user sees its report as a card in the conversation." : `Since your last reply the user ran Copse Reviewer ${String(reports.length)} times on this thread\u2019s changes, oldest first. You did not start these reviews; the user sees each report as a card in the conversation.` + (omitted > 0 ? ` Only the latest ${String(shown.length)} are summarised here.` : "");
+  const body = [intro, ...shown.map(reportContextText)].join("\n\n");
+  return `<${REVIEW_CONTEXT_TAG}>
+${body}
+</${REVIEW_CONTEXT_TAG}>`;
+}
+var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
+var init_review_reports = __esm({
+  "src/shared/store/review-reports.ts"() {
+    MAX_CONTEXT_REPORTS = 3;
+    MAX_CONTEXT_FINDINGS = 12;
+    MAX_CONTEXT_CLAIM_CHARS = 400;
+    REVIEW_CONTEXT_TAG = "copse_review_report";
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical = CANONICAL_WORDS.get(word);
@@ -24206,10 +24308,12 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshPayload(store2, threadId, payload) {
+function refreshPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
   const thread = getThreadById(store2, threadId);
+  const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   return {
     ...payload,
+    ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
     // Send the per-thread model so the run uses the picker's selection rather
@@ -24511,6 +24615,7 @@ var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
+    init_review_reports();
     init_agent_activity();
     init_continuation_budget();
     init_thread_hydration();
@@ -37880,7 +37985,7 @@ var init_demo_api = __esm({
         stability: "stable",
         name: "Todos",
         version: "1.0.0",
-        description: "Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
+        description: "Plan and track multi-step work inside a thread. Adds the `todo_write` tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
         enabled: true,
         contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["todo_write", "todo_read"] },
         settings: []
@@ -61257,7 +61362,7 @@ var init_apple_development_plugin = __esm({
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
-    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop"];
+    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -64683,7 +64788,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (field.description) {
       const hint = document.createElement("span");
       hint.className = "plugin-setting-desc";
-      hint.textContent = field.description;
+      hint.innerHTML = renderMarkdown(field.description);
       label.append(hint);
     }
     if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput));
@@ -64823,7 +64928,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (plugin.description) {
       const desc = document.createElement("div");
       desc.className = "plugin-row-desc";
-      desc.textContent = plugin.description;
+      desc.innerHTML = renderMarkdown(plugin.description);
       row2.append(desc);
     }
     const chips = document.createElement("div");
@@ -74798,7 +74903,7 @@ function statusLabel3(report) {
       return "Review";
   }
 }
-function findingLocation(finding) {
+function findingLocation2(finding) {
   if (finding.startLine === void 0) return finding.path;
   const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
   return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
@@ -74868,7 +74973,7 @@ function findingEl(finding, actions) {
   summary.append(
     el("span", { class: "review-finding-severity" }, finding.severity),
     el("span", { class: "review-finding-class" }, finding.class),
-    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("code", { class: "review-finding-location" }, findingLocation2(finding)),
     el("span", { class: "review-finding-claim" }, finding.claim),
     el(
       "span",
@@ -75181,6 +75286,7 @@ function startReview(store2, api2, threadId, messageId) {
   const runningReport = {
     status: "running",
     startedAt: Date.now(),
+    initiator: "user",
     models: { reviewer: thread?.model ?? "", challenger: null },
     lenses: [],
     baseRef: "",
@@ -78313,7 +78419,10 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = scrollTop;
       return;
     }
-    if (scrollTop < lastScrollTop - 1) {
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    if (clamped) {
+    } else if (dropped) {
       userScrolledUpAt = Date.now();
       pinnedToBottom = false;
     } else if (isNearBottom()) {
@@ -91927,16 +92036,16 @@ var init_context_wheel = __esm({
 // src/renderer/views/footer-compact.ts
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
-  const previousShrink = [...items].map((el3) => el3.style.flexShrink);
+  const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
   items.forEach((el3) => {
-    el3.style.flexShrink = "0";
+    el3.style.flex = "0 0 auto";
   });
   if (usage) usage.style.display = "inline";
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
-    el3.style.flexShrink = previousShrink[index] ?? "";
+    el3.style.flex = previousFlex[index] ?? "";
   });
   if (usage) usage.style.display = previousUsageDisplay ?? "";
   return width;
@@ -91960,8 +92069,17 @@ function bindFooterCompactLayout(footer, onChange) {
   };
   const observer = new ResizeObserver(sync);
   observer.observe(footer);
+  for (const control of footer.children) observer.observe(control);
   const inputBar = footer.closest("#input-bar");
   if (inputBar) observer.observe(inputBar);
+  const mutations = new MutationObserver(sync);
+  mutations.observe(footer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
   window.addEventListener("resize", sync, { passive: true });
   sync();
   return {
@@ -91969,6 +92087,7 @@ function bindFooterCompactLayout(footer, onChange) {
     destroy: () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       window.removeEventListener("resize", sync);
     }
   };
