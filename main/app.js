@@ -870,7 +870,8 @@ var init_model_parameters = __esm({
         // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
         // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
         // for the model in general; we keep `medium` for this scenario on our own
-        // evidence, and the row stays opt-in and experimental because that evidence is
+        // evidence. Like every recipe it applies by default (a user-set field replaces
+        // its value), but the row stays labelled experimental because that evidence is
         // one benchmark on one host.
         params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
       },
@@ -56896,29 +56897,59 @@ function readNumberInput(input2) {
 function formatNumber(value) {
   return value === void 0 ? "" : String(value);
 }
-function createModelParametersSection(api2) {
+function samplingPlaceholder(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : String(recipeValue);
+}
+function blankHint(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : `Blank sends the recommended ${String(recipeValue)}.`;
+}
+function createModelParametersSection(api2, options = {}) {
   const fields = el("div", { class: "model-parameter-fields" });
-  const recommendBtn = el(
-    "button",
-    { type: "button", class: "provider-secondary", "data-testid": "model-parameter-recommend" },
-    "Use recommended"
+  const modelSelect = el("select", {
+    id: "settings-model-parameters-model",
+    "data-testid": "model-parameter-model"
+  });
+  const modelField = uiField({
+    label: "Model to tune",
+    control: modelSelect,
+    hint: "Any model you can pick. Changing this does not change your chat model."
+  });
+  const customisedList = el("div", { class: "provider-chips model-parameter-customised" });
+  const customisedRow = el(
+    "div",
+    { class: "model-parameter-customised-row", "data-testid": "model-parameter-customised" },
+    el("span", { class: "field-hint" }, "Customised:"),
+    customisedList
   );
   const recommendNote = el("p", { class: "field-hint model-parameter-recommend-note" });
   const recommendRow = el(
     "div",
-    { class: "model-parameter-recommend", hidden: "" },
-    recommendBtn,
+    { class: "model-parameter-recommend", "data-testid": "model-parameter-recommend" },
     recommendNote
   );
+  const resetBtn = el("button", {
+    type: "button",
+    class: "provider-secondary",
+    "data-testid": "model-parameter-reset"
+  });
   const note = el("p", { class: "settings-fieldset-desc model-parameter-note" });
   const root = el(
     "div",
     { class: "model-parameter-section", "data-testid": "model-parameters" },
-    el("h4", { class: "model-role-heading" }, "Model parameters"),
-    note,
-    recommendRow,
-    fields
+    // Which model, and what it runs on before any field is touched.
+    el(
+      "div",
+      { class: "model-parameter-header", "data-testid": "model-parameter-header" },
+      el("h4", { class: "model-role-heading" }, "Model parameters"),
+      modelField,
+      customisedRow,
+      note,
+      recommendRow
+    ),
+    fields,
+    resetBtn
   );
+  const picker = options.mountModelPicker?.(modelSelect);
   const reasoningSelect = el("select", {
     name: "modelReasoning",
     "data-testid": "model-parameter-reasoning"
@@ -56966,15 +56997,47 @@ function createModelParametersSection(api2) {
   function selected() {
     return stored[current] ?? {};
   }
+  function recipe() {
+    return recommendedModelParameters(current)?.params ?? {};
+  }
   function commit(next) {
     dirty = true;
     const sanitized = sanitizeModelParameters(next, current);
     if (isEmptyModelParameters(sanitized)) {
       const { [current]: _cleared, ...rest } = stored;
       stored = rest;
-      return;
+    } else {
+      stored = { ...stored, [current]: sanitized };
     }
-    stored = { ...stored, [current]: sanitized };
+    renderCustomised();
+    renderReset();
+  }
+  function renderCustomised() {
+    const models = Object.keys(stored);
+    customisedRow.hidden = models.length === 0;
+    customisedList.replaceChildren(
+      ...models.map((model) => {
+        const chip2 = el(
+          "button",
+          {
+            type: "button",
+            class: model === current ? "provider-chip active" : "provider-chip",
+            "aria-pressed": String(model === current),
+            "data-model": model
+          },
+          modelDisplayLabel(model)
+        );
+        chip2.addEventListener("click", () => {
+          selectModel(model);
+          void picker?.refresh(model);
+        });
+        return chip2;
+      })
+    );
+  }
+  function renderReset() {
+    resetBtn.hidden = stored[current] === void 0;
+    resetBtn.textContent = recommendedModelParameters(current) === null ? "Clear custom values" : "Reset to recommended";
   }
   function renderRecommendation() {
     const recommendation = recommendedModelParameters(current);
@@ -56990,9 +57053,11 @@ function createModelParametersSection(api2) {
       recommendation.sourceLabel ?? "model card"
     );
     recommendNote.replaceChildren(
-      document.createTextNode(`${recommendation.label} \u2014 fills the fields below from its `),
+      document.createTextNode(`Applied by default: ${recommendation.label}, from its `),
       link,
-      document.createTextNode(". Change or clear them afterwards like any other value.")
+      document.createTextNode(
+        ". Blank fields use it; a value you enter replaces the recommended one."
+      )
     );
   }
   function ceilingHint(gated) {
@@ -57004,14 +57069,17 @@ function createModelParametersSection(api2) {
   function render() {
     const support = modelParameterSupport(current);
     const params = selected();
+    const defaults = recipe();
     fields.replaceChildren();
     renderRecommendation();
-    if (support.unavailableReason) {
-      note.textContent = support.unavailableReason;
+    renderCustomised();
+    renderReset();
+    if (!current) {
+      note.textContent = "Choose a model to tune how it runs, wherever it is used.";
       return;
     }
-    if (!current) {
-      note.textContent = "Choose a chat model above to tune how it runs.";
+    if (support.unavailableReason) {
+      note.textContent = support.unavailableReason;
       return;
     }
     const parts = [
@@ -57024,7 +57092,11 @@ function createModelParametersSection(api2) {
     note.textContent = parts.join(" ");
     if (support.reasoning.length > 0) {
       reasoningSelect.replaceChildren(
-        el("option", { value: "" }, DEFAULT_OPTION_LABEL),
+        el(
+          "option",
+          { value: "" },
+          defaults.reasoning === void 0 ? DEFAULT_OPTION_LABEL : `Recommended (${REASONING_LABELS[defaults.reasoning]})`
+        ),
         ...support.reasoning.map(
           (level) => el("option", { value: level }, REASONING_LABELS[level])
         )
@@ -57045,11 +57117,15 @@ function createModelParametersSection(api2) {
     }
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens);
+      maxOutputTokensInput.placeholder = samplingPlaceholder(
+        defaults.maxOutputTokens,
+        "Provider default"
+      );
       fields.append(
         uiField({
           label: "Maximum output tokens",
           control: maxOutputTokensInput,
-          hint: "Per response, including hidden reasoning. Blank uses the provider default; a low cap can truncate a tool call."
+          hint: `Per response, including hidden reasoning. ${blankHint(defaults.maxOutputTokens, "Blank uses the provider default.")} A low cap can truncate a tool call.`
         })
       );
     }
@@ -57060,11 +57136,13 @@ function createModelParametersSection(api2) {
       const max = field === "temperature" ? support.temperatureMax : SAMPLING_BOUNDS[field].max;
       input2.max = String(max);
       input2.value = formatNumber(params[field]);
+      input2.placeholder = samplingPlaceholder(defaults[field], "Model default");
+      const blank = blankHint(defaults[field], "Blank uses the model\u2019s own default.");
       fields.append(
         uiField({
           label: spec.label,
           control: input2,
-          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} Blank uses the model\u2019s own default.`
+          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} ${blank}`
         })
       );
     }
@@ -57074,24 +57152,39 @@ function createModelParametersSection(api2) {
     const { reasoning: _dropped, ...rest } = selected();
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest);
   });
-  recommendBtn.addEventListener("click", () => {
-    const recommendation = recommendedModelParameters(current);
-    if (!recommendation) return;
-    commit({ ...selected(), ...recommendation.params });
+  resetBtn.addEventListener("click", () => {
+    commit({});
     render();
   });
-  function setModel(model) {
+  modelSelect.addEventListener("change", () => {
+    selectModel(modelSelect.value);
+  });
+  function selectModel(model) {
     current = model.trim();
+    if (current && ![...modelSelect.options].some((option) => option.value === current)) {
+      modelSelect.append(el("option", { value: current }, modelDisplayLabel(current)));
+    }
+    modelSelect.value = current;
     render();
   }
-  async function refresh(model) {
+  function setModel(chatModel) {
+    const model = chatModel.trim();
+    if (!model || modelParameterSupport(model).unavailableReason) {
+      render();
+      return;
+    }
+    selectModel(model);
+    void picker?.refresh(current);
+  }
+  async function refresh(chatModel) {
     try {
       stored = decodeModelParametersMap(await api2.get("modelParameters"));
     } catch {
       stored = {};
     }
     dirty = false;
-    setModel(model);
+    setModel(chatModel);
+    await picker?.refresh(current);
   }
   async function save() {
     if (!dirty) return;
@@ -63228,7 +63321,13 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
   const modelRoutingSection = createModelRoutingSection(api2, { modelScope: "all" });
   qsRequired(overlay, "#settings-model-routing-host").append(modelRoutingSection.root);
-  const modelParametersSection = createModelParametersSection(api2.settings);
+  const modelParametersSection = createModelParametersSection(api2.settings, {
+    mountModelPicker: (select) => mountModelSelectPicker(select, {
+      loadOptions: (current) => fetchModelOptions(api2, current),
+      ariaLabel: "Model to tune",
+      loadOnMount: false
+    })
+  });
   qsRequired(overlay, "#settings-model-parameters-host").append(modelParametersSection.root);
   const settingsModelPickers = {
     model: mountModelSelectPicker(qsRequired(overlay, 'select[name="model"]'), {
