@@ -89,9 +89,10 @@ jobs:
             const number = candidates[0].number;
             const { data: parent } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const sameRepository = parent.head.repo?.full_name === `${owner}/${repo}`;
-            const integrationHead = parent.head.ref === 'main' || parent.head.ref === 'release';
-            // Promotion and merge-back PRs carry commits whose screenshots were
-            // reviewed on their source PRs; their review gate passes unasked.
+            const integrationHead = ['main', 'promote/main', 'release'].includes(parent.head.ref);
+            // Promotion (`promote/main`, promote-develop.yml) and merge-back PRs
+            // carry commits whose screenshots were reviewed on their source PRs;
+            // their review gate passes unasked.
             if (
               parent.state === 'open' &&
               sameRepository &&
