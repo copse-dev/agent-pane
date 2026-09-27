@@ -3011,7 +3011,13 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = scrollTop
       return
     }
-    if (scrollTop < lastScrollTop - 1) {
+    // A drop that lands flush with the bottom is the browser clamping scrollTop
+    // after the content shrank (a finished turn's disclosures compacting), not
+    // the reader: scrolling up always leaves the bottom by at least the scroll.
+    // Treating the clamp as a scroll-up unpinned the view, so the next reply
+    // or a reopened disclosure stopped being followed.
+    const flushWithBottom = list.scrollHeight - scrollTop - list.clientHeight <= 1
+    if (scrollTop < lastScrollTop - 1 && !flushWithBottom) {
       userScrolledUpAt = Date.now()
       pinnedToBottom = false
     } else if (isNearBottom()) {
