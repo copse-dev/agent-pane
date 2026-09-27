@@ -126,9 +126,10 @@ dialog.activity-panel-overlay {
 .activity-row-open:hover {
   background: var(--bg-hover);
 }
+/* The selected row takes the full-bleed fill alone: an inline-edge rail means
+   nesting in this app (styles/accent-rails.test.ts). */
 .activity-row-open[aria-current='true'] {
   background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 .activity-row-open:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -241,8 +242,9 @@ dialog.activity-panel-overlay {
 }
 .activity-detail-title {
   margin: var(--spacing-sm) 0 0;
-  font-size: var(--font-size-md);
-  font-weight: 600;
+  /* An h3 is the display tier: Averia ships only 400 (docs/ui-taste.md). */
+  font-size: var(--font-size-lg);
+  font-weight: 400;
   overflow-wrap: anywhere;
 }
 /* The request itself scrolls; the header and the action bar stay put. */
