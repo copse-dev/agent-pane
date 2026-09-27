@@ -207,7 +207,7 @@ describe('syncAppleDevelopmentTools', () => {
     setDefaultPluginRegistry(null)
   })
 
-  it('keeps the visible Simulator tool aligned with the Apple plugin', () => {
+  it('keeps Simulator and Device Hub tools aligned with the Apple plugin', () => {
     const plugins = createFirstPartyPluginRegistry()
     setDefaultPluginRegistry(plugins)
     const registry = new ToolRegistry()
@@ -215,14 +215,17 @@ describe('syncAppleDevelopmentTools', () => {
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
     syncAppleDevelopmentTools(registry)
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+    assert.equal(registry.has('device_hub'), false)
 
     plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
     syncAppleDevelopmentTools(registry)
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+    assert.equal(registry.has('device_hub'), true)
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
     syncAppleDevelopmentTools(registry)
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+    assert.equal(registry.has('device_hub'), false)
   })
 })
 

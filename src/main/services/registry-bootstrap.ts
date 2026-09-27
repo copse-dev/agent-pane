@@ -88,6 +88,7 @@ import {
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
+import { deviceHubTool } from '../tools/device-hub-tool.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
 
 export function createRegistry(): ToolRegistry {
@@ -238,8 +239,10 @@ export function syncAppleDevelopmentTools(registry: ToolRegistry): void {
     if (!registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)) {
       registry.register(openSimulatorDesktopTool)
     }
+    if (!registry.has(deviceHubTool.name)) registry.register(deviceHubTool)
   } else {
     registry.unregister(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)
+    registry.unregister(deviceHubTool.name)
   }
 }
 
