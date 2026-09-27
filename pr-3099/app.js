@@ -91926,16 +91926,16 @@ var init_context_wheel = __esm({
 // src/renderer/views/footer-compact.ts
 function footerNaturalWidth(footer) {
   const items = footer.querySelectorAll(SHRINKING_FOOTER_ITEMS);
-  const previousShrink = [...items].map((el3) => el3.style.flexShrink);
+  const previousFlex = [...items].map((el3) => el3.style.flex);
   const usage = footer.querySelector(".footer-usage");
   const previousUsageDisplay = usage?.style.display;
   items.forEach((el3) => {
-    el3.style.flexShrink = "0";
+    el3.style.flex = "0 0 auto";
   });
   if (usage) usage.style.display = "inline";
   const width = footer.scrollWidth;
   items.forEach((el3, index) => {
-    el3.style.flexShrink = previousShrink[index] ?? "";
+    el3.style.flex = previousFlex[index] ?? "";
   });
   if (usage) usage.style.display = previousUsageDisplay ?? "";
   return width;
@@ -91959,8 +91959,17 @@ function bindFooterCompactLayout(footer, onChange) {
   };
   const observer = new ResizeObserver(sync);
   observer.observe(footer);
+  for (const control of footer.children) observer.observe(control);
   const inputBar = footer.closest("#input-bar");
   if (inputBar) observer.observe(inputBar);
+  const mutations = new MutationObserver(sync);
+  mutations.observe(footer, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
   window.addEventListener("resize", sync, { passive: true });
   sync();
   return {
@@ -91968,6 +91977,7 @@ function bindFooterCompactLayout(footer, onChange) {
     destroy: () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      mutations.disconnect();
       window.removeEventListener("resize", sync);
     }
   };
