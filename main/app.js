@@ -61256,7 +61256,7 @@ var init_apple_development_plugin = __esm({
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
-    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop"];
+    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
