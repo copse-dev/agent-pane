@@ -171,9 +171,11 @@ jobs:
       # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
       # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
       # against ~1 GB for this history alone. Nothing here reads another branch:
-      # a pull_request merge commit has the PR base as a parent, a push's
-      # `before` is an ancestor, and every step that needs `BASE_SHA` still
-      # fetches it explicitly.
+      # a pull_request merge commit has the PR base as a parent, and every step
+      # that needs `BASE_SHA` still fetches it explicitly. A push's `before` is
+      # usually an ancestor, but a force-push may have replaced it; the plan
+      # step fetches it unshallowed for that, and the oracle fails closed (full
+      # plan) whenever it still finds no merge-base.
       - name: Fetch the checked-out commit's history
         run: git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"
       - name: Plan reviewer-cell conformance
@@ -398,8 +400,11 @@ jobs:
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # full clone already has base history; this is belt-and-suspenders.
-          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          # Never `--depth=1`: into this full history it marks BASE_SHA a shallow
+          # boundary, and a force-pushed `before` then has no merge-base with
+          # HEAD. Unshallowed, an ancestor transfers nothing and a replaced tip
+          # only its own commits. The oracle plans `full` if this still fails.
+          git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
           grep -E '^(mode|specs|unit_mode|unit_specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -414,7 +419,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
       # Keep every full e2e run at 8 shards. This was sized when both runner
       # classes had a tight memory ceiling: the private-repo hosted runner was

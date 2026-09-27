@@ -91,6 +91,18 @@ describe('ci.yml workflow invariants', () => {
     )
   })
 
+  it('fetches the oracle base unshallowed so a force-pushed `before` keeps its merge-base', () => {
+    // `--depth=1` into the full history marks BASE_SHA a shallow boundary: a
+    // push whose `before` was force-replaced then shares no merge-base with
+    // HEAD. The oracle fails closed on that (full plan), but a normal fetch
+    // keeps such a push scoped at the cost of only the replaced commits.
+    const precheck = jobBlock('precheck')
+    assert.doesNotMatch(precheck, /git fetch[^\n]*--depth[^\n]*"\$BASE_SHA"/)
+    const fetch = precheck.indexOf('git fetch --no-tags origin "$BASE_SHA"')
+    const oracle = precheck.indexOf('node scripts/test-oracle.mts --plan --base "$BASE_SHA"')
+    assert.ok(fetch >= 0 && oracle > fetch, 'the plan step must fetch BASE_SHA before the oracle')
+  })
+
   it('skips the e2e job when the oracle plans zero shards (empty matrix is a GHA failure)', () => {
     // GitHub Actions treats `strategy.matrix: []` as job failure, not skipped.
     // Zero-shard plans (mode=skip / empty subset) must therefore gate the job
