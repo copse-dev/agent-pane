@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  pinTextForCapture,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 
 // G2 (docs/plans/hooks-and-feature-packs.md): the dry-run hook tester. Each
@@ -22,7 +26,11 @@ describe('settings sources hooks (dry-run tester)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-hook-test-'))
+    // A fixed path, not mkdtemp: the Sources list prints it, and a random
+    // suffix made every capture differ.
+    workspaceRoot = join(tmpdir(), 'copse-e2e', 'hook-test')
+    rmSync(workspaceRoot, { recursive: true, force: true })
+    mkdirSync(workspaceRoot, { recursive: true })
     mkdirSync(join(workspaceRoot, '.cursor'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, '.cursor', 'hooks.json'),
@@ -104,9 +112,16 @@ describe('settings sources hooks (dry-run tester)', () => {
     })
     await browser.pause(100)
 
+    // The duration chip is the hook's real run time. Pin only that chip.
+    const restoreDuration = await pinTextForCapture(
+      'fieldset:has(#sources-hooks-list)',
+      /^\d+ ms$/,
+      '40 ms',
+    )
     await saveElementScreenshot(
       'fieldset:has(#sources-hooks-list)',
       'settings-sources-hook-test.png',
     )
+    await restoreDuration()
   })
 })
