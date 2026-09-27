@@ -116,9 +116,11 @@ function branchOwnedScreenshots(mergeBase: string, cwd: string): Set<string> {
 export function computeScreenshotScope(base = 'origin/main', cwd = process.cwd()): ScreenshotScope {
   const mergeBase = git(['merge-base', 'HEAD', base], cwd).trim()
   if (!mergeBase) return unscoped()
+  const changed = changedFiles(base)
+  if (changed === null) return unscoped()
   // `labeled: false` — the label is handled by the caller (it bypasses filtering
   // wholesale), and passing it here would only change `gate.ok`, which we ignore.
-  const gate = computeScreenshotGate(changedFiles(base), false)
+  const gate = computeScreenshotGate(changed, false)
   return {
     enabled: true,
     affected: new Set(gate.affected.map(screenshotName)),

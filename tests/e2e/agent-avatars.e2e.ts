@@ -7,6 +7,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
+  parkPointer,
   saveAppScreenshot,
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
@@ -199,6 +200,9 @@ describe('riso avatars in agent chat', () => {
       [28, 28],
       [28, 28],
     ])
+    // A fresh session's pointer can rest over the transcript and fade in a
+    // message's hover-only Copy button.
+    await parkPointer()
     await saveAppScreenshot('agent-avatars-dark.png')
 
     const card = await $('.tool-card-subagent')
@@ -213,6 +217,7 @@ describe('riso avatars in agent chat', () => {
     await browser.execute(() => {
       document.documentElement.dataset['theme'] = 'light'
     })
+    await parkPointer()
     await saveAppScreenshot('agent-avatars-light.png')
   })
 
