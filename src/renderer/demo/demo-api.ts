@@ -174,7 +174,7 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
     name: 'Todos',
     version: '1.0.0',
     description:
-      'Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
+      'Plan and track multi-step work inside a thread. Adds the `todo_write` tool, the plan panel, and the prompt block that teaches the agent when to keep a list.',
     enabled: true,
     contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ['todo_write', 'todo_read'] },
     settings: [],

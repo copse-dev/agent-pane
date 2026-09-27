@@ -164,11 +164,49 @@ describe('reasoning responsiveness under a fixed ACP workload', () => {
     console.log(`Responsiveness report: ${JSON.stringify(report.summary)}`)
     // Timing is report-only until the base/head variance is calibrated. Content,
     // valid samples and working input are hard assertions from the first run.
+    // Open the live reasoning the way a reader does. About a second after the
+    // turn ends, compaction closes every disclosure that opened itself, so a
+    // scripted `open = true` raced it: the capture showed either the still
+    // auto-opened block at the end of the transcript or the compacted, short
+    // transcript from the top. A summary click is a recorded choice compaction
+    // leaves alone; clicking twice when it is still auto-opened lands on the
+    // same open, chosen state.
     await browser.execute(() => {
       const all = [...document.querySelectorAll<HTMLDetailsElement>('.message-reasoning')]
-      const last = all.find((node) => node.textContent.includes('Live reasoning begins.'))
-      if (last) last.open = true
+      const reasoning = all.find((node) => node.textContent.includes('Live reasoning begins.'))
+      const summary = reasoning?.querySelector<HTMLElement>(':scope > summary')
+      if (!reasoning || !summary) return
+      if (reasoning.open) summary.click()
+      summary.click()
     })
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            [...document.querySelectorAll<HTMLDetailsElement>('.message-reasoning')].find((node) =>
+              node.textContent.includes('Live reasoning begins.'),
+            )?.dataset['userToggled'] === '1',
+        ),
+      {
+        timeout: 5_000,
+        timeoutMsg: 'the live reasoning disclosure did not take the reader toggle',
+      },
+    )
+    // Frame the end of the transcript: the tail of the reasoning and the final reply.
+    await browser.execute(() => {
+      const list = document.querySelector<HTMLElement>('.messages-list')
+      if (list) list.scrollTop = list.scrollHeight
+    })
+    assert.equal(
+      await browser.execute(
+        () =>
+          [...document.querySelectorAll<HTMLDetailsElement>('.message-reasoning')].find((node) =>
+            node.textContent.includes('Live reasoning begins.'),
+          )?.open,
+      ),
+      true,
+      'the live reasoning should be open for the capture',
+    )
     await saveAppScreenshot('reasoning-responsiveness.png')
   })
 })
