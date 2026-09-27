@@ -162,14 +162,22 @@ jobs:
       # Whether the real Docker reviewer cell needs its focused conformance job.
       review_cell_required: ${{ steps.review-cell-plan.outputs.required }}
     steps:
-      # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
-      # / previous main tip.
       - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      # Full history of the commit under test, for the oracle's base diff and the
+      # gitleaks history scan. Not `fetch-depth: 0`: that also fetched every
+      # other branch (~575, mostly screenshot-compare/*) and every tag, 2.3 GB
+      # against ~1 GB for this history alone. Nothing here reads another branch:
+      # a pull_request merge commit has the PR base as a parent, and every step
+      # that needs `BASE_SHA` still fetches it explicitly. A push's `before` is
+      # usually an ancestor, but a force-push may have replaced it; the plan
+      # step fetches it unshallowed for that, and the oracle fails closed (full
+      # plan) whenever it still finds no merge-base.
+      - name: Fetch the checked-out commit's history
+        run: git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)"
       - name: Plan reviewer-cell conformance
         id: review-cell-plan
         shell: bash
@@ -392,8 +400,11 @@ jobs:
             { echo "mode=full"; echo "specs="; echo "unit_mode=full"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # full clone already has base history; this is belt-and-suspenders.
-          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          # Never `--depth=1`: into this full history it marks BASE_SHA a shallow
+          # boundary, and a force-pushed `before` then has no merge-base with
+          # HEAD. Unshallowed, an ancestor transfers nothing and a replaced tip
+          # only its own commits. The oracle plans `full` if this still fails.
+          git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
           node scripts/test-oracle.mts --plan --base "$BASE_SHA" | tee plan.txt
           grep -E '^(mode|specs|unit_mode|unit_specs)=' plan.txt >> "$GITHUB_OUTPUT"
           { echo '### e2e oracle plan'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -408,7 +419,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+          git fetch --no-tags origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
       # Keep every full e2e run at 8 shards. This was sized when both runner
       # classes had a tight memory ceiling: the private-repo hosted runner was
@@ -486,7 +497,7 @@ jobs:
   # memory proportional to the PR.
   #
   # A SEPARATE job rather than folded into `precheck`: precheck checks out the
-  # merge ref (fetch-depth: 0) so the e2e oracle can diff against base, whereas
+  # merge ref (with full history) so the e2e oracle can diff against base, whereas
   # committing needs the branch (head_ref) checkout. The formatter runs last so it tidies
   # whatever ESLint rewrote; `eslint-config-prettier` means the two never fight.
   #
@@ -501,8 +512,13 @@ jobs:
   # finds no diff and pushes nothing. Falls back to github.token when the App
   # credentials are unset (commit lands, just no CI re-trigger — the behaviour
   # before any push identity was configured).
+  #
+  # Never on a promotion into `release`: its head, `promote/main`
+  # (promote-develop.yml), must hold only commits already on `main`, and a
+  # format commit pushed there would reach `release` without ever landing on
+  # trunk. Those commits were formatted on their own PRs.
   autoformat:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.base_ref != 'release'
     # Hosted by default; SELF_HOSTED_CHECKS=copse-checks opts this job onto the
     # self-hosted check fleet (see the routing note above). Watch for 6 GB self-hosted OOM on eslint (see precheck).
     runs-on: ${{ vars.SELF_HOSTED_CHECKS || 'ubuntu-latest' }}
@@ -561,8 +577,17 @@ jobs:
         if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
-          fetch-depth: 0
           token: ${{ steps.app-token.outputs.token || github.token }}
+      # The head's history plus the base branch, so `BASE_SHA...HEAD` below has
+      # its merge-base even when the branch is behind. `fetch-depth: 0` got this
+      # by fetching every branch and tag (see the precheck checkout).
+      - name: Fetch the head's history and the base branch
+        if: steps.head.outputs.exists == 'true'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)" \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
       # Decide whether there is anything to fix BEFORE installing. `npm ci` /
       # cache-restore is ~2-5 min on this fleet and the autofix itself takes
       # seconds, so on a diff with no formattable file the old order paid the
@@ -1829,15 +1854,21 @@ jobs:
       # Checkout FIRST: `actions/checkout` cleans the workspace, so downloading
       # the shard artifacts before it would wipe them. No `ref:` — the default
       # merge commit is what the e2e shards rendered against, so the filter's
-      # `git diff` reproduces exactly the comparison they made. `fetch-depth: 0`
-      # for the filter's flap lookback and its `origin/main` scope base.
+      # `git diff` reproduces exactly the comparison they made. The fetch step
+      # after it supplies the history for the filter's flap lookback and its
+      # `origin/main` scope base.
       - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           # Mirrors precheck: never leave even the read-only GITHUB_TOKEN in a
           # fork checkout, but keep it for same-repo runs, which is the only
           # shape `./.github/actions/setup` is proven against in this pipeline.
           persist-credentials: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+      # The merge commit's history plus `main`, rather than `fetch-depth: 0`'s
+      # every branch and tag (see the precheck checkout).
+      - name: Fetch the checked-out commit's history and main
+        run: |
+          git fetch --no-tags --quiet --unshallow origin "$(git rev-parse HEAD)" \
+            '+refs/heads/main:refs/remotes/origin/main'
       - uses: ./.github/actions/setup
       - name: Download rendered screenshot candidates
         uses: actions/download-artifact@v8

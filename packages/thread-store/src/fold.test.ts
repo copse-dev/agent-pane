@@ -286,6 +286,44 @@ test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips the lengths of system-reminder blocks appended to a result', () => {
+  // The transcript shows exactly these blocks as Copse notes; after a reload a
+  // lost field would print their tags again, and a malformed one must not
+  // reclassify tool output.
+  const block = '<system-reminder>\nnote\n</system-reminder>'
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc1',
+          name: 'find_files',
+          args: {},
+          status: 'done',
+          result: `found\n\n${block}`,
+          appendedReminderLengths: [block.length],
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+
+  const { spine, files } = explodeThread(messages, hash)
+  const call = spine[0]?.toolCalls[0]
+  ok(call)
+  for (const malformed of [[], [-1], [1.5], ['12'], 'x']) {
+    // Through the real on-disk decode path, as a hand-edited events.jsonl would be.
+    const tampered = parseSpine(
+      JSON.stringify({ ...spine[0], toolCalls: [{ ...call, appendedReminderLengths: malformed }] }),
+    )
+    const folded = foldThread(meta(), tampered, resolverFor(files), { hash })
+    strictEqual(folded.messages[0]?.toolCalls[0]?.appendedReminderLengths, undefined)
+  }
+})
+
 test('round-trips tool-result images through referenced blobs', () => {
   const dataUrl = 'data:image/png;base64,aW1hZ2UtYnl0ZXM='
   const messages: Message[] = [
