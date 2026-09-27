@@ -104,6 +104,25 @@ describe('transcript bottom pinning', () => {
     )
   })
 
+  it('leaves a reader who scrolled up unpinned when a shrink clamps them onto the bottom', async () => {
+    const { list, threadId, store, geometry } = mountAtBottom()
+
+    // The reader scrolls up, away from the bottom.
+    list.scrollTop = geometry.max() - 120
+    list.dispatchEvent(new Event('scroll'))
+    // Content collapses under them far enough that the browser clamps their
+    // position onto the new bottom. That is layout, not a choice to follow.
+    geometry.setExtra(0)
+    const clampedAt = list.scrollTop
+    assert.equal(clampedAt, geometry.max(), 'the clamp lands on the new bottom')
+
+    // Past the scroll-up debounce, so only the pin state decides.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    addMessage(store, threadId, 'assistant', 'next reply')
+
+    assert.equal(list.scrollTop, clampedAt, 'the clamp must not re-pin a reader who scrolled up')
+  })
+
   it('still stops following when the reader scrolls up', () => {
     const { list, threadId, store, geometry } = mountAtBottom()
 
