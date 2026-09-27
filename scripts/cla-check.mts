@@ -173,6 +173,12 @@ export type ClaResult =
       unresolved: string[]
     }
 
+/** What an evaluation read from the pull request's comments. */
+interface Reading {
+  signings: Set<number>
+  comments: ClaComment[]
+}
+
 interface Signatures {
   ids: Set<number>
   emails: Set<string>
@@ -326,10 +332,11 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
   }
 
   /**
-   * The verdict, adding to `signings` the id of every signing comment it
-   * counted, so that publish can tell a signature posted after this read.
+   * The verdict, recording in `reading` the comments it read and the id of
+   * every signing comment it counted, so that publish can tell a signature
+   * posted after this read.
    */
-  async function decideReading(pr: ClaPullRequest, signings: Set<number>): Promise<ClaResult> {
+  async function decideReading(pr: ClaPullRequest, reading: Reading): Promise<ClaResult> {
     const { number } = pr
     // A promotion (main -> release, opened by copse-release-bot) carries only
     // commits already on the default branch, each of which merged there
@@ -355,10 +362,11 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       issue_number: number,
       per_page: 100,
     })
+    reading.comments = comments
     for (const c of comments) {
       if (c.user && c.body?.includes(SIGN_PHRASE)) {
         signedIds.add(c.user.id)
-        signings.add(c.id)
+        reading.signings.add(c.id)
       }
     }
 
@@ -485,7 +493,35 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
   }
 
   function decide(pr: ClaPullRequest): Promise<ClaResult> {
-    return decideReading(pr, new Set<number>())
+    return decideReading(pr, { signings: new Set<number>(), comments: [] })
+  }
+
+  function claUrlOf(pr: ClaPullRequest): string {
+    return `https://github.com/${owner}/${repo}/blob/${pr.base.repo.default_branch}/CLA.md`
+  }
+
+  /**
+   * The write that brings the bot comment in line with `result`, or null when
+   * it already is: a failure creates or updates it; a success updates one
+   * left from a failure and creates none.
+   */
+  function commentWrite(
+    result: Extract<ClaResult, { kind: 'evaluated' }>,
+    comments: readonly ClaComment[],
+    claUrl: string,
+  ): { id: number | undefined; body: string } | null {
+    const existing = comments.find(
+      (c) => c.user?.type === 'Bot' && c.body?.includes(COMMENT_MARKER),
+    )
+    if (result.state === 'success') {
+      if (!existing || existing.body?.includes(SIGNED_COMMENT_TEXT)) return null
+      return {
+        id: existing.id,
+        body: `${COMMENT_MARKER}\n${SIGNED_COMMENT_TEXT} the [Copse CLA](${claUrl}). Thank you.`,
+      }
+    }
+    const body = failureBody(result, claUrl)
+    return existing?.body === body ? null : { id: existing?.id, body }
   }
 
   /**
@@ -498,15 +534,17 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
    * it would stand on a signed head. A signature that lands between that
    * read and the failure write is caught by reading the comments once more
    * after it: the pull request is then evaluated again (once, `retry`) and
-   * that verdict published, so the last status written reflects it.
+   * that verdict published, so the last status written reflects it. Without
+   * `writeStatus` (the verdict is unchanged) only an existing comment is
+   * corrected.
    */
   async function publish(
     pr: ClaPullRequest,
     result: Extract<ClaResult, { kind: 'evaluated' }>,
     signings: ReadonlySet<number>,
-    retry: boolean,
+    options: { writeStatus: boolean; retry: boolean },
   ): Promise<ClaResult> {
-    const claUrl = `https://github.com/${owner}/${repo}/blob/${pr.base.repo.default_branch}/CLA.md`
+    const claUrl = claUrlOf(pr)
     const listComments = (): Promise<ClaComment[]> =>
       github.paginate(github.rest.issues.listComments, {
         owner,
@@ -527,16 +565,18 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
         }
       }
     }
-    await github.rest.repos.createCommitStatus({
-      owner,
-      repo,
-      sha: result.sha,
-      context: CLA_CONTEXT,
-      target_url: claUrl,
-      state: result.state,
-      description: result.description.slice(0, 140),
-    })
-    if (result.state === 'failure' && retry) {
+    if (options.writeStatus) {
+      await github.rest.repos.createCommitStatus({
+        owner,
+        repo,
+        sha: result.sha,
+        context: CLA_CONTEXT,
+        target_url: claUrl,
+        state: result.state,
+        description: result.description.slice(0, 140),
+      })
+    }
+    if (result.state === 'failure' && options.writeStatus && options.retry) {
       const late = uncounted(await listComments())
       if (late) {
         log(
@@ -546,25 +586,25 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       }
     }
 
-    const existing = comments.find(
-      (c) => c.user?.type === 'Bot' && c.body?.includes(COMMENT_MARKER),
-    )
-    if (result.state === 'success') {
-      if (existing && !existing.body?.includes(SIGNED_COMMENT_TEXT)) {
-        await github.rest.issues.updateComment({
+    const write = commentWrite(result, comments, claUrl)
+    if (write?.id === undefined) {
+      // An unchanged verdict corrects a comment but does not post one: a
+      // maintainer may have deleted it.
+      if (write && options.writeStatus) {
+        await github.rest.issues.createComment({
           owner,
           repo,
-          comment_id: existing.id,
-          body: `${COMMENT_MARKER}\n${SIGNED_COMMENT_TEXT} the [Copse CLA](${claUrl}). Thank you.`,
+          issue_number: pr.number,
+          body: write.body,
         })
       }
-      return result
-    }
-    const body = failureBody(result, claUrl)
-    if (!existing) {
-      await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body })
-    } else if (existing.body !== body) {
-      await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
+    } else {
+      await github.rest.issues.updateComment({
+        owner,
+        repo,
+        comment_id: write.id,
+        body: write.body,
+      })
     }
     return result
   }
@@ -575,10 +615,17 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     retry: boolean,
   ): Promise<ClaResult> {
     if (pr.state !== 'open') return { kind: 'skipped', number: pr.number, reason: 'not open' }
-    const signings = new Set<number>()
-    const result = await decideReading(pr, signings)
-    if (result.kind !== 'evaluated' || result.state === current) return result
-    return publish(pr, result, signings, retry)
+    const reading: Reading = { signings: new Set<number>(), comments: [] }
+    const result = await decideReading(pr, reading)
+    if (result.kind !== 'evaluated') return result
+    if (result.state !== current) {
+      return publish(pr, result, reading.signings, { writeStatus: true, retry })
+    }
+    // The verdict stands, but the comment may describe another head: one a
+    // default-token push moved away from and back to this failed SHA. Sync
+    // it, through publish's signature guard, only when it is out of date.
+    if (commentWrite(result, reading.comments, claUrlOf(pr))?.id === undefined) return result
+    return publish(pr, result, reading.signings, { writeStatus: false, retry: false })
   }
 
   function evaluate(pr: ClaPullRequest, current?: string): Promise<ClaResult> {

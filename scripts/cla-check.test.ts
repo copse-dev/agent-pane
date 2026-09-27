@@ -614,6 +614,48 @@ describe('CLA backfill', () => {
     )
   })
 
+  it('in the scheduled sweep, corrects a stale failure comment without rewriting the status', async () => {
+    // A default-token push moved the head back to a SHA that already failed;
+    // the bot comment still describes the later head's authors.
+    const commits = [commit(outsider, 'eve@example.com')]
+    const stale: ClaComment = {
+      id: 31,
+      user: actionsBot,
+      body: `${COMMENT_MARKER}\nThanks for contributing. ... Waiting on:\n- @mallory (first seen in abc)`,
+    }
+    const failed = [{ context: CLA_CONTEXT, state: 'failure' }]
+    const scenario: Scenario = {
+      pr: pull(15, outsider, commits, { fork: true }),
+      commits,
+      comments: [stale],
+      statuses: failed,
+    }
+    const first = fakeGitHub([scenario])
+    await evaluateOpenPullRequests(
+      { github: first.github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyChanged: true },
+    )
+    assert.deepEqual(first.written.statuses, [], 'the failure status stands')
+    assert.deepEqual(first.written.created, [])
+    assert.equal(first.written.updated.length, 1)
+    const corrected = first.written.updated[0]?.body ?? ''
+    assert.match(corrected, /@eve/)
+    assert.doesNotMatch(corrected, /@mallory/)
+    // Once the comment is current, the sweep writes nothing at all.
+    scenario.comments = [{ ...stale, body: corrected }]
+    const second = fakeGitHub([scenario])
+    await evaluateOpenPullRequests(
+      { github: second.github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyChanged: true },
+    )
+    assert.deepEqual(second.written, {
+      statuses: [],
+      created: [],
+      updated: [],
+      commitListings: [15],
+    })
+  })
+
   it('leaves an unchanged failure comment alone', async () => {
     const commits = [commit(outsider, 'eve@example.com')]
     const first = fakeGitHub([{ pr: pull(9, outsider, commits, { fork: true }), commits }])
