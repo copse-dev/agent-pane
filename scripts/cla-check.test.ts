@@ -358,6 +358,33 @@ describe('CLA evaluation', () => {
     const pr = pull(4011, maintainer, commits.slice(0, MAX_LISTED_COMMITS))
     const { result } = await evaluate({ pr, commits })
     assert.equal(stateOf(result), 'failure')
+    // The listing stops before the head, which has not moved.
+    const past = await evaluate({ pr: pull(4012, maintainer, commits), commits })
+    assert.equal(stateOf(past.result), 'failure')
+  })
+
+  it('does not stamp a truncated listing on a head that moved while its commits were listed', async () => {
+    // Read at 249 commits; a push lands before the listing, which then stops
+    // at the API's 250. The truncation failure belongs to the new head, not
+    // to the 249 the older head carries.
+    const commits = Array.from({ length: 251 }, () => commit(maintainer, 'jk@example.com'))
+    const scenario: Scenario = { pr: pull(4019, maintainer, commits.slice(0, 249)), commits }
+    const { github, written } = fakeGitHub([scenario])
+    const listCommits = github.rest.pulls.listCommits
+    github.rest.pulls.listCommits = async (params): ReturnType<typeof listCommits> => {
+      scenario.pr = pull(4019, maintainer, commits)
+      return listCommits(params)
+    }
+    const result = await evaluateOpenPullRequests(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log: () => {} },
+      { onlyChanged: false },
+    )
+    assert.deepEqual(
+      result.map((r) => r.kind),
+      ['skipped'],
+    )
+    assert.deepEqual(written.statuses, [])
+    assert.deepEqual(written.created, [])
   })
 })
 
@@ -437,6 +464,44 @@ describe('CLA backfill', () => {
       ['failure'],
     )
     assert.equal(written.created.length, 1)
+  })
+
+  it('does not let a backfill publish a failure after a noreply co-author signs', async () => {
+    // An unsigned `<id>+<login>@users.noreply.github.com` co-author is
+    // reported as unresolved, not as an unsigned login, but their signing
+    // comment still starts its own run that sets the status.
+    const commits = [
+      commit(
+        maintainer,
+        'jk@example.com',
+        'x\n\nCo-authored-by: Eve <2+eve@users.noreply.github.com>',
+      ),
+    ]
+    const scenario: Scenario = { pr: pull(13, maintainer, commits), commits }
+    const { github, written } = fakeGitHub([scenario])
+    const listCommits = github.rest.pulls.listCommits
+    github.rest.pulls.listCommits = async (params): ReturnType<typeof listCommits> => {
+      // The backfill has read the comments; now eve signs.
+      scenario.comments = [{ id: 7, user: outsider, body: SIGN_PHRASE }]
+      return listCommits(params)
+    }
+    const results = await evaluateOpenPullRequests(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyChanged: false },
+    )
+    assert.deepEqual(
+      results.map((r) => r.kind),
+      ['skipped'],
+    )
+    assert.deepEqual(written.statuses, [])
+    assert.deepEqual(written.created, [])
+    // The signing comment's own run sees the signature and passes.
+    github.rest.pulls.listCommits = listCommits
+    const signing = await evaluatePullRequest(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log },
+      13,
+    )
+    assert.equal(stateOf(signing), 'success')
   })
 
   it('does not let a backfill that read comments before a signature overwrite the signing run', async () => {

@@ -25,7 +25,7 @@ name: CLA
 #             run, so the schedule is what corrects a success computed under
 #             the older rule. The two jobs run in different concurrency
 #             groups, so a backfill can overlap a signing comment's run; the
-#             script drops a failure whose author signed meanwhile, and the
+#             script drops a failure if anyone signed meanwhile, and the
 #             schedule recomputes any verdict left stale.
 #
 # No pull request code is checked out or run. Both jobs check out only

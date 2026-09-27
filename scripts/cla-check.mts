@@ -325,7 +325,11 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     return (await canPush(pr.user.login)) ? 'maintainer' : 'other'
   }
 
-  async function decide(pr: ClaPullRequest): Promise<ClaResult> {
+  /**
+   * The verdict, adding to `signings` the id of every signing comment it
+   * counted, so that publish can tell a signature posted after this read.
+   */
+  async function decideReading(pr: ClaPullRequest, signings: Set<number>): Promise<ClaResult> {
     const { number } = pr
     // A promotion (main -> release, opened by copse-release-bot) carries only
     // commits already on the default branch, each of which merged there
@@ -352,7 +356,10 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       per_page: 100,
     })
     for (const c of comments) {
-      if (c.user && c.body?.includes(SIGN_PHRASE)) signedIds.add(c.user.id)
+      if (c.user && c.body?.includes(SIGN_PHRASE)) {
+        signedIds.add(c.user.id)
+        signings.add(c.id)
+      }
     }
 
     const commits = await github.paginate(github.rest.pulls.listCommits, {
@@ -363,10 +370,20 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     })
     // The head moved between reading the pull request and listing its
     // commits. The push that moved it raised its own event (or the backfill
-    // reaches it), so do not stamp this list's verdict on the older head.
+    // reaches it), so do not stamp this list's verdict on the older head. A
+    // listing cut off at MAX_LISTED_COMMITS ends before the head, so there
+    // the pull request is read again: a push that took it from under the
+    // limit to the limit must not stamp the truncation failure on the old
+    // head.
     const last = commits.at(-1)
-    if (commits.length < MAX_LISTED_COMMITS && last && last.sha !== pr.head.sha) {
-      return { kind: 'skipped', number, reason: `head moved from ${pr.head.sha} to ${last.sha}` }
+    if (last && last.sha !== pr.head.sha) {
+      const now =
+        commits.length < MAX_LISTED_COMMITS
+          ? last.sha
+          : (await github.rest.pulls.get({ owner, repo, pull_number: number })).data.head.sha
+      if (now !== pr.head.sha) {
+        return { kind: 'skipped', number, reason: `head moved from ${pr.head.sha} to ${now}` }
+      }
     }
 
     const opener = await openerKind(pr)
@@ -467,16 +484,23 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     return lines.join('\n')
   }
 
+  function decide(pr: ClaPullRequest): Promise<ClaResult> {
+    return decideReading(pr, new Set<number>())
+  }
+
   /**
    * Sets the status on the head it was computed for and syncs the comment.
-   * Writes nothing when a failure has gone stale: one of its unsigned authors
-   * has since posted the signing sentence. That comment starts its own run,
-   * in another concurrency group from the backfill, which sets the status;
-   * a failure written after it would stand on a signed head.
+   * Writes nothing when a failure may have gone stale: a signing comment the
+   * evaluation did not count (`signings`) has since been posted, whoever
+   * posted it (an unsigned author, or a co-author the failure lists as
+   * unresolved). That comment starts its own run, in another concurrency
+   * group from the backfill, which sets the status; a failure written after
+   * it would stand on a signed head.
    */
   async function publish(
     pr: ClaPullRequest,
     result: Extract<ClaResult, { kind: 'evaluated' }>,
+    signings: ReadonlySet<number>,
   ): Promise<ClaResult> {
     const claUrl = `https://github.com/${owner}/${repo}/blob/${pr.base.repo.default_branch}/CLA.md`
     const comments = await github.paginate(github.rest.issues.listComments, {
@@ -486,9 +510,8 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       per_page: 100,
     })
     if (result.state === 'failure') {
-      const waitingOn = new Set(result.unsigned.map((u) => u.login))
       const signer = comments.find(
-        (c) => c.user && waitingOn.has(c.user.login) && c.body?.includes(SIGN_PHRASE),
+        (c) => c.user && !signings.has(c.id) && c.body?.includes(SIGN_PHRASE),
       )?.user
       if (signer) {
         return {
@@ -533,9 +556,10 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
 
   async function evaluate(pr: ClaPullRequest, current?: string): Promise<ClaResult> {
     if (pr.state !== 'open') return { kind: 'skipped', number: pr.number, reason: 'not open' }
-    const result = await decide(pr)
+    const signings = new Set<number>()
+    const result = await decideReading(pr, signings)
     if (result.kind !== 'evaluated' || result.state === current) return result
-    return publish(pr, result)
+    return publish(pr, result, signings)
   }
 
   return { decide, evaluate }
