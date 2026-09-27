@@ -22063,8 +22063,8 @@ function resolveFooterUsage(input2) {
   }
   const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
   const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total && !input2.running) return null;
+  const total2 = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total2 && !input2.running) return null;
   return {
     inputTokens: estimatedInput ?? 0,
     outputTokens: estimatedOutput,
@@ -22097,6 +22097,11 @@ function getThreadById(store2, id) {
   if (!id) return void 0;
   const { threads, backgroundThreads } = store2.getState();
   return threads.find((t2) => t2.id === id) ?? backgroundThreads.find((b4) => b4.thread.id === id)?.thread;
+}
+function getThreadProjectId(store2, threadId) {
+  const { threads, backgroundThreads, activeProjectId } = store2.getState();
+  if (threads.some((t2) => t2.id === threadId)) return activeProjectId;
+  return backgroundThreads.find((b4) => b4.thread.id === threadId)?.projectId ?? null;
 }
 function patchThreadAnywhere(store2, threadId, patch) {
   const { threads, backgroundThreads } = store2.getState();
@@ -23752,9 +23757,9 @@ function todoProgress(todos) {
   return { done, total: active2.length };
 }
 function formatTodoProgress(todos) {
-  const { done, total } = todoProgress(todos);
-  if (total === 0) return null;
-  return `${String(done)}/${String(total)} done`;
+  const { done, total: total2 } = todoProgress(todos);
+  if (total2 === 0) return null;
+  return `${String(done)}/${String(total2)} done`;
 }
 var init_todo_logic = __esm({
   "src/shared/todos/todo-logic.ts"() {
@@ -33775,21 +33780,21 @@ async function ensureSshConnected(api2, hostId) {
   await api2.sshWorkspace.connect(hostId);
 }
 function paginateSidebarThreads(threads, visibleLimit, activeThreadId) {
-  const total = threads.length;
-  let visibleCount = Math.min(visibleLimit, total);
+  const total2 = threads.length;
+  let visibleCount = Math.min(visibleLimit, total2);
   if (activeThreadId) {
     const index = threads.findIndex((t2) => t2.id === activeThreadId);
     if (index >= visibleCount) {
       visibleCount = Math.min(
         Math.ceil((index + 1) / SIDEBAR_THREADS_PAGE_SIZE) * SIDEBAR_THREADS_PAGE_SIZE,
-        total
+        total2
       );
     }
   }
   return {
     visibleThreads: threads.slice(0, visibleCount),
     visibleCount,
-    hasMore: visibleCount < total
+    hasMore: visibleCount < total2
   };
 }
 function settleActivationWaiter(projectId, error62) {
@@ -37097,7 +37102,7 @@ function createDemoApi(scenario, options = {}) {
     approval: { respond: resolvedVoid },
     review: { run: resolvedVoid, dismissFinding: resolvedVoid, restoreFinding: resolvedVoid },
     ask: { respond: resolvedVoid },
-    alerts: { threadFinished: resolvedVoid },
+    alerts: { threadFinished: resolvedVoid, onOpenThread: subscribe },
     sshPrompt: {
       respond: resolvedVoid,
       onRequest: subscribe
@@ -39570,13 +39575,13 @@ function countPortraitPanelOverflow(widths, gap, containerWidth, overflowTrigger
   if (widths.length === 0) return 0;
   const rowWidth = (count, includeOverflow) => {
     if (count <= 0) return includeOverflow ? overflowTriggerWidth : 0;
-    let total = 0;
+    let total2 = 0;
     for (let i2 = 0; i2 < count; i2++) {
-      total += widths[i2] ?? 0;
-      if (i2 > 0) total += gap;
+      total2 += widths[i2] ?? 0;
+      if (i2 > 0) total2 += gap;
     }
-    if (includeOverflow) total += gap + overflowTriggerWidth;
-    return total;
+    if (includeOverflow) total2 += gap + overflowTriggerWidth;
+    return total2;
   };
   if (rowWidth(widths.length, false) <= containerWidth) return 0;
   const maxHide = Math.max(0, widths.length - minVisible);
@@ -57783,11 +57788,11 @@ function pointTooltipContent(p2, costAxis = "blended") {
       ttRow("tt-muted", `Off-plan you'd pay ${formatPrice2(p2.planDetail.apiPricePerMTok)} blended.`)
     );
     if (p2.planDetail.priorLimitHits) {
-      const { hit, total } = p2.planDetail.priorLimitHits;
+      const { hit, total: total2 } = p2.planDetail.priorLimitHits;
       root.append(
         ttRow(
           "tt-muted",
-          `Limit hit in ${String(hit)}/${String(total)} prior windows \u2014 still treating as included.`
+          `Limit hit in ${String(hit)}/${String(total2)} prior windows \u2014 still treating as included.`
         )
       );
     }
@@ -66077,7 +66082,7 @@ function createThreadFilter(store2, api2, changed) {
     }
     const messages = await api2.threads.loadMessages(projectId, thread.id);
     const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
-    const size = prompts.reduce((total, prompt) => total + prompt.length, 0);
+    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
     remember(key, {
       updatedAt: thread.updatedAt,
       lastPromptAt: thread.lastPromptAt,
@@ -66197,6 +66202,25 @@ var init_attention = __esm({
   }
 });
 
+// packages/thread-store/src/prompt-placeholders.ts
+function stripPastePlaceholders(content) {
+  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
+  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
+}
+var PASTE_PLACEHOLDER;
+var init_prompt_placeholders = __esm({
+  "packages/thread-store/src/prompt-placeholders.ts"() {
+    PASTE_PLACEHOLDER = "\uFFFC";
+  }
+});
+
+// src/shared/threads/prompt-placeholders.ts
+var init_prompt_placeholders2 = __esm({
+  "src/shared/threads/prompt-placeholders.ts"() {
+    init_prompt_placeholders();
+  }
+});
+
 // src/shared/git/worktree-policy.ts
 function slugPrompt(prompt) {
   const slug2 = prompt.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 42).replace(/-+$/g, "");
@@ -66228,17 +66252,20 @@ var init_worktree_policy = __esm({
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
-    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && m2.content.trim()
+    (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
 }
 function firstWords(text2, n2 = 6) {
   return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
+function promptWords(message2) {
+  return stripPastePlaceholders(message2.content);
+}
 function namingInput(userMessages) {
   const first = userMessages[0];
   if (!first) return "";
   const recent = userMessages.slice(1).slice(-3);
-  return [first, ...recent].map((m2) => m2.content.trim().slice(0, 300)).join("\n\n");
+  return [first, ...recent].map((m2) => promptWords(m2).slice(0, 300)).join("\n\n");
 }
 function owningProjectId(store2, threadId) {
   const background = backgroundProjectOf(store2, threadId);
@@ -66288,7 +66315,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(first.content) : current.title;
+    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -66300,6 +66327,7 @@ var init_thread_naming = __esm({
   "src/renderer/controller/thread-naming.ts"() {
     init_thread_helpers();
     init_unknown_value3();
+    init_prompt_placeholders2();
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
@@ -68183,11 +68211,11 @@ function userPromptLines(content) {
 }
 function userPromptWrappedLineEstimate(content) {
   const lines = userPromptLines(content);
-  let total = 0;
+  let total2 = 0;
   for (const line of lines) {
-    total += Math.max(1, Math.ceil(line.length / USER_PROMPT_FOLD_CHARS_PER_LINE));
+    total2 += Math.max(1, Math.ceil(line.length / USER_PROMPT_FOLD_CHARS_PER_LINE));
   }
-  return total;
+  return total2;
 }
 function budgetWordRun(words, budget, fromEnd) {
   let count = 0;
@@ -74458,13 +74486,13 @@ var init_plugin_panel = __esm({
 // packages/agent/src/plugins/plugin-panel.ts
 function panelListSummary(rows) {
   let done = 0;
-  let total = 0;
+  let total2 = 0;
   for (const row2 of rows) {
     if (row2.status === "cancelled") continue;
-    total += 1;
+    total2 += 1;
     if (row2.status === "completed") done += 1;
   }
-  return `${String(done)}/${String(total)} done`;
+  return `${String(done)}/${String(total2)} done`;
 }
 function todosToPanelListRows(todos) {
   return todos.filter((todo) => todo.status !== "cancelled").map((todo) => {
@@ -75942,25 +75970,6 @@ var init_render_signature = __esm({
   }
 });
 
-// packages/thread-store/src/prompt-placeholders.ts
-function stripPastePlaceholders(content) {
-  if (!content.includes(PASTE_PLACEHOLDER)) return content.trim();
-  return content.split(PASTE_PLACEHOLDER).join("").replace(/[^\S\n]+\n/g, "\n").replace(/[^\S\n]{2,}/g, " ").trim();
-}
-var PASTE_PLACEHOLDER;
-var init_prompt_placeholders = __esm({
-  "packages/thread-store/src/prompt-placeholders.ts"() {
-    PASTE_PLACEHOLDER = "\uFFFC";
-  }
-});
-
-// src/shared/threads/prompt-placeholders.ts
-var init_prompt_placeholders2 = __esm({
-  "src/shared/threads/prompt-placeholders.ts"() {
-    init_prompt_placeholders();
-  }
-});
-
 // src/renderer/controller/resend-message.ts
 function lastResendableMessage(thread) {
   const queued = queuedMessageIds(thread);
@@ -76368,15 +76377,15 @@ function mountConversationSearch(root) {
     }
   }
   function updateCount() {
-    const total = ranges.length;
+    const total2 = ranges.length;
     const query = input2.value;
     if (!query) {
       count.textContent = "";
       input2.classList.remove("chat-search-nomatch");
       return;
     }
-    count.textContent = total === 0 ? "0/0" : `${String(currentIdx + 1)}/${String(total)}`;
-    input2.classList.toggle("chat-search-nomatch", total === 0);
+    count.textContent = total2 === 0 ? "0/0" : `${String(currentIdx + 1)}/${String(total2)}`;
+    input2.classList.toggle("chat-search-nomatch", total2 === 0);
   }
   function scrollCurrentIntoView() {
     const current = ranges[currentIdx];
@@ -79322,9 +79331,9 @@ function mountConversation(root, store2, api2) {
         hydrationFailed(thread.id) ? hydrationFailureEl() : hydrationNoticeEl(thread.status === "running")
       );
     }
-    const total = thread.messages.length;
-    const initialStart = Math.max(0, total - INITIAL_RENDER_WINDOW);
-    for (let i2 = initialStart; i2 < total; i2++) {
+    const total2 = thread.messages.length;
+    const initialStart = Math.max(0, total2 - INITIAL_RENDER_WINDOW);
+    for (let i2 = initialStart; i2 < total2; i2++) {
       const m2 = thread.messages[i2];
       if (m2) appendMessageEl(thread.id, m2.id, true);
     }
@@ -90451,7 +90460,8 @@ function mountFileTree(root, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "sidebar-header sidebar-header-compact" },
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Explorer"),
     panePopoutButton(store2, api2, "explorer", "explorer"),
     paneMaximizeButton(store2, "explorer"),
     refreshBtn
@@ -106636,8 +106646,8 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
   });
   const listHeader = el(
     "div",
-    { class: "terminals-list-header terminal-rail-section-header" },
-    "Shells"
+    { class: "pane-header terminals-list-header terminal-rail-section-header" },
+    el("span", { class: "pane-header-title" }, "Shells")
   );
   const newBtn = el(
     "button",
@@ -107922,8 +107932,8 @@ function defaultProposedPath(queue, activeDiff) {
   return first.path;
 }
 function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
-  const listHeader = el("div", { class: "git-changes-header" });
-  const headerTitle = el("span", { class: "git-changes-title" }, "Changes");
+  const listHeader = el("div", { class: "pane-header git-changes-header" });
+  const headerTitle = el("span", { class: "pane-header-title" }, "Changes");
   const bulkActions = el("div", { class: "git-changes-bulk-actions" });
   const acceptAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Accept all");
   const rejectAllBtn = el("button", { type: "button", class: "git-changes-bulk-btn" }, "Reject all");
@@ -108518,7 +108528,7 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
   function renderDirectoryView(diff) {
     clear(dirWrap);
     const files = diff.directoryFiles ?? [];
-    const total = diff.directoryFileCount ?? files.length;
+    const total2 = diff.directoryFileCount ?? files.length;
     dirWrap.append(
       el(
         "div",
@@ -108535,11 +108545,11 @@ function mountGitChangesPane(listRoot, viewerRoot, store2, api2, monaco) {
         el(
           "span",
           { class: "git-dir-view-count" },
-          `Untracked directory \xB7 ${String(total)} ${total === 1 ? "file" : "files"}`
+          `Untracked directory \xB7 ${String(total2)} ${total2 === 1 ? "file" : "files"}`
         )
       )
     );
-    if (total > files.length) {
+    if (total2 > files.length) {
       dirWrap.append(
         el("div", { class: "git-dir-view-note" }, `Showing the first ${String(files.length)}.`)
       );
@@ -109106,9 +109116,9 @@ function collectLinkedPrs(store2) {
   return refs;
 }
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
-  const listHeader = el("div", { class: "git-changes-header" });
+  const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Pull requests"),
+    el("span", { class: "pane-header-title" }, "Pull requests"),
     panePopoutButton(store2, api2, "prs", "pull requests"),
     paneMaximizeButton(store2, "pull requests"),
     el(
@@ -110159,9 +110169,9 @@ function mountMemoriesPane(listRoot, viewerRoot, store2, api2) {
   let creating = false;
   let loadToken = 0;
   let loading = false;
-  const listHeader = el("div", { class: "git-changes-header" });
+  const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Memories"),
+    el("span", { class: "pane-header-title" }, "Memories"),
     panePopoutButton(store2, api2, "memories", "memories"),
     paneMaximizeButton(store2, "memories"),
     el(
@@ -110742,13 +110752,13 @@ function assignCurrentWeights(root) {
   }
 }
 function resizePair(before, after, beforeStart, afterStart, delta) {
-  const total = beforeStart + afterStart;
+  const total2 = beforeStart + afterStart;
   const beforeSize = Math.min(
-    total - minimumHeight(after),
+    total2 - minimumHeight(after),
     Math.max(minimumHeight(before), beforeStart + delta)
   );
   before.style.flexGrow = String(beforeSize);
-  after.style.flexGrow = String(total - beforeSize);
+  after.style.flexGrow = String(total2 - beforeSize);
 }
 function sectionLabel(section) {
   return section.querySelector(".terminal-rail-section-header")?.textContent.trim() ?? "section";
@@ -111091,7 +111101,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   const collapsedCategories = /* @__PURE__ */ new Set();
   const editorDrafts = /* @__PURE__ */ new Map();
   const autoSaveToken = /* @__PURE__ */ new Map();
-  const listHeader = el("div", { class: "git-changes-header roadmap-list-header" });
+  const listHeader = el("div", { class: "pane-header roadmap-list-header" });
   const filter = el("div", { class: "roadmap-filter" });
   const searchInput = el("input", {
     type: "search",
@@ -111185,7 +111195,7 @@ function mountRoadmapPane(listRoot, viewerRoot, store2, api2) {
   });
   actionButtons.append(newBtn, importBtn, reviewBtn, exportBtn, refreshBtn);
   listHeader.append(
-    el("span", { class: "git-changes-title" }, "Roadmap"),
+    el("span", { class: "pane-header-title" }, "Roadmap"),
     panePopoutButton(store2, api2, "roadmap", "roadmap"),
     paneMaximizeButton(store2, "roadmap"),
     filter,
@@ -113339,7 +113349,11 @@ function createWebview(partition, resolveWorkspacePreview) {
   return guest;
 }
 function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
-  const listHeader = el("div", { class: "browser-tabs-list-header" }, "Tabs");
+  const listHeader = el(
+    "div",
+    { class: "pane-header browser-tabs-list-header" },
+    el("span", { class: "pane-header-title" }, "Tabs")
+  );
   const newBtn = el(
     "button",
     {
@@ -125327,8 +125341,8 @@ var init_tight = __esm({
       }
       _paletteRect(x2, y2, width, height, data, palette, display) {
         const dest = this._getScratchBuffer(width * height * 4);
-        const total = width * height * 4;
-        for (let i2 = 0, j3 = 0; i2 < total; i2 += 4, j3++) {
+        const total2 = width * height * 4;
+        for (let i2 = 0, j3 = 0; i2 < total2; i2 += 4, j3++) {
           const sp = data[j3] * 3;
           dest[i2] = palette[sp];
           dest[i2 + 1] = palette[sp + 1];
@@ -130579,8 +130593,8 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
   );
   const header = el(
     "div",
-    { class: "git-changes-header" },
-    el("span", { class: "git-changes-title" }, "Desktop"),
+    { class: "pane-header" },
+    el("span", { class: "pane-header-title" }, "Desktop"),
     el(
       "div",
       { class: "vnc-header-actions" },
@@ -132037,6 +132051,29 @@ var init_ask_user_dialog = __esm({
   }
 });
 
+// src/renderer/controller/alert-navigation.ts
+function openThreadFromAlert(store2, target, open2) {
+  const { projects } = store2.getState();
+  const known = target.projectId !== null && projects.some((project2) => project2.id === target.projectId);
+  const projectId = known ? target.projectId : getThreadProjectId(store2, target.threadId);
+  if (projectId === null) return false;
+  open2(projectId, target.threadId);
+  return true;
+}
+function mountAlertThreadNavigation(store2, api2) {
+  return api2.alerts.onOpenThread((target) => {
+    openThreadFromAlert(store2, target, (projectId, threadId) => {
+      switchProjectThread(store2, api2, projectId, threadId);
+    });
+  });
+}
+var init_alert_navigation = __esm({
+  "src/renderer/controller/alert-navigation.ts"() {
+    init_thread_helpers();
+    init_projects();
+  }
+});
+
 // src/renderer/views/ssh-prompt-dialog.ts
 function mountSshPromptDialog(api2) {
   const promptEl = el("pre", { class: "ssh-prompt-body" });
@@ -132925,6 +132962,40 @@ function sortedRows(rows, column, ascending) {
     return (a3 - b4) * direction || left.pid - right.pid;
   });
 }
+function total(values) {
+  const known = values.filter((value) => value !== null);
+  return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0);
+}
+function groupedRows(rows, column, ascending) {
+  const byThread = /* @__PURE__ */ new Map();
+  for (const row2 of sortedRows(rows, column, ascending)) {
+    const group = byThread.get(row2.threadId);
+    if (group) group.push(row2);
+    else byThread.set(row2.threadId, [row2]);
+  }
+  const groups = [...byThread].map(([threadId, groupRows]) => ({
+    threadId,
+    rows: groupRows,
+    cpuPercent: total(groupRows.map((row2) => row2.cpuPercent)),
+    memoryMiB: total(groupRows.map((row2) => row2.memoryMiB))
+  }));
+  const direction = ascending ? 1 : -1;
+  return groups.sort((left, right) => {
+    if (left.threadId === null) return right.threadId === null ? 0 : 1;
+    if (right.threadId === null) return -1;
+    const a3 = column === "cpu" ? left.cpuPercent : left.memoryMiB;
+    const b4 = column === "cpu" ? right.cpuPercent : right.memoryMiB;
+    if (a3 === null) return b4 === null ? left.threadId.localeCompare(right.threadId) : 1;
+    if (b4 === null) return -1;
+    return (a3 - b4) * direction || left.threadId.localeCompare(right.threadId);
+  });
+}
+function formatCpu(value) {
+  return value === null ? "\u2014" : `${value.toFixed(1)}%`;
+}
+function formatMemory(value) {
+  return value === null ? "\u2014" : `${value.toFixed(1)} MiB`;
+}
 function mountProcessManagerDialog(api2, store2) {
   const { dialog: dialog2, open: open2, close } = createOverlayDialog({
     id: "process-manager-dialog",
@@ -133016,6 +133087,7 @@ function mountProcessManagerDialog(api2, store2) {
   let timer = null;
   let generation = 0;
   let refreshing = false;
+  const collapsedGroups = /* @__PURE__ */ new Set();
   const runGenerations = /* @__PURE__ */ new Map();
   let sampledRuns = /* @__PURE__ */ new Set();
   function trackRuns(snapshot) {
@@ -133027,8 +133099,7 @@ function mountProcessManagerDialog(api2, store2) {
     sampledRuns = new Set(snapshot.activeRunThreadIds);
   }
   function projectForThread(threadId, projectId) {
-    const state = store2.getState();
-    return projectId ?? state.backgroundThreads.find((item) => item.thread.id === threadId)?.projectId ?? (state.threads.some((thread) => thread.id === threadId) ? state.activeProjectId : null);
+    return projectId ?? getThreadProjectId(store2, threadId);
   }
   function jumpToThread(projectId, threadId) {
     close();
@@ -133094,6 +133165,37 @@ function mountProcessManagerDialog(api2, store2) {
     }
     return entries2;
   }
+  function threadLabel2(threadId) {
+    if (threadId === null) return "Shared";
+    const title = getThreadById(store2, threadId)?.title.trim();
+    return title && title.length > 0 ? title : `Thread ${threadId.slice(0, 8)}`;
+  }
+  function threadEntries(threadId) {
+    return threadId ? threadMenuEntries(
+      threadId,
+      projectForThread(threadId),
+      getThreadById(store2, threadId)?.status === "running"
+    ) : [];
+  }
+  function actionsCellFor(label, entries2) {
+    const cell = el("td", { class: "process-manager-actions" });
+    if (entries2().length === 0) return cell;
+    const button = el(
+      "button",
+      {
+        type: "button",
+        class: "ui-btn ui-btn-ghost process-manager-actions-button",
+        "aria-label": `Actions for ${label}`
+      },
+      moreHorizontalIcon("ui-icon ui-icon-sm")
+    );
+    button.addEventListener("click", () => {
+      const rect = button.getBoundingClientRect();
+      showContextMenu(rect.right, rect.bottom, entries2(), dialog2);
+    });
+    cell.append(button);
+    return cell;
+  }
   function activityMenuEntries(threadId, projectId) {
     const run2 = runGenerations.get(threadId);
     return threadMenuEntries(
@@ -133121,6 +133223,7 @@ function mountProcessManagerDialog(api2, store2) {
   }
   function render(snapshot) {
     const focusedActivityThread = document.activeElement instanceof HTMLElement && activityList.contains(document.activeElement) ? document.activeElement.dataset["threadId"] : void 0;
+    const focusedGroup = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) && document.activeElement.classList.contains("process-manager-group-toggle") ? document.activeElement.dataset["groupKey"] : void 0;
     cpuHeading.setAttribute(
       "aria-sort",
       column === "cpu" ? ascending ? "ascending" : "descending" : "none"
@@ -133181,61 +133284,82 @@ function mountProcessManagerDialog(api2, store2) {
       closeButton.focus({ preventScroll: true });
     }
     const state = store2.getState();
-    for (const row2 of sortedRows(snapshot.processes, column, ascending)) {
-      const thread = getThreadById(store2, row2.threadId);
-      const title = thread?.title.trim();
-      const threadLabel2 = row2.threadId ? title && title.length > 0 ? title : `Thread ${row2.threadId.slice(0, 8)}` : "Shared";
-      const entries2 = menuEntries(row2);
-      const actionsCell = el("td", { class: "process-manager-actions" });
-      if (entries2.length > 0) {
-        const actionsButton = el(
-          "button",
-          {
-            type: "button",
-            class: "ui-btn ui-btn-ghost process-manager-actions-button",
-            "aria-label": `Actions for ${row2.label} (${String(row2.pid)})`
-          },
-          moreHorizontalIcon("ui-icon ui-icon-sm")
-        );
-        actionsButton.addEventListener("click", () => {
-          const rect = actionsButton.getBoundingClientRect();
-          showContextMenu(rect.right, rect.bottom, menuEntries(row2), dialog2);
-        });
-        actionsCell.append(actionsButton);
-      }
-      const tableRow = el(
+    for (const group of groupedRows(snapshot.processes, column, ascending)) {
+      const groupKey = group.threadId ?? "";
+      const expanded = !collapsedGroups.has(groupKey);
+      const label = threadLabel2(group.threadId);
+      const count = `${String(group.rows.length)} ${group.rows.length === 1 ? "process" : "processes"}`;
+      const toggle = el(
+        "button",
+        {
+          type: "button",
+          class: "process-manager-group-toggle",
+          "data-group-key": groupKey,
+          "aria-expanded": String(expanded)
+        },
+        chevronRightIcon("ui-icon ui-icon-sm process-manager-group-chevron"),
+        el("span", { class: "process-manager-group-title", title: label }, label),
+        el("span", { class: "process-manager-group-count" }, count)
+      );
+      toggle.addEventListener("click", () => {
+        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey);
+        else collapsedGroups.add(groupKey);
+        if (current) render(current);
+      });
+      const groupEntries = () => threadEntries(group.threadId);
+      const header = el(
         "tr",
         {
-          "data-pid": String(row2.pid),
-          "data-kind": row2.type,
-          "data-thread-id": row2.threadId ?? "",
+          class: "process-manager-group",
+          "data-group-key": groupKey,
           "data-active-thread": String(
-            row2.threadId !== null && row2.threadId === state.activeThreadId
+            group.threadId !== null && group.threadId === state.activeThreadId
           )
         },
-        el("td", { class: "process-manager-name", title: row2.label }, row2.label),
-        el("td", { class: "process-manager-type" }, row2.type),
-        el("td", { class: "process-manager-thread", title: threadLabel2 }, threadLabel2),
-        el(
-          "td",
-          { class: "process-manager-number" },
-          row2.cpuPercent === null ? "\u2014" : `${row2.cpuPercent.toFixed(1)}%`
-        ),
-        el(
-          "td",
-          { class: "process-manager-number" },
-          row2.memoryMiB === null ? "\u2014" : `${row2.memoryMiB.toFixed(1)} MiB`
-        ),
-        el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
-        actionsCell
+        el("th", { scope: "rowgroup", colspan: "3" }, toggle),
+        el("td", { class: "process-manager-number" }, formatCpu(group.cpuPercent)),
+        el("td", { class: "process-manager-number" }, formatMemory(group.memoryMiB)),
+        el("td"),
+        actionsCellFor(label, groupEntries)
       );
-      if (entries2.length > 0) {
-        tableRow.addEventListener("contextmenu", (event) => {
+      if (groupEntries().length > 0) {
+        header.addEventListener("contextmenu", (event) => {
           event.preventDefault();
-          showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+          showContextMenu(event.clientX, event.clientY, groupEntries(), dialog2);
         });
       }
-      body.append(tableRow);
+      body.append(header);
+      if (groupKey === focusedGroup) toggle.focus({ preventScroll: true });
+      for (const row2 of group.rows) {
+        const entries2 = menuEntries(row2);
+        const tableRow = el(
+          "tr",
+          {
+            class: "process-manager-process",
+            "data-pid": String(row2.pid),
+            "data-kind": row2.type,
+            "data-thread-id": row2.threadId ?? "",
+            "data-active-thread": String(
+              row2.threadId !== null && row2.threadId === state.activeThreadId
+            )
+          },
+          el("td", { class: "process-manager-name", title: row2.label }, row2.label),
+          el("td", { class: "process-manager-type" }, row2.type),
+          el("td", { class: "process-manager-thread", title: label }, label),
+          el("td", { class: "process-manager-number" }, formatCpu(row2.cpuPercent)),
+          el("td", { class: "process-manager-number" }, formatMemory(row2.memoryMiB)),
+          el("td", { class: "process-manager-number process-manager-pid" }, String(row2.pid)),
+          actionsCellFor(`${row2.label} (${String(row2.pid)})`, () => menuEntries(row2))
+        );
+        tableRow.hidden = !expanded;
+        if (entries2.length > 0) {
+          tableRow.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            showContextMenu(event.clientX, event.clientY, menuEntries(row2), dialog2);
+          });
+        }
+        body.append(tableRow);
+      }
     }
     updated.textContent = `Updated ${new Date(snapshot.sampledAt).toLocaleTimeString()}`;
     dialog2.dataset["sampledAt"] = String(snapshot.sampledAt);
@@ -144165,6 +144289,7 @@ async function boot() {
   mountOnboardingDialog(store, api);
   mountApprovalDialog(api, store);
   mountAskUserDialog(api, store);
+  mountAlertThreadNavigation(store, api);
   mountSshPromptDialog(api);
   mountUpdatePromptDialog(api);
   mountConfirmDialog();
@@ -144586,6 +144711,7 @@ var init_main = __esm({
     init_ssh_status_banner();
     init_approval_dialog();
     init_ask_user_dialog();
+    init_alert_navigation();
     init_ssh_prompt_dialog();
     init_update_prompt_dialog();
     init_ui();
