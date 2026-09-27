@@ -8,7 +8,7 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
-## 0.1.0-beta.9
+## 0.1.0-beta.10
 
 - The update prompt now lists what changed in every release since the one you
   are running, newest first, instead of only naming the new version. Skipping a

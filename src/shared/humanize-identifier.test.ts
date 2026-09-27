@@ -21,6 +21,13 @@ describe('humanizeIdentifier', () => {
     assert.equal(humanizeIdentifier('ci-investigator'), 'CI investigator')
   })
 
+  it('keeps an acronym canonical next to punctuation', () => {
+    assert.equal(humanizeIdentifier('MCP: tool'), 'MCP: tool')
+    assert.equal(humanizeIdentifier('mcp:tool'), 'MCP:tool')
+    assert.equal(humanizeIdentifier('read (pdf)'), 'Read (PDF)')
+    assert.equal(humanizeIdentifier('ping:'), 'Ping:')
+  })
+
   it('keeps prose compounds hyphenated', () => {
     assert.equal(humanizeIdentifier('post-turn-review'), 'Post-turn review')
     assert.equal(humanizeIdentifier('long-horizon-tasks'), 'Long-horizon tasks')
