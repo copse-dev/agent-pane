@@ -14,7 +14,7 @@ export const siteBuildingPlugin: RegisteredPlugin = definePlugin(
   {
     name: SITE_BUILDING_PLUGIN_ID,
     description:
-      'Site building — adds a focused design, implementation, accessibility, and browser-verification brief when a user asks Copse to build a website.',
+      'Adds a focused design, implementation, accessibility, and browser-verification brief when a user asks Copse to build a website.',
     trust: 'first-party',
     stability: 'stable',
     storage: { namespace: SITE_BUILDING_PLUGIN_ID },

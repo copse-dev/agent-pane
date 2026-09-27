@@ -21,11 +21,13 @@
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-sm);
 }
+/* The dialog's own heading, typed like the other dialog titles (Process
+   Manager, Automations, Run app): an h2 at --font-size-lg. */
 .attachment-preview-title {
   max-width: min(80ch, 80vw);
+  margin: 0;
   color: var(--text-primary);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-size: var(--font-size-lg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -66,22 +68,10 @@
   text-align: center;
   overflow-wrap: anywhere;
 }
+/* `ui-btn ui-btn-ghost` + closeIcon(), the same close control every other
+   dialog header uses. */
 .attachment-preview-close {
   flex-shrink: 0;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border-radius: var(--radius);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 1.25rem;
-  line-height: 1;
-  cursor: pointer;
-}
-.attachment-preview-close:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .text-expandable {
@@ -95,9 +85,9 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-/* Composer pills hang the affordance on their label, because the pill itself
+/* Composer chips hang the affordance on their label, because the chip itself
    already contains the ✕ button. Round the hover tint so it sits inside the
-   pill's border rather than squaring off against it. */
+   chip's border rather than squaring off against it. */
 .attachment-chip-label.text-expandable,
 .inline-paste-chip-label.text-expandable {
   border-radius: var(--radius);

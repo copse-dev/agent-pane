@@ -3,6 +3,12 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
+import {
+  assertBadgeRecipe,
+  assertNeutralBadge,
+  readBadgeStyles,
+  signalColours,
+} from './helpers/badge-style.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { resetUserData, seedEmptyProject, writeSeedConfig } from './helpers/seed-config.ts'
 import {
@@ -74,6 +80,21 @@ describe('custom agent discovery surfaces', () => {
     assert.match(text, new RegExp(AGENT_DESCRIPTION))
     assert.match(text, /project/i)
     assert.match(text, /\.cursor/i)
+
+    // Scope and container are labels, not statuses: neutral, in the shared badge
+    // recipe, and the container directory shown exactly as written.
+    const signals = await signalColours()
+    const badges = await readBadgeStyles('#sources-agents-list .sources-badge')
+    const scope = badges.find((badge) => badge.text === 'project')
+    const container = badges.find((badge) => badge.text === '.cursor')
+    assert.ok(scope, 'project scope badge rendered')
+    assert.ok(container, '.cursor container badge rendered')
+    assertNeutralBadge(scope, signals)
+    assertNeutralBadge(container, signals)
+    assertBadgeRecipe(scope)
+    assertBadgeRecipe(container, { literal: true })
+    assert.match(container.fontFamily, /mono|Menlo|Consolas/i, 'a directory name is monospace')
+    assert.equal(scope.borderColor, container.borderColor, 'both badges share the neutral outline')
 
     await browser.execute(() => {
       document.querySelector('#sources-agents-list')?.closest('fieldset')?.scrollIntoView({
