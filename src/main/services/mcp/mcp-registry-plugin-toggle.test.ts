@@ -11,6 +11,7 @@ import { CANVAS_SERVER_NAME } from './bundled-mcp-server.ts'
 import { mcpToolName } from './mcp-config.ts'
 import {
   loadMcpServers,
+  reloadMcpServers,
   reloadMcpServersForPluginToggle,
   shutdownMcpServers,
 } from './mcp-registry.ts'
@@ -127,6 +128,39 @@ describe('reloadMcpServersForPluginToggle', () => {
         false,
         `status reported after ${String(turns)} hops`,
       )
+    }
+  })
+
+  it('keeps tracking a bundled client a concurrent full reload connected', async () => {
+    // A toggle's resync awaits the old bundled clients closing. A full reload that
+    // reconnects the canvas meanwhile must not have its fresh client dropped from
+    // tracking, or a later disable could no longer find and remove its tool.
+    const hop = (): Promise<void> => Promise.resolve()
+    for (const reloadFirst of [false, true]) {
+      for (let hops = 0; hops <= 200; hops++) {
+        await shutdownMcpServers()
+        tools = new ToolRegistry()
+        plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+        await loadMcpServers(tools)
+
+        const first = reloadFirst
+          ? reloadMcpServers(tools)
+          : reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+        for (let i = 0; i < hops; i++) await hop()
+        const second = reloadFirst
+          ? reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+          : reloadMcpServers(tools)
+        await Promise.all([first, second])
+
+        plugins.disable(MCP_UI_CANVAS_PLUGIN_ID)
+        await reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+        const order = reloadFirst ? 'reload first' : 'toggle first'
+        assert.equal(
+          tools.has(RENDER_TOOL),
+          false,
+          `${order}, ${String(hops)} hops: tool left registered`,
+        )
+      }
     }
   })
 

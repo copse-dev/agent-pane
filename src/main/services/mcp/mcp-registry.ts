@@ -805,10 +805,13 @@ async function resyncBundledServers(registry: ToolRegistry): Promise<McpServerSt
     registry.unregister(toolName)
     toolMeta.delete(toolName)
   }
+  // Untrack exactly the clients snapshotted above, before awaiting their close,
+  // so anything another load registers meanwhile is never swept up here.
+  for (const server of bundled) {
+    const index = activeServers.indexOf(server)
+    if (index !== -1) activeServers.splice(index, 1)
+  }
   await Promise.allSettled(bundled.map((server) => server.client.close()))
-  const configured = activeServers.filter((server) => server.config.transport !== 'in-process')
-  activeServers.length = 0
-  activeServers.push(...configured)
   const bundledStatuses = await connectBundledServers(registry, () => run === bundledGeneration)
   // A newer toggle took over while this one connected; it publishes instead.
   if (run !== bundledGeneration) return getMcpServerStatuses()
