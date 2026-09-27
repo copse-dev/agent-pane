@@ -8,6 +8,7 @@ import {
 } from './helpers/screenshot.ts'
 import { assertCheckboxBesideLabel } from './helpers/checkbox-row.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
+import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 function settingsSection(section: 'ssh') {
   return $(`.settings-section[data-section="${section}"]`)
@@ -104,6 +105,10 @@ describe('SSH settings section', () => {
       'Port must be a whole number from 1 to 65535.',
     )
     await expect(sshSection.$$('.ssh-host-row')).toBeElementsArrayOfSize(1)
+    await assertErrorColor('.ssh-host-status .ui-inline-status')
+    await assertKitButtonChrome('.ssh-host-save', 'primary')
+    await assertKitButtonChrome('.ssh-host-clear', 'secondary')
+    await assertKitButtonChrome('.ssh-import-config', 'secondary')
     // The rejected field itself is marked, in the error hue, not just the
     // status line; and every host field takes the Settings field recipe (#3065).
     const fields = await browser.execute(() => {

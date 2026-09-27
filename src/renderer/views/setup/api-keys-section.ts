@@ -1,7 +1,16 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
-import { setInlineStatus } from '../../dom/inline-status.ts'
+import { setInlineStatus, setInlineStatusMarkdown } from '../../dom/inline-status.ts'
 import { showConfirmDialog } from '../../views/confirm-dialog.ts'
+
+/**
+ * Why a key was not stored when OS secure storage is unavailable and the
+ * process-level plaintext escape hatch is off. One clause shared by every key
+ * field, so the guidance reads the same wherever a key is saved; callers prefix
+ * it ("Not saved: …").
+ */
+export const PLAINTEXT_STORAGE_DISABLED_REASON =
+  'secure storage is unavailable and plaintext secret storage is disabled. Start Copse with `COPSE_ALLOW_PLAINTEXT_SECRETS=1` to opt in.'
 
 // Fixed cloud providers with bespoke key validation. OpenAI-compatible presets
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
@@ -243,12 +252,12 @@ export function createApiKeysSection(
       } else {
         const message =
           result.reason === 'plaintext-storage-disabled'
-            ? 'Not saved: secure storage unavailable; plaintext is disabled (set COPSE_ALLOW_PLAINTEXT_SECRETS=1 to opt in)'
+            ? `Not saved: ${PLAINTEXT_STORAGE_DISABLED_REASON}`
             : 'Not saved: unencrypted storage declined'
         failures.push(message)
         // Leave the entered value in place and keep Settings open so the user
         // can retry after fixing the keyring or explicitly enabling the escape.
-        setInlineStatus(field.status, 'error', message)
+        setInlineStatusMarkdown(field.status, 'error', message)
         field.status.className = keyStatusClass(false)
       }
     }

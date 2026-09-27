@@ -84,8 +84,15 @@
   --text-on-accent: #444444;
   --error: #f48771;
   --danger: #f14c4c;
+  /* Label on a --danger fill (.ui-btn-danger). Dark text in dark, where the
+     fill is a light red; light restates it as white on its deep red. */
+  --text-on-danger: #1a1a1a;
   --success: #4ec9b0;
   --warning: #cca700;
+  /* Label on a --warning fill (the held-message badge). No single colour clears
+     AA on both themes' warning, so light restates it: dark text on dark's
+     yellow, white on light's brown. */
+  --text-on-warning: #1a1a1a;
   /* Callout severities. --info backs GitHub-alert Note; --important backs the
      fifth alert kind, which GitHub renders in purple. --important is pushed
      bluer than a true violet on purpose: a magenta-leaning purple reads as
@@ -154,6 +161,15 @@
   --action-min-height: calc(36px * var(--ui-scale));
   --action-padding-block: calc(6.8px * var(--ui-scale));
   --action-padding-inline: calc(14px * var(--ui-scale));
+  /* Badge recipe (`.ui-badge`, global/ui.css): a label on the thing, not a
+     shouted status. Sentence case, a restrained corner (full rounding belongs to
+     the actions above), and neutral unless the badge reports a status. See
+     docs/ui-taste.md → "Badges are labels". */
+  --badge-font-size: var(--font-size-xs);
+  --badge-font-weight: 500;
+  --badge-radius: var(--radius);
+  --badge-padding-block: 1px;
+  --badge-padding-inline: calc(6px * var(--ui-scale));
   --spacing-xs: calc(4px * var(--ui-scale));
   --spacing-sm: calc(8px * var(--ui-scale));
   --spacing-md: calc(12px * var(--ui-scale));
@@ -177,7 +193,18 @@
      16px icon + sm padding + top border (Settings' historical band). */
   --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: calc(16px * var(--ui-scale));
-  /* Browser Tabs header + URL toolbar share one band so their bottom borders
-     meet across the tree resizer (28px nav buttons + xs pad + bottom border). */
-  --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
+  /* Every right-panel list pane header (Explorer, Terminal, Changes, PRs,
+     Memories, Roadmap, Desktop, Browser) sits on one band, so switching panel
+     modes never moves the header's bottom edge (28px controls + xs pad + bottom
+     border). See docs/ui-taste.md "Pane headers share one band". */
+  --pane-header-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
+  /* Browser Tabs header + URL toolbar share that band so their bottom borders
+     meet across the tree resizer. */
+  --browser-chrome-band-height: var(--pane-header-band-height);
+  /* In-pane group headers (tracked caps over a list section or card): one size,
+     tracking and weight so "CHANGES", "AGENT TASKS" and a roadmap category read
+     as the same element. */
+  --group-header-font-size: var(--font-size-xs);
+  --group-header-letter-spacing: 0.04em;
+  --group-header-font-weight: 600;
 }

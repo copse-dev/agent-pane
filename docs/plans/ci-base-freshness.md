@@ -42,7 +42,9 @@ Acceptance cases:
 - A pull request that contains every commit on its base reports current.
 - A pull request behind its base reports the exact deficit, worded as the
   branch's own deficit ("Branch is N commits behind `main`") — never as a claim
-  about which base CI merged (see _What `Base Current` measures_).
+  about which base CI merged (see _What `Base Current` measures_). It reports
+  it as `neutral`, unless the commits it lacks change a file it also changes;
+  then it reports `failure` and names those files (see _Red only on overlap_).
 - A base retarget without a push re-evaluates, because the merge result changed.
 - A comparison that cannot be established reports failure, never a quiet pass
   and never `neutral` or `skipped`.
@@ -72,10 +74,25 @@ A new check context, `Base Current`, published by
 - **`behind_by`, not a local guess.** The verdict is GitHub's own count of
   commits on the base the head does not contain: the same measure
   "Require branches to be up to date before merging" uses.
-- **Two conclusions only.** `neutral` and `skipped` both _satisfy_ a required
-  status check, so the policy emits `success` or `failure` and nothing else.
-  An unestablished comparison is `failure`: at merge time it is
-  indistinguishable from a stale one.
+- **Red only on overlap.** Up to date is `success`. Behind is `neutral`,
+  unless the base commits the branch lacks change a file the pull request also
+  changes: that is `failure`, naming the files, because it is where the merge
+  result CI tested is most likely to differ from the one that would land. A
+  comparison that could not be established is `failure`. Every push to the base
+  makes every open pull request behind, and a red check for that alone invited
+  a base merge on each one, which re-runs its whole CI and restarts its
+  screenshot and Copse reviews without finding anything. The original design
+  kept to `success` and `failure` because `neutral` _satisfies_ a required
+  status check, but this context is advisory and never required, so that
+  argument does not apply.
+- **Overlap from GitHub's file lists.** The head's changed paths come from the
+  same `base...head` comparison as `behind_by`. The base's come from one
+  `mergeBase...base` comparison, made only when the head is behind and shared
+  by every candidate with the same merge base. GitHub lists at most 300 files
+  per comparison; a list that long may be truncated, so the overlap is unknown
+  and the verdict stays `neutral`, saying so. Renames count under both names.
+  This is same-file overlap, not the test oracle's dependency mapping, which
+  would need a checkout and dependencies this job deliberately does without.
 - **Self-healing.** Every failure path is re-evaluated by the next push to the
   base and by the pull request's own next push, retarget or reopen, so a
   transient API failure cannot park a pull request.
@@ -166,9 +183,10 @@ on the pull request what the rule is blocking on.
 ## Validation evidence
 
 `scripts/base-freshness.test.ts` covers the policy, the decoders, the fan-out,
-the single-PR re-validation, and the workflow's structural invariants. The policy tests assert the
-two-conclusion property directly, because a `neutral` here would be a silent
-regression to the behavior this control exists to remove.
+the single-PR re-validation, and the workflow's structural invariants. The policy tests pin
+the outcomes: `success` only from zero behind, `neutral` for a positive count
+with no overlap or an unknown one, and `failure` for an overlap or for a
+comparison that could not be established.
 
 Full local validation is recorded in the pull request.
 

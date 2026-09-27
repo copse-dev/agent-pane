@@ -10,7 +10,9 @@ name: Copse review findings
 # no model, cloud, workflow, or App credential. The Stage 0 report remains
 # untrusted input and is validated before a field reaches a model. Then one
 # review is posted on the pull request: each anchored finding an inline comment
-# on the head commit, the rest in the body.
+# on the head commit, the rest in the body. Last, the description summary that
+# review-summary.yml keeps on every push is rewritten with this review's
+# evidence, unless the pull request has moved past the reviewed head.
 #
 # The fresh handoff job at the end of "Copse review ground" explicitly
 # dispatches this workflow. `workflow_dispatch` is GitHub's documented
@@ -321,6 +323,7 @@ jobs:
             --max-verify "$REVIEW_MAX_VERIFY" \
             --verify-concurrency "$REVIEW_VERIFY_CONCURRENCY" \
             --post-review github \
+            --post-summary github \
             --repo "$GITHUB_REPOSITORY" \
             --pr "$PR_NUMBER" \
             --json findings.json \

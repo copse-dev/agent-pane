@@ -3,7 +3,8 @@ import { uiActions } from '../ui/index.ts'
 
 export interface ConfirmDialogRequest {
   message: string
-  detail?: string
+  /** Supporting text. Pass a node when part of it is code (paths, commands). */
+  detail?: string | Node
   confirmLabel?: string
   cancelLabel?: string
   /** Style the confirm button as destructive (delete, restore, etc.). */
@@ -56,7 +57,7 @@ export function mountConfirmDialog(): void {
     if (!active) return
     messageEl.textContent = active.message
     if (active.detail) {
-      detailEl.textContent = active.detail
+      detailEl.replaceChildren(active.detail)
       detailEl.hidden = false
     } else {
       detailEl.textContent = ''

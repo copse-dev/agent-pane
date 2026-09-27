@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, realpath, rm, rmdir } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -24,6 +24,7 @@ import {
   worktreeManagerSandboxOverlay,
   worktreeReadOnlySandboxOverlay,
 } from '../project-sandbox/worktree-config.ts'
+import { isMandatoryWriteDenyMountPath } from '../project-sandbox/config.ts'
 
 const OWNER_ID = /^[\w-]{1,128}$/
 
@@ -670,10 +671,58 @@ async function seedFromSnapshot(worktreePath: string, snapshotRef: string): Prom
   }
 }
 
+/**
+ * An empty entry at a mandatory write-deny path is a sandbox mount point, not
+ * work: see {@link isMandatoryWriteDenyMountPath}. One that has already gone
+ * away has nothing to seed either.
+ *
+ * Only Linux (bubblewrap) materializes those mount points. macOS seatbelt
+ * denies without creating anything, so there an empty `.bashrc` is the user's
+ * own file and still counts as work to seed.
+ */
+export async function isSandboxMountArtifact(
+  root: string,
+  relativePath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  if (platform !== 'linux') return false
+  if (!isMandatoryWriteDenyMountPath(relativePath)) return false
+  const path = join(root, relativePath)
+  try {
+    const stat = await lstat(path)
+    if (stat.isFile()) return stat.size === 0
+    if (!stat.isDirectory()) return false
+    for (const entry of await readdir(path)) {
+      if (!(await isSandboxMountArtifact(root, join(relativePath, entry), platform))) return false
+    }
+    return true
+  } catch (error) {
+    if (ownErrorCode(error) === 'ENOENT') return true
+    throw error
+  }
+}
+
+/**
+ * Whether the project checkout holds work a new worktree should be seeded with.
+ *
+ * Another thread's sandboxed commands can be running in this checkout while a
+ * blank thread prepares its isolated one. On Linux each of them materializes
+ * empty mount points for the mandatory write denies, and `git status` reports
+ * those as untracked. They are not the user's work, and seeding them fails:
+ * the restore's own sandbox mounts read-only files at the same paths. Ignore
+ * them so that race cannot turn a clean project into a failed first send.
+ */
 async function repositoryIsDirty(projectRoot: string): Promise<boolean> {
   const result = await git(projectRoot, ['status', '--porcelain=v1', '-z'])
   if (result.code !== 0) throw commandFailure('Cannot inspect repository status', result)
-  return result.stdout.length > 0
+  for (const record of result.stdout.split('\0')) {
+    if (!record) continue
+    // Tracked changes (and the source path that follows a rename record) are
+    // always work; only untracked entries can be sandbox mount points.
+    if (!record.startsWith('?? ')) return true
+    if (!(await isSandboxMountArtifact(projectRoot, record.slice(3)))) return true
+  }
+  return false
 }
 
 async function branchIsPublished(projectRoot: string, branch: string): Promise<boolean> {
@@ -1199,6 +1248,54 @@ export async function retireThreadWorktree(
   if (remove.code !== 0) throw commandFailure('Cannot retire thread worktree', remove)
   releaseWorktreeRoot(validated.root)
   return { status: 'removed', branch: validated.branch }
+}
+
+export type DeletedThreadWorktreeResult =
+  | { status: 'removed'; branch: string; branchDeleted: boolean }
+  | Exclude<RetireWorktreeResult, { status: 'removed' }>
+
+/**
+ * Retire the checkout of a thread that is being deleted.
+ *
+ * The safety predicate is exactly `retireThreadWorktree`'s — the same one
+ * `pruneSafeOrphans` applies to ownerless checkouts: nothing uncommitted,
+ * untracked, or ignored, and a branch already contained by its recorded base.
+ * Anything else is returned as a blocked result and left on disk, where
+ * Settings → Storage → Worktrees lists it as an orphan with explicit,
+ * confirmed removal.
+ *
+ * A kept checkout loses the internal-root authority and indexing that
+ * validation granted it: its thread is going away, so nothing may run there
+ * until someone reclaims it explicitly, which is its state after a restart.
+ *
+ * Once the checkout is gone its branch is offered to `git branch -d`, as the
+ * Settings removal does: Git deletes it (and its `branch.<name>.*` recovery
+ * metadata) only when fully merged, so no commit can become unreachable here.
+ */
+export async function retireDeletedThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<DeletedThreadWorktreeResult> {
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const executionRoot = resolve(input.worktree.path, location.projectRelativePath)
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    let retired: RetireWorktreeResult
+    try {
+      retired = await retireThreadWorktree(input)
+    } catch (error) {
+      // Validation may already have granted authority (and indexing may be
+      // watching) before inspection or removal failed; a half-removed checkout
+      // must not keep a recursive watcher either.
+      releaseWorktreeRoot(executionRoot)
+      throw error
+    }
+    if (retired.status !== 'removed') {
+      releaseWorktreeRoot(executionRoot)
+      return retired
+    }
+    const deleted = await git(projectRoot, ['branch', '-d', retired.branch])
+    return { ...retired, branchDeleted: deleted.code === 0 }
+  })
 }
 
 /**
