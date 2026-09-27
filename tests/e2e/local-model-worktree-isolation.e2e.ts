@@ -194,6 +194,10 @@ describe('local provider default worktree isolation', () => {
       'expected the local HTTP provider to serve both agent steps',
     )
     await assertNoErrorToasts('local-provider isolated tool write')
+    // The composer's Changes bubble lands a status round trip after the turn
+    // settles; without this wait some runs capture the composer before it.
+    await $('.follow-up-bubble-changes').waitForDisplayed({ timeout: 15_000 })
+    await expect($('.follow-up-bubble-changes .follow-up-stat-add')).toHaveText('+1')
     await saveAppScreenshot('local-model-worktree-isolation.png')
   })
 })
