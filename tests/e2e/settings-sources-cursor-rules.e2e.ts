@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { $, browser, expect } from '@wdio/globals'
@@ -22,7 +22,11 @@ describe('settings sources cursor rules (#636)', function () {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
 
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-cursor-rules-'))
+    // A fixed path, not mkdtemp: the Sources list prints it, and a random
+    // suffix made every capture differ.
+    workspaceRoot = join(tmpdir(), 'copse-e2e', 'cursor-rules')
+    rmSync(workspaceRoot, { recursive: true, force: true })
+    mkdirSync(workspaceRoot, { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'AGENTS.md'),
       'Use the project-specific release checklist before shipping.\n',
