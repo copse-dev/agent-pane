@@ -24,9 +24,11 @@ const claude: ClaUser = { login: 'claude', id: 81847, type: 'User' }
 const actionsBot: ClaUser = { login: 'github-actions[bot]', id: 41898282, type: 'Bot' }
 const releaseBot: ClaUser = { login: 'copse-release-bot[bot]', id: 304038887, type: 'Bot' }
 const copilot: ClaUser = { login: 'Copilot', id: 198982749, type: 'Bot' }
+const dependabot: ClaUser = { login: 'dependabot[bot]', id: 49699333, type: 'Bot' }
 
 const ACTIONS_EMAIL = '41898282+github-actions[bot]@users.noreply.github.com'
 const COPILOT_EMAIL = '198982749+Copilot@users.noreply.github.com'
+const DEPENDABOT_EMAIL = '49699333+dependabot[bot]@users.noreply.github.com'
 
 let shaCounter = 0
 function commit(author: ClaUser | null, email: string, message = 'change'): ClaCommit {
@@ -201,13 +203,61 @@ describe('CLA evaluation', () => {
     assert.match(written.statuses[0]?.description ?? '', /^Promotes main/)
   })
 
-  it('passes a same-repository pull request an App opened, with an unlinked author address', async () => {
-    // peter-evans/create-pull-request under copse-release-bot: sync and
-    // release-bump pull requests. Their head branch lives here, so the opener
-    // had write access.
-    const commits = [commit(null, 'automation@unlinked.example'), commit(actionsBot, ACTIONS_EMAIL)]
-    const { result } = await evaluate({ pr: pull(4001, releaseBot, commits), commits })
-    assert.equal(stateOf(result), 'success')
+  it('passes the pull requests the repository automation Apps open', async () => {
+    // peter-evans/create-pull-request under copse-release-bot (sync-*,
+    // release-bump): the commit carries the dispatching or schedule actor's
+    // linked noreply address, and CI's autoformat commit follows. Dependabot
+    // authors its own commits.
+    const sync = [
+      commit(maintainer, '1+jk@users.noreply.github.com'),
+      commit(actionsBot, ACTIONS_EMAIL),
+    ]
+    const bumped = await evaluate({ pr: pull(4001, releaseBot, sync), commits: sync })
+    assert.equal(stateOf(bumped.result), 'success')
+    const bump = [commit(dependabot, DEPENDABOT_EMAIL, 'chore(deps): bump x')]
+    const deps = await evaluate({ pr: pull(4013, dependabot, bump), commits: bump })
+    assert.equal(stateOf(deps.result), 'success')
+  })
+
+  it('does not trust an App outside the automation allowlist, even from a same-repository branch', async () => {
+    // Anyone can open a pull request from an existing branch here; a branch
+    // in this repository says nothing about the App that opened it.
+    const helperApp: ClaUser = { login: 'helper[bot]', id: 9, type: 'Bot' }
+    const unlinked = [commit(null, 'someone@unlinked.example')]
+    const byAddress = await evaluate({ pr: pull(4014, helperApp, unlinked), commits: unlinked })
+    assert.equal(stateOf(byAddress.result), 'failure')
+    assert.deepEqual(
+      byAddress.written.statuses.map((s) => s.state),
+      ['failure'],
+    )
+    const trailer = [
+      commit(
+        maintainer,
+        'jk@example.com',
+        'x\n\nCo-authored-by: Someone <someone@unlinked.example>',
+      ),
+    ]
+    const byTrailer = await evaluate({ pr: pull(4015, helperApp, trailer), commits: trailer })
+    assert.equal(stateOf(byTrailer.result), 'failure')
+    const agent = [commit(claude, 'noreply@anthropic.com')]
+    const byAgent = await evaluate({ pr: pull(4016, helperApp, agent), commits: agent })
+    assert.equal(stateOf(byAgent.result), 'failure')
+    assert.ok(byAgent.result.kind === 'evaluated')
+    assert.match(byAgent.result.unresolved.join('\n'), /opened by helper\[bot\]/)
+  })
+
+  it('does not let an automation App answer for an unlinked human address', async () => {
+    // An App vouches for agent and bot commits on its own branch, but it
+    // cannot answer for a person: an unlinked address must be in the
+    // signatures file, as a maintainer's own addresses are.
+    const commits = [commit(null, 'someone@unlinked.example'), commit(actionsBot, ACTIONS_EMAIL)]
+    const unsigned = await evaluate({ pr: pull(4017, releaseBot, commits), commits })
+    assert.equal(stateOf(unsigned.result), 'failure')
+    const listed = await evaluate(
+      { pr: pull(4018, releaseBot, commits), commits },
+      { signatures: { signatures: [{ id: 1, emails: ['someone@unlinked.example'] }] } },
+    )
+    assert.equal(stateOf(listed.result), 'success')
   })
 
   it('passes a maintainer pull request carrying a Copilot co-author trailer', async () => {
@@ -260,10 +310,7 @@ describe('CLA evaluation', () => {
     })
     assert.equal(stateOf(result), 'failure')
     assert.ok(result.kind === 'evaluated')
-    assert.match(
-      result.unresolved.join('\n'),
-      /opened by helper\[bot\] from outside this repository/,
-    )
+    assert.match(result.unresolved.join('\n'), /opened by helper\[bot\]/)
   })
 
   it('fails an outside unsigned human author, even on a maintainer pull request', async () => {
@@ -336,7 +383,7 @@ describe('CLA backfill', () => {
     ])
     const results = await evaluateOpenPullRequests(
       { github, owner: 'copse-dev', repo: 'agent-pane', log },
-      { onlyMissing: false },
+      { onlyChanged: false },
     )
     assert.deepEqual(results.map(stateOf), ['success'])
     assert.equal(written.statuses[0]?.state, 'success')
@@ -344,8 +391,9 @@ describe('CLA backfill', () => {
     assert.match(written.updated[0]?.body ?? '', /All commit authors have signed/)
   })
 
-  it('in only-missing mode, evaluates just the heads that carry no CLA status', async () => {
-    // #3228's head predates the workflow; a GITHUB_TOKEN push lands the same way.
+  it('in the scheduled sweep, re-evaluates every head and writes only a changed verdict', async () => {
+    // #3228's head predates the workflow; a GITHUB_TOKEN push lands the same
+    // way. #3245's success still holds and is not rewritten.
     const missing = [commit(actionsBot, ACTIONS_EMAIL)]
     const present = [commit(maintainer, 'jk@example.com')]
     const { github, written } = fakeGitHub([
@@ -358,16 +406,37 @@ describe('CLA backfill', () => {
     ])
     const results = await evaluateOpenPullRequests(
       { github, owner: 'copse-dev', repo: 'agent-pane', log },
-      { onlyMissing: true },
+      { onlyChanged: true },
     )
-    assert.deepEqual(
-      results.map((r) => r.number),
-      [3228],
-    )
+    assert.deepEqual(results.map(stateOf), ['success', 'success'])
     assert.deepEqual(
       written.statuses.map((s) => s.sha),
       [missing[0]?.sha],
     )
+  })
+
+  it('in the scheduled sweep, rewrites a success that a newer rule or signature change fails', async () => {
+    // A change to the signatures, the workflow or the script pushed with
+    // GITHUB_TOKEN starts no push backfill, so the sweep is what corrects a
+    // success computed under the older rule.
+    const commits = [commit(outsider, 'eve@example.com')]
+    const { github, written } = fakeGitHub([
+      {
+        pr: pull(22, outsider, commits, { fork: true }),
+        commits,
+        statuses: [{ context: CLA_CONTEXT, state: 'success' }],
+      },
+    ])
+    const results = await evaluateOpenPullRequests(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyChanged: true },
+    )
+    assert.deepEqual(results.map(stateOf), ['failure'])
+    assert.deepEqual(
+      written.statuses.map((s) => s.state),
+      ['failure'],
+    )
+    assert.equal(written.created.length, 1)
   })
 
   it('does not let a backfill that read comments before a signature overwrite the signing run', async () => {
@@ -394,14 +463,14 @@ describe('CLA backfill', () => {
     }
     await evaluateOpenPullRequests(
       { github, owner: 'copse-dev', repo: 'agent-pane', log },
-      { onlyMissing: false },
+      { onlyChanged: false },
     )
     assert.ok(raced)
     assert.equal(written.statuses.at(-1)?.state, 'success')
     assert.deepEqual(written.created, [], 'no request to sign after the signature')
   })
 
-  it('in only-missing mode, re-evaluates a failing head and rewrites only a changed verdict', async () => {
+  it('in the scheduled sweep, re-evaluates a failing head and rewrites only a changed verdict', async () => {
     // A stale failure (from a race or an older rule) must not block merging
     // until the next push; an unchanged failure is not rewritten every sweep.
     const signed = [commit(outsider, 'eve@example.com')]
@@ -418,7 +487,7 @@ describe('CLA backfill', () => {
     ])
     const results = await evaluateOpenPullRequests(
       { github, owner: 'copse-dev', repo: 'agent-pane', log },
-      { onlyMissing: true },
+      { onlyChanged: true },
     )
     assert.deepEqual(results.map(stateOf), ['success', 'failure'])
     assert.deepEqual(written.statuses, [
@@ -445,7 +514,7 @@ describe('CLA backfill', () => {
     await assert.rejects(
       evaluateOpenPullRequests(
         { github, owner: 'copse-dev', repo: 'agent-pane', log },
-        { onlyMissing: false },
+        { onlyChanged: false },
       ),
       /CLA evaluation failed for #1/,
     )
@@ -460,7 +529,7 @@ describe('CLA backfill', () => {
     const first = fakeGitHub([{ pr: pull(9, outsider, commits, { fork: true }), commits }])
     await evaluateOpenPullRequests(
       { github: first.github, owner: 'copse-dev', repo: 'agent-pane', log },
-      { onlyMissing: false },
+      { onlyChanged: false },
     )
     const body = first.written.created[0]?.body ?? ''
     assert.ok(body.includes('@eve'))
@@ -473,7 +542,7 @@ describe('CLA backfill', () => {
     ])
     await evaluateOpenPullRequests(
       { github: second.github, owner: 'copse-dev', repo: 'agent-pane', log },
-      { onlyMissing: false },
+      { onlyChanged: false },
     )
     assert.deepEqual(second.written.created, [])
     assert.deepEqual(second.written.updated, [])

@@ -2,7 +2,12 @@ name: CLA
 
 # Sets the required `CLA` commit status on pull request heads. The rules (who
 # counts as signed, how agent and bot commits are attributed, trusted openers,
-# promotions) live in scripts/cla-check.mts, shared by both jobs below:
+# promotions) live in scripts/cla-check.mts, shared by both jobs below. A
+# trusted opener is a person with push access, or copse-release-bot or
+# Dependabot (TRUSTED_AUTOMATION, by account id) opening from a branch in this
+# repository; any other bot or App is untrusted wherever its branch lives. Only
+# a person with push access answers for an author address linked to no GitHub
+# account: on an automation pull request it must be in .github/cla-signatures.json.
 #
 #   check     one pull request, on its own events. `pull_request_target`,
 #             because a fork's `pull_request` token cannot set a status or
@@ -13,12 +18,15 @@ name: CLA
 #             `check`, and a status computed under an older rule or before a
 #             signature landed is never recomputed by one. Runs when
 #             main's signatures, this workflow or the script change (all heads
-#             recomputed), on dispatch (all heads), and on a schedule (heads
-#             with no `CLA` status yet or a failing one, rewritten only when the
-#             verdict changes). The two jobs run in different concurrency
+#             recomputed and rewritten), on dispatch (the same), and on a
+#             schedule (all heads recomputed, success included, and written
+#             only where the verdict changed; about 3 API requests a head). A
+#             change to those files pushed with GITHUB_TOKEN starts no push
+#             run, so the schedule is what corrects a success computed under
+#             the older rule. The two jobs run in different concurrency
 #             groups, so a backfill can overlap a signing comment's run; the
 #             script drops a failure whose author signed meanwhile, and the
-#             schedule recomputes any failure left stale.
+#             schedule recomputes any verdict left stale.
 #
 # No pull request code is checked out or run. Both jobs check out only
 # scripts/cla-check.mts, at `github.sha`: under `pull_request_target` that is the
@@ -40,7 +48,7 @@ on:
       - .github/workflows/cla.yml
       - scripts/cla-check.mts
   schedule:
-    # Off the hour; picks up heads no event reached.
+    # Off the hour; picks up heads no event reached and verdicts gone stale.
     - cron: '41 */2 * * *'
   workflow_dispatch:
 
@@ -111,7 +119,7 @@ jobs:
       - name: Re-evaluate every open pull request
         uses: actions/github-script@v9
         env:
-          ONLY_MISSING: ${{ github.event_name == 'schedule' }}
+          ONLY_CHANGED: ${{ github.event_name == 'schedule' }}
         with:
           script: |
             const { evaluateOpenPullRequests } = await import(
@@ -119,5 +127,5 @@ jobs:
             );
             await evaluateOpenPullRequests(
               { github, owner: context.repo.owner, repo: context.repo.repo, log: core.info },
-              { onlyMissing: process.env.ONLY_MISSING === 'true' },
+              { onlyChanged: process.env.ONLY_CHANGED === 'true' },
             );

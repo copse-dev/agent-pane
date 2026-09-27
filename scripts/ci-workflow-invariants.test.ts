@@ -618,7 +618,8 @@ describe('cla.yml workflow invariants', () => {
       workflow,
       /github\.event_name == 'push' \|\| github\.event_name == 'schedule' \|\|\n\s+github\.event_name == 'workflow_dispatch'/,
     )
-    assert.match(workflow, /ONLY_MISSING: \$\{\{ github\.event_name == 'schedule' \}\}/)
+    assert.match(workflow, /ONLY_CHANGED: \$\{\{ github\.event_name == 'schedule' \}\}/)
+    assert.match(workflow, /\{ onlyChanged: process\.env\.ONLY_CHANGED === 'true' \}/)
   })
 })
 

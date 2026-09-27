@@ -11,7 +11,9 @@
 //   - evaluateOpenPullRequests: every open pull request, for the backfill that
 //     covers heads no event reached (a push made with the default
 //     GITHUB_TOKEN starts no workflow) and results computed by an older rule
-//     or before a signature landed.
+//     or before a signature landed. The scheduled sweep recomputes every head,
+//     success included, because a signature or rule change pushed to main
+//     with GITHUB_TOKEN starts no push backfill either.
 //
 // Node builtins only, and not even those: the workflow checks out this one
 // file from the trusted base commit, with no install, so it must not import
@@ -32,13 +34,16 @@
 // bot Co-authored-by trailers are skipped; they only ever add authors, and the
 // commit's own author is checked separately.
 //
-// A trusted opener is a person with push access, or a bot or App whose head
-// branch lives in this repository (creating that branch took write access
-// here: copse-release-bot, Dependabot, the sync workflows). On a pull request
-// a trusted opener opened, an author or co-author whose email is not linked to
-// any GitHub account is theirs to answer for: maintainers' own commits and
-// trailers often carry unlinked addresses. Authors that do resolve to an
-// outside account are still checked there.
+// A trusted opener is a person with push access, or one of this repository's
+// automation Apps (TRUSTED_AUTOMATION) opening from a branch in this
+// repository. Any other bot or App is untrusted, even from a branch here:
+// anyone can open a pull request from an existing branch, so the branch says
+// nothing about the App that opened it. A maintainer opener also answers for
+// an author or co-author whose email is not linked to any GitHub account
+// (maintainers' own commits and trailers often carry unlinked addresses); an
+// App cannot answer for a person, so on its pull requests such an address
+// must be in the signatures file. Authors that do resolve to an account are
+// checked as that account either way.
 
 export const CLA_CONTEXT = 'CLA'
 export const SIGN_PHRASE = 'I have read the Copse CLA Document and I hereby sign the CLA'
@@ -50,6 +55,18 @@ export const NON_AUTHOR_EMAIL =
   /@anthropic\.com$|@cursor\.com$|^noreply@copse\.dev$|\[bot\]@users\.noreply\.github\.com$/i
 const NOREPLY_ID = /^(\d+)\+([^@]+)@users\.noreply\.github\.com$/i
 const CO_AUTHOR_TRAILER = /^Co-authored-by:.*<([^>]+)>\s*$/gim
+
+/**
+ * The Apps that open pull requests here, by account id (a login can be
+ * renamed; an id cannot be reused): copse-release-bot, through its
+ * installation token in release-bump, promote-develop and the sync-*
+ * workflows, and Dependabot. github-actions[bot] is absent because this
+ * organization blocks GITHUB_TOKEN from opening pull requests.
+ */
+export const TRUSTED_AUTOMATION: ReadonlyMap<number, string> = new Map([
+  [304038887, 'copse-release-bot[bot]'],
+  [49699333, 'dependabot[bot]'],
+])
 
 /** `pulls.listCommits` stops at this many; a longer pull request cannot be checked. */
 export const MAX_LISTED_COMMITS = 250
@@ -167,6 +184,10 @@ function httpStatus(error: unknown): unknown {
 
 function isBot(user: ClaUser): boolean {
   return user.type === 'Bot' || user.login.endsWith('[bot]')
+}
+
+function isTrustedAutomation(user: ClaUser): boolean {
+  return TRUSTED_AUTOMATION.get(user.id) === user.login
 }
 
 function sameRepository(pr: ClaPullRequest): boolean {
@@ -292,10 +313,16 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     return cached
   }
 
-  async function isTrustedOpener(pr: ClaPullRequest): Promise<boolean> {
-    if (!pr.user) return false
-    if (isBot(pr.user)) return sameRepository(pr)
-    return canPush(pr.user.login)
+  /**
+   * Who opened the pull request: a person with push access, this repository's
+   * automation on a branch here, or anyone else.
+   */
+  async function openerKind(pr: ClaPullRequest): Promise<'maintainer' | 'automation' | 'other'> {
+    if (!pr.user) return 'other'
+    if (isBot(pr.user)) {
+      return isTrustedAutomation(pr.user) && sameRepository(pr) ? 'automation' : 'other'
+    }
+    return (await canPush(pr.user.login)) ? 'maintainer' : 'other'
   }
 
   async function decide(pr: ClaPullRequest): Promise<ClaResult> {
@@ -342,7 +369,10 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       return { kind: 'skipped', number, reason: `head moved from ${pr.head.sha} to ${last.sha}` }
     }
 
-    const trusted = await isTrustedOpener(pr)
+    const opener = await openerKind(pr)
+    const trusted = opener !== 'other'
+    // Only a person answers for a person's unlinked address.
+    const answersForUnlinked = opener === 'maintainer'
     const unsigned = new Map<string, string>() // login -> first sha
     const unresolved: string[] = []
 
@@ -354,12 +384,12 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     // An agent or bot wrote this commit (its address can map to an account,
     // e.g. noreply@anthropic.com to @claude). Whoever opened the pull request
     // answers for it; the address is self-declared, so an outside opener must
-    // have signed, and an outside bot has no one to sign for it.
+    // have signed, and any other bot has no one to sign for it.
     async function answeredByOpener(sha: string): Promise<void> {
       if (trusted) return
       if (!pr.user || isBot(pr.user)) {
         unresolved.push(
-          `agent or bot commit ${sha} in a pull request opened by ${pr.user?.login ?? 'an unknown account'} from outside this repository`,
+          `agent or bot commit ${sha} in a pull request opened by ${pr.user?.login ?? 'an unknown account'}, which is not this repository's automation`,
         )
         return
       }
@@ -373,7 +403,7 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
         await answeredByOpener(sha)
       } else if (c.author) {
         await checkPerson(c.author, sha)
-      } else if (!trusted && !signatures.emails.has(authorEmail)) {
+      } else if (!answersForUnlinked && !signatures.emails.has(authorEmail)) {
         unresolved.push(`${authorEmail || 'no email'} (${sha})`)
       }
       for (const m of c.commit.message.matchAll(CO_AUTHOR_TRAILER)) {
@@ -384,7 +414,7 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
           const id = Number(noreply[1])
           const login = noreply[2] ?? ''
           if (signedIds.has(id) || (await canPush(login)) || (await isBotLogin(login))) continue
-        } else if (trusted) {
+        } else if (answersForUnlinked) {
           continue
         }
         unresolved.push(`co-author ${email} (${sha})`)
@@ -530,17 +560,24 @@ export async function evaluatePullRequest(ctx: ClaContext, number: number): Prom
 }
 
 /**
- * Every open pull request. With `onlyMissing` (the scheduled sweep), heads
- * whose `CLA` status is success are skipped and the rest recomputed: those with
- * none yet, and failures, which may be stale (a backfill that read the comments
- * before a signature can finish after the signing run), rewritten only if the
- * verdict changed. Otherwise every head is recomputed and rewritten (after a
- * signature or rule change, or on dispatch). One pull request's failure does
- * not stop the rest; the run fails at the end if any did.
+ * Every open pull request, every head recomputed. With `onlyChanged` (the
+ * scheduled sweep), a head's current `CLA` state is read first and a verdict
+ * is written only where it differs: a head with no status yet, a stale failure
+ * (a backfill that read the comments before a signature can finish after the
+ * signing run), or a stale success (a signature or rule change pushed with
+ * GITHUB_TOKEN starts no push backfill). Otherwise every verdict is rewritten
+ * (after a signature or rule change, or on dispatch). One pull request's
+ * failure does not stop the rest; the run fails at the end if any did.
+ *
+ * Cost per pull request: the status read, one page each of comments and
+ * commits (more only past 100 of either), and a permission or user lookup
+ * per login not seen before in the run. About 3 requests a head, so ~400 for
+ * 120 open pull requests, once every 2 hours, against GITHUB_TOKEN's
+ * 1,000 an hour per repository.
  */
 export async function evaluateOpenPullRequests(
   ctx: ClaContext,
-  options: { onlyMissing: boolean },
+  options: { onlyChanged: boolean },
 ): Promise<ClaResult[]> {
   const { github, owner, repo, log } = ctx
   const evaluator = createClaEvaluator(ctx)
@@ -555,7 +592,7 @@ export async function evaluateOpenPullRequests(
   for (const pr of pulls) {
     try {
       let current: string | undefined
-      if (options.onlyMissing) {
+      if (options.onlyChanged) {
         // The combined status carries the latest status of each context.
         const { data } = await github.rest.repos.getCombinedStatusForRef({
           owner,
@@ -564,7 +601,6 @@ export async function evaluateOpenPullRequests(
           per_page: 100,
         })
         current = data.statuses.find((s) => s.context === CLA_CONTEXT)?.state
-        if (current === 'success') continue
       }
       const result = await evaluator.evaluate(pr, current)
       log(summarize(result))
