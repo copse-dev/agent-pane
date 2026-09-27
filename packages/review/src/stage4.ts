@@ -23,6 +23,7 @@ import {
   reproducerTools,
   type ReproducerRun,
 } from './verifier-tools.ts'
+import { describeReviewImages } from './review-images.ts'
 
 /** Classes a reproducing test can demonstrate. */
 export const REPRODUCIBLE_CLASSES: readonly FindingClass[] = ['test', 'contract', 'concurrency']
@@ -111,6 +112,8 @@ function describeFinding(finding: Finding, context: ReviewContext): string {
       : []),
     '',
     `The change: head ${context.headCommit.slice(0, 10)} against merge-base ${context.mergeBase.slice(0, 10)}. Changed files: ${context.files.map((file) => file.path).join(', ')}.`,
+    // A visual claim is settled by looking; the challenger gets the same images.
+    ...(finding.class === 'visual' ? ['', ...describeReviewImages(context)] : []),
   ].join('\n')
 }
 

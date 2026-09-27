@@ -1,5 +1,5 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
-import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
+import { openAcpSession, settleAcpChildShutdowns, willSandboxAcpAgent } from './acp-client.ts'
 import { acpSshTarget } from './acp-ssh-transport.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
@@ -352,6 +352,7 @@ export async function disposeAllAcpSessions(): Promise<void> {
     reaper = null
   }
   await Promise.all(entries.map((entry) => entry.dispose()))
+  await settleAcpChildShutdowns()
 }
 
 /** Test/introspection helper. */
