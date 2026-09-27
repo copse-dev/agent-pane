@@ -200,11 +200,18 @@ export function defaultBase(): string {
   return resolvedRemoteHead() ?? 'origin/main'
 }
 
-/** Changed files: committed-vs-base ∪ staged ∪ unstaged ∪ untracked. */
-export function changedFiles(base: string): string[] {
+/**
+ * Changed files: committed-vs-base ∪ staged ∪ unstaged ∪ untracked — or `null`
+ * when `base` has no merge-base with HEAD (unresolvable, unrelated after a
+ * force-push, or cut off by a shallow fetch). Without one the committed change
+ * is UNKNOWN, not empty: callers must fail closed rather than plan from the
+ * working tree alone, which would read as "nothing changed".
+ */
+export function changedFiles(base: string): string[] | null {
   const set = new Set<string>()
   const mergeBase = git(['merge-base', 'HEAD', base]).trim()
-  if (mergeBase) for (const f of git(['diff', '--name-only', mergeBase]).split('\n')) add(f)
+  if (!mergeBase) return null
+  for (const f of git(['diff', '--name-only', mergeBase]).split('\n')) add(f)
   for (const f of git(['diff', '--name-only', 'HEAD']).split('\n')) add(f)
   for (const f of git(['diff', '--name-only', '--cached']).split('\n')) add(f)
   for (const line of git(['ls-files', '--others', '--exclude-standard']).split('\n')) add(line)
@@ -519,6 +526,8 @@ export function reachableFiles(entry: string, cache: Map<string, Set<string>>): 
 // ── Selection ────────────────────────────────────────────────────────────────
 export type Selection = {
   changed: string[]
+  /** No merge-base with the base, so `changed` is unknown and the run is broad. */
+  baseUnknown: boolean
   broad: boolean
   broadHits: string[]
   confidence: 'high' | 'low' | 'broad'
@@ -561,9 +570,13 @@ export function listSourceFiles(): string[] {
   )
 }
 
-/** Map a set of changed files to the affected e2e specs and unit tests. */
-export function computeSelection(changedInput: string[]): Selection {
-  const changed = changedInput.map((f) => f.replace(/\\/g, '/'))
+/**
+ * Map a set of changed files to the affected e2e specs and unit tests. `null`
+ * (see {@link changedFiles}) means the change set is unknown: select everything.
+ */
+export function computeSelection(changedInput: string[] | null): Selection {
+  const baseUnknown = changedInput === null
+  const changed = (changedInput ?? []).map((f) => f.replace(/\\/g, '/'))
   const specs = listSpecs()
   const unitTests = listUnitTests()
 
@@ -577,7 +590,7 @@ export function computeSelection(changedInput: string[]): Selection {
   for (const t of unitTests) unitImports.set(t, reachableFiles(t, importCache))
 
   const broadHits = changed.filter((f) => BROAD_PATTERNS.some((re) => re.test(f)))
-  const broad = broadHits.length > 0
+  const broad = baseUnknown || broadHits.length > 0
 
   // Reasons per spec / unit test (for --explain).
   const e2eReasons = new Map<string, string[]>()
@@ -654,6 +667,7 @@ export function computeSelection(changedInput: string[]): Selection {
 
   return {
     changed,
+    baseUnknown,
     broad,
     broadHits,
     confidence,
@@ -746,6 +760,7 @@ function main(): void {
         {
           base: args.base,
           changed: sel.changed,
+          baseUnknown: sel.baseUnknown,
           broad: sel.broad,
           broadHits: sel.broadHits,
           confidence: sel.confidence,
@@ -786,12 +801,17 @@ function report(args: Args, c: Selection): void {
       ),
     )
   }
-  if (!c.changed.length) {
+  if (c.baseUnknown) {
+    console.log(
+      `\n⚠️  No merge-base with ${args.base}, so the change set is unknown — recommend running EVERYTHING.\n` +
+        dim('   Fetch the base (unshallowed) or pass --base <ref> for a scoped plan.'),
+    )
+  } else if (!c.changed.length) {
     console.log(dim('  (no changes detected vs base / working tree)'))
     return
   }
 
-  if (c.broad) {
+  if (c.broadHits.length) {
     console.log(`\n⚠️  Broad change — recommend running EVERYTHING:`)
     for (const f of c.broadHits) console.log(`    ${f}`)
   }

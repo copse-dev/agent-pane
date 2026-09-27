@@ -136,6 +136,12 @@ describe('transcript workspace image links', () => {
       { timeout: 15_000 },
     )
     await expect($('.attachment-preview-title')).toHaveText('diagram.svg')
+    // The previous test's "Copied image" toast lives 1.5s, about as long as
+    // reaching this frame takes; capture after it has gone.
+    await browser.waitUntil(
+      () => browser.execute(() => document.querySelector('.toast') === null),
+      { timeout: 5_000, timeoutMsg: 'a toast was still showing before the preview capture' },
+    )
     await saveAppScreenshot('transcript-image-preview.png')
     await $('.attachment-preview-close').click()
 
