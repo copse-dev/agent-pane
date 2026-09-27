@@ -4,7 +4,7 @@ import {
   seedCalloutSurfacesFixture,
   seedE2eViewport,
 } from './helpers/seed-config.ts'
-import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import { parkPointer, saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 /**
  * The accent rail used to do three unrelated jobs — containment in the
@@ -295,6 +295,9 @@ describe('callout surfaces', () => {
         })
         expect(reasoning).toEqual({ image: 'none', border: '1px', shadow: 'none' })
       }
+      // The pointer rests where the Settings dialog was dismissed, which can be
+      // over this message, fading its hover-only Copy button into the frame.
+      await parkPointer()
       await saveElementScreenshot('.message-reasoning', 'callout-reasoning-increased-contrast.png')
     } finally {
       await browser.sendCommand('Emulation.setEmulatedMedia', { features: [] })

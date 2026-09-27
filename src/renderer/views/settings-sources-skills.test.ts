@@ -91,7 +91,9 @@ describe('settings sources → skills list', () => {
     const row = list.querySelector<HTMLElement>('.sources-row')
     assert.ok(row)
     assert.equal(row.querySelector('.sources-badge')?.textContent, 'project')
-    assert.ok(row.querySelector('.sources-badge-project'))
+    // Scope is a label, not a status: a project skill wears the same neutral
+    // badge as a user one (docs/ui-taste.md → "Badges are labels").
+    assert.equal(row.querySelector('.sources-badge')?.className, 'ui-badge sources-badge')
     assert.equal(row.querySelector('.sources-row-detail'), null)
     const hover = row.querySelector('.sources-row-hover-detail')
     assert.ok(hover)

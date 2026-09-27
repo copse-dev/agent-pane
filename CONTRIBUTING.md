@@ -24,10 +24,18 @@ provider is available.
 
 ## Licensing your contribution
 
-Copse is licensed under [AGPL-3.0-only](LICENSE). Contributions are accepted
-under that same license — what comes in matches what goes out.
+Copse is [dual-licensed](LICENSING.md): under [AGPL-3.0-only](LICENSE), and
+under commercial terms from the copyright holder. Two things follow for
+contributors.
 
-Sign off every commit with `git commit -s`, which appends a trailer:
+**Sign the CLA once.** Before your first pull request can merge, sign the
+[Copse Contributor Licence Agreement](CLA.md). You keep the copyright in your
+work. The CLA grants a licence that also covers commercially licensed builds,
+and commits that your contribution will always remain available under the AGPL
+or another open source licence. The **CLA** check on your pull request tells
+you how to sign; it takes one comment.
+
+**Sign off every commit** with `git commit -s`, which appends a trailer:
 
 ```
 Signed-off-by: Your Name <you@example.com>
