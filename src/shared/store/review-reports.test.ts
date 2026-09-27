@@ -121,6 +121,38 @@ describe('reviewReportsAwaitingModel', () => {
     assert.deepEqual(reviewReportsAwaitingModel(sameMs), [])
   })
 
+  it('hands over a retried review anchored to an older turn until the model replies after it', () => {
+    // Retrying a failed inline card re-runs the review on that card's turn, which
+    // newer replies may already follow.
+    const retried = report({ startedAt: 60 })
+    const t = thread({
+      messages: [
+        message('u1', 'user', 10),
+        { ...message('a1', 'assistant', 20), reviewReport: retried },
+        message('u2', 'user', 30),
+        message('a2', 'assistant', 40),
+      ],
+    })
+    assert.deepEqual(reviewReportsAwaitingModel(t), [retried])
+    const replied = thread({
+      messages: [...t.messages, message('u3', 'user', 70), message('a3', 'assistant', 80)],
+    })
+    assert.deepEqual(reviewReportsAwaitingModel(replied), [])
+  })
+
+  it('lists unanswered reviews oldest first, the thread-level one before anchored ones', () => {
+    const older = report({ startedAt: 50 })
+    const newer = report({ startedAt: 60 })
+    const t = thread({
+      messages: [
+        message('u1', 'user', 10),
+        { ...message('a1', 'assistant', 20), reviewReport: newer },
+        { ...message('a2', 'assistant', 40), reviewReport: older },
+      ],
+    })
+    assert.deepEqual(reviewReportsAwaitingModel(t), [older, newer])
+  })
+
   it('lists an unanswered thread-level review before the anchored one', () => {
     const legacy = report({ startedAt: 5 })
     const anchored = report({ startedAt: 30 })

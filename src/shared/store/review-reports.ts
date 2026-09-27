@@ -37,36 +37,38 @@ function userRunDone(report: ThreadReviewReport | undefined): ThreadReviewReport
 
 /**
  * Completed reviews the user ran that the model has not replied after, oldest
- * first. Only the latest assistant message's report can qualify — any earlier
- * one already has a reply after it — and a thread-level report (a run started
- * before any assistant turn) qualifies while no assistant message is newer than
- * its run. Each is handed over once, with the next prompt, because that
- * prompt's reply lands after it. Reports from before `initiator` was recorded
- * are never handed over.
+ * first. A report qualifies while no assistant message other than its own
+ * anchor is stamped at or after its run started. The run is usually anchored to
+ * the latest assistant turn, but retrying a failed inline card re-runs it on
+ * that card's older turn after newer replies exist, so the anchor's position
+ * alone cannot say whether the model has seen it. A thread-level report (a run
+ * started before any assistant turn) follows the same rule; it is only written
+ * while no assistant message exists, so a reply stamped in the same millisecond
+ * as the run is its reply. Each is handed over once, with the next prompt,
+ * because that prompt's reply lands after it. Reports from before `initiator`
+ * was recorded are never handed over.
  */
 export function reviewReportsAwaitingModel(
   thread: Pick<Thread, 'messages' | 'reviewReport'>,
 ): ThreadReviewReport[] {
+  const repliedAfter = (report: ThreadReviewReport, anchorId?: string): boolean =>
+    thread.messages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        message.id !== anchorId &&
+        message.createdAt >= report.startedAt,
+    )
   const awaiting: ThreadReviewReport[] = []
   const legacy = userRunDone(thread.reviewReport)
-  // A thread-level report is only written while no assistant message exists, so
-  // any assistant message stamped in the same millisecond as the run is its reply.
-  if (
-    legacy &&
-    !thread.messages.some(
-      (message) => message.role === 'assistant' && message.createdAt >= legacy.startedAt,
-    )
-  ) {
-    awaiting.push(legacy)
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy)
+  const anchored: ThreadReviewReport[] = []
+  for (const message of thread.messages) {
+    if (message.role !== 'assistant') continue
+    const report = userRunDone(message.reviewReport)
+    if (report && !repliedAfter(report, message.id)) anchored.push(report)
   }
-  for (let i = thread.messages.length - 1; i >= 0; i--) {
-    const message = thread.messages[i]
-    if (message?.role !== 'assistant') continue
-    const anchored = userRunDone(message.reviewReport)
-    if (anchored) awaiting.push(anchored)
-    break
-  }
-  return awaiting
+  anchored.sort((a, b) => a.startedAt - b.startedAt)
+  return [...awaiting, ...anchored]
 }
 
 function clip(text: string, max: number): string {
