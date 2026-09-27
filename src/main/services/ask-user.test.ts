@@ -146,6 +146,33 @@ describe('window ask_user handler', () => {
     assert.deepEqual(await pending, { answers: ['', ''], cancelled: true })
     assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
   })
+
+  it('alerts for the asking thread and releases the alert once answered', async () => {
+    const window = fakeWindowDeps()
+    const alerts: { kind: string; threadId: string | undefined }[] = []
+    let released = 0
+    setAskUserHandler(
+      createWindowAskUserHandler({
+        ...window.deps,
+        alertUser: (kind, _body, threadId) => {
+          alerts.push({ kind, threadId })
+          return (): void => {
+            released += 1
+          }
+        },
+      }),
+    )
+    const pending = runWithActiveRunIdentity('thread-ask', () =>
+      requestUserAnswers(req, new AbortController().signal),
+    )
+
+    // The thread lets the notification open it and holds its badge count.
+    assert.deepEqual(alerts, [{ kind: 'interaction', threadId: 'thread-ask' }])
+    assert.equal(released, 0)
+    window.answer(['Postgres', 'Yes'])
+    await pending
+    assert.equal(released, 1)
+  })
 })
 
 // #2332: a question waiting on a human is a host-side wait, and the run's
