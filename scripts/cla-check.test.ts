@@ -504,6 +504,31 @@ describe('CLA backfill', () => {
     assert.equal(stateOf(signing), 'success')
   })
 
+  it('re-evaluates when a signature lands between the last comment read and the failure write', async () => {
+    // The signing comment's run may already have written success; the
+    // failure written after it must not be the last word.
+    const commits = [commit(outsider, 'eve@example.com')]
+    const scenario: Scenario = { pr: pull(14, outsider, commits, { fork: true }), commits }
+    const { github, written } = fakeGitHub([scenario])
+    const createCommitStatus = github.rest.repos.createCommitStatus
+    github.rest.repos.createCommitStatus = async (
+      params,
+    ): ReturnType<typeof createCommitStatus> => {
+      const response = await createCommitStatus(params)
+      if (params.state === 'failure' && !scenario.comments) {
+        scenario.comments = [{ id: 8, user: outsider, body: SIGN_PHRASE }]
+      }
+      return response
+    }
+    const results = await evaluateOpenPullRequests(
+      { github, owner: 'copse-dev', repo: 'agent-pane', log },
+      { onlyChanged: false },
+    )
+    assert.deepEqual(results.map(stateOf), ['success'])
+    assert.equal(written.statuses.at(-1)?.state, 'success')
+    assert.deepEqual(written.created, [], 'no request to sign after the signature')
+  })
+
   it('does not let a backfill that read comments before a signature overwrite the signing run', async () => {
     // The backfill (concurrency group `cla-backfill`) and the signing
     // comment's run (`cla-<number>`) can overlap on the same head.

@@ -25,15 +25,17 @@ name: CLA
 #             run, so the schedule is what corrects a success computed under
 #             the older rule. The two jobs run in different concurrency
 #             groups, so a backfill can overlap a signing comment's run; the
-#             script drops a failure if anyone signed meanwhile, and the
+#             script drops a failure if anyone signed meanwhile, re-evaluates
+#             once if a signature lands just after it writes one, and the
 #             schedule recomputes any verdict left stale.
 #
 # No pull request code is checked out or run. Both jobs check out only
-# scripts/cla-check.mts, at `github.sha`: under `pull_request_target` that is the
-# base branch tip (the same trust as this workflow file), under `issue_comment`,
-# `schedule` and `push` the default branch, under `workflow_dispatch` the
-# dispatched ref (dispatching needs write access). The script reads the API
-# only.
+# scripts/cla-check.mts. `check` takes it at `github.sha`: under
+# `pull_request_target` the base branch tip (the same trust as this workflow
+# file), under `issue_comment` the default branch. `backfill` always takes it
+# from main, and refuses to run when started from any other ref: under
+# `workflow_dispatch` `github.sha` is whatever branch the dispatcher picked. The
+# script reads the API only.
 on:
   pull_request_target:
     # `edited` for a retarget: a stacked pull request moved onto main keeps the
@@ -109,10 +111,10 @@ jobs:
       issues: write
       statuses: write
     steps:
-      - name: Check out the CLA script from the trusted base
+      - name: Check out the CLA script from main
         uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: main
           persist-credentials: false
           sparse-checkout: scripts/cla-check.mts
           sparse-checkout-cone-mode: false
@@ -122,6 +124,14 @@ jobs:
           ONLY_CHANGED: ${{ github.event_name == 'schedule' }}
         with:
           script: |
+            // Schedule and push runs start from main. A dispatch from another
+            // branch evaluates nothing.
+            if (context.ref !== 'refs/heads/main') {
+              core.setFailed(
+                `The CLA backfill runs only from refs/heads/main, not ${context.ref}; nothing was evaluated. Dispatch it on main.`,
+              );
+              return;
+            }
             const { evaluateOpenPullRequests } = await import(
               `${process.env.GITHUB_WORKSPACE}/scripts/cla-check.mts`
             );

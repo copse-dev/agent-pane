@@ -576,12 +576,28 @@ describe('cla.yml workflow invariants', () => {
     )
     const checkouts = workflow.match(/uses: actions\/checkout@.*\n(?: {8}.*\n)+/g) ?? []
     assert.equal(checkouts.length, 2)
+    const check = checkouts.at(0) ?? ''
+    const backfill = checkouts.at(1) ?? ''
+    // github.sha is the base branch tip under pull_request_target.
+    assert.match(check, /^ {10}ref: \$\{\{ github\.sha \}\}$/m)
+    // Under workflow_dispatch github.sha is the dispatched ref, which any
+    // writer controls; the backfill always runs main's script.
+    assert.match(backfill, /^ {10}ref: main$/m)
     for (const checkout of checkouts) {
-      // github.sha is the base branch tip under pull_request_target.
-      assert.match(checkout, /^ {10}ref: \$\{\{ github\.sha \}\}$/m)
       assert.match(checkout, /^ {10}persist-credentials: false$/m)
       assert.match(checkout, /^ {10}sparse-checkout: scripts\/cla-check\.mts$/m)
     }
+  })
+
+  it('refuses a backfill dispatched from any branch but main', () => {
+    const job = workflow.slice(workflow.indexOf('\n  backfill:\n'))
+    const refusal = job.indexOf("if (context.ref !== 'refs/heads/main') {")
+    assert.ok(refusal > 0, 'the backfill checks the ref it was started from')
+    assert.match(job.slice(refusal), /^ {14}core\.setFailed\(/m)
+    assert.ok(
+      refusal < job.indexOf('await import('),
+      'the refusal comes before the script is loaded',
+    )
   })
 
   it('shares one evaluation between the event path and the backfill', () => {

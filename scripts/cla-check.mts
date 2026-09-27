@@ -243,7 +243,7 @@ export interface ClaEvaluator {
 }
 
 export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
-  const { github, owner, repo } = ctx
+  const { github, owner, repo, log } = ctx
   const signatureCache = new Map<string, Promise<Signatures>>()
   const pushCache = new Map<string, Promise<boolean>>()
   const botCache = new Map<string, Promise<boolean>>()
@@ -495,24 +495,30 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
    * posted it (an unsigned author, or a co-author the failure lists as
    * unresolved). That comment starts its own run, in another concurrency
    * group from the backfill, which sets the status; a failure written after
-   * it would stand on a signed head.
+   * it would stand on a signed head. A signature that lands between that
+   * read and the failure write is caught by reading the comments once more
+   * after it: the pull request is then evaluated again (once, `retry`) and
+   * that verdict published, so the last status written reflects it.
    */
   async function publish(
     pr: ClaPullRequest,
     result: Extract<ClaResult, { kind: 'evaluated' }>,
     signings: ReadonlySet<number>,
+    retry: boolean,
   ): Promise<ClaResult> {
     const claUrl = `https://github.com/${owner}/${repo}/blob/${pr.base.repo.default_branch}/CLA.md`
-    const comments = await github.paginate(github.rest.issues.listComments, {
-      owner,
-      repo,
-      issue_number: pr.number,
-      per_page: 100,
-    })
+    const listComments = (): Promise<ClaComment[]> =>
+      github.paginate(github.rest.issues.listComments, {
+        owner,
+        repo,
+        issue_number: pr.number,
+        per_page: 100,
+      })
+    const uncounted = (list: ClaComment[]): ClaUser | null | undefined =>
+      list.find((c) => c.user && !signings.has(c.id) && c.body?.includes(SIGN_PHRASE))?.user
+    const comments = await listComments()
     if (result.state === 'failure') {
-      const signer = comments.find(
-        (c) => c.user && !signings.has(c.id) && c.body?.includes(SIGN_PHRASE),
-      )?.user
+      const signer = uncounted(comments)
       if (signer) {
         return {
           kind: 'skipped',
@@ -530,6 +536,15 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
       state: result.state,
       description: result.description.slice(0, 140),
     })
+    if (result.state === 'failure' && retry) {
+      const late = uncounted(await listComments())
+      if (late) {
+        log(
+          `#${String(pr.number)}: ${late.login} signed as the failure was written; evaluating again`,
+        )
+        return evaluateOnce(pr, undefined, false)
+      }
+    }
 
     const existing = comments.find(
       (c) => c.user?.type === 'Bot' && c.body?.includes(COMMENT_MARKER),
@@ -554,12 +569,20 @@ export function createClaEvaluator(ctx: ClaContext): ClaEvaluator {
     return result
   }
 
-  async function evaluate(pr: ClaPullRequest, current?: string): Promise<ClaResult> {
+  async function evaluateOnce(
+    pr: ClaPullRequest,
+    current: string | undefined,
+    retry: boolean,
+  ): Promise<ClaResult> {
     if (pr.state !== 'open') return { kind: 'skipped', number: pr.number, reason: 'not open' }
     const signings = new Set<number>()
     const result = await decideReading(pr, signings)
     if (result.kind !== 'evaluated' || result.state === current) return result
-    return publish(pr, result, signings)
+    return publish(pr, result, signings, retry)
+  }
+
+  function evaluate(pr: ClaPullRequest, current?: string): Promise<ClaResult> {
+    return evaluateOnce(pr, current, true)
   }
 
   return { decide, evaluate }
