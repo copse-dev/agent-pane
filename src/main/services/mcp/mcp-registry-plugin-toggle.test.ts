@@ -1,6 +1,7 @@
-import { after, before, beforeEach, describe, it } from 'node:test'
+import { after, before, beforeEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { MCP_UI_CANVAS_PLUGIN_ID } from '@copse/agent/plugins/mcp-ui-canvas-plugin.ts'
@@ -161,6 +162,22 @@ describe('reloadMcpServersForPluginToggle', () => {
           `${order}, ${String(hops)} hops: tool left registered`,
         )
       }
+    }
+  })
+
+  it('closes a bundled client whose tool listing fails', async () => {
+    plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+    const listTools = mock.method(Client.prototype, 'listTools', () =>
+      Promise.reject(new Error('listing failed')),
+    )
+    const close = mock.method(Client.prototype, 'close')
+    try {
+      await loadMcpServers(tools)
+      assert.equal(tools.has(RENDER_TOOL), false)
+      assert.ok(close.mock.callCount() >= 1, 'the untracked client is closed, not leaked')
+    } finally {
+      listTools.mock.restore()
+      close.mock.restore()
     }
   })
 

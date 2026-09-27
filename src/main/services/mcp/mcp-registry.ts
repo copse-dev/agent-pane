@@ -517,6 +517,7 @@ async function connectBundledServers(
   const bundled = await createBundledMcpServers()
   const statuses: McpServerStatus[] = []
   for (const [index, { name, client }] of bundled.entries()) {
+    let tracked = false
     try {
       const listed = isCurrent() ? (await client.listTools()).tools : null
       // Superseded while starting or listing: close this and every later client
@@ -527,6 +528,7 @@ async function connectBundledServers(
         return []
       }
       activeServers.push({ config: { name, transport: 'in-process' }, client })
+      tracked = true
       const tools = registerListedTools(
         registry,
         client,
@@ -550,6 +552,9 @@ async function connectBundledServers(
     } catch (err) {
       const message = errorMessage(err)
       console.error(`[MCP] Failed to register bundled "${name}":`, message)
+      // Listing failed before the client was tracked, so teardown and shutdown
+      // would never reach it: close it here rather than leak the connection.
+      if (!tracked) await client.close().catch(() => {})
       statuses.push({
         name,
         transport: 'in-process',
