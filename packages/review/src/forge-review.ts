@@ -453,6 +453,22 @@ export interface PostedReview {
 
 /** Every posted review carries it; a superseded one no longer does. */
 const REVIEW_MARKER = /<!-- copse-review:[0-9a-f]{40} -->/
+const SUPERSEDED_PREFIX = '### Copse Reviewer\n\nSuperseded by '
+const RESOLVED_PREFIX = '### Copse Reviewer\n\nResolved: '
+
+/**
+ * Whether a review body is one Copse Reviewer posted: current, superseded, or
+ * resolved by a newer review with no findings.
+ * Reading a pull request's conversation skips these: a reviewer re-reading its
+ * own earlier findings would only corroborate itself.
+ */
+export function isCopseReviewBody(body: string): boolean {
+  return (
+    REVIEW_MARKER.test(body) ||
+    body.startsWith(SUPERSEDED_PREFIX) ||
+    body.startsWith(RESOLVED_PREFIX)
+  )
+}
 const postedReviewSchema = z.object({
   id: z.number(),
   html_url: z.string(),
@@ -697,7 +713,7 @@ export async function postForgeReview(
         resolved = {
           superseded: await supersedeEarlierReviews(
             target,
-            { body: `### Copse Reviewer\n\nResolved: a newer review${sha} raised no new issues.` },
+            { body: `${RESOLVED_PREFIX}a newer review${sha} raised no new issues.` },
             request,
           ),
         }
@@ -763,7 +779,7 @@ export async function postForgeReview(
           {
             exceptId: posted.id,
             ...(posted.user === null ? {} : { login: posted.user.login }),
-            body: `### Copse Reviewer\n\nSuperseded by [a newer review](${posted.html_url})${sha}.`,
+            body: `${SUPERSEDED_PREFIX}[a newer review](${posted.html_url})${sha}.`,
           },
           request,
         ),

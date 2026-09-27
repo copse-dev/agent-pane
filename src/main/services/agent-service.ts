@@ -145,6 +145,7 @@ import {
   resolveOrchestrationWorkerModelId,
 } from './orchestration-runner.ts'
 import { runThreadReview, runWithReviewToolContext } from './review/review-service.ts'
+import { withReviewContext } from '@shared/store/review-reports.ts'
 import { runWithSubagentUsageScope, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
@@ -722,6 +723,13 @@ export interface RunAgentOptions {
    * Purely observational: never awaited, and a throwing sink cannot fail a turn.
    */
   onHistoryCheckpoint?: (messages: LLMMessage[]) => void
+  /**
+   * Summary of the Copse Reviewer runs the user started since the model's last
+   * reply (#2519). Leads the outbound prompt — after `beforeSubmitPrompt`, which
+   * sees only what the user typed — so every provider path reads it and it is
+   * kept in the thread's history with the prompt it arrived on.
+   */
+  reviewContext?: string
 }
 
 export interface RunAgentResult {
@@ -892,7 +900,10 @@ export async function runAgent(
   // the feature is off. When it is on but Rampart cannot run, the prompt goes out
   // unchanged and the user is told so through the same turn notice as a model
   // fallback.
-  const redaction = await redactUserContent(threadId, userPrompt)
+  const redaction = await redactUserContent(
+    threadId,
+    withReviewContext(userPrompt, options?.reviewContext),
+  )
   const outboundPrompt = redaction.content
   if (redaction.notice) {
     sendChunk({ type: 'text', text: redaction.notice })
