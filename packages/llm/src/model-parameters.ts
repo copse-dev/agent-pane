@@ -518,7 +518,8 @@ const RECOMMENDATIONS: ReadonlyArray<ModelParameterRecommendation & { match: str
     // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
     // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
     // for the model in general; we keep `medium` for this scenario on our own
-    // evidence, and the row stays opt-in and experimental because that evidence is
+    // evidence. Like every recipe it applies by default (a user-set field replaces
+    // its value), but the row stays labelled experimental because that evidence is
     // one benchmark on one host.
     params: { reasoning: 'medium', maxOutputTokens: 16_384, temperature: 1, topP: 0.95 },
   },
