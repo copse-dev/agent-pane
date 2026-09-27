@@ -66094,11 +66094,12 @@ function deriveActivity(input2) {
           run2?.startedAt ?? null
         )
       );
-    } else if (thread.status === "error") {
-      recent.push(threadRow(thread, "failed", "Ended with an error", run2?.endedAt ?? null));
     } else {
       const endedAt = run2?.endedAt ?? thread.unreadAt;
-      if (endedAt !== void 0) recent.push(threadRow(thread, "finished", "Finished", endedAt));
+      if (endedAt === void 0) continue;
+      recent.push(
+        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
+      );
     }
   }
   const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
