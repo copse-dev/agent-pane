@@ -209,14 +209,19 @@ function hostControlReasons(argv: readonly string[]): string[] {
   switch (head) {
     case 'pkill':
     case 'killall': {
-      // A path or a multi-word command line (`pkill -f "node scripts/watch"`)
-      // names the agent's own process; a bare name (`pkill -f vite`, `killall
-      // Finder`) matches whatever else the user is running under that name.
-      const patterns = argv.slice(1).filter((arg) => !arg.startsWith('-'))
-      const broad = patterns.length === 0 || patterns.some((p) => !/[\s/]/.test(p))
-      return broad
-        ? [`${head} kills every process with that name, not only ones this agent started`]
-        : []
+      // Signal 0 only checks that a process exists, and `killall -l` lists signals.
+      const probes = argv.some(
+        (arg, i) =>
+          /^-(?:0|s0|SIG0|l)$/i.test(arg) ||
+          arg === '--signal=0' ||
+          ((arg === '-s' || arg === '--signal') && argv[i + 1] === '0'),
+      )
+      // A pattern cannot be scoped to this agent's processes: `pkill -f "node
+      // scripts/watch"` also stops the user's own watcher in another terminal.
+      // The agent can stop what it started by PID or job (`kill %1`) without asking.
+      return probes
+        ? []
+        : [`${head} kills every process matching a pattern, not only ones this agent started`]
     }
     case 'launchctl':
       return LAUNCHCTL_READS.has(sub) ? [] : ['changes launchd services (launchctl)']

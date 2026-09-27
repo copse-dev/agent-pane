@@ -424,7 +424,7 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action('pkill -9 -u tester'), 'deny')
     // A single named process is ordinary process management.
     assert.equal(action('kill -9 4321'), 'allow')
-    assert.equal(action('pkill -f "node scripts/watch"'), 'allow')
+    assert.equal(action('pkill -f "node scripts/watch"'), 'prompt')
   })
 
   it('denies whole-device destruction that names no /dev node pattern', () => {
