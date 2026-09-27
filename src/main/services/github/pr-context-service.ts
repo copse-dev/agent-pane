@@ -1,4 +1,5 @@
 import { runCommand } from '../exec/command-runner.ts'
+import { readOnlyWorkspaceSandboxOverlay } from '../../project-sandbox/config.ts'
 import { runGh, parseGhJson } from './gh-service.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isGitAvailableForTarget, isGhAvailable } from '../tool-availability.ts'
@@ -149,6 +150,9 @@ async function runGit(
   const { stdout, code } = await runCommand('git', args, {
     cwd,
     env: { PATH: `${pathPrefix}${process.env['PATH'] ?? ''}` },
+    // Only reads (branch, status). A writable overlay would make Linux
+    // bubblewrap leave write-deny placeholders (.bashrc, ...) in the checkout.
+    sandboxConfig: readOnlyWorkspaceSandboxOverlay(cwd),
   })
   return { stdout, code }
 }

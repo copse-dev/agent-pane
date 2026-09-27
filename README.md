@@ -18,7 +18,7 @@ Copse has no hosted backend of its own. Connect your preferred cloud provider di
   <a href="https://github.com/copse-dev/agent-pane/issues">Issues</a>
 </p>
 
-![Copse showing a project, agent conversation, and editor](site/screenshots/chat-layout-three-pane.png)
+![Copse building a site: the project, the agent conversation, and its proposed changes ready to accept](tests/e2e/screenshots/landing-cupcake-changes.png)
 
 > Copse is currently distributed from source. The supported app target is macOS 26 or newer on Apple Silicon and Intel Macs. Linux and Windows can be used for source development, but are not supported release targets yet.
 
@@ -185,6 +185,10 @@ version 3](LICENSE). You may use, study, modify, and redistribute it. If you
 distribute a modified version, or make one available to users over a network,
 you must make the complete corresponding source available under the same
 license.
+
+Commercial licences are also available for uses where the AGPL's conditions do
+not fit, such as shipping a modified Copse without publishing its source. See
+[LICENSING.md](LICENSING.md).
 
 Copse relicensed from Apache-2.0 to AGPL-3.0-only on 6 September 2026. Releases
 up to and including `0.1.0-beta.8` were published under the Apache License 2.0,

@@ -9,14 +9,27 @@ import {
   saveElementScreenshot,
 } from './helpers/screenshot.ts'
 import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
+import { readFocusedFilterStyle, readModelPickerMenuStyle } from './helpers/model-picker-style.ts'
 
 const OPENROUTER_FIXTURE_PORT = 51235
 
 // Mimics OpenRouter's /models payload: a free tool-capable model, a free model
 // without tool support (filtered out), paid tool-capable models (shown when
-// free mode is off), and a non-text generator (filtered out).
+// free mode is off), and a non-text generator (filtered out). One paid model
+// carries a catalog-length name, wider than the menu's width cap, so the list
+// has a label it must ellipsize rather than scroll sideways to show (#3065).
+const LONG_MODEL_NAME =
+  'Mistral Large 2411 Extended Context Preview with Parallel Tool Calling and Structured Outputs (paid)'
 const MODELS_PAYLOAD = {
   data: [
+    {
+      id: 'mistralai/mistral-large-2411-extended-preview',
+      name: LONG_MODEL_NAME,
+      context_length: 131072,
+      pricing: { prompt: '0.000002', completion: '0.000006' },
+      supported_parameters: ['tools'],
+      architecture: { modality: 'text->text' },
+    },
     {
       id: 'qwen/qwen3-235b-a22b:free',
       name: 'Qwen3 235B A22B (free)',
@@ -200,6 +213,29 @@ describe('OpenRouter model picker', () => {
       'custom id that matches the live catalog should not duplicate',
     )
 
+    // #3065: the catalog's longest labels ("Best value — Best intelligence per
+    // pound across …") used to scroll the list sideways and clip mid-word in a
+    // monospace face the trigger never uses. They ellipsize now, in the
+    // interface font, with the whole label on the row's tooltip; the applied
+    // model is the selection fill plus weight, not accent text.
+    const all = await readModelPickerMenuStyle('.model-picker-menu')
+    assert.ok(all, 'the all-models menu should be measurable')
+    assert.ok(
+      all.listHorizontalOverflow <= 0,
+      `the model list must not scroll sideways (overflow ${String(all.listHorizontalOverflow)}px)`,
+    )
+    assert.deepEqual(all.labelTextOverflow, ['ellipsis'])
+    assert.ok(all.truncated, 'expected the long catalog label to be ellipsized at the width cap')
+    assert.match(all.truncated.text, /Extended Context Preview/)
+    assert.equal(all.truncated.title, all.truncated.text, 'a truncated row keeps its full label')
+    assert.equal(all.optionFontFamily, all.tokens.fontFamily)
+    assert.notEqual(all.optionFontFamily, all.tokens.fontMono)
+    assert.equal(all.optionFontSize, all.tokens.fontSizeSm)
+    assert.notEqual(all.selectedColor, all.tokens.accent, 'selection is the fill, not accent text')
+    assert.equal(all.selectedColor, all.tokens.textPrimary)
+    assert.equal(all.selectedBackground, all.tokens.bgSelected)
+    assert.equal(all.selectedFontWeight, '600')
+
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-all.png')
     await browser.keys('Escape')
     await $('.model-picker-filter').waitForDisplayed({ reverse: true })
@@ -253,6 +289,14 @@ describe('OpenRouter model picker', () => {
       { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
       { text: 'Claude Sonnet 3.5 (paid)', active: 'true', hasActiveClass: true },
     ])
+    // The keyboard highlight is a hover fill; only the applied model keeps the
+    // selection fill, so the menu never shows two selected-looking rows.
+    const keyboard = await readModelPickerMenuStyle('.model-picker-menu')
+    assert.ok(keyboard, 'the recent menu should be measurable')
+    assert.equal(keyboard.activeIsSelected, false)
+    assert.equal(keyboard.activeBackground, keyboard.tokens.bgHover)
+    assert.notEqual(keyboard.activeBackground, keyboard.selectedBackground)
+    assert.equal(keyboard.selectedBackground, keyboard.tokens.bgSelected)
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-keyboard.png')
 
     // prepareE2eScreenshot can steal focus; put it back before applying.
@@ -282,6 +326,15 @@ describe('OpenRouter model picker', () => {
       true,
       'filter should be focused when the picker opens',
     )
+    // One focus ring: the global input accent border, no extra outline.
+    const focusRing = await readFocusedFilterStyle('.model-picker-filter')
+    assert.ok(focusRing?.focused, 'the filter should hold focus while measured')
+    assert.ok(
+      focusRing.outlineStyle === 'none' || focusRing.outlineWidth === '0px',
+      `the filter must not add an outline (${focusRing.outlineStyle} ${focusRing.outlineWidth})`,
+    )
+    assert.equal(focusRing.borderColor, focusRing.accent)
+    assert.equal(focusRing.boxShadow, 'none')
 
     await filter.setValue('qwen')
     await browser.waitUntil(

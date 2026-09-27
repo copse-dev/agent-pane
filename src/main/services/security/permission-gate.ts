@@ -1167,7 +1167,7 @@ export async function ensureShellCommandPermitted(
     forceAsk && decision.action === 'allow' ? 'prompt' : decision.action
   const effectiveReasons =
     forceAsk && decision.action === 'allow'
-      ? ['the tool permission setting requires approval for every invocation']
+      ? ['The tool permission setting requires approval for every invocation']
       : decision.reasons
 
   // F2: fire the canonical `permissionDecision` observation with the verdict

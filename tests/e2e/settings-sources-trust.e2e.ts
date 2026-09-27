@@ -111,7 +111,7 @@ describe('settings sources workspace trust', function () {
       async () => (await row.$$('button.sources-badge-untrusted')).length === 0,
       { timeout: 15_000, timeoutMsg: 'expected the instruction row to reload as trusted' },
     )
-    // getText() reports the badge's rendered (CSS-uppercased) label.
+    // The badge's capital comes from CSS `::first-letter`, which getText() ignores.
     await expect(row.$('.sources-badge')).toHaveText('project', { ignoreCase: true })
     expect(await row.$('.sources-row-detail').getText()).not.toContain('inert until you trust')
     await maskInstructionPaths()

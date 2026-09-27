@@ -164,6 +164,11 @@ describe('agent plugins discovery', function () {
       timeoutMsg: 'expected the discovered plugin to enable',
     })
 
+    // Both CI renders framed other plugins after the toggle; bring the enabled
+    // plugin and its open settings into view for the capture.
+    await plugins
+      .$(`.plugin-row[data-plugin-id="${GOOD_PLUGIN_ID}"]`)
+      .scrollIntoView({ block: 'center' })
     await saveElementScreenshot('#settings-dialog', 'settings-plugins-agent-plugin.png')
 
     await browser.keys('Escape')

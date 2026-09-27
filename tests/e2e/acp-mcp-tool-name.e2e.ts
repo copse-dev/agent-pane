@@ -68,7 +68,7 @@ describe('ACP MCP tool name', () => {
   it('shows the recovered MCP tool name instead of Cursor’s generic placeholder', async () => {
     const card = $('.tool-card[data-tool-id="tc-acp-mcp-name"]')
     await card.waitForExist({ timeout: 30_000 })
-    await expect(card.$('.tool-name')).toHaveText('Read Archive')
+    await expect(card.$('.tool-name')).toHaveText('Read archive')
     await expect($('.messages-list')).not.toHaveText(expect.stringContaining('MCP: tool'))
 
     await saveAppScreenshot('acp-mcp-tool-name.png')

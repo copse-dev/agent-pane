@@ -41,9 +41,12 @@ describe('tool argument error guidance', () => {
     }
     await expect(card).toHaveText('No files match: __no_such_file__', { containing: true })
     await expect(card).toHaveText('max_results — clamped to 200', { containing: true })
-    await expect(card).toHaveText('Arguments were clamped to schema bounds', {
-      containing: true,
-    })
+    await expect(card.$('.tool-result-note')).toHaveText(
+      'Arguments were clamped to schema bounds: max_results — clamped to 200.',
+    )
+    // The note reaches the model as a system-reminder block; the card shows
+    // its text, never the tags.
+    expect(await card.getText()).not.toContain('system-reminder')
     await saveElementScreenshot(
       '.tool-card[data-tool-id][data-status="done"]',
       'tool-argument-clamp-guidance.png',

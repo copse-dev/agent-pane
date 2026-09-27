@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject, seedSshWorkspaceSettings } from './helpers/seed-config.ts'
+import { assertErrorColor, assertKitButtonChrome } from './helpers/ui-kit-style.ts'
 
 describe('Open remote folder — path breadcrumbs', () => {
   before(async () => {
@@ -47,10 +48,24 @@ describe('Open remote folder — path breadcrumbs', () => {
     // Root crumb is already `/` — never paint a second slash separator after it.
     assert.doesNotMatch(crumbText.replace(/\s+/g, ' '), /\/\s*\/\s+\S/)
 
+    // The fixture host is unreachable, so browsing fails. The dialog must say
+    // why in the error hue, without Electron's IPC channel wrapping.
+    const errorStatus = dialog.$('.remote-folder-status [data-status-kind="error"]')
+    await errorStatus.waitForExist({
+      timeout: 15_000,
+      timeoutMsg: 'unreachable host did not surface an error status',
+    })
+    const errorText = await errorStatus.getText()
+    assert.ok(errorText.trim().length > 0, 'error status must carry the failure reason')
+    assert.doesNotMatch(errorText, /Error invoking remote method|ssh-workspace:connect/)
+    await assertErrorColor('#remote-folder-dialog .remote-folder-status .ui-inline-status')
+
+    // Every action is a kit button with visible chrome, not a bare word.
+    await assertKitButtonChrome('#remote-folder-dialog .remote-folder-open', 'primary')
+    await assertKitButtonChrome('#remote-folder-dialog .remote-folder-cancel', 'secondary')
+    await assertKitButtonChrome('#remote-folder-dialog .remote-folder-add-host-btn', 'secondary')
+
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-breadcrumbs.png')
-    // The action row is UI-kit chrome, not bare text (#3065).
-    await expect(dialog.$('.remote-folder-open')).toHaveElementClass('ui-btn-primary')
-    await expect(dialog.$('.remote-folder-cancel')).toHaveElementClass('ui-btn-secondary')
     await dialog.$('.remote-folder-cancel').click()
     await expect(dialog).not.toBeDisplayed()
   })
