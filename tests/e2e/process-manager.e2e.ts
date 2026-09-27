@@ -141,15 +141,35 @@ describe('Process manager', function () {
     )
     assert.match(ascendingIndicator.clipPath, /^polygon\(50% 0(?:px)?, 100% 100%/)
     await memorySort.click()
-    const values = await browser.execute(() =>
-      [...document.querySelectorAll('#process-manager-dialog tbody tr td:nth-child(5)')]
-        .map((cell) => Number.parseFloat(cell.textContent ?? ''))
-        .filter(Number.isFinite),
-    )
-    assert.deepEqual(
-      values,
-      [...values].sort((a, b) => b - a),
-    )
+    const groups = await browser.execute(() => {
+      const byGroup: { key: string; expanded: string | null; memory: number[] }[] = []
+      for (const row of document.querySelectorAll<HTMLTableRowElement>(
+        '#process-manager-dialog tbody tr',
+      )) {
+        if (row.classList.contains('process-manager-group')) {
+          byGroup.push({
+            key: row.dataset['groupKey'] ?? '',
+            expanded:
+              row.querySelector('.process-manager-group-toggle')?.getAttribute('aria-expanded') ??
+              null,
+            memory: [],
+          })
+          continue
+        }
+        const value = Number.parseFloat(row.cells[4]?.textContent ?? '')
+        if (Number.isFinite(value)) byGroup.at(-1)?.memory.push(value)
+      }
+      return byGroup
+    })
+    assert.ok(groups.some((group) => group.key === originalThreadId))
+    assert.equal(groups.at(-1)?.key, '', 'shared processes are grouped last')
+    for (const group of groups) {
+      assert.equal(group.expanded, 'true', 'thread groups start expanded')
+      assert.deepEqual(
+        group.memory,
+        [...group.memory].sort((a, b) => b - a),
+      )
+    }
     await saveAppScreenshot('process-manager.png')
 
     await dialog.$('[aria-label="Close process manager"]').click()

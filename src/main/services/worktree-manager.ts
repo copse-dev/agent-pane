@@ -1250,6 +1250,54 @@ export async function retireThreadWorktree(
   return { status: 'removed', branch: validated.branch }
 }
 
+export type DeletedThreadWorktreeResult =
+  | { status: 'removed'; branch: string; branchDeleted: boolean }
+  | Exclude<RetireWorktreeResult, { status: 'removed' }>
+
+/**
+ * Retire the checkout of a thread that is being deleted.
+ *
+ * The safety predicate is exactly `retireThreadWorktree`'s — the same one
+ * `pruneSafeOrphans` applies to ownerless checkouts: nothing uncommitted,
+ * untracked, or ignored, and a branch already contained by its recorded base.
+ * Anything else is returned as a blocked result and left on disk, where
+ * Settings → Storage → Worktrees lists it as an orphan with explicit,
+ * confirmed removal.
+ *
+ * A kept checkout loses the internal-root authority and indexing that
+ * validation granted it: its thread is going away, so nothing may run there
+ * until someone reclaims it explicitly, which is its state after a restart.
+ *
+ * Once the checkout is gone its branch is offered to `git branch -d`, as the
+ * Settings removal does: Git deletes it (and its `branch.<name>.*` recovery
+ * metadata) only when fully merged, so no commit can become unreachable here.
+ */
+export async function retireDeletedThreadWorktree(
+  input: ValidateWorktreeInput,
+): Promise<DeletedThreadWorktreeResult> {
+  const location = await repositoryLocation(input.projectRoot)
+  const projectRoot = location.repositoryRoot
+  const executionRoot = resolve(input.worktree.path, location.projectRelativePath)
+  return runSerialized(`worktree-manager:${projectRoot}`, async () => {
+    let retired: RetireWorktreeResult
+    try {
+      retired = await retireThreadWorktree(input)
+    } catch (error) {
+      // Validation may already have granted authority (and indexing may be
+      // watching) before inspection or removal failed; a half-removed checkout
+      // must not keep a recursive watcher either.
+      releaseWorktreeRoot(executionRoot)
+      throw error
+    }
+    if (retired.status !== 'removed') {
+      releaseWorktreeRoot(executionRoot)
+      return retired
+    }
+    const deleted = await git(projectRoot, ['branch', '-d', retired.branch])
+    return { ...retired, branchDeleted: deleted.code === 0 }
+  })
+}
+
 /**
  * Remove a PR-backed checkout while retaining its local branch. Unlike ordinary
  * retirement this does not require merge: it requires a clean checkout whose
