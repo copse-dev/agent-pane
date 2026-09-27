@@ -185,7 +185,7 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       // surfaces as a sidebar attention indicator instead of interrupting
       // whichever thread the user is currently focused on.
       const threadId = getActiveRunThread() ?? undefined
-      const stopAlert = deps.alertUser('interaction', 'An agent has a question.')
+      const stopAlert = deps.alertUser('interaction', 'An agent has a question.', threadId)
       const withdraw = (result: AskUserResult): void => {
         deps.send('agent:ask-user-cancelled', { id })
         deps.settle(id, result)
