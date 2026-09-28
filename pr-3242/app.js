@@ -50987,7 +50987,7 @@ function isPrivateOrLinkLocalHost(hostname3) {
   const first = hextets[0] ?? 0;
   return (first & 65024) === 64512 || (first & 65472) === 65152;
 }
-function validateCredentialBaseUrl(value, label = "Base URL") {
+function validateCredentialBaseUrl(value, label = "Base URL", options = {}) {
   const raw = value.trim();
   if (!raw) throw new Error(`${label} cannot be blank`);
   let url2;
@@ -50999,7 +50999,8 @@ function validateCredentialBaseUrl(value, label = "Base URL") {
   if (url2.username || url2.password) {
     throw new Error(`${label} must not include embedded credentials`);
   }
-  const loopback = isLoopbackHostname(url2.hostname);
+  const host = normalizeHostname(url2.hostname);
+  const loopback = isLoopbackHostname(host) || (options.loopbackAliases ?? []).some((alias) => normalizeHostname(alias) === host);
   if (url2.protocol === "http:") {
     if (loopback) return url2.toString();
     throw new Error(`${label} may only use http: for loopback hosts`);
