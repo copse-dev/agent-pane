@@ -58,6 +58,10 @@ export async function sendCodeBlockRunResult(
   // the result as a draft attachment rather than run the agent on a checkout
   // that may have moved off the thread's branch.
   if (branchResult.status === 'rejected') return false
+  // The settings and Git reads above cross async boundaries. Re-check the
+  // project before mutating the store so a project switch during either read
+  // cannot send this output to a newly active same-id thread.
+  if (store.getState().activeProjectId !== projectId) return false
   const currentBranch = branchResult.value
   const promptState = promptResult.status === 'fulfilled' ? promptResult.value : null
   const current = getThreadById(store, threadId)

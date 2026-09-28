@@ -120,6 +120,39 @@ test('a result from a background project cannot target a same-id active thread',
   assert.equal(getThreadById(store, thread.id)?.messages.length, 1)
 })
 
+test('a project switch during async guards cannot target a same-id active thread', async () => {
+  const origin = runThread('idle')
+  const store = storeWith(origin)
+  const { api, runs } = sendApi()
+  let allowSettings: ((value: boolean) => void) | undefined
+  let settingsStarted: (() => void) | undefined
+  const started = new Promise<void>((resolve) => {
+    settingsStarted = resolve
+  })
+  api.settings.get = async (): Promise<boolean> => {
+    settingsStarted?.()
+    return await new Promise<boolean>((resolve) => {
+      allowSettings = resolve
+    })
+  }
+
+  const sending = sendCodeBlockRunResult(store, api, result())
+  await started
+  const replacement = runThread('idle')
+  store.setState({
+    activeProjectId: 'project-2',
+    activeThreadId: replacement.id,
+    threads: [replacement],
+    backgroundThreads: [{ projectId: 'project-1', thread: origin }],
+  })
+  allowSettings?.(true)
+
+  assert.equal(await sending, false)
+  assert.deepEqual(runs, [])
+  assert.equal(replacement.messages.length, 1)
+  assert.equal(origin.messages.length, 1)
+})
+
 test('a result stays as a draft attachment when terminal sharing is disabled', async () => {
   const store = storeWith(runThread('idle'))
   const { api, runs } = sendApi()
