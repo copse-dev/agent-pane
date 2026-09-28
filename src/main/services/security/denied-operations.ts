@@ -71,8 +71,8 @@ export function recordApprovedDeniedOperation(
 /**
  * Cap for the *display* of a prior command cited in a denial note. The live
  * command under review is truncated separately; this only keeps a long multi-
- * line script from blowing up the "earlier in this thread" block. Never fed
- * back into markdown/backticks that could splice into the live command.
+ * line script from blowing up the "earlier in this thread" block. The live
+ * command remains complete in its independently scrollable command region.
  */
 export const CACHED_DENIAL_COMMAND_DISPLAY_MAX = 120
 

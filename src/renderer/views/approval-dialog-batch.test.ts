@@ -400,7 +400,7 @@ describe('approval dialog coalescing', () => {
     assert.ok(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('keeps prior-denial note, reason list, truncated command, and footer as distinct sections', () => {
+  it('keeps prior-denial note, reason list, full command, and footer as distinct sections', () => {
     // Mirrors formatExpectedSandboxBlockPromptParts output: denial note is its
     // own prose block (not spliced into a bullet with the live script).
     const prior =
@@ -412,7 +412,7 @@ describe('approval dialog coalescing', () => {
       '• Runs the GitHub CLI, which may reach GitHub\n\n' +
       'It is asking to run outside the sandbox up front, rather than letting it fail inside first.'
     const commandPreview =
-      'set -o pipefail\ngh search prs one\ngh search prs two\n… (+28 more lines, 1800 more characters)'
+      'set -o pipefail\ngh search prs one\ngh search prs two\ngh search prs three'
     emit({
       id: 'outside-readable',
       title: 'Run outside sandbox?',
@@ -428,18 +428,18 @@ describe('approval dialog coalescing', () => {
     const body = qsRequired(dialog, '.approval-body')
     const footer = qsRequired(dialog, '.approval-footer')
 
-    assert.match(advice.textContent ?? '', /Earlier in this thread: already confirmed denied/)
-    assert.match(advice.textContent ?? '', /The agent expects the project sandbox to block/)
+    assert.match(advice.textContent, /Earlier in this thread: already confirmed denied/)
+    assert.match(advice.textContent, /The agent expects the project sandbox to block/)
     assert.deepEqual(
       [...advice.querySelectorAll('ul.approval-reasons > li')].map((node) => node.textContent),
       ['Runs the GitHub CLI, which may reach GitHub'],
     )
     // Live command lives only in the monospaced block — not concatenated into advice.
-    assert.doesNotMatch(advice.textContent ?? '', /gh search prs two/)
-    assert.doesNotMatch(advice.textContent ?? '', /`/)
+    assert.doesNotMatch(advice.textContent, /gh search prs two/)
+    assert.doesNotMatch(advice.textContent, /`/)
     assert.equal(body.textContent, commandPreview)
     assert.ok(body.classList.contains('approval-body-code'))
-    assert.match(footer.textContent ?? '', /Allow running it once outside the sandbox/)
+    assert.match(footer.textContent, /Allow running it once outside the sandbox/)
     assert.ok(advice.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING)
     assert.ok(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)
   })

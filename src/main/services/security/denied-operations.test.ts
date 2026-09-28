@@ -35,7 +35,7 @@ describe('deniedOperations (issue #1436 point 2)', () => {
   it('flattens and truncates a multi-line prior command in the denial note', () => {
     const mega = [
       'set -o pipefail',
-      ...Array.from({ length: 40 }, (_, i) => `gh search prs q${i}`),
+      ...Array.from({ length: 40 }, (_, i) => `gh search prs q${String(i)}`),
     ].join('\n')
     deniedOperations.record(
       'thread-mega',

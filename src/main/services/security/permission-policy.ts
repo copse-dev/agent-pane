@@ -302,41 +302,6 @@ export interface ShellPromptParts {
   bodyFooter?: string
 }
 
-/** Max lines shown in the monospaced command region of an approval dialog. */
-export const SHELL_APPROVAL_COMMAND_MAX_LINES = 12
-/** Max characters shown in the monospaced command region of an approval dialog. */
-export const SHELL_APPROVAL_COMMAND_MAX_CHARS = 900
-
-/**
- * Truncate a shell command for the approval dialog body only. The full command
- * still runs after approve; this keeps long compound scripts scannable so the
- * monospaced block cannot swallow advice/footer.
- */
-export function truncateShellCommandForApproval(
-  command: string,
-  opts: { maxLines?: number; maxChars?: number } = {},
-): string {
-  const maxLines = opts.maxLines ?? SHELL_APPROVAL_COMMAND_MAX_LINES
-  const maxChars = opts.maxChars ?? SHELL_APPROVAL_COMMAND_MAX_CHARS
-  const normalized = command.replace(/\r\n/g, '\n')
-  const lines = normalized.split('\n')
-  let preview = normalized
-  let omittedLines = 0
-  if (lines.length > maxLines) {
-    preview = lines.slice(0, maxLines).join('\n')
-    omittedLines = lines.length - maxLines
-  }
-  if (preview.length > maxChars) {
-    preview = preview.slice(0, maxChars)
-  }
-  const hiddenChars = normalized.length - preview.length
-  if (hiddenChars <= 0) return preview
-  const parts: string[] = []
-  if (omittedLines > 0) parts.push(`${String(omittedLines)} more lines`)
-  parts.push(`${String(hiddenChars)} more characters`)
-  return `${preview}\n… (+${parts.join(', ')})`
-}
-
 export function shellPromptToApprovalFields(parts: ShellPromptParts): {
   body: string
   bodyAdvice?: string
@@ -457,8 +422,9 @@ export function formatExternalSandboxPromptParts(
   reasons: string[],
 ): ShellPromptParts {
   return {
-    // Truncate only the monospaced approval body; the gate still runs `command`.
-    command: truncateShellCommandForApproval(command),
+    // The dialog's command region scrolls independently. Keep the complete
+    // command visible so approval never authorizes undisclosed shell text.
+    command,
     // The platform is deliberately unnamed: this prompt only appears while a
     // project sandbox is active, which is seatbelt on macOS and bubblewrap on
     // Linux, and naming the wrong one is worse than naming none.
@@ -481,7 +447,7 @@ export function formatExpectedSandboxBlockPromptParts(
   reasons: string[],
 ): ShellPromptParts {
   return {
-    command: truncateShellCommandForApproval(command),
+    command,
     bodyAdvice: buildOutsideSandboxAdvice({
       leadIn: 'The agent expects the project sandbox to block this command:',
       reasons,

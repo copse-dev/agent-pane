@@ -15,10 +15,7 @@ import {
   formatExpectedSandboxBlockPromptParts,
   formatExternalSandboxPromptParts,
   formatShellPromptParts,
-  SHELL_APPROVAL_COMMAND_MAX_CHARS,
-  SHELL_APPROVAL_COMMAND_MAX_LINES,
   shellPromptToApprovalFields,
-  truncateShellCommandForApproval,
 } from './permission-policy.ts'
 
 const root = '/Users/me/project'
@@ -89,10 +86,9 @@ describe('outside-sandbox approval copy', () => {
       `${PRIOR_DENIAL_MARKER} (matched command: "set -o pipefail; gh pr list").`
     const live = [
       'set -o pipefail',
-      ...Array.from({ length: 30 }, (_, i) => `gh search prs --limit 100 "q${i}"`),
+      ...Array.from({ length: 30 }, (_, i) => `gh search prs --limit 100 "q${String(i)}"`),
     ].join('\n')
-    // Pad so the live script clearly exceeds the monospaced preview budget.
-    const mega = live + '\n' + 'x'.repeat(SHELL_APPROVAL_COMMAND_MAX_CHARS)
+    const mega = live + '\n' + 'x'.repeat(900)
 
     const parts = formatExpectedSandboxBlockPromptParts(mega, [
       prior,
@@ -111,21 +107,16 @@ describe('outside-sandbox approval copy', () => {
     // Prior denial is not rendered as a bullet that also holds the command.
     assert.doesNotMatch(fields.bodyAdvice ?? '', new RegExp(`•[^\n]*${PRIOR_DENIAL_MARKER}`))
 
-    // Live command is only in the monospaced body, truncated with a clear remainder.
-    assert.notEqual(fields.body, mega)
-    assert.match(fields.body, /\n… \(\+/)
-    assert.match(fields.body, /more (lines|characters)/)
-    assert.ok(fields.body.length < mega.length)
+    // Live command is only in the independently scrollable monospaced body. It
+    // stays complete: approval must never authorize undisclosed shell text.
+    assert.equal(fields.body, mega)
     assert.ok(!fields.body.includes(prior))
 
     assert.match(fields.bodyFooter ?? '', /Allow running it once outside the sandbox/)
   })
 
-  it('truncates long commands the same way on the post-failure escalation path', () => {
-    const mega = Array.from(
-      { length: SHELL_APPROVAL_COMMAND_MAX_LINES + 5 },
-      (_, i) => `echo ${i}`,
-    ).join('\n')
+  it('keeps long commands complete on the post-failure escalation path', () => {
+    const mega = Array.from({ length: 17 }, (_, i) => `echo ${String(i)}`).join('\n')
     const prior =
       'git fetch needs network access that was denied\n\n' +
       `${PRIOR_DENIAL_MARKER} (matched command: "git fetch origin main").`
@@ -138,15 +129,8 @@ describe('outside-sandbox approval copy', () => {
       fields.bodyAdvice ?? '',
       /failed inside the project sandbox \(.*Earlier in this thread/,
     )
-    assert.match(fields.body, /\n… \(\+/)
+    assert.equal(fields.body, mega)
     assert.equal(fields.bodyFooter, 'Allow running it once without sandbox restrictions?')
-  })
-
-  it('truncateShellCommandForApproval reports remaining characters for a single long line', () => {
-    const long = 'a'.repeat(SHELL_APPROVAL_COMMAND_MAX_CHARS + 200)
-    const out = truncateShellCommandForApproval(long)
-    assert.match(out, /\+200 more characters/)
-    assert.ok(out.startsWith('a'.repeat(SHELL_APPROVAL_COMMAND_MAX_CHARS)))
   })
 })
 

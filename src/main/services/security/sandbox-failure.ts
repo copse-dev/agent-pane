@@ -1,6 +1,5 @@
 import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import type { ShellPromptParts } from './permission-policy.ts'
-import { truncateShellCommandForApproval } from './permission-policy.ts'
 
 // The detection itself lives in `@copse/hooks-dialects` (the hook runner is one of
 // its two callers); re-exported so the shell tool and the gate keep their import.
@@ -40,7 +39,9 @@ export function formatUnsandboxedPromptParts(command: string, reasons: string[])
   const detail = detailReasons.length ? detailReasons.join('; ') : 'sandbox restriction suspected'
   const failureLine = `This command failed inside the project sandbox (${detail}).`
   return {
-    command: truncateShellCommandForApproval(command),
+    // The renderer constrains this region with its own scrollbar. Preserve the
+    // full command so the user can inspect everything approval would execute.
+    command,
     bodyAdvice: priorDenial ? `${priorDenial}\n\n${failureLine}` : failureLine,
     bodyFooter: 'Allow running it once without sandbox restrictions?',
   }
