@@ -101,6 +101,17 @@ describe('attachCodeBlockCopyButtons', () => {
     unbind()
   })
 
+  it('does not send a conventional shell prompt marker to the terminal', () => {
+    const root = preWithCode('$ pnpm test --filter focused')
+    const requests: Array<{ id: string; command: string }> = []
+    bindCodeBlockRunRequests(root, (request) => requests.push(request))
+    attachCodeBlockCopyButtons(root, { runCommands: true })
+
+    qsRequired<HTMLButtonElement>(root, '.code-block-run').click()
+
+    assert.equal(requests[0]?.command, 'pnpm test --filter focused')
+  })
+
   it('shows the run under its code block, from running to its output', () => {
     const root = preWithCode('pnpm test')
     attachCodeBlockCopyButtons(root, { runCommands: true })

@@ -116,7 +116,7 @@ function runKey(pre: HTMLElement, command: string): string | null {
     if (other === pre) break
     if (other.closest('[data-message-id]') !== message) continue
     const otherCode = other.querySelector<HTMLElement>('code')
-    if (otherCode && copyButtonText(otherCode).trim() === command) occurrence++
+    if (otherCode && runnableCommand(otherCode) === command) occurrence++
   }
   return `${messageId}\u0000${String(occurrence)}\u0000${command}`
 }
@@ -154,6 +154,12 @@ function looksLikeUnlabelledCommand(source: string): boolean {
   const slash = Math.max(head.lastIndexOf('/'), head.lastIndexOf('\\'))
   const basename = (slash >= 0 ? head.slice(slash + 1) : head).toLowerCase()
   return COMMON_SHELL_COMMANDS.has(basename)
+}
+
+/** Strip a conventional one-line shell prompt without changing copied code. */
+function runnableCommand(code: HTMLElement): string {
+  const command = copyButtonText(code).trim()
+  return command.includes('\n') ? command : command.replace(/^\$\s+/, '')
 }
 
 export function isRunnableCodeBlock(code: HTMLElement): boolean {
@@ -317,7 +323,7 @@ export function attachCodeBlockCopyButtons(
       event.stopPropagation()
       const currentCode = pre.querySelector<HTMLElement>('code')
       if (!currentCode) return
-      const command = copyButtonText(currentCode).trim()
+      const command = runnableCommand(currentCode)
       if (!command) return
       const run: CodeBlockRun = { id: crypto.randomUUID(), state: 'running', outcome: null }
       const key = runKey(pre, command)
@@ -335,7 +341,7 @@ export function attachCodeBlockCopyButtons(
     // is done.
     if (runsByBlock.size > 0) {
       queueMicrotask(() => {
-        const command = copyButtonText(code).trim()
+        const command = runnableCommand(code)
         const key = runKey(pre, command)
         const run = key ? runsByBlock.get(key) : undefined
         if (run && !runBtn.dataset['runId']) showRun(runShell, runBtn, run)
