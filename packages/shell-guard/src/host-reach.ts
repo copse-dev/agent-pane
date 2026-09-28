@@ -577,7 +577,7 @@ const TEMPORARY_PATH_ENTRY =
  * ordinary command: `export PATH=/tmp/x:$PATH; git status` runs `/tmp/x/git`.
  */
 function temporaryPathReason(command: string): string | null {
-  for (const match of command.matchAll(/(?:^|[\s;&|(])PATH=(?:"([^"]*)"|'([^']*)'|(\S*))/g)) {
+  for (const match of command.matchAll(/(?:^|[\s;&|(])PATH\+?=(?:"([^"]*)"|'([^']*)'|(\S*))/g)) {
     const value = match[1] ?? match[2] ?? match[3] ?? ''
     const entry = value.split(':').find((part) => TEMPORARY_PATH_ENTRY.test(part))
     if (entry !== undefined) return `puts a temporary directory on PATH (${entry})`
