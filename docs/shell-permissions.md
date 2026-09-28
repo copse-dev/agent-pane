@@ -85,6 +85,12 @@ products remain in Copse-owned per-operation scratch directories, with ownership
 duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
 so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
 
+The native `device_hub` tool also requires an enabled Apple Development plugin and an enrolled
+local macOS project. Device discovery, screenshots, app launch, and simulator input request tool
+approval by default because they access host devices outside the project sandbox. Explicit tool
+permission overrides apply, but read-only mode and enrollment checks still fail closed. Showing a
+simulator does not enable renderer control; discrete agent input is a separate approved call.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
