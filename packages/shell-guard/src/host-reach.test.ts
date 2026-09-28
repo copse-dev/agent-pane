@@ -359,3 +359,23 @@ describe('hostReachReasons — database input', () => {
     }
   })
 })
+
+describe('hostReachReasons — shell history', () => {
+  it('prompts when history is searched for secret-named words', () => {
+    assert.ok(reaches('history | grep -i token'))
+    assert.ok(reaches('history |& grep -i token'))
+    assert.ok(reaches('fc -l 1 | rg PASSWORD'))
+    assert.ok(reaches("history | grep 'ordinary; token'"))
+    assert.ok(reaches("history | grep 'ordinary && secret'"))
+    assert.ok(reaches("history | grep 'ordinary | api_key'"))
+  })
+
+  it('leaves plain history and ordinary searches alone', () => {
+    assert.ok(!reaches('history'))
+    assert.ok(!reaches('history | grep make'))
+    assert.ok(!reaches('grep -rn token src'))
+    assert.ok(!reaches('history; rg token src'))
+    assert.ok(!reaches('history && grep -rn PASSWORD src'))
+    assert.ok(reaches('history 50 | tail -20 | grep -i secret'))
+  })
+})

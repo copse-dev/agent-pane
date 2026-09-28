@@ -664,6 +664,42 @@ function databaseInputReason(command: string): string | null {
 
 // ---------------------------------------------------------------------------
 
+const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'awk', 'sed'])
+
+/**
+ * `history | grep -i token`: plain `history` is harmless (and empty in an agent's
+ * non-interactive shell), but filtering it for a secret-named word is a search
+ * for credentials. Reading the history files themselves asks as a credential store.
+ */
+function isHistoryStage(argv: readonly string[]): boolean {
+  const head = commandName(argv[0])
+  return head === 'history' || (head === 'fc' && argv.includes('-l'))
+}
+
+function searchesForSecrets(argv: readonly string[]): boolean {
+  return SEARCHERS.has(commandName(argv[0])) && argv.slice(1).some((arg) => SECRET_NAME.test(arg))
+}
+
+/**
+ * Only a search that reads history's output counts: `history | grep -i token`,
+ * not `history; rg token src`. Pipelines are split at `;`, `&&`, `||`, `&` and
+ * newlines, then into stages at `|`/`|&`; a searcher must follow the history stage.
+ */
+function historySearchReason(command: string): string | null {
+  const composition = scanShellComposition(command)
+  if (!composition) return null
+  let readsHistory = false
+  for (const [index, segment] of composition.segments.entries()) {
+    const previousOperator = composition.operators[index - 1]
+    if (index > 0 && previousOperator !== '|' && previousOperator !== '|&') readsHistory = false
+    const [rawArgv = []] = shellSegments(segment)
+    const argv = unwrapWrappers(rawArgv)
+    if (readsHistory && searchesForSecrets(argv)) return 'searches shell history for secrets'
+    if (isHistoryStage(argv)) readsHistory = true
+  }
+  return null
+}
+
 /** Every host-reach reason for a shell command line, deduplicated. */
 export function hostReachReasons(command: string, context: HostReachContext): string[] {
   const reasons = new Set<string>(secretOverNetworkReasons(command))
@@ -688,6 +724,7 @@ export function hostReachReasons(command: string, context: HostReachContext): st
     temporaryPathReason(command),
     downloadThenRunReason(segments),
     databaseInputReason(command),
+    historySearchReason(command),
   ]) {
     if (reason !== null) reasons.add(reason)
   }
