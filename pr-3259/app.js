@@ -63608,9 +63608,9 @@ function mountSettingsDialog(store2, api2) {
             <fieldset>
               <legend>Mobile Companion</legend>
               <p class="field-hint">
-                Securely open your Copse threads from a phone on the same local network. Choose the
-                network interface your phone uses, pair phones, or turn sharing off. Copse must stay
-                open and this computer must stay awake.
+                Open your Copse threads from a phone on the same local network. Choose the network
+                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
+                and this computer must stay awake.
               </p>
               <div class="settings-action-row">
                 <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
