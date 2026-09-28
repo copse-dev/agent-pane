@@ -13,9 +13,10 @@ const PROJECT_ID = 'e2e-apple-suggestion-project'
 
 describeAppleSuggestion('Apple development suggestion on project open', function () {
   this.timeout(90_000)
-  const workspace = mkdtempSync(join(tmpdir(), 'copse-apple-suggestion-'))
+  let workspace = ''
 
   before(async () => {
+    workspace = mkdtempSync(join(tmpdir(), 'copse-apple-suggestion-'))
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     // An Xcode project directory is all the open-time detection looks for.
     mkdirSync(join(workspace, 'MyApp.xcodeproj'), { recursive: true })

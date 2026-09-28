@@ -151,7 +151,7 @@ export function mountAppleProjectSuggestions(
   store: AppStore,
   api: ApiClient,
   onAllowed: () => void,
-): HTMLElement {
+): { element: HTMLElement; destroy: () => void } {
   const text = el('span', { class: 'apple-suggestion-notice-text' })
   const acceptLink = el('button', { type: 'button', class: 'apple-suggestion-notice-accept' })
   const dismissLink = el(
@@ -170,6 +170,7 @@ export function mountAppleProjectSuggestions(
   const asked = new Set<string>()
   const reminders = new Map<string, Reminder>()
   let pendingDialog: { projectId: string; controller: AbortController } | null = null
+  let disposed = false
 
   const projectName = (projectId: string): string => {
     const project = store.getState().projects.find((candidate) => candidate.id === projectId)
@@ -221,6 +222,7 @@ export function mountAppleProjectSuggestions(
   }
 
   const offer = async (projectId: string, suggestion: AppleProjectSuggestion): Promise<void> => {
+    if (disposed) return
     if (suggestion.offer === 'reminder') {
       reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled })
       renderReminder()
@@ -234,6 +236,7 @@ export function mountAppleProjectSuggestions(
       pluginEnabled: suggestion.pluginEnabled,
       signal: controller.signal,
     })
+    if (disposed) return
     if (pendingDialog.controller === controller) pendingDialog = null
     if (choice === null) {
       asked.delete(projectId)
@@ -245,6 +248,7 @@ export function mountAppleProjectSuggestions(
   }
 
   const evaluate = async (): Promise<void> => {
+    if (disposed) return
     renderReminder()
     if (pendingDialog) return
     const { activeProjectId, activeThreadId } = store.getState()
@@ -258,6 +262,7 @@ export function mountAppleProjectSuggestions(
       asked.delete(activeProjectId)
       return
     }
+    if (disposed) return
     // The user moved on while the probe ran; ask when they come back.
     if (store.getState().activeProjectId !== activeProjectId) {
       asked.delete(activeProjectId)
@@ -281,7 +286,7 @@ export function mountAppleProjectSuggestions(
     renderReminder()
   })
 
-  store.on('workspace_changed', () => {
+  const unsubscribeWorkspace = store.on('workspace_changed', () => {
     const activeProjectId = store.getState().activeProjectId
     if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
       pendingDialog.controller.abort()
@@ -290,5 +295,15 @@ export function mountAppleProjectSuggestions(
   })
   // Launch may restore the project before this mounts.
   void evaluate()
-  return host
+  return {
+    element: host,
+    destroy: (): void => {
+      disposed = true
+      unsubscribeWorkspace()
+      pendingDialog?.controller.abort()
+      pendingDialog = null
+      reminders.clear()
+      host.remove()
+    },
+  }
 }

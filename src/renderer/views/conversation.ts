@@ -2505,10 +2505,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     arrowDownIcon('ui-icon'),
   )
-  const appleSuggestionHost = mountAppleProjectSuggestions(store, api, () =>
+  const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
     appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
   )
-  scrollArea.append(appleSuggestionHost, appleDevelopmentHost, todoHost, list, scrollToBottomBtn)
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn,
+  )
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -4585,6 +4591,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
+    appleSuggestions.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

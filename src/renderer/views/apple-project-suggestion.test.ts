@@ -23,7 +23,10 @@ interface Harness {
   enrolled: Array<[string, string, boolean]>
   answers: Array<[string, AppleSuggestionAnswer]>
   allowed: () => number
+  destroy: () => void
 }
+
+const cleanups: Array<() => void> = []
 
 function mount(
   suggestion: AppleProjectSuggestion | ((projectId: string) => AppleProjectSuggestion),
@@ -69,11 +72,22 @@ function mount(
     activeProjectId: 'myapp',
     activeThreadId: 'thread-1',
   })
-  const host = mountAppleProjectSuggestions(store, api, () => {
+  const suggestionMount = mountAppleProjectSuggestions(store, api, () => {
     allowedCount += 1
   })
+  const { element: host, destroy } = suggestionMount
+  cleanups.push(destroy)
   document.body.append(host)
-  return { store, host, probes, enabled, enrolled, answers, allowed: () => allowedCount }
+  return {
+    store,
+    host,
+    probes,
+    enabled,
+    enrolled,
+    answers,
+    allowed: () => allowedCount,
+    destroy,
+  }
 }
 
 function dialog(): HTMLDialogElement | null {
@@ -90,6 +104,9 @@ function clickDialogButton(label: string): void {
 
 describe('Apple project suggestion', () => {
   afterEach(() => {
+    cleanups.splice(0).forEach((cleanup) => {
+      cleanup()
+    })
     document.body.replaceChildren()
   })
 
@@ -207,5 +224,20 @@ describe('Apple project suggestion', () => {
     await tick()
 
     assert.deepEqual(harness.probes, ['myapp', 'site'])
+  })
+
+  it('stops probing and closes its dialog when the conversation unmounts', async () => {
+    const harness = mount({ offer: 'dialog', pluginEnabled: false })
+    await tick()
+    assert.ok(dialog())
+
+    harness.destroy()
+    await tick()
+    assert.equal(dialog(), null)
+
+    harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
+    harness.store.emit('workspace_changed')
+    await tick()
+    assert.deepEqual(harness.probes, ['myapp'])
   })
 })
