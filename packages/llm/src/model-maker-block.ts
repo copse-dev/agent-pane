@@ -22,6 +22,15 @@ export const MODEL_MAKERS: readonly { id: ModelMaker; label: string }[] = [
 ]
 
 const isModelMaker = memberOf(MODEL_MAKER_IDS)
+const MISTRAL_MODEL_FAMILIES = [
+  'mistral',
+  'mixtral',
+  'codestral',
+  'devstral',
+  'magistral',
+  'ministral',
+  'pixtral',
+] as const
 
 /** Treat an absent or older setting as an empty block list. */
 export function parseBlockedModelMakers(value: unknown): ModelMaker[] {
@@ -43,9 +52,10 @@ function makerFromName(name: string): ModelMaker | null {
     return 'google'
   if (normalized === 'deepseek' || normalized.startsWith('deepseek-')) return 'deepseek'
   if (
-    normalized === 'mistral' ||
-    normalized.startsWith('mistral-') ||
-    normalized.startsWith('mixtral-')
+    normalized === 'mistralai' ||
+    MISTRAL_MODEL_FAMILIES.some(
+      (family) => normalized === family || normalized.startsWith(`${family}-`),
+    )
   )
     return 'mistral'
   if (
@@ -64,6 +74,7 @@ function makerFromAgent(agent: string): ModelMaker | null {
   if (normalized.startsWith('claude')) return 'anthropic'
   if (normalized.startsWith('codex')) return 'openai'
   if (normalized.startsWith('gemini')) return 'google'
+  if (normalized.startsWith('mistral')) return 'mistral'
   if (normalized.startsWith('grok')) return 'xai'
   return null
 }

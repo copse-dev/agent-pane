@@ -42,6 +42,22 @@ describe('model maker block list', () => {
     assert.equal(modelMakerForSelection('mistral:mistral-large-latest'), 'mistral')
   })
 
+  it('recognizes Mistral vendor and product-family ids that do not start with mistral', () => {
+    for (const selection of [
+      'openrouter:mistralai/codestral-latest',
+      'openrouter:mistralai/devstral-2',
+      'openrouter:mistralai/magistral-medium',
+      'openrouter:mistralai/ministral-3-8b',
+      'openrouter:mistralai/pixtral-large-2411',
+      'lmstudio:codestral-latest',
+      'lmstudio:codestral',
+      'acp:mistral-agent',
+    ]) {
+      assert.equal(modelMakerForSelection(selection), 'mistral', selection)
+      assert.equal(blockedModelMaker(selection, ['mistral']), 'mistral', selection)
+    }
+  })
+
   it('does not infer a hidden model inside an agent or plugin', () => {
     assert.equal(modelMakerForSelection('acp:cursor'), null)
     assert.equal(modelMakerForSelection('remote-agent:cursor'), null)
