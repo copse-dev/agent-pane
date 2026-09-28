@@ -4,6 +4,7 @@ import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts
 import { checkForUpdatesManually } from '../services/auto-update.ts'
 import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 import { buildAppFileMenuItems } from './app-menu-file-items.ts'
+import { showMobileCompanion } from './mobile-desktop.ts'
 
 export interface AppMenuWindowProvider {
   getFocusedWindow(): BrowserWindow | null
@@ -161,6 +162,14 @@ export function buildAppMenu(windows: AppMenuWindowProvider, developerMode = fal
           accelerator: 'CmdOrCtrl+Shift+P',
           click: (): void => {
             sendToFocused('menu:process-manager')
+          },
+        },
+        {
+          id: 'mobile-companion',
+          label: 'Mobile Companion…',
+          click: (): void => {
+            const win = windows.getFocusedWindow()
+            if (win) void showMobileCompanion(win)
           },
         },
         { type: 'separator' as const },

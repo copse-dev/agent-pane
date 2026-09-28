@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { safeJsonParse, decodeWithSchema } from './packages/std/src/safe-json.ts'
 import type { Server } from 'node:http'
 import { createServer } from 'node:http'
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs'
@@ -6,6 +8,8 @@ import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
 import { installDeleteSessionSafety, withTimeout } from './tests/e2e/helpers/after-test-safety.ts'
 import { prepareBenchmarkExplorerFixture } from './tests/demo/helpers/benchmark-explorer-fixture.ts'
+import { buildMobileAssets } from './scripts/mobile-build.mts'
+import { MOBILE_CONTENT_SECURITY_POLICY } from './src/shared/mobile-content-security-policy.ts'
 
 /** Cap how long afterTest may talk to a possibly-dead Chrome session. */
 const AFTER_TEST_SESSION_BUDGET_MS = 5_000
@@ -14,6 +18,8 @@ const DEMO_PORT = 4173
 const DEMO_ROOT = resolve('dist/demo')
 const PROTOTYPE_ROOT = resolve('prototypes')
 const PROTOTYPE_MOUNT = '/prototypes'
+const MOBILE_ROOT = resolve('dist/mobile')
+const MOBILE_MOUNT = '/mobile'
 // Static workshops reuse the shipped theme tokens and local fonts.
 const PROTOTYPE_ASSETS = [
   { mount: '/src/renderer/styles', root: resolve('src/renderer/styles') },
@@ -35,28 +41,168 @@ const contentTypes: Readonly<Record<string, string>> = {
 }
 
 async function startDemoServer(): Promise<void> {
+  let mobileStep = 0
+  let mobileText = ''
+  const mobileSession = '11111111-1111-4111-8111-111111111111'
+  const approvalId = '22222222-2222-4222-8222-222222222222'
+  const questionId = '33333333-3333-4333-8333-333333333333'
+  const runId = '44444444-4444-4444-8444-444444444444'
+
   await prepareBenchmarkExplorerFixture()
+  await buildMobileAssets(MOBILE_ROOT)
   server = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', `http://127.0.0.1:${String(DEMO_PORT)}`)
     const pathname = decodeURIComponent(requestUrl.pathname)
+    if (pathname === '/mobile-fixture/reset') {
+      mobileStep = 0
+      mobileText = ''
+      response.writeHead(200).end('{}')
+      return
+    }
+    if (pathname === '/api/action' && request.method === 'POST') {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => chunks.push(chunk))
+      request.on('end', () => {
+        const body = safeJsonParse(
+          Buffer.concat(chunks).toString(),
+          decodeWithSchema(
+            z.object({
+              action: z.enum(['approval', 'answer', 'stop', 'message']),
+              text: z.string().optional(),
+            }),
+          ),
+        )
+        if (!body || request.headers.authorization !== 'Bearer visual-test-token') {
+          response.writeHead(400).end('{}')
+          return
+        }
+        if (body.action === 'approval') mobileStep = 1
+        if (body.action === 'answer') mobileStep = 2
+        if (body.action === 'stop') mobileStep = 3
+        if (body.action === 'message') mobileText = body.text ?? ''
+        response
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ ok: true, threadId: 'thread-1', queued: mobileStep < 3 }))
+      })
+      return
+    }
+    if (pathname === '/api/activity' || pathname === '/api/thread/proj-1/thread-1') {
+      if (request.headers.authorization !== 'Bearer visual-test-token') {
+        response.writeHead(401, { 'Cache-Control': 'no-store' }).end('{}')
+        return
+      }
+      const body =
+        pathname === '/api/activity'
+          ? {
+              sessionId: mobileSession,
+              access: 'control',
+              projects: [{ id: 'proj-1', name: 'Copse' }],
+              refreshedAt: Date.now(),
+              rows: [
+                {
+                  projectId: 'proj-1',
+                  projectName: 'Copse',
+                  threadId: 'thread-1',
+                  title: 'Review the release',
+                  group: 'needs-you',
+                  state: 'needs-approval',
+                  detail: '1 approval waiting',
+                  lastSavedAt: Date.now() - 120_000,
+                },
+                {
+                  projectId: 'proj-1',
+                  projectName: 'Copse',
+                  threadId: 'thread-2',
+                  title: 'Run the focused tests',
+                  group: 'working',
+                  state: 'working',
+                  detail: 'Agent running · last saved activity shown below',
+                  lastSavedAt: Date.now() - 15_000,
+                },
+                {
+                  projectId: 'proj-1',
+                  projectName: 'Copse',
+                  threadId: 'thread-3',
+                  title: 'Document the migration',
+                  group: 'recent',
+                  state: 'finished',
+                  detail: 'Latest completed output',
+                  lastSavedAt: Date.now() - 480_000,
+                },
+              ],
+            }
+          : {
+              projectName: 'Copse',
+              title: 'Review the release',
+              sessionId: mobileSession,
+              access: 'control',
+              runId: mobileStep < 3 ? runId : null,
+              attention: [],
+              decisions:
+                mobileStep === 0
+                  ? [
+                      {
+                        id: approvalId,
+                        kind: 'approval',
+                        title: 'Run outside sandbox?',
+                        body: 'pnpm run check',
+                        advice: 'This command needs access outside the project sandbox.',
+                      },
+                    ]
+                  : mobileStep === 1
+                    ? [
+                        {
+                          id: questionId,
+                          kind: 'question',
+                          questions: [
+                            {
+                              question: 'Which tests should I run?',
+                              options: ['Focused tests', 'Full suite'],
+                            },
+                          ],
+                        },
+                      ]
+                    : [],
+              messages: [
+                { role: 'user', content: 'Check the release notes.', summary: null },
+                ...(mobileText ? [{ role: 'user', content: mobileText, summary: null }] : []),
+                {
+                  role: 'assistant',
+                  content: 'The release notes are ready. </p><img src=x onerror=alert(1)>',
+                  summary: 'Reviewed three files',
+                },
+              ],
+            }
+      response
+        .writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        })
+        .end(JSON.stringify(body))
+      return
+    }
     const marketingDemoPath = mountedPath(pathname, MARKETING_DEMO_MOUNT)
     const marketingPath = mountedPath(pathname, MARKETING_MOUNT)
     const prototypePath = mountedPath(pathname, PROTOTYPE_MOUNT)
+    const mobilePath = mountedPath(pathname, MOBILE_MOUNT)
     const sharedAsset = PROTOTYPE_ASSETS.map(({ mount, root }) => ({
       root,
       path: mountedPath(pathname, mount),
     })).find((asset) => asset.path !== null)
     const root = sharedAsset
       ? sharedAsset.root
-      : prototypePath
-        ? PROTOTYPE_ROOT
-        : marketingDemoPath
-          ? DEMO_ROOT
-          : marketingPath
-            ? MARKETING_ROOT
-            : DEMO_ROOT
+      : mobilePath
+        ? MOBILE_ROOT
+        : prototypePath
+          ? PROTOTYPE_ROOT
+          : marketingDemoPath
+            ? DEMO_ROOT
+            : marketingPath
+              ? MARKETING_ROOT
+              : DEMO_ROOT
     const relativePath =
       sharedAsset?.path ??
+      mobilePath ??
       prototypePath ??
       marketingDemoPath ??
       marketingPath ??
@@ -73,6 +219,7 @@ async function startDemoServer(): Promise<void> {
     response.writeHead(200, {
       'Content-Type': contentTypes[extname(path)] ?? 'application/octet-stream',
       'Cache-Control': 'no-store',
+      ...(mobilePath ? { 'Content-Security-Policy': MOBILE_CONTENT_SECURITY_POLICY } : {}),
     })
     createReadStream(path).pipe(response)
   })
