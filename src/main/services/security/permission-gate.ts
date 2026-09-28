@@ -32,6 +32,7 @@ import type { ShellPermissionDecision, ShellPromptParts } from './permission-pol
 import { errorMessage } from '@shared/errors.ts'
 import type { PromptCause } from '@shared/threads/prompt-cause.ts'
 import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import type { AutomationPermission } from '@shared/types'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isProjectSandboxPlatform, projectSandboxInitFailure } from '../../project-sandbox/state.ts'
 import {
@@ -118,6 +119,11 @@ import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
+import {
+  guardedYoloTierReason,
+  shadowTierScreening,
+  tierScreeningClassifier,
+} from './tier-screening.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
 import {
   TRUSTED_SSH_HOSTS_SETTING,
@@ -138,6 +144,7 @@ import {
   dangerousInSandboxReasons,
   isReplayableOpaqueLocalExecution,
 } from './shell-scope.ts'
+import { getAutomationService } from '../automations/automation-service.ts'
 
 const SANDBOX_REPLAY_LABEL = 'Allow retries for this task (up to 10, for 15 minutes)'
 const EXTERNAL_REPLAY_LABEL = 'Allow retries outside the sandbox (up to 2, for 15 minutes)'
@@ -573,6 +580,51 @@ async function promptExplicitToolAsk(
   return approved
 }
 
+interface AutomationPermissionTarget {
+  projectId: string
+  scheduleId: string
+  scheduleName: string
+  allowed: boolean
+}
+
+/**
+ * Resolve a grant only after the schedule's main-owned run record corroborates
+ * the renderer-visible thread metadata. A renderer can patch thread metadata,
+ * so the automation claim alone is never authority.
+ */
+function automationPermissionTarget(
+  permission: AutomationPermission,
+): AutomationPermissionTarget | null {
+  const context = getThreadExecutionContext()
+  if (!context?.automation) return null
+  const preference = getAutomationService().permissionPreferenceForThread(
+    context.projectId,
+    context.threadId,
+    context.automation,
+    permission,
+  )
+  if (!preference) return null
+  return {
+    projectId: context.projectId,
+    scheduleId: context.automation.scheduleId,
+    scheduleName: preference.scheduleName,
+    allowed: preference.allowed,
+  }
+}
+
+function automationRememberLabel(subject: 'action' | 'tool', scheduleName: string): string {
+  return `Allow this ${subject} for future “${scheduleName}” runs`
+}
+
+/**
+ * A schedule grant is project-scoped. Explicit owner/repo arguments may target
+ * another repository, so those calls keep prompting and cannot enlarge the
+ * schedule preference from the approval dialog.
+ */
+function githubWriteUsesProjectTarget(args: unknown): boolean {
+  return isRecord(args) && args['owner'] === undefined && args['repo'] === undefined
+}
+
 async function checkMcpPermission(
   toolName: string,
   args: unknown,
@@ -580,11 +632,16 @@ async function checkMcpPermission(
   explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
   if (explicitPolicy === 'allow') return true
+  const permission: AutomationPermission = { kind: 'mcp-tool', toolName }
+  const automation = explicitPolicy === 'ask' ? null : automationPermissionTarget(permission)
   const meta = getMcpToolMeta(toolName)
   const decision = decideMcpPermission({
     toolName,
     annotations: meta?.annotations,
-    remembered: explicitPolicy === 'ask' ? false : isMcpToolRemembered(toolName),
+    remembered:
+      explicitPolicy === 'ask'
+        ? false
+        : isMcpToolRemembered(toolName) || automation?.allowed === true,
     autoAllowReadOnly:
       explicitPolicy === 'ask' ? false : getSetting<boolean>('mcpAutoAllowReadOnly', false),
     bundled: explicitPolicy === 'ask' ? false : (meta?.bundled ?? false),
@@ -604,10 +661,23 @@ async function checkMcpPermission(
       scope: 'external',
       cause: 'mcp-tool',
       allowRemember: explicitPolicy !== 'ask',
+      ...(automation
+        ? { rememberLabel: automationRememberLabel('tool', automation.scheduleName) }
+        : {}),
     },
     signal,
   )
-  if (approved && remember && explicitPolicy !== 'ask') await rememberMcpTool(toolName)
+  if (approved && remember && explicitPolicy !== 'ask') {
+    if (automation) {
+      await getAutomationService().grantPermission(
+        automation.projectId,
+        automation.scheduleId,
+        permission,
+      )
+    } else {
+      await rememberMcpTool(toolName)
+    }
+  }
   return approved
 }
 
@@ -798,19 +868,36 @@ async function checkGithubWriteToolPermission(
   toolName: string,
   args: unknown,
   signal?: AbortSignal,
+  explicitPolicy?: Extract<ToolPermissionPolicy, 'allow' | 'ask'>,
 ): Promise<boolean> {
+  const permission: AutomationPermission = { kind: 'copse-action', toolName }
+  const automation =
+    explicitPolicy !== 'ask' && githubWriteUsesProjectTarget(args)
+      ? automationPermissionTarget(permission)
+      : null
+  if (automation?.allowed) return true
   const prompt = formatGithubWritePrompt(toolName, args)
-  const { approved } = await requestApproval(
+  const { approved, remember } = await requestApproval(
     {
       title: prompt.title,
       body: prompt.body,
       type: 'mcp',
       cause: 'github-write',
-      allowRemember: false,
+      allowRemember: automation !== null,
+      ...(automation
+        ? { rememberLabel: automationRememberLabel('action', automation.scheduleName) }
+        : {}),
       subject: toolName,
     },
     signal,
   )
+  if (approved && remember && automation) {
+    await getAutomationService().grantPermission(
+      automation.projectId,
+      automation.scheduleId,
+      permission,
+    )
+  }
   return approved
 }
 
@@ -1169,7 +1256,10 @@ export async function ensureShellCommandPermitted(
   const outsideSandbox =
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
     (guardedYolo && sandboxEnabled && routeShellCommand(command).outcome === 'allow')
-  const auditGuardedYolo = (userResponse: 'approved' | 'declined' | 'not-required'): void => {
+  const auditGuardedYolo = (
+    userResponse: 'approved' | 'declined' | 'not-required',
+    promptedBy?: string[],
+  ): void => {
     if (!guardedYolo || !harmDecision) return
     const originalCommand = opts.originalCommand ?? command
     recordPermissionDecision({
@@ -1179,10 +1269,23 @@ export async function ensureShellCommandPermitted(
       effectiveMode: 'guarded-yolo',
       sandboxState: sandboxEnabled && !outsideSandbox ? 'project-sandbox' : 'unsandboxed',
       harmDecision: harmDecision.action,
-      policyDecision: effectiveAction,
-      reasons: effectiveReasons,
+      policyDecision: promptedBy ? 'prompt' : effectiveAction,
+      reasons: promptedBy ?? effectiveReasons,
       userResponse,
     })
+  }
+
+  // Guarded YOLO's second opinion (tier-screening.ts). A classifier connection
+  // chosen for safety screening may turn an unsandboxed allow into the harm
+  // gate's one-time confirmation; it can never allow what the gate did not.
+  // A contained command needs no second opinion: the sandbox bounds it.
+  if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
+    const tierReason = await guardedYoloTierReason(command, workspaceRoot, opts.signal)
+    if (tierReason) {
+      const approved = await promptGuardedYoloHarm(command, [tierReason], false, opts.signal)
+      auditGuardedYolo(approved ? 'approved' : 'declined', [tierReason])
+      return approved
+    }
   }
 
   if (effectiveAction === 'allow') {
@@ -1224,6 +1327,20 @@ export async function ensureShellCommandPermitted(
     )
   )
     return true
+
+  // Record, in the background, what a classifier connection would have approved
+  // here. The prompt below does not wait for it and nothing changes.
+  if (!forceAsk && tierScreeningClassifier()) {
+    const harm = assessShellHarm(command, {
+      workspaceRoot,
+      homeDir: homedir(),
+      canonicalizePath: realpathSync.native,
+      readScript: readScriptForHarm,
+      isCompiledProgram,
+      ...harmHostReachContext(),
+    })
+    void shadowTierScreening(command, workspaceRoot, harm.action)
+  }
 
   // A user may explicitly authorize one constituent for bounded exact retries in
   // this human turn tree. Conservative top-level composition is allowed only
@@ -1796,7 +1913,7 @@ export async function ensureToolPermitted(
   } else if (toolName === 'prepare_worktree') {
     permitted = await checkWorktreePreparationPermission(args, signal)
   } else if (GITHUB_WRITE_TOOLS.has(toolName)) {
-    permitted = await checkGithubWriteToolPermission(toolName, args, signal)
+    permitted = await checkGithubWriteToolPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName.startsWith('mcp__')) {
     permitted = await checkMcpPermission(toolName, args, signal, explicitPolicy)
   } else if (toolName.startsWith(CUSTOM_TOOL_PREFIX)) {

@@ -67,7 +67,7 @@
 {"id":"reg-gy-trusted-host-proxycommand","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"reg-gy-trusted-host-untrusted-jump","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"reg-gy-rsync-local","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"reg-gy-pkill-own-command-line","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"reg-gy-pkill-own-command-line","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"reg-gy-npx-project-bin","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"reg-gy-npx-explicit-package","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"reg-gy-pnpm-dlx","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
@@ -234,7 +234,7 @@
 {"id":"scope-find-actions-1","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-find-actions-2","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"scope-find-actions-3","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"scope-find-actions-4","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"scope-find-actions-4","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"scope-find-actions-5","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":true,"harm":"allow"}
 {"id":"scope-env-wrappers-1","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"scope-env-wrappers-2","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
@@ -494,7 +494,7 @@
 {"id":"au-find-delete-home","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"deny"}
 {"id":"au-git-config-credential","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-gh-auth-status-token","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"au-history-grep-token","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"au-history-grep-token","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-keychain-dump","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-npm-token-create","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-docker-run-privileged","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
@@ -502,7 +502,7 @@
 {"id":"au-workspace-script-curl-sh","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"au-trusted-host-read","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"au-untrusted-host-read","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"ss2-0016","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"ss2-0016","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0019","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0022","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0046","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
@@ -534,12 +534,12 @@
 {"id":"ss2-0162","scope":"ambiguous","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0163","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"deny"}
 {"id":"ss2-0165","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
-{"id":"ss2-0168","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"ss2-0168","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0175","scope":"sandbox","autoApproval":{"read":null,"local-write":"local-write","remote-write":"local-write"},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0180","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0182","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0183","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
-{"id":"ss2-0189","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
+{"id":"ss2-0189","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}
 {"id":"ss2-0193","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0197","scope":"sandbox","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"allow"}
 {"id":"ss2-0204","scope":"external","autoApproval":{"read":null,"local-write":null,"remote-write":null},"readOutside":false,"harm":"prompt"}

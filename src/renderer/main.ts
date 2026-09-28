@@ -1,3 +1,4 @@
+import { attachMobileChat } from './controller/mobile-chat.ts'
 import './styles/tokens.css'
 // Shared markdown styling lives in the renderer package; agent-pane maps its
 // theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
@@ -343,11 +344,16 @@ async function boot(): Promise<void> {
   }
   applyExternalLinkMarks()
   store.on('settings_changed', applyExternalLinkMarks)
+  let mobileRestored: () => void = () => {}
+  const mobileReady = new Promise<void>((resolve) => {
+    mobileRestored = resolve
+  })
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {
     startAgentController(store, api)
     attachAutosave(store, api)
+    attachMobileChat(store, api, mobileReady)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
@@ -524,6 +530,8 @@ async function boot(): Promise<void> {
       ensureLayout()
     })
   }
+
+  mobileRestored()
 
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.

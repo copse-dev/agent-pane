@@ -951,3 +951,12 @@ fixed add/commit operation. The ordinary tool-gate hooks remain in the registry 
 Its separate signing capability never inherits a shell basename bypass: approvals
 bind to a project, system signer, public key and agent socket, and do not change the
 Git hook process's sandbox. See `docs/shell-permissions.md#native-commits-and-signing`.
+
+### Mobile human submissions (26 September 2026)
+
+An authenticated, desktop-authorized phone is a human submission surface. New
+messages use the primary renderer's normal user queue and start a human turn tree
+when submitted at idle; they do not carry hook origin or consume the machine
+continuation budget. The phone API cannot call hooks, grant leases, or dispatch a
+machine continuation. Checkout preparation and permission prompts retain their
+existing desktop paths. See `mobile-web-experience.md`, revised decision 5.

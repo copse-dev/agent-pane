@@ -28,6 +28,7 @@ import type {
 } from '@shared/types/hooks.ts'
 import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
+  AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
@@ -151,6 +152,12 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  mobile: {
+    onChat: (
+      handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
+    ) => () => void
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) => Promise<void>
+  }
   windowState: {
     getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
     setNavigation: (
@@ -1090,6 +1097,7 @@ export interface ApiClient {
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
+    permissionOptions: (projectId: string) => Promise<AutomationPermissionOption[]>
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>

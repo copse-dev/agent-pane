@@ -32,8 +32,9 @@ legacy execution name fails closed rather than inheriting another server's grant
 
 Always allow is unavailable where the product contract requires a fresh operation-specific
 approval: worktree preparation, mutating GitHub actions, and custom tools declared with
-`requiresApproval`. An approval prompt's existing “remember” action writes the same explicit
-Always allow policy when that policy is available.
+`requiresApproval`. Mutating GitHub actions may instead receive the narrower, exact
+schedule-scoped automation opt-in described below. An approval prompt's existing “remember” action
+writes the same explicit Always allow policy when that policy is available.
 
 ## Platform matrix
 
@@ -187,6 +188,9 @@ Shell-builtin assignment forms such as `printf -v` also fall back: they can chan
 replace a later reader without containing a leading `NAME=value` token.
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
 paths as broad as `~` or `/` are never eligible.
+The Copse LAN certificate and device directory (`<COPSE_DIR>/lan`, normally
+`~/.copse/lan`) and its ancestors are also ineligible for a standing read
+grant; a directory read of the whole profile must not sweep in its CA key.
 
 The proof follows a `cd` to an absolute or home-relative directory when it runs in sequence (`&&`
 or `;`), not in a pipeline, subshell, background job, or after `||`. Later relative operands
@@ -338,8 +342,9 @@ While active:
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
   `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
   one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
-  Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still always prompt. Read-only `gh`
-  carve-outs keep the normal sandboxed path.
+  Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still prompt unless the owning automation
+  has the exact project-scoped grant described below. Read-only `gh` carve-outs keep the normal
+  sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
   it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
@@ -364,8 +369,8 @@ While active:
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
-    `pkill`/`killall` of a bare name (a path or multi-word command line names the agent's own
-    process and runs);
+    every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
+    `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
   - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
@@ -398,17 +403,33 @@ While active:
     `--registry`, `--index-url`, …);
   - sending a request body or upload to a host other than loopback (`curl -d`, `-T`, `-X POST`,
     `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
+  - test and load runners pointed at a non-loopback URL (`pytest --base-url https://…`,
+    `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
+    `pg_restore` into a database, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`),
+    `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
+    from a file or stdin (`psql -f`, `mysql db < dump.sql`, `cat dump.sql | psql db`);
+  - filtering shell history for a secret-named word (`history | grep -i token`);
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
   has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
-  name. A program run by absolute path is inspected unless it lives under an installed-program
-  root (`/usr`, `/bin`, `/opt`, `/System`, …): a script's text is assessed, and a binary or missing
-  file outside the workspace still runs as an installed program. Anything run from a temporary
+  name. A program run by absolute path is an installed program when it lives under a system root
+  (`/usr`, `/bin`, `/opt`, `/System`, …) or a home toolchain directory (`~/.cargo/bin`,
+  `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
+  text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
+  command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. A program in command position
+  is inspected however its path is spelled (`$HOME/x.sh`, `"$HOME/x.sh"`, `'/abs/x.sh'`); a spelling
+  the gate cannot match to the parse is inspected rather than skipped. Anything run from a temporary
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
-  allows them.
+  allows them. When a classifier connection is chosen under Settings → Classifiers → Safety
+  screening, such a command first gets its second opinion (`tier-screening.ts`). A P(`ask`) of at
+  least 0.5 turns the allow into the harm gate's one-time confirmation. The classifier can only add
+  a prompt: a missing, slow or failing connection leaves the harm gate's allow standing. A command
+  that stays inside the project sandbox is not asked. Every confirmation ends "Approve this command
+  once?", because an ask-once prompt need not be destructive.
 - A shell builtin that assigns variables for later commands (currently `printf -v`) requires the
   one-time harm confirmation; changing `PATH` can otherwise replace the command being authorized.
 
@@ -445,6 +466,24 @@ Interpreter inspection recognizes Node's `.mts` and `.cts` launchers as well as 
 configuration-file argument cannot accidentally be inspected in place of the launcher.
 
 Update this document and the Guarded YOLO / harm / read-outside tests with any intentional change.
+
+## Automation-scoped tool grants
+
+Automation schedules default to no extra approvals. A user may opt one schedule into exact MCP
+tool names and a fixed catalogue of mutating Copse GitHub actions. These grants are stored with the
+schedule, never as ambient thread or application trust, and the gate resolves them only from the
+latest thread that main recorded as created by that schedule. Renderer-visible thread metadata is
+only a claim: the gate corroborates its schedule, thread id, and trigger time against the
+main-owned schedule run record before using a grant. Read-only mode and tool-gate hooks still run
+first. A global **Blocked** policy rejects before the schedule grant, and **Always ask** forces a
+fresh prompt without offering to remember the answer back to the schedule.
+
+Copse GitHub grants cover the current project repository only. Passing an explicit `owner` or
+`repo` keeps the normal per-call prompt. Shell commands, file changes, web/browser origins,
+sensitive-data reveals, ACP agent permission kinds, and model-spend approvals are deliberately not
+eligible. An eligible prompt raised inside an automation offers to add that exact action or MCP
+tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
+behavior.
 
 ## Implementation map
 
@@ -493,10 +532,18 @@ the registry still fails contained and offers to run outside.
   are additionally capped at `read` if a caller reaches the level helper without a sandbox. A
   segment that names a secret file (`secrets.ts`) is never approved, even inside the workspace,
   and `gh auth status --show-token` is not the `gh auth status` read.
+- `tier-screening.ts`: the classifier second opinion. In Guarded YOLO it may add the confirmation
+  above. In standard mode it only records a `tier-shadow` decision, in the background, for each
+  shell prompt: what a local-write blend (deterministic tiers, or P(`read`/`local-write`) ≥ 0.95
+  with a harm-gate allow) would have approved. The shadow record keeps a SHA-256 of the command,
+  not its text. It is evidence for a later decision, and it approves nothing.
 - `host-reach.ts`, `secrets.ts`, `remote-change.ts`: the Guarded YOLO ask-once rules above. The
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
+- `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants, the selectable
+  permission catalogue, and corroboration of renderer-visible provenance against the schedule's
+  main-owned latest-run record.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
   reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the

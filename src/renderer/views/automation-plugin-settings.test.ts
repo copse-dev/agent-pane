@@ -2,7 +2,11 @@ import '../../../tests/setup-dom.ts'
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { AutomationSchedule, AutomationScheduleInput } from '@shared/types'
+import type {
+  AutomationPermissionOption,
+  AutomationSchedule,
+  AutomationScheduleInput,
+} from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { createAutomationPluginSettings } from './automation-plugin-settings.ts'
@@ -14,7 +18,23 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-function stubApi(schedules: AutomationSchedule[]): {
+const PERMISSION_OPTIONS: AutomationPermissionOption[] = [
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_approve' },
+    label: 'Approve pull requests',
+    detail: 'Submits a GitHub approval for this project.',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__linear__create_issue' },
+    label: 'Create issue',
+    detail: 'linear MCP server · may access external systems',
+  },
+]
+
+function stubApi(
+  schedules: AutomationSchedule[],
+  permissionOptions: AutomationPermissionOption[] = PERMISSION_OPTIONS,
+): {
   api: AutomationSettingsApi
   upserts: Array<{ projectId: string; input: AutomationScheduleInput }>
 } {
@@ -23,6 +43,9 @@ function stubApi(schedules: AutomationSchedule[]): {
     automations: {
       list(projectId: string): Promise<AutomationSchedule[]> {
         return Promise.resolve(schedules.filter((schedule) => schedule.projectId === projectId))
+      },
+      permissionOptions(): Promise<AutomationPermissionOption[]> {
+        return Promise.resolve(permissionOptions)
       },
       upsert(projectId: string, input: AutomationScheduleInput): Promise<AutomationSchedule> {
         upserts.push({ projectId, input })
@@ -140,6 +163,7 @@ describe('automation plugin settings detail', () => {
     })
     const root = createAutomationPluginSettings(store, api, true)
     document.body.append(root)
+    await tick()
     root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
     await tick()
 
@@ -160,6 +184,31 @@ describe('automation plugin settings detail', () => {
     const form = root.querySelector<HTMLFormElement>('.automation-form')
     assert.ok(name && repeat && time && weeklyDay && prompt && worktreeLimit && form)
     assert.equal(root.querySelector('.automation-cron-input'), null)
+    const permissionInputs = root.querySelectorAll<HTMLInputElement>('.automation-permission-input')
+    assert.equal(permissionInputs.length, 2)
+    assert.equal(root.querySelectorAll('.automation-permission-switch').length, 2)
+    assert.equal(
+      root.querySelectorAll('.automation-permission-switch .toggle-switch-track').length,
+      2,
+    )
+    assert.equal(permissionInputs[0]?.getAttribute('role'), 'switch')
+    assert.match(root.textContent, /2 permissions/)
+    assert.match(root.textContent, /Copse action/)
+    assert.match(root.textContent, /MCP tool/)
+    const permissionFilter = root.querySelector<HTMLInputElement>('.automation-permission-filter')
+    assert.ok(permissionFilter)
+    permissionFilter.value = 'linear create'
+    permissionFilter.dispatchEvent(new Event('input', { bubbles: true }))
+    const filteredPermissionInputs = root.querySelectorAll<HTMLInputElement>(
+      '.automation-permission-input',
+    )
+    assert.equal(filteredPermissionInputs.length, 1)
+    assert.match(root.textContent, /1 of 2 permissions/)
+    filteredPermissionInputs[0]?.click()
+    permissionFilter.value = 'no such permission'
+    permissionFilter.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.equal(root.querySelectorAll('.automation-permission-row').length, 0)
+    assert.match(root.textContent, /No permissions match/)
     name.value = 'Nightly review'
     repeat.value = 'weekly'
     repeat.dispatchEvent(new Event('change'))
@@ -186,6 +235,7 @@ describe('automation plugin settings detail', () => {
           model: BEST_VALUE_CHAT_MODEL,
           enabled: true,
           maxLiveWorktrees: 2,
+          permissions: [{ kind: 'mcp-tool', toolName: 'mcp__linear__create_issue' }],
         },
       },
     ])
@@ -297,6 +347,7 @@ describe('automation plugin settings detail', () => {
     assert.ok(upsert)
     assert.equal(upsert.input.model, 'gpt-5.4')
     assert.equal(upsert.input.cron, schedule.cron)
+    assert.deepEqual(upsert.input.permissions, [])
   })
 
   it('normalizes cron Sunday 7 into the weekly Sunday control', async () => {
@@ -337,5 +388,43 @@ describe('automation plugin settings detail', () => {
     await tick()
 
     assert.equal(upserts[0]?.input.cron, '0 8 * * 0')
+  })
+
+  it('keeps a selected permission visible when its MCP tool is temporarily unavailable', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: 'gpt-5.4',
+      enabled: true,
+      permissions: [{ kind: 'mcp-tool', toolName: 'mcp__gone__publish_report' }],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const { api } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true, schedule.id)
+    document.body.append(root)
+    await tick()
+
+    const unavailable = root.querySelector<HTMLInputElement>(
+      '.automation-permission-unavailable .automation-permission-input',
+    )
+    assert.ok(unavailable)
+    assert.equal(unavailable.checked, true)
+    assert.match(root.textContent, /3 permissions/)
+    assert.match(root.textContent, /gone \/ publish_report/)
+    assert.match(root.textContent, /works if this tool returns/i)
+    const filter = root.querySelector<HTMLInputElement>('.automation-permission-filter')
+    assert.ok(filter)
+    filter.value = 'publish_report'
+    filter.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.equal(root.querySelectorAll('.automation-permission-row').length, 1)
+    assert.match(root.textContent, /1 of 3 permissions/)
   })
 })

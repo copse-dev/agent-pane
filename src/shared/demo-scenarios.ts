@@ -1148,6 +1148,27 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    id: 'automation-permissions',
+    label: 'Automation permission preferences',
+    project: project('demo-automation-permissions-project', 'Copse', '/demo/copse'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-automation-permissions-thread',
+        title: 'Automation permissions',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     // Per-model generation parameters. The scenario only has to seed the chat
     // model and its saved parameters — open Settings → General → Models in the
     // preview and the section renders itself against that selection. Uses an

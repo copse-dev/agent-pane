@@ -49,4 +49,7 @@
 // open PRs, so this skips them to avoid a collision whichever lands first.
 // v21 conservatively versions the optional Copse Reviewer report initiator on
 // thread payloads and `review_report` chunks.
-export const API_PROTOCOL_VERSION = 21 as const
+// v22 versions mobile-device decision actors and the resulting decisions:list shape.
+// v27 conservatively versions schedule-scoped automation permissions in list/upsert
+// payloads. v22–v26 are claimed by open PRs, so this skips them to avoid collisions.
+export const API_PROTOCOL_VERSION = 27 as const

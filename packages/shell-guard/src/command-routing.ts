@@ -125,20 +125,20 @@ function hasGroupingOrSubstitution(command: string): boolean {
 
 /**
  * Split a command line into top-level segments at the control operators
- * `&&`/`||`/`;`/`|`/`&` (and newlines), honouring single/double quotes and
+ * `&&`/`||`/`;`/`|`/`|&`/`&` (and newlines), honouring single/double quotes and
  * backslash escapes so an operator inside a string literal or an escaped `\;`
  * does not split. A lone `&` that is part of a redirect (`2>&1`, `&>file`) is
  * NOT treated as a control operator. Callers must have already rejected command
  * substitution / grouping via {@link hasGroupingOrSubstitution}.
  */
-export type ShellControlOperator = '&&' | '||' | ';' | '|' | '&'
+export type ShellControlOperator = '&&' | '||' | ';' | '|' | '|&' | '&'
 
 export interface ShellComposition {
   segments: string[]
   operators: ShellControlOperator[]
 }
 
-function scanShellComposition(command: string): ShellComposition | null {
+export function scanShellComposition(command: string): ShellComposition | null {
   const segments: string[] = []
   const operators: ShellControlOperator[] = []
   let current = ''
@@ -173,7 +173,7 @@ function scanShellComposition(command: string): ShellComposition | null {
       continue
     }
     const two = command.slice(i, i + 2)
-    if (two === '&&' || two === '||') {
+    if (two === '&&' || two === '||' || two === '|&') {
       if (!split(two)) return null
       i++
       continue
