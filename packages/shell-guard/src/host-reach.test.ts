@@ -337,6 +337,7 @@ describe('hostReachReasons — privilege, PATH and downloads', () => {
 describe('hostReachReasons — shell history', () => {
   it('prompts when history is searched for secret-named words', () => {
     assert.ok(reaches('history | grep -i token'))
+    assert.ok(reaches('history |& grep -i token'))
     assert.ok(reaches('fc -l 1 | rg PASSWORD'))
     assert.ok(reaches("history | grep 'ordinary; token'"))
     assert.ok(reaches("history | grep 'ordinary && secret'"))
