@@ -304,7 +304,7 @@ const SED_SCRIPT_ACTIVE_LETTERS = /[wWrRe]/
  * Refusal only ever means the command prompts, which was the status quo; the
  * read-outside-project grant still keeps its own head list and stays unchanged.
  */
-function isReadOnlySedCommand(argv: readonly string[]): boolean {
+export function isReadOnlySedCommand(argv: readonly string[]): boolean {
   const scripts: string[] = []
   const positional: string[] = []
   let expressionSeen = false
@@ -468,6 +468,25 @@ export function commandName(argv0: string | undefined): string {
 }
 
 /**
+ * Whether an argv invokes the shell's `printf -v name …` assignment form.
+ *
+ * `printf` normally only writes bytes, but Bash and Zsh implement `-v` as a
+ * shell builtin that writes a variable in the current shell. In a compound
+ * command, `printf -v PATH /tmp/evil && git …` can therefore replace the next
+ * executable without containing a leading `NAME=value` token. Authorization
+ * paths that treat ordinary `printf` as inert must reject this form.
+ */
+export function printfAssignsShellVariable(argv: readonly string[]): boolean {
+  if (commandName(argv[0]) !== 'printf') return false
+  for (const arg of argv.slice(1)) {
+    if (arg === '--') return false
+    if (arg === '-v' || arg.startsWith('-v')) return true
+    if (!arg.startsWith('-') || arg === '-') return false
+  }
+  return false
+}
+
+/**
  * Drop leading environment assignments and pass-through wrappers until the argv
  * starts at the command that actually runs.
  */
@@ -619,7 +638,10 @@ export function shellSegments(command: string, includeRawFallback = true): strin
   // Hard-deny consumers must not treat a separator inside quoted data as code.
   if (!includeRawFallback) return segments
 
-  for (const segment of command.split(/&&|\|\||[;&|(\r\n]+/)) {
+  // The `&` of a redirect (`2>&1`, `<&3`, `&>log`) separates nothing. Splitting on it
+  // made `1` a command head, and that phantom head's "not a plain read" blocker
+  // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
+  for (const segment of command.split(/&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/)) {
     const argv = withoutRawRedirects(rawTokens(segment))
     if (argv.length > 0) segments.push(argv)
   }
