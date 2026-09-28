@@ -21923,6 +21923,76 @@ var init_thread_proposal2 = __esm({
   }
 });
 
+// src/shared/unknown-value.mts
+var init_unknown_value2 = __esm({
+  "src/shared/unknown-value.mts"() {
+    init_unknown_value();
+  }
+});
+
+// src/shared/unknown-value.ts
+var init_unknown_value3 = __esm({
+  "src/shared/unknown-value.ts"() {
+    init_unknown_value2();
+  }
+});
+
+// src/shared/threads/reviewer-input.ts
+function isReviewerInputCall(call) {
+  return [call.name, call.programmaticName].some(
+    (name) => name === REVIEWER_INPUT_TOOL || typeof name === "string" && /^(?:mcp[^a-z0-9]+)?copse[^a-z0-9]+request_review_input(?![a-z0-9_])/i.test(name)
+  );
+}
+function parseReviewerInputCall(call, messageId) {
+  if (!isReviewerInputCall(call) || call.status !== "done" || !isRecord(call.args)) return null;
+  const { question, context, recommendation, options } = call.args;
+  if (typeof question !== "string" || question.trim() === "" || typeof context !== "string" || context.trim() === "") {
+    return null;
+  }
+  const validOptions = Array.isArray(options) ? options.flatMap(
+    (value) => typeof value === "string" && value.trim() !== "" ? [value] : []
+  ) : [];
+  return {
+    id: call.id,
+    messageId,
+    question: question.trim().slice(0, 300),
+    context: context.trim().slice(0, 1200),
+    ...typeof recommendation === "string" && recommendation.trim() !== "" ? { recommendation: recommendation.trim().slice(0, 600) } : {},
+    options: validOptions.slice(0, 4).map((value) => value.trim().slice(0, 120))
+  };
+}
+function reviewerInputRequests(thread) {
+  return thread.messages.flatMap(
+    (message2) => message2.toolCalls.map((call) => parseReviewerInputCall(call, message2.id)).filter((request) => request !== null)
+  );
+}
+function reviewerInputAnswer(answers, id) {
+  return parseReviewerInputAnswers(answers).find((answer) => answer.id === id);
+}
+function parseReviewerInputAnswers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry["id"] !== "string" || typeof entry["text"] !== "string" || typeof entry["answeredAt"] !== "number" || !Number.isFinite(entry["answeredAt"]) || typeof entry["messageId"] !== "string") {
+      return [];
+    }
+    return [
+      {
+        id: entry["id"],
+        text: entry["text"],
+        answeredAt: entry["answeredAt"],
+        messageId: entry["messageId"]
+      }
+    ];
+  });
+}
+var REVIEWER_INPUT_TOOL;
+var init_reviewer_input = __esm({
+  "src/shared/threads/reviewer-input.ts"() {
+    init_unknown_value3();
+    REVIEWER_INPUT_TOOL = "request_review_input";
+  }
+});
+
 // packages/thread-store/src/thread-sort.ts
 function isHumanUserPrompt(message2) {
   return message2.role === "user" && (message2.origin === void 0 || message2.editedByUser === true);
@@ -22595,6 +22665,19 @@ function setThreadProposalDecision(store2, threadId, decision) {
   }));
   store2.emit("threads_changed");
 }
+function setReviewerInputAnswer(store2, threadId, answer) {
+  patchThreadAnywhere(store2, threadId, (thread) => ({
+    ...thread,
+    reviewerInputAnswers: [
+      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
+        (entry) => entry.id !== answer.id
+      ),
+      answer
+    ],
+    updatedAt: Date.now()
+  }));
+  store2.emit("threads_changed");
+}
 function clearThreadProposalDecisionFor(store2, threadId, proposalId) {
   patchThreadAnywhere(store2, threadId, (t2) => {
     const remaining = clearThreadProposalDecision(t2.threadProposals, proposalId);
@@ -22633,6 +22716,7 @@ var init_thread_helpers = __esm({
     init_pending_submissions();
     init_array_utils2();
     init_thread_proposal2();
+    init_reviewer_input();
     init_thread_sort();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
@@ -22691,20 +22775,6 @@ function dropProjectBackgroundThreads(store2, projectId) {
 var init_background_threads = __esm({
   "src/renderer/controller/background-threads.ts"() {
     init_pending_submissions();
-  }
-});
-
-// src/shared/unknown-value.mts
-var init_unknown_value2 = __esm({
-  "src/shared/unknown-value.mts"() {
-    init_unknown_value();
-  }
-});
-
-// src/shared/unknown-value.ts
-var init_unknown_value3 = __esm({
-  "src/shared/unknown-value.ts"() {
-    init_unknown_value2();
   }
 });
 
@@ -23430,7 +23500,7 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   const regular = [];
   for (const tc2 of toolCalls) {
     if (tc2.subagent) subagents.push(tc2);
-    else if (tc2.name === THREAD_PROPOSAL_TOOL) proposals.push(tc2);
+    else if (tc2.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc2)) proposals.push(tc2);
     else regular.push(tc2);
   }
   const result = [];
@@ -23507,6 +23577,7 @@ var init_tool_display = __esm({
     init_unknown_value3();
     init_humanize_identifier();
     init_thread_proposal2();
+    init_reviewer_input();
     TOOL_DISPLAY_NAMES = {
       explore: { running: "Exploring files", done: "Explored files" },
       read_file: { running: "Reading file", done: "Read file" },
@@ -23554,6 +23625,7 @@ var init_tool_display = __esm({
       read_terminal: { running: "Reading shell", done: "Read shell" },
       video_frames: { running: "Reading video", done: "Read video" },
       ask_user: { running: "Asking user", done: "Asked user" },
+      request_review_input: { running: "Saving question", done: "Saved question" },
       propose_thread: { running: "Proposing a thread", done: "Proposed a thread" },
       update_todos: { running: "Updating plan", done: "Updated plan" },
       run_checkup: { running: "Running checkup", done: "Ran checkup" },
@@ -38620,6 +38692,8 @@ function createStore(initial) {
     thread_status_changed: /* @__PURE__ */ new Set(),
     agent_activity: /* @__PURE__ */ new Set(),
     threads_changed: /* @__PURE__ */ new Set(),
+    reviewer_input_open: /* @__PURE__ */ new Set(),
+    reviewer_input_jump: /* @__PURE__ */ new Set(),
     thread_draft_changed: /* @__PURE__ */ new Set(),
     new_thread_opened: /* @__PURE__ */ new Set(),
     panel_changed: /* @__PURE__ */ new Set(),
@@ -76620,6 +76694,254 @@ var init_thread_proposal_tool_card = __esm({
   }
 });
 
+// src/renderer/controller/reviewer-input.ts
+function answerReviewerInput(store2, api2, threadId, requestId, answer) {
+  const text2 = answer.trim();
+  const thread = getThreadById(store2, threadId);
+  if (!thread || text2 === "" || text2.length > 8192) return false;
+  const request = reviewerInputRequests(thread).find((item) => item.id === requestId);
+  if (!request || reviewerInputAnswer(thread.reviewerInputAnswers, requestId)) return false;
+  const content = `Answer to your review question \u201C${request.question}\u201D: ${text2}`;
+  if (thread.status === "idle") startHumanTurnTree(store2, threadId);
+  const messageId = addMessage(store2, threadId, "user", content);
+  setReviewerInputAnswer(store2, threadId, {
+    id: requestId,
+    text: text2,
+    answeredAt: Date.now(),
+    messageId
+  });
+  enqueueUserMessage(store2, threadId, {
+    messageId,
+    payload: { content },
+    createdAt: Date.now()
+  });
+  drainMessageQueue(store2, api2, threadId);
+  return true;
+}
+var init_reviewer_input2 = __esm({
+  "src/renderer/controller/reviewer-input.ts"() {
+    init_thread_helpers();
+    init_reviewer_input();
+    init_message_queue();
+  }
+});
+
+// src/renderer/views/reviewer-input.ts
+function answerText(choice, detail) {
+  return [choice, detail.trim()].filter(Boolean).join(" \u2014 ");
+}
+function mountReviewerInput(store2, api2) {
+  const toggle = el("button", { type: "button", class: "reviewer-input-toggle", hidden: "" });
+  const panel = el("aside", {
+    class: "reviewer-input-panel",
+    "aria-label": "Needs your input",
+    hidden: ""
+  });
+  const heading = el("div", { class: "reviewer-input-heading" }, "Needs your input");
+  const close = el(
+    "button",
+    { type: "button", class: "reviewer-input-close", "aria-label": "Close" },
+    "\xD7"
+  );
+  const header = el("div", { class: "reviewer-input-header" }, heading, close);
+  const items = el("div", { class: "reviewer-input-items" });
+  panel.append(header, items);
+  let expandedId = null;
+  let selectedOption = "";
+  let draft = "";
+  let threadId = null;
+  let signature = "";
+  const closedThreads = /* @__PURE__ */ new Set();
+  function open2(requestId) {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    closedThreads.delete(thread.id);
+    expandedId = requestId;
+    selectedOption = "";
+    draft = "";
+    signature = "";
+    sync();
+  }
+  function renderRow2(request, activeThreadId) {
+    const row2 = el("div", { class: "reviewer-input-item", "data-reviewer-input-id": request.id });
+    const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, request.id);
+    const question = el(
+      "button",
+      {
+        type: "button",
+        class: "reviewer-input-question",
+        "aria-expanded": String(expandedId === request.id)
+      },
+      request.question
+    );
+    question.addEventListener("click", () => {
+      expandedId = expandedId === request.id ? null : request.id;
+      selectedOption = "";
+      draft = "";
+      signature = "";
+      sync();
+    });
+    row2.append(question);
+    if (expandedId === request.id) {
+      row2.append(el("p", { class: "reviewer-input-context" }, request.context));
+      if (request.recommendation) {
+        row2.append(
+          el(
+            "p",
+            { class: "reviewer-input-recommendation" },
+            `Agent suggests: ${request.recommendation}`
+          )
+        );
+      }
+      if (answer) {
+        row2.append(el("div", { class: "reviewer-input-answer" }, `Answered: ${answer.text}`));
+      } else {
+        const options = el("div", { class: "reviewer-input-options" });
+        const send = el("button", { type: "button", class: "ui-btn ui-btn-primary" }, "Send answer");
+        const input2 = el("textarea", {
+          class: "reviewer-input-text",
+          rows: "2",
+          "aria-label": "Your answer or extra context",
+          placeholder: "Your answer or extra context\u2026"
+        });
+        input2.value = draft;
+        const updateSend = () => {
+          send.disabled = answerText(selectedOption, input2.value) === "";
+        };
+        for (const option of request.options) {
+          const button = el(
+            "button",
+            {
+              type: "button",
+              class: "reviewer-input-option",
+              "aria-pressed": String(selectedOption === option)
+            },
+            option
+          );
+          button.addEventListener("click", () => {
+            selectedOption = selectedOption === option ? "" : option;
+            for (const peer of options.querySelectorAll("button")) {
+              peer.setAttribute("aria-pressed", String(peer === button && selectedOption !== ""));
+            }
+            updateSend();
+          });
+          options.append(button);
+        }
+        input2.addEventListener("input", () => {
+          draft = input2.value;
+          updateSend();
+        });
+        send.addEventListener("click", () => {
+          const text2 = answerText(selectedOption, input2.value);
+          if (!answerReviewerInput(store2, api2, activeThreadId, request.id, text2)) return;
+          expandedId = null;
+          selectedOption = "";
+          draft = "";
+          signature = "";
+          sync();
+        });
+        updateSend();
+        if (request.options.length) row2.append(options);
+        row2.append(input2, send);
+      }
+    }
+    const origin = el(
+      "button",
+      { type: "button", class: "reviewer-input-origin" },
+      "Show in conversation"
+    );
+    origin.addEventListener("click", () => {
+      store2.emit("reviewer_input_jump", request.messageId, request.id);
+    });
+    row2.append(origin);
+    return row2;
+  }
+  function sync() {
+    const thread = getActiveThread(store2);
+    if (thread?.id !== threadId) {
+      threadId = thread?.id ?? null;
+      expandedId = null;
+      selectedOption = "";
+      draft = "";
+      signature = "";
+    }
+    const requests = thread ? reviewerInputRequests(thread) : [];
+    const answers = thread?.reviewerInputAnswers;
+    const pending = requests.filter((request) => !reviewerInputAnswer(answers, request.id));
+    const nextSignature = JSON.stringify({
+      threadId,
+      requests,
+      answers,
+      expandedId,
+      closed: thread ? closedThreads.has(thread.id) : false
+    });
+    if (nextSignature === signature) return;
+    signature = nextSignature;
+    toggle.hidden = requests.length === 0;
+    toggle.textContent = `${String(pending.length)} ${pending.length === 1 ? "question" : "questions"}`;
+    toggle.setAttribute("aria-expanded", String(requests.length > 0 && !panel.hidden));
+    panel.hidden = !thread || requests.length === 0 || closedThreads.has(thread.id);
+    toggle.setAttribute("aria-expanded", String(!panel.hidden));
+    items.replaceChildren(
+      ...thread ? requests.map((request) => renderRow2(request, thread.id)) : []
+    );
+  }
+  toggle.addEventListener("click", () => {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    if (closedThreads.has(thread.id)) closedThreads.delete(thread.id);
+    else closedThreads.add(thread.id);
+    signature = "";
+    sync();
+  });
+  close.addEventListener("click", () => {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    closedThreads.add(thread.id);
+    signature = "";
+    sync();
+  });
+  return { toggle, panel, sync, open: open2 };
+}
+function createReviewerInputToolCard(call, store2) {
+  const request = parseReviewerInputCall(call, "");
+  if (!request) return null;
+  const card = el("details", {
+    class: "tool-card reviewer-input-card",
+    "data-tool-id": call.id,
+    "data-status": "done"
+  });
+  const answer = reviewerInputAnswer(getActiveThread(store2)?.reviewerInputAnswers, call.id);
+  card.append(
+    el(
+      "summary",
+      { class: "tool-card-header" },
+      answer ? "Answered" : "Needs your input",
+      " \xB7 ",
+      request.question
+    ),
+    el("p", { class: "reviewer-input-card-context" }, request.context)
+  );
+  if (answer)
+    card.append(el("p", { class: "reviewer-input-card-answer" }, `Your answer: ${answer.text}`));
+  else {
+    const open2 = el("button", { type: "button", class: "reviewer-input-origin" }, "Answer question");
+    open2.addEventListener("click", () => {
+      store2.emit("reviewer_input_open", request.id);
+    });
+    card.append(open2);
+  }
+  return card;
+}
+var init_reviewer_input3 = __esm({
+  "src/renderer/views/reviewer-input.ts"() {
+    init_helpers();
+    init_thread_helpers();
+    init_reviewer_input();
+    init_reviewer_input2();
+  }
+});
+
 // src/renderer/views/render-signature.ts
 function digestString(text2) {
   let a3 = FNV_OFFSET;
@@ -77492,6 +77814,10 @@ function createIndividualToolCard(tc2, label, api2, threadId, store2) {
   if (store2 && isThreadProposalCall(tc2)) {
     const proposalCard = createThreadProposalToolCard(tc2, store2, api2, threadId);
     if (proposalCard) return proposalCard;
+  }
+  if (store2 && isReviewerInputCall(tc2)) {
+    const inputCard = createReviewerInputToolCard(tc2, store2);
+    if (inputCard) return inputCard;
   }
   const card = el("details", {
     class: "tool-card",
@@ -78794,7 +79120,14 @@ function mountConversation(root, store2, api2) {
   });
   const queuedHost = el("div", { class: "conversation-queued", hidden: true });
   const roadmapOrigin = mountThreadRoadmapOrigin(store2, api2);
-  root.append(roadmapOrigin.element, scrollArea, queuedHost);
+  const reviewerInput = mountReviewerInput(store2, api2);
+  const transcriptAndInput = el(
+    "div",
+    { class: "conversation-reviewer-body" },
+    scrollArea,
+    reviewerInput.panel
+  );
+  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost);
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
     if (!projectId || !threadId) {
@@ -79456,7 +79789,7 @@ function mountConversation(root, store2, api2) {
       let card = existing.get(key) ?? null;
       if (card) existing.delete(key);
       if (card && toolCardSignatures.get(card) === sig) {
-      } else if (card && !card.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall))) {
+      } else if (card && !card.classList.contains("thread-proposal") && !(item.type === "individual" && isThreadProposalCall(item.toolCall)) && !(item.type === "individual" && isReviewerInputCall(item.toolCall))) {
         reconcileToolCard(card, item, api2, threadId, store2);
       } else {
         card?.remove();
@@ -80056,7 +80389,38 @@ function mountConversation(root, store2, api2) {
       scrollToBottom();
     } else restoreReadingAnchor(readingAnchor, prevScrollTop);
   }
+  function jumpToReviewerInput(messageId, requestId) {
+    const activeThreadId = store2.getState().activeThreadId;
+    let attempts = 0;
+    const tryJump = () => {
+      if (disposed || store2.getState().activeThreadId !== activeThreadId) return;
+      const message2 = Array.from(list.querySelectorAll("[data-message-id]")).find(
+        (item) => item.dataset["messageId"] === messageId
+      );
+      if (!message2) {
+        if (attempts++ < 300) requestAnimationFrame(tryJump);
+        return;
+      }
+      const card = Array.from(message2.querySelectorAll("[data-tool-id]")).find(
+        (item) => item.dataset["toolId"] === requestId
+      );
+      if (card instanceof HTMLDetailsElement) card.open = true;
+      const target = card ?? message2;
+      pinnedToBottom = false;
+      userScrolledUpAt = Date.now();
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("reviewer-input-highlight");
+      setTimeout(() => {
+        target.classList.remove("reviewer-input-highlight");
+      }, 3e3);
+    };
+    tryJump();
+  }
   const unsubs = [
+    store2.on("reviewer_input_open", (requestId) => {
+      reviewerInput.open(requestId);
+    }),
+    store2.on("reviewer_input_jump", jumpToReviewerInput),
     store2.on("code_block_run_finished", (result) => {
       setCodeBlockRunOutcome(list, result.id, result.exitCode);
     }),
@@ -80181,13 +80545,16 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("tool_call_started", (mid) => {
       refreshToolCards(mid);
+      reviewerInput.sync();
     }),
     store2.on("tool_call_updated", (mid) => {
       refreshToolCards(mid);
+      reviewerInput.sync();
     }),
     store2.on("threads_changed", () => {
       rebuildForThread();
       syncFromStore();
+      reviewerInput.sync();
     }),
     store2.on("todos_changed", () => {
       syncTodoPanel();
@@ -80253,6 +80620,7 @@ function mountConversation(root, store2, api2) {
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store2, api2);
   rebuildForThread();
   syncFromStore();
+  reviewerInput.sync();
   return () => {
     disposed = true;
     avatarMotion.dispose();
@@ -80367,6 +80735,8 @@ var init_conversation = __esm({
     init_tool_error_format();
     init_tool_result_reminders();
     init_thread_proposal_tool_card();
+    init_reviewer_input3();
+    init_reviewer_input();
     init_render_signature();
     init_message_queue();
     init_fork_thread3();
