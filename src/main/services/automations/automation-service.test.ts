@@ -1,7 +1,7 @@
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import type { Thread } from '@shared/types'
+import type { AutomationPermission, Thread } from '@shared/types'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { EnqueueSupervisedTaskInput } from '../supervisor/task-supervisor.ts'
 import { storageSet } from '../storage/storage.ts'
@@ -137,6 +137,164 @@ describe('AutomationService', () => {
     now += 15_000
     await service.tick()
     assert.equal(created.length, 1)
+  })
+
+  it('stores unique opt-in permissions and can add one from a running schedule', async () => {
+    let now = 10
+    const created: Thread[] = []
+    const service = createAutomationService({
+      now: () => now,
+      isPluginEnabled: () => true,
+      createProjectThread: (_projectId, thread) => {
+        created.push(thread)
+        return Promise.resolve()
+      },
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+    const approve: AutomationPermission = { kind: 'copse-action', toolName: 'gh_pr_approve' }
+    const autoMerge: AutomationPermission = {
+      kind: 'copse-action',
+      toolName: 'gh_pr_enable_auto_merge',
+    }
+    const permissionOptions = service.permissionOptions()
+    assert.deepEqual(
+      permissionOptions
+        .filter((option) => option.permission.kind === 'copse-action')
+        .map((option) => option.permission.toolName),
+      [
+        'gh_pr_create',
+        'gh_pr_rerun_failed_ci',
+        'gh_pr_approve',
+        'gh_pr_mark_ready',
+        'gh_pr_enable_auto_merge',
+      ],
+    )
+    assert.equal(
+      new Set(permissionOptions.map((option) => JSON.stringify(option.permission))).size,
+      permissionOptions.length,
+    )
+    const schedule = await service.upsert('project-a', {
+      name: 'Pull request caretaker',
+      cron: '0 9 * * 1-5',
+      prompt: 'Keep the pull request moving.',
+      model: 'gpt-5.4',
+      enabled: true,
+      permissions: [approve, approve],
+    })
+
+    assert.deepEqual(schedule.permissions, [approve])
+    const run = await service.runNow('project-a', schedule.id)
+    const automation = created[0]?.automation
+    assert.ok(automation)
+    assert.deepEqual(
+      service.permissionPreferenceForThread('project-a', run.threadId, automation, approve),
+      {
+        scheduleName: schedule.name,
+        allowed: true,
+      },
+    )
+    assert.equal(
+      service.permissionPreferenceForThread('project-b', run.threadId, automation, approve),
+      null,
+      'a grant cannot cross its project boundary',
+    )
+    assert.equal(
+      service.permissionPreferenceForThread(
+        'project-a',
+        'ordinary-renderer-thread',
+        automation,
+        approve,
+      ),
+      null,
+      'renderer-visible provenance cannot attach a schedule grant to another thread',
+    )
+    assert.equal(
+      service.permissionPreferenceForThread(
+        'project-a',
+        run.threadId,
+        { ...automation, triggeredAt: automation.triggeredAt + 1 },
+        approve,
+      ),
+      null,
+      'renderer-visible provenance must match the recorded schedule run time',
+    )
+
+    now = 20
+    assert.equal(await service.grantPermission('project-a', schedule.id, autoMerge), true)
+    assert.equal(
+      service.permissionPreferenceForThread('project-a', run.threadId, automation, autoMerge)
+        ?.allowed,
+      true,
+    )
+    assert.equal(service.list('project-a')[0]?.updatedAt, 20)
+
+    assert.equal(
+      await service.grantPermission('project-a', schedule.id, {
+        kind: 'copse-action',
+        toolName: 'unregistered_action',
+      }),
+      false,
+    )
+    assert.equal(
+      await service.grantPermission('project-a', schedule.id, {
+        kind: 'mcp-tool',
+        toolName: `mcp__server__${'x'.repeat(512)}`,
+      }),
+      false,
+    )
+    assert.equal(service.list('project-a')[0]?.permissions?.length, 2)
+  })
+
+  it('only accepts picker permissions, while preserving a saved tool that went offline', async () => {
+    const service = createAutomationService({
+      now: () => 1,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+    })
+    await assert.rejects(
+      () =>
+        service.upsert('project-a', {
+          name: 'Unsafe seed',
+          cron: '* * * * *',
+          prompt: 'Run.',
+          model: 'gpt-5.4',
+          enabled: true,
+          permissions: [{ kind: 'mcp-tool', toolName: 'mcp__offline__unknown' }],
+        }),
+      /permission is not available/,
+    )
+
+    storageSet(STORAGE_KEY, [
+      {
+        id: 'existing',
+        projectId: 'project-a',
+        name: 'Existing',
+        cron: '* * * * *',
+        prompt: 'Run.',
+        model: 'gpt-5.4',
+        enabled: true,
+        permissions: [
+          { kind: 'mcp-tool', toolName: 'mcp__offline__publish_report' },
+          { kind: 'mcp-tool', toolName: 'mcp__offline__publish_report' },
+        ],
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    assert.equal(service.list('project-a')[0]?.permissions?.length, 1)
+    const updated = await service.upsert('project-a', {
+      id: 'existing',
+      name: 'Existing',
+      cron: '* * * * *',
+      prompt: 'Run again.',
+      model: 'gpt-5.4',
+      enabled: true,
+      permissions: [{ kind: 'mcp-tool', toolName: 'mcp__offline__publish_report' }],
+    })
+    assert.equal(updated.permissions?.[0]?.toolName, 'mcp__offline__publish_report')
   })
 
   it('does not trigger while the plugin is disabled, but keeps configuration', async () => {

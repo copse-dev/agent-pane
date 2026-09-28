@@ -28,6 +28,7 @@ import type {
 } from '@shared/types/hooks.ts'
 import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
+  AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
@@ -1096,6 +1097,7 @@ export interface ApiClient {
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
+    permissionOptions: (projectId: string) => Promise<AutomationPermissionOption[]>
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
