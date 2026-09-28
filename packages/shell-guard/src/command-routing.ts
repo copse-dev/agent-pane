@@ -138,7 +138,7 @@ export interface ShellComposition {
   operators: ShellControlOperator[]
 }
 
-function scanShellComposition(command: string): ShellComposition | null {
+export function scanShellComposition(command: string): ShellComposition | null {
   const segments: string[] = []
   const operators: ShellControlOperator[] = []
   let current = ''
