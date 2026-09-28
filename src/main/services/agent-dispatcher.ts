@@ -44,6 +44,8 @@ export interface AgentDispatchPayload {
   reasoning?: ReasoningLevel
   turnTreeId?: string
   continuationBudgetUsed?: number
+  /** Summary of reviews the user ran since the model's last reply (#2519). */
+  reviewContext?: string
 }
 
 export interface AgentDispatchRequest {
@@ -557,6 +559,7 @@ export class AgentDispatcher {
       ...(payload.continuationBudgetUsed !== undefined
         ? { continuationBudgetUsed: payload.continuationBudgetUsed }
         : {}),
+      ...(payload.reviewContext !== undefined ? { reviewContext: payload.reviewContext } : {}),
     }
     let result: Awaited<ReturnType<AgentDispatcherDependencies['run']>>
     try {
