@@ -24,6 +24,7 @@ import {
   isAppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { MODEL_MAKERS, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
 import { validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
@@ -598,6 +599,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -1634,6 +1636,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     cloudAgentOptions: qsRequired(overlay, '#settings-cloud-agent-options'),
   })
   qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
+
+  const makerBlockList = el('div', { class: 'model-maker-block-list' })
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        el('input', { type: 'checkbox', name: 'blockedModelMakers', value: maker.id }),
+        maker.label,
+      ),
+    )
+  }
+  qsRequired(overlay, '#settings-model-maker-block-host').append(
+    el('h4', { class: 'model-role-heading' }, 'Blocked model makers'),
+    el(
+      'p',
+      { class: 'settings-fieldset-desc' },
+      'Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run.',
+    ),
+    makerBlockList,
+  )
 
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
@@ -4704,6 +4727,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await refreshStage('form-fields', async () => {
         await loadSimpleFields(form, api)
+        const blockedMakers = parseBlockedModelMakers(await api.settings.get('blockedModelMakers'))
+        for (const input of makerBlockList.querySelectorAll<HTMLInputElement>('input')) {
+          input.checked = blockedMakers.some((maker) => maker === input.value)
+        }
         syncDeveloperOnlySettings()
         wireSafetySliders(form)
         const savedWebOrigins = storedStringArray(
@@ -4888,6 +4915,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
 
       saveIfDirty('model', model)
+      saveIfDirty('blockedModelMakers', parseBlockedModelMakers(data.getAll('blockedModelMakers')))
       saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
       // `advisorModel` and the reviewer models are no longer saved here — they
       // are plugin-scoped `model` settings persisted on change via

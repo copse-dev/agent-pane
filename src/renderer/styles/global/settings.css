@@ -538,6 +538,19 @@ dialog.settings-overlay::backdrop {
   padding-top: var(--spacing-lg);
   border-top: 1px solid var(--border);
 }
+#settings-model-maker-block-host {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border);
+}
+.model-maker-block-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.settings-content .model-maker-block-list .checkbox-label {
+  margin: 0;
+}
 /* Generation parameters belong to the chat model picked above them, so they get
    the same nested-inside-the-Models-card treatment as the task roles below —
    one card, three stacked decisions, no second border box. */

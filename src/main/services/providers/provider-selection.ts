@@ -39,6 +39,7 @@ import {
 } from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
@@ -305,6 +306,7 @@ export async function describeProvider(
   model: string,
   opts: BuildProviderOptions = {},
 ): Promise<ProviderDescription> {
+  assertModelMakerAllowed(model)
   const hostRouted = hostRoutedNamespace(model)
   if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)
