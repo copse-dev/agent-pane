@@ -40961,7 +40961,9 @@ function makerFromName(name) {
   if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
     return "google";
   if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
-  if (normalized === "mistral" || normalized.startsWith("mistral-") || normalized.startsWith("mixtral-"))
+  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
+    (family) => normalized === family || normalized.startsWith(`${family}-`)
+  ))
     return "mistral";
   if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
     return "xai";
@@ -40972,6 +40974,7 @@ function makerFromAgent(agent) {
   if (normalized.startsWith("claude")) return "anthropic";
   if (normalized.startsWith("codex")) return "openai";
   if (normalized.startsWith("gemini")) return "google";
+  if (normalized.startsWith("mistral")) return "mistral";
   if (normalized.startsWith("grok")) return "xai";
   return null;
 }
@@ -40995,7 +40998,7 @@ function blockedModelMaker(selection2, blocked) {
   const maker = modelMakerForSelection(selection2);
   return maker && blocked.includes(maker) ? maker : null;
 }
-var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker;
+var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
 var init_model_maker_block = __esm({
   "packages/llm/src/model-maker-block.ts"() {
     init_model_selection();
@@ -41017,6 +41020,15 @@ var init_model_maker_block = __esm({
       { id: "xai", label: "xAI" }
     ];
     isModelMaker = memberOf(MODEL_MAKER_IDS);
+    MISTRAL_MODEL_FAMILIES = [
+      "mistral",
+      "mixtral",
+      "codestral",
+      "devstral",
+      "magistral",
+      "ministral",
+      "pixtral"
+    ];
   }
 });
 
