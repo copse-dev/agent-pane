@@ -235,6 +235,73 @@ describe('acp-session-pool', () => {
     assert.equal(log.spawns, 2)
   })
 
+  it('serializes simultaneous first acquires for one thread', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeTransportFactory(log)
+
+    const [first, second] = await Promise.all([
+      acquireAcpSession({ threadId: 'same-thread', config: CONFIG, createTransport }),
+      acquireAcpSession({ threadId: 'same-thread', config: CONFIG, createTransport }),
+    ])
+
+    assert.equal(log.spawns, 1)
+    assert.equal(first.entry, second.entry)
+    assert.equal(acpSessionPoolSize(), 1)
+  })
+
+  it('waits for an idle-reaped writer to stop before reattaching its session', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const underlying = makeResumableTransportFactory(log)
+    let releaseShutdown!: () => void
+    const shutdown = new Promise<void>((resolve) => {
+      releaseShutdown = resolve
+    })
+    let markShutdownStarted!: () => void
+    const shutdownStarted = new Promise<void>((resolve) => {
+      markShutdownStarted = resolve
+    })
+    const createTransport = async (): Promise<AcpTransport> => {
+      const transport = await underlying()
+      if (log.spawns !== 1) return transport
+      return {
+        ...transport,
+        dispose: async (): Promise<void> => {
+          transport.dispose()
+          markShutdownStarted()
+          await shutdown
+        },
+      }
+    }
+
+    const first = await acquireAcpSession({
+      threadId: 'reap-single-writer',
+      config: CONFIG,
+      createTransport,
+    })
+    first.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(first.entry.open, 'one', undefined)
+    first.entry.lastUsedAt = 0
+
+    const reaping = reapIdleAcpSessions(Date.now(), 1)
+    await shutdownStarted
+    const replacement = acquireAcpSession({
+      threadId: 'reap-single-writer',
+      config: CONFIG,
+      createTransport,
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    try {
+      assert.equal(log.spawns, 1, 'reattach must wait until the reaped writer has stopped')
+    } finally {
+      releaseShutdown()
+    }
+
+    assert.deepEqual(await reaping, ['reap-single-writer'])
+    const resumed = await replacement
+    assert.equal(log.spawns, 2)
+    assert.equal(resumed.fresh, false)
+  })
+
   it('dispose and idle-reap evict; non-resumable agents reacquire fresh', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)

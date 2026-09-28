@@ -94,6 +94,27 @@ let ceilingWarned = false
 
 const pool = new Map<string, PooledAcpSession>()
 /**
+ * Pool mutations are serialized per thread. Besides coalescing simultaneous
+ * first acquires, this keeps a replacement from reattaching while an idle
+ * reap or explicit disposal is still shutting down the previous writer.
+ */
+const threadOperations = new Map<string, Promise<void>>()
+
+function runThreadOperation<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
+  const previous = threadOperations.get(threadId) ?? Promise.resolve()
+  const result = previous.then(operation)
+  const tail = result.then(
+    () => {},
+    () => {},
+  )
+  threadOperations.set(threadId, tail)
+  void tail.then(() => {
+    if (threadOperations.get(threadId) === tail) threadOperations.delete(threadId)
+  })
+  return result
+}
+
+/**
  * The session each thread last had, once its process is gone (reaped, dropped,
  * or replaced), kept so the next acquire can reattach to it.
  */
@@ -164,20 +185,25 @@ function rememberCarryOver(threadId: string, entry: PooledAcpSession): void {
 /** Evict sessions idle past `idleMs`. Exported with injectable `now` for tests. */
 export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): Promise<string[]> {
   const reaped: string[] = []
-  for (const [threadId, entry] of pool) {
-    // An in-flight turn (including one blocked on session/request_permission)
-    // is not idle — reaping it closes the transport under the open approval
-    // dialog and surfaces as "ACP connection closed" after a long wait.
-    if (entry.open.turnStop !== null) continue
-    if (now - entry.lastUsedAt >= idleMs) {
+  for (const threadId of [...pool.keys()]) {
+    const didReap = await runThreadOperation(threadId, async () => {
+      const entry = pool.get(threadId)
+      if (!entry) return false
+      // An in-flight turn (including one blocked on session/request_permission)
+      // is not idle — reaping it closes the transport under the open approval
+      // dialog and surfaces as "ACP connection closed" after a long wait.
+      if (entry.open.turnStop !== null || now - entry.lastUsedAt < idleMs) return false
       // Tear down the live process, but keep the opaque session ID — the next
       // acquire spawns a fresh transport and reattaches with `session/resume`
-      // or `session/load` instead of replaying the transcript (#830).
+      // or `session/load` instead of replaying the transcript (#830). Keep the
+      // thread operation until disposal settles so no replacement can become a
+      // second writer for that session in the meantime.
       rememberCarryOver(threadId, entry)
       pool.delete(threadId)
       await entry.dispose()
-      reaped.push(threadId)
-    }
+      return true
+    })
+    if (didReap) reaped.push(threadId)
   }
   return reaped
 }
@@ -188,11 +214,19 @@ export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): P
  * `handover` says why, when it had a session with history that could not be
  * carried over.
  */
-export async function acquireAcpSession(opts: AcquireAcpSessionOptions): Promise<{
+interface AcquiredAcpSession {
   entry: PooledAcpSession
   fresh: boolean
   handover: AcpSessionHandover | null
-}> {
+}
+
+export function acquireAcpSession(opts: AcquireAcpSessionOptions): Promise<AcquiredAcpSession> {
+  return runThreadOperation(opts.threadId, () => acquireAcpSessionUnlocked(opts))
+}
+
+async function acquireAcpSessionUnlocked(
+  opts: AcquireAcpSessionOptions,
+): Promise<AcquiredAcpSession> {
   ensureReaper()
   const fingerprint = acpSessionFingerprint(opts.config)
   const lineage = acpSessionLineage(opts.config)
@@ -356,9 +390,16 @@ export async function acquireAcpSession(opts: AcquireAcpSessionOptions): Promise
 }
 
 /** Evict and tear down one thread's session (e.g. after a broken turn). */
-export async function disposeAcpSession(
+export function disposeAcpSession(
   threadId: string,
   options: { preserveForResume?: boolean } = {},
+): Promise<boolean> {
+  return runThreadOperation(threadId, () => disposeAcpSessionUnlocked(threadId, options))
+}
+
+async function disposeAcpSessionUnlocked(
+  threadId: string,
+  options: { preserveForResume?: boolean },
 ): Promise<boolean> {
   const entry = pool.get(threadId)
   if (!entry) {
@@ -378,6 +419,7 @@ export async function disposeAcpSession(
 
 /** Tear down every pooled session (app shutdown). */
 export async function disposeAllAcpSessions(): Promise<void> {
+  await Promise.all([...threadOperations.values()])
   const entries = [...pool.values()]
   pool.clear()
   carryOverCandidates.clear()
@@ -388,6 +430,7 @@ export async function disposeAllAcpSessions(): Promise<void> {
   }
   await Promise.all(entries.map((entry) => entry.dispose()))
   await settleAcpChildShutdowns()
+  threadOperations.clear()
 }
 
 /** Test/introspection helper. */
