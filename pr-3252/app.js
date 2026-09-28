@@ -46,6 +46,72 @@ var init_demo = __esm({
   }
 });
 
+// packages/agent/src/plugins/plugin-manifest.ts
+function definePlugin(manifest, contributions = {}) {
+  return {
+    id: manifest.name,
+    trust: manifest.trust,
+    manifest,
+    contributions: { ...EMPTY_PLUGIN_CONTRIBUTIONS, ...contributions }
+  };
+}
+var EMPTY_PLUGIN_CONTRIBUTIONS;
+var init_plugin_manifest = __esm({
+  "packages/agent/src/plugins/plugin-manifest.ts"() {
+    EMPTY_PLUGIN_CONTRIBUTIONS = {
+      toolNames: [],
+      modelRoutes: [],
+      browserOrigins: [],
+      blockingHooks: [],
+      asyncHooks: [],
+      promptBlocks: [],
+      uiContributions: [],
+      followUps: [],
+      capabilities: [],
+      instructionSources: [],
+      permissions: []
+    };
+  }
+});
+
+// packages/agent/src/plugins/automations-plugin.ts
+var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
+var init_automations_plugin = __esm({
+  "packages/agent/src/plugins/automations-plugin.ts"() {
+    init_plugin_manifest();
+    AUTOMATIONS_PLUGIN_ID = "copse.automations";
+    automationsPlugin = definePlugin(
+      {
+        name: AUTOMATIONS_PLUGIN_ID,
+        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+        trust: "first-party",
+        stability: "experimental",
+        ui: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
+        ],
+        storage: { namespace: AUTOMATIONS_PLUGIN_ID }
+      },
+      {
+        uiContributions: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
+        ]
+      }
+    );
+  }
+});
+
 // packages/llm/src/model-catalog.generated.ts
 var MODEL_CATALOG;
 var init_model_catalog_generated = __esm({
@@ -34214,11 +34280,46 @@ async function relocateProject(store2, api2, id) {
   await activateAndWait(store2, api2, id, path);
   return true;
 }
-function listOrphanProjects(api2) {
-  return api2.threads.listOrphans();
+function parseDismissedOrphanStores(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || item.length === 0 || seen.has(item)) continue;
+    seen.add(item);
+    ids.push(item);
+  }
+  return ids;
 }
-async function recoverOrphanProject(store2, api2, storeId) {
+function updateDismissedOrphanStores(api2, update) {
+  const next = dismissedOrphanStoresChain.catch(() => void 0).then(async () => {
+    const current = parseDismissedOrphanStores(await api2.storage.get(KEY_DISMISSED_ORPHAN_STORES));
+    const updated = update(current);
+    if (updated.length === current.length && updated.every((storeId, index) => storeId === current[index]))
+      return;
+    await serializedSet(api2, KEY_DISMISSED_ORPHAN_STORES, updated);
+  });
+  dismissedOrphanStoresChain = next;
+  return next;
+}
+async function listOrphanProjects(api2) {
+  const [orphans, dismissedRaw] = await Promise.all([
+    api2.threads.listOrphans(),
+    api2.storage.get(KEY_DISMISSED_ORPHAN_STORES)
+  ]);
+  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw));
+  if (dismissed.size === 0) return orphans;
+  return orphans.filter((orphan) => !dismissed.has(orphan.id));
+}
+async function dismissOrphanProject(api2, storeId) {
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current : [...current, storeId]
+  );
+}
+async function recoverOrphanProject(store2, api2, storeId, confirm2) {
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
+  if (confirm2 && !await confirm2()) return false;
   const path = await api2.workspace.open();
   if (!path) return false;
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
@@ -34226,10 +34327,14 @@ async function recoverOrphanProject(store2, api2, storeId) {
     projects: [...store2.getState().projects, { id: storeId, path, name: basename(path) }]
   });
   store2.emit("projects_changed");
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current.filter((id) => id !== storeId) : current
+  );
   await activateAndWait(store2, api2, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_thread_helpers();
@@ -34251,6 +34356,8 @@ var init_projects = __esm({
     activationWaiters = /* @__PURE__ */ new Map();
     workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
+    KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
+    dismissedOrphanStoresChain = Promise.resolve();
   }
 });
 
@@ -36418,6 +36525,27 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "automation-permissions",
+        label: "Automation permission preferences",
+        project: project("demo-automation-permissions-project", "Copse", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-automation-permissions-thread",
+            title: "Automation permissions",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         // Per-model generation parameters. The scenario only has to seed the chat
         // model and its saved parameters — open Settings → General → Models in the
         // preview and the section renders itself against that selection. Uses an
@@ -36755,6 +36883,25 @@ function createDemoApi(scenario, options = {}) {
   ]);
   let workspaceRoot = scenario.project.path;
   let threads = structuredClone(scenario.threads);
+  const showAutomationPermissions = scenario.id === "automation-permissions";
+  const demoPlugins = showAutomationPermissions ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN] : DEMO_PLUGINS;
+  const automationSchedules = showAutomationPermissions ? [
+    {
+      id: "demo-weekday-review",
+      projectId: scenario.project.id,
+      name: "Weekday project review",
+      cron: "0 9 * * 1-5",
+      prompt: "Review open work and prepare a concise project status update.",
+      model: "claude-sonnet-4-6",
+      enabled: false,
+      permissions: [
+        { kind: "copse-action", toolName: "gh_pr_approve" },
+        { kind: "mcp-tool", toolName: "mcp__reports__publish_weekly" }
+      ],
+      createdAt: Date.parse(DEMO_TIME),
+      updatedAt: Date.parse(DEMO_TIME)
+    }
+  ] : [];
   let navigation = {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null
@@ -37464,7 +37611,7 @@ function createDemoApi(scenario, options = {}) {
     },
     plugins: {
       list: () => resolved({
-        plugins: DEMO_PLUGINS.map(
+        plugins: demoPlugins.map(
           (plugin) => plugin.id === "copse.apple-development" ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled } : plugin
         )
       }),
@@ -37477,7 +37624,8 @@ function createDemoApi(scenario, options = {}) {
       export: () => resolved({ path: "", count: 0 })
     },
     automations: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(automationSchedules)),
+      permissionOptions: () => resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
@@ -37655,9 +37803,10 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_automations_plugin();
     init_parse_agent_run_payload();
     init_working_brief();
     init_trace_player();
@@ -37852,6 +38001,79 @@ var init_demo_api = __esm({
         enabled: false,
         contributions: DEMO_PLUGIN_CONTRIBUTIONS,
         settings: []
+      }
+    ];
+    DEMO_AUTOMATIONS_PLUGIN = {
+      id: AUTOMATIONS_PLUGIN_ID,
+      trust: "first-party",
+      stability: "experimental",
+      name: AUTOMATIONS_PLUGIN_ID,
+      description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+      enabled: true,
+      contributions: {
+        ...DEMO_PLUGIN_CONTRIBUTIONS,
+        ui: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          }
+        ],
+        storageNamespace: AUTOMATIONS_PLUGIN_ID
+      },
+      settings: []
+    };
+    DEMO_AUTOMATION_PERMISSIONS = [
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_create" },
+        label: "Create pull requests",
+        detail: "Pushes the current thread branch and opens a pull request in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_rerun_failed_ci" },
+        label: "Re-run failed CI",
+        detail: "Re-runs failed checks for pull requests in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_approve" },
+        label: "Approve pull requests",
+        detail: "Submits a GitHub approval for pull requests in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_mark_ready" },
+        label: "Mark pull requests ready",
+        detail: "Moves draft pull requests in this project repository into review."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_enable_auto_merge" },
+        label: "Enable pull request auto-merge",
+        detail: "Enables the repository-preferred auto-merge strategy for a pull request."
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__linear__create_issue" },
+        label: "Create issue",
+        detail: "Linear MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__linear__update_issue" },
+        label: "Update issue",
+        detail: "Linear MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__notion__create_page" },
+        label: "Create page",
+        detail: "Notion MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__slack__send_message" },
+        label: "Send message",
+        detail: "Slack MCP \xB7 may access external systems"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__figma__add_comment" },
+        label: "Add comment",
+        detail: "Figma MCP \xB7 changes external data"
       }
     ];
     emptyArray = () => Promise.resolve([]);
@@ -38294,6 +38516,9 @@ var init_guarded_yolo = __esm({
 });
 
 // src/shared/types/automations.ts
+function automationPermissionKey(permission) {
+  return JSON.stringify([permission.kind, permission.toolName]);
+}
 var init_automations = __esm({
   "src/shared/types/automations.ts"() {
   }
@@ -39604,34 +39829,6 @@ function countPortraitPanelOverflow(widths, gap, containerWidth, overflowTrigger
 }
 var init_portrait_panel_bar_overflow = __esm({
   "src/renderer/views/portrait-panel-bar-overflow.ts"() {
-  }
-});
-
-// packages/agent/src/plugins/plugin-manifest.ts
-function definePlugin(manifest, contributions = {}) {
-  return {
-    id: manifest.name,
-    trust: manifest.trust,
-    manifest,
-    contributions: { ...EMPTY_PLUGIN_CONTRIBUTIONS, ...contributions }
-  };
-}
-var EMPTY_PLUGIN_CONTRIBUTIONS;
-var init_plugin_manifest = __esm({
-  "packages/agent/src/plugins/plugin-manifest.ts"() {
-    EMPTY_PLUGIN_CONTRIBUTIONS = {
-      toolNames: [],
-      modelRoutes: [],
-      browserOrigins: [],
-      blockingHooks: [],
-      asyncHooks: [],
-      promptBlocks: [],
-      uiContributions: [],
-      followUps: [],
-      capabilities: [],
-      instructionSources: [],
-      permissions: []
-    };
   }
 });
 
@@ -60546,44 +60743,6 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
-// packages/agent/src/plugins/automations-plugin.ts
-var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
-var init_automations_plugin = __esm({
-  "packages/agent/src/plugins/automations-plugin.ts"() {
-    init_plugin_manifest();
-    AUTOMATIONS_PLUGIN_ID = "copse.automations";
-    automationsPlugin = definePlugin(
-      {
-        name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
-        trust: "first-party",
-        stability: "experimental",
-        ui: [
-          {
-            id: "schedule-editor",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Automation schedules"
-          },
-          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
-        ],
-        storage: { namespace: AUTOMATIONS_PLUGIN_ID }
-      },
-      {
-        uiContributions: [
-          {
-            id: "schedule-editor",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Automation schedules"
-          },
-          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
-        ]
-      }
-    );
-  }
-});
-
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -60686,7 +60845,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     { class: "automation-scope" },
     project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
@@ -60775,6 +60934,30 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
+  const permissionsFieldset = el("fieldset", { class: "automation-permissions" });
+  const permissionFilterInput = el("input", {
+    type: "search",
+    class: "automation-input automation-permission-filter",
+    placeholder: "Filter actions and MCP tools\u2026",
+    "aria-label": "Filter automation permissions",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const permissionCount = el("span", {
+    class: "automation-permission-count",
+    "aria-live": "polite"
+  });
+  const permissionsList = el("div", { class: "automation-permission-list" });
+  permissionsFieldset.append(
+    el("legend", {}, "Allowed without asking"),
+    el(
+      "p",
+      { class: "automation-hint automation-permissions-hint" },
+      "Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask."
+    ),
+    el("div", { class: "automation-permission-toolbar" }, permissionFilterInput, permissionCount),
+    permissionsList
+  );
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
@@ -60802,6 +60985,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         "Higher limits let fresh runs start while older changes wait for review."
       )
     ),
+    permissionsFieldset,
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
@@ -60812,6 +60996,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     loadOnMount: false
   });
   let schedules = [];
+  let availablePermissions = [];
+  let permissionValuesByKey = /* @__PURE__ */ new Map();
+  let selectedPermissionKeys = /* @__PURE__ */ new Set();
   let editingId = null;
   let customCron = null;
   let pendingReveal = revealScheduleId;
@@ -60894,6 +61081,119 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
     updateScheduleControls();
   }
+  function unavailablePermissionOption(permission) {
+    const parts = permission.toolName.split("__");
+    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${parts[1] ?? "MCP"} / ${parts.slice(2).join("__")}` : permission.toolName;
+    return {
+      permission,
+      label: permission.kind === "mcp-tool" ? mcpLabel : permission.toolName,
+      detail: "Not currently available. Kept so the approval works if this tool returns."
+    };
+  }
+  function permissionRow(option, unavailable = false) {
+    const key = automationPermissionKey(option.permission);
+    const checkbox = el("input", {
+      type: "checkbox",
+      role: "switch",
+      class: "automation-permission-input",
+      "data-permission-key": key
+    });
+    checkbox.checked = selectedPermissionKeys.has(key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedPermissionKeys.add(key);
+      else selectedPermissionKeys.delete(key);
+    });
+    const switchControl = el(
+      "span",
+      { class: "toggle-switch automation-permission-switch" },
+      checkbox,
+      el("span", { class: "toggle-switch-track", "aria-hidden": "true" })
+    );
+    return el(
+      "label",
+      {
+        class: `automation-permission-row${unavailable ? " automation-permission-unavailable" : ""}`,
+        title: option.permission.toolName
+      },
+      el(
+        "span",
+        { class: "automation-permission-copy" },
+        el(
+          "span",
+          { class: "automation-permission-heading" },
+          el("span", { class: "automation-permission-label" }, option.label),
+          el(
+            "span",
+            {
+              class: `automation-permission-kind automation-permission-kind-${option.permission.kind}`
+            },
+            unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+          )
+        ),
+        el("span", { class: "automation-permission-detail" }, option.detail),
+        el("code", { class: "automation-permission-id" }, option.permission.toolName)
+      ),
+      switchControl
+    );
+  }
+  function renderPermissionChoices() {
+    clear(permissionsList);
+    const availableKeys = new Set(
+      availablePermissions.map((option) => automationPermissionKey(option.permission))
+    );
+    const unavailable = [...permissionValuesByKey.values()].filter((permission) => !availableKeys.has(automationPermissionKey(permission))).map(unavailablePermissionOption);
+    const allOptions = [
+      ...availablePermissions.map((option) => ({ option, unavailable: false })),
+      ...unavailable.map((option) => ({ option, unavailable: true }))
+    ];
+    const query = permissionFilterInput.value.trim().toLowerCase();
+    const terms = query ? query.split(/\s+/) : [];
+    const matches2 = allOptions.filter(({ option }) => {
+      const haystack = [
+        option.label,
+        option.detail,
+        option.permission.toolName,
+        option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+      ].join(" ").toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
+    permissionCount.textContent = query ? `${String(matches2.length)} of ${String(allOptions.length)} permissions` : `${String(allOptions.length)} permission${allOptions.length === 1 ? "" : "s"}`;
+    if (matches2.length === 0) {
+      permissionsList.append(
+        el(
+          "p",
+          { class: "automation-permission-empty" },
+          query ? `No permissions match \u201C${permissionFilterInput.value.trim()}\u201D.` : "No permissions are available."
+        )
+      );
+      return;
+    }
+    permissionsList.append(
+      ...matches2.map(
+        ({ option, unavailable: isUnavailable }) => permissionRow(option, isUnavailable)
+      )
+    );
+  }
+  function setPermissionChoices(permissions) {
+    permissionValuesByKey = new Map(
+      availablePermissions.map((option) => [
+        automationPermissionKey(option.permission),
+        option.permission
+      ])
+    );
+    for (const permission of permissions) {
+      permissionValuesByKey.set(automationPermissionKey(permission), permission);
+    }
+    selectedPermissionKeys = new Set(permissions.map(automationPermissionKey));
+    renderPermissionChoices();
+  }
+  function selectedPermissions() {
+    return [...selectedPermissionKeys].flatMap((key) => {
+      const permission = permissionValuesByKey.get(key);
+      return permission ? [{ ...permission }] : [];
+    });
+  }
+  permissionFilterInput.addEventListener("input", renderPermissionChoices);
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
@@ -60905,6 +61205,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     promptInput.value = schedule?.prompt ?? "";
     enabledInput.checked = schedule?.enabled ?? true;
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    permissionFilterInput.value = "";
+    setPermissionChoices(schedule?.permissions ?? []);
     const configuredModel = schedule?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
     form.hidden = false;
@@ -60938,6 +61240,11 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
             "span",
             {},
             `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
+          ),
+          el(
+            "span",
+            {},
+            (schedule.permissions?.length ?? 0) === 0 ? "No unattended approvals" : `${String(schedule.permissions?.length ?? 0)} unattended approval${(schedule.permissions?.length ?? 0) === 1 ? "" : "s"}`
           )
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
@@ -61018,7 +61325,12 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   async function refresh() {
     if (!projectId) return;
     try {
-      schedules = await api2.automations.list(projectId);
+      const [loadedSchedules, loadedPermissions] = await Promise.all([
+        api2.automations.list(projectId),
+        api2.automations.permissionOptions(projectId)
+      ]);
+      schedules = loadedSchedules;
+      availablePermissions = loadedPermissions;
       renderList();
       revealLinkedSchedule();
       if (pendingCreate) {
@@ -61060,7 +61372,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,
-      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
+      permissions: selectedPermissions()
     };
     void api2.automations.upsert(projectId, input2).then(
       async () => {
@@ -61087,6 +61400,7 @@ var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
+    init_types();
     init_lm_studio_defaults();
     init_helpers();
     init_model_options();
@@ -67279,6 +67593,44 @@ function mountProjectsPane(root, store2, api2) {
     wrap.append(action);
     return wrap;
   }
+  function orphanPrimaryLabel(orphan) {
+    const lead = orphan.sampleTitles[0]?.trim();
+    if (lead) return lead;
+    const count = orphan.threadCount;
+    return `${String(count)} thread${count === 1 ? "" : "s"}`;
+  }
+  function orphanSubtitle(orphan) {
+    const count = orphan.threadCount;
+    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    if (extra.length === 0) return countLabel;
+    const shown = extra.slice(0, 2).join(" \xB7 ");
+    const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
+    return `${countLabel} \xB7 ${shown}${more}`;
+  }
+  function orphanRecoverDetail(orphan) {
+    const lines = [
+      "Choose the folder this conversation belonged to. Copse will attach the saved threads to that project."
+    ];
+    if (orphan.sampleTitles.length > 0) {
+      lines.push("");
+      lines.push("Threads in this store:");
+      for (const title2 of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title2}`);
+      }
+      if (orphan.threadCount > orphan.sampleTitles.length) {
+        lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
+      }
+    } else {
+      lines.push("");
+      lines.push(
+        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? "" : "s"}.`
+      );
+    }
+    lines.push("");
+    lines.push(`Store id: ${orphan.id}`);
+    return lines.join("\n");
+  }
   function renderOrphansSection() {
     const section = el("div", { class: "orphans-section" });
     section.append(
@@ -67287,22 +67639,67 @@ function mountProjectsPane(root, store2, api2) {
         { class: "orphans-heading" },
         warningIcon("ui-icon ui-icon-sm"),
         el("span", {}, "Recoverable threads")
+      ),
+      el(
+        "p",
+        { class: "orphans-hint" },
+        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
       )
     );
     for (const orphan of orphans) {
-      const count = orphan.threadCount;
+      const primary = orphanPrimaryLabel(orphan);
+      const subtitle = orphanSubtitle(orphan);
       const row2 = el(
         "div",
-        { class: "orphan-row", title: `Store ${orphan.id}` },
-        el("span", { class: "orphan-name" }, `${String(count)} thread${count === 1 ? "" : "s"}`)
+        {
+          class: "orphan-row",
+          title: `Store ${orphan.id}`,
+          "data-orphan-id": orphan.id
+        },
+        el(
+          "div",
+          { class: "orphan-copy" },
+          el("span", { class: "orphan-name" }, primary),
+          el("span", { class: "orphan-meta" }, subtitle)
+        )
       );
+      const actions = el("div", { class: "orphan-actions" });
+      const dismissBtn = el(
+        "button",
+        { type: "button", class: "orphan-dismiss-btn", title: "Hide this store from the list" },
+        "Dismiss"
+      );
+      dismissBtn.addEventListener("click", () => {
+        void dismissOrphanProject(api2, orphan.id).then(() => {
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+          showToast("Recoverable threads hidden. They remain on disk.");
+        }).catch((err2) => {
+          showErrorToast("Could not dismiss recoverable threads", err2);
+        });
+      });
       const recoverBtn = el("button", { type: "button", class: "orphan-recover-btn" }, "Recover\u2026");
       recoverBtn.addEventListener("click", () => {
-        void recoverOrphanProject(store2, api2, orphan.id).catch((err2) => {
+        void recoverOrphanProject(
+          store2,
+          api2,
+          orphan.id,
+          () => showConfirmDialog({
+            message: `Recover \u201C${primary}\u201D?`,
+            detail: orphanRecoverDetail(orphan),
+            confirmLabel: "Choose folder\u2026",
+            cancelLabel: "Cancel"
+          })
+        ).then((recovered) => {
+          if (!recovered) return;
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+        }).catch((err2) => {
           showErrorToast("Could not recover threads", err2);
         });
       });
-      row2.append(recoverBtn);
+      actions.append(dismissBtn, recoverBtn);
+      row2.append(actions);
       section.append(row2);
     }
     return section;
@@ -67311,7 +67708,7 @@ function mountProjectsPane(root, store2, api2) {
     void listOrphanProjects(api2).then((next) => {
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
-        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount;
+        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
       });
       orphans = next;
       if (changed) render();
@@ -68147,6 +68544,7 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_confirm_dialog();
     init_toast();
     init_fork_thread3();
     init_thread_filter();
