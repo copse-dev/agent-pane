@@ -663,6 +663,46 @@ export interface ShellRedirect {
   truncates: boolean
 }
 
+/** Whether a command redirects descriptor 0 from a file, heredoc/string, or another descriptor. */
+export function hasShellInputRedirect(command: string): boolean {
+  // Let the shared parser reject malformed source, then retain the source text so
+  // `3< file` (descriptor 3) can be distinguished from `< file` (stdin). The
+  // parser's token stream drops that adjacency and reports both as the same `<`.
+  try {
+    parseShellCommand(command)
+  } catch {
+    return false
+  }
+  let quote: '"' | "'" | null = null
+  for (let index = 0; index < command.length; index++) {
+    const char = command.charAt(index)
+    if (quote !== null) {
+      if (quote === '"' && char === '\\') index++
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '\\') {
+      index++
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char !== '<' || command.charAt(index + 1) === '(') continue
+
+    let digitStart = index
+    while (digitStart > 0 && /\d/.test(command.charAt(digitStart - 1))) digitStart--
+    if (digitStart === index) return true
+    const beforeDigits = command.charAt(digitStart - 1)
+    // Digits are an IO-number only when they begin a shell word. In `arg3<file`,
+    // `arg3` remains an argument and the redirect still targets stdin.
+    if (digitStart > 0 && !/[\s;&|()]/.test(beforeDigits)) return true
+    if (/^0+$/.test(command.slice(digitStart, index))) return true
+  }
+  return false
+}
+
 /**
  * Files a command line opens for writing via redirection.
  *
