@@ -219,7 +219,7 @@ export async function showMobileCompanion(win: BrowserWindow): Promise<void> {
     title: 'Enable Mobile Companion',
     message: 'Choose the network your phone is using.',
     detail:
-      'Each address belongs to a different network interface. Usually choose Wi-Fi (often en0) when your phone is on Wi-Fi, or the wired interface when both devices use that network. VPN and virtual-machine interfaces are not reachable from your phone. Copse being “on” only means the listener started; macOS or Wi-Fi client isolation can still block the phone.\n\nThis opens an encrypted companion for your threads. Pairing and phone control require your approval on this Mac.',
+      'Each address belongs to a different network interface. Usually choose Wi-Fi (often en0) when your phone is on Wi-Fi, or the wired interface when both devices use that network. VPN and virtual-machine interfaces may not be reachable unless your phone also joins that network. Copse being “on” only means the listener started; macOS or Wi-Fi client isolation can still block the phone.\n\nThis opens an encrypted companion for your threads. Pairing and phone control require your approval on this Mac.',
     buttons: [
       ...addresses.map(({ interfaceName, address }) => `${interfaceName} — ${address}`),
       'Cancel',
