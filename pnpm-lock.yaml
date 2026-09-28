@@ -182,14 +182,14 @@ importers:
         specifier: ^3.4.13
         version: 3.4.15
       electron:
-        specifier: ^44.4.1
-        version: 44.4.1
+        specifier: ^44.4.3
+        version: 44.4.3
       electron-builder:
         specifier: ^26.16.1
         version: 26.16.1(electron-builder-squirrel-windows@26.16.1)
       electron-chromedriver:
-        specifier: ^44.4.1
-        version: 44.4.1
+        specifier: ^44.4.2
+        version: 44.4.2
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
@@ -1880,8 +1880,8 @@ packages:
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
 
-  '@types/node@24.13.5':
-    resolution: {integrity: sha512-TXyindR+lBr22aJIdMQzCFHPHR6cR4js838mRDCSz5hOKWZvZwsXSSiXDmjRj4iJmgl+sR9O+1mkoVBSMadNug==}
+  '@types/node@24.13.6':
+    resolution: {integrity: sha512-SGrw/h3KPFshy3OE6ZL53LMBG5vGQQ8/gIpiqz/kRZhPJ7HgwCEs8LBuNtWLa8dvGZVpSF7+Bf+c11HUrCb/yg==}
 
   '@types/node@26.6.1':
     resolution: {integrity: sha512-VqGJBMCtdhqkBUCcBLvywI0NJ+KLuVzgNnlBUNFOQjqVxzo2lxLUNg1DSey8+u2u6ktswSAxg+s68QLzWHNOuA==}
@@ -2899,8 +2899,8 @@ packages:
     engines: {node: '>=14.0.0'}
     hasBin: true
 
-  electron-chromedriver@44.4.1:
-    resolution: {integrity: sha512-Ndy30C7h6jQFgM+PQFs+IASUQ6ZOnC2YW+/d8LFpTFMiBWnZ41wBpR2IyHPX2pfNu27BZ9aR6+XhVkPCuLaFpg==}
+  electron-chromedriver@44.4.2:
+    resolution: {integrity: sha512-Y/RO1CadhGng/jtJVIeNnMYtauWJbmpU5FwDZngFXWeKRnG/pt8yxz5mNtLxN63r8sFJ6mdzApFl9DQ/jTFf8A==}
     engines: {node: '>=10.12.0'}
     hasBin: true
 
@@ -2918,8 +2918,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.4.1:
-    resolution: {integrity: sha512-gXJarQ2Utfn8G6bp/IqLXvckOSCtrxPWjFqQaqm02Gf4zYn1aP+RN9PKimoLH/DMqjKLfBrNC4C4CviPv0cXnQ==}
+  electron@44.4.3:
+    resolution: {integrity: sha512-LTpSFTB40qVCXIX5xMo+cgHI/Jjkbjw7VpB26PccEbroqOn72LBukeaDwPVo1fBYzSzs0c9iPuAucFCO7Tw81Q==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -6420,7 +6420,7 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/node@24.13.5':
+  '@types/node@24.13.6':
     dependencies:
       undici-types: 7.18.2
 
@@ -7710,7 +7710,7 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-chromedriver@44.4.1:
+  electron-chromedriver@44.4.2:
     dependencies:
       '@electron/get': 2.0.3
       extract-zip: file:packages/extract-zip
@@ -7761,11 +7761,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.4.1:
+  electron@44.4.3:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0
-      '@types/node': 24.13.5
+      '@types/node': 24.13.6
     transitivePeerDependencies:
       - supports-color
 
