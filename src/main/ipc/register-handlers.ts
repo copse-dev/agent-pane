@@ -437,6 +437,11 @@ import { explainContainerModel } from '../services/providers/container-provider.
 
 const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
 
+const zAutomationPermission = z.object({
+  kind: z.enum(['copse-action', 'mcp-tool']),
+  toolName: z.string().trim().min(1).max(512),
+})
+
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
   name: z.string().trim().min(1).max(160),
@@ -445,6 +450,7 @@ const zAutomationScheduleInput = z.object({
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
   maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  permissions: z.array(zAutomationPermission).max(256).optional(),
 })
 
 const SKILLS_RELOAD_KEYS = new Set([
@@ -2269,6 +2275,11 @@ export function registerAllHandlers(
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     return getAutomationService().list(projectId)
   })
+  ipcMain.handle('automations:permissionOptions', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    parseIpcArgs(zProjectId, [rawProjectId])
+    return getAutomationService().permissionOptions()
+  })
   ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
@@ -2280,6 +2291,8 @@ export function registerAllHandlers(
       prompt: input.prompt,
       model: input.model,
       enabled: input.enabled,
+      ...(input.maxLiveWorktrees !== undefined ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
+      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
     })
   })
   ipcMain.handle(

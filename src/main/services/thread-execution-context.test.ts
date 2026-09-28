@@ -72,6 +72,20 @@ describe('thread execution context', () => {
     assert.equal(context.branch, 'feature/shared')
   })
 
+  it('carries persisted automation provenance into the permission context', async () => {
+    const automation = {
+      scheduleId: 'schedule-1',
+      scheduleName: 'Morning review',
+      triggeredAt: 42,
+    }
+    const context = await resolver({
+      getThreadMeta: async () => ({ id: 'thread-1', automation }),
+    })
+
+    assert.deepEqual(context.automation, automation)
+    assert.notEqual(context.automation, automation)
+  })
+
   it('uses only a manager-validated worktree root and branch', async () => {
     const persisted = {
       path: '/diagnostic/path',

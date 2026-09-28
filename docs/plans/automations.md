@@ -48,12 +48,22 @@ Legacy automation threads that resolved onto a shared checkout remain historical
 the next successful trigger creates a fresh isolated task. Archived automation
 threads are likewise never resurrected.
 
-The schedule authorizes submission of the configured prompt, not broader tool
-access. Normal permission policy remains in force: sandbox-contained commands
-follow the user's current auto-run setting, and commands that require approval
-still pause the scheduled thread and prompt. A checkout failure keeps the prompt
-as an unsent draft; provider failures surface on the started thread, matching an
-interactive submission.
+The schedule authorizes submission of the configured prompt and starts with no
+extra tool grants. Its editor offers an explicit, schedule-scoped allow-list for
+exact MCP tools and the supported mutating Copse GitHub actions. The editor presents
+the complete eligible catalogue in one filterable list, including saved tools
+that are temporarily offline. Copse actions apply only to the current project
+repository; an explicit `owner` / `repo` target still prompts. If an unselected
+eligible tool interrupts an automation thread, the approval dialog can add that
+exact tool to the owning schedule instead of making a global grant. Disconnected
+MCP selections stay visible and inert until the same exact tool returns.
+
+Everything else keeps the normal permission boundary: shell commands, file
+approvals, websites, sensitive-data reveals, ACP permission kinds, and model
+spend cannot be represented by an automation grant. Read-only mode and blocking
+hooks run before this allow-list. A checkout failure keeps the prompt as an unsent
+draft; provider failures surface on the started thread, matching an interactive
+submission.
 
 The renderer currently owns interactive agent streams and transcript persistence.
 Consequently, a task for the active project starts immediately; a task created for
