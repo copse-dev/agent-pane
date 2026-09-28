@@ -121,7 +121,8 @@ describe('kit buttons replace bespoke button stacks (#3065)', () => {
     assert.deepEqual(offenders, [], 'fade the paused row copy, not the row holding the buttons')
     const pausedCopy = all.find(
       (rule) =>
-        rule.selector === '.automation-row-paused:not(.automation-row-blocked) .automation-row-copy',
+        rule.selector ===
+        '.automation-row-paused:not(.automation-row-blocked) .automation-row-copy',
     )
     assert.ok(pausedCopy, 'an ordinary paused schedule still reads as paused')
     assert.match(pausedCopy.body, /opacity:/)
