@@ -50,25 +50,39 @@ export function mismatches(testCase, result) {
   return out
 }
 
-export async function run(cases = loadCases()) {
+/** Analyse one anonymised case: files, hosts and HOME come from the case, never this machine. */
+export function analyzeCase(guard, testCase) {
+  const files = testCase.files ?? {}
+  const readScript = (path) => (Object.hasOwn(files, path) ? (files[path].text ?? null) : null)
+  const workspace = Object.hasOwn(testCase, 'workspace') ? testCase.workspace : WORKSPACE
+  const isCompiledProgram = (path) => Object.hasOwn(files, path) && files[path].binary === true
+  const pathExists = (path) => Object.hasOwn(files, path)
+  return analyze(guard, testCase.command, workspace, {
+    homeDir: HOME,
+    readScript,
+    isCompiledProgram,
+    pathExists,
+    trustedSshHosts: testCase.trustedSshHosts ?? [],
+  })
+}
+
+/** Run `analyzeCase` over many cases with HOME pointed at the anonymised home. */
+export async function withAnonymisedHome(callback) {
   const previousHome = process.env.HOME
   // shell-scope resolves `~` through os.homedir(), which reads HOME.
   process.env.HOME = HOME
   try {
-    const guard = await loadGuard()
-    return cases.map((testCase) => {
-      const files = testCase.files ?? {}
-      const readScript = (path) => (Object.hasOwn(files, path) ? (files[path].text ?? null) : null)
-      const workspace = Object.hasOwn(testCase, 'workspace') ? testCase.workspace : WORKSPACE
-      const isCompiledProgram = (path) => Object.hasOwn(files, path) && files[path].binary === true
-      const pathExists = (path) => Object.hasOwn(files, path)
-      const result = analyze(guard, testCase.command, workspace, {
-        homeDir: HOME,
-        readScript,
-        isCompiledProgram,
-        pathExists,
-        trustedSshHosts: testCase.trustedSshHosts ?? [],
-      })
+    return await callback(await loadGuard())
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+  }
+}
+
+export async function run(cases = loadCases()) {
+  return withAnonymisedHome((guard) =>
+    cases.map((testCase) => {
+      const result = analyzeCase(guard, testCase)
       const problems = mismatches(testCase, result)
       const outcome =
         testCase.status === 'enforced'
@@ -85,11 +99,8 @@ export async function run(cases = loadCases()) {
         outcome,
         problems,
       }
-    })
-  } finally {
-    if (previousHome === undefined) delete process.env.HOME
-    else process.env.HOME = previousHome
-  }
+    }),
+  )
 }
 
 export async function main(argv = process.argv.slice(2)) {
