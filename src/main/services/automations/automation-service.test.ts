@@ -141,10 +141,14 @@ describe('AutomationService', () => {
 
   it('stores unique opt-in permissions and can add one from a running schedule', async () => {
     let now = 10
+    const created: Thread[] = []
     const service = createAutomationService({
       now: () => now,
       isPluginEnabled: () => true,
-      createProjectThread: () => Promise.resolve(),
+      createProjectThread: (_projectId, thread) => {
+        created.push(thread)
+        return Promise.resolve()
+      },
       loadProjectThreads: () => Promise.resolve([]),
       releasePreviousRun: () => Promise.resolve(true),
     })
@@ -180,19 +184,49 @@ describe('AutomationService', () => {
     })
 
     assert.deepEqual(schedule.permissions, [approve])
-    assert.deepEqual(service.permissionPreference('project-a', schedule.id, approve), {
-      scheduleName: schedule.name,
-      allowed: true,
-    })
+    const run = await service.runNow('project-a', schedule.id)
+    const automation = created[0]?.automation
+    assert.ok(automation)
+    assert.deepEqual(
+      service.permissionPreferenceForThread('project-a', run.threadId, automation, approve),
+      {
+        scheduleName: schedule.name,
+        allowed: true,
+      },
+    )
     assert.equal(
-      service.permissionPreference('project-b', schedule.id, approve),
+      service.permissionPreferenceForThread('project-b', run.threadId, automation, approve),
       null,
       'a grant cannot cross its project boundary',
+    )
+    assert.equal(
+      service.permissionPreferenceForThread(
+        'project-a',
+        'ordinary-renderer-thread',
+        automation,
+        approve,
+      ),
+      null,
+      'renderer-visible provenance cannot attach a schedule grant to another thread',
+    )
+    assert.equal(
+      service.permissionPreferenceForThread(
+        'project-a',
+        run.threadId,
+        { ...automation, triggeredAt: automation.triggeredAt + 1 },
+        approve,
+      ),
+      null,
+      'renderer-visible provenance must match the recorded schedule run time',
     )
 
     now = 20
     assert.equal(await service.grantPermission('project-a', schedule.id, autoMerge), true)
-    assert.equal(service.permissionPreference('project-a', schedule.id, autoMerge)?.allowed, true)
+    assert.equal(
+      service.permissionPreferenceForThread('project-a', run.threadId, automation, autoMerge)
+        ?.allowed,
+      true,
+    )
     assert.equal(service.list('project-a')[0]?.updatedAt, 20)
 
     assert.equal(

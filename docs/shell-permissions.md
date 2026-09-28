@@ -469,9 +469,11 @@ Update this document and the Guarded YOLO / harm / read-outside tests with any i
 Automation schedules default to no extra approvals. A user may opt one schedule into exact MCP
 tool names and a fixed catalogue of mutating Copse GitHub actions. These grants are stored with the
 schedule, never as ambient thread or application trust, and the gate resolves them only from the
-trusted execution context of a thread created by that schedule. Read-only mode and tool-gate hooks
-still run first. A global **Blocked** policy rejects before the schedule grant, and **Always ask**
-forces a fresh prompt without offering to remember the answer back to the schedule.
+latest thread that main recorded as created by that schedule. Renderer-visible thread metadata is
+only a claim: the gate corroborates its schedule, thread id, and trigger time against the
+main-owned schedule run record before using a grant. Read-only mode and tool-gate hooks still run
+first. A global **Blocked** policy rejects before the schedule grant, and **Always ask** forces a
+fresh prompt without offering to remember the answer back to the schedule.
 
 Copse GitHub grants cover the current project repository only. Passing an explicit `owner` or
 `repo` keeps the normal per-call prompt. Shell commands, file changes, web/browser origins,
@@ -536,8 +538,9 @@ the registry still fails contained and offers to run outside.
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
-- `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants and the selectable
-  permission catalogue; the permission gate never accepts a renderer-supplied thread identity.
+- `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants, the selectable
+  permission catalogue, and corroboration of renderer-visible provenance against the schedule's
+  main-owned latest-run record.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
   reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the

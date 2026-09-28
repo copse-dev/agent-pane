@@ -33,7 +33,10 @@ export interface ThreadExecutionContext {
   readonly root: string
   readonly checkoutMode: ThreadCheckoutMode
   readonly branch: string | null
-  /** Schedule provenance, present only for a turn created by an automation. */
+  /**
+   * Renderer-visible schedule claim from thread metadata. Permission consumers
+   * must corroborate it against main-owned automation state before trusting it.
+   */
   readonly automation?: NonNullable<Thread['automation']>
 }
 

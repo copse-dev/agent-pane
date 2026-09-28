@@ -168,9 +168,10 @@ function minuteStamp(timestamp: number): number {
 export interface AutomationService {
   list(projectId: string): AutomationSchedule[]
   permissionOptions(): AutomationPermissionOption[]
-  permissionPreference(
+  permissionPreferenceForThread(
     projectId: string,
-    scheduleId: string,
+    threadId: string,
+    automation: NonNullable<Thread['automation']>,
     permission: AutomationPermission,
   ): { scheduleName: string; allowed: boolean } | null
   grantPermission(
@@ -407,8 +408,15 @@ export function createAutomationService(
         .sort((a, b) => a.createdAt - b.createdAt)
     },
     permissionOptions,
-    permissionPreference(projectId, scheduleId, permission) {
-      const schedule = service.list(projectId).find((candidate) => candidate.id === scheduleId)
+    permissionPreferenceForThread(projectId, threadId, automation, permission) {
+      const schedule = service
+        .list(projectId)
+        .find(
+          (candidate) =>
+            candidate.id === automation.scheduleId &&
+            candidate.lastCreatedThreadId === threadId &&
+            candidate.lastRunAt === automation.triggeredAt,
+        )
       if (!schedule) return null
       const key = automationPermissionKey(permission)
       return {

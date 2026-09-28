@@ -84,6 +84,8 @@ function seedAutomationSchedule(permissions: AutomationPermission[] = []): void 
       model: 'gpt-5.4',
       enabled: true,
       permissions,
+      lastRunAt: 1,
+      lastCreatedThreadId: 'automation-thread-1',
       createdAt: 1,
       updatedAt: 1,
     },
@@ -523,6 +525,40 @@ describe('ensureToolPermitted', () => {
     }
   })
 
+  it('rejects a renderer-spoofed automation claim that is not the recorded run', async () => {
+    setPermissionGateForTests(null)
+    seedAutomationSchedule([{ kind: 'copse-action', toolName: 'gh_pr_approve' }])
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      const permitted = await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId: 'ordinary-renderer-thread',
+          projectRoot: '/tmp/automation-project',
+          root: '/tmp/automation-project',
+          checkoutMode: 'shared',
+          branch: null,
+          automation: {
+            scheduleId: 'schedule-1',
+            scheduleName: 'Morning caretaker',
+            triggeredAt: 1,
+          },
+        },
+        () => ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } }),
+      )
+
+      assert.equal(permitted, false)
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
   it('lets an automation approval add the exact Copse action to its schedule', async () => {
     setPermissionGateForTests(null)
     seedAutomationSchedule()
@@ -540,10 +576,19 @@ describe('ensureToolPermitted', () => {
       )
       assert.match(rememberLabel, /future “Morning caretaker” runs/)
       assert.equal(
-        getAutomationService().permissionPreference('project-1', 'schedule-1', {
-          kind: 'copse-action',
-          toolName: 'gh_pr_enable_auto_merge',
-        })?.allowed,
+        getAutomationService().permissionPreferenceForThread(
+          'project-1',
+          'automation-thread-1',
+          {
+            scheduleId: 'schedule-1',
+            scheduleName: 'Morning caretaker',
+            triggeredAt: 1,
+          },
+          {
+            kind: 'copse-action',
+            toolName: 'gh_pr_enable_auto_merge',
+          },
+        )?.allowed,
         true,
       )
       let promptedAgain = false
@@ -581,10 +626,16 @@ describe('ensureToolPermitted', () => {
       )
       assert.match(rememberLabel, /Allow this tool for future “Morning caretaker” runs/)
       assert.equal(
-        getAutomationService().permissionPreference('project-1', 'schedule-1', {
-          kind: 'mcp-tool',
-          toolName,
-        })?.allowed,
+        getAutomationService().permissionPreferenceForThread(
+          'project-1',
+          'automation-thread-1',
+          {
+            scheduleId: 'schedule-1',
+            scheduleName: 'Morning caretaker',
+            triggeredAt: 1,
+          },
+          { kind: 'mcp-tool', toolName },
+        )?.allowed,
         true,
       )
       assert.equal(isMcpToolRemembered(toolName), false)

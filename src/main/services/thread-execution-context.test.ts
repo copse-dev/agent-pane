@@ -72,7 +72,7 @@ describe('thread execution context', () => {
     assert.equal(context.branch, 'feature/shared')
   })
 
-  it('carries persisted automation provenance into the permission context', async () => {
+  it('carries persisted automation metadata as a claim for later corroboration', async () => {
     const automation = {
       scheduleId: 'schedule-1',
       scheduleName: 'Morning review',

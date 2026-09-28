@@ -587,15 +587,20 @@ interface AutomationPermissionTarget {
   allowed: boolean
 }
 
-/** Resolve a grant only from the persisted schedule that owns this exact turn. */
+/**
+ * Resolve a grant only after the schedule's main-owned run record corroborates
+ * the renderer-visible thread metadata. A renderer can patch thread metadata,
+ * so the automation claim alone is never authority.
+ */
 function automationPermissionTarget(
   permission: AutomationPermission,
 ): AutomationPermissionTarget | null {
   const context = getThreadExecutionContext()
   if (!context?.automation) return null
-  const preference = getAutomationService().permissionPreference(
+  const preference = getAutomationService().permissionPreferenceForThread(
     context.projectId,
-    context.automation.scheduleId,
+    context.threadId,
+    context.automation,
     permission,
   )
   if (!preference) return null

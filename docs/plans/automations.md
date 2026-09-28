@@ -65,6 +65,11 @@ hooks run before this allow-list. A checkout failure keeps the prompt as an unse
 draft; provider failures surface on the started thread, matching an interactive
 submission.
 
+Thread metadata is renderer-visible and therefore does not prove automation
+ownership. Before applying a grant, main matches the claimed schedule, thread id,
+and trigger time to that schedule's main-owned latest-run record. A copied or
+edited metadata claim fails closed and follows the ordinary approval path.
+
 The renderer currently owns interactive agent streams and transcript persistence.
 Consequently, a task for the active project starts immediately; a task created for
 an inactive project starts when that project is next opened. True headless execution
