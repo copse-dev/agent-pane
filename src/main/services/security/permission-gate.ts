@@ -9,7 +9,7 @@ import {
   currentBrowserScope,
   grantBrowserOrigin,
 } from '../browser/browser-network-grants.ts'
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -117,7 +117,17 @@ import { PARALLEL_SEARCH_API_URL } from '../parallel-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
-import { assessShellHarm } from './shell-harm.ts'
+import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
+import {
+  guardedYoloTierReason,
+  shadowTierScreening,
+  tierScreeningClassifier,
+} from './tier-screening.ts'
+import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
+import {
+  TRUSTED_SSH_HOSTS_SETTING,
+  sanitizeTrustedSshHosts,
+} from '@copse/shell-guard/trusted-ssh-hosts.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
 import { resolveToolPermission } from './tool-permissions.ts'
@@ -418,36 +428,6 @@ async function promptGuardedYoloHarm(
     signal,
   )
   return approved
-}
-
-const MAX_HARM_SCRIPT_BYTES = 256 * 1024
-const HARM_SCRIPT_TEXT_SAMPLE_BYTES = 8192
-
-/** Reject NULs and dense C0 controls so binary assets are never UTF-8-lexed as shell. */
-function harmScriptBytesLookBinary(bytes: Buffer): boolean {
-  if (bytes.includes(0)) return true
-  const sampleLen = Math.min(bytes.length, HARM_SCRIPT_TEXT_SAMPLE_BYTES)
-  if (sampleLen === 0) return false
-  let controls = 0
-  for (let i = 0; i < sampleLen; i++) {
-    const byte = bytes[i]
-    if (byte === undefined) continue
-    if (byte === 9 || byte === 10 || byte === 13) continue
-    if (byte < 32 || byte === 127) controls++
-  }
-  return controls / sampleLen > 0.1
-}
-
-function readScriptForHarm(path: string): string | null {
-  try {
-    const stat = statSync(path)
-    if (!stat.isFile() || stat.size > MAX_HARM_SCRIPT_BYTES) return null
-    const bytes = readFileSync(path)
-    if (harmScriptBytesLookBinary(bytes)) return null
-    return bytes.toString('utf8')
-  } catch {
-    return null
-  }
 }
 
 /**
@@ -953,6 +933,14 @@ function sandboxCommandNormallyAllowed(command: string, workspaceRoot: string): 
   )
 }
 
+/** The user's trusted SSH hosts and a filesystem probe, for the harm gate's host-reach rules. */
+function harmHostReachContext(): Pick<ShellHarmContext, 'trustedSshHosts' | 'pathExists'> {
+  return {
+    trustedSshHosts: sanitizeTrustedSshHosts(getSetting<unknown>(TRUSTED_SSH_HOSTS_SETTING, [])),
+    pathExists: existsSync,
+  }
+}
+
 /**
  * The contained-runtime gate: an unattended run on a container decides every
  * shell command by where its effect lands, not by whether a host sandbox would
@@ -975,6 +963,8 @@ async function ensureContainedShellCommandPermitted(
     homeDir: homedir(),
     canonicalizePath: realpathSync.native,
     readScript: readScriptForHarm,
+    isCompiledProgram,
+    ...harmHostReachContext(),
   })
   const decision = decideContainedShellEffect(command, harm)
   firePermissionDecision(
@@ -1152,6 +1142,8 @@ export async function ensureShellCommandPermitted(
         homeDir: homedir(),
         canonicalizePath: realpathSync.native,
         readScript: readScriptForHarm,
+        isCompiledProgram,
+        ...harmHostReachContext(),
       })
     : undefined
   const decision = decideShellPermission(command, {
@@ -1182,7 +1174,10 @@ export async function ensureShellCommandPermitted(
   const outsideSandbox =
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
     (guardedYolo && sandboxEnabled && routeShellCommand(command).outcome === 'allow')
-  const auditGuardedYolo = (userResponse: 'approved' | 'declined' | 'not-required'): void => {
+  const auditGuardedYolo = (
+    userResponse: 'approved' | 'declined' | 'not-required',
+    promptedBy?: string[],
+  ): void => {
     if (!guardedYolo || !harmDecision) return
     const originalCommand = opts.originalCommand ?? command
     recordPermissionDecision({
@@ -1192,10 +1187,23 @@ export async function ensureShellCommandPermitted(
       effectiveMode: 'guarded-yolo',
       sandboxState: sandboxEnabled && !outsideSandbox ? 'project-sandbox' : 'unsandboxed',
       harmDecision: harmDecision.action,
-      policyDecision: effectiveAction,
-      reasons: effectiveReasons,
+      policyDecision: promptedBy ? 'prompt' : effectiveAction,
+      reasons: promptedBy ?? effectiveReasons,
       userResponse,
     })
+  }
+
+  // Guarded YOLO's second opinion (tier-screening.ts). A classifier connection
+  // chosen for safety screening may turn an unsandboxed allow into the harm
+  // gate's one-time confirmation; it can never allow what the gate did not.
+  // A contained command needs no second opinion: the sandbox bounds it.
+  if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
+    const tierReason = await guardedYoloTierReason(command, workspaceRoot, opts.signal)
+    if (tierReason) {
+      const approved = await promptGuardedYoloHarm(command, [tierReason], false, opts.signal)
+      auditGuardedYolo(approved ? 'approved' : 'declined', [tierReason])
+      return approved
+    }
   }
 
   if (effectiveAction === 'allow') {
@@ -1237,6 +1245,20 @@ export async function ensureShellCommandPermitted(
     )
   )
     return true
+
+  // Record, in the background, what a classifier connection would have approved
+  // here. The prompt below does not wait for it and nothing changes.
+  if (!forceAsk && tierScreeningClassifier()) {
+    const harm = assessShellHarm(command, {
+      workspaceRoot,
+      homeDir: homedir(),
+      canonicalizePath: realpathSync.native,
+      readScript: readScriptForHarm,
+      isCompiledProgram,
+      ...harmHostReachContext(),
+    })
+    void shadowTierScreening(command, workspaceRoot, harm.action)
+  }
 
   // A user may explicitly authorize one constituent for bounded exact retries in
   // this human turn tree. Conservative top-level composition is allowed only
