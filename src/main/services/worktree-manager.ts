@@ -1277,13 +1277,17 @@ export async function reattachThreadWorktree(
   const projectRoot = (await repositoryLocation(input.projectRoot)).repositoryRoot
   return runSerialized(`worktree-manager:${projectRoot}`, async () => {
     const validated = await validateThreadWorktreeState(input)
+    // Validation registers a healthy attached checkout for sandbox access and
+    // indexing. Reject before entering the detached-failure cleanup below, or
+    // a stale Reattach click after a manual `git switch` would unregister that
+    // healthy root.
+    if (validated.branch) throw new Error('Thread worktree is already on a branch')
     reattachingRoots.add(validated.root)
     let failed = false
     try {
       // A concurrent validation may have released the root between this
       // validation registering it and the pin above; restore the grant.
       await registerInternalWorkspaceRoot(validated.path, validated.root)
-      if (validated.branch) throw new Error('Thread worktree is already on a branch')
       const recovery = await activeGitRecovery(validated.gitDir)
       if (recovery) {
         throw new Error(

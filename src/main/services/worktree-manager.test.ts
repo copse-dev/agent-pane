@@ -782,7 +782,14 @@ describe('worktree manager', () => {
     it('reports attachment and refuses while a rebase is in progress', async () => {
       const { input, path } = await detachedWorktree()
       assert.deepEqual(await inspectThreadWorktreeAttachment(input), { state: 'attached' })
+      const root = await realpath(path)
+      assert.equal(getInternalWorkspaceRootRegistration(root)?.checkoutRoot, root)
       await assert.rejects(reattachThreadWorktree(input), /already on a branch/)
+      assert.equal(
+        getInternalWorkspaceRootRegistration(root)?.checkoutRoot,
+        root,
+        'rejecting a stale reattach must not release a healthy attached root',
+      )
 
       git(path, ['checkout', '-q', '--detach', 'HEAD'])
       assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
