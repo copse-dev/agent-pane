@@ -46,6 +46,72 @@ var init_demo = __esm({
   }
 });
 
+// packages/agent/src/plugins/plugin-manifest.ts
+function definePlugin(manifest, contributions = {}) {
+  return {
+    id: manifest.name,
+    trust: manifest.trust,
+    manifest,
+    contributions: { ...EMPTY_PLUGIN_CONTRIBUTIONS, ...contributions }
+  };
+}
+var EMPTY_PLUGIN_CONTRIBUTIONS;
+var init_plugin_manifest = __esm({
+  "packages/agent/src/plugins/plugin-manifest.ts"() {
+    EMPTY_PLUGIN_CONTRIBUTIONS = {
+      toolNames: [],
+      modelRoutes: [],
+      browserOrigins: [],
+      blockingHooks: [],
+      asyncHooks: [],
+      promptBlocks: [],
+      uiContributions: [],
+      followUps: [],
+      capabilities: [],
+      instructionSources: [],
+      permissions: []
+    };
+  }
+});
+
+// packages/agent/src/plugins/automations-plugin.ts
+var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
+var init_automations_plugin = __esm({
+  "packages/agent/src/plugins/automations-plugin.ts"() {
+    init_plugin_manifest();
+    AUTOMATIONS_PLUGIN_ID = "copse.automations";
+    automationsPlugin = definePlugin(
+      {
+        name: AUTOMATIONS_PLUGIN_ID,
+        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+        trust: "first-party",
+        stability: "experimental",
+        ui: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
+        ],
+        storage: { namespace: AUTOMATIONS_PLUGIN_ID }
+      },
+      {
+        uiContributions: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          },
+          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
+        ]
+      }
+    );
+  }
+});
+
 // packages/llm/src/model-catalog.generated.ts
 var MODEL_CATALOG;
 var init_model_catalog_generated = __esm({
@@ -870,7 +936,8 @@ var init_model_parameters = __esm({
         // 2.1 screen scored medium-plus-cap 4/6 against 2/6 for a max-effort uncapped
         // baseline, on the shell-agent loop Copse actually runs. Z.ai recommends `max`
         // for the model in general; we keep `medium` for this scenario on our own
-        // evidence, and the row stays opt-in and experimental because that evidence is
+        // evidence. Like every recipe it applies by default (a user-set field replaces
+        // its value), but the row stays labelled experimental because that evidence is
         // one benchmark on one host.
         params: { reasoning: "medium", maxOutputTokens: 16384, temperature: 1, topP: 0.95 }
       },
@@ -3386,7 +3453,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -3407,11 +3474,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f4]) => f4.l && f4.r).map(([k2]) => k2);
@@ -21373,6 +21440,11 @@ var init_unknown_value = __esm({
 });
 
 // packages/agent/src/parse-agent-run-payload.ts
+function parseReviewContext(value) {
+  if (typeof value !== "string" || value.trim() === "") return void 0;
+  return value.length <= REVIEW_CONTEXT_CHAR_CAP ? value : `${value.slice(0, REVIEW_CONTEXT_CHAR_CAP)}
+[review summary truncated]`;
+}
 function parseAgentRunPayload(rawPrompt) {
   try {
     const parsed2 = JSON.parse(rawPrompt);
@@ -21383,6 +21455,7 @@ function parseAgentRunPayload(rawPrompt) {
       }
       const invokedSkills = external_exports.array(external_exports.string()).safeParse(parsed2["invokedSkills"]);
       const priorTodos = external_exports.array(todoSchema).safeParse(parsed2["priorTodos"]);
+      const reviewContext = parseReviewContext(parsed2["reviewContext"]);
       const normalizedTodos = priorTodos.success ? priorTodos.data.map((todo) => ({
         id: todo.id,
         content: todo.content,
@@ -21399,7 +21472,8 @@ function parseAgentRunPayload(rawPrompt) {
         ...typeof parsed2["model"] === "string" && parsed2["model"] ? { model: parsed2["model"] } : {},
         ...isReasoningLevel(parsed2["reasoning"]) ? { reasoning: parsed2["reasoning"] } : {},
         ...typeof parsed2["turnTreeId"] === "string" && parsed2["turnTreeId"] ? { turnTreeId: parsed2["turnTreeId"] } : {},
-        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {}
+        ...typeof parsed2["continuationBudgetUsed"] === "number" && Number.isFinite(parsed2["continuationBudgetUsed"]) ? { continuationBudgetUsed: parsed2["continuationBudgetUsed"] } : {},
+        ...reviewContext !== void 0 ? { reviewContext } : {}
       };
     }
     const content = userContentSchema.safeParse(parsed2);
@@ -21412,7 +21486,7 @@ function parseAgentRunPayload(rawPrompt) {
     return { userContent: rawPrompt, invokedSkills: [], priorTodos: [] };
   }
 }
-var userContentSchema, todoSchema;
+var userContentSchema, todoSchema, REVIEW_CONTEXT_CHAR_CAP;
 var init_parse_agent_run_payload = __esm({
   "packages/agent/src/parse-agent-run-payload.ts"() {
     init_model_parameters();
@@ -21443,6 +21517,7 @@ var init_parse_agent_run_payload = __esm({
       ]).optional(),
       assignedModel: external_exports.enum(["cloud", "local"]).optional()
     });
+    REVIEW_CONTEXT_CHAR_CAP = 2e4;
   }
 });
 
@@ -22990,6 +23065,100 @@ var init_persistence = __esm({
   }
 });
 
+// src/shared/store/review-reports.ts
+function findingLocation(finding) {
+  if (finding.startLine === void 0) return finding.path;
+  const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
+  return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
+}
+function userRunDone(report) {
+  return report?.initiator === "user" && report.status === "done" ? report : null;
+}
+function reviewReportsAwaitingModel(thread) {
+  const repliedAfter = (report, anchorId) => thread.messages.some(
+    (message2) => message2.role === "assistant" && message2.id !== anchorId && message2.createdAt >= report.startedAt
+  );
+  const awaiting = [];
+  const legacy = userRunDone(thread.reviewReport);
+  if (legacy && !repliedAfter(legacy)) awaiting.push(legacy);
+  const anchored = [];
+  for (const message2 of thread.messages) {
+    if (message2.role !== "assistant") continue;
+    const report = userRunDone(message2.reviewReport);
+    if (report && !repliedAfter(report, message2.id)) anchored.push(report);
+  }
+  anchored.sort((a3, b4) => a3.startedAt - b4.startedAt);
+  return [...awaiting, ...anchored];
+}
+function clip(text2, max) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}\u2026`;
+}
+function reviewedLine(report) {
+  const parts = ["Copse Reviewer"];
+  if (report.baseRef !== "") {
+    const head = report.dirtyWorkingTree ? "the working tree" : `HEAD${report.headCommit !== null ? ` (${report.headCommit.slice(0, 10)})` : ""}`;
+    parts.push(`reviewed ${head} against ${report.baseRef}`);
+  }
+  if (report.models.reviewer !== "") parts.push(`with ${report.models.reviewer}`);
+  return `${parts.join(" ")}.`;
+}
+function groundLine(report) {
+  if (!report.execution.executed) {
+    return report.execution.reason === "" ? "Read-only review: nothing was executed." : `Read-only review: nothing was executed (${report.execution.reason}).`;
+  }
+  const checks = report.checks.map((check2) => `${check2.kind} ${check2.verdict}`);
+  const notChecked = report.notChecked.map((note) => `not checked: ${note}`);
+  const all = [...checks, ...notChecked];
+  return all.length === 0 ? null : `Checks: ${all.join("; ")}.`;
+}
+function findingLine(finding, index) {
+  return `${String(index + 1)}. [${finding.severity} \xB7 ${finding.class} \xB7 ${finding.verdict.status}] ${findingLocation(finding)} \u2014 ${clip(finding.claim, MAX_CONTEXT_CLAIM_CHARS)}`;
+}
+function reportContextText(report) {
+  const lines = [reviewedLine(report)];
+  const ground = groundLine(report);
+  if (ground !== null) lines.push(ground);
+  if (report.note !== void 0) lines.push(report.note);
+  const live = report.findings.filter((finding) => finding.dismissed !== true);
+  const dismissed = report.findings.length - live.length;
+  const dismissedNote = dismissed > 0 ? ` (${String(dismissed)} more dismissed by the user and left out)` : "";
+  if (live.length === 0) {
+    lines.push(report.findings.length === 0 ? "No findings." : `No open findings${dismissedNote}.`);
+  } else {
+    lines.push(`${String(live.length)} finding(s)${dismissedNote}:`);
+    live.slice(0, MAX_CONTEXT_FINDINGS).forEach((finding, index) => {
+      lines.push(findingLine(finding, index));
+    });
+    if (live.length > MAX_CONTEXT_FINDINGS) {
+      lines.push(`\u2026and ${String(live.length - MAX_CONTEXT_FINDINGS)} more on the card.`);
+    }
+  }
+  if (report.appendix > 0) {
+    lines.push(`${String(report.appendix)} lower-ranked finding(s) fell below the report's cut.`);
+  }
+  return lines.join("\n");
+}
+function reviewReportModelContext(reports) {
+  if (reports.length === 0) return void 0;
+  const shown = reports.slice(-MAX_CONTEXT_REPORTS);
+  const omitted = reports.length - shown.length;
+  const intro = reports.length === 1 ? "Since your last reply the user ran Copse Reviewer on this thread\u2019s changes. You did not start this review; the user sees its report as a card in the conversation." : `Since your last reply the user ran Copse Reviewer ${String(reports.length)} times on this thread\u2019s changes, oldest first. You did not start these reviews; the user sees each report as a card in the conversation.` + (omitted > 0 ? ` Only the latest ${String(shown.length)} are summarised here.` : "");
+  const body = [intro, ...shown.map(reportContextText)].join("\n\n");
+  return `<${REVIEW_CONTEXT_TAG}>
+${body}
+</${REVIEW_CONTEXT_TAG}>`;
+}
+var MAX_CONTEXT_REPORTS, MAX_CONTEXT_FINDINGS, MAX_CONTEXT_CLAIM_CHARS, REVIEW_CONTEXT_TAG;
+var init_review_reports = __esm({
+  "src/shared/store/review-reports.ts"() {
+    MAX_CONTEXT_REPORTS = 3;
+    MAX_CONTEXT_FINDINGS = 12;
+    MAX_CONTEXT_CLAIM_CHARS = 400;
+    REVIEW_CONTEXT_TAG = "copse_review_report";
+  }
+});
+
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
   const canonical = CANONICAL_WORDS.get(word);
@@ -23925,10 +24094,12 @@ function setMessageHookOrigin(store2, messageId, origin) {
   }));
   store2.setState({ threads });
 }
-function refreshPayload(store2, threadId, payload) {
+function refreshPayload(store2, threadId, { reviewContext: _stale, ...payload }) {
   const thread = getThreadById(store2, threadId);
+  const reviewContext = thread ? reviewReportModelContext(reviewReportsAwaitingModel(thread)) : void 0;
   return {
     ...payload,
+    ...reviewContext !== void 0 ? { reviewContext } : {},
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...thread?.workingBrief !== void 0 ? { workingBrief: thread.workingBrief } : {},
     // Send the per-thread model so the run uses the picker's selection rather
@@ -24230,6 +24401,7 @@ var pendingDispatches;
 var init_message_queue = __esm({
   "src/renderer/controller/message-queue.ts"() {
     init_thread_helpers();
+    init_review_reports();
     init_agent_activity();
     init_continuation_budget();
     init_thread_hydration();
@@ -33841,6 +34013,15 @@ function switchProject(store2, api2, id, pendingThreadId = null) {
   if (!proj) return;
   activate(store2, api2, id, proj.path, proj.sshHost, pendingThreadId);
 }
+async function activateMobileProject(store2, api2, id) {
+  const project2 = store2.getState().projects.find((item) => item.id === id);
+  if (!project2 || project2.missing) throw new Error("Project unavailable on the desktop.");
+  if (store2.getState().activeProjectId === id) {
+    cancelPendingSwitch(store2, api2);
+    return;
+  }
+  await activateAndWait(store2, api2, id, project2.path, project2.sshHost);
+}
 function switchProjectThread(store2, api2, projectId, threadId) {
   const { activeProjectId, expandedProjectId } = store2.getState();
   if (projectId === activeProjectId) {
@@ -34027,11 +34208,46 @@ async function relocateProject(store2, api2, id) {
   await activateAndWait(store2, api2, id, path);
   return true;
 }
-function listOrphanProjects(api2) {
-  return api2.threads.listOrphans();
+function parseDismissedOrphanStores(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || item.length === 0 || seen.has(item)) continue;
+    seen.add(item);
+    ids.push(item);
+  }
+  return ids;
 }
-async function recoverOrphanProject(store2, api2, storeId) {
+function updateDismissedOrphanStores(api2, update) {
+  const next = dismissedOrphanStoresChain.catch(() => void 0).then(async () => {
+    const current = parseDismissedOrphanStores(await api2.storage.get(KEY_DISMISSED_ORPHAN_STORES));
+    const updated = update(current);
+    if (updated.length === current.length && updated.every((storeId, index) => storeId === current[index]))
+      return;
+    await serializedSet(api2, KEY_DISMISSED_ORPHAN_STORES, updated);
+  });
+  dismissedOrphanStoresChain = next;
+  return next;
+}
+async function listOrphanProjects(api2) {
+  const [orphans, dismissedRaw] = await Promise.all([
+    api2.threads.listOrphans(),
+    api2.storage.get(KEY_DISMISSED_ORPHAN_STORES)
+  ]);
+  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw));
+  if (dismissed.size === 0) return orphans;
+  return orphans.filter((orphan) => !dismissed.has(orphan.id));
+}
+async function dismissOrphanProject(api2, storeId) {
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current : [...current, storeId]
+  );
+}
+async function recoverOrphanProject(store2, api2, storeId, confirm2) {
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
+  if (confirm2 && !await confirm2()) return false;
   const path = await api2.workspace.open();
   if (!path) return false;
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
@@ -34039,10 +34255,14 @@ async function recoverOrphanProject(store2, api2, storeId) {
     projects: [...store2.getState().projects, { id: storeId, path, name: basename(path) }]
   });
   store2.emit("projects_changed");
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current.filter((id) => id !== storeId) : current
+  );
   await activateAndWait(store2, api2, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_thread_helpers();
@@ -34064,6 +34284,8 @@ var init_projects = __esm({
     activationWaiters = /* @__PURE__ */ new Map();
     workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
+    KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
+    dismissedOrphanStoresChain = Promise.resolve();
   }
 });
 
@@ -36231,6 +36453,27 @@ var init_demo_scenarios = __esm({
         ]
       },
       {
+        id: "automation-permissions",
+        label: "Automation permission preferences",
+        project: project("demo-automation-permissions-project", "Copse", "/demo/copse"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off"
+        },
+        threads: [
+          {
+            id: "demo-automation-permissions-thread",
+            title: "Automation permissions",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
+      },
+      {
         // Per-model generation parameters. The scenario only has to seed the chat
         // model and its saved parameters — open Settings → General → Models in the
         // preview and the section renders itself against that selection. Uses an
@@ -36568,6 +36811,25 @@ function createDemoApi(scenario, options = {}) {
   ]);
   let workspaceRoot = scenario.project.path;
   let threads = structuredClone(scenario.threads);
+  const showAutomationPermissions = scenario.id === "automation-permissions";
+  const demoPlugins = showAutomationPermissions ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN] : DEMO_PLUGINS;
+  const automationSchedules = showAutomationPermissions ? [
+    {
+      id: "demo-weekday-review",
+      projectId: scenario.project.id,
+      name: "Weekday project review",
+      cron: "0 9 * * 1-5",
+      prompt: "Review open work and prepare a concise project status update.",
+      model: "claude-sonnet-4-6",
+      enabled: false,
+      permissions: [
+        { kind: "copse-action", toolName: "gh_pr_approve" },
+        { kind: "mcp-tool", toolName: "mcp__reports__publish_weekly" }
+      ],
+      createdAt: Date.parse(DEMO_TIME),
+      updatedAt: Date.parse(DEMO_TIME)
+    }
+  ] : [];
   let navigation = {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null
@@ -36631,6 +36893,9 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
+    mobile: { onChat: () => () => {
+    }, reply: async () => {
+    } },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -37266,6 +37531,7 @@ function createDemoApi(scenario, options = {}) {
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
+    bundledSkillPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
@@ -37273,7 +37539,7 @@ function createDemoApi(scenario, options = {}) {
     },
     plugins: {
       list: () => resolved({
-        plugins: DEMO_PLUGINS.map(
+        plugins: demoPlugins.map(
           (plugin) => plugin.id === "copse.apple-development" ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled } : plugin
         )
       }),
@@ -37286,7 +37552,8 @@ function createDemoApi(scenario, options = {}) {
       export: () => resolved({ path: "", count: 0 })
     },
     automations: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(automationSchedules)),
+      permissionOptions: () => resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
@@ -37464,9 +37731,10 @@ function createDemoApi(scenario, options = {}) {
   };
   return api2;
 }
-var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, emptyArray;
+var DEMO_MODEL, DEMO_TIME, DEMO_MCP_STATUSES, DEMO_TOOL_PERMISSIONS, DEMO_PLUGIN_CONTRIBUTIONS, DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN, DEMO_AUTOMATION_PERMISSIONS, emptyArray;
 var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
+    init_automations_plugin();
     init_parse_agent_run_payload();
     init_working_brief();
     init_trace_player();
@@ -37598,7 +37866,7 @@ var init_demo_api = __esm({
         stability: "stable",
         name: "Todos",
         version: "1.0.0",
-        description: "Plan and track multi-step work inside a thread. Adds the todo tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
+        description: "Plan and track multi-step work inside a thread. Adds the `todo_write` tool, the plan panel, and the prompt block that teaches the agent when to keep a list.",
         enabled: true,
         contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["todo_write", "todo_read"] },
         settings: []
@@ -37617,7 +37885,7 @@ var init_demo_api = __esm({
             id: "maxReviewCycles",
             kind: "number",
             title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn.",
+            description: "How many times a failing review may buy the agent another turn. `0` turns retries off.",
             default: 2,
             value: 2
           }
@@ -37661,6 +37929,79 @@ var init_demo_api = __esm({
         enabled: false,
         contributions: DEMO_PLUGIN_CONTRIBUTIONS,
         settings: []
+      }
+    ];
+    DEMO_AUTOMATIONS_PLUGIN = {
+      id: AUTOMATIONS_PLUGIN_ID,
+      trust: "first-party",
+      stability: "experimental",
+      name: AUTOMATIONS_PLUGIN_ID,
+      description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+      enabled: true,
+      contributions: {
+        ...DEMO_PLUGIN_CONTRIBUTIONS,
+        ui: [
+          {
+            id: "schedule-editor",
+            level: 3,
+            slot: "settings-plugin-detail",
+            title: "Automation schedules"
+          }
+        ],
+        storageNamespace: AUTOMATIONS_PLUGIN_ID
+      },
+      settings: []
+    };
+    DEMO_AUTOMATION_PERMISSIONS = [
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_create" },
+        label: "Create pull requests",
+        detail: "Pushes the current thread branch and opens a pull request in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_rerun_failed_ci" },
+        label: "Re-run failed CI",
+        detail: "Re-runs failed checks for pull requests in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_approve" },
+        label: "Approve pull requests",
+        detail: "Submits a GitHub approval for pull requests in this project repository."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_mark_ready" },
+        label: "Mark pull requests ready",
+        detail: "Moves draft pull requests in this project repository into review."
+      },
+      {
+        permission: { kind: "copse-action", toolName: "gh_pr_enable_auto_merge" },
+        label: "Enable pull request auto-merge",
+        detail: "Enables the repository-preferred auto-merge strategy for a pull request."
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__linear__create_issue" },
+        label: "Create issue",
+        detail: "Linear MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__linear__update_issue" },
+        label: "Update issue",
+        detail: "Linear MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__notion__create_page" },
+        label: "Create page",
+        detail: "Notion MCP \xB7 changes external data"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__slack__send_message" },
+        label: "Send message",
+        detail: "Slack MCP \xB7 may access external systems"
+      },
+      {
+        permission: { kind: "mcp-tool", toolName: "mcp__figma__add_comment" },
+        label: "Add comment",
+        detail: "Figma MCP \xB7 changes external data"
       }
     ];
     emptyArray = () => Promise.resolve([]);
@@ -37832,6 +38173,79 @@ var init_autoplay = __esm({
     DEFAULT_CHARS_PER_SECOND2 = 28;
     DEFAULT_START_DELAY_MS = 1200;
     DEFAULT_LOOP_PAUSE_MS = 2e4;
+  }
+});
+
+// src/renderer/controller/mobile-chat.ts
+async function acceptMobileChat(store2, api2, command) {
+  let ownedThread = null;
+  const checkCurrent = () => {
+    if (Date.now() >= command.expiresAt) throw new Error("This send expired. Try again.");
+    if (store2.getState().activeProjectId !== command.projectId)
+      throw new Error("The desktop changed projects during this send. Try again.");
+  };
+  try {
+    if (Date.now() >= command.expiresAt) throw new Error("This send expired. Try again.");
+    await activateMobileProject(store2, api2, command.projectId);
+    checkCurrent();
+    const threadId = command.threadId ?? createThread(store2);
+    const initial = getThreadById(store2, threadId);
+    if (!initial || initial.archivedAt !== void 0) throw new Error("Thread unavailable.");
+    if (!beginThreadSubmission(store2, threadId))
+      throw new Error("Another message is being submitted to this thread. Try again shortly.");
+    ownedThread = threadId;
+    switchThread(store2, threadId);
+    await awaitPendingThreadPersistence();
+    await ensureThreadMessages(command.projectId, threadId);
+    checkCurrent();
+    if (hydrationFailed(threadId) || getThreadById(store2, threadId)?.messagesLoaded === false)
+      throw new Error("The desktop could not load the conversation. Try again.");
+    if (!initial.worktreeChoice && initial.messages.length === 0) {
+      const prepared = await api2.agent.prepareCheckout(
+        command.projectId,
+        threadId,
+        command.text,
+        "automatic",
+        initial.model
+      );
+      checkCurrent();
+      applyPreparedThreadCheckout(store2, threadId, prepared);
+    }
+    const current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0) throw new Error("Thread unavailable.");
+    checkCurrent();
+    const payload = { content: command.text };
+    const messageId = addMessage(store2, threadId, "user", command.text);
+    const queued = { messageId, payload, createdAt: Date.now() };
+    const running = current.status === "running";
+    if (running) enqueueUserMessage(store2, threadId, queued);
+    else {
+      startHumanTurnTree(store2, threadId);
+      dispatchAgentRun(store2, api2, threadId, payload, queued);
+    }
+    return { ok: true, threadId, queued: running };
+  } catch (error62) {
+    return {
+      ok: false,
+      error: error62 instanceof Error ? error62.message : "The desktop could not send this message."
+    };
+  } finally {
+    if (ownedThread) endThreadSubmission(store2, ownedThread);
+  }
+}
+function attachMobileChat(store2, api2, ready3) {
+  return api2.mobile.onChat((command) => {
+    void ready3.then(() => acceptMobileChat(store2, api2, command)).then((result) => api2.mobile.reply(command.id, result));
+  });
+}
+var init_mobile_chat = __esm({
+  "src/renderer/controller/mobile-chat.ts"() {
+    init_thread_helpers();
+    init_pending_submissions();
+    init_projects();
+    init_persistence();
+    init_thread_hydration();
+    init_message_queue();
   }
 });
 
@@ -38030,6 +38444,9 @@ var init_guarded_yolo = __esm({
 });
 
 // src/shared/types/automations.ts
+function automationPermissionKey(permission) {
+  return JSON.stringify([permission.kind, permission.toolName]);
+}
 var init_automations = __esm({
   "src/shared/types/automations.ts"() {
   }
@@ -39338,34 +39755,6 @@ function countPortraitPanelOverflow(widths, gap, containerWidth, overflowTrigger
 }
 var init_portrait_panel_bar_overflow = __esm({
   "src/renderer/views/portrait-panel-bar-overflow.ts"() {
-  }
-});
-
-// packages/agent/src/plugins/plugin-manifest.ts
-function definePlugin(manifest, contributions = {}) {
-  return {
-    id: manifest.name,
-    trust: manifest.trust,
-    manifest,
-    contributions: { ...EMPTY_PLUGIN_CONTRIBUTIONS, ...contributions }
-  };
-}
-var EMPTY_PLUGIN_CONTRIBUTIONS;
-var init_plugin_manifest = __esm({
-  "packages/agent/src/plugins/plugin-manifest.ts"() {
-    EMPTY_PLUGIN_CONTRIBUTIONS = {
-      toolNames: [],
-      modelRoutes: [],
-      browserOrigins: [],
-      blockingHooks: [],
-      asyncHooks: [],
-      promptBlocks: [],
-      uiContributions: [],
-      followUps: [],
-      capabilities: [],
-      instructionSources: [],
-      permissions: []
-    };
   }
 });
 
@@ -50795,7 +51184,7 @@ function isPrivateOrLinkLocalHost(hostname3) {
   const first = hextets[0] ?? 0;
   return (first & 65024) === 64512 || (first & 65472) === 65152;
 }
-function validateCredentialBaseUrl(value, label = "Base URL") {
+function validateCredentialBaseUrl(value, label = "Base URL", options = {}) {
   const raw = value.trim();
   if (!raw) throw new Error(`${label} cannot be blank`);
   let url2;
@@ -50807,7 +51196,8 @@ function validateCredentialBaseUrl(value, label = "Base URL") {
   if (url2.username || url2.password) {
     throw new Error(`${label} must not include embedded credentials`);
   }
-  const loopback = isLoopbackHostname(url2.hostname);
+  const host = normalizeHostname(url2.hostname);
+  const loopback = isLoopbackHostname(host) || (options.loopbackAliases ?? []).some((alias) => normalizeHostname(alias) === host);
   if (url2.protocol === "http:") {
     if (loopback) return url2.toString();
     throw new Error(`${label} may only use http: for loopback hosts`);
@@ -56791,29 +57181,59 @@ function readNumberInput(input2) {
 function formatNumber(value) {
   return value === void 0 ? "" : String(value);
 }
-function createModelParametersSection(api2) {
+function samplingPlaceholder(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : String(recipeValue);
+}
+function blankHint(recipeValue, fallback) {
+  return recipeValue === void 0 ? fallback : `Blank sends the recommended ${String(recipeValue)}.`;
+}
+function createModelParametersSection(api2, options = {}) {
   const fields = el("div", { class: "model-parameter-fields" });
-  const recommendBtn = el(
-    "button",
-    { type: "button", class: "provider-secondary", "data-testid": "model-parameter-recommend" },
-    "Use recommended"
+  const modelSelect = el("select", {
+    id: "settings-model-parameters-model",
+    "data-testid": "model-parameter-model"
+  });
+  const modelField = uiField({
+    label: "Model to tune",
+    control: modelSelect,
+    hint: "Any model you can pick. Changing this does not change your chat model."
+  });
+  const customisedList = el("div", { class: "provider-chips model-parameter-customised" });
+  const customisedRow = el(
+    "div",
+    { class: "model-parameter-customised-row", "data-testid": "model-parameter-customised" },
+    el("span", { class: "field-hint" }, "Customised:"),
+    customisedList
   );
   const recommendNote = el("p", { class: "field-hint model-parameter-recommend-note" });
   const recommendRow = el(
     "div",
-    { class: "model-parameter-recommend", hidden: "" },
-    recommendBtn,
+    { class: "model-parameter-recommend", "data-testid": "model-parameter-recommend" },
     recommendNote
   );
+  const resetBtn = el("button", {
+    type: "button",
+    class: "provider-secondary",
+    "data-testid": "model-parameter-reset"
+  });
   const note = el("p", { class: "settings-fieldset-desc model-parameter-note" });
   const root = el(
     "div",
     { class: "model-parameter-section", "data-testid": "model-parameters" },
-    el("h4", { class: "model-role-heading" }, "Model parameters"),
-    note,
-    recommendRow,
-    fields
+    // Which model, and what it runs on before any field is touched.
+    el(
+      "div",
+      { class: "model-parameter-header", "data-testid": "model-parameter-header" },
+      el("h4", { class: "model-role-heading" }, "Model parameters"),
+      modelField,
+      customisedRow,
+      note,
+      recommendRow
+    ),
+    fields,
+    resetBtn
   );
+  const picker = options.mountModelPicker?.(modelSelect);
   const reasoningSelect = el("select", {
     name: "modelReasoning",
     "data-testid": "model-parameter-reasoning"
@@ -56861,15 +57281,47 @@ function createModelParametersSection(api2) {
   function selected() {
     return stored[current] ?? {};
   }
+  function recipe() {
+    return recommendedModelParameters(current)?.params ?? {};
+  }
   function commit(next) {
     dirty = true;
     const sanitized = sanitizeModelParameters(next, current);
     if (isEmptyModelParameters(sanitized)) {
       const { [current]: _cleared, ...rest } = stored;
       stored = rest;
-      return;
+    } else {
+      stored = { ...stored, [current]: sanitized };
     }
-    stored = { ...stored, [current]: sanitized };
+    renderCustomised();
+    renderReset();
+  }
+  function renderCustomised() {
+    const models = Object.keys(stored);
+    customisedRow.hidden = models.length === 0;
+    customisedList.replaceChildren(
+      ...models.map((model) => {
+        const chip2 = el(
+          "button",
+          {
+            type: "button",
+            class: model === current ? "provider-chip active" : "provider-chip",
+            "aria-pressed": String(model === current),
+            "data-model": model
+          },
+          modelDisplayLabel(model)
+        );
+        chip2.addEventListener("click", () => {
+          selectModel(model);
+          void picker?.refresh(model);
+        });
+        return chip2;
+      })
+    );
+  }
+  function renderReset() {
+    resetBtn.hidden = stored[current] === void 0;
+    resetBtn.textContent = recommendedModelParameters(current) === null ? "Clear custom values" : "Reset to recommended";
   }
   function renderRecommendation() {
     const recommendation = recommendedModelParameters(current);
@@ -56885,9 +57337,11 @@ function createModelParametersSection(api2) {
       recommendation.sourceLabel ?? "model card"
     );
     recommendNote.replaceChildren(
-      document.createTextNode(`${recommendation.label} \u2014 fills the fields below from its `),
+      document.createTextNode(`Applied by default: ${recommendation.label}, from its `),
       link,
-      document.createTextNode(". Change or clear them afterwards like any other value.")
+      document.createTextNode(
+        ". Blank fields use it; a value you enter replaces the recommended one."
+      )
     );
   }
   function ceilingHint(gated) {
@@ -56899,14 +57353,17 @@ function createModelParametersSection(api2) {
   function render() {
     const support = modelParameterSupport(current);
     const params = selected();
+    const defaults = recipe();
     fields.replaceChildren();
     renderRecommendation();
-    if (support.unavailableReason) {
-      note.textContent = support.unavailableReason;
+    renderCustomised();
+    renderReset();
+    if (!current) {
+      note.textContent = "Choose a model to tune how it runs, wherever it is used.";
       return;
     }
-    if (!current) {
-      note.textContent = "Choose a chat model above to tune how it runs.";
+    if (support.unavailableReason) {
+      note.textContent = support.unavailableReason;
       return;
     }
     const parts = [
@@ -56919,7 +57376,11 @@ function createModelParametersSection(api2) {
     note.textContent = parts.join(" ");
     if (support.reasoning.length > 0) {
       reasoningSelect.replaceChildren(
-        el("option", { value: "" }, DEFAULT_OPTION_LABEL),
+        el(
+          "option",
+          { value: "" },
+          defaults.reasoning === void 0 ? DEFAULT_OPTION_LABEL : `Recommended (${REASONING_LABELS[defaults.reasoning]})`
+        ),
         ...support.reasoning.map(
           (level) => el("option", { value: level }, REASONING_LABELS[level])
         )
@@ -56940,11 +57401,15 @@ function createModelParametersSection(api2) {
     }
     if (support.outputCap) {
       maxOutputTokensInput.value = formatNumber(params.maxOutputTokens);
+      maxOutputTokensInput.placeholder = samplingPlaceholder(
+        defaults.maxOutputTokens,
+        "Provider default"
+      );
       fields.append(
         uiField({
           label: "Maximum output tokens",
           control: maxOutputTokensInput,
-          hint: "Per response, including hidden reasoning. Blank uses the provider default; a low cap can truncate a tool call."
+          hint: `Per response, including hidden reasoning. ${blankHint(defaults.maxOutputTokens, "Blank uses the provider default.")} A low cap can truncate a tool call.`
         })
       );
     }
@@ -56955,11 +57420,13 @@ function createModelParametersSection(api2) {
       const max = field === "temperature" ? support.temperatureMax : SAMPLING_BOUNDS[field].max;
       input2.max = String(max);
       input2.value = formatNumber(params[field]);
+      input2.placeholder = samplingPlaceholder(defaults[field], "Model default");
+      const blank = blankHint(defaults[field], "Blank uses the model\u2019s own default.");
       fields.append(
         uiField({
           label: spec.label,
           control: input2,
-          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} Blank uses the model\u2019s own default.`
+          hint: `${String(SAMPLING_BOUNDS[field].min)}\u2013${String(max)}. ${spec.hint} ${blank}`
         })
       );
     }
@@ -56969,24 +57436,39 @@ function createModelParametersSection(api2) {
     const { reasoning: _dropped, ...rest } = selected();
     commit(isReasoningLevel(value) ? { ...rest, reasoning: value } : rest);
   });
-  recommendBtn.addEventListener("click", () => {
-    const recommendation = recommendedModelParameters(current);
-    if (!recommendation) return;
-    commit({ ...selected(), ...recommendation.params });
+  resetBtn.addEventListener("click", () => {
+    commit({});
     render();
   });
-  function setModel(model) {
+  modelSelect.addEventListener("change", () => {
+    selectModel(modelSelect.value);
+  });
+  function selectModel(model) {
     current = model.trim();
+    if (current && ![...modelSelect.options].some((option) => option.value === current)) {
+      modelSelect.append(el("option", { value: current }, modelDisplayLabel(current)));
+    }
+    modelSelect.value = current;
     render();
   }
-  async function refresh(model) {
+  function setModel(chatModel) {
+    const model = chatModel.trim();
+    if (!model || modelParameterSupport(model).unavailableReason) {
+      render();
+      return;
+    }
+    selectModel(model);
+    void picker?.refresh(current);
+  }
+  async function refresh(chatModel) {
     try {
       stored = decodeModelParametersMap(await api2.get("modelParameters"));
     } catch {
       stored = {};
     }
     dirty = false;
-    setModel(model);
+    setModel(chatModel);
+    await picker?.refresh(current);
   }
   async function save() {
     if (!dirty) return;
@@ -60187,44 +60669,6 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
-// packages/agent/src/plugins/automations-plugin.ts
-var AUTOMATIONS_PLUGIN_ID, automationsPlugin;
-var init_automations_plugin = __esm({
-  "packages/agent/src/plugins/automations-plugin.ts"() {
-    init_plugin_manifest();
-    AUTOMATIONS_PLUGIN_ID = "copse.automations";
-    automationsPlugin = definePlugin(
-      {
-        name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
-        trust: "first-party",
-        stability: "experimental",
-        ui: [
-          {
-            id: "schedule-editor",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Automation schedules"
-          },
-          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
-        ],
-        storage: { namespace: AUTOMATIONS_PLUGIN_ID }
-      },
-      {
-        uiContributions: [
-          {
-            id: "schedule-editor",
-            level: 3,
-            slot: "settings-plugin-detail",
-            title: "Automation schedules"
-          },
-          { id: "automation-manager", level: 3, slot: "app-dialog", title: "Automations" }
-        ]
-      }
-    );
-  }
-});
-
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -60327,7 +60771,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     { class: "automation-scope" },
     project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
@@ -60416,6 +60860,30 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
     el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
   );
+  const permissionsFieldset = el("fieldset", { class: "automation-permissions" });
+  const permissionFilterInput = el("input", {
+    type: "search",
+    class: "automation-input automation-permission-filter",
+    placeholder: "Filter actions and MCP tools\u2026",
+    "aria-label": "Filter automation permissions",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const permissionCount = el("span", {
+    class: "automation-permission-count",
+    "aria-live": "polite"
+  });
+  const permissionsList = el("div", { class: "automation-permission-list" });
+  permissionsFieldset.append(
+    el("legend", {}, "Allowed without asking"),
+    el(
+      "p",
+      { class: "automation-hint automation-permissions-hint" },
+      "Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask."
+    ),
+    el("div", { class: "automation-permission-toolbar" }, permissionFilterInput, permissionCount),
+    permissionsList
+  );
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
@@ -60443,6 +60911,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         "Higher limits let fresh runs start while older changes wait for review."
       )
     ),
+    permissionsFieldset,
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
@@ -60453,6 +60922,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     loadOnMount: false
   });
   let schedules = [];
+  let availablePermissions = [];
+  let permissionValuesByKey = /* @__PURE__ */ new Map();
+  let selectedPermissionKeys = /* @__PURE__ */ new Set();
   let editingId = null;
   let customCron = null;
   let pendingReveal = revealScheduleId;
@@ -60535,6 +61007,119 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     if (schedule.repeat === "monthly") monthlyDaySelect.value = String(schedule.on);
     updateScheduleControls();
   }
+  function unavailablePermissionOption(permission) {
+    const parts = permission.toolName.split("__");
+    const mcpLabel = parts[0] === "mcp" && parts.length >= 3 ? `${parts[1] ?? "MCP"} / ${parts.slice(2).join("__")}` : permission.toolName;
+    return {
+      permission,
+      label: permission.kind === "mcp-tool" ? mcpLabel : permission.toolName,
+      detail: "Not currently available. Kept so the approval works if this tool returns."
+    };
+  }
+  function permissionRow(option, unavailable = false) {
+    const key = automationPermissionKey(option.permission);
+    const checkbox = el("input", {
+      type: "checkbox",
+      role: "switch",
+      class: "automation-permission-input",
+      "data-permission-key": key
+    });
+    checkbox.checked = selectedPermissionKeys.has(key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedPermissionKeys.add(key);
+      else selectedPermissionKeys.delete(key);
+    });
+    const switchControl = el(
+      "span",
+      { class: "toggle-switch automation-permission-switch" },
+      checkbox,
+      el("span", { class: "toggle-switch-track", "aria-hidden": "true" })
+    );
+    return el(
+      "label",
+      {
+        class: `automation-permission-row${unavailable ? " automation-permission-unavailable" : ""}`,
+        title: option.permission.toolName
+      },
+      el(
+        "span",
+        { class: "automation-permission-copy" },
+        el(
+          "span",
+          { class: "automation-permission-heading" },
+          el("span", { class: "automation-permission-label" }, option.label),
+          el(
+            "span",
+            {
+              class: `automation-permission-kind automation-permission-kind-${option.permission.kind}`
+            },
+            unavailable ? "Unavailable" : option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+          )
+        ),
+        el("span", { class: "automation-permission-detail" }, option.detail),
+        el("code", { class: "automation-permission-id" }, option.permission.toolName)
+      ),
+      switchControl
+    );
+  }
+  function renderPermissionChoices() {
+    clear(permissionsList);
+    const availableKeys = new Set(
+      availablePermissions.map((option) => automationPermissionKey(option.permission))
+    );
+    const unavailable = [...permissionValuesByKey.values()].filter((permission) => !availableKeys.has(automationPermissionKey(permission))).map(unavailablePermissionOption);
+    const allOptions = [
+      ...availablePermissions.map((option) => ({ option, unavailable: false })),
+      ...unavailable.map((option) => ({ option, unavailable: true }))
+    ];
+    const query = permissionFilterInput.value.trim().toLowerCase();
+    const terms = query ? query.split(/\s+/) : [];
+    const matches2 = allOptions.filter(({ option }) => {
+      const haystack = [
+        option.label,
+        option.detail,
+        option.permission.toolName,
+        option.permission.kind === "copse-action" ? "Copse action" : "MCP tool"
+      ].join(" ").toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
+    permissionCount.textContent = query ? `${String(matches2.length)} of ${String(allOptions.length)} permissions` : `${String(allOptions.length)} permission${allOptions.length === 1 ? "" : "s"}`;
+    if (matches2.length === 0) {
+      permissionsList.append(
+        el(
+          "p",
+          { class: "automation-permission-empty" },
+          query ? `No permissions match \u201C${permissionFilterInput.value.trim()}\u201D.` : "No permissions are available."
+        )
+      );
+      return;
+    }
+    permissionsList.append(
+      ...matches2.map(
+        ({ option, unavailable: isUnavailable }) => permissionRow(option, isUnavailable)
+      )
+    );
+  }
+  function setPermissionChoices(permissions) {
+    permissionValuesByKey = new Map(
+      availablePermissions.map((option) => [
+        automationPermissionKey(option.permission),
+        option.permission
+      ])
+    );
+    for (const permission of permissions) {
+      permissionValuesByKey.set(automationPermissionKey(permission), permission);
+    }
+    selectedPermissionKeys = new Set(permissions.map(automationPermissionKey));
+    renderPermissionChoices();
+  }
+  function selectedPermissions() {
+    return [...selectedPermissionKeys].flatMap((key) => {
+      const permission = permissionValuesByKey.get(key);
+      return permission ? [{ ...permission }] : [];
+    });
+  }
+  permissionFilterInput.addEventListener("input", renderPermissionChoices);
   async function openForm(schedule) {
     hideStatus();
     editingId = schedule?.id ?? null;
@@ -60546,6 +61131,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     promptInput.value = schedule?.prompt ?? "";
     enabledInput.checked = schedule?.enabled ?? true;
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    permissionFilterInput.value = "";
+    setPermissionChoices(schedule?.permissions ?? []);
     const configuredModel = schedule?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
     form.hidden = false;
@@ -60579,6 +61166,11 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
             "span",
             {},
             `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? "" : "s"} max`
+          ),
+          el(
+            "span",
+            {},
+            (schedule.permissions?.length ?? 0) === 0 ? "No unattended approvals" : `${String(schedule.permissions?.length ?? 0)} unattended approval${(schedule.permissions?.length ?? 0) === 1 ? "" : "s"}`
           )
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
@@ -60659,7 +61251,12 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   async function refresh() {
     if (!projectId) return;
     try {
-      schedules = await api2.automations.list(projectId);
+      const [loadedSchedules, loadedPermissions] = await Promise.all([
+        api2.automations.list(projectId),
+        api2.automations.permissionOptions(projectId)
+      ]);
+      schedules = loadedSchedules;
+      availablePermissions = loadedPermissions;
       renderList();
       revealLinkedSchedule();
       if (pendingCreate) {
@@ -60701,7 +61298,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       prompt: promptInput.value,
       model: modelSelect.value,
       enabled: enabledInput.checked,
-      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
+      permissions: selectedPermissions()
     };
     void api2.automations.upsert(projectId, input2).then(
       async () => {
@@ -60728,6 +61326,7 @@ var WEEKDAYS;
 var init_automation_plugin_settings = __esm({
   "src/renderer/views/automation-plugin-settings.ts"() {
     init_automations_plugin();
+    init_types();
     init_lm_studio_defaults();
     init_helpers();
     init_model_options();
@@ -61256,7 +61855,7 @@ var init_apple_development_plugin = __esm({
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
-    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop"];
+    APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -61832,6 +62431,43 @@ var init_command_routing = __esm({
   }
 });
 
+// packages/shell-guard/src/trusted-ssh-hosts.ts
+function normalizeSshHost(host) {
+  return host.trim().toLowerCase().replace(/\.$/, "");
+}
+function collect(entries2) {
+  const out = [];
+  for (const entry of entries2) {
+    if (typeof entry !== "string") continue;
+    const host = normalizeSshHost(entry);
+    if (!host || out.includes(host) || !VALID_HOST.test(host)) continue;
+    out.push(host);
+  }
+  return out;
+}
+function parseTrustedSshHosts(text2) {
+  return collect(
+    text2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeTrustedSshHosts(value) {
+  return Array.isArray(value) ? collect(value) : [];
+}
+var TRUSTED_SSH_HOSTS_SETTING, VALID_HOST;
+var init_trusted_ssh_hosts = __esm({
+  "packages/shell-guard/src/trusted-ssh-hosts.ts"() {
+    TRUSTED_SSH_HOSTS_SETTING = "trustedSshHosts";
+    VALID_HOST = /^[a-z0-9._:-]+$/;
+  }
+});
+
+// src/shared/trusted-ssh-hosts.ts
+var init_trusted_ssh_hosts2 = __esm({
+  "src/shared/trusted-ssh-hosts.ts"() {
+    init_trusted_ssh_hosts();
+  }
+});
+
 // src/shared/developer-mode.ts
 var DEVELOPER_MODE_SETTING;
 var init_developer_mode = __esm({
@@ -62400,6 +63036,21 @@ function mountSettingsDialog(store2, api2) {
                   Only applies in a project you trust and while the first option above is on.
                 </span>
               </label>
+              <label>
+                Trusted SSH hosts
+                <textarea
+                  name="trustedSshHosts"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="build-box.local"
+                ></textarea>
+                <span class="field-hint">
+                  One host name or <code>~/.ssh/config</code> alias per line. In Guarded YOLO,
+                  <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
+                  without asking; any other host asks first. A destructive remote command still
+                  asks.
+                </span>
+              </label>
             </fieldset>
 
             <fieldset>
@@ -62940,8 +63591,8 @@ function mountSettingsDialog(store2, api2) {
               </label>
               <p class="field-hint">
                 When a project is on a remote machine, start the agent there, next to the code,
-                instead of leaving it unavailable. The agent has to be installed and signed in on
-                that machine already.
+                instead of leaving it unavailable. If the agent is not installed there, Copse asks
+                before installing it; you sign in on that machine yourself.
               </p>
             </fieldset>
           </section>
@@ -62957,11 +63608,13 @@ function mountSettingsDialog(store2, api2) {
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
-                Show the read-only Desktop pane
+                Show the Desktop pane
               </label>
               <p class="field-hint">
-                View a VNC server on this machine or through the active SSH workspace's encrypted
-                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+                View a VNC desktop on this machine, on a saved SSH machine, or found nearby on your
+                network, plus booted iOS Simulators and Android emulators. Connections start
+                view-only; turn on control to send keyboard and pointer input. Clipboard is not
+                shared.
               </p>
             </fieldset>
 
@@ -63036,8 +63689,8 @@ function mountSettingsDialog(store2, api2) {
                 Enable developer mode
               </label>
               <p class="field-hint">
-                Shows Hooks in Sources and the conversation diagnostics menu. The optional
-                <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
+                Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
+                Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
           </section>
@@ -63123,7 +63776,13 @@ function mountSettingsDialog(store2, api2) {
   qsRequired(overlay, "#tool-permissions-host").append(toolPermissionsPanel.root);
   const modelRoutingSection = createModelRoutingSection(api2, { modelScope: "all" });
   qsRequired(overlay, "#settings-model-routing-host").append(modelRoutingSection.root);
-  const modelParametersSection = createModelParametersSection(api2.settings);
+  const modelParametersSection = createModelParametersSection(api2.settings, {
+    mountModelPicker: (select) => mountModelSelectPicker(select, {
+      loadOptions: (current) => fetchModelOptions(api2, current),
+      ariaLabel: "Model to tune",
+      loadOnMount: false
+    })
+  });
   qsRequired(overlay, "#settings-model-parameters-host").append(modelParametersSection.root);
   const settingsModelPickers = {
     model: mountModelSelectPicker(qsRequired(overlay, 'select[name="model"]'), {
@@ -64682,7 +65341,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (field.description) {
       const hint = document.createElement("span");
       hint.className = "plugin-setting-desc";
-      hint.textContent = field.description;
+      hint.innerHTML = renderMarkdown(field.description);
       label.append(hint);
     }
     if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput));
@@ -64717,12 +65376,13 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     const statusEl = qsRequired(overlay, "#plugins-reload-status");
     statusEl.textContent = "Loading\u2026";
     try {
-      const [result, cursorPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
-        api2.cursorPlugins.list().catch(() => [])
+        api2.cursorPlugins.list().catch(() => []),
+        api2.bundledSkillPlugins.list().catch(() => [])
       ]);
       listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0) {
+      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
         const empty = document.createElement("span");
         empty.className = "plugins-empty";
         empty.textContent = "No plugins installed.";
@@ -64738,6 +65398,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
             id: plugin.name,
             enabled: true,
             render: () => makeCursorPluginRow(plugin)
+          })),
+          ...bundledPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: plugin.enabled && !plugin.suppressed,
+            render: () => makeBundledSkillPluginRow(plugin)
           }))
         ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
         let lastEnabled = null;
@@ -64822,7 +65487,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (plugin.description) {
       const desc = document.createElement("div");
       desc.className = "plugin-row-desc";
-      desc.textContent = plugin.description;
+      desc.innerHTML = renderMarkdown(plugin.description);
       row2.append(desc);
     }
     const chips = document.createElement("div");
@@ -64848,6 +65513,105 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     path.className = "plugin-source-path";
     path.textContent = plugin.root;
     row2.append(path);
+    return row2;
+  }
+  function makeBundledSkillPluginRow(plugin) {
+    const row2 = document.createElement("div");
+    row2.className = "plugin-row";
+    row2.dataset["pluginId"] = plugin.name;
+    row2.dataset["pluginOrigin"] = "bundled";
+    row2.dataset["enabled"] = String(plugin.enabled && !plugin.suppressed);
+    const header = document.createElement("div");
+    header.className = "plugin-row-header";
+    const icon = document.createElement("span");
+    icon.className = "plugin-icon plugin-icon-cursor";
+    icon.setAttribute("aria-hidden", "true");
+    const mark2 = document.createElement("img");
+    mark2.src = "./cursor-mark.svg";
+    mark2.alt = "";
+    icon.append(mark2);
+    header.append(icon);
+    const title = document.createElement("div");
+    title.className = "plugin-row-title";
+    const originBadge = document.createElement("span");
+    originBadge.className = "plugin-badge plugin-badge-cursor";
+    originBadge.textContent = "Cursor \xB7 Bundled";
+    originBadge.title = "Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.";
+    title.append(originBadge);
+    const nameLine = document.createElement("div");
+    nameLine.className = "plugin-row-name-line";
+    const nameEl = document.createElement("span");
+    nameEl.className = "plugin-name";
+    nameEl.textContent = plugin.name;
+    nameLine.append(nameEl);
+    if (plugin.version) {
+      const versionEl = document.createElement("span");
+      versionEl.className = "plugin-version";
+      versionEl.textContent = plugin.version;
+      nameLine.append(versionEl);
+    }
+    title.append(nameLine);
+    const toggleControl = document.createElement("div");
+    toggleControl.className = "plugin-toggle-control";
+    const makeStateLabel = (side) => {
+      const stateEl = document.createElement("span");
+      stateEl.className = "plugin-toggle-state";
+      stateEl.dataset["side"] = side;
+      stateEl.textContent = side === "on" ? "On" : "Off";
+      stateEl.setAttribute("aria-hidden", "true");
+      return stateEl;
+    };
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "toggle-switch plugin-toggle";
+    toggleLabel.title = plugin.suppressed ? "All bundled skills are off \u2014 turn them on under Agent \u2192 Skills." : plugin.enabled ? "Turn off this plugin" : "Turn on this plugin";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = plugin.enabled;
+    toggle.disabled = plugin.suppressed;
+    toggle.className = "plugin-toggle-input";
+    toggle.setAttribute("aria-label", `${plugin.name} plugin enabled`);
+    const track = document.createElement("span");
+    track.className = "toggle-switch-track";
+    track.setAttribute("aria-hidden", "true");
+    toggle.addEventListener("change", () => {
+      toggle.disabled = true;
+      void (async () => {
+        const stored = await api2.settings.get("bundledSkillPluginOverrides");
+        await api2.settings.set("bundledSkillPluginOverrides", {
+          ...isRecord(stored) ? stored : {},
+          [plugin.name]: toggle.checked
+        });
+        await refreshPlugins();
+        store2.emit("settings_changed");
+      })().catch(() => {
+        toggle.checked = !toggle.checked;
+      }).finally(() => {
+        toggle.disabled = plugin.suppressed;
+      });
+    });
+    toggleLabel.append(toggle, track);
+    toggleControl.append(makeStateLabel("off"), toggleLabel, makeStateLabel("on"));
+    header.append(title, toggleControl);
+    row2.append(header);
+    if (plugin.description) {
+      const desc = document.createElement("div");
+      desc.className = "plugin-row-desc";
+      desc.textContent = plugin.description;
+      row2.append(desc);
+    }
+    if (plugin.offByDefaultReason) {
+      const note = document.createElement("p");
+      note.className = "field-hint plugin-default-off-note";
+      note.textContent = `Off by default. ${plugin.offByDefaultReason}`;
+      row2.append(note);
+    }
+    const chips = document.createElement("div");
+    chips.className = "plugin-chips";
+    const chip2 = document.createElement("span");
+    chip2.className = "plugin-chip";
+    chip2.textContent = `${String(plugin.skillCount)} ${plugin.skillCount === 1 ? "skill" : "skills"}`;
+    chips.append(chip2);
+    row2.append(chips);
     return row2;
   }
   function mcpOriginChip(s16) {
@@ -65260,6 +66024,9 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         textareaControl(form, "trustedShellCommands").value = formatTrustedCommands(
           sanitizeTrustedCommands(await api2.settings.get(TRUSTED_COMMANDS_SETTING))
         );
+        textareaControl(form, "trustedSshHosts").value = sanitizeTrustedSshHosts(
+          await api2.settings.get(TRUSTED_SSH_HOSTS_SETTING)
+        ).join("\n");
         selectControl(form, "shellAutoApprovalLevel").value = sanitizeAutoApprovalLevel(
           await api2.settings.get(AUTO_APPROVAL_LEVEL_SETTING)
         );
@@ -65462,6 +66229,14 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
           })
         );
       }
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api2.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING))
+          )
+        );
+      }
       await Promise.all(writes);
       store2.setState({
         theme,
@@ -65540,6 +66315,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
+    init_trusted_ssh_hosts2();
     init_unknown_value3();
     init_developer_mode();
     init_terminal_history();
@@ -66743,6 +67519,44 @@ function mountProjectsPane(root, store2, api2) {
     wrap.append(action);
     return wrap;
   }
+  function orphanPrimaryLabel(orphan) {
+    const lead = orphan.sampleTitles[0]?.trim();
+    if (lead) return lead;
+    const count = orphan.threadCount;
+    return `${String(count)} thread${count === 1 ? "" : "s"}`;
+  }
+  function orphanSubtitle(orphan) {
+    const count = orphan.threadCount;
+    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    if (extra.length === 0) return countLabel;
+    const shown = extra.slice(0, 2).join(" \xB7 ");
+    const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
+    return `${countLabel} \xB7 ${shown}${more}`;
+  }
+  function orphanRecoverDetail(orphan) {
+    const lines = [
+      "Choose the folder this conversation belonged to. Copse will attach the saved threads to that project."
+    ];
+    if (orphan.sampleTitles.length > 0) {
+      lines.push("");
+      lines.push("Threads in this store:");
+      for (const title2 of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title2}`);
+      }
+      if (orphan.threadCount > orphan.sampleTitles.length) {
+        lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
+      }
+    } else {
+      lines.push("");
+      lines.push(
+        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? "" : "s"}.`
+      );
+    }
+    lines.push("");
+    lines.push(`Store id: ${orphan.id}`);
+    return lines.join("\n");
+  }
   function renderOrphansSection() {
     const section = el("div", { class: "orphans-section" });
     section.append(
@@ -66751,22 +67565,67 @@ function mountProjectsPane(root, store2, api2) {
         { class: "orphans-heading" },
         warningIcon("ui-icon ui-icon-sm"),
         el("span", {}, "Recoverable threads")
+      ),
+      el(
+        "p",
+        { class: "orphans-hint" },
+        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
       )
     );
     for (const orphan of orphans) {
-      const count = orphan.threadCount;
+      const primary = orphanPrimaryLabel(orphan);
+      const subtitle = orphanSubtitle(orphan);
       const row2 = el(
         "div",
-        { class: "orphan-row", title: `Store ${orphan.id}` },
-        el("span", { class: "orphan-name" }, `${String(count)} thread${count === 1 ? "" : "s"}`)
+        {
+          class: "orphan-row",
+          title: `Store ${orphan.id}`,
+          "data-orphan-id": orphan.id
+        },
+        el(
+          "div",
+          { class: "orphan-copy" },
+          el("span", { class: "orphan-name" }, primary),
+          el("span", { class: "orphan-meta" }, subtitle)
+        )
       );
+      const actions = el("div", { class: "orphan-actions" });
+      const dismissBtn = el(
+        "button",
+        { type: "button", class: "orphan-dismiss-btn", title: "Hide this store from the list" },
+        "Dismiss"
+      );
+      dismissBtn.addEventListener("click", () => {
+        void dismissOrphanProject(api2, orphan.id).then(() => {
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+          showToast("Recoverable threads hidden. They remain on disk.");
+        }).catch((err2) => {
+          showErrorToast("Could not dismiss recoverable threads", err2);
+        });
+      });
       const recoverBtn = el("button", { type: "button", class: "orphan-recover-btn" }, "Recover\u2026");
       recoverBtn.addEventListener("click", () => {
-        void recoverOrphanProject(store2, api2, orphan.id).catch((err2) => {
+        void recoverOrphanProject(
+          store2,
+          api2,
+          orphan.id,
+          () => showConfirmDialog({
+            message: `Recover \u201C${primary}\u201D?`,
+            detail: orphanRecoverDetail(orphan),
+            confirmLabel: "Choose folder\u2026",
+            cancelLabel: "Cancel"
+          })
+        ).then((recovered) => {
+          if (!recovered) return;
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+        }).catch((err2) => {
           showErrorToast("Could not recover threads", err2);
         });
       });
-      row2.append(recoverBtn);
+      actions.append(dismissBtn, recoverBtn);
+      row2.append(actions);
       section.append(row2);
     }
     return section;
@@ -66775,7 +67634,7 @@ function mountProjectsPane(root, store2, api2) {
     void listOrphanProjects(api2).then((next) => {
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
-        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount;
+        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
       });
       orphans = next;
       if (changed) render();
@@ -67611,6 +68470,7 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_confirm_dialog();
     init_toast();
     init_fork_thread3();
     init_thread_filter();
@@ -74797,7 +75657,7 @@ function statusLabel3(report) {
       return "Review";
   }
 }
-function findingLocation(finding) {
+function findingLocation2(finding) {
   if (finding.startLine === void 0) return finding.path;
   const end = finding.endLine !== void 0 && finding.endLine !== finding.startLine;
   return `${finding.path}:${String(finding.startLine)}${end ? `\u2013${String(finding.endLine)}` : ""}`;
@@ -74867,7 +75727,7 @@ function findingEl(finding, actions) {
   summary.append(
     el("span", { class: "review-finding-severity" }, finding.severity),
     el("span", { class: "review-finding-class" }, finding.class),
-    el("code", { class: "review-finding-location" }, findingLocation(finding)),
+    el("code", { class: "review-finding-location" }, findingLocation2(finding)),
     el("span", { class: "review-finding-claim" }, finding.claim),
     el(
       "span",
@@ -75180,6 +76040,7 @@ function startReview(store2, api2, threadId, messageId) {
   const runningReport = {
     status: "running",
     startedAt: Date.now(),
+    initiator: "user",
     models: { reviewer: thread?.model ?? "", challenger: null },
     lenses: [],
     baseRef: "",
@@ -78312,7 +79173,10 @@ function mountConversation(root, store2, api2) {
       lastScrollTop = scrollTop;
       return;
     }
-    if (scrollTop < lastScrollTop - 1) {
+    const dropped = scrollTop < lastScrollTop - 1;
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1;
+    if (clamped) {
+    } else if (dropped) {
       userScrolledUpAt = Date.now();
       pinnedToBottom = false;
     } else if (isNearBottom()) {
@@ -144178,9 +145042,15 @@ async function boot() {
   };
   applyExternalLinkMarks();
   store.on("settings_changed", applyExternalLinkMarks);
+  let mobileRestored = () => {
+  };
+  const mobileReady = new Promise((resolve) => {
+    mobileRestored = resolve;
+  });
   if (!popoutMode) {
     startAgentController(store, api);
     attachAutosave(store, api);
+    attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
     attachAutomationController(store, api);
     attachPrPanelFollow(store, api);
@@ -144286,6 +145156,7 @@ async function boot() {
       ensureLayout();
     });
   }
+  mobileRestored();
   if (popoutMode && store.getState().workspaceRoot) {
     await activatePopoutPane(popoutMode);
     return;
@@ -144502,6 +145373,7 @@ function switchToNextThread() {
 var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
+    init_mobile_chat();
     init_tokens();
     init_default();
     init_global();
