@@ -533,7 +533,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
-    mobile: { onChat: () => () => {}, reply: async () => {} },
+    mobile: { manage: async () => {}, onChat: () => () => {}, reply: async () => {} },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -1333,6 +1333,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           currentBranch: forBranch ?? currentBranch,
           pr: null,
         }),
+      // The demo has no linked worktrees, so there is never a detached one.
+      worktreeAttachment: () => resolved({ state: 'attached' }),
+      reattachWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch
