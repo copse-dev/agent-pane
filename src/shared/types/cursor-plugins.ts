@@ -11,3 +11,22 @@ export interface CursorPluginSummary {
   /** Resolved MCP config file path, when `mcpServers` is set in the manifest. */
   mcpConfigPath?: string
 }
+
+/** A Cursor plugin whose skills ship inside Copse (`vendor/bundled-cursor-skills`). */
+export interface BundledSkillPluginSummary {
+  /** Plugin id from `.cursor-plugin/plugin.json` `name`. */
+  name: string
+  description?: string
+  version?: string
+  skillCount: number
+  /** This plugin's own switch: the user's choice, else {@link defaultEnabled}. */
+  enabled: boolean
+  defaultEnabled: boolean
+  /** Why the plugin ships switched off, when it does. */
+  offByDefaultReason?: string
+  /**
+   * Every bundled skill is off (Settings → Agent → Skills), so this plugin
+   * contributes nothing whatever its own switch says.
+   */
+  suppressed: boolean
+}
