@@ -2275,7 +2275,7 @@ export function registerAllHandlers(
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     return getAutomationService().list(projectId)
   })
-  ipcMain.handle('automations:permissionOptions', (event, rawProjectId: unknown) => {
+  ipcMain.handle('automations:permission-options', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
     parseIpcArgs(zProjectId, [rawProjectId])
     return getAutomationService().permissionOptions()

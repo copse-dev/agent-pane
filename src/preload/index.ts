@@ -1316,7 +1316,7 @@ const api: ApiClient = {
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
     permissionOptions: (projectId: string) =>
-      ipcRenderer.invoke('automations:permissionOptions', projectId),
+      ipcRenderer.invoke('automations:permission-options', projectId),
     upsert: (projectId: string, input: unknown) =>
       ipcRenderer.invoke('automations:upsert', projectId, input),
     remove: (projectId: string, scheduleId: string) =>
