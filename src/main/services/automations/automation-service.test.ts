@@ -1,7 +1,12 @@
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import type { AutomationPermission, AutomationScheduleInput, Thread } from '@shared/types'
+import type {
+  AutomationPermission,
+  AutomationScheduleInput,
+  AutomationTriggerEvent,
+  Thread,
+} from '@shared/types'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { EnqueueSupervisedTaskInput } from '../supervisor/task-supervisor.ts'
 import { storageSet } from '../storage/storage.ts'
@@ -535,6 +540,8 @@ describe('AutomationService', () => {
   it('does not allocate another worktree while the previous run retains changes', async () => {
     let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
     const threads = new Map<string, Thread>()
+    const events: AutomationTriggerEvent[] = []
+    const supervisor = new FakeTaskSupervisor()
     const service = createAutomationService({
       now: () => now,
       isPluginEnabled: () => true,
@@ -544,6 +551,10 @@ describe('AutomationService', () => {
       },
       loadProjectThreads: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve(false),
+      supervisor: () => supervisor,
+    })
+    service.start((event) => {
+      events.push(event)
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -576,9 +587,12 @@ describe('AutomationService', () => {
     assert.equal(blocked.threadId, first.threadId)
     assert.equal(threads.size, 1)
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
+    assert.equal(events.at(-1)?.coalescedReason, 'worktree-limit')
     now += 60_000
     await service.tick()
     assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
+    assert.equal(events.at(-1)?.triggeredAt, now)
+    assert.equal(events.at(-1)?.coalescedReason, 'worktree-limit')
 
     const updated = await service.upsert('project-a', {
       id: schedule.id,
@@ -594,6 +608,7 @@ describe('AutomationService', () => {
     const resumed = await service.runNow('project-a', schedule.id)
     assert.equal(resumed.disposition, 'started')
     assert.equal(threads.size, 2)
+    service.stop()
   })
 
   it('allows a bounded number of retained worktrees when the schedule opts in', async () => {

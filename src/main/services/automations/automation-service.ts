@@ -377,7 +377,7 @@ export function createAutomationService(
       const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
       if (retainedWorktrees >= maxLiveWorktrees) {
         await recordWorktreeLimit(schedule.projectId, schedule.id, triggeredAt, maxLiveWorktrees)
-        return {
+        const event: AutomationTriggerEvent = {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
           threadId: previous?.id ?? scheduleThreads[0]?.id ?? schedule.id,
@@ -385,6 +385,8 @@ export function createAutomationService(
           disposition: 'coalesced',
           coalescedReason: 'worktree-limit',
         }
+        notify?.(event)
+        return event
       }
 
       const threadId = randomUUID()

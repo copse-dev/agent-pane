@@ -6,6 +6,7 @@ import {
   type AutomationLiveWorktreeLimit,
   type AutomationSchedule,
   type AutomationScheduleInput,
+  type AutomationTriggerEvent,
 } from '@shared/types'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -835,6 +836,25 @@ export function createAutomationPluginSettings(
         saveButton.removeAttribute('disabled')
       })
   })
+
+  const unsubscribeTriggered = api.automations.onTriggered(
+    (event: AutomationTriggerEvent): void => {
+      if (
+        event.projectId !== projectId ||
+        event.disposition !== 'coalesced' ||
+        event.coalescedReason !== 'worktree-limit'
+      ) {
+        return
+      }
+      void refresh()
+    },
+  )
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return
+    removalObserver.disconnect()
+    unsubscribeTriggered()
+  })
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true })
 
   void refresh()
   return Object.assign(root, {

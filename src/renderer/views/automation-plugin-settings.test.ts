@@ -6,6 +6,7 @@ import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationTriggerEvent,
 } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -37,8 +38,10 @@ function stubApi(
 ): {
   api: AutomationSettingsApi
   upserts: Array<{ projectId: string; input: AutomationScheduleInput }>
+  emitTriggered: (event: AutomationTriggerEvent) => void
 } {
   const upserts: Array<{ projectId: string; input: AutomationScheduleInput }> = []
+  const triggerHandlers = new Set<(event: AutomationTriggerEvent) => void>()
   const api: AutomationSettingsApi = {
     automations: {
       list(projectId: string): Promise<AutomationSchedule[]> {
@@ -82,8 +85,11 @@ function stubApi(
           disposition: 'started',
         })
       },
-      onTriggered(): () => void {
-        return (): void => {}
+      onTriggered(handler): () => void {
+        triggerHandlers.add(handler)
+        return (): void => {
+          triggerHandlers.delete(handler)
+        }
       },
     },
     settings: {
@@ -113,7 +119,15 @@ function stubApi(
       },
     },
   }
-  return { api, upserts }
+  return {
+    api,
+    upserts,
+    emitTriggered(event): void {
+      triggerHandlers.forEach((handler) => {
+        handler(event)
+      })
+    },
+  }
 }
 
 describe('automation plugin settings detail', () => {
@@ -188,6 +202,48 @@ describe('automation plugin settings detail', () => {
       /Last attempt skipped/,
     )
     assert.ok(root.querySelector('.automation-row-blocked'))
+  })
+
+  it('shows a worktree-limit block when a scheduled run is skipped while open', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: BEST_VALUE_CHAT_MODEL,
+      enabled: true,
+      maxLiveWorktrees: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      lastRunAt: 2,
+    }
+    const { api, emitTriggered } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), true)
+    schedule.lastWorktreeLimitAt = 3
+    emitTriggered({
+      projectId: 'project-a',
+      scheduleId: schedule.id,
+      threadId: 'thread-a',
+      triggeredAt: 3,
+      disposition: 'coalesced',
+      coalescedReason: 'worktree-limit',
+    })
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), false)
+    assert.match(
+      root.querySelector('.automation-row-blocked-message')?.textContent ?? '',
+      /Last attempt skipped/,
+    )
   })
 
   it('explains an invalid save instead of silently leaving the editor open', async () => {
