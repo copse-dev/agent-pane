@@ -47,4 +47,10 @@
 // v20 conservatively versions the optional appended system-reminder lengths on tool
 // results (`tool_result` chunks and thread tool calls). v18 and v19 are claimed by
 // open PRs, so this skips them to avoid a collision whichever lands first.
-export const API_PROTOCOL_VERSION = 20 as const
+// v21 conservatively versions the optional Copse Reviewer report initiator on
+// thread payloads and `review_report` chunks.
+// v22 versions mobile-device decision actors and the resulting decisions:list shape.
+// v27 conservatively versions schedule-scoped automation permissions in list/upsert
+// payloads. v22–v26 are claimed by open PRs, so this skips them to avoid collisions.
+// v28 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
+export const API_PROTOCOL_VERSION = 28 as const

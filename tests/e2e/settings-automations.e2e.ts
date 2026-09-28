@@ -144,6 +144,10 @@ describe('settings automations plugin', function () {
                 // live during e2e, so an armed weekday schedule could create a task
                 // when CI happens to run at 09:00 local time.
                 enabled: false,
+                permissions: [
+                  { kind: 'copse-action', toolName: 'gh_pr_approve' },
+                  { kind: 'mcp-tool', toolName: 'mcp__reports__publish_weekly' },
+                ],
                 createdAt: 1_786_000_000_000,
                 updatedAt: 1_786_000_000_000,
               },
@@ -184,7 +188,8 @@ describe('settings automations plugin', function () {
     assert.match(await detail.getText(), /Each run starts a fresh isolated task/i)
     assert.match(await detail.getText(), /One live worktree is the safe default/i)
     assert.match(await detail.getText(), /1 live worktree max/i)
-    assert.match(await detail.getText(), /Normal tool permission prompts still apply/i)
+    assert.match(await detail.getText(), /Exact actions selected below can run without/i)
+    assert.match(await detail.getText(), /2 unattended approvals/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
     // Row actions are compact kit buttons (#3065): Edit / Run now secondary,
     // Delete the kit danger, --spacing-md apart.
@@ -258,7 +263,7 @@ describe('settings automations plugin', function () {
 
     // Capture the editor separately so the settings dialog's sticky global
     // footer cannot cover a tall schedule form in the reference image.
-    await detail.$('.automation-add-btn').click()
+    await detail.$('.automation-row .automation-row-btn').click()
     await expect(detail.$('.automation-form')).toBeDisplayed()
     await expect(detail.$('.automation-form .model-picker-field')).toBeDisplayed()
     await expect(detail.$('.automation-cron-input')).not.toExist()
@@ -268,6 +273,29 @@ describe('settings automations plugin', function () {
       'Every weekday at 09:00 · local time',
     )
     await expect(detail.$('.automation-worktree-limit-select')).toHaveValue('1')
+    await expect(detail.$('.automation-permission-row[title="gh_pr_approve"] input')).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-unavailable[title="mcp__reports__publish_weekly"] input'),
+    ).toBeChecked()
+    await expect(
+      detail.$('.automation-permission-row[title="gh_pr_approve"] .toggle-switch-track'),
+    ).toBeDisplayed()
+    const approveRow = detail.$('.automation-permission-row[title="gh_pr_approve"]')
+    const headingPosition = await approveRow.$('.automation-permission-heading').getLocation()
+    const switchPosition = await approveRow.$('.automation-permission-switch').getLocation()
+    assert.ok(
+      Math.abs(switchPosition.y - headingPosition.y) <= 4,
+      'permission switch should share the heading line',
+    )
+    assert.ok(switchPosition.x > headingPosition.x, 'permission switch should trail the heading')
+    assert.match(await detail.$('.automation-permissions').getText(), /Allowed without asking/)
+    assert.match(await detail.$('.automation-permissions').getText(), /Copse action/)
+    const filter = detail.$('.automation-permission-filter')
+    await filter.setValue('publish_weekly')
+    await browser.waitUntil(
+      async () => (await detail.$$('.automation-permission-row')).length === 1,
+    )
+    assert.match(await detail.$('.automation-permissions').getText(), /1 of \d+ permissions/)
     await expect(dialog.$('.settings-buttons')).not.toBeDisplayed()
     // The form's title is a nested card title: it keeps its own Pliant recipe
     // rather than inheriting the section masthead's 28px display face.

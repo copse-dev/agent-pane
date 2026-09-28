@@ -145,6 +145,7 @@ import {
   resolveOrchestrationWorkerModelId,
 } from './orchestration-runner.ts'
 import { runThreadReview, runWithReviewToolContext } from './review/review-service.ts'
+import { withReviewContext } from '@shared/store/review-reports.ts'
 import { runWithSubagentUsageScope, getAccumulatedSubagentUsage } from './subagent-usage.ts'
 import {
   runWithAgentRunTodoContext,
@@ -722,6 +723,13 @@ export interface RunAgentOptions {
    * Purely observational: never awaited, and a throwing sink cannot fail a turn.
    */
   onHistoryCheckpoint?: (messages: LLMMessage[]) => void
+  /**
+   * Summary of the Copse Reviewer runs the user started since the model's last
+   * reply (#2519). Leads the outbound prompt — after `beforeSubmitPrompt`, which
+   * sees only what the user typed — so every provider path reads it and it is
+   * kept in the thread's history with the prompt it arrived on.
+   */
+  reviewContext?: string
 }
 
 export interface RunAgentResult {
@@ -890,7 +898,10 @@ export async function runAgent(
   // provider path (local, remote, ACP). The redacted form is also what we persist
   // to thread history, so placeholders stay consistent across turns. No-op when
   // the feature is off or Rampart is unavailable.
-  const outboundPrompt = await redactUserContent(threadId, userPrompt)
+  const outboundPrompt = await redactUserContent(
+    threadId,
+    withReviewContext(userPrompt, options?.reviewContext),
+  )
   const resolvePluginSetting =
     options?.resolvePluginSetting ??
     ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
@@ -2466,6 +2477,26 @@ export async function runAgent(
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+const mobileRunIds = new WeakMap<AbortController, string>()
+
+/** A stop from a delayed phone page must never abort a newer run. */
+export function mobileRunId(threadId: string): string | null {
+  const controller = abortMap.get(threadId)
+  if (!controller || controller.signal.aborted) return null
+  let id = mobileRunIds.get(controller)
+  if (!id) {
+    id = crypto.randomUUID()
+    mobileRunIds.set(controller, id)
+  }
+  return id
+}
+
+export function stopMobileRun(threadId: string, runId: string): boolean {
+  if (mobileRunId(threadId) !== runId) return false
+  abortAgent(threadId)
+  return true
 }
 
 /**
