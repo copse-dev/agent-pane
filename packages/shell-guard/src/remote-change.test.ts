@@ -165,6 +165,8 @@ describe('remoteChangeReasons', () => {
       'npx playwright test',
       'act -W .github/workflows/ci.yml',
       'psql -c "select 1"',
+      'mysql -f -e "select 1"',
+      'mariadb --force -e "select 1"',
       'pg_restore -f out.sql dump.custom',
       'pg_restore --list dump.custom',
       'influx query "from(bucket:\\"m\\") |> range(start: -1h)"',
