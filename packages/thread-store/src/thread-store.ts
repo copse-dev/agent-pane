@@ -692,39 +692,51 @@ async function backfillSelectedThreadPrRefs(
   }
   // Deliberately low concurrency: this runs while the user is working, and the
   // point of the whole change is to stop thread reads monopolising the loop.
-  await mapConcurrent(
+  const failures = await mapConcurrent(
     pending,
     async (threadId) => {
-      const thread = await readThread(projectId, threadId)
-      if (!thread) return
-      const prRefs = collectThreadPrRefs(thread)
-      // Transcript scanning stays concurrent and outside the foreground queue,
-      // but the final read-merge-write joins the same per-project chain as every
-      // other metadata mutation. Re-read at commit time so a title/status/usage
-      // update that landed during the scan cannot be overwritten.
-      const committedRefs = await runStoreWrite(projectId, async () => {
-        const path = join(threadDir(projectId, threadId), META_FILE)
-        const meta = parseMeta(await readOrNull(path))
-        if (meta === null) return null
-        const merged = mergeGithubPrRefs(meta.prRefs ?? [], prRefs)
-        // Write even an empty list: `undefined` means "never scanned", `[]`
-        // means "scanned, no PRs" — otherwise this would re-run forever.
-        if (meta.prRefs === undefined || merged.added) {
-          await atomicWriteFileAsync(
-            path,
-            JSON.stringify({ ...meta, prRefs: merged.refs }, null, 2),
-          )
+      try {
+        const thread = await readThread(projectId, threadId)
+        if (!thread) throw new Error(`Could not read thread ${threadId}`)
+        const prRefs = collectThreadPrRefs(thread)
+        // Transcript scanning stays concurrent and outside the foreground queue,
+        // but the final read-merge-write joins the same per-project chain as every
+        // other metadata mutation. Re-read at commit time so a title/status/usage
+        // update that landed during the scan cannot be overwritten.
+        const committedRefs = await runStoreWrite(projectId, async () => {
+          const path = join(threadDir(projectId, threadId), META_FILE)
+          const meta = parseMeta(await readOrNull(path))
+          if (meta === null) return null
+          const merged = mergeGithubPrRefs(meta.prRefs ?? [], prRefs)
+          // Write even an empty list: `undefined` means "never scanned", `[]`
+          // means "scanned, no PRs" — otherwise this would re-run forever.
+          if (meta.prRefs === undefined || merged.added) {
+            await atomicWriteFileAsync(
+              path,
+              JSON.stringify({ ...meta, prRefs: merged.refs }, null, 2),
+            )
+          }
+          return merged.refs
+        })
+        if (committedRefs && committedRefs.length > 0) {
+          batch.push({ threadId, prRefs: committedRefs })
         }
-        return merged.refs
-      })
-      if (committedRefs && committedRefs.length > 0) {
-        batch.push({ threadId, prRefs: committedRefs })
+        if (batch.length >= 25) flush()
+        return null
+      } catch (error) {
+        return { threadId, error }
       }
-      if (batch.length >= 25) flush()
     },
     BACKFILL_CONCURRENCY,
   )
   flush()
+  const failed = failures.filter(isNonNull)
+  if (failed.length > 0) {
+    throw new AggregateError(
+      failed.map(({ error }) => error),
+      `Could not backfill PR refs for ${failed.map(({ threadId }) => threadId).join(', ')}`,
+    )
+  }
 }
 
 /** Keep transcript folding from competing heavily with foreground reads. */

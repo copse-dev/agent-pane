@@ -372,6 +372,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const prBackfillRequested = new Map<string, Set<string>>()
   const prBackfillRetryAttempts = new Map<string, number>()
   const prBackfillRetryTimers = new Set<ReturnType<typeof setTimeout>>()
+  let prBackfillRowsByKey = new Map<string, Element>()
   let prBackfillObserver: IntersectionObserver | null = null
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
@@ -1634,6 +1635,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
     if (orphans.length > 0) list.append(renderOrphansSection())
 
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row, projectId, threadId }) => [`${projectId}\0${threadId}`, row]),
+    )
     if (prBackfillRows.length > 0 && typeof IntersectionObserver !== 'undefined') {
       const rowThreads = new Map<Element, { projectId: string; threadId: string }>(
         prBackfillRows.map(({ row, projectId, threadId }) => [row, { projectId, threadId }]),
@@ -1678,9 +1682,11 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 const delay = Math.min(1_000 * 2 ** (attempt - 1), 30_000)
                 const timer = setTimeout(() => {
                   prBackfillRetryTimers.delete(timer)
-                  if (prBackfillObserver !== observer) return
-                  for (const { row } of batch) {
-                    if (row.isConnected) observer.observe(row)
+                  const currentObserver = prBackfillObserver
+                  if (!currentObserver) return
+                  for (const { threadId } of batch) {
+                    const row = prBackfillRowsByKey.get(`${projectId}\0${threadId}`)
+                    if (row?.isConnected) currentObserver.observe(row)
                   }
                 }, delay)
                 prBackfillRetryTimers.add(timer)
@@ -1726,6 +1732,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     prBackfillRetryTimers.clear()
     prBackfillObserver?.disconnect()
     prBackfillObserver = null
+    prBackfillRowsByKey.clear()
     prStatusGeneration += 1
     dismissContextMenu()
     renaming = null

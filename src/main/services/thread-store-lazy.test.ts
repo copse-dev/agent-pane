@@ -375,4 +375,27 @@ describe('thread-store PR-ref cache', () => {
 
     assert.deepEqual(second, [], 'a second pass must be a no-op')
   })
+
+  it('rejects an unreadable transcript so a repaired visible row can retry', async (t) => {
+    t.mock.method(console, 'warn', () => undefined)
+    const legacy = thread('broken', {
+      messages: [userMsg('m1', 'https://github.com/acme/widget/pull/5')],
+    })
+    await saveProjectThread('p', legacy)
+    rmSync(join(root, 'p', 'broken', 'messages', 'm1.md'))
+
+    await assert.rejects(
+      backfillThreadPrRefs('p', ['broken'], () => undefined),
+      /Could not backfill PR refs for broken/,
+    )
+    assert.equal(metaOnDisk(root, 'p', 'broken')['prRefs'], undefined)
+
+    await saveProjectThread('p', legacy)
+    await backfillThreadPrRefs('p', ['broken'], () => undefined)
+    const repaired = metaOnDisk(root, 'p', 'broken')['prRefs']
+    assert.ok(Array.isArray(repaired))
+    const first: unknown = repaired[0]
+    assert.ok(typeof first === 'object' && first !== null)
+    assert.equal(Reflect.get(first, 'number'), 5)
+  })
 })

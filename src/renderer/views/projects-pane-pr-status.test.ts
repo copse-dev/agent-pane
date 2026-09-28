@@ -239,7 +239,7 @@ describe('projects pane thread PR status (component)', () => {
     )
   })
 
-  it('re-observes a visible legacy row after a transient backfill failure', async (t) => {
+  it('re-observes the current visible row when an older render request fails', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] })
     t.mock.method(console, 'warn', () => {})
     const originalObserver = globalThis.IntersectionObserver
@@ -280,6 +280,7 @@ describe('projects pane thread PR status (component)', () => {
     })
 
     let attempts = 0
+    let rejectFirst: ((reason: Error) => void) | undefined
     const base = apiWithPrDetails(async () => null)
     const api = {
       ...base,
@@ -287,7 +288,11 @@ describe('projects pane thread PR status (component)', () => {
         ...base.threads,
         backfillPrRefs: async (): Promise<void> => {
           attempts += 1
-          if (attempts === 1) throw new Error('transient backfill failure')
+          if (attempts === 1) {
+            return new Promise((_resolve, reject) => {
+              rejectFirst = reject
+            })
+          }
         },
       },
     } satisfies ApiClient
@@ -325,12 +330,43 @@ describe('projects pane thread PR status (component)', () => {
       assert.equal(attempts, 1)
       assert.equal(observed.has(row), false)
 
-      t.mock.timers.tick(999)
-      assert.equal(observed.has(row), false)
-      t.mock.timers.tick(1)
-      assert.equal(observed.has(row), true)
+      // A normal sidebar update replaces both the row and observer while the
+      // first IPC request remains in flight. The replacement observer sees the
+      // row but skips its leased id, then unobserves it.
+      store.emit('threads_changed')
+      const currentRow = rowByTitle('Legacy thread')
+      assert.ok(currentRow)
+      assert.notEqual(currentRow, row)
+      assert.ok(deliver)
+      assert.ok(observer)
+      assert.equal(observed.has(currentRow), true)
+      const currentRect = currentRow.getBoundingClientRect()
+      const currentEntry = {
+        target: currentRow,
+        isIntersecting: true,
+        intersectionRatio: 1,
+        boundingClientRect: currentRect,
+        intersectionRect: currentRect,
+        rootBounds: null,
+        time: 0,
+      } satisfies IntersectionObserverEntry
+      deliver([currentEntry], observer)
+      assert.equal(observed.has(currentRow), false)
+      assert.equal(attempts, 1)
 
-      deliver([entry], observer)
+      assert.ok(rejectFirst)
+      rejectFirst(new Error('transient backfill failure'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      t.mock.timers.tick(999)
+      assert.equal(observed.has(currentRow), false)
+      t.mock.timers.tick(1)
+      assert.equal(observed.has(currentRow), true)
+
+      deliver([currentEntry], observer)
       await Promise.resolve()
       await Promise.resolve()
       assert.equal(attempts, 2)
