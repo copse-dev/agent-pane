@@ -63,6 +63,7 @@ const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCh
 const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
+const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
 const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
 const REVIEW_PLUGIN_MIGRATION_KEY = 'pluginMigration.reviewFromModelComparison'
 const PLUGIN_SOURCES_KEY = 'pluginSources'
@@ -143,6 +144,7 @@ function clearStorage(): void {
   storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
@@ -500,6 +502,25 @@ describe('PluginService', () => {
     __resetPluginServiceForTests()
     const later = getPluginService()
     assert.equal(later.registry.isEnabled(REVIEWER_INPUT_PLUGIN_ID), true)
+  })
+
+  it('seeds the dark-factory sensor off once for existing profiles without erasing later choices', async () => {
+    // An existing profile: it owns a disable list that pre-dates the plugin, so
+    // the fresh-profile seed never runs and only the upgrade seed can turn it off.
+    storageSet(PLUGIN_DISABLED_KEY, [REVIEW_PLUGIN_ID])
+    storageDelete(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY)
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(DARK_FACTORY_PLUGIN_ID), false)
+    assert.deepEqual(
+      parseStringList(storageGet(PLUGIN_DISABLED_KEY)),
+      [DARK_FACTORY_PLUGIN_ID, REVIEW_PLUGIN_ID].sort(),
+    )
+    assert.equal(storageGet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(DARK_FACTORY_PLUGIN_ID, true)
+    __resetPluginServiceForTests()
+    const later = getPluginService()
+    assert.equal(later.registry.isEnabled(DARK_FACTORY_PLUGIN_ID), true)
   })
 
   it('carries a comparison opt-in across to the review plugin once, models included', async () => {

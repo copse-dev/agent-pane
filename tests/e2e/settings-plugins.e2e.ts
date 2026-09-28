@@ -409,6 +409,8 @@ describe('settings plugins (about:addons)', function () {
     const cls = (await todosRow.getAttribute('class')) ?? ''
     assert.ok(cls.includes('plugin-row-disabled'), 'disabled row must be visually greyed')
 
+    await todosRow.scrollIntoView({ block: 'center' })
+    await browser.pause(100)
     await saveElementScreenshot('#settings-dialog', 'settings-plugins.png')
 
     // The same manifest metadata is represented in the thread model picker.

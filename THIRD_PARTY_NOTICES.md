@@ -101,3 +101,14 @@ this section must become a full entry before release. LGPL-3.0 section 4 would
 then require all of the following: libvips must stay a separately loaded shared
 library that the user can replace, its license text must ship with the app, and
 this file must include a source offer for it.
+
+## Shell-command test set samples (benchmarks only)
+
+- **Datasets:** tomngdev/shell-safety-v2 (Copyright (c) tomngdev) and westenfelder/NL2SH-ALFA
+  (Copyright 2025 MIT-ALFA), both on Hugging Face.
+- **License:** MIT. The full notice and the pinned revisions are in
+  `benchmarks/escalation-review/testset/sources/LICENSE-HF.md`.
+- **Used by:** the escalation-review test set only (`benchmarks/escalation-review/testset/`).
+  Nothing from these datasets ships in the app.
+- **Modifications:** we kept a subset of rows and anonymised one ssh user name and one working
+  directory. The reference labels are our own.
