@@ -112,7 +112,7 @@ import {
   createSpecialistCheckBudget,
   specialistCheckDefinition,
 } from '@copse/agent/specialist-checks.ts'
-import { runSpecialistCheck } from './specialist-check-runner.ts'
+import { runApprovedEvidenceExploration, runSpecialistCheck } from './specialist-check-runner.ts'
 import { runExploreSubagent } from './subagent-service.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
 import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
@@ -2448,29 +2448,36 @@ export async function runAgent(
                     signal: controller.signal,
                     usageModel: route.usageModel,
                     onUsage: recordReviewUsage,
-                    gatherEvidence: async (query, paths, signal) => {
-                      const explored = await runExploreSubagent({
-                        parentToolCallId: 'review-specialist-explorer',
-                        query,
-                        ...(paths.length > 0 ? { paths } : {}),
-                        parentGoal: request.question,
-                        provider: explorerRoute.provider,
-                        registry,
-                        contextWindow: explorerRoute.contextWindow,
-                        toolSchemaReserve: explorerRoute.toolSchemaReserve,
-                        signal,
-                        onChunk: (chunk) => {
-                          if (chunk.type === 'usage') {
-                            recordReviewUsage(explorerRoute.usageModel, {
-                              inputTokens: chunk.inputTokens,
-                              outputTokens: chunk.outputTokens,
-                            })
-                          }
-                        },
+                    gatherEvidence: (query, paths, signal) =>
+                      runApprovedEvidenceExploration({
                         usageModel: explorerRoute.usageModel,
-                      })
-                      return explored.summary
-                    },
+                        billable: isBillableModel(explorerRoute.usageModel),
+                        ensureApproved: () =>
+                          ensureReviewApproved(explorerRoute.usageModel, threadId, signal),
+                        run: async () => {
+                          const explored = await runExploreSubagent({
+                            parentToolCallId: 'review-specialist-explorer',
+                            query,
+                            ...(paths.length > 0 ? { paths } : {}),
+                            parentGoal: request.question,
+                            provider: explorerRoute.provider,
+                            registry,
+                            contextWindow: explorerRoute.contextWindow,
+                            toolSchemaReserve: explorerRoute.toolSchemaReserve,
+                            signal,
+                            onChunk: (chunk) => {
+                              if (chunk.type === 'usage') {
+                                recordReviewUsage(explorerRoute.usageModel, {
+                                  inputTokens: chunk.inputTokens,
+                                  outputTokens: chunk.outputTokens,
+                                })
+                              }
+                            },
+                            usageModel: explorerRoute.usageModel,
+                          })
+                          return explored.summary
+                        },
+                      }),
                   })
                 },
               }),

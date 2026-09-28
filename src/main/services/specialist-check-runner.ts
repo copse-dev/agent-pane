@@ -61,6 +61,23 @@ export interface RunSpecialistCheckOptions {
   gatherEvidence: (query: string, paths: string[], signal: AbortSignal) => Promise<string>
 }
 
+export interface RunApprovedEvidenceExplorationOptions {
+  usageModel: string
+  billable: boolean
+  ensureApproved: () => Promise<boolean>
+  run: () => Promise<string>
+}
+
+/** Lazily gate a separately routed paid explorer before it can make an LLM call. */
+export async function runApprovedEvidenceExploration(
+  opts: RunApprovedEvidenceExplorationOptions,
+): Promise<string> {
+  if (opts.billable && !(await opts.ensureApproved())) {
+    return `Evidence exploration skipped — spending on ${opts.usageModel} was not approved.`
+  }
+  return opts.run()
+}
+
 function specialistTools(registry: ToolRegistry): LLMTool[] {
   const allowed = new Set<string>(SPECIALIST_DIRECT_TOOL_NAMES)
   return [...registry.toLLMTools().filter((tool) => allowed.has(tool.name)), gatherEvidenceTool]

@@ -5,7 +5,11 @@ import {
   GATHER_SPECIALIST_EVIDENCE_TOOL_NAME,
   RUN_SPECIALIST_CHECK_TOOL_NAME,
 } from '@copse/agent/specialist-checks.ts'
-import { SPECIALIST_DIRECT_TOOL_NAMES, specialistCheckTool } from './specialist-check-runner.ts'
+import {
+  SPECIALIST_DIRECT_TOOL_NAMES,
+  runApprovedEvidenceExploration,
+  specialistCheckTool,
+} from './specialist-check-runner.ts'
 
 describe('specialist check capabilities', () => {
   it('offers the primary reviewer one generic specialist tool', () => {
@@ -19,5 +23,47 @@ describe('specialist check capabilities', () => {
     assert.equal(direct.has('run_shell'), false)
     assert.equal(direct.has(RUN_SPECIALIST_CHECK_TOOL_NAME), false)
     assert.equal(direct.has(GATHER_SPECIALIST_EVIDENCE_TOOL_NAME), false)
+  })
+})
+
+describe('specialist explorer spend approval', () => {
+  it('does not run a paid explorer when its model is declined', async () => {
+    let ran = false
+    const result = await runApprovedEvidenceExploration({
+      usageModel: 'paid-explorer',
+      billable: true,
+      ensureApproved: async () => false,
+      run: async () => {
+        ran = true
+        return 'evidence'
+      },
+    })
+    assert.equal(ran, false)
+    assert.match(result, /paid-explorer.*not approved/)
+  })
+
+  it('runs an approved paid explorer', async () => {
+    const result = await runApprovedEvidenceExploration({
+      usageModel: 'paid-explorer',
+      billable: true,
+      ensureApproved: async () => true,
+      run: async () => 'evidence',
+    })
+    assert.equal(result, 'evidence')
+  })
+
+  it('runs a free explorer without requesting approval', async () => {
+    let approvalCalls = 0
+    const result = await runApprovedEvidenceExploration({
+      usageModel: 'local-explorer',
+      billable: false,
+      ensureApproved: async () => {
+        approvalCalls += 1
+        return false
+      },
+      run: async () => 'local evidence',
+    })
+    assert.equal(approvalCalls, 0)
+    assert.equal(result, 'local evidence')
   })
 })
