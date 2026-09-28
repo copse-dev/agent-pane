@@ -23781,7 +23781,7 @@ function runningToolName(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
     const m2 = thread.messages[i2];
     if (!m2) continue;
-    const toolCalls = m2.toolCalls ?? [];
+    const toolCalls = m2.toolCalls;
     for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
       const tc2 = toolCalls[j3];
       if (!tc2) continue;
@@ -24348,13 +24348,11 @@ function queuedPayloadText(payload) {
 }
 function withPayloadText(content, text2) {
   if (typeof content === "string") return text2;
-  let replaced = false;
-  const next = content.map((block) => {
-    if (block.type !== "text" || replaced) return block;
-    replaced = true;
-    return { ...block, text: text2 };
-  });
-  return replaced ? next : [...next, { type: "text", text: text2 }];
+  const firstText = content.findIndex((block) => block.type === "text");
+  if (firstText === -1) return [...content, { type: "text", text: text2 }];
+  return content.map(
+    (block, index) => index === firstText && block.type === "text" ? { ...block, text: text2 } : block
+  );
 }
 function updateQueuedMessageText(store2, threadId, messageId, text2) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -51884,6 +51882,7 @@ function toExtraProviderModel(slug2, modelId) {
 var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
 var init_extra_providers = __esm({
   "packages/llm/src/extra-providers.ts"() {
+    init_unknown_value();
     init_credential_url();
     init_provider_metadata2();
     init_model_selection();
@@ -66716,8 +66715,7 @@ function copyMessage(message2) {
   return {
     ...rest,
     id: randomUUID2(),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
+    toolCalls: toolCalls.map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
     ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
     ...visualEvidence !== void 0 ? {
@@ -79431,7 +79429,7 @@ function syncSubagentTimeline(timeline, session, status, api2) {
       }
       desired.push(node2);
     }
-    const innerToolCalls = msg.toolCalls ?? [];
+    const innerToolCalls = msg.toolCalls;
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`;
       const sig = renderSignature(innerToolCalls);
@@ -81241,7 +81239,7 @@ function mountConversation(root, store2, api2) {
     const anchor2 = thread?.messages.find((m2) => m2.id === run2.anchorId);
     const anchorEl = list.querySelector(`[data-message-id="${run2.anchorId}"]`);
     if (!anchor2 || !anchorEl) return;
-    renderToolCards(anchorEl, anchor2.toolCalls ?? [], {
+    renderToolCards(anchorEl, anchor2.toolCalls, {
       ...messageToolCardOpts(anchor2),
       run: run2,
       liveStepId: liveStepMessageId(thread)
@@ -81254,7 +81252,7 @@ function mountConversation(root, store2, api2) {
       if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
       const msg = thread?.messages.find((m2) => m2.id === id);
       if (!msg) continue;
-      renderToolCards(memberEl, msg.toolCalls ?? [], {
+      renderToolCards(memberEl, msg.toolCalls, {
         ...messageToolCardOpts(msg),
         run: run2,
         liveStepId: liveStepMessageId(thread)
@@ -81314,10 +81312,7 @@ function mountConversation(root, store2, api2) {
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
     if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
-    const nestReasoning = (
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
-    );
+    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== void 0;
     appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
@@ -81335,7 +81330,7 @@ function mountConversation(root, store2, api2) {
     if (!msg || !msgEl) return;
     hydrateRemoteArtifactImages(list, api2);
     const run2 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
@@ -81770,7 +81765,7 @@ function mountConversation(root, store2, api2) {
     const wasPinned = pinnedToBottom;
     const readingAnchor = wasPinned ? null : captureReadingAnchor();
     const run2 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
@@ -95148,14 +95143,14 @@ function collectSubagentUsage(toolCalls, totals) {
       totals.outputTokens += session.usage.outputTokens;
     }
     for (const message2 of session.messages) {
-      collectSubagentUsage(message2.toolCalls ?? [], totals);
+      collectSubagentUsage(message2.toolCalls, totals);
     }
   }
 }
 function sumSubagentUsage(messages) {
   const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
   for (const message2 of messages) {
-    collectSubagentUsage(message2.toolCalls ?? [], totals);
+    collectSubagentUsage(message2.toolCalls, totals);
   }
   return totals;
 }
@@ -95164,7 +95159,7 @@ function estimateAssistantOutputTokens(messages) {
   for (const message2 of messages) {
     if (message2.role !== "assistant") continue;
     chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
+    for (const toolCall of message2.toolCalls) {
       for (const subMessage of toolCall.subagent?.messages ?? []) {
         if (subMessage.role === "assistant") chars += subMessage.content.length;
       }
@@ -95608,7 +95603,7 @@ function lastExchange(store2, threadId) {
   const lastUser = userMessages.at(-1);
   const lastAssistant = assistantMessages.at(-1);
   if (!lastUser?.content.trim() || !lastAssistant) return null;
-  const toolNames = (lastAssistant.toolCalls ?? []).map((tc2) => tc2.name);
+  const toolNames = lastAssistant.toolCalls.map((tc2) => tc2.name);
   const openTodos = normalizeFollowUpOpenTodos(
     (thread.todos ?? []).filter((t2) => t2.status === "pending" || t2.status === "in_progress").map((t2) => t2.content)
   );
@@ -109456,9 +109451,10 @@ ${output2}` : "Terminal output: (none)"
     const text2 = readTerminalText(tab);
     if (text2.length < 8) return;
     tab.naming = true;
+    const renamedByUser = () => tab.renamed;
     try {
       const title = await api2.agent.suggestTerminalTitle(text2);
-      if (title && !tab.renamed) {
+      if (title && !renamedByUser()) {
         setTabLabel(tab, title);
         tab.autoNamed = true;
       }
