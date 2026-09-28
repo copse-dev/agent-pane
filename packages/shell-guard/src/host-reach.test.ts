@@ -18,8 +18,13 @@ describe('hostReachReasons — other machines', () => {
       'ssh -p 2222 dev@build.example.com uptime',
       'scp build.tar mini:/tmp/',
       'scp mini:/var/log/app.log .',
+      'scp -O mini:/var/log/app.log .',
+      'scp -R mini:/var/log/app.log .',
+      'scp -p mini:/var/log/app.log .',
       'rsync -a dist/ deploy@web:/srv/app',
       'sftp mini',
+      'sftp -s internal-sftp mini',
+      'sftp -X nrequests=64 mini',
       'ssh ssh://dev@[::1]:22',
     ]) {
       assert.ok(reaches(command), command)
@@ -31,8 +36,28 @@ describe('hostReachReasons — other machines', () => {
     for (const command of [
       "ssh mini 'docker ps'",
       'ssh -p 2222 dev@Build.Example.com. uptime',
+      'ssh -o ProxyJump=build.example.com mini uptime',
+      'ssh -o Hostname=build.example.com mini uptime',
+      'ssh -J none mini uptime',
+      'ssh -o ProxyJump=none mini uptime',
+      'ssh -I none mini uptime',
+      'ssh -o SecurityKeyProvider=internal mini uptime',
+      'ssh -o ForwardAgent=no mini uptime',
+      'ssh -o ForwardX11=no mini uptime',
+      'ssh -o GSSAPIDelegateCredentials=no mini uptime',
+      'ssh -o CanonicalizeHostname=no mini uptime',
+      'ssh -o StrictHostKeyChecking=yes mini uptime',
+      'ssh -S none mini uptime',
       'scp build.tar mini:/tmp/',
+      'scp -O mini:/tmp/build.tar .',
+      'scp -R mini:/tmp/tree .',
+      'scp -p mini:/tmp/build.tar .',
+      'sftp -R 64 mini',
+      'sftp -s internal-sftp mini',
+      'sftp -X nrequests=64 mini',
       'rsync -av mini:/data/ ./data/',
+      'mosh -p 60000 mini',
+      'autossh -M 0 mini uptime',
     ]) {
       assert.deepEqual(reasons(command, { trustedSshHosts }), [], command)
     }
@@ -45,12 +70,110 @@ describe('hostReachReasons — other machines', () => {
       'ssh -oLocalCommand=id -o PermitLocalCommand=yes mini true',
       'ssh -F ./ssh_config mini true',
       'ssh -J bastion mini true',
+      'ssh -o ProxyJump=bastion mini true',
+      'ssh -o "ProxyJump bastion" mini true',
+      'ssh -oProxyJump=bastion mini true',
+      'ssh -vJbastion mini true',
+      'ssh -o Hostname=other.example mini true',
+      'ssh -o "Hostname other.example" mini true',
+      'ssh -oHostname=other.example mini true',
       'rsync -e "ssh -i key" -a src/ mini:/srv/',
       'rsync --rsh=./tool -a src/ mini:/srv/',
       "ssh mini 'rm -rf ~/cache'",
+      'ssh -o RemoteCommand="rm -rf /" mini',
+      'rsync --rsync-path="rm -rf /" src/ mini:/srv/',
     ]) {
       assert.ok(reaches(command, { trustedSshHosts }), command)
     }
+  })
+
+  it('prompts when xargs can append an uninspected destination or remote command', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'printf evil.example | xargs ssh',
+      "printf 'rm -rf /' | xargs ssh mini",
+      'env xargs ssh',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+  })
+
+  it('prompts when a trusted host invocation opens a tunnel or forwards traffic', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'ssh -L 8080:other.example:80 mini',
+      'ssh -R 8080:localhost:80 mini',
+      'ssh -D 1080 mini',
+      'ssh -W other.example:80 mini',
+      'ssh -w 0:0 mini',
+      'ssh -A mini',
+      'ssh -K mini',
+      'ssh -X mini',
+      'ssh -Y mini',
+      'scp -A build.tar mini:/tmp/',
+      'sftp -A mini',
+      'ssh -o ForwardAgent=yes mini',
+      'ssh -o ForwardX11=yes mini',
+      'ssh -o ForwardX11Trusted=yes mini',
+      'ssh -o GSSAPIDelegateCredentials=yes mini',
+      'ssh -O forward mini',
+      'ssh -O proxy mini',
+      'ssh -o LocalForward=8080:other.example:80 mini',
+      'ssh -o RemoteForward=8080:localhost:80 mini',
+      'ssh -o DynamicForward=1080 mini',
+      'ssh -o Tunnel=yes mini',
+      'ssh -o TunnelDevice=0:0 mini',
+      'ssh -fL8080:other.example:80 mini',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+  })
+
+  it('prompts when an SSH-family client loads or launches a local helper', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'ssh -I /tmp/provider.dylib mini true',
+      'ssh -o PKCS11Provider=/tmp/provider.dylib mini true',
+      'ssh -o SecurityKeyProvider=/tmp/provider.dylib mini true',
+      'ssh -o XAuthLocation=/tmp/xauth mini true',
+      'ssh -o Include=/tmp/ssh_config mini true',
+      'ssh -o Include=internal mini true',
+      'ssh -o XAuthLocation=none mini true',
+      'scp -S /tmp/ssh build.tar mini:/tmp/',
+      'scp -qS/tmp/ssh build.tar mini:/tmp/',
+      'sftp -S /tmp/ssh mini',
+      'sftp -D /tmp/sftp-server mini',
+      'mosh --ssh=/tmp/ssh mini',
+      'mosh --client=/tmp/mosh-client mini',
+      'mosh --server="rm -rf /" mini',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+  })
+
+  it('prompts when command-line options weaken or redirect trusted-host authentication', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'ssh -o CanonicalizeHostname=yes -o CanonicalDomains=evil.example mini',
+      'ssh -o StrictHostKeyChecking=no mini',
+      'ssh -o NoHostAuthenticationForLocalhost=yes mini',
+      'ssh -S /tmp/control mini uptime',
+      'ssh -o ControlPath=/tmp/control mini uptime',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+  })
+
+  it('prompts before forwarding secret-looking environment variables to a trusted host', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'ssh -o SendEnv=GITHUB_TOKEN mini',
+      'ssh -o "SendEnv LANG OPENAI_API_KEY" mini',
+      'ssh -o SetEnv=OPENAI_API_KEY=value mini',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+    assert.deepEqual(reasons('ssh -o SendEnv=-GITHUB_TOKEN mini', { trustedSshHosts }), [])
   })
 
   it('does not treat local paths as remote operands', () => {
@@ -148,6 +271,11 @@ describe('hostReachReasons — code fetched at run time', () => {
       'npx --package=cowsay cowsay hi',
       'pnpm dlx create-vite',
       'yarn dlx create-vite',
+      'npm create vite@latest',
+      'npm init vite@latest',
+      'pnpm create vite',
+      'yarn create vite',
+      'bun create vite',
       'bunx cowsay',
       'bun x cowsay',
       'uvx ruff',
@@ -157,6 +285,12 @@ describe('hostReachReasons — code fetched at run time', () => {
     }
     // Without a workspace there is no project dependency to run.
     assert.ok(reaches('npx tsc', { pathExists, workspaceRoot: null }))
+  })
+
+  it('leaves the local npm package-initialization forms alone', () => {
+    for (const command of ['npm init', 'npm init -y', 'npm init --yes']) {
+      assert.deepEqual(reasons(command), [], command)
+    }
   })
 })
 

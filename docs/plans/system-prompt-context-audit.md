@@ -48,21 +48,22 @@ The fourth is worth quoting, because it describes Copse's current prompt almost 
 | #   | Source                                                       | Gate                                      |
 | --- | ------------------------------------------------------------ | ----------------------------------------- |
 | 1   | `BASE_SYSTEM_PROMPT` / `BASE_SYSTEM_PROMPT_DIRECT_READS`     | `subagentsEnabled`                        |
-| 2   | `OPUS_5_RESPONSE_LENGTH_BLOCK`                               | `isOpus5Model(model)`                     |
-| 3   | `EXTERNAL_API_SAFETY_BLOCK`                                  | `externalApiSafety` setting (default off) |
-| 4   | `BROWSER_TOOLS_BLOCK`                                        | `browserToolsEnabled` (default on)        |
-| 5   | `READ_TERMINAL_BLOCK`                                        | setting on **and** thread has open shells |
-| 6   | `MEMORY_TOOLS_BLOCK`                                         | `copse.okf-memories` pack (default off)   |
-| 7   | `PII_REDACTION_BLOCK`                                        | `copse.pii-redaction` pack (default off)  |
-| 8   | `buildSkillsCatalogBlock()`                                  | any model-invocable skills discovered     |
-| 9   | `buildInvokedSkillsBlock()`                                  | `/skill` invoked this turn                |
-| 10  | `loadAgentRequestedRulesCatalog()`                           | `.cursor/rules/**` present                |
-| 11  | `buildSemanticSearchPromptBlock()`                           | always                                    |
-| 12  | `OPUS_5_TONE_REMINDER`                                       | `isOpus5Model(model)`                     |
-| 13  | Custom instructions                                          | user setting                              |
-| 14  | Project instructions (`AGENTS.md` / `CLAUDE.md` / `.cursor`) | workspace                                 |
+| 2   | `WORKTREE_PREPARATION_BLOCK`                                 | linked worktree **and** preflight offered |
+| 3   | `OPUS_5_RESPONSE_LENGTH_BLOCK`                               | `isOpus5Model(model)`                     |
+| 4   | `EXTERNAL_API_SAFETY_BLOCK`                                  | `externalApiSafety` setting (default off) |
+| 5   | `BROWSER_TOOLS_BLOCK`                                        | `browserToolsEnabled` (default on)        |
+| 6   | `READ_TERMINAL_BLOCK`                                        | setting on **and** thread has open shells |
+| 7   | `MEMORY_TOOLS_BLOCK`                                         | `copse.okf-memories` pack (default off)   |
+| 8   | `PII_REDACTION_BLOCK`                                        | `copse.pii-redaction` pack (default off)  |
+| 9   | `buildSkillsCatalogBlock()`                                  | any model-invocable skills discovered     |
+| 10  | `buildInvokedSkillsBlock()`                                  | `/skill` invoked this turn                |
+| 11  | `loadAgentRequestedRulesCatalog()`                           | `.cursor/rules/**` present                |
+| 12  | `buildSemanticSearchPromptBlock()`                           | always                                    |
+| 13  | `OPUS_5_TONE_REMINDER`                                       | `isOpus5Model(model)`                     |
+| 14  | Custom instructions                                          | user setting                              |
+| 15  | Project instructions (`AGENTS.md` / `CLAUDE.md` / `.cursor`) | workspace                                 |
 
-Rows 2 and 12 are the one model-conditional pair: everything else in the list is
+Rows 3 and 13 are the one model-conditional pair: everything else in the list is
 model-agnostic by design, and the Opus 5 length steering is the documented
 exception (see the comment above `OPUS_5_RESPONSE_LENGTH_BLOCK`).
 

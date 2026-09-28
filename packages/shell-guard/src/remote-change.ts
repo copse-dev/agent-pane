@@ -481,6 +481,20 @@ const DATABASE_LOADERS = new Set([
 const INFLUX_WRITE_VERB =
   /^(?:write|delete|restore|setup|create|update|import|apply|remove|rm|run|retry|replay)$/
 
+/**
+ * Return a mutating command-path word, without mistaking a flag value or query
+ * argument named `write`/`delete` for a subcommand. Influx commands put their
+ * command path before flags; most paths have one or two words, while the v1
+ * compatibility and org membership commands have a third action word.
+ */
+function influxWriteVerb(argv: readonly string[]): string | null {
+  const [first = '', second = '', third = ''] = argv.slice(1)
+  if (INFLUX_WRITE_VERB.test(first)) return first
+  const nested = first === 'v1' || (first === 'org' && /^(?:members|owners)$/.test(second))
+  const action = nested ? third : second
+  return INFLUX_WRITE_VERB.test(action) ? action : null
+}
+
 function databaseLoadReason(head: string, argv: readonly string[]): string | null {
   if (DATABASE_LOADERS.has(head)) return `loads data into a database (${head})`
   if (head === 'pg_restore') {
@@ -491,7 +505,7 @@ function databaseLoadReason(head: string, argv: readonly string[]): string | nul
     return toDatabase || !toFileOrList ? 'loads data into a database (pg_restore)' : null
   }
   if (head === 'influx') {
-    const verb = nonFlagWords(argv).find((word) => INFLUX_WRITE_VERB.test(word))
+    const verb = influxWriteVerb(argv)
     return verb ? `changes database data (influx ${verb})` : null
   }
   if (
