@@ -411,7 +411,7 @@ the visual evidence that `AGENTS.md` requires:
 
 ## Fix pull requests
 
-The concrete defects this audit found are being fixed in these draft pull requests. None of them changes a default.
+The concrete defects this audit found were tracked in these pull requests. None of them changes a default.
 
 - [#3098](https://github.com/copse-dev/agent-pane/pull/3098): CI investigator: only mention `investigate_ci` when the turn can call it (#3073)
 - [#3099](https://github.com/copse-dev/agent-pane/pull/3099): Dark-factory upgrade seed; canvas toggle reloads MCP servers; e2e default-off list derived from the product; CSP tests (#3068)
