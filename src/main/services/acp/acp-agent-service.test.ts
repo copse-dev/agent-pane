@@ -1,5 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -7,6 +11,8 @@ import { setApprovalHandler } from '../approval.ts'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
   acpErrorMessage,
@@ -810,4 +816,81 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       approved: true,
     })
   })
+})
+
+describe('worktree-backup auto-approval of ACP edits', () => {
+  // The backup only protects files on this machine; a remote (ACP-over-SSH)
+  // agent edits the SSH host's checkout, which that backup cannot restore.
+  let repo = ''
+  let prompts = 0
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(() => {
+    setGitAvailableForTest(true)
+    repo = mkdtempSync(join(tmpdir(), 'copse-acp-backup-'))
+    restoreWorkspace = setWorkspaceRootForTest(repo)
+    const git = (...args: string[]): void => {
+      execFileSync('git', args, { cwd: repo, stdio: 'ignore' })
+    }
+    git('init', '-q')
+    git(
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'user.name=T',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'base',
+    )
+    prompts = 0
+    setApprovalHandler(() => {
+      prompts++
+      return Promise.resolve({ approved: false, remember: false })
+    })
+  })
+
+  afterEach(() => {
+    setApprovalHandler(null)
+    setGitAvailableForTest(null)
+    restoreWorkspace?.()
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  async function answer(
+    remote: boolean,
+    kind: 'edit' | 'delete' | 'move',
+  ): Promise<{ prompted: boolean; approved: boolean }> {
+    const before = prompts
+    const thread = {
+      projectId: 'p-backup',
+      threadId: `t-${kind}-${String(remote)}`,
+      projectRoot: repo,
+      root: repo,
+      checkoutMode: 'shared' as const,
+      branch: null,
+    }
+    const response = await runWithThreadExecutionContext(thread, () =>
+      respondToPermissionForTest(
+        { id: 'gemini', title: 'Agent', sandboxed: !remote, contained: false, remote },
+        permissionRequest({ kind, title: `${kind} src/index.ts` }),
+        repo,
+        repo,
+      ),
+    )
+    return {
+      prompted: prompts > before,
+      approved:
+        response.outcome.outcome === 'selected' &&
+        response.outcome.optionId === ALLOW_ONCE.optionId,
+    }
+  }
+
+  for (const kind of ['edit', 'delete', 'move'] as const) {
+    it(`auto-approves a local ${kind} but prompts for a remote one`, async () => {
+      assert.deepEqual(await answer(false, kind), { prompted: false, approved: true })
+      assert.deepEqual(await answer(true, kind), { prompted: true, approved: false })
+    })
+  }
 })

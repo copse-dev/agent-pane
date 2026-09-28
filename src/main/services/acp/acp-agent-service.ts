@@ -906,7 +906,13 @@ async function respondToPermission(
   // use. Nothing the agent overwrites is unrecoverable, so the per-edit modal
   // adds friction without adding protection. Shell/web/other still prompt: a
   // stash makes overwritten files recoverable, not a `rm -rf` or a network call.
-  if (WRITE_TOOL_KINDS.has(kind) && getSetting<boolean>('acpAutoApproveEditsWithBackup', true)) {
+  // Not for a remote (ACP-over-SSH) agent: it edits the SSH host's checkout,
+  // which a backup of this machine's worktree cannot restore.
+  if (
+    agent.remote !== true &&
+    WRITE_TOOL_KINDS.has(kind) &&
+    getSetting<boolean>('acpAutoApproveEditsWithBackup', true)
+  ) {
     if (await ensureWorktreeRecoverable(root)) {
       return permissionResponseFor(req.options, true)
     }
