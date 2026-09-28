@@ -17,6 +17,7 @@ exposePerfBridge()
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
   mobile: {
+    manage: () => ipcRenderer.invoke('mobile:manage'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -1465,6 +1466,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:current-branch', projectId, threadId),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branch-status', projectId, threadId, forBranch),
+    worktreeAttachment: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:worktree-attachment', projectId, threadId),
+    reattachWorktree: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:reattach-worktree', projectId, threadId),
     promptState: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>

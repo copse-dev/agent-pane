@@ -1434,6 +1434,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </p>
 
             <fieldset>
+              <legend>Mobile Companion</legend>
+              <p class="field-hint">
+                Open your Copse threads from a phone on the same local network. Choose the network
+                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
+                and this computer must stay awake.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
+                  Set up or manage…
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
@@ -1670,6 +1684,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
+
+  qsRequired<HTMLButtonElement>(overlay, '#mobile-companion-manage').addEventListener(
+    'click',
+    () => {
+      closeSettingsDialog()
+      void api.mobile.manage()
+    },
+  )
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')

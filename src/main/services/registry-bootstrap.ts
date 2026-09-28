@@ -35,6 +35,8 @@ import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
+import { reviewerInputTool } from '../tools/reviewer-input-tool.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
@@ -202,6 +204,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
+  syncReviewerInputTools(registry)
   // Model-proposed threads. Always registered: an agent can spot work worth
   // splitting out in any project, and the card it draws is inert until clicked
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
@@ -277,6 +280,15 @@ export function syncRoadmapPlanTools(registry: ToolRegistry): void {
     if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
   } else {
     registry.unregister('roadmap_plan')
+  }
+}
+
+/** Keep saved reviewer questions available to agents only while the experiment is enabled. */
+export function syncReviewerInputTools(registry: ToolRegistry): void {
+  if (getDefaultPluginRegistry().isEnabled(REVIEWER_INPUT_PLUGIN_ID)) {
+    if (!registry.has(reviewerInputTool.name)) registry.register(reviewerInputTool)
+  } else {
+    registry.unregister(reviewerInputTool.name)
   }
 }
 

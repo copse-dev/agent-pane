@@ -131,6 +131,8 @@ import {
   isThreadProposalCall,
   threadProposalCardSignature,
 } from './thread-proposal-tool-card.ts'
+import { createReviewerInputToolCard, mountReviewerInput } from './reviewer-input.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
@@ -611,6 +613,10 @@ function createIndividualToolCard(
   if (store && isThreadProposalCall(tc)) {
     const proposalCard = createThreadProposalToolCard(tc, store, api, threadId)
     if (proposalCard) return proposalCard
+  }
+  if (store && isReviewerInputCall(tc)) {
+    const inputCard = createReviewerInputToolCard(tc, store)
+    if (inputCard) return inputCard
   }
 
   const card = el('details', {
@@ -2537,12 +2543,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  root.append(roadmapOrigin.element, scrollArea, queuedHost)
+  const reviewerInput = mountReviewerInput(store, api)
+  const transcriptAndInput = el(
+    'div',
+    { class: 'conversation-reviewer-body' },
+    scrollArea,
+    reviewerInput.panel,
+  )
+  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
     if (!projectId || !threadId) {
-      setCodeBlockRunOutcome(list, id, null)
+      setCodeBlockRunOutcome(list, id, { exitCode: null, output: '' })
       return
     }
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
@@ -3458,7 +3471,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       } else if (
         card &&
         !card.classList.contains('thread-proposal') &&
-        !(item.type === 'individual' && isThreadProposalCall(item.toolCall))
+        !(item.type === 'individual' && isThreadProposalCall(item.toolCall)) &&
+        !(item.type === 'individual' && isReviewerInputCall(item.toolCall))
       ) {
         // Patch the existing disclosure shell so status/result changes preserve
         // focus, open state, and the browser's scroll anchor.
@@ -4347,9 +4361,46 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else restoreReadingAnchor(readingAnchor, prevScrollTop)
   }
 
+  function jumpToReviewerInput(messageId: string, requestId: string): void {
+    const activeThreadId = store.getState().activeThreadId
+    let attempts = 0
+    const tryJump = (): void => {
+      if (disposed || store.getState().activeThreadId !== activeThreadId) return
+      const message = Array.from(list.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+        (item) => item.dataset['messageId'] === messageId,
+      )
+      if (!message) {
+        // Older messages load in background chunks. Wait for the original
+        // assistant bubble rather than jumping to a newer approximation.
+        if (attempts++ < 300) requestAnimationFrame(tryJump)
+        return
+      }
+      const card = Array.from(message.querySelectorAll<HTMLElement>('[data-tool-id]')).find(
+        (item) => item.dataset['toolId'] === requestId,
+      )
+      if (card instanceof HTMLDetailsElement) card.open = true
+      const target = card ?? message
+      pinnedToBottom = false
+      userScrolledUpAt = Date.now()
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target.classList.add('reviewer-input-highlight')
+      setTimeout(() => {
+        target.classList.remove('reviewer-input-highlight')
+      }, 3000)
+    }
+    tryJump()
+  }
+
   const unsubs = [
+    store.on('reviewer_input_open', (requestId) => {
+      reviewerInput.open(requestId)
+    }),
+    store.on('reviewer_input_jump', jumpToReviewerInput),
     store.on('code_block_run_finished', (result) => {
-      setCodeBlockRunOutcome(list, result.id, result.exitCode)
+      setCodeBlockRunOutcome(list, result.id, {
+        exitCode: result.exitCode,
+        output: result.output,
+      })
     }),
     store.on('settings_changed', () => {
       agentNamesRequested = false
@@ -4491,13 +4542,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
+      reviewerInput.sync()
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
+      reviewerInput.sync()
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
+      reviewerInput.sync()
     }),
     store.on('todos_changed', () => {
       syncTodoPanel()
@@ -4571,6 +4625,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
+  reviewerInput.sync()
   return () => {
     disposed = true
     avatarMotion.dispose()
