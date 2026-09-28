@@ -364,8 +364,8 @@ While active:
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
-    `pkill`/`killall` of a bare name (a path or multi-word command line names the agent's own
-    process and runs);
+    every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
+    `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
   - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
@@ -408,9 +408,14 @@ While active:
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
   has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
-  name. A program run by absolute path is inspected unless it lives under an installed-program
-  root (`/usr`, `/bin`, `/opt`, `/System`, …): a script's text is assessed, and a binary or missing
-  file outside the workspace still runs as an installed program. Anything run from a temporary
+  name. A program run by absolute path is an installed program when it lives under a system root
+  (`/usr`, `/bin`, `/opt`, `/System`, …) or a home toolchain directory (`~/.cargo/bin`,
+  `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
+  text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
+  command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. A program in command position
+  is inspected however its path is spelled (`$HOME/x.sh`, `"$HOME/x.sh"`, `'/abs/x.sh'`); a spelling
+  the gate cannot match to the parse is inspected rather than skipped. Anything run from a temporary
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
