@@ -42,6 +42,12 @@ describe('hostReachReasons — other machines', () => {
       'ssh -o ProxyJump=none mini uptime',
       'ssh -I none mini uptime',
       'ssh -o SecurityKeyProvider=internal mini uptime',
+      'ssh -o ForwardAgent=no mini uptime',
+      'ssh -o ForwardX11=no mini uptime',
+      'ssh -o GSSAPIDelegateCredentials=no mini uptime',
+      'ssh -o CanonicalizeHostname=no mini uptime',
+      'ssh -o StrictHostKeyChecking=yes mini uptime',
+      'ssh -S none mini uptime',
       'scp build.tar mini:/tmp/',
       'scp -O mini:/tmp/build.tar .',
       'scp -R mini:/tmp/tree .',
@@ -106,6 +112,12 @@ describe('hostReachReasons — other machines', () => {
       'ssh -Y mini',
       'scp -A build.tar mini:/tmp/',
       'sftp -A mini',
+      'ssh -o ForwardAgent=yes mini',
+      'ssh -o ForwardX11=yes mini',
+      'ssh -o ForwardX11Trusted=yes mini',
+      'ssh -o GSSAPIDelegateCredentials=yes mini',
+      'ssh -O forward mini',
+      'ssh -O proxy mini',
       'ssh -o LocalForward=8080:other.example:80 mini',
       'ssh -o RemoteForward=8080:localhost:80 mini',
       'ssh -o DynamicForward=1080 mini',
@@ -137,6 +149,31 @@ describe('hostReachReasons — other machines', () => {
     ]) {
       assert.ok(reaches(command, { trustedSshHosts }), command)
     }
+  })
+
+  it('prompts when command-line options weaken or redirect trusted-host authentication', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'ssh -o CanonicalizeHostname=yes -o CanonicalDomains=evil.example mini',
+      'ssh -o StrictHostKeyChecking=no mini',
+      'ssh -o NoHostAuthenticationForLocalhost=yes mini',
+      'ssh -S /tmp/control mini uptime',
+      'ssh -o ControlPath=/tmp/control mini uptime',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+  })
+
+  it('prompts before forwarding secret-looking environment variables to a trusted host', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'ssh -o SendEnv=GITHUB_TOKEN mini',
+      'ssh -o "SendEnv LANG OPENAI_API_KEY" mini',
+      'ssh -o SetEnv=OPENAI_API_KEY=value mini',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+    assert.deepEqual(reasons('ssh -o SendEnv=-GITHUB_TOKEN mini', { trustedSshHosts }), [])
   })
 
   it('does not treat local paths as remote operands', () => {

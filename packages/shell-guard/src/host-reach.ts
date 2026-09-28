@@ -42,6 +42,10 @@ const SSH_VALUE_OPTION_LETTERS: Readonly<Record<string, ReadonlySet<string>>> = 
 const SSH_FORWARD_FLAGS = new Set(['-D', '-L', '-R', '-W', '-w'])
 const SSH_FORWARD_OPTIONS = new Set([
   'dynamicforward',
+  'forwardagent',
+  'forwardx11',
+  'forwardx11trusted',
+  'gssapidelegatecredentials',
   'localforward',
   'remoteforward',
   'tunnel',
@@ -143,20 +147,43 @@ function openSshOption(raw: string): { name: string; value: string } {
   }
 }
 
+function sshOptionIsEnabled(value: string): boolean {
+  return !/^(?:no|off|false|none)$/i.test(value)
+}
+
+function secretEnvironmentNames(option: { name: string; value: string }): string[] {
+  if (option.name === 'sendenv') {
+    return option.value
+      .split(/\s+/)
+      .filter((name) => name && !name.startsWith('-') && SECRET_NAME.test(name))
+  }
+  if (option.name === 'setenv') {
+    return option.value
+      .split(/\s+/)
+      .map((assignment) => assignment.slice(0, assignment.indexOf('=')))
+      .filter((name) => name && SECRET_NAME.test(name))
+  }
+  return []
+}
+
 interface SshInvocation {
   hosts: string[]
   /** Commands a remote shell runs, from operands or command-bearing options. */
   remoteCommands: string[]
   localExecution: boolean
   forwarding: boolean
+  trustOverride: boolean
+  secretEnvironment: string[]
 }
 
 function parseSshClient(head: string, args: readonly string[]): SshInvocation {
   const hosts: string[] = []
   const operands: string[] = []
   const remoteCommands: string[] = []
+  const secretEnvironment: string[] = []
   let localExecution = false
   let forwarding = false
+  let trustOverride = false
   for (let i = 0; i < args.length; i++) {
     const token = args[i] ?? ''
     if (head === 'mosh') {
@@ -211,6 +238,16 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
     const { flag, value, consumesNext } = shortOptions.valueOption
     if (consumesNext) i++
     if ((head === 'ssh' || head === 'autossh') && SSH_FORWARD_FLAGS.has(flag)) forwarding = true
+    if (
+      (head === 'ssh' || head === 'autossh') &&
+      flag === '-O' &&
+      /^(?:forward|proxy)$/i.test(value)
+    ) {
+      forwarding = true
+    }
+    if ((head === 'ssh' || head === 'autossh') && flag === '-S' && value.toLowerCase() !== 'none') {
+      trustOverride = true
+    }
     if ((head === 'ssh' || head === 'autossh') && flag === '-I' && value.toLowerCase() !== 'none') {
       localExecution = true
     }
@@ -222,7 +259,18 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
       const option = openSshOption(value)
       if (SSH_LOCAL_EXECUTION.test(value.replace(/^\s+/, ''))) localExecution = true
       if (sshOptionLoadsLocalCode(option.name, option.value)) localExecution = true
-      if (SSH_FORWARD_OPTIONS.has(option.name)) forwarding = true
+      if (SSH_FORWARD_OPTIONS.has(option.name) && sshOptionIsEnabled(option.value)) {
+        forwarding = true
+      }
+      secretEnvironment.push(...secretEnvironmentNames(option))
+      if (
+        (option.name === 'canonicalizehostname' && sshOptionIsEnabled(option.value)) ||
+        (option.name === 'stricthostkeychecking' && /^(?:no|off)$/i.test(option.value)) ||
+        (option.name === 'nohostauthenticationforlocalhost' && sshOptionIsEnabled(option.value)) ||
+        (option.name === 'controlpath' && option.value.toLowerCase() !== 'none')
+      ) {
+        trustOverride = true
+      }
       if (option.name === 'remotecommand' && option.value.toLowerCase() !== 'none') {
         remoteCommands.push(option.value)
       }
@@ -253,13 +301,15 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
       remoteCommands,
       localExecution,
       forwarding,
+      trustOverride,
+      secretEnvironment,
     }
   }
   for (const operand of operands) {
     const host = remoteOperandHost(operand)
     if (host) hosts.push(host)
   }
-  return { hosts, remoteCommands, localExecution, forwarding }
+  return { hosts, remoteCommands, localExecution, forwarding, trustOverride, secretEnvironment }
 }
 
 const SSH_CLIENTS = new Set(['ssh', 'scp', 'sftp', 'rsync', 'mosh', 'autossh'])
@@ -293,6 +343,16 @@ function remoteReasons(head: string, args: readonly string[], context: HostReach
   }
   if (invocation.forwarding) {
     reasons.push(`${head} opens a tunnel or forwards network traffic`)
+  }
+  if (invocation.trustOverride) {
+    reasons.push(
+      `${head} overrides destination resolution, host authentication, or local connection sharing`,
+    )
+  }
+  if (invocation.secretEnvironment.length > 0) {
+    reasons.push(
+      `${head} forwards secret-looking environment variables (${[...new Set(invocation.secretEnvironment)].join(', ')})`,
+    )
   }
   const trusted = new Set((context.trustedSshHosts ?? []).map(normalizeSshHost))
   const untrusted = [...new Set(invocation.hosts)].filter((host) => host && !trusted.has(host))
