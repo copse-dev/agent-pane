@@ -163,7 +163,7 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "extendInfo": {
-        "NSLocalNetworkUsageDescription": "Copse discovers nearby computers that advertise VNC screen sharing.",
+        "NSLocalNetworkUsageDescription": "Copse discovers nearby VNC screen sharing computers and serves Mobile Companion to paired phones on your local network.",
         "NSBonjourServices": [
           "_rfb._tcp"
         ]
