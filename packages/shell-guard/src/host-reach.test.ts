@@ -330,7 +330,10 @@ describe('hostReachReasons — privilege, PATH and downloads', () => {
   it('prompts for a temporary directory on PATH', () => {
     assert.ok(reaches('export PATH=/tmp/x:$PATH; git status'))
     assert.ok(reaches('PATH="$TMPDIR/bin:$PATH" make'))
+    assert.ok(reaches('export PATH+=:/tmp; git status'))
+    assert.ok(reaches('PATH+=:$TMPDIR/bin make'))
     assert.ok(!reaches('export PATH="$HOME/.cargo/bin:$PATH"; cargo test'))
+    assert.ok(!reaches('export PATH+=:$HOME/.cargo/bin; cargo test'))
   })
 
   it('prompts for running or making executable a file the command downloaded', () => {
