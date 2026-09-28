@@ -1,5 +1,14 @@
 import { join } from 'node:path'
-import { commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
+import { scanShellComposition } from './command-routing.ts'
+import {
+  CODE_INTERPRETERS,
+  commandName,
+  hasShellInputRedirect,
+  shellSegments,
+  unwrapWrappers,
+} from './shell-argv.ts'
+import { remoteChangeReasons } from './remote-change.ts'
+import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
 import { dangerousInSandboxReasons } from './shell-scope.ts'
 import { normalizeSshHost } from './trusted-ssh-hosts.ts'
 
@@ -454,14 +463,34 @@ function hostControlReasons(argv: readonly string[]): string[] {
   switch (head) {
     case 'pkill':
     case 'killall': {
-      // A path or a multi-word command line (`pkill -f "node scripts/watch"`)
-      // names the agent's own process; a bare name (`pkill -f vite`, `killall
-      // Finder`) matches whatever else the user is running under that name.
-      const patterns = argv.slice(1).filter((arg) => !arg.startsWith('-'))
-      const broad = patterns.length === 0 || patterns.some((p) => !/[\s/]/.test(p))
-      return broad
-        ? [`${head} kills every process with that name, not only ones this agent started`]
-        : []
+      // Signal 0 only checks that a process exists, and `killall -l` lists signals.
+      // On procps `pkill`, however, `-s 0` selects this session and still sends
+      // SIGTERM; on BSD `pkill -l` still kills and merely prints what it did.
+      const listsSignals =
+        head === 'killall' && argv.some((arg) => arg === '-l' || arg === '--list')
+      const signals: string[] = []
+      for (let index = 1; index < argv.length; index++) {
+        const arg = argv[index] ?? ''
+        const short =
+          /^-(\d+|(?:SIG)?(?:HUP|INT|QUIT|ILL|TRAP|ABRT|EMT|FPE|KILL|BUS|SEGV|SYS|PIPE|ALRM|TERM|URG|STOP|TSTP|CONT|CHLD|TTIN|TTOU|IO|XCPU|XFSZ|VTALRM|PROF|WINCH|INFO|USR1|USR2))$/i.exec(
+            arg,
+          )
+        if (short) signals.push(short[1] ?? '')
+        const long = /^--signal=(.+)$/i.exec(arg)
+        if (long) signals.push(long[1] ?? '')
+        if (arg === '--signal' || (head === 'killall' && arg === '-s')) {
+          signals.push(argv[++index] ?? '')
+        }
+        if (head === 'killall' && /^-s.+/.test(arg)) signals.push(arg.slice(2))
+      }
+      const probe = listsSignals || signals.some((signal) => /^(?:0|SIG0)$/i.test(signal))
+      const otherSignal = signals.some((signal) => !/^(?:0|SIG0)$/i.test(signal))
+      // A pattern cannot be scoped to this agent's processes: `pkill -f "node
+      // scripts/watch"` also stops the user's own watcher in another terminal.
+      // The agent can stop what it started by PID or job (`kill %1`) without asking.
+      return probe && !otherSignal
+        ? []
+        : [`${head} kills every process matching a pattern, not only ones this agent started`]
     }
     case 'launchctl':
       return LAUNCHCTL_READS.has(sub) ? [] : ['changes launchd services (launchctl)']
@@ -548,11 +577,154 @@ function fetchedCodeReasons(argv: readonly string[], context: HostReachContext):
 }
 
 // ---------------------------------------------------------------------------
+// Privilege, PATH and downloaded programs
+// ---------------------------------------------------------------------------
+
+const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas', 'run0', 'pkexec', 'su'])
+
+/**
+ * `sudo` is a pass-through wrapper for every other inspector, which judge the
+ * command it runs. Running it as root is its own effect: `… | sudo sh` and
+ * `sudo chown $USER /etc/passwd` looked like ordinary commands.
+ */
+function privilegeReason(rawArgv: readonly string[], argv: readonly string[]): string | null {
+  const prefix = rawArgv.slice(0, rawArgv.length - argv.length + 1)
+  const wrapper = prefix
+    .map((token) => commandName(token))
+    .find((name) => PRIVILEGE_WRAPPERS.has(name))
+  return wrapper ? `runs a command as another user (${wrapper})` : null
+}
+
+const TEMPORARY_PATH_ENTRY =
+  /^(?:\/tmp|\/private\/tmp|\/var\/tmp|\/private\/var\/tmp|\/var\/folders|\/private\/var\/folders|\/dev\/shm|\$\{?TMPDIR\b)/
+
+/**
+ * A temporary directory on `PATH` lets any program written there stand in for an
+ * ordinary command: `export PATH=/tmp/x:$PATH; git status` runs `/tmp/x/git`.
+ */
+function temporaryPathReason(command: string): string | null {
+  for (const match of command.matchAll(/(?:^|[\s;&|(])PATH\+?=(?:"([^"]*)"|'([^']*)'|(\S*))/g)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? ''
+    const entry = value.split(':').find((part) => TEMPORARY_PATH_ENTRY.test(part))
+    if (entry !== undefined) return `puts a temporary directory on PATH (${entry})`
+  }
+  return null
+}
+
+/** Files a `curl -o`/`wget -O` in the command writes. */
+function downloadedFiles(segments: readonly (readonly string[])[]): Set<string> {
+  const out = new Set<string>()
+  for (const argv of segments) {
+    const head = commandName(argv[0])
+    if (head !== 'curl' && head !== 'wget') continue
+    for (let i = 1; i < argv.length; i++) {
+      const arg = argv[i] ?? ''
+      // Short flags combine: `curl -Lo tool`, `wget -qO tool`.
+      const flag =
+        head === 'curl' ? /^(?:-[A-Za-z]*o|--output)$/ : /^(?:-[A-Za-z]*O|--output-document)$/
+      const attached =
+        head === 'curl' ? /^(?:-o|--output=)(.+)$/ : /^(?:-O|--output-document=)(.+)$/
+      const value = flag.test(arg) ? argv[i + 1] : attached.exec(arg)?.[1]
+      if (value && value !== '-') out.add(value.replace(/^\.\//, ''))
+    }
+  }
+  return out
+}
+
+/**
+ * `curl -Lo tool URL && chmod +x tool && ./tool`: nothing the gate can read
+ * exists until the command runs, and a compiled download inside the workspace
+ * would otherwise pass as a program the project built.
+ */
+function downloadThenRunReason(segments: readonly (readonly string[])[]): string | null {
+  const downloaded = downloadedFiles(segments)
+  if (downloaded.size === 0) return null
+  const named = (token: string | undefined): boolean =>
+    token !== undefined && downloaded.has(token.replace(/^\.\//, ''))
+  for (const argv of segments) {
+    const head = argv[0]
+    if (named(head)) return `runs a file it has just downloaded (${head ?? ''})`
+    const name = commandName(head)
+    const runner = CODE_INTERPRETERS.has(name) || name === 'source' || name === '.'
+    const script = runner ? argv.slice(1).find(named) : undefined
+    if (script !== undefined) return `runs a file it has just downloaded (${script})`
+    if (
+      commandName(head) === 'chmod' &&
+      argv.some((arg) => /x/.test(arg) && !named(arg)) &&
+      argv.some(named)
+    ) {
+      return 'makes a file it has just downloaded executable'
+    }
+  }
+  return null
+}
+
+const SQL_STDIN_CLIENTS = new Set(['psql', 'mysql', 'mariadb'])
+
+/**
+ * SQL clients execute stdin as SQL. Their argv contains neither a redirect target
+ * nor an upstream pipeline, so the per-argv remote-change rules cannot see that
+ * `mysql app < dump.sql` or `cat dump.sql | psql app` loads uninspected input.
+ */
+function databaseInputReason(command: string): string | null {
+  const composition = scanShellComposition(command)
+  if (!composition) return null
+  for (const [index, segment] of composition.segments.entries()) {
+    const [rawArgv = []] = shellSegments(segment, false)
+    const argv = unwrapWrappers(rawArgv)
+    const head = commandName(argv[0])
+    if (!SQL_STDIN_CLIENTS.has(head)) continue
+    const piped = composition.operators[index - 1]?.startsWith('|') === true
+    if (piped || hasShellInputRedirect(segment)) {
+      return `runs uninspected SQL input (${head} stdin)`
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+
+const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'awk', 'sed'])
+
+/**
+ * `history | grep -i token`: plain `history` is harmless (and empty in an agent's
+ * non-interactive shell), but filtering it for a secret-named word is a search
+ * for credentials. Reading the history files themselves asks as a credential store.
+ */
+function isHistoryStage(argv: readonly string[]): boolean {
+  const head = commandName(argv[0])
+  return head === 'history' || (head === 'fc' && argv.includes('-l'))
+}
+
+function searchesForSecrets(argv: readonly string[]): boolean {
+  return SEARCHERS.has(commandName(argv[0])) && argv.slice(1).some((arg) => SECRET_NAME.test(arg))
+}
+
+/**
+ * Only a search that reads history's output counts: `history | grep -i token`,
+ * not `history; rg token src`. Pipelines are split at `;`, `&&`, `||`, `&` and
+ * newlines, then into stages at `|`/`|&`; a searcher must follow the history stage.
+ */
+function historySearchReason(command: string): string | null {
+  const composition = scanShellComposition(command)
+  if (!composition) return null
+  let readsHistory = false
+  for (const [index, segment] of composition.segments.entries()) {
+    const previousOperator = composition.operators[index - 1]
+    if (index > 0 && previousOperator !== '|' && previousOperator !== '|&') readsHistory = false
+    const [rawArgv = []] = shellSegments(segment)
+    const argv = unwrapWrappers(rawArgv)
+    if (readsHistory && searchesForSecrets(argv)) return 'searches shell history for secrets'
+    if (isHistoryStage(argv)) readsHistory = true
+  }
+  return null
+}
 
 /** Every host-reach reason for a shell command line, deduplicated. */
 export function hostReachReasons(command: string, context: HostReachContext): string[] {
   const reasons = new Set<string>(secretOverNetworkReasons(command))
-  for (const rawArgv of shellSegments(command)) {
+  const segments = shellSegments(command)
+  for (const rawArgv of segments) {
     const argv = unwrapWrappers(rawArgv)
     const head = commandName(argv[0])
     const found = [
@@ -561,8 +733,20 @@ export function hostReachReasons(command: string, context: HostReachContext): st
       ...secretReasons(rawArgv, argv),
       ...hostControlReasons(argv),
       ...fetchedCodeReasons(argv, context),
+      ...remoteChangeReasons(rawArgv, argv),
+      privilegeReason(rawArgv, argv),
+      tokenPrinterReason(argv),
+      secretFileExposure(argv),
     ]
-    for (const reason of found) reasons.add(reason)
+    for (const reason of found) if (reason !== null) reasons.add(reason)
+  }
+  for (const reason of [
+    temporaryPathReason(command),
+    downloadThenRunReason(segments),
+    databaseInputReason(command),
+    historySearchReason(command),
+  ]) {
+    if (reason !== null) reasons.add(reason)
   }
   return [...reasons]
 }

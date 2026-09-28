@@ -154,6 +154,10 @@ export function classifyGhSegment(argv: readonly string[]): GhSegmentKind | null
   if (argv[1] === 'api') return isGhApiRead(argv.slice(2)) ? 'read' : null
   const words = argv.slice(1).filter((token) => !isFlag(token))
   const pair = `${words[0] ?? ''} ${words[1] ?? ''}`.trim()
+  // `gh auth status` reads, except with the flag that prints the token itself.
+  if (pair === 'auth status' && argv.some((token) => token === '--show-token' || token === '-t')) {
+    return null
+  }
   if (GH_READ_SUBCOMMANDS.has(pair)) return 'read'
   if (!GH_WRITE_SUBCOMMANDS.has(pair)) return null
   // Writes take an explicit flag allow-list rather than a denylist of `--repo`.
