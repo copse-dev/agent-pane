@@ -34212,11 +34212,46 @@ async function relocateProject(store2, api2, id) {
   await activateAndWait(store2, api2, id, path);
   return true;
 }
-function listOrphanProjects(api2) {
-  return api2.threads.listOrphans();
+function parseDismissedOrphanStores(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of value) {
+    if (typeof item !== "string" || item.length === 0 || seen.has(item)) continue;
+    seen.add(item);
+    ids.push(item);
+  }
+  return ids;
 }
-async function recoverOrphanProject(store2, api2, storeId) {
+function updateDismissedOrphanStores(api2, update) {
+  const next = dismissedOrphanStoresChain.catch(() => void 0).then(async () => {
+    const current = parseDismissedOrphanStores(await api2.storage.get(KEY_DISMISSED_ORPHAN_STORES));
+    const updated = update(current);
+    if (updated.length === current.length && updated.every((storeId, index) => storeId === current[index]))
+      return;
+    await serializedSet(api2, KEY_DISMISSED_ORPHAN_STORES, updated);
+  });
+  dismissedOrphanStoresChain = next;
+  return next;
+}
+async function listOrphanProjects(api2) {
+  const [orphans, dismissedRaw] = await Promise.all([
+    api2.threads.listOrphans(),
+    api2.storage.get(KEY_DISMISSED_ORPHAN_STORES)
+  ]);
+  const dismissed = new Set(parseDismissedOrphanStores(dismissedRaw));
+  if (dismissed.size === 0) return orphans;
+  return orphans.filter((orphan) => !dismissed.has(orphan.id));
+}
+async function dismissOrphanProject(api2, storeId) {
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current : [...current, storeId]
+  );
+}
+async function recoverOrphanProject(store2, api2, storeId, confirm2) {
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
+  if (confirm2 && !await confirm2()) return false;
   const path = await api2.workspace.open();
   if (!path) return false;
   if (store2.getState().projects.some((p2) => p2.id === storeId)) return false;
@@ -34224,10 +34259,14 @@ async function recoverOrphanProject(store2, api2, storeId) {
     projects: [...store2.getState().projects, { id: storeId, path, name: basename(path) }]
   });
   store2.emit("projects_changed");
+  await updateDismissedOrphanStores(
+    api2,
+    (current) => current.includes(storeId) ? current.filter((id) => id !== storeId) : current
+  );
   await activateAndWait(store2, api2, storeId, path);
   return true;
 }
-var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT;
+var uuid3, basename, SIDEBAR_THREADS_PAGE_SIZE, threadCache, liveCacheProjectId, projectViewState, switchGeneration, pendingSwitch, activationWaiters, workspaceChain, NEW_PROJECT_STARTER_PROMPT, KEY_DISMISSED_ORPHAN_STORES, dismissedOrphanStoresChain;
 var init_projects = __esm({
   "src/renderer/controller/projects.ts"() {
     init_thread_helpers();
@@ -34249,6 +34288,8 @@ var init_projects = __esm({
     activationWaiters = /* @__PURE__ */ new Map();
     workspaceChain = Promise.resolve();
     NEW_PROJECT_STARTER_PROMPT = "Introduce this project: look at the AGENT.md and README.md, then suggest what we should build first. Prefer plan mode and ask me clarifying questions before making changes.";
+    KEY_DISMISSED_ORPHAN_STORES = "dismissedOrphanStores";
+    dismissedOrphanStoresChain = Promise.resolve();
   }
 });
 
@@ -67482,6 +67523,44 @@ function mountProjectsPane(root, store2, api2) {
     wrap.append(action);
     return wrap;
   }
+  function orphanPrimaryLabel(orphan) {
+    const lead = orphan.sampleTitles[0]?.trim();
+    if (lead) return lead;
+    const count = orphan.threadCount;
+    return `${String(count)} thread${count === 1 ? "" : "s"}`;
+  }
+  function orphanSubtitle(orphan) {
+    const count = orphan.threadCount;
+    const countLabel = `${String(count)} thread${count === 1 ? "" : "s"}`;
+    const extra = orphan.sampleTitles.slice(1).filter((title2) => title2.trim().length > 0);
+    if (extra.length === 0) return countLabel;
+    const shown = extra.slice(0, 2).join(" \xB7 ");
+    const more = orphan.threadCount > orphan.sampleTitles.length ? ` \xB7 +${String(orphan.threadCount - orphan.sampleTitles.length)} more` : "";
+    return `${countLabel} \xB7 ${shown}${more}`;
+  }
+  function orphanRecoverDetail(orphan) {
+    const lines = [
+      "Choose the folder this conversation belonged to. Copse will attach the saved threads to that project."
+    ];
+    if (orphan.sampleTitles.length > 0) {
+      lines.push("");
+      lines.push("Threads in this store:");
+      for (const title2 of orphan.sampleTitles) {
+        lines.push(`\u2022 ${title2}`);
+      }
+      if (orphan.threadCount > orphan.sampleTitles.length) {
+        lines.push(`\u2022 \u2026and ${String(orphan.threadCount - orphan.sampleTitles.length)} more`);
+      }
+    } else {
+      lines.push("");
+      lines.push(
+        `This store holds ${String(orphan.threadCount)} thread${orphan.threadCount === 1 ? "" : "s"}.`
+      );
+    }
+    lines.push("");
+    lines.push(`Store id: ${orphan.id}`);
+    return lines.join("\n");
+  }
   function renderOrphansSection() {
     const section = el("div", { class: "orphans-section" });
     section.append(
@@ -67490,22 +67569,67 @@ function mountProjectsPane(root, store2, api2) {
         { class: "orphans-heading" },
         warningIcon("ui-icon ui-icon-sm"),
         el("span", {}, "Recoverable threads")
+      ),
+      el(
+        "p",
+        { class: "orphans-hint" },
+        "Saved chats with no project in the sidebar. Recover attaches them to a folder; Dismiss hides the row (threads stay on disk)."
       )
     );
     for (const orphan of orphans) {
-      const count = orphan.threadCount;
+      const primary = orphanPrimaryLabel(orphan);
+      const subtitle = orphanSubtitle(orphan);
       const row2 = el(
         "div",
-        { class: "orphan-row", title: `Store ${orphan.id}` },
-        el("span", { class: "orphan-name" }, `${String(count)} thread${count === 1 ? "" : "s"}`)
+        {
+          class: "orphan-row",
+          title: `Store ${orphan.id}`,
+          "data-orphan-id": orphan.id
+        },
+        el(
+          "div",
+          { class: "orphan-copy" },
+          el("span", { class: "orphan-name" }, primary),
+          el("span", { class: "orphan-meta" }, subtitle)
+        )
       );
+      const actions = el("div", { class: "orphan-actions" });
+      const dismissBtn = el(
+        "button",
+        { type: "button", class: "orphan-dismiss-btn", title: "Hide this store from the list" },
+        "Dismiss"
+      );
+      dismissBtn.addEventListener("click", () => {
+        void dismissOrphanProject(api2, orphan.id).then(() => {
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+          showToast("Recoverable threads hidden. They remain on disk.");
+        }).catch((err2) => {
+          showErrorToast("Could not dismiss recoverable threads", err2);
+        });
+      });
       const recoverBtn = el("button", { type: "button", class: "orphan-recover-btn" }, "Recover\u2026");
       recoverBtn.addEventListener("click", () => {
-        void recoverOrphanProject(store2, api2, orphan.id).catch((err2) => {
+        void recoverOrphanProject(
+          store2,
+          api2,
+          orphan.id,
+          () => showConfirmDialog({
+            message: `Recover \u201C${primary}\u201D?`,
+            detail: orphanRecoverDetail(orphan),
+            confirmLabel: "Choose folder\u2026",
+            cancelLabel: "Cancel"
+          })
+        ).then((recovered) => {
+          if (!recovered) return;
+          orphans = orphans.filter((entry) => entry.id !== orphan.id);
+          render();
+        }).catch((err2) => {
           showErrorToast("Could not recover threads", err2);
         });
       });
-      row2.append(recoverBtn);
+      actions.append(dismissBtn, recoverBtn);
+      row2.append(actions);
       section.append(row2);
     }
     return section;
@@ -67514,7 +67638,7 @@ function mountProjectsPane(root, store2, api2) {
     void listOrphanProjects(api2).then((next) => {
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
-        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount;
+        return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
       });
       orphans = next;
       if (changed) render();
@@ -68350,6 +68474,7 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_confirm_dialog();
     init_toast();
     init_fork_thread3();
     init_thread_filter();
