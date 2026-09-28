@@ -96,13 +96,25 @@ export const rememberTool = defineTool({
 export const RECALL_ALL_MAX_MEMORIES = 50
 export const RECALL_ALL_MAX_CHARS = 20_000
 
-/** Take memories in order until either cap would be exceeded (always at least one). */
+/**
+ * Take memories in order until either cap would be exceeded. A first memory
+ * that alone is over the character cap is clipped to it rather than returned
+ * whole, so one oversized note cannot defeat the cap; the rest of it is one
+ * query away.
+ */
 function capUnfiltered(formatted: string[]): string[] {
   const shown: string[] = []
   let chars = 0
   for (const text of formatted) {
     if (shown.length >= RECALL_ALL_MAX_MEMORIES) break
-    if (shown.length > 0 && chars + text.length > RECALL_ALL_MAX_CHARS) break
+    if (chars + text.length > RECALL_ALL_MAX_CHARS) {
+      if (shown.length === 0) {
+        shown.push(
+          `${text.slice(0, RECALL_ALL_MAX_CHARS)}\n\n(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`,
+        )
+      }
+      break
+    }
     shown.push(text)
     chars += text.length
   }

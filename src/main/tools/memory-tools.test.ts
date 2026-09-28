@@ -209,6 +209,21 @@ describe('memory-tools', () => {
     assert.match(all, /Output truncated: showing 1 of 3 memories; 2 not shown/)
   })
 
+  it('clips a single memory larger than the size cap instead of returning it whole', async () => {
+    addKnowledgeNote({
+      type: MEMORY_TYPE,
+      title: 'Huge',
+      body: 'y'.repeat(RECALL_ALL_MAX_CHARS * 3),
+    })
+
+    const all = await run(recallTool, {})
+
+    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.match(all, /## Huge/)
+    assert.match(all, /Memory truncated at 20,000 characters/)
+    assert.match(all, /recall with a query/)
+  })
+
   it('does not taint the turn for a tainted memory the cap left out', async () => {
     const big = 'x'.repeat(RECALL_ALL_MAX_CHARS)
     addKnowledgeNote({ type: MEMORY_TYPE, title: 'Shown', body: big })
