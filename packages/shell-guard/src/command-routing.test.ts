@@ -129,6 +129,16 @@ describe('resolveCommandRouting', () => {
     )
   })
 
+  it('defers when printf -v rewrites the environment before a trusted command', () => {
+    const r = resolveCommandRouting(
+      'printf -v PATH /tmp/evil && xcodebuild build',
+      root,
+      trust('xcodebuild'),
+    )
+    assert.equal(r.outcome, 'defer')
+    assert.match(r.reasons.join(' '), /shell variable|printf -v/)
+  })
+
   it('defers a trusted command chained with a sandbox-DEPENDENT sibling (no laundering)', () => {
     // `npm test` is contained-safe only *inside* the seatbelt; it must NOT run
     // unsandboxed just because xcodebuild is trusted.

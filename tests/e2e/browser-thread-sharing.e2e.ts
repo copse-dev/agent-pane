@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { $, $$, browser, expect } from '@wdio/globals'
+import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import {
   resetUserData,
   seedE2eViewport,
@@ -25,20 +26,6 @@ async function closeServer(server: Server | null): Promise<void> {
       else resolve()
     })
   })
-}
-
-async function navigateActiveTab(url: string): Promise<void> {
-  await browser.execute((targetUrl) => {
-    const input = document.querySelector<HTMLInputElement>(
-      '.browser-tab-panel.is-active .browser-url-input',
-    )
-    const go = document.querySelector<HTMLButtonElement>(
-      '.browser-tab-panel.is-active .browser-go-btn',
-    )
-    if (!input || !go) throw new Error('active browser toolbar is unavailable')
-    input.value = targetUrl
-    go.click()
-  }, url)
 }
 
 async function openBrowserMenu(): Promise<void> {
@@ -95,7 +82,7 @@ describe('browser context sharing with a thread', function () {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('.titlebar-btn[aria-label="Open browser"]').click()
     await $('.browser-url-input').waitForDisplayed({ timeout: 10_000 })
-    await navigateActiveTab(`${origin}/notes`)
+    await navigateActiveBrowserTab(`${origin}/notes`)
     await browser.waitUntil(
       async () =>
         (await $('.browser-tabs-tab.is-active .browser-tabs-tab-label').getText()) ===

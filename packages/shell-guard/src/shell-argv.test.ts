@@ -9,6 +9,7 @@ import {
   inlineCodeBody,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
+  printfAssignsShellVariable,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
@@ -107,6 +108,15 @@ describe('unwrapWrappers', () => {
       assert.ok(PASS_THROUGH_WRAPPERS.has(wrapper), wrapper)
       assert.ok(!TRUST_TRANSPARENT_WRAPPERS.has(wrapper), wrapper)
     }
+  })
+})
+
+describe('printfAssignsShellVariable', () => {
+  it('recognises the shell builtin assignment form without treating data as an option', () => {
+    assert.equal(printfAssignsShellVariable(['printf', '-v', 'PATH', '/tmp/evil']), true)
+    assert.equal(printfAssignsShellVariable(['printf', '-vPATH', '/tmp/evil']), true)
+    assert.equal(printfAssignsShellVariable(['printf', '%s', '-v']), false)
+    assert.equal(printfAssignsShellVariable(['printf', '--', '-v', 'PATH']), false)
   })
 })
 

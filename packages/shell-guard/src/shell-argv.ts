@@ -468,6 +468,25 @@ export function commandName(argv0: string | undefined): string {
 }
 
 /**
+ * Whether an argv invokes the shell's `printf -v name …` assignment form.
+ *
+ * `printf` normally only writes bytes, but Bash and Zsh implement `-v` as a
+ * shell builtin that writes a variable in the current shell. In a compound
+ * command, `printf -v PATH /tmp/evil && git …` can therefore replace the next
+ * executable without containing a leading `NAME=value` token. Authorization
+ * paths that treat ordinary `printf` as inert must reject this form.
+ */
+export function printfAssignsShellVariable(argv: readonly string[]): boolean {
+  if (commandName(argv[0]) !== 'printf') return false
+  for (const arg of argv.slice(1)) {
+    if (arg === '--') return false
+    if (arg === '-v' || arg.startsWith('-v')) return true
+    if (!arg.startsWith('-') || arg === '-') return false
+  }
+  return false
+}
+
+/**
  * Drop leading environment assignments and pass-through wrappers until the argv
  * starts at the command that actually runs.
  */
@@ -541,6 +560,14 @@ function withoutRawRedirects(argv: string[]): string[] {
     command.push(token)
   }
   return command
+}
+
+/**
+ * Quote-aware fallback argv for one already-separated shell segment. This keeps
+ * Windows separators and unknown variable spellings while dropping redirects.
+ */
+export function rawShellArgv(segment: string): string[] {
+  return withoutRawRedirects(rawTokens(segment))
 }
 
 /**
@@ -623,7 +650,7 @@ export function shellSegments(command: string, includeRawFallback = true): strin
   // made `1` a command head, and that phantom head's "not a plain read" blocker
   // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
   for (const segment of command.split(/&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/)) {
-    const argv = withoutRawRedirects(rawTokens(segment))
+    const argv = rawShellArgv(segment)
     if (argv.length > 0) segments.push(argv)
   }
 

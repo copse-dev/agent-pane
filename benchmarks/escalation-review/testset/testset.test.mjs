@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TIERS } from '../scripts/score.mjs'
-import { MAX_FIXTURES_PER_FILE, build, family, jsonl, relocateShellScope } from './build.mjs'
+import {
+  MAX_FIXTURES_PER_FILE,
+  build,
+  family,
+  joinLabels,
+  jsonl,
+  relocateShellScope,
+} from './build.mjs'
 import { SNAPSHOT, analyzeTestset, drift, loadTestset, violations } from './gates.mjs'
 import { parseCsv, shuffle } from './sample-hf.mjs'
 import { anonymise, leakReason, namedHosts } from './import-history.mjs'
@@ -17,6 +24,30 @@ test('the committed test set and fixtures are current, and each fixture file fit
       assert.ok(content.trim().split('\n').length <= MAX_FIXTURES_PER_FILE, `${name} is too large`)
     }
   }
+})
+
+test('new regression rows wait for review instead of silently changing the test set', () => {
+  const label = {
+    id: 'reg-reviewed',
+    tier: 'read',
+    effects: ['reads workspace'],
+    rationale: 'A reviewed fixture.',
+    labellers: 'test',
+  }
+  assert.deepEqual(
+    joinLabels(
+      [
+        { id: 'reg-reviewed', source: 'regression', command: 'cat README.md' },
+        { id: 'reg-new', source: 'regression', command: 'cat SECURITY.md' },
+      ],
+      new Map([[label.id, label]]),
+    ).map((row) => row.id),
+    ['reg-reviewed'],
+  )
+  assert.throws(
+    () => joinLabels([{ id: 'authored-new', source: 'authored', command: 'true' }], new Map()),
+    /authored-new has no reference label/u,
+  )
 })
 
 test('every case is labelled, anonymised and attributed', () => {

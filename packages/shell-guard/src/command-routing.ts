@@ -1,6 +1,10 @@
 import { parse as parseShell } from 'shell-quote'
 import { isValidTrustedCommand } from './trusted-commands.ts'
-import { CODE_INTERPRETERS, TRUST_TRANSPARENT_WRAPPERS } from './shell-argv.ts'
+import {
+  CODE_INTERPRETERS,
+  TRUST_TRANSPARENT_WRAPPERS,
+  printfAssignsShellVariable,
+} from './shell-argv.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 
 /**
@@ -134,7 +138,7 @@ export interface ShellComposition {
   operators: ShellControlOperator[]
 }
 
-function scanShellComposition(command: string): ShellComposition | null {
+export function scanShellComposition(command: string): ShellComposition | null {
   const segments: string[] = []
   const operators: ShellControlOperator[] = []
   let current = ''
@@ -260,6 +264,32 @@ function leadingAssignment(segment: string): string | null {
   return null
 }
 
+/** The argv beginning at the command word, using routing's narrow wrapper set. */
+function routingArgv(segment: string): string[] | null {
+  let tokens: ReturnType<typeof parseShell>
+  try {
+    tokens = parseShell(segment)
+  } catch {
+    return null
+  }
+  if (!tokens.every((token) => typeof token === 'string')) return null
+  let index = 0
+  while (index < tokens.length) {
+    const token = tokens[index] ?? ''
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index++
+      continue
+    }
+    const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
+    if (TRANSPARENT_PREFIXES.has(base)) {
+      index++
+      continue
+    }
+    break
+  }
+  return tokens.slice(index)
+}
+
 /**
  * Resolve whether {@link command} may run unsandboxed with no prompt.
  *
@@ -300,6 +330,10 @@ export function resolveCommandRouting(
     // Not trusted → must be a trivially-safe prep command with no escape signals.
     if (!head || !SAFE_PREP_COMMANDS.has(head)) {
       return { outcome: 'defer', reasons: [`segment not trusted: ${head ?? segment}`] }
+    }
+    const prepArgv = routingArgv(segment)
+    if (!prepArgv || printfAssignsShellVariable(prepArgv)) {
+      return { outcome: 'defer', reasons: ['printf -v assigns a shell variable'] }
     }
     if (analyzeShellCommand(segment, workspaceRoot).verdict !== 'sandbox') {
       return { outcome: 'defer', reasons: [`prep command shows escape signals: ${segment}`] }

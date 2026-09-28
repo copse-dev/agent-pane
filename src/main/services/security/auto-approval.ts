@@ -14,6 +14,7 @@ import { isReadOnlySimpleCommand, READ_ONLY_GIT_SUBCOMMANDS } from './permission
 import {
   commandName,
   hasGitReadEscapeHatch,
+  printfAssignsShellVariable,
   shellRedirects,
   TRUST_TRANSPARENT_WRAPPERS,
 } from './shell-argv.ts'
@@ -731,6 +732,9 @@ function classifySegment(segment: string, context: AutoApprovalContext): Segment
     return { tier: null, reason: `environment assignment before the command: ${segment}` }
   const head = commandName(effective[0])
   if (!head) return { tier: null, reason: `no command word in: ${segment}` }
+  if (printfAssignsShellVariable(effective)) {
+    return { tier: null, reason: `printf -v assigns a shell variable: ${segment}` }
+  }
   // A secret file inside the workspace is still a secret: reading `.env` is
   // exactly as contained as reading `README.md`, but it hands the agent a token.
   const secrets = secretFilesIn(effective)
