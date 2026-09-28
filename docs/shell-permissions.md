@@ -344,12 +344,14 @@ While active:
     Permissions → Trusted SSH hosts (empty by default; every `-J`/`ProxyJump` host and any
     command-line `Hostname` override must be listed too). A trusted host still asks when the client
     would load or run local code (`-o ProxyCommand`, provider/helper options, `-F`,
-    `scp`/`sftp -S`, `mosh --ssh`, or `rsync -e`/`--rsh`), opens a forwarding or tunnel (`-L`,
-    `-R`, `-D`, `-W`, `-w`, or the equivalent `-o` options), or a remote command (including
-    `RemoteCommand` and `rsync --rsync-path`) matches a destructive pattern. Clustered OpenSSH
-    options such as `-fL…` and `-vJ…` receive the same checks. Trusting a host otherwise hands it
-    commands as if it were this machine, including reads of its secrets. An SSH-family command
-    under `xargs` always asks because stdin can append an uninspected destination or remote command.
+    `scp`/`sftp -S`, `mosh --ssh`/`--client`, or `rsync -e`/`--rsh`), forwards a local capability
+    (`-A`, `-K`, `-X`, `-Y`), opens a forwarding or tunnel (`-L`, `-R`, `-D`, `-W`, `-w`, or the
+    equivalent `-o` options), or a remote command (including `RemoteCommand`, `mosh --server`, and
+    `rsync --rsync-path`) matches a destructive pattern. Each client has its own option grammar, and
+    clustered OpenSSH options such as `-fL…` and `-vJ…` receive the same checks. Trusting a host
+    otherwise hands it commands as if it were this machine, including reads of its secrets. An
+    SSH-family command under `xargs` always asks because stdin can append an uninspected destination
+    or remote command.
   - printing the environment (`env`, `printenv`, `export -p`, `declare -x`, bare `set`), a
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;

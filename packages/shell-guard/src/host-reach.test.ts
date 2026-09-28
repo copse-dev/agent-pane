@@ -18,8 +18,13 @@ describe('hostReachReasons — other machines', () => {
       'ssh -p 2222 dev@build.example.com uptime',
       'scp build.tar mini:/tmp/',
       'scp mini:/var/log/app.log .',
+      'scp -O mini:/var/log/app.log .',
+      'scp -R mini:/var/log/app.log .',
+      'scp -p mini:/var/log/app.log .',
       'rsync -a dist/ deploy@web:/srv/app',
       'sftp mini',
+      'sftp -s internal-sftp mini',
+      'sftp -X nrequests=64 mini',
       'ssh ssh://dev@[::1]:22',
     ]) {
       assert.ok(reaches(command), command)
@@ -38,8 +43,15 @@ describe('hostReachReasons — other machines', () => {
       'ssh -I none mini uptime',
       'ssh -o SecurityKeyProvider=internal mini uptime',
       'scp build.tar mini:/tmp/',
+      'scp -O mini:/tmp/build.tar .',
+      'scp -R mini:/tmp/tree .',
+      'scp -p mini:/tmp/build.tar .',
       'sftp -R 64 mini',
+      'sftp -s internal-sftp mini',
+      'sftp -X nrequests=64 mini',
       'rsync -av mini:/data/ ./data/',
+      'mosh -p 60000 mini',
+      'autossh -M 0 mini uptime',
     ]) {
       assert.deepEqual(reasons(command, { trustedSshHosts }), [], command)
     }
@@ -88,6 +100,12 @@ describe('hostReachReasons — other machines', () => {
       'ssh -D 1080 mini',
       'ssh -W other.example:80 mini',
       'ssh -w 0:0 mini',
+      'ssh -A mini',
+      'ssh -K mini',
+      'ssh -X mini',
+      'ssh -Y mini',
+      'scp -A build.tar mini:/tmp/',
+      'sftp -A mini',
       'ssh -o LocalForward=8080:other.example:80 mini',
       'ssh -o RemoteForward=8080:localhost:80 mini',
       'ssh -o DynamicForward=1080 mini',
@@ -114,6 +132,8 @@ describe('hostReachReasons — other machines', () => {
       'sftp -S /tmp/ssh mini',
       'sftp -D /tmp/sftp-server mini',
       'mosh --ssh=/tmp/ssh mini',
+      'mosh --client=/tmp/mosh-client mini',
+      'mosh --server="rm -rf /" mini',
     ]) {
       assert.ok(reaches(command, { trustedSshHosts }), command)
     }
