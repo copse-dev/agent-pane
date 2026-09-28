@@ -115,6 +115,20 @@ let loadGeneration = 0
 // under an older value is superseded and must not register tools or publish its
 // status — otherwise a quick enable→disable leaves the canvas tool registered.
 let bundledGeneration = 0
+// Full reloads, bundled-only resyncs and shutdown all mutate the same client
+// list and tool registry around awaited closes. Run those lifecycle boundaries
+// one at a time so a client connected by one operation cannot be swept out of
+// tracking by another operation's post-await cleanup.
+let lifecycleTail: Promise<void> = Promise.resolve()
+
+function serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+  const result = lifecycleTail.then(operation)
+  lifecycleTail = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
+}
 
 export function getMcpServerStatuses(): McpServerStatus[] {
   return serverStatuses.map((s) => ({ ...s }))
@@ -789,10 +803,12 @@ export async function setWorkspaceTrustAndReload(
 }
 
 /** Tear down all MCP clients/tools and reconnect from current config. */
-export async function reloadMcpServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
-  await teardown(registry)
-  await loadMcpServers(registry)
-  return getMcpServerStatuses()
+export function reloadMcpServers(registry: ToolRegistry): Promise<McpServerStatus[]> {
+  return serializeLifecycle(async () => {
+    await teardown(registry)
+    await loadMcpServers(registry)
+    return getMcpServerStatuses()
+  })
 }
 
 /**
@@ -841,17 +857,19 @@ export async function reloadMcpServersForPluginToggle(
   pluginId: string,
 ): Promise<McpServerStatus[] | null> {
   if (pluginId !== MCP_UI_CANVAS_PLUGIN_ID) return null
-  return resyncBundledServers(registry)
+  return serializeLifecycle(() => resyncBundledServers(registry))
 }
 
-export async function shutdownMcpServers(): Promise<void> {
-  loadGeneration++ // invalidate any in-flight load
-  bundledGeneration++
-  await Promise.allSettled(activeServers.map((s) => s.client.close()))
-  activeServers.length = 0
-  toolMeta.clear()
-  clearMcpToolPermissionTargets()
-  serverStatuses = []
+export function shutdownMcpServers(): Promise<void> {
+  return serializeLifecycle(async () => {
+    loadGeneration++ // invalidate any in-flight load
+    bundledGeneration++
+    await Promise.allSettled(activeServers.map((s) => s.client.close()))
+    activeServers.length = 0
+    toolMeta.clear()
+    clearMcpToolPermissionTargets()
+    serverStatuses = []
+  })
 }
 
 export { parseMcpToolName }

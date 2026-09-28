@@ -165,6 +165,46 @@ describe('reloadMcpServersForPluginToggle', () => {
     }
   })
 
+  it('does not orphan a client when a full reload overlaps a bundled resync', async () => {
+    plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
+    const listTools = mock.method(Client.prototype, 'listTools')
+    let releaseFirstClose: (() => void) | undefined
+    const firstClose = new Promise<void>((resolve) => {
+      releaseFirstClose = resolve
+    })
+    const closedClients = new Set<unknown>()
+    let closeCalls = 0
+    const close = mock.method(Client.prototype, 'close', function (this: Client) {
+      closedClients.add(this)
+      closeCalls++
+      return closeCalls === 1 ? firstClose : Promise.resolve()
+    })
+    try {
+      await loadMcpServers(tools)
+
+      // Hold the reload inside teardown. Before lifecycle operations were
+      // serialized, the resync could connect a fresh client during this wait;
+      // teardown then cleared it from activeServers without closing it.
+      const reloading = reloadMcpServers(tools)
+      for (let hops = 0; hops < 200 && closeCalls === 0; hops++) await Promise.resolve()
+      assert.equal(closeCalls, 1, 'the reload reached its awaited client close')
+      const resyncing = reloadMcpServersForPluginToggle(tools, MCP_UI_CANVAS_PLUGIN_ID)
+      for (let hops = 0; hops < 200; hops++) await Promise.resolve()
+
+      releaseFirstClose?.()
+      await Promise.all([reloading, resyncing])
+      await shutdownMcpServers()
+
+      for (const call of listTools.mock.calls) {
+        assert.ok(closedClients.has(call.this), 'every connected bundled client was closed')
+      }
+    } finally {
+      releaseFirstClose?.()
+      listTools.mock.restore()
+      close.mock.restore()
+    }
+  })
+
   it('closes a bundled client whose tool listing fails', async () => {
     plugins.enable(MCP_UI_CANVAS_PLUGIN_ID)
     const listTools = mock.method(Client.prototype, 'listTools', () =>
