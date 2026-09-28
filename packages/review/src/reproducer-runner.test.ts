@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, type ExecutionCell } from './isolation.ts'
 import { createVerifierToolExecutor, type VerifierToolExecutor } from './verifier-tools.ts'
+import { toolText } from './test-repo.ts'
 
 describe('supported reproducer runner', () => {
   let scratch: string
@@ -89,11 +90,11 @@ describe('supported reproducer runner', () => {
       new AbortController().signal,
       'ts-proof',
     )
-    assert.match(result, /exit codes separate head from base/)
+    assert.match(toolText(result), /exit codes separate head from base/)
     assert.equal(tools.reproducer()?.head.exitCode, 1)
     assert.equal(tools.reproducer()?.base.exitCode, 0)
     assert.match(tools.reproducer()?.head.output ?? '', /2 !== 1/)
-    assert.match(result, /not confirmation/)
+    assert.match(toolText(result), /not confirmation/)
     assert.deepEqual(await readdir(join(base, '.copse-review')), [])
     assert.deepEqual(await readdir(join(head, '.copse-review')), ['value.test.ts'])
   })
@@ -122,43 +123,49 @@ describe('supported reproducer runner', () => {
     const tools = executor()
     const signal = new AbortController().signal
     assert.match(
-      await tools.execute(
-        'write_reproducer',
-        {
-          path: '../escaped.ts',
-          content: 'throw 1',
-          argv: ['copse-test'],
-        },
-        signal,
-        'escape',
+      toolText(
+        await tools.execute(
+          'write_reproducer',
+          {
+            path: '../escaped.ts',
+            content: 'throw 1',
+            argv: ['copse-test'],
+          },
+          signal,
+          'escape',
+        ),
       ),
       /must live under/,
     )
     assert.match(
-      await tools.execute(
-        'write_reproducer',
-        {
-          path: '.copse-review/test.ts',
-          content: 'throw 1',
-          argv: ['copse-test', '../escaped.ts'],
-        },
-        signal,
-        'extra-path',
+      toolText(
+        await tools.execute(
+          'write_reproducer',
+          {
+            path: '.copse-review/test.ts',
+            content: 'throw 1',
+            argv: ['copse-test', '../escaped.ts'],
+          },
+          signal,
+          'extra-path',
+        ),
       ),
       /path comes from path/,
     )
     assert.equal(tools.reproducer(), null)
     const denied = executor('deny')
     assert.match(
-      await denied.execute(
-        'write_reproducer',
-        {
-          path: '.copse-review/denied.ts',
-          content: 'throw 1',
-          argv: ['copse-test'],
-        },
-        signal,
-        'denied',
+      toolText(
+        await denied.execute(
+          'write_reproducer',
+          {
+            path: '.copse-review/denied.ts',
+            content: 'throw 1',
+            argv: ['copse-test'],
+          },
+          signal,
+          'denied',
+        ),
       ),
       /commands cannot run/,
     )

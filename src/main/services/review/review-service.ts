@@ -45,7 +45,7 @@ import { discoverPnpmStore, reviewPermissionProfile } from '@copse/review/cli.ts
 import type { Finding } from '@copse/review/finding.ts'
 import { createHostProcessBackend } from '@copse/review/host-process-backend.ts'
 import { serializeCell, type IsolationBackend } from '@copse/review/isolation.ts'
-import { resolveLenses } from '@copse/review/lenses.ts'
+import { applicableLenses, resolveLenses } from '@copse/review/lenses.ts'
 import { renderReviewReport } from '@copse/review/report-text.ts'
 import {
   openReviewGround,
@@ -239,7 +239,10 @@ async function ensureApproved(
   options: ReviewRunOptions,
   services: ReviewHostServices,
 ): Promise<boolean> {
-  if (options.signal.aborted) return false
+  // Read afresh across the await below: AbortSignal.aborted is mutable, but
+  // TypeScript keeps the narrowing from the first check through the await.
+  const aborted = (): boolean => options.signal.aborted
+  if (aborted()) return false
   if (options.initiator === 'user') return true
   if (!services.isBillable(models.reviewer) && !services.isBillable(models.challenger)) return true
   if (approvedThreads.has(options.threadId)) return true
@@ -250,8 +253,7 @@ async function ensureApproved(
     },
     options.signal,
   )
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
-  if (options.signal.aborted) return false
+  if (aborted()) return false
   if (approved && remember) approvedThreads.add(options.threadId)
   return approved
 }
@@ -316,6 +318,7 @@ export interface ProjectReportInput {
   readonly models: ReviewModels
   readonly lenses: readonly string[]
   readonly startedAt: number
+  readonly initiator: ReviewInitiator
   readonly dismissed: ReadonlySet<string>
   /** Reads the anchored source of a finding on head; `null` when unreadable. */
   readonly anchored: (finding: Finding) => string | null
@@ -339,6 +342,7 @@ export function projectReviewReport(input: ProjectReportInput): ThreadReviewRepo
     status: failed.length > 0 ? 'error' : 'done',
     ...(error !== '' ? { error } : {}),
     startedAt: input.startedAt,
+    initiator: input.initiator,
     models: { reviewer: models.reviewer, challenger: models.challenger },
     lenses: [...input.lenses],
     baseRef: stage0.baseRef,
@@ -379,10 +383,12 @@ export function runningReviewReport(
   models: ReviewModels,
   lenses: readonly string[],
   startedAt: number,
+  initiator: ReviewInitiator,
 ): ThreadReviewReport {
   return {
     status: 'running',
     startedAt,
+    initiator,
     models: { reviewer: models.reviewer, challenger: models.challenger },
     lenses: [...lenses],
     baseRef: '',
@@ -424,7 +430,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
   const lensSpec = resolveReviewLensSpec(readSetting)
   const lenses = resolveLenses(lensSpec)
   const lensIds = lenses.map((lens) => lens.id)
-  const placeholder = runningReviewReport(models, lensIds, startedAt)
+  const placeholder = runningReviewReport(models, lensIds, startedAt, options.initiator)
 
   if (!getDefaultPluginRegistry().isEnabled(REVIEW_PLUGIN_ID)) {
     const report = errorReport(
@@ -538,7 +544,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
         ...host,
         validation: stage0,
         reviewers: [{ model: models.reviewer, providerFor: (): LLMProvider => reviewerProvider }],
-        lenses,
+        lenses: applicableLenses(lenses, context).lenses,
         threadId: threadKey,
         turnPrefix,
         concurrency: 2,
@@ -587,6 +593,7 @@ export async function runThreadReview(options: ReviewRunOptions): Promise<Review
       models,
       lenses: lensIds,
       startedAt,
+      initiator: options.initiator,
       dismissed: loadDismissedFindingIds(),
       anchored: (finding) => anchoredSource(headCheckout, finding),
       cost: services.estimateCost(usageByModel),

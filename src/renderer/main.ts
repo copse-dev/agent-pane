@@ -1,3 +1,4 @@
+import { attachMobileChat } from './controller/mobile-chat.ts'
 import './styles/tokens.css'
 // Shared markdown styling lives in the renderer package; agent-pane maps its
 // theme tokens onto the sheet's `--sm-*` knobs (see the bridge in
@@ -91,6 +92,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { mountProcessManagerDialog } from './views/process-manager-dialog.ts'
+import { mountActivityPanel, openActivityPanel } from './views/activity-panel.ts'
 import { startAgentController } from './controller/agent.ts'
 import { attachDiffState } from './controller/diff-state.ts'
 import { attachAutomationController } from './controller/automations.ts'
@@ -138,6 +140,7 @@ import {
   matchFindInChatShortcut,
   matchUiScaleShortcut,
   matchCommandPaletteShortcut,
+  matchActivityPanelShortcut,
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
@@ -251,8 +254,8 @@ async function boot(): Promise<void> {
   installTooltips()
   mountSettingsDialog(store, api)
   mountOnboardingDialog(store, api)
-  mountApprovalDialog(api, store)
-  mountAskUserDialog(api, store)
+  const approvalRequests = mountApprovalDialog(api, store)
+  const askUserRequests = mountAskUserDialog(api, store)
   // A clicked notification about a thread opens it here (main picks the window).
   mountAlertThreadNavigation(store, api)
   mountSshPromptDialog(api)
@@ -265,6 +268,9 @@ async function boot(): Promise<void> {
   mountCommandPalette(store, api)
   mountKeyboardShortcutsDialog()
   openProcessManager = mountProcessManagerDialog(api, store)
+  // Lists every pending request the two dialogs above hold, and answers
+  // approvals back through the approval dialog's own queue.
+  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests })
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
@@ -343,11 +349,16 @@ async function boot(): Promise<void> {
   }
   applyExternalLinkMarks()
   store.on('settings_changed', applyExternalLinkMarks)
+  let mobileRestored: () => void = () => {}
+  const mobileReady = new Promise<void>((resolve) => {
+    mobileRestored = resolve
+  })
   // A pop-out window is a secondary view of the same workspace; let the main
   // window own the agent loop and config autosave so the two don't race.
   if (!popoutMode) {
     startAgentController(store, api)
     attachAutosave(store, api)
+    attachMobileChat(store, api, mobileReady)
     attachBestValueDefaultResolver(store, api)
     attachAutomationController(store, api)
     // When `gh_pr_create` turns the diff you're reading into a PR, move the
@@ -525,6 +536,8 @@ async function boot(): Promise<void> {
     })
   }
 
+  mobileRestored()
+
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.
   if (popoutMode && store.getState().workspaceRoot) {
@@ -672,6 +685,11 @@ function registerKeyboardShortcuts(): void {
     if (meta && e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault()
       openProcessManager?.()
+    }
+    // Cmd/Ctrl+Shift+A opens the Activity panel: what needs you, what is working.
+    if (matchActivityPanelShortcut(e)) {
+      e.preventDefault()
+      openActivityPanel()
     }
     // Cmd/Ctrl+P opens the file quick-open palette (needs a workspace to search).
     if (meta && !e.shiftKey && e.key.toLowerCase() === 'p') {

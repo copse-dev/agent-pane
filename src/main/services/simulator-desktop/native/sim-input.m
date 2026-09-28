@@ -6,8 +6,8 @@
 //
 // Headless HID input forwarder for the booted iOS Simulator.
 //
-// Reads NDJSON events on stdin and synthesises Indigo HID messages, sending
-// them via SimulatorKit's SimDeviceLegacyHIDClient. No Simulator.app needed.
+// Reads NDJSON events on stdin and sends DTUHID XPC events on newer runtimes,
+// or Indigo messages through SimDeviceLegacyHIDClient on older runtimes.
 //
 // Event schema (one JSON object per line):
 //   {"type":"touch","phase":"down|move|up","x":0..1,"y":0..1}
@@ -28,6 +28,8 @@
 // has no private-framework dependencies.
 //
 // Wire format (Indigo) ported from facebook/idb's FBSimulatorIndigoHID.
+// DTUHID transport adapted from facebook/idb (MIT), Copyright (c) Meta
+// Platforms, Inc. and affiliates. See UPSTREAM-LICENSE.txt.
 
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -37,6 +39,8 @@
 #import <mach/mach.h>
 #import <mach/mach_time.h>
 #import <malloc/malloc.h>
+#import <stdatomic.h>
+#import <xpc/xpc.h>
 
 #pragma pack(push, 4)
 
@@ -117,7 +121,7 @@ typedef struct {
 // Indigo C-function pointer types
 typedef IndigoMessage *(*IndigoButtonFn)(int keyCode, int op, int target);
 typedef IndigoMessage *(*IndigoKeyboardFn)(uint32_t usageCode, int op);
-typedef IndigoMessage *(*IndigoMouseFn)(CGPoint *point0, CGPoint *point1, int target, int eventType, BOOL extra);
+typedef IndigoMessage *(*IndigoMouseFn)(CGPoint *point0, CGPoint *point1, uint32_t target, NSUInteger eventType, CGSize size, uint32_t edge);
 
 // ───────────────────────────────────────────────────────────────────────────
 // Logging
@@ -136,6 +140,7 @@ static void elog(NSString *fmt, ...) {
 // ───────────────────────────────────────────────────────────────────────────
 
 static NSString *developerDir(void) {
+    // xcode-select resolves DEVELOPER_DIR, including an Xcode.app bundle path.
     NSTask *t = [NSTask new];
     t.launchPath = @"/usr/bin/xcode-select";
     t.arguments = @[@"-p"];
@@ -192,25 +197,98 @@ static IndigoButtonFn gButtonFn = NULL;
 static IndigoKeyboardFn gKeyboardFn = NULL;
 static IndigoMouseFn  gMouseFn  = NULL;
 static dispatch_queue_t gSendQueue;
+static dispatch_group_t gPendingInput;
+static atomic_int gInputFailed;
+static xpc_connection_t gDTUConnection;
+static BOOL gContactActive;
+static const char *DTU_SERVICE = "com.apple.coredevice.feature.remote.hid.digitizer";
+
+static xpc_object_t dtuMessage(const char *type, xpc_object_t payload, BOOL barrier) {
+    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_string(message, "messageType", type);
+    xpc_dictionary_set_string(message, "featureIdentifier", DTU_SERVICE);
+    xpc_dictionary_set_bool(message, "isBarrier", barrier);
+    xpc_dictionary_set_value(message, "payload", payload);
+    return message;
+}
+
+// A successful send alone is insufficient: launchd can vend a port for a daemon
+// that has not started. Require a round-trip before accepting any user input.
+static BOOL dtuBarrier(void) {
+    xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_uint64(payload, "usageCode", 0);
+    xpc_dictionary_set_uint64(payload, "state", 2);
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block BOOL answered = NO;
+    xpc_connection_send_message_with_reply(gDTUConnection,
+        dtuMessage("IndigoKeyboardButtonEvent", payload, YES),
+        dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(xpc_object_t reply) {
+            answered = xpc_get_type(reply) != XPC_TYPE_ERROR;
+            dispatch_semaphore_signal(done);
+        });
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC)) != 0) return NO;
+    if (answered) usleep(200000);
+    return answered;
+}
+
+// 0 means this runtime has no DTUHID service and can use legacy Indigo.
+// -1 means DTUHID exists but is unhealthy: fail instead of silently losing input.
+static int connectDTU(id device) {
+    SEL lookup = NSSelectorFromString(@"lookup:error:");
+    if (![device respondsToSelector:lookup]) return 0;
+    NSError *error = nil;
+    mach_port_t (*lookupFn)(id, SEL, NSString *, NSError **) =
+        (mach_port_t (*)(id, SEL, NSString *, NSError **))objc_msgSend;
+    mach_port_t port = lookupFn(device, lookup, @(DTU_SERVICE), &error);
+    if (!port) return 0;
+    xpc_object_t (*endpointFn)(mach_port_t, uint64_t, uint64_t) = dlsym(RTLD_DEFAULT, "xpc_endpoint_create_mach_port_4sim");
+    xpc_connection_t (*connectionFn)(xpc_object_t) = dlsym(RTLD_DEFAULT, "xpc_connection_create_from_endpoint");
+    void (*enableFn)(xpc_connection_t) = dlsym(RTLD_DEFAULT, "xpc_connection_enable_sim2host_4sim");
+    if (!endpointFn || !connectionFn || !enableFn) return -1;
+    xpc_object_t endpoint = endpointFn(port, 0, 0);
+    if (!endpoint) return -1;
+    gDTUConnection = connectionFn(endpoint);
+    if (!gDTUConnection) return -1;
+    enableFn(gDTUConnection);
+    xpc_connection_set_event_handler(gDTUConnection, ^(xpc_object_t event) {
+        if (xpc_get_type(event) == XPC_TYPE_ERROR) {
+            elog(@"[sim-input] DTUHID disconnected; reconnect the Desktop viewer");
+            exit(2);
+        }
+    });
+    xpc_connection_resume(gDTUConnection);
+    if (!dtuBarrier()) {
+        xpc_connection_cancel(gDTUConnection);
+        gDTUConnection = nil;
+        return -1;
+    }
+    elog(@"[sim-input] DTUHID ready");
+    return 1;
+}
+
+static void sendDTU(const char *type, xpc_object_t payload) {
+    xpc_connection_send_message(gDTUConnection, dtuMessage(type, payload, NO));
+}
 
 static BOOL ensureHID(void) {
-    if (gHidClient) return YES;
+    if (gHidClient || gDTUConnection) return YES;
 
     if (!dlopen("/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator", RTLD_NOW)) {
         elog(@"[sim-input] FAIL dlopen CoreSimulator: %s", dlerror());
         return NO;
     }
-    NSString *kitPath = [developerDir() stringByAppendingPathComponent:@"Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"];
-    void *kit = dlopen(kitPath.fileSystemRepresentation, RTLD_NOW);
-    if (!kit) {
-        elog(@"[sim-input] FAIL dlopen SimulatorKit (%@): %s", kitPath, dlerror());
-        return NO;
+    NSString *devDir = developerDir();
+    NSArray<NSString *> *kitPaths = @[
+        [[devDir stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"SharedFrameworks/SimulatorKit.framework/SimulatorKit"],
+        [devDir stringByAppendingPathComponent:@"Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"]
+    ];
+    void *kit = NULL;
+    for (NSString *candidate in kitPaths) {
+        kit = dlopen(candidate.fileSystemRepresentation, RTLD_NOW);
+        if (kit) break;
     }
-    gButtonFn = (IndigoButtonFn) dlsym(kit, "IndigoHIDMessageForButton");
-    gKeyboardFn = (IndigoKeyboardFn) dlsym(kit, "IndigoHIDMessageForKeyboardArbitrary");
-    gMouseFn  = (IndigoMouseFn)  dlsym(kit, "IndigoHIDMessageForMouseNSEvent");
-    if (!gButtonFn || !gKeyboardFn || !gMouseFn) {
-        elog(@"[sim-input] FAIL Indigo dlsym button=%p keyboard=%p mouse=%p", gButtonFn, gKeyboardFn, gMouseFn);
+    if (!kit) {
+        elog(@"[sim-input] FAIL dlopen SimulatorKit in selected Xcode: %s", dlerror());
         return NO;
     }
 
@@ -220,6 +298,20 @@ static BOOL ensureHID(void) {
     if (!dev) {
         if (gTargetUDID.length) elog(@"[sim-input] no booted device matching %@", gTargetUDID);
         else elog(@"[sim-input] no booted device");
+        return NO;
+    }
+
+    int dtu = connectDTU(dev);
+    if (dtu > 0) return YES;
+    if (dtu < 0) {
+        elog(@"[sim-input] DTUHID unavailable. Wait for simulator startup to finish and reconnect.");
+        return NO;
+    }
+    gButtonFn = (IndigoButtonFn) dlsym(kit, "IndigoHIDMessageForButton");
+    gKeyboardFn = (IndigoKeyboardFn) dlsym(kit, "IndigoHIDMessageForKeyboardArbitrary");
+    gMouseFn  = (IndigoMouseFn)  dlsym(kit, "IndigoHIDMessageForMouseNSEvent");
+    if (!gButtonFn || !gKeyboardFn || !gMouseFn) {
+        elog(@"[sim-input] FAIL Indigo dlsym button=%p keyboard=%p mouse=%p", gButtonFn, gKeyboardFn, gMouseFn);
         return NO;
     }
 
@@ -235,15 +327,21 @@ static BOOL ensureHID(void) {
     if (!client) { elog(@"[sim-input] FAIL init HID client: %@", err); return NO; }
     gHidClient = client;
     gSendQueue = dispatch_queue_create("co.bennett.ios-sim.input", DISPATCH_QUEUE_SERIAL);
+    gPendingInput = dispatch_group_create();
     elog(@"[sim-input] HID client ready dev=%@ udid=%@", [dev valueForKey:@"name"], [dev valueForKey:@"UDID"]);
     return YES;
 }
 
 static void sendIndigo(IndigoMessage *msg) {
     if (!gHidClient || !msg) return;
+    dispatch_group_enter(gPendingInput);
     SEL sel = @selector(sendWithMessage:freeWhenDone:completionQueue:completion:);
     void (^cb)(NSError *) = ^(NSError *err) {
-        if (err) elog(@"[sim-input] send err: %@", err);
+        if (err) {
+            atomic_store(&gInputFailed, 1);
+            elog(@"[sim-input] send err: %@", err);
+        }
+        dispatch_group_leave(gPendingInput);
     };
     void (*sendFn)(id, SEL, IndigoMessage *, BOOL, dispatch_queue_t, void(^)(NSError *)) =
         (void (*)(id, SEL, IndigoMessage *, BOOL, dispatch_queue_t, void(^)(NSError *)))objc_msgSend;
@@ -255,10 +353,23 @@ static void sendIndigo(IndigoMessage *msg) {
 // ───────────────────────────────────────────────────────────────────────────
 
 static void sendTouch(double xRatio, double yRatio, BOOL down) {
+    if (gDTUConnection) {
+        xpc_object_t point = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_double(point, "x", xRatio);
+        xpc_dictionary_set_double(point, "y", yRatio);
+        xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_value(payload, "pointOne", point);
+        xpc_dictionary_set_uint64(payload, "eventType", down ? (gContactActive ? 1 : 0) : 2);
+        xpc_dictionary_set_uint64(payload, "edge", 0);
+        xpc_dictionary_set_uint64(payload, "target", 0);
+        gContactActive = down;
+        sendDTU("IndigoDigitizerEvent", payload);
+        return;
+    }
     if (!gMouseFn) return;
     CGPoint pt = CGPointMake(xRatio, yRatio);
     int evtType = down ? ButtonEventTypeDown : ButtonEventTypeUp;
-    IndigoMessage *seed = gMouseFn(&pt, NULL, 0x32, evtType, NO);
+    IndigoMessage *seed = gMouseFn(&pt, NULL, 0x32, evtType, CGSizeMake(1, 1), 0);
     if (!seed) { elog(@"[sim-input] MouseFn returned NULL"); return; }
 
     // Allocate canonical 320-byte two-payload message
@@ -288,6 +399,15 @@ static void sendTouch(double xRatio, double yRatio, BOOL down) {
 }
 
 static void sendButton(NSString *name, BOOL down) {
+    if (gDTUConnection) {
+        uint64_t code = [name isEqualToString:@"home"] ? 0x40 : [name isEqualToString:@"siri"] ? 0xcf : 0x30;
+        xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_uint64(payload, "usagePage", 0x0c);
+        xpc_dictionary_set_uint64(payload, "usageCode", code);
+        xpc_dictionary_set_uint64(payload, "state", down ? 1 : 2);
+        sendDTU("IndigoButtonEvent", payload);
+        return;
+    }
     if (!gButtonFn) return;
     int src = ButtonEventSourceHomeButton;
     if      ([name isEqualToString:@"home"]) src = ButtonEventSourceHomeButton;
@@ -302,6 +422,13 @@ static void sendButton(NSString *name, BOOL down) {
 }
 
 static void sendKey(uint32_t keyCode, BOOL down) {
+    if (gDTUConnection) {
+        xpc_object_t payload = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_uint64(payload, "usageCode", keyCode);
+        xpc_dictionary_set_uint64(payload, "state", down ? 1 : 2);
+        sendDTU("IndigoKeyboardButtonEvent", payload);
+        return;
+    }
     if (!gKeyboardFn) return;
     int op = down ? ButtonEventTypeDown : ButtonEventTypeUp;
     IndigoMessage *m = gKeyboardFn(keyCode, op);
@@ -380,7 +507,7 @@ int main(int argc, const char **argv) {
             elog(@"[sim-input] target udid=%@", gTargetUDID);
         }
         // Pre-warm: try to attach now so first event has no latency
-        ensureHID();
+        if (!ensureHID()) return 2;
         elog(@"[sim-input] ready");
 
         NSFileHandle *in = [NSFileHandle fileHandleWithStandardInput];
@@ -408,6 +535,15 @@ int main(int argc, const char **argv) {
                 processEvent((NSDictionary *)obj);
             }
         }
+        if (gDTUConnection && !dtuBarrier()) {
+            elog(@"[sim-input] DTUHID stopped responding");
+            return 2;
+        }
+        if (gPendingInput && dispatch_group_wait(gPendingInput, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
+            elog(@"[sim-input] timed out waiting for input acknowledgement");
+            return 2;
+        }
+        if (atomic_load(&gInputFailed)) return 2;
         elog(@"[sim-input] stdin closed, exiting");
     }
     return 0;

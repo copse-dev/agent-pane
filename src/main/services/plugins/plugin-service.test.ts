@@ -39,6 +39,7 @@ import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.t
 import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
@@ -59,8 +60,10 @@ const PLUGIN_DISABLED_KEY = 'pluginDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.automationsEnablement'
 const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearchEnablement'
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
+const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
 const BACKGROUND_TASKS_STABLE_MIGRATION_KEY = 'pluginMigration.backgroundTasksStable'
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
+const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
 const AGENTS_MD_MODE_MIGRATION_KEY = 'pluginMigration.agentsMdInstructionFiles'
 const REVIEW_PLUGIN_MIGRATION_KEY = 'pluginMigration.reviewFromModelComparison'
 const PLUGIN_SOURCES_KEY = 'pluginSources'
@@ -137,9 +140,11 @@ function clearStorage(): void {
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(REVIEW_PLUGIN_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_STABLE_MIGRATION_KEY, true)
   storageSet(APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(AGENTS_MD_MODE_MIGRATION_KEY, true)
   storageSet(PLUGIN_SOURCES_KEY, [])
   storageSet(pluginSettingsKey('demo.plugin'), {})
@@ -391,6 +396,7 @@ describe('PluginService', () => {
       DARK_FACTORY_PLUGIN_ID,
       PARALLEL_SEARCH_PLUGIN_ID,
       ARTIFACT_CHECKPOINT_PLUGIN_ID,
+      REVIEWER_INPUT_PLUGIN_ID,
       APPLE_DEVELOPMENT_PLUGIN_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
@@ -412,6 +418,7 @@ describe('PluginService', () => {
         DARK_FACTORY_PLUGIN_ID,
         PARALLEL_SEARCH_PLUGIN_ID,
         ARTIFACT_CHECKPOINT_PLUGIN_ID,
+        REVIEWER_INPUT_PLUGIN_ID,
         APPLE_DEVELOPMENT_PLUGIN_ID,
       ].sort(),
     )
@@ -483,6 +490,37 @@ describe('PluginService', () => {
     __resetPluginServiceForTests()
     const later = getPluginService()
     assert.equal(later.registry.isEnabled(ARTIFACT_CHECKPOINT_PLUGIN_ID), true)
+  })
+
+  it('seeds reviewer input off once for existing profiles without erasing later choices', async () => {
+    storageDelete(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY)
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(REVIEWER_INPUT_PLUGIN_ID), false)
+    assert.equal(storageGet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(REVIEWER_INPUT_PLUGIN_ID, true)
+    __resetPluginServiceForTests()
+    const later = getPluginService()
+    assert.equal(later.registry.isEnabled(REVIEWER_INPUT_PLUGIN_ID), true)
+  })
+
+  it('seeds the dark-factory sensor off once for existing profiles without erasing later choices', async () => {
+    // An existing profile: it owns a disable list that pre-dates the plugin, so
+    // the fresh-profile seed never runs and only the upgrade seed can turn it off.
+    storageSet(PLUGIN_DISABLED_KEY, [REVIEW_PLUGIN_ID])
+    storageDelete(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY)
+    const service = getPluginService()
+    assert.equal(service.registry.isEnabled(DARK_FACTORY_PLUGIN_ID), false)
+    assert.deepEqual(
+      parseStringList(storageGet(PLUGIN_DISABLED_KEY)),
+      [DARK_FACTORY_PLUGIN_ID, REVIEW_PLUGIN_ID].sort(),
+    )
+    assert.equal(storageGet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(DARK_FACTORY_PLUGIN_ID, true)
+    __resetPluginServiceForTests()
+    const later = getPluginService()
+    assert.equal(later.registry.isEnabled(DARK_FACTORY_PLUGIN_ID), true)
   })
 
   it('carries a comparison opt-in across to the review plugin once, models included', async () => {
