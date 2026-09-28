@@ -1118,6 +1118,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
+    bundledSkillPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
