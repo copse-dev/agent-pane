@@ -210,6 +210,7 @@ import {
   waitForAgentsRegistryRefresh,
 } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
+import { listBundledSkillPlugins } from '../services/skills/bundled-cursor-skills.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import {
@@ -356,6 +357,7 @@ import { createPrForThread } from '../services/github/pr-create-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
+  reloadMcpServersForPluginToggle,
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
@@ -448,6 +450,7 @@ const zAutomationScheduleInput = z.object({
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
   'bundledCursorSkillsEnabled',
+  'bundledSkillPluginOverrides',
   'skillPluginPaths',
 ])
 
@@ -2031,6 +2034,7 @@ export function registerAllHandlers(
     return listAgents()
   })
   ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
+  ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
@@ -2219,6 +2223,11 @@ export function registerAllHandlers(
     if (id === DARK_FACTORY_PLUGIN_ID) {
       syncDarkFactorySensor()
     }
+    // The `copse.mcp-ui-canvas` plugin gates the bundled canvas server, so its
+    // `render_html_artefact` tool must connect or disconnect with the toggle —
+    // the same live reload the Apple Development toggle does below.
+    const bundledMcpStatuses = await reloadMcpServersForPluginToggle(registry, id)
+    if (bundledMcpStatuses) win.webContents.send('mcp:status-changed', bundledMcpStatuses)
     if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
