@@ -83,6 +83,18 @@ describe('footer branch status for a detached thread worktree', () => {
     return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
   }
 
+  /** The repair button shares the branch's line instead of wrapping beneath it. */
+  async function expectOnBranchLine(button: WebdriverIO.Element): Promise<void> {
+    const label = await $('.footer-branch-status').getLocation()
+    const labelSize = await $('.footer-branch-status').getSize()
+    const buttonAt = await button.getLocation()
+    const buttonSize = await button.getSize()
+    const labelMid = label.y + labelSize.height / 2
+    const buttonMid = buttonAt.y + buttonSize.height / 2
+    expect(Math.abs(labelMid - buttonMid)).toBeLessThan(2)
+    expect(buttonAt.x).toBeGreaterThan(label.x + labelSize.width - 1)
+  }
+
   before(async function () {
     this.timeout(120_000)
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
@@ -186,6 +198,7 @@ describe('footer branch status for a detached thread worktree', () => {
       'aria-label',
       `Reattach checkout to ${detachedBranch}`,
     )
+    await expectOnBranchLine(reattachBtn)
 
     await saveElementScreenshot('#input-bar', 'footer-branch-detached-worktree.png')
   })
@@ -202,5 +215,68 @@ describe('footer branch status for a detached thread worktree', () => {
     expect(git(worktreeRoot, ['symbolic-ref', '--short', 'HEAD'])).toBe(detachedBranch)
 
     await saveElementScreenshot('#input-bar', 'footer-branch-reattached-worktree.png')
+  })
+
+  it('offers to continue a rebase that stopped part-way', async function () {
+    this.timeout(90_000)
+    // A conflicting rebase stops with HEAD detached and its sequencer state on
+    // disk: the state a signing failure or conflict leaves an agent's checkout in.
+    const baseBranch = git(projectRoot, ['branch', '--show-current'])
+    writeFileSync(join(worktreeRoot, 'README.md'), 'thread change\n')
+    git(worktreeRoot, ['commit', '-qam', 'thread change'])
+    writeFileSync(join(projectRoot, 'README.md'), 'base change\n')
+    git(projectRoot, ['commit', '-qam', 'base change'])
+    expect(() => git(worktreeRoot, ['rebase', baseBranch])).toThrow()
+    expect(git(worktreeRoot, ['status'])).toContain('rebase in progress')
+
+    // The rebase rewrote the checkout's files, and the footer's working-tree
+    // watcher picks that up without a thread switch.
+    const continueBtn = await $('.branch-reattach-button')
+    await expect(continueBtn).toHaveText('Continue rebase', { wait: 20_000 })
+    await expect(continueBtn).toBeEnabled()
+    await expect(continueBtn).toHaveAttribute(
+      'aria-label',
+      `Continue the rebase on ${detachedBranch} in a terminal`,
+    )
+    await expectOnBranchLine(continueBtn)
+
+    await saveElementScreenshot('#input-bar', 'footer-branch-rebase-in-progress.png')
+  })
+
+  it('commits a pick that failed to sign before continuing the rebase', async function () {
+    this.timeout(90_000)
+    // Start from main so the conflicting commit from the previous case does
+    // not stop this rebase first.
+    git(worktreeRoot, ['rebase', '--abort'])
+    const baseBranch = git(projectRoot, ['branch', '--show-current'])
+    git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
+    writeFileSync(join(worktreeRoot, 'thread.txt'), 'thread\n')
+    git(worktreeRoot, ['add', 'thread.txt'])
+    git(worktreeRoot, ['commit', '-qm', 'thread file'])
+    const picked = git(worktreeRoot, ['rev-parse', 'HEAD'])
+    writeFileSync(join(projectRoot, 'main.txt'), 'main\n')
+    git(projectRoot, ['add', 'main.txt'])
+    git(projectRoot, ['commit', '-qm', 'main file'])
+    // A signing key that cannot load fails the pick's commit the way a
+    // sandboxed agent without the user's ssh-agent does.
+    expect(() =>
+      git(worktreeRoot, [
+        '-c',
+        'gpg.format=ssh',
+        '-c',
+        'user.signingkey=/nonexistent/copse-e2e-key',
+        'rebase',
+        '-S',
+        baseBranch,
+      ]),
+    ).toThrow()
+
+    const button = await $('.branch-reattach-button')
+    await expect(button).toHaveText('Commit and continue', { wait: 20_000 })
+    await expect(button).toBeEnabled()
+    await expect(button).toHaveAttribute('title', expect.stringContaining(picked.slice(0, 7)))
+    await expectOnBranchLine(button)
+
+    await saveElementScreenshot('#input-bar', 'footer-branch-uncommitted-pick.png')
   })
 })

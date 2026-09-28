@@ -1,9 +1,13 @@
-import { lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
-import type { ThreadWorktreeAttachment, ThreadWorktreeReattachResult } from '@shared/types/git.ts'
+import type {
+  ThreadWorktreeAttachment,
+  ThreadWorktreeReattachResult,
+  UncommittedRebasePick,
+} from '@shared/types/git.ts'
 import {
   initialThreadWorktreeBranchName,
   isInitialThreadWorktreeBranchName,
@@ -1101,6 +1105,87 @@ async function hasActiveGitRecovery(gitDir: string): Promise<boolean> {
   return (await activeGitRecovery(gitDir)) !== null
 }
 
+async function readOptionalFile(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch (error) {
+    if (ownErrorCode(error) === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  return (await readOptionalFile(path)) !== null
+}
+
+const REBASE_PICK_LINE = /^(?:p|pick)\s+([0-9a-f]{7,64})(?:\s|$)/i
+
+/** The commands of a sequencer file, skipping comments and blank lines. */
+function sequencerCommands(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+}
+
+function pickedCommit(line: string | undefined): string | null {
+  return line ? (REBASE_PICK_LINE.exec(line)?.[1]?.toLowerCase() ?? null) : null
+}
+
+const SIGN_OPTION = /^-S[A-Za-z0-9._@+-]*$/
+
+async function nulSeparatedPaths(cwd: string, args: string[]): Promise<Set<string> | null> {
+  const result = await git(cwd, args)
+  if (result.code !== 0) return null
+  return new Set(result.stdout.split('\0').filter(Boolean))
+}
+
+/**
+ * Recognise a rebase pick that applied but whose commit failed. Git then
+ * reschedules the pick, so the last done command and the next todo command
+ * name the same commit; it records no `stopped-sha`, leaves the picked
+ * changes staged, and `git rebase --continue` refuses to go on. Committing
+ * the staged changes with the picked commit's message lets the rebase drop
+ * the rescheduled pick as already applied and finish.
+ *
+ * Every signal must agree, including that the staged paths are exactly the
+ * picked commit's paths, so a rebase stopped for any other reason keeps the
+ * plain `--continue`.
+ */
+async function uncommittedRebasePick(
+  checkout: string,
+  gitDir: string,
+): Promise<UncommittedRebasePick | null> {
+  const stateDir = join(gitDir, 'rebase-merge')
+  const [done, todo, stoppedSha, amend, signOption] = await Promise.all([
+    readOptionalFile(join(stateDir, 'done')),
+    readOptionalFile(join(stateDir, 'git-rebase-todo')),
+    fileExists(join(stateDir, 'stopped-sha')),
+    fileExists(join(stateDir, 'amend')),
+    readOptionalFile(join(stateDir, 'gpg_sign_opt')),
+  ])
+  if (done === null || todo === null || stoppedSha || amend) return null
+  const lastDone = pickedCommit(sequencerCommands(done).at(-1))
+  const nextTodo = pickedCommit(sequencerCommands(todo)[0])
+  if (!lastDone || lastDone !== nextTodo) return null
+
+  const [commit, cherryPickHead] = await Promise.all([
+    resolveCommit(checkout, lastDone),
+    resolveCommit(checkout, 'CHERRY_PICK_HEAD'),
+  ])
+  if (!commit || commit !== cherryPickHead) return null
+
+  const [staged, picked] = await Promise.all([
+    nulSeparatedPaths(checkout, ['diff', '--cached', '--name-only', '-z', 'HEAD']),
+    nulSeparatedPaths(checkout, ['diff', '--name-only', '-z', `${commit}^`, commit]),
+  ])
+  if (!staged || !picked || staged.size === 0 || staged.size !== picked.size) return null
+  for (const path of staged) if (!picked.has(path)) return null
+
+  const sign = signOption?.trim() ?? ''
+  return { commit, signOption: SIGN_OPTION.test(sign) ? sign : null }
+}
+
 /** Reconstruct and validate persisted metadata; failure never falls back to shared mode. */
 async function validateThreadWorktreeState(
   input: ValidateWorktreeInput,
@@ -1245,10 +1330,15 @@ export async function inspectThreadWorktreeAttachment(
   const validated = await validateThreadWorktreeState(input)
   if (validated.branch) return { state: 'attached' }
   try {
+    const recovery = await activeGitRecovery(validated.gitDir)
     return {
       state: 'detached',
       branch: input.worktree.branch,
-      recovery: await activeGitRecovery(validated.gitDir),
+      recovery,
+      uncommittedPick:
+        recovery === 'rebase'
+          ? await uncommittedRebasePick(validated.path, validated.gitDir)
+          : null,
     }
   } finally {
     releaseDetachedWorktreeRoot(validated.root, observedAt)

@@ -752,9 +752,28 @@
 .footer-branch-status.is-detached {
   color: var(--warning);
 }
+/* The repair button sits on the branch's own line: the label gives way to an
+   ellipsis and the button keeps its width. A block picker wrapped the button
+   under the branch name and doubled the footer's height. */
+.footer-branch-host .branch-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.footer-branch-host .branch-picker-trigger {
+  flex: 0 1 auto;
+}
+/* The button's width comes on top of the branch's own cap, not out of it. */
+.footer-branch-host .branch-picker:has(> .branch-reattach-button:not([hidden])) {
+  max-width: min(320px, 45vw);
+}
 .branch-reattach-button {
+  flex: none;
   font: inherit;
   font-size: var(--font-size-xs);
+  line-height: 1.4;
+  white-space: nowrap;
   color: var(--text-primary);
   background: transparent;
   border: 1px solid var(--border);

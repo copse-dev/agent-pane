@@ -796,6 +796,7 @@ describe('worktree manager', () => {
         state: 'detached',
         branch: input.worktree.branch,
         recovery: null,
+        uncommittedPick: null,
       })
 
       const gitDir = git(path, ['rev-parse', '--absolute-git-dir']).trim()
@@ -804,9 +805,67 @@ describe('worktree manager', () => {
         state: 'detached',
         branch: input.worktree.branch,
         recovery: 'rebase',
+        uncommittedPick: null,
       })
       await assert.rejects(reattachThreadWorktree(input), /rebase is still in progress/)
       assert.equal((await inspectThreadWorktreeAttachment(input)).state, 'detached')
+    })
+
+    /** Rebase the thread branch onto a new `main` commit, expecting the rebase to stop. */
+    function stoppedRebase(path: string, args: string[] = ['rebase', 'main']): void {
+      assert.throws(() => git(path, args))
+      assert.ok(git(path, ['status']).includes('rebase in progress'))
+    }
+
+    it('recognises a rebase pick whose commit failed to sign', async () => {
+      const { input, path } = await detachedWorktree()
+      const repo = input.projectRoot
+      const picked = await commitFile(path, 'thread.txt')
+      await commitFile(repo, 'main.txt')
+      // A signing key that cannot load fails the pick's commit the way a
+      // sandboxed agent without the user's ssh-agent does.
+      stoppedRebase(path, [
+        '-c',
+        'gpg.format=ssh',
+        '-c',
+        'user.signingkey=/nonexistent/copse-test-key',
+        'rebase',
+        '-S',
+        'main',
+      ])
+
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+        state: 'detached',
+        branch: input.worktree.branch,
+        recovery: 'rebase',
+        uncommittedPick: { commit: picked, signOption: '-S' },
+      })
+
+      // The offered recovery finishes the rebase: the rescheduled pick is
+      // dropped as already applied and the checkout is back on its branch.
+      git(path, ['-c', 'commit.gpgsign=false', 'commit', '-q', '-C', picked])
+      git(path, ['-c', 'commit.gpgsign=false', 'rebase', '--continue'])
+      assert.equal(headBranch(path), input.worktree.branch)
+      assert.equal(git(path, ['log', '-1', '--format=%s']).trim(), 'thread.txt')
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), { state: 'attached' })
+    })
+
+    it('keeps the plain continue for a rebase stopped on a conflict', async () => {
+      const { input, path } = await detachedWorktree()
+      const repo = input.projectRoot
+      await writeFile(join(path, 'README.md'), 'thread\n')
+      git(path, ['commit', '-q', '-am', 'thread readme'])
+      await writeFile(join(repo, 'README.md'), 'main\n')
+      git(repo, ['commit', '-q', '-am', 'main readme'])
+      stoppedRebase(path)
+      git(path, ['add', 'README.md'])
+
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+        state: 'detached',
+        branch: input.worktree.branch,
+        recovery: 'rebase',
+        uncommittedPick: null,
+      })
     })
 
     it('switches back when HEAD is still the branch tip', async () => {
