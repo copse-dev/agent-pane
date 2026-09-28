@@ -25,6 +25,7 @@ describe('browser-hosted Experimental settings copy', () => {
     const hint = await fieldset.$('.field-hint').getText()
     assert.match(hint, /same local network/)
     assert.match(hint, /must stay awake/)
+    assert.doesNotMatch(hint, /\bsecure(?:ly)?\b/i)
 
     await fieldset.scrollIntoView()
     await saveElementScreenshot(MOBILE_FIELDSET, 'settings-mobile-companion.png')
