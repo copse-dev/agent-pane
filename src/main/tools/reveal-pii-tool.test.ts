@@ -34,7 +34,10 @@ function fakeGuard(): PiiGuard {
   }
 }
 
-const fakeModule: RampartModule = { createGuard: () => Promise.resolve(fakeGuard()) }
+const fakeModule: RampartModule = {
+  createGuard: () => Promise.resolve(fakeGuard()),
+  detectHeuristics: () => [],
+}
 const signal = new AbortController().signal
 
 describe('reveal_pii tool', () => {

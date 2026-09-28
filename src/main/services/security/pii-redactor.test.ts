@@ -51,7 +51,10 @@ function makeFakeGuard(): PiiGuard {
 
 // A fresh guard per createGuard call, so different threads stay isolated.
 function fakeModule(): RampartModule {
-  return { createGuard: () => Promise.resolve(makeFakeGuard()) }
+  return {
+    createGuard: () => Promise.resolve(makeFakeGuard()),
+    detectHeuristics: () => [],
+  }
 }
 
 describe('pii-redactor', () => {
@@ -123,7 +126,10 @@ describe('pii-redactor', () => {
 
   it('fails open with a notice when no guard can be created', async () => {
     setRampartLoaderForTest(() =>
-      Promise.resolve({ createGuard: () => Promise.reject(new Error('no guard')) }),
+      Promise.resolve({
+        createGuard: () => Promise.reject(new Error('no guard')),
+        detectHeuristics: () => [],
+      }),
     )
     const text = 'email john@example.com'
     assert.deepEqual(await redactUserContent('t1', text), {
@@ -137,7 +143,12 @@ describe('pii-redactor', () => {
       protect: () => Promise.reject(new Error('scrub failed')),
       reveal: (reply) => reply,
     }
-    setRampartLoaderForTest(() => Promise.resolve({ createGuard: () => Promise.resolve(throwing) }))
+    setRampartLoaderForTest(() =>
+      Promise.resolve({
+        createGuard: () => Promise.resolve(throwing),
+        detectHeuristics: () => [],
+      }),
+    )
     const text = 'email john@example.com'
     assert.deepEqual(await redactUserContent('t1', text), {
       content: text,
@@ -155,6 +166,7 @@ describe('pii-redactor', () => {
             ? Promise.resolve(makeFakeGuard())
             : Promise.reject(new Error('model unavailable'))
         },
+        detectHeuristics: () => [],
       }),
     )
     assert.deepEqual(await redactUserContent('t1', 'ping Jane'), { content: 'ping [PII_1]' })
@@ -169,6 +181,7 @@ describe('pii-redactor', () => {
           seen.push(options)
           return Promise.resolve(makeFakeGuard())
         },
+        detectHeuristics: () => [],
       }),
     )
     await redactUserContent('a', 'Jane')
@@ -247,6 +260,7 @@ describe('pii-redactor with the real Rampart', () => {
               : { ...options, ner: contextualDetector }
           return real.createGuard(withDetector)
         },
+        detectHeuristics: real.detectHeuristics,
       }),
     )
   }
@@ -291,6 +305,45 @@ describe('pii-redactor with the real Rampart', () => {
     assert.ok(email, out)
     assert.match(out, /\[SSN_[A-Z]{5}_1\]/)
     assert.equal(revealPlaceholder('t1', email), 'jane.doe@example.com')
+  })
+
+  it('redacts heuristic PII nested in kept URLs without hiding the URL host', async (t) => {
+    if (!rampart) {
+      t.skip('@nationaldesignstudio/rampart is not installed')
+      return
+    }
+    useRealRampart('release')
+    const card = '4111111111111111'
+    const formattedCard = '4111 1111 1111 1111'
+    const ssn = '123-45-6789'
+    const input =
+      `Card ${formattedCard} via https://pay.example.test/c/${card}; ` +
+      `SSN ${ssn} at http://identity.example.test/person?ssn=${ssn}; ` +
+      'clone https://jane.doe@example.com/org/repo.git'
+    const out = await redactText('nested', input)
+
+    assert.doesNotMatch(out, /4111111111111111/)
+    assert.doesNotMatch(out, /123-45-6789/)
+    assert.doesNotMatch(out, /jane\.doe@example\.com/)
+
+    const cardTokens = out.match(/\[CREDIT_CARD_[A-Z]{5}_\d+\]/g) ?? []
+    const ssnToken = /\[SSN_[A-Z]{5}_1\]/.exec(out)?.[0]
+    const emailToken = /\[EMAIL_[A-Z]{5}_1\]/.exec(out)?.[0]
+    assert.equal(cardTokens.length, 2, out)
+    const [formattedCardToken, urlCardToken] = cardTokens
+    assert.ok(formattedCardToken, out)
+    assert.ok(urlCardToken, out)
+    assert.notEqual(formattedCardToken, urlCardToken)
+    assert.ok(ssnToken, out)
+    assert.ok(emailToken, out)
+    assert.equal(out.split(ssnToken).length - 1, 2)
+    assert.ok(out.includes(`https://pay.example.test/c/${urlCardToken}`), out)
+    assert.ok(out.includes(`http://identity.example.test/person?ssn=${ssnToken}`), out)
+    assert.ok(out.includes(`https://${emailToken}@example.com/org/repo.git`), out)
+    assert.equal(revealPlaceholder('nested', formattedCardToken), formattedCard)
+    assert.equal(revealPlaceholder('nested', urlCardToken), card)
+    assert.equal(revealPlaceholder('nested', ssnToken), ssn)
+    assert.equal(revealPlaceholder('nested', emailToken), 'jane.doe@example.com')
   })
 
   it('redacts phone numbers and names when the contextual layer reports them', async (t) => {

@@ -3,6 +3,8 @@ import type { UserContent } from '@shared/types/llm.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { isNonNull } from '@shared/nullish.ts'
+import { z } from 'zod'
 
 /**
  * Experimental, opt-in client-side PII redaction (off by default).
@@ -72,6 +74,17 @@ const PII_LABELS = [
 
 type PiiLabel = (typeof PII_LABELS)[number]
 
+const heuristicSpanSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive(),
+  label: z.enum(PII_LABELS),
+  score: z.number().min(0).max(1),
+  source: z.literal('heuristic'),
+  text: z.string(),
+})
+
+type HeuristicSpan = z.infer<typeof heuristicSpanSchema>
+
 /**
  * Labels Rampart classifies but Copse leaves in the text.
  *
@@ -81,8 +94,10 @@ type PiiLabel = (typeof PII_LABELS)[number]
  * and MAC address — Rampart files IPs and MACs under `IP_ADDRESS` — which breaks
  * ordinary requests about code, docs and local servers. Those are kept.
  *
- * Trade-off: Rampart merges overlapping spans before applying this list, so PII
- * embedded *inside* a URL (e.g. an email in a query string) is kept with it.
+ * Rampart merges overlapping spans before applying this list, so its guard alone
+ * would keep PII embedded inside a URL. Copse performs a second heuristic pass
+ * over the protected text and replaces nested email, SSN and card spans while
+ * leaving the surrounding URL intact.
  */
 export const PII_KEEP_LABELS: readonly PiiLabel[] = [
   'CITY',
@@ -102,6 +117,7 @@ interface GuardOptions {
 /** The slice of the Rampart module we call. */
 export interface RampartModule {
   createGuard(options?: GuardOptions): Promise<PiiGuard>
+  readonly detectHeuristics: (text: string) => unknown
 }
 
 export type RampartLoader = () => Promise<RampartModule | null>
@@ -125,8 +141,18 @@ export const loadRampart: RampartLoader = async () => {
     // so the import is typed `any`; shape it as the slice we call. Every call site
     // is still guarded (try/catch + null fallback).
     const mod: unknown = await import(specifier)
-    if (!isRecord(mod) || !isCreateGuard(mod['createGuard'])) return null
-    return { createGuard: mod['createGuard'] }
+    if (!isRecord(mod) || !isCreateGuard(mod['createGuard'])) {
+      return null
+    }
+    const detectHeuristics = mod['detectHeuristics']
+    if (typeof detectHeuristics !== 'function') return null
+    return {
+      createGuard: mod['createGuard'],
+      detectHeuristics: (text): unknown => {
+        const detected: unknown = Reflect.apply(detectHeuristics, undefined, [text])
+        return detected
+      },
+    }
   } catch (err) {
     console.warn('[pii] Rampart is unavailable; PII redaction disabled for this run.', err)
     return null
@@ -189,6 +215,129 @@ function sessionAliases(tag: string): Partial<Record<PiiLabel, string>> {
 // long as the process lives.
 const guards = new Map<string, PiiGuard>()
 
+const PII_KEEP_LABEL_SET: ReadonlySet<PiiLabel> = new Set(PII_KEEP_LABELS)
+
+function readHeuristicSpans(
+  detectHeuristics: RampartModule['detectHeuristics'],
+  text: string,
+): readonly HeuristicSpan[] {
+  const result = z.array(heuristicSpanSchema).safeParse(detectHeuristics(text))
+  if (!result.success) {
+    throw new Error('Rampart returned malformed heuristic spans')
+  }
+  for (const span of result.data) {
+    if (
+      span.end <= span.start ||
+      span.end > text.length ||
+      span.text !== text.slice(span.start, span.end)
+    ) {
+      throw new Error('Rampart returned an invalid heuristic span range')
+    }
+  }
+  return result.data
+}
+
+interface NestedSpan {
+  readonly span: HeuristicSpan
+  readonly url: HeuristicSpan
+}
+
+function findNestedSensitiveSpans(
+  detectHeuristics: RampartModule['detectHeuristics'],
+  text: string,
+): readonly NestedSpan[] {
+  const spans = readHeuristicSpans(detectHeuristics, text)
+  const urls = spans.filter((span) => span.label === 'URL')
+  const nested = spans
+    .filter((span) => !PII_KEEP_LABEL_SET.has(span.label))
+    .map((span) => {
+      const url = urls.find(
+        (candidate) => candidate.start <= span.start && candidate.end >= span.end,
+      )
+      return url ? { span, url } : null
+    })
+    .filter(isNonNull)
+    .sort((a, b) => a.span.start - b.span.start || b.span.end - a.span.end)
+
+  // Heuristic spans can contain one another (for example, a digit identifier
+  // inside an email-shaped URL userinfo). Keep the widest span so replacements
+  // are disjoint; Rampart uses the same longer-span tie-break for heuristics.
+  const disjoint: NestedSpan[] = []
+  for (const entry of nested) {
+    const previous = disjoint.at(-1)
+    if (!previous || entry.span.start >= previous.span.end) {
+      disjoint.push(entry)
+      continue
+    }
+    if (entry.span.end > previous.span.end) {
+      throw new Error('Rampart returned partially overlapping heuristic spans')
+    }
+  }
+  return disjoint
+}
+
+function replacementInsideUrl(entry: NestedSpan, placeholder: string): string {
+  if (entry.span.label !== 'EMAIL') return placeholder
+
+  const urlText = entry.url.text
+  const schemeEnd = urlText.indexOf('://')
+  if (schemeEnd < 0) return placeholder
+  const authorityStart = entry.url.start + schemeEnd + 3
+  const suffix = urlText.slice(schemeEnd + 3)
+  const boundary = suffix.search(/[/?#]/)
+  const authorityEnd = boundary < 0 ? entry.url.end : authorityStart + boundary
+  if (entry.span.start < authorityStart || entry.span.end > authorityEnd) return placeholder
+
+  // `https://jane@example.com/path` is URL userinfo plus a public host. Rampart's
+  // email detector covers both halves. Keep the host that the URL policy meant
+  // to preserve, while replacing the identifying userinfo with a token.
+  const at = entry.span.text.lastIndexOf('@')
+  return at < 0 ? placeholder : `${placeholder}@${entry.span.text.slice(at + 1)}`
+}
+
+async function protectUrlNestedPii(
+  guard: PiiGuard,
+  detectHeuristics: RampartModule['detectHeuristics'],
+  text: string,
+): Promise<ScrubResult> {
+  const protectedResult = await guard.protect(text)
+  const nested = findNestedSensitiveSpans(detectHeuristics, protectedResult.text)
+  if (nested.length === 0) return protectedResult
+
+  // A single call keeps the contextual guard from running one model inference
+  // per URL. Heuristic spans cannot contain newlines, so the separator is
+  // unambiguous and preserves one replacement per detected value.
+  const nestedResult = await guard.protect(nested.map((entry) => entry.span.text).join('\n'))
+  const replacements = nestedResult.text.split('\n')
+  if (replacements.length !== nested.length) {
+    throw new Error('Rampart returned an unexpected nested redaction result')
+  }
+
+  let safeText = protectedResult.text
+  const placeholders = new Set(protectedResult.placeholders)
+  for (const token of nestedResult.placeholders) placeholders.add(token)
+  for (let index = nested.length - 1; index >= 0; index -= 1) {
+    const entry = nested[index]
+    const replacement = replacements[index]
+    if (!entry || replacement === undefined) {
+      throw new Error('Rampart returned an incomplete nested redaction result')
+    }
+    if (replacement === entry.span.text || nestedResult.placeholders.length === 0) {
+      throw new Error(`Rampart did not redact nested ${entry.span.label} span`)
+    }
+    const urlReplacement = replacementInsideUrl(entry, replacement)
+    safeText = `${safeText.slice(0, entry.span.start)}${urlReplacement}${safeText.slice(entry.span.end)}`
+  }
+  return { text: safeText, placeholders: [...placeholders] }
+}
+
+function wrapGuard(guard: PiiGuard, mod: RampartModule): PiiGuard {
+  return {
+    protect: (text) => protectUrlNestedPii(guard, mod.detectHeuristics, text),
+    reveal: (reply) => guard.reveal(reply),
+  }
+}
+
 async function getGuard(threadId: string): Promise<PiiGuard | null> {
   const existing = guards.get(threadId)
   if (existing) return existing
@@ -208,14 +357,14 @@ async function getGuard(threadId: string): Promise<PiiGuard | null> {
   // card numbers — is still redacted with no network. Only when both fail do we
   // give up and pass text through unchanged.
   try {
-    const guard = await mod.createGuard(shared)
+    const guard = wrapGuard(await mod.createGuard(shared), mod)
     guards.set(threadId, guard)
     return guard
   } catch (err) {
     console.warn('[pii] Rampart NER unavailable; falling back to heuristics only.', err)
   }
   try {
-    const guard = await mod.createGuard({ ...shared, heuristicsOnly: true })
+    const guard = wrapGuard(await mod.createGuard({ ...shared, heuristicsOnly: true }), mod)
     guards.set(threadId, guard)
     return guard
   } catch (err) {

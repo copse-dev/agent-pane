@@ -36,9 +36,12 @@ Rampart is default-deny and keeps only city, state and ZIP code. Copse also
 keeps **URLs** (`https://…`, `www.…`) and **IP addresses** (IPv4, IPv6 and MAC
 addresses, which Rampart files under the same label). Without this, every link,
 `127.0.0.1`, and four-part version number such as `1.2.3.4` would be rewritten,
-which breaks ordinary coding requests. Because Rampart resolves overlapping
-detections before applying the keep-list, PII embedded _inside_ a URL (for
-example an email address in a query string) is kept along with the URL.
+which breaks ordinary coding requests. Rampart resolves overlapping detections
+before applying the keep-list, so Copse follows its guard with a second local
+heuristic pass: recognized email addresses, SSNs, and valid credit-card numbers
+left inside a kept URL are replaced while its scheme and host stay readable.
+URL-encoded values and contextual PII that the heuristic layer cannot recognize
+may still remain in a URL.
 
 ## Revealing a value
 
@@ -90,7 +93,8 @@ is shown.
 - **Fails open** (see above). This reduces exposure; it does not guarantee it.
 - **Heuristic-only in releases.** Names, phone numbers and addresses need the
   contextual model, which is not in the packaged installer.
-- **URLs and IPs are kept**, including PII embedded inside a URL.
+- **URLs and IPs are kept.** Recognized heuristic PII inside a URL is redacted,
+  but URL-encoded values and contextual PII can remain.
 - **Latin-script only** (en, es, fr, de, it, pt, nl). Other scripts are out of
   scope.
 - **Input only.** The model's own output is not rehydrated for display, and PII
