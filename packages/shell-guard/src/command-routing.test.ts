@@ -28,8 +28,8 @@ describe('commandHead', () => {
 })
 
 describe('splitSegments', () => {
-  it('splits on &&, ||, ;, |, & and newlines', () => {
-    assert.deepEqual(splitSegments('a && b || c ; d | e & f\ng'), [
+  it('splits on &&, ||, ;, |, |&, & and newlines', () => {
+    assert.deepEqual(splitSegments('a && b || c ; d | e |& f & g\nh'), [
       'a',
       'b',
       'c',
@@ -37,6 +37,7 @@ describe('splitSegments', () => {
       'e',
       'f',
       'g',
+      'h',
     ])
   })
 
@@ -65,10 +66,13 @@ describe('splitSegments', () => {
 
 describe('parseShellComposition', () => {
   it('retains top-level operators while preserving source segments', () => {
-    assert.deepEqual(parseShellComposition('cd /work && node run.mjs; ls out | rg failure'), {
-      segments: ['cd /work', 'node run.mjs', 'ls out', 'rg failure'],
-      operators: ['&&', ';', '|'],
-    })
+    assert.deepEqual(
+      parseShellComposition('cd /work && node run.mjs; ls out | rg failure |& tee log'),
+      {
+        segments: ['cd /work', 'node run.mjs', 'ls out', 'rg failure', 'tee log'],
+        operators: ['&&', ';', '|', '|&'],
+      },
+    )
   })
 
   it('fails closed on substitutions, grouping, malformed quotes, and empty segments', () => {

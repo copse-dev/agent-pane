@@ -674,14 +674,15 @@ function searchesForSecrets(argv: readonly string[]): boolean {
 /**
  * Only a search that reads history's output counts: `history | grep -i token`,
  * not `history; rg token src`. Pipelines are split at `;`, `&&`, `||`, `&` and
- * newlines, then into stages at `|`; a searcher must follow the history stage.
+ * newlines, then into stages at `|`/`|&`; a searcher must follow the history stage.
  */
 function historySearchReason(command: string): string | null {
   const composition = scanShellComposition(command)
   if (!composition) return null
   let readsHistory = false
   for (const [index, segment] of composition.segments.entries()) {
-    if (index > 0 && composition.operators[index - 1] !== '|') readsHistory = false
+    const previousOperator = composition.operators[index - 1]
+    if (index > 0 && previousOperator !== '|' && previousOperator !== '|&') readsHistory = false
     const [rawArgv = []] = shellSegments(segment)
     const argv = unwrapWrappers(rawArgv)
     if (readsHistory && searchesForSecrets(argv)) return 'searches shell history for secrets'
