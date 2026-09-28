@@ -1,5 +1,6 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
@@ -301,6 +302,41 @@ export interface ShellPromptParts {
   bodyFooter?: string
 }
 
+/** Max lines shown in the monospaced command region of an approval dialog. */
+export const SHELL_APPROVAL_COMMAND_MAX_LINES = 12
+/** Max characters shown in the monospaced command region of an approval dialog. */
+export const SHELL_APPROVAL_COMMAND_MAX_CHARS = 900
+
+/**
+ * Truncate a shell command for the approval dialog body only. The full command
+ * still runs after approve; this keeps long compound scripts scannable so the
+ * monospaced block cannot swallow advice/footer.
+ */
+export function truncateShellCommandForApproval(
+  command: string,
+  opts: { maxLines?: number; maxChars?: number } = {},
+): string {
+  const maxLines = opts.maxLines ?? SHELL_APPROVAL_COMMAND_MAX_LINES
+  const maxChars = opts.maxChars ?? SHELL_APPROVAL_COMMAND_MAX_CHARS
+  const normalized = command.replace(/\r\n/g, '\n')
+  const lines = normalized.split('\n')
+  let preview = normalized
+  let omittedLines = 0
+  if (lines.length > maxLines) {
+    preview = lines.slice(0, maxLines).join('\n')
+    omittedLines = lines.length - maxLines
+  }
+  if (preview.length > maxChars) {
+    preview = preview.slice(0, maxChars)
+  }
+  const hiddenChars = normalized.length - preview.length
+  if (hiddenChars <= 0) return preview
+  const parts: string[] = []
+  if (omittedLines > 0) parts.push(`${String(omittedLines)} more lines`)
+  parts.push(`${String(hiddenChars)} more characters`)
+  return `${preview}\n… (+${parts.join(', ')})`
+}
+
 export function shellPromptToApprovalFields(parts: ShellPromptParts): {
   body: string
   bodyAdvice?: string
@@ -371,18 +407,65 @@ export function formatPortBindingPromptParts(
  */
 const NEEDS_OUTSIDE_ACCESS: readonly string[] = ['Needs network or outside-project access']
 
+/**
+ * Prior-denial prose (from `cachedDenialAdvice` / `PRIOR_DENIAL_MARKER`) must
+ * not become a reason bullet that also holds the live command. Split it out so
+ * formatters can put it in its own section above the lead-in.
+ */
+function isPriorDenialReason(reason: string): boolean {
+  return reason.includes(PRIOR_DENIAL_MARKER)
+}
+
+function splitPriorDenialReasons(reasons: readonly string[]): {
+  priorDenial: string | null
+  scopeReasons: string[]
+} {
+  const priorDenialParts: string[] = []
+  const scopeReasons: string[] = []
+  for (const reason of reasons) {
+    if (isPriorDenialReason(reason)) priorDenialParts.push(reason)
+    else scopeReasons.push(reason)
+  }
+  return {
+    priorDenial: priorDenialParts.length ? priorDenialParts.join('\n\n') : null,
+    scopeReasons,
+  }
+}
+
+/**
+ * Build the advice block: optional prior-denial note, lead-in, reason bullets,
+ * optional trailing prose. Sections are blank-line separated so the renderer
+ * keeps them distinct from the monospaced command body.
+ */
+function buildOutsideSandboxAdvice(options: {
+  leadIn: string
+  reasons: readonly string[]
+  trailing?: string
+}): string {
+  const { priorDenial, scopeReasons } = splitPriorDenialReasons(options.reasons)
+  const sections: string[] = []
+  if (priorDenial) sections.push(priorDenial)
+  sections.push(
+    `${options.leadIn}\n${reasonList(scopeReasons.length ? scopeReasons : NEEDS_OUTSIDE_ACCESS)}`,
+  )
+  if (options.trailing) sections.push(options.trailing)
+  return sections.join('\n\n')
+}
+
 export function formatExternalSandboxPromptParts(
   command: string,
   reasons: string[],
 ): ShellPromptParts {
   return {
-    command,
+    // Truncate only the monospaced approval body; the gate still runs `command`.
+    command: truncateShellCommandForApproval(command),
     // The platform is deliberately unnamed: this prompt only appears while a
     // project sandbox is active, which is seatbelt on macOS and bubblewrap on
     // Linux, and naming the wrong one is worse than naming none.
-    bodyAdvice: `The project sandbox would block this command:\n${reasonList(
-      reasons.length ? reasons : NEEDS_OUTSIDE_ACCESS,
-    )}`,
+    bodyAdvice: buildOutsideSandboxAdvice({
+      leadIn: 'The project sandbox would block this command:',
+      reasons,
+    }),
     bodyFooter: 'Allow running it once outside the sandbox?',
   }
 }
@@ -398,12 +481,13 @@ export function formatExpectedSandboxBlockPromptParts(
   reasons: string[],
 ): ShellPromptParts {
   return {
-    command,
-    bodyAdvice:
-      `The agent expects the project sandbox to block this command:\n${reasonList(
-        reasons.length ? reasons : NEEDS_OUTSIDE_ACCESS,
-      )}\n\n` +
-      'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
+    command: truncateShellCommandForApproval(command),
+    bodyAdvice: buildOutsideSandboxAdvice({
+      leadIn: 'The agent expects the project sandbox to block this command:',
+      reasons,
+      trailing:
+        'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
+    }),
     bodyFooter:
       "This is the agent's expectation, not a confirmed sandbox block. " +
       'Allow running it once outside the sandbox?',

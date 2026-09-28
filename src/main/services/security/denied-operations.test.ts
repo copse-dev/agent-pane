@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   cachedDenialAdvice,
   deniedOperations,
+  formatCachedDenialCommandForDisplay,
+  PRIOR_DENIAL_MARKER,
   recordApprovedDeniedOperation,
 } from './denied-operations.ts'
 
@@ -23,6 +25,30 @@ describe('deniedOperations (issue #1436 point 2)', () => {
     assert.ok(advice)
     assert.match(advice, /git fetch/)
     assert.match(advice, /git fetch origin main/)
+    assert.match(advice, new RegExp(PRIOR_DENIAL_MARKER))
+    // Plain quotes — never markdown backticks that can break when the prior
+    // command itself contains backticks or newlines.
+    assert.doesNotMatch(advice, /`/)
+    assert.match(advice, /matched command: "git fetch origin main"/)
+  })
+
+  it('flattens and truncates a multi-line prior command in the denial note', () => {
+    const mega = ['set -o pipefail', ...Array.from({ length: 40 }, (_, i) => `gh search prs q${i}`)].join(
+      '\n',
+    )
+    deniedOperations.record(
+      'thread-mega',
+      'read ~/.config/gh',
+      mega,
+      'gh could not read its own config at ~/.config/gh (operation not permitted)',
+    )
+    const advice = cachedDenialAdvice('thread-mega', 'read ~/.config/gh')
+    assert.ok(advice)
+    assert.doesNotMatch(advice, /\nset -o pipefail/)
+    assert.doesNotMatch(advice, /`/)
+    assert.match(advice, /more characters/)
+    assert.equal(formatCachedDenialCommandForDisplay(mega).includes('\n'), false)
+    deniedOperations.clearThread('thread-mega')
   })
 
   it('a denied fetch does not make a later push look blocked (no network-wide warning)', () => {
@@ -75,7 +101,7 @@ describe('deniedOperations (issue #1436 point 2)', () => {
       'git fetch origin main',
       'network denied',
     )
-    assert.match(cachedDenialAdvice(threadId, 'git fetch') ?? '', /Already confirmed denied/)
+    assert.match(cachedDenialAdvice(threadId, 'git fetch') ?? '', /already confirmed denied/)
     deniedOperations.clearThread(threadId)
   })
 })
