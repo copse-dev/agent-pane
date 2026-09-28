@@ -168,6 +168,8 @@ describe('remoteChangeReasons', () => {
       'pg_restore -f out.sql dump.custom',
       'pg_restore --list dump.custom',
       'influx query "from(bucket:\\"m\\") |> range(start: -1h)"',
+      'influx query --org write "from(bucket:\\"m\\") |> range(start: -1h)"',
+      'influx bucket list --org delete',
       'influx ping',
       'influx version',
     ])

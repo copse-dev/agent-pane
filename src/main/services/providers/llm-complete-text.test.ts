@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { LLMProvider } from '@shared/types'
+import type { LLMProvider, ModelUsage } from '@shared/types'
 import type { ProviderWithUsage } from '@copse/llm/provider-usage.ts'
 import { completeMessagesWithUsage } from './llm-complete-text.ts'
 
@@ -157,4 +157,55 @@ describe('completeMessagesWithUsage', () => {
       assert.equal((await pending).text, 'partial')
     },
   )
+})
+
+describe('completeMessagesWithUsage usage listener', () => {
+  it('reports the final usage once on success', async () => {
+    const provider: LLMProvider = {
+      async *stream() {
+        yield { type: 'text' as const, text: 'ok' }
+        yield { type: 'usage' as const, model: 'm', inputTokens: 50, outputTokens: 5 }
+        yield { type: 'done' as const }
+      },
+    }
+    const reported: ModelUsage[] = []
+    await completeMessagesWithUsage(provider, [], 60_000, undefined, (usage) => {
+      reported.push(usage)
+    })
+    assert.deepEqual(reported, [{ inputTokens: 50, outputTokens: 5 }])
+  })
+
+  it('reports usage the provider sent before the call failed', async () => {
+    const provider: LLMProvider = {
+      async *stream() {
+        yield { type: 'usage' as const, model: 'm', inputTokens: 70, outputTokens: 0 }
+        throw new Error('connection reset')
+      },
+    }
+    const reported: ModelUsage[] = []
+    await assert.rejects(
+      completeMessagesWithUsage(provider, [], 60_000, undefined, (usage) => {
+        reported.push(usage)
+      }),
+      /connection reset/,
+    )
+    assert.deepEqual(reported, [{ inputTokens: 70, outputTokens: 0 }])
+  })
+
+  it('does not trust a possibly stale provider.lastUsage on failure', async () => {
+    const provider: LLMProvider & ProviderWithUsage = {
+      lastUsage: { inputTokens: 999, outputTokens: 99 },
+      async *stream() {
+        yield { type: 'text' as const, text: '' }
+        throw new Error('boom')
+      },
+    }
+    const reported: ModelUsage[] = []
+    await assert.rejects(
+      completeMessagesWithUsage(provider, [], 60_000, undefined, (usage) => {
+        reported.push(usage)
+      }),
+    )
+    assert.deepEqual(reported, [{ inputTokens: 0, outputTokens: 0 }])
+  })
 })

@@ -3,6 +3,7 @@ import { isAbsolute, basename, resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import {
   commandName,
+  printfAssignsShellVariable,
   shellRedirects,
   shellSegments,
   TRUST_TRANSPARENT_WRAPPERS,
@@ -247,6 +248,9 @@ function headBlocker(rawArgv: readonly string[], argv: readonly string[]): strin
   if (!head) return null
   if (rawHead !== head && !TRUST_TRANSPARENT_WRAPPERS.has(rawHead)) {
     return `runs through \`${rawHead}\`, which changes how the command runs`
+  }
+  if (printfAssignsShellVariable(argv)) {
+    return '`printf -v` assigns a shell variable before a later command'
   }
   // `sed` is a read only in the filter shape `isReadOnlySedCommand` proves.
   if (head === 'sed') {
