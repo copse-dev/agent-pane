@@ -16,6 +16,7 @@ exposePerfBridge()
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
   mobile: {
+    manage: () => ipcRenderer.invoke('mobile:manage'),
     onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

@@ -24,6 +24,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { showMobileCompanion } from '../windows/mobile-desktop.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -249,10 +250,12 @@ import {
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
+  syncReviewerInputTools,
 } from '../services/registry-bootstrap.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
@@ -527,6 +530,11 @@ export function registerAllHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
+  ipcMain.handle('mobile:manage', async (event) => {
+    assertMainFrameSender(event, win)
+    await showMobileCompanion(win)
+  })
+
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
@@ -2192,6 +2200,9 @@ export function registerAllHandlers(
     // Same for the `copse.roadmap-plans` plugin's `roadmap_plan` tool.
     if (id === ROADMAP_PLANS_PLUGIN_ID) {
       syncRoadmapPlanTools(registry)
+    }
+    if (id === REVIEWER_INPUT_PLUGIN_ID) {
+      syncReviewerInputTools(registry)
     }
     // Same for the `copse.advisor-strategy` plugin's `advisor` tool.
     if (id === ADVISOR_STRATEGY_PLUGIN_ID) {

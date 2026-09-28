@@ -155,6 +155,7 @@ export interface DetectedEnvKey {
 
 export interface ApiClient {
   mobile: {
+    manage: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
