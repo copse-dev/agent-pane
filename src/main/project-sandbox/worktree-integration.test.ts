@@ -19,6 +19,11 @@ import {
 } from '../services/workspace.ts'
 import { createWorktreeBackup, getGitStatus } from '../services/github/git-service.ts'
 import { setGitAvailableForTest } from '../services/tool-availability.ts'
+import {
+  inspectThreadWorktreeAttachment,
+  reattachThreadWorktree,
+  validateThreadWorktree,
+} from '../services/worktree-manager.ts'
 import { gitBackupSandboxOverlay, workspaceTmpDir } from './config.ts'
 
 interface CommandResult {
@@ -489,6 +494,67 @@ describe('linked-worktree sandbox integration', () => {
     }
     assert.equal(git(root, ['status', '--porcelain=v1']), statusBefore)
     assert.deepEqual(await readFile(join(root, '.git', 'index')), indexBefore)
+  })
+
+  it('reattaches a home-contained thread checkout while Git IPC keeps validating it', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('project sandbox integration is not enabled on Windows')
+      return
+    }
+    // Every validation of a detached checkout releases its internal root. The
+    // footer and Git panels keep validating while Reattach runs, and a release
+    // landing before the sandboxed `git switch` left the common `.git` re-bound
+    // read-only over the checkout's administration directory on Linux.
+    const parent = await mkdtemp(join(homedir(), 'copse-reattach-home-'))
+    cleanups.push(parent)
+    const previousWorktreesDir = process.env['COPSE_WORKTREES_DIR']
+    process.env['COPSE_WORKTREES_DIR'] = join(parent, 'worktrees')
+    t.after(() => {
+      if (previousWorktreesDir === undefined) delete process.env['COPSE_WORKTREES_DIR']
+      else process.env['COPSE_WORKTREES_DIR'] = previousWorktreesDir
+    })
+    const repo = join(parent, 'project')
+    const checkout = join(parent, 'worktrees', 'project-1', 'thread-1')
+    const branch = 'copse/reattach-home'
+    await mkdir(repo, { recursive: true })
+    await mkdir(join(parent, 'worktrees', 'project-1'), { recursive: true })
+    git(repo, ['init', '-q', '-b', 'main'])
+    await writeFile(join(repo, 'tracked.txt'), 'base\n')
+    git(repo, ['add', '.'])
+    git(repo, ['commit', '-q', '-m', 'initial'])
+    const baseCommit = git(repo, ['rev-parse', 'HEAD']).trim()
+    git(repo, ['worktree', 'add', '-q', '-b', branch, checkout])
+    git(checkout, ['checkout', '-q', '--detach', 'HEAD'])
+    const input = {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree: {
+        path: checkout,
+        branch,
+        baseBranch: 'main',
+        baseCommit,
+        createdAt: Date.now(),
+        seededFromDirtyProject: false,
+      },
+    }
+    setGitAvailableForTest(true)
+    await initProjectSandbox()
+    if (!isProjectSandboxEnabled()) {
+      t.skip('ASRT sandbox unavailable')
+      return
+    }
+
+    const probes = Array.from({ length: 12 }, async (_, index) => {
+      await new Promise((resolve) => setTimeout(resolve, index * 15))
+      await Promise.allSettled([
+        inspectThreadWorktreeAttachment(input),
+        validateThreadWorktree(input),
+      ])
+    })
+    const [reattached] = await Promise.all([reattachThreadWorktree(input), ...probes])
+    assert.deepEqual(reattached, { branch, keptDetachedCommits: false, backupBranch: null })
+    assert.equal(git(checkout, ['symbolic-ref', '--short', 'HEAD']).trim(), branch)
   })
 
   it('starts Node in a home-contained workspace while keeping sibling files unreadable', async (t) => {

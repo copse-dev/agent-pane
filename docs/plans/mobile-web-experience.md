@@ -158,7 +158,7 @@ expensive is an axis this version simply does not have.
    an absolute session age, or failed authentication attempts. An explicit Turn off
    action revokes the enabled state. The choice lives in `~/.copse/lan/service.json`,
    outside `config.json` and `settings.json`, so renderer settings writes cannot flip it.
-   The menu shows whether the listener is live or waiting for a private LAN address.
+   Settings → Experimental owns setup, paired-device management, and one-click stop; opening it reports whether the listener is live or waiting for a private LAN address.
    If that address is absent at launch, Copse chooses another active private IPv4 address
    or retries until one is available. The listener closes with the app process; its
    enabled choice and paired devices survive that close. This supersedes the original
@@ -625,7 +625,7 @@ by hand, on a device the app cannot reach.
   still has Mobile Companion enabled. The listener stays bound to its selected private
   IPv4 address while Copse runs, so it does not silently widen to another interface.
   On the next launch, an unavailable preferred address may be replaced by another
-  private IPv4 address. The user can turn the service off from the menu and revoke phones.
+  private IPv4 address. The user can turn the service off in Settings → Experimental and revoke phones.
 - **Chrome's Local Network Access is a live external dependency.** The design currently sits
   on two exemptions — "local → local is not a local network request", and top-level
   navigations are not gated. The explainer lists gating top-level navigation to local

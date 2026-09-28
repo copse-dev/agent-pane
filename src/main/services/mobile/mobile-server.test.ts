@@ -2,7 +2,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
-import { MOBILE_READ_DISPATCH, mobileRequestAllowed } from './mobile-server.ts'
+import type { NetworkInterfaceInfo } from 'node:os'
+import { MOBILE_READ_DISPATCH, mobileLanAddresses, mobileRequestAllowed } from './mobile-server.ts'
 
 function request(
   peer: string,
@@ -18,6 +19,35 @@ function request(
   if (origin !== undefined) req.headers.origin = origin
   return req
 }
+
+function networkAddress(address: string, family: 'IPv4' | 'IPv6' = 'IPv4'): NetworkInterfaceInfo {
+  return {
+    address,
+    netmask: family === 'IPv4' ? '255.255.255.0' : 'ffff:ffff:ffff:ffff::',
+    family,
+    mac: '00:00:00:00:00:00',
+    internal: false,
+    cidr: family === 'IPv4' ? `${address}/24` : `${address}/64`,
+    scopeid: 0,
+  }
+}
+
+describe('mobile LAN interfaces', () => {
+  it('keeps interface names so the UI can distinguish Wi-Fi from virtual networks', () => {
+    assert.deepEqual(
+      mobileLanAddresses({
+        en0: [networkAddress('192.168.1.41')],
+        utun4: [networkAddress('10.20.0.2')],
+        lo0: [{ ...networkAddress('127.0.0.1'), internal: true }],
+        en6: [networkAddress('2001:db8::1', 'IPv6')],
+      }),
+      [
+        { address: '192.168.1.41', interfaceName: 'en0' },
+        { address: '10.20.0.2', interfaceName: 'utun4' },
+      ],
+    )
+  })
+})
 
 describe('mobile request boundary', () => {
   const authority = '192.168.1.41:4000'
