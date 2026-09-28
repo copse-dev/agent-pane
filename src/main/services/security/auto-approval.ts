@@ -13,6 +13,7 @@ import { isReadOnlySimpleCommand, READ_ONLY_GIT_SUBCOMMANDS } from './permission
 import {
   commandName,
   hasGitReadEscapeHatch,
+  printfAssignsShellVariable,
   shellRedirects,
   TRUST_TRANSPARENT_WRAPPERS,
 } from './shell-argv.ts'
@@ -114,15 +115,30 @@ export interface AutoApprovalContext {
  *
  * A backslash escape consumes the next character, so `\$HOME` is literal.
  *
+ * `$HOME` / `${HOME}` is the one expansion allowed through, because its value is
+ * known: the scope analyzer resolves it and still refuses a path outside the
+ * workspace. That holds only while nothing in the command can change it, so any
+ * other mention of `HOME` (`HOME=/ …`, `unset HOME`, `export HOME`) keeps it a
+ * substitution.
+ *
  * Redirections are NOT scanned here — {@link shellRedirects} is the codebase's
  * answer for those and already understands that `2>&1` duplicates a descriptor
  * rather than opening a file.
  */
+const HOME_EXPANSION = /\$(?:HOME\b|\{HOME\})/y
+
 function hasSubstitution(command: string): boolean {
   let quote: '"' | "'" | null = null
+  const homeIsFixed = !/\bHOME\b/.test(command.replace(/\$(?:HOME\b|\{HOME\})/g, ''))
+  const isHomeExpansion = (index: number): boolean => {
+    if (!homeIsFixed) return false
+    HOME_EXPANSION.lastIndex = index
+    return HOME_EXPANSION.test(command)
+  }
 
   for (let i = 0; i < command.length; i++) {
     const ch = command.charAt(i)
+    if (ch === '$' && quote !== "'" && isHomeExpansion(i)) continue
 
     if (ch === '\\' && quote !== "'") {
       i++ // escaped character is literal
@@ -249,6 +265,9 @@ function isWorkspaceRelativePath(token: string): boolean {
   return true
 }
 
+/** Prep commands whose operands name directories. */
+const PATH_OPERAND_PREP_COMMANDS: ReadonlySet<string> = new Set(['cd', 'mkdir'])
+
 /**
  * Whether a prep command's argument stays inside the workspace.
  *
@@ -266,6 +285,9 @@ function prepArgumentsStayInWorkspace(
   args: readonly string[],
   context: AutoApprovalContext,
 ): boolean {
+  // Only `cd` and `mkdir` treat their operands as paths. `echo "/tmp/x"` prints
+  // text; a redirect of that text is refused separately by `writesAFile`.
+  if (!PATH_OPERAND_PREP_COMMANDS.has(head)) return true
   const positional = args.filter((token) => !isFlag(token))
   if (head === 'cd') {
     // `cd` alone changes to the home directory.
@@ -709,6 +731,9 @@ function classifySegment(segment: string, context: AutoApprovalContext): Segment
     return { tier: null, reason: `environment assignment before the command: ${segment}` }
   const head = commandName(effective[0])
   if (!head) return { tier: null, reason: `no command word in: ${segment}` }
+  if (printfAssignsShellVariable(effective)) {
+    return { tier: null, reason: `printf -v assigns a shell variable: ${segment}` }
+  }
 
   if (head === 'git') return classifyGitSegment(effective, lexical, context)
 
