@@ -1,7 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ToolCall } from '@shared/types'
-import { parseReviewerInputCall, reviewerInputAnswer } from './reviewer-input.ts'
+import {
+  parseReviewerInputAnswers,
+  parseReviewerInputCall,
+  reviewerInputAnswer,
+} from './reviewer-input.ts'
 
 const call: ToolCall = {
   id: 'request-1',
@@ -45,6 +49,15 @@ test('ACP bridge names resolve to the same request and unfinished calls do not s
 
 test('answer lookup is scoped to the request id', () => {
   const answer = { id: 'request-1', text: 'Wrap', answeredAt: 1, messageId: 'm3' }
-  assert.equal(reviewerInputAnswer([answer], 'request-1'), answer)
+  assert.deepEqual(reviewerInputAnswer([answer], 'request-1'), answer)
   assert.equal(reviewerInputAnswer([answer], 'request-2'), undefined)
+})
+
+test('persisted answer decoding drops malformed entries without crashing lookup', () => {
+  const answer = { id: 'request-1', text: 'Wrap', answeredAt: 1, messageId: 'm3' }
+  assert.deepEqual(parseReviewerInputAnswers([answer, null, { ...answer, answeredAt: 'now' }]), [
+    answer,
+  ])
+  assert.deepEqual(parseReviewerInputAnswers({ id: 'not-an-array' }), [])
+  assert.equal(reviewerInputAnswer('corrupt', 'request-1'), undefined)
 })

@@ -34,6 +34,7 @@ import {
   recordThreadProposalDecision,
   type ThreadProposalDecision,
 } from '@shared/threads/thread-proposal.ts'
+import { parseReviewerInputAnswers } from '@shared/threads/reviewer-input.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
@@ -1099,7 +1100,9 @@ export function setReviewerInputAnswer(
   patchThreadAnywhere(store, threadId, (thread) => ({
     ...thread,
     reviewerInputAnswers: [
-      ...(thread.reviewerInputAnswers ?? []).filter((entry) => entry.id !== answer.id),
+      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
+        (entry) => entry.id !== answer.id,
+      ),
       answer,
     ],
     updatedAt: Date.now(),

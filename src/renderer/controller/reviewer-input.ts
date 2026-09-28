@@ -22,7 +22,11 @@ export function answerReviewerInput(
   const request = reviewerInputRequests(thread).find((item) => item.id === requestId)
   if (!request || reviewerInputAnswer(thread.reviewerInputAnswers, requestId)) return false
   const content = `Answer to your review question “${request.question}”: ${text}`
-  startHumanTurnTree(store, threadId)
+  // Match an ordinary typed prompt: an answer submitted at idle starts a new
+  // human turn tree, while one queued behind an active run stays in that tree.
+  // Resetting the epoch here while a run is still finishing would make its
+  // continuation-budget fold-back look stale and discard it.
+  if (thread.status === 'idle') startHumanTurnTree(store, threadId)
   const messageId = addMessage(store, threadId, 'user', content)
   setReviewerInputAnswer(store, threadId, {
     id: requestId,

@@ -61,9 +61,31 @@ export function reviewerInputRequests(thread: Thread): ReviewerInputRequest[] {
   )
 }
 
-export function reviewerInputAnswer(
-  answers: readonly ReviewerInputAnswer[] | undefined,
-  id: string,
-): ReviewerInputAnswer | undefined {
-  return answers?.find((answer) => answer.id === id)
+export function reviewerInputAnswer(answers: unknown, id: string): ReviewerInputAnswer | undefined {
+  return parseReviewerInputAnswers(answers).find((answer) => answer.id === id)
+}
+
+/** Decode optional persisted answers before renderer code treats them as a list. */
+export function parseReviewerInputAnswers(value: unknown): ReviewerInputAnswer[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry: unknown) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry['id'] !== 'string' ||
+      typeof entry['text'] !== 'string' ||
+      typeof entry['answeredAt'] !== 'number' ||
+      !Number.isFinite(entry['answeredAt']) ||
+      typeof entry['messageId'] !== 'string'
+    ) {
+      return []
+    }
+    return [
+      {
+        id: entry['id'],
+        text: entry['text'],
+        answeredAt: entry['answeredAt'],
+        messageId: entry['messageId'],
+      },
+    ]
+  })
 }

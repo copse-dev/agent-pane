@@ -49,4 +49,5 @@
 // open PRs, so this skips them to avoid a collision whichever lands first.
 // v21 conservatively versions the optional Copse Reviewer report initiator on
 // thread payloads and `review_report` chunks.
-export const API_PROTOCOL_VERSION = 21 as const
+// v22 versions persisted reviewer-input answers on thread payloads.
+export const API_PROTOCOL_VERSION = 22 as const
