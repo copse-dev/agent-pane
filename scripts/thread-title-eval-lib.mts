@@ -104,9 +104,25 @@ function normalized(value: string): string {
     .trim()
 }
 
+function conceptTokenMatches(word: string, concept: string): boolean {
+  if (word === concept) return true
+  if (concept === '@') return word.startsWith('@')
+  // Titles naturally pluralise nouns ("thread" → "threads"). Admit those
+  // bounded forms without returning to arbitrary substring matching.
+  return word === `${concept}s` || word === `${concept}es`
+}
+
 function containsConcept(title: string, alternatives: readonly string[]): boolean {
-  const haystack = normalized(title)
-  return alternatives.some((alternative) => haystack.includes(normalized(alternative)))
+  const titleWords = normalized(title).split(/\s+/).filter(Boolean)
+  return alternatives.some((alternative) => {
+    const conceptWords = normalized(alternative).split(/\s+/).filter(Boolean)
+    if (conceptWords.length === 0) return false
+    return titleWords.some((_, start) =>
+      conceptWords.every((concept, offset) =>
+        conceptTokenMatches(titleWords[start + offset] ?? '', concept),
+      ),
+    )
+  })
 }
 
 function titleFormatPass(title: string): boolean {
@@ -223,18 +239,23 @@ function armOrder(
   return [...arms].reverse()
 }
 
-async function runAttempt(
+/** One scored model call, exported so failure accounting stays regression-testable. */
+export async function runThreadTitleEvalAttempt(
   provider: LLMProvider,
   evalCase: ThreadTitleEvalCase,
   arm: ThreadTitleEvalArm,
   repeat: number,
 ): Promise<ThreadTitleEvalAttempt> {
   const started = Date.now()
+  let usage: ModelUsage = { inputTokens: 0, outputTokens: 0 }
   try {
-    const { text: raw, usage } = await completeTextWithUsage(
+    const { text: raw } = await completeTextWithUsage(
       provider,
       promptForArm(arm, evalCase.input),
       20_000,
+      (reported) => {
+        usage = reported
+      },
     )
     const title = cleanForArm(arm, raw)
     const score = scoreThreadTitle(evalCase, title)
@@ -258,7 +279,7 @@ async function runAttempt(
       title: null,
       rawFormatPass: false,
       score: scoreThreadTitle(evalCase, null),
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage,
       durationMs: Date.now() - started,
       error: error instanceof Error ? error.message : String(error),
     }
@@ -283,7 +304,7 @@ export async function runThreadTitleEval(
   for (let repeat = 1; repeat <= options.repeats; repeat += 1) {
     for (const [caseIndex, evalCase] of cases.entries()) {
       for (const arm of armOrder(options.arms, caseIndex, repeat)) {
-        const attempt = await runAttempt(provider, evalCase, arm, repeat)
+        const attempt = await runThreadTitleEvalAttempt(provider, evalCase, arm, repeat)
         attempts.push(attempt)
         console.log(
           `  ${attempt.score.pass ? 'PASS' : 'fail'} ${evalCase.id}/${arm}: ${attempt.title ?? attempt.error ?? '(empty)'}`,

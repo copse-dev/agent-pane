@@ -1,9 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import type { LLMProvider } from '@shared/types'
 import type { ThreadTitleEvalCase } from '../benchmarks/thread-titles/cases.ts'
 import {
   cleanForArm,
   parseThreadTitleEvalArgs,
+  runThreadTitleEvalAttempt,
   scoreThreadTitle,
   summarizeThreadTitleEval,
   type ThreadTitleEvalAttempt,
@@ -28,6 +30,36 @@ describe('scoreThreadTitle', () => {
     assert.equal(copiedOpening.formatPass, false)
     assert.equal(copiedOpening.conceptPass, false)
     assert.equal(copiedOpening.pass, false)
+  })
+
+  it('matches complete concept words and phrases, not unrelated substrings', () => {
+    const recentThreads: ThreadTitleEvalCase = {
+      id: 'filter-recent-threads',
+      input: 'Filter threads after a chosen date',
+      concepts: [['filter', 'search'], ['thread'], ['date', 'recent', 'time', 'old']],
+    }
+
+    const falsePositive = scoreThreadTitle(recentThreads, 'Filter thread folder')
+    assert.equal(falsePositive.conceptPass, false)
+    assert.deepEqual(falsePositive.missingConcepts, [['date', 'recent', 'time', 'old']])
+    assert.equal(scoreThreadTitle(recentThreads, 'Filter old threads').conceptPass, true)
+  })
+})
+
+describe('runThreadTitleEvalAttempt', () => {
+  it('keeps usage reported before a failed completion', async () => {
+    const provider: LLMProvider = {
+      async *stream() {
+        yield { type: 'usage' as const, model: 'local', inputTokens: 17, outputTokens: 2 }
+        throw new Error('connection reset')
+      },
+    }
+
+    const attempt = await runThreadTitleEvalAttempt(provider, CASE, 'candidate', 1)
+
+    assert.deepEqual(attempt.usage, { inputTokens: 17, outputTokens: 2 })
+    assert.equal(attempt.error, 'connection reset')
+    assert.equal(attempt.score.pass, false)
   })
 })
 
