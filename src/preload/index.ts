@@ -16,6 +16,22 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  mobile: {
+    onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/mobile-chat.ts').MobileChatCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('mobile:chat', listener)
+      return (): void => {
+        ipcRenderer.off('mobile:chat', listener)
+      }
+    },
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) =>
+      ipcRenderer.invoke('mobile:reply', id, result),
+  },
   windowState: {
     getNavigation: () => ipcRenderer.invoke('main-window:get-navigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>

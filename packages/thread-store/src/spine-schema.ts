@@ -613,7 +613,11 @@ const DECISION_LINE_FIELDS: RequiredFieldChecks<SpineDecisionLine> = {
   kind: (value) => typeof value === 'string',
   subject: (value) => typeof value === 'string',
   actor: (value) =>
-    value === 'user' || value === 'classifier' || value === 'hook' || value === 'system',
+    value === 'user' ||
+    value === 'classifier' ||
+    value === 'hook' ||
+    value === 'system' ||
+    value === 'mobile-device',
   verdict: (value) =>
     value === 'approved' ||
     value === 'denied' ||

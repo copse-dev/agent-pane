@@ -10,6 +10,10 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
 import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
+import { mobileDecisions, mobileDecisionSource } from './mobile/mobile-decisions.ts'
+import { getActiveProjectId } from './workspace.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
+import { recordDecision } from './security/decision-log-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 
 export interface AskUserRequest {
@@ -42,6 +46,20 @@ export type AskUserHandler = (req: AskUserRequest, signal?: AbortSignal) => Prom
 
 let handler: AskUserHandler | null = null
 const scopedHandler = new AsyncLocalStorage<AskUserHandler>()
+const pendingQuestionThreads = new Map<string, { threadId: string; questions: AskUserQuestion[] }>()
+
+/** Read-only attention projection for the mobile session view. */
+export function pendingAskUserCountForThread(threadId: string): number {
+  let count = 0
+  for (const pending of pendingQuestionThreads.values()) if (pending.threadId === threadId) count++
+  return count
+}
+
+export function pendingAskUserQuestionsForThread(threadId: string): AskUserQuestion[] {
+  return [...pendingQuestionThreads.values()]
+    .filter((pending) => pending.threadId === threadId)
+    .flatMap((pending) => pending.questions)
+}
 
 export function runWithAskUserHandler<T>(next: AskUserHandler, fn: () => T): T {
   return scopedHandler.run(next, fn)
@@ -121,6 +139,7 @@ export function initAskUser(
     const resolve = pending.get(id)
     if (!resolve) return
     pending.delete(id)
+    pendingQuestionThreads.delete(id)
     resolve(result)
   }
 
@@ -142,6 +161,7 @@ export function initAskUser(
   win.on('closed', () => {
     for (const [id, resolve] of pending) {
       pending.delete(id)
+      pendingQuestionThreads.delete(id)
       resolve({ answers: [] })
     }
   })
@@ -151,8 +171,13 @@ export function initAskUser(
       send: (channel, payload) => {
         win.webContents.send(channel, payload)
       },
-      register: (id, resolve) => {
+      register: (id, resolve, context) => {
         pending.set(id, resolve)
+        if (context.threadId)
+          pendingQuestionThreads.set(id, {
+            threadId: context.threadId,
+            questions: context.questions,
+          })
       },
       settle,
       alertUser,
@@ -163,7 +188,11 @@ export function initAskUser(
 /** What the window-backed handler needs from `initAskUser`'s window and pending map. */
 export interface WindowAskUserDeps {
   send: (channel: 'agent:ask-user-request' | 'agent:ask-user-cancelled', payload: object) => void
-  register: (id: string, resolve: (result: AskUserResult) => void) => void
+  register: (
+    id: string,
+    resolve: (result: AskUserResult) => void,
+    context: { threadId: string | undefined; questions: AskUserQuestion[] },
+  ) => void
   settle: (id: string, result: AskUserResult) => void
   alertUser: UserAlertSender
 }
@@ -187,7 +216,6 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
       const threadId = getActiveRunThread() ?? undefined
       const stopAlert = deps.alertUser('interaction', 'An agent has a question.', threadId)
       const withdraw = (result: AskUserResult): void => {
-        deps.send('agent:ask-user-cancelled', { id })
         deps.settle(id, result)
       }
       // Settle as cancelled here too: this listener runs before the deferred
@@ -200,12 +228,40 @@ export function createWindowAskUserHandler(deps: WindowAskUserDeps): AskUserHand
         withdraw(blankAnswers(req))
       }, ASK_USER_TIMEOUT_MS)
       if (typeof timer.unref === 'function') timer.unref()
-      deps.register(id, (result) => {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        stopAlert()
-        resolve(result)
-      })
+      const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+      const removeMobile =
+        projectId && threadId
+          ? mobileDecisions.register(
+              projectId,
+              threadId,
+              { id, kind: 'question', questions: req.questions },
+              (answer, device) => {
+                if (answer.kind !== 'question') return
+                recordDecision({
+                  projectId,
+                  threadId,
+                  kind: 'ask-user',
+                  actor: 'mobile-device',
+                  verdict: 'approved',
+                  subject: 'Answered agent questions',
+                  source: mobileDecisionSource(device),
+                })
+                deps.settle(id, { answers: answer.answers })
+              },
+            )
+          : (): void => {}
+      deps.register(
+        id,
+        (result) => {
+          removeMobile()
+          deps.send('agent:ask-user-cancelled', { id })
+          clearTimeout(timer)
+          signal?.removeEventListener('abort', onAbort)
+          stopAlert()
+          resolve(result)
+        },
+        { threadId, questions: req.questions },
+      )
       signal?.addEventListener('abort', onAbort, { once: true })
       deps.send('agent:ask-user-request', { id, threadId, questions: req.questions })
     })
