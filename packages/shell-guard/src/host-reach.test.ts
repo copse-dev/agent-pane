@@ -55,12 +55,15 @@ describe('hostReachReasons — other machines', () => {
       'ssh -o ProxyJump=bastion mini true',
       'ssh -o "ProxyJump bastion" mini true',
       'ssh -oProxyJump=bastion mini true',
+      'ssh -vJbastion mini true',
       'ssh -o Hostname=other.example mini true',
       'ssh -o "Hostname other.example" mini true',
       'ssh -oHostname=other.example mini true',
       'rsync -e "ssh -i key" -a src/ mini:/srv/',
       'rsync --rsh=./tool -a src/ mini:/srv/',
       "ssh mini 'rm -rf ~/cache'",
+      'ssh -o RemoteCommand="rm -rf /" mini',
+      'rsync --rsync-path="rm -rf /" src/ mini:/srv/',
     ]) {
       assert.ok(reaches(command, { trustedSshHosts }), command)
     }
@@ -79,6 +82,7 @@ describe('hostReachReasons — other machines', () => {
       'ssh -o DynamicForward=1080 mini',
       'ssh -o Tunnel=yes mini',
       'ssh -o TunnelDevice=0:0 mini',
+      'ssh -fL8080:other.example:80 mini',
     ]) {
       assert.ok(reaches(command, { trustedSshHosts }), command)
     }
@@ -92,7 +96,10 @@ describe('hostReachReasons — other machines', () => {
       'ssh -o SecurityKeyProvider=/tmp/provider.dylib mini true',
       'ssh -o XAuthLocation=/tmp/xauth mini true',
       'ssh -o Include=/tmp/ssh_config mini true',
+      'ssh -o Include=internal mini true',
+      'ssh -o XAuthLocation=none mini true',
       'scp -S /tmp/ssh build.tar mini:/tmp/',
+      'scp -qS/tmp/ssh build.tar mini:/tmp/',
       'sftp -S /tmp/ssh mini',
       'sftp -D /tmp/sftp-server mini',
       'mosh --ssh=/tmp/ssh mini',

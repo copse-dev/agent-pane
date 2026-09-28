@@ -27,8 +27,8 @@ export interface HostReachContext {
 // Other machines
 // ---------------------------------------------------------------------------
 
-/** OpenSSH client options that take a separate value. */
-const SSH_VALUE_FLAGS = new Set('BbcDEeFIiJLlmOoPpQRSWw'.split('').map((l) => `-${l}`))
+/** OpenSSH client option letters that take a value, attached or separate. */
+const SSH_VALUE_OPTION_LETTERS = new Set('BbcDEeFIiJLlmOoPpQRSWw'.split(''))
 
 /** Options that open listeners, forward connections, or create tunnel devices. */
 const SSH_FORWARD_FLAGS = new Set(['-D', '-L', '-R', '-W', '-w'])
@@ -54,6 +54,50 @@ const SSH_LOCAL_CODE_OPTIONS = new Set([
   'securitykeyprovider',
   'xauthlocation',
 ])
+
+function sshOptionLoadsLocalCode(name: string, value: string): boolean {
+  if (!SSH_LOCAL_CODE_OPTIONS.has(name)) return false
+  // OpenSSH documents `none` only for PKCS11Provider and `internal` only for
+  // SecurityKeyProvider. Include and XAuthLocation always name a local file or
+  // executable — treating those words as universal sentinels lets a caller
+  // select `~/.ssh/internal` or an executable literally named `none`.
+  if (name === 'pkcs11provider') return value.toLowerCase() !== 'none'
+  if (name === 'securitykeyprovider') return value.toLowerCase() !== 'internal'
+  return true
+}
+
+interface ShortOptionWithValue {
+  flag: string
+  value: string
+  consumesNext: boolean
+}
+
+/**
+ * Find the first value-taking OpenSSH option in a short-option token.
+ *
+ * OpenSSH uses getopt-style clusters: `-fL8080:host:80` is `-f` followed by
+ * `-L 8080:host:80`, and `-vJjump` is `-v` followed by `-J jump`. Looking only
+ * at `token.slice(0, 2)` therefore misses exactly the options that cross the
+ * trust boundary. A value-taking option consumes the rest of its token, so
+ * there cannot be a second option after it.
+ */
+function sshShortOptionWithValue(
+  token: string,
+  next: string | undefined,
+): ShortOptionWithValue | null {
+  if (!/^-[^-]/.test(token)) return null
+  for (let index = 1; index < token.length; index++) {
+    const letter = token.charAt(index)
+    if (!SSH_VALUE_OPTION_LETTERS.has(letter)) continue
+    const attached = token.slice(index + 1)
+    return {
+      flag: `-${letter}`,
+      value: attached.length > 0 ? attached : (next ?? ''),
+      consumesNext: attached.length === 0,
+    }
+  }
+  return null
+}
 
 /** `user@host`, `ssh://user@host:22/path` → `host`. */
 function sshDestinationHost(destination: string): string {
@@ -85,8 +129,8 @@ function openSshOption(raw: string): { name: string; value: string } {
 
 interface SshInvocation {
   hosts: string[]
-  /** The command the remote shell runs, when one is given. */
-  remoteCommand: string | null
+  /** Commands a remote shell runs, from operands or command-bearing options. */
+  remoteCommands: string[]
   localExecution: boolean
   forwarding: boolean
 }
@@ -94,6 +138,7 @@ interface SshInvocation {
 function parseSshClient(head: string, args: readonly string[]): SshInvocation {
   const hosts: string[] = []
   const operands: string[] = []
+  const remoteCommands: string[] = []
   let localExecution = false
   let forwarding = false
   for (let i = 0; i < args.length; i++) {
@@ -103,14 +148,30 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
       if (token === '--ssh') i++
       continue
     }
+    if (head === 'rsync') {
+      if (token === '--rsync-path' || token.startsWith('--rsync-path=')) {
+        const value = token === '--rsync-path' ? (args[++i] ?? '') : token.slice(13)
+        if (value) remoteCommands.push(value)
+        continue
+      }
+      // rsync also clusters short options. `-ave ssh` contains `-e ssh`, which
+      // selects a local transport program just as the unclustered spelling does.
+      if (/^-[^-]*e/.test(token)) {
+        localExecution = true
+        if (token.endsWith('e')) i++
+        continue
+      }
+    }
     if (!token.startsWith('-') || token === '-') {
       operands.push(token)
       continue
     }
-    // `-oProxyCommand=…`, `-J jump`, `-F cfg`: the value may be attached.
-    const flag = token.slice(0, 2)
-    if (!SSH_VALUE_FLAGS.has(flag)) continue
-    const value = token.length > 2 ? token.slice(2) : (args[++i] ?? '')
+    // `-oProxyCommand=…`, `-fL8080:host:80`, `-vJjump`: OpenSSH permits both
+    // attached values and getopt-style clusters before a value-taking option.
+    const shortOption = sshShortOptionWithValue(token, args[i + 1])
+    if (!shortOption) continue
+    const { flag, value } = shortOption
+    if (shortOption.consumesNext) i++
     if ((head === 'ssh' || head === 'autossh') && SSH_FORWARD_FLAGS.has(flag)) forwarding = true
     if ((head === 'ssh' || head === 'autossh') && flag === '-I' && value.toLowerCase() !== 'none') {
       localExecution = true
@@ -121,10 +182,11 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
     if (flag === '-o') {
       const option = openSshOption(value)
       if (SSH_LOCAL_EXECUTION.test(value.replace(/^\s+/, ''))) localExecution = true
-      if (SSH_LOCAL_CODE_OPTIONS.has(option.name) && !/^(?:internal|none)$/i.test(option.value)) {
-        localExecution = true
-      }
+      if (sshOptionLoadsLocalCode(option.name, option.value)) localExecution = true
       if (SSH_FORWARD_OPTIONS.has(option.name)) forwarding = true
+      if (option.name === 'remotecommand' && option.value.toLowerCase() !== 'none') {
+        remoteCommands.push(option.value)
+      }
       if (option.name === 'proxyjump' && option.value.toLowerCase() !== 'none') {
         for (const jump of option.value.split(',')) {
           const host = sshDestinationHost(jump.trim())
@@ -146,9 +208,10 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
   if (head === 'ssh' || head === 'sftp' || head === 'mosh' || head === 'autossh') {
     const [destination, ...remote] = operands
     if (destination !== undefined) hosts.push(sshDestinationHost(destination))
+    if (head === 'ssh' && remote.length > 0) remoteCommands.push(remote.join(' '))
     return {
       hosts,
-      remoteCommand: head === 'ssh' && remote.length > 0 ? remote.join(' ') : null,
+      remoteCommands,
       localExecution,
       forwarding,
     }
@@ -157,7 +220,7 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
     const host = remoteOperandHost(operand)
     if (host) hosts.push(host)
   }
-  return { hosts, remoteCommand: null, localExecution, forwarding }
+  return { hosts, remoteCommands, localExecution, forwarding }
 }
 
 const SSH_CLIENTS = new Set(['ssh', 'scp', 'sftp', 'rsync', 'mosh', 'autossh'])
@@ -184,9 +247,11 @@ function remoteReasons(head: string, args: readonly string[], context: HostReach
     )
   }
   // A trusted host still gets the destructive-pattern net over what it is told to run.
-  if (invocation.remoteCommand !== null && untrusted.length === 0) {
-    for (const reason of dangerousInSandboxReasons(invocation.remoteCommand)) {
-      reasons.push(`on ${invocation.hosts.join(', ')}: ${reason}`)
+  if (untrusted.length === 0) {
+    for (const remoteCommand of invocation.remoteCommands) {
+      for (const reason of dangerousInSandboxReasons(remoteCommand)) {
+        reasons.push(`on ${invocation.hosts.join(', ') || 'the remote host'}: ${reason}`)
+      }
     }
   }
   return reasons

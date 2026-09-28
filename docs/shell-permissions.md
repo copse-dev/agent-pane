@@ -345,9 +345,10 @@ While active:
     command-line `Hostname` override must be listed too). A trusted host still asks when the client
     would load or run local code (`-o ProxyCommand`, provider/helper options, `-F`,
     `scp`/`sftp -S`, `mosh --ssh`, or `rsync -e`/`--rsh`), opens a forwarding or tunnel (`-L`,
-    `-R`, `-D`, `-W`, `-w`, or the equivalent `-o` options), or the remote command matches a
-    destructive pattern. Trusting a host otherwise hands it commands as if it were this machine,
-    including reads of its secrets.
+    `-R`, `-D`, `-W`, `-w`, or the equivalent `-o` options), or a remote command (including
+    `RemoteCommand` and `rsync --rsync-path`) matches a destructive pattern. Clustered OpenSSH
+    options such as `-fL…` and `-vJ…` receive the same checks. Trusting a host otherwise hands it
+    commands as if it were this machine, including reads of its secrets.
   - printing the environment (`env`, `printenv`, `export -p`, `declare -x`, bare `set`), a
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;
