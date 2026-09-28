@@ -15,18 +15,128 @@ import { commandName } from './shell-argv.ts'
 const nonFlagWords = (argv: readonly string[]): string[] =>
   argv.slice(1).filter((arg) => !arg.startsWith('-'))
 
+interface GlobalOptions {
+  value: ReadonlySet<string>
+  toggle: ReadonlySet<string>
+}
+
+/**
+ * The first two command-path words after known global options. A value such as
+ * `logs` in `kubectl --namespace logs delete pod` is data, not the read-only
+ * `logs` subcommand. An unknown option before the path fails closed because the
+ * gate cannot know whether the following word is its value.
+ */
+function commandPathWords(
+  argv: readonly string[],
+  options: GlobalOptions,
+  nestedCommands: ReadonlySet<string>,
+): string[] | null {
+  const words: string[] = []
+  for (let index = 1; index < argv.length && words.length < 2; index++) {
+    const arg = argv[index] ?? ''
+    if (!arg.startsWith('-') || arg === '-') {
+      words.push(arg)
+      if (words.length === 1 && !nestedCommands.has(arg)) break
+      continue
+    }
+    if (arg === '--') continue
+    const name = arg.split('=', 1)[0] ?? arg
+    // An unknown option with its value attached cannot consume or disguise the
+    // following command word. Unknown separate-value options still fail closed.
+    if (arg.includes('=') && !options.value.has(name)) continue
+    if (options.value.has(name)) {
+      if (!arg.includes('=')) {
+        if (argv[index + 1] === undefined) return null
+        index++
+      }
+      continue
+    }
+    if (options.toggle.has(name)) continue
+    return null
+  }
+  return words
+}
+
 // ---------------------------------------------------------------------------
 // Publishing
 // ---------------------------------------------------------------------------
 
-function publishReason(argv: readonly string[]): string | null {
+const PACKAGE_GLOBAL_OPTIONS: ReadonlyMap<string, GlobalOptions> = new Map([
+  [
+    'npm',
+    {
+      value: new Set([
+        '--cache',
+        '--loglevel',
+        '--prefix',
+        '--registry',
+        '--userconfig',
+        '--workspace',
+        '-w',
+      ]),
+      toggle: new Set([
+        '--global',
+        '-g',
+        '--help',
+        '-h',
+        '--json',
+        '--silent',
+        '--verbose',
+        '--version',
+        '-v',
+        '--yes',
+        '-y',
+      ]),
+    },
+  ],
+  [
+    'pnpm',
+    {
+      value: new Set(['--dir', '-C', '--global-dir', '--global-bin-dir', '--workspace-dir']),
+      toggle: new Set(['--color', '--help', '-h', '--no-color', '--silent', '--version', '-v']),
+    },
+  ],
+  [
+    'yarn',
+    {
+      value: new Set(['--cwd', '--cache-folder', '--modules-folder', '--mutex']),
+      toggle: new Set(['--help', '-h', '--offline', '--silent', '--verbose', '--version', '-v']),
+    },
+  ],
+  [
+    'bun',
+    {
+      value: new Set(['--cwd', '--config']),
+      toggle: new Set(['--help', '-h', '--silent', '--version', '-v']),
+    },
+  ],
+])
+
+function packageCommandWords(head: string, argv: readonly string[]): string[] | null {
+  const options = PACKAGE_GLOBAL_OPTIONS.get(head)
+  return options
+    ? commandPathWords(argv, options, new Set(['dist-tag', 'npm']))
+    : nonFlagWords(argv)
+}
+
+function publishReason(
+  argv: readonly string[],
+  containerWords: readonly string[] | null,
+): string | null {
   const head = commandName(argv[0])
-  const words = nonFlagWords(argv)
+  const parsedWords = packageCommandWords(head, argv)
+  const words = parsedWords ?? nonFlagWords(argv)
   const [first = '', second = ''] = words
+  const packageWrite = /^(?:publish|unpublish|deprecate|owner|access)$/
+  const packageManagerPublishes =
+    ['npm', 'pnpm', 'yarn', 'bun'].includes(head) &&
+    (parsedWords === null
+      ? words.some((word) => packageWrite.test(word))
+      : packageWrite.test(first))
   const publishes =
-    (['npm', 'pnpm', 'yarn', 'bun'].includes(head) &&
-      /^(?:publish|unpublish|deprecate|owner|access)$/.test(first)) ||
+    packageManagerPublishes ||
     (head === 'npm' && first === 'dist-tag' && /^(?:add|rm)$/.test(second)) ||
+    (head === 'yarn' && first === 'npm' && second === 'publish') ||
     (head === 'cargo' && /^(?:publish|yank|owner)$/.test(first)) ||
     (head === 'gem' && /^(?:push|yank|owner)$/.test(first)) ||
     (head === 'twine' && first === 'upload') ||
@@ -36,7 +146,9 @@ function publishReason(argv: readonly string[]): string | null {
     (/^gradlew?$/.test(head) && words.some((word) => /^publish/.test(word))) ||
     (head === 'dotnet' && first === 'nuget' && second === 'push') ||
     ((head === 'docker' || head === 'podman') &&
-      (first === 'push' || (first === 'image' && second === 'push') || argv.includes('--push')))
+      (containerWords?.[0] === 'push' ||
+        (containerWords?.[0] === 'image' && containerWords[1] === 'push') ||
+        argv.includes('--push')))
   return publishes ? `publishes to a registry (${head} ${first})` : null
 }
 
@@ -63,6 +175,43 @@ const KUBE_READS = new Set([
 ])
 const KUBE_READ_PAIRS =
   /^(?:config (?:view|get-\w+|current-context)|auth (?:can-i|whoami)|rollout (?:status|history))$/
+const KUBE_NESTED_COMMANDS = new Set(['config', 'auth', 'rollout'])
+
+const KUBE_GLOBAL_OPTIONS: GlobalOptions = {
+  value: new Set([
+    '--as',
+    '--as-group',
+    '--as-uid',
+    '--cache-dir',
+    '--certificate-authority',
+    '--client-certificate',
+    '--client-key',
+    '--cluster',
+    '--context',
+    '--kubeconfig',
+    '--namespace',
+    '-n',
+    '--password',
+    '--profile',
+    '--profile-output',
+    '--request-timeout',
+    '--server',
+    '-s',
+    '--tls-server-name',
+    '--token',
+    '--user',
+    '--username',
+    '--v',
+    '-v',
+    '--vmodule',
+  ]),
+  toggle: new Set([
+    '--disable-compression',
+    '--insecure-skip-tls-verify',
+    '--match-server-version',
+    '--warnings-as-errors',
+  ]),
+}
 
 function kubeReason(head: string, words: readonly string[]): string | null {
   const [first = '', second = ''] = words
@@ -155,6 +304,78 @@ const FIRST_WORD_READS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
     wrangler: new Set(['whoami', 'dev', 'tail', 'types', 'help', 'login']),
   }),
 )
+
+const HELM_GLOBAL_OPTIONS: GlobalOptions = {
+  value: new Set([
+    '--burst-limit',
+    '--kube-apiserver',
+    '--kube-as-group',
+    '--kube-as-user',
+    '--kube-ca-file',
+    '--kube-context',
+    '--kube-token',
+    '--kubeconfig',
+    '--namespace',
+    '-n',
+    '--qps',
+    '--registry-config',
+    '--repository-cache',
+    '--repository-config',
+  ]),
+  toggle: new Set(['--debug']),
+}
+
+const PULUMI_GLOBAL_OPTIONS: GlobalOptions = {
+  value: new Set([
+    '--color',
+    '--cwd',
+    '-C',
+    '--memprofilerate',
+    '--profiling',
+    '--tracing',
+    '--verbose',
+    '-v',
+  ]),
+  toggle: new Set([
+    '--disable-integrity-checking',
+    '--emoji',
+    '--logflow',
+    '--logtostderr',
+    '--non-interactive',
+  ]),
+}
+
+const VERCEL_GLOBAL_OPTIONS: GlobalOptions = {
+  value: new Set(['--cwd', '--global-config', '-Q', '--local-config', '--scope', '--token']),
+  toggle: new Set(['--debug', '-d', '--no-color']),
+}
+
+const NO_GLOBAL_OPTIONS: GlobalOptions = { value: new Set(), toggle: new Set() }
+const HELM_NESTED_COMMANDS = new Set(['repo', 'plugin', 'dependency'])
+
+const DEPLOY_NESTED_COMMANDS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['helm', HELM_NESTED_COMMANDS],
+  ['terraform', new Set(['state', 'workspace'])],
+  ['pulumi', new Set(['stack', 'config', 'plugin'])],
+  ['fly', new Set(['apps', 'config', 'auth'])],
+])
+
+function deployCommandWords(head: string, argv: readonly string[]): string[] | null {
+  const normalized = head === 'tofu' ? 'terraform' : head === 'flyctl' ? 'fly' : head
+  if (!FIRST_WORD_READS.has(normalized)) return nonFlagWords(argv)
+  const options =
+    normalized === 'helm'
+      ? HELM_GLOBAL_OPTIONS
+      : normalized === 'pulumi'
+        ? PULUMI_GLOBAL_OPTIONS
+        : normalized === 'vercel'
+          ? VERCEL_GLOBAL_OPTIONS
+          : NO_GLOBAL_OPTIONS
+  return commandPathWords(argv, options, DEPLOY_NESTED_COMMANDS.get(normalized) ?? new Set())
+}
+
+const HELM_WRITING_PAIR =
+  /^(?:repo (?:add|remove|update)|plugin (?:install|uninstall|update)|dependency (?:build|update))$/
 /** Second words that still write under a read-looking first word. */
 const WRITING_SECOND_WORDS =
   /^(?:rm|remove|delete|destroy|set|import|push|mv|untaint|taint|force-unlock|select|new|unset|add|install|uninstall|upgrade|rollback|rename|init)$/
@@ -177,6 +398,9 @@ function deployReason(
       : `deploys or changes infrastructure (${head})`
   }
   if (!reads.has(first)) return `deploys or changes infrastructure (${head} ${first})`
+  if (head === 'helm' && HELM_WRITING_PAIR.test(`${first} ${second}`)) {
+    return `deploys or changes infrastructure (${head} ${first} ${second})`
+  }
   // `terraform state rm`, `pulumi stack rm`, `helm repo add`, `fly apps destroy`.
   if (
     (head === 'terraform' ||
@@ -237,9 +461,10 @@ function cloudReason(
 
 function paymentReason(head: string, words: readonly string[]): string | null {
   if (head !== 'stripe') return null
-  const reads =
-    /^(?:list|retrieve|logs|listen|help|version|login|config|samples|completion|open|status|get)$/
-  return words.length === 0 || words.some((word) => reads.test(word))
+  const [first = '', second = ''] = words
+  const topLevelRead = /^(?:logs|listen|help|version|login|config|samples|completion|open|status)$/
+  const apiRead = /^(?:list|retrieve|get|search)$/
+  return !first || topLevelRead.test(first) || apiRead.test(second)
     ? null
     : `may create charges or change a Stripe account (stripe ${words.slice(0, 2).join(' ')})`
 }
@@ -280,12 +505,89 @@ function databaseReason(head: string, argv: readonly string[]): string | null {
 const HOST_MOUNT =
   /^(?:\/|\/etc|\/var\/run\/docker\.sock|\/run\/docker\.sock|\/root|\/Users|\/home|~)(?::|$)/
 
+const CONTAINER_GLOBAL_OPTIONS: ReadonlyMap<string, GlobalOptions> = new Map([
+  [
+    'docker',
+    {
+      value: new Set([
+        '--config',
+        '--context',
+        '-c',
+        '--host',
+        '-H',
+        '--log-level',
+        '-l',
+        '--tlscacert',
+        '--tlscert',
+        '--tlskey',
+      ]),
+      toggle: new Set(['--debug', '-D', '--help', '-h', '--tls', '--tlsverify', '--version', '-v']),
+    },
+  ],
+  [
+    'podman',
+    {
+      value: new Set([
+        '--connection',
+        '-c',
+        '--events-backend',
+        '--hooks-dir',
+        '--identity',
+        '--log-level',
+        '--module',
+        '--network-config-dir',
+        '--root',
+        '--runroot',
+        '--runtime',
+        '--storage-driver',
+        '--storage-opt',
+        '--tmpdir',
+        '--url',
+      ]),
+      toggle: new Set(['--help', '-h', '--remote', '--transient-store', '--version', '-v']),
+    },
+  ],
+  [
+    'nerdctl',
+    {
+      value: new Set([
+        '--address',
+        '-a',
+        '--cgroup-manager',
+        '--data-root',
+        '--host',
+        '--hosts-dir',
+        '--namespace',
+        '-n',
+        '--snapshotter',
+        '--storage-driver',
+      ]),
+      toggle: new Set(['--debug', '--help', '-h', '--insecure-registry', '--version', '-v']),
+    },
+  ],
+])
+
+const CONTAINER_NESTED_COMMANDS = new Set([
+  'buildx',
+  'container',
+  'image',
+  'network',
+  'system',
+  'volume',
+])
+
+function containerCommandWords(head: string, argv: readonly string[]): string[] | null {
+  const options = CONTAINER_GLOBAL_OPTIONS.get(head)
+  return options ? commandPathWords(argv, options, CONTAINER_NESTED_COMMANDS) : []
+}
+
 function containerReason(
   head: string,
-  words: readonly string[],
+  words: readonly string[] | null,
   argv: readonly string[],
 ): string | null {
   if (head !== 'docker' && head !== 'podman' && head !== 'nerdctl') return null
+  if (words === null) return `may change container state (${head}: unrecognized global option)`
   const [first = '', second = ''] = words
   const verb = first === 'container' || first === 'image' ? second : first
   if (verb === 'run' || verb === 'create') {
@@ -525,14 +827,20 @@ function databaseLoadReason(head: string, argv: readonly string[]): string | nul
 export function remoteChangeReasons(rawArgv: readonly string[], argv: readonly string[]): string[] {
   const head = commandName(argv[0])
   const words = nonFlagWords(argv)
+  const kubeWords =
+    head === 'kubectl' || head === 'oc'
+      ? commandPathWords(argv, KUBE_GLOBAL_OPTIONS, KUBE_NESTED_COMMANDS)
+      : null
+  const deployWords = deployCommandWords(head, argv)
+  const containerWords = containerCommandWords(head, argv)
   const reasons = [
-    publishReason(argv),
-    head === 'kubectl' || head === 'oc' ? kubeReason(head, words) : null,
-    deployReason(head, words, argv),
+    publishReason(argv, containerWords),
+    head === 'kubectl' || head === 'oc' ? kubeReason(head, kubeWords ?? []) : null,
+    deployReason(head, deployWords ?? [], argv),
     cloudReason(head, words, argv),
     paymentReason(head, words),
     databaseReason(head, argv),
-    containerReason(head, words, argv),
+    containerReason(head, containerWords, argv),
     registryReason(rawArgv, argv),
     uploadReason(head, argv),
     listenerReason(head, argv),
