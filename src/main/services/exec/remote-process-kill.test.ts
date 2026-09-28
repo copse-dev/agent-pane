@@ -26,6 +26,13 @@ describe('killRemoteProcessGroup', () => {
     resetSshConnectionManagerForTests()
   })
 
+  it('rejects when the SSH connection is unavailable', async () => {
+    await assert.rejects(
+      () => killRemoteProcessGroup(HOST.id, 4321),
+      /SSH host remote-kill-test is disconnected/,
+    )
+  })
+
   it('rejects when SSH could not deliver the remote signals', async () => {
     const previousHosts = getSetting<SshWorkspaceHost[]>('sshWorkspaceHosts', [])
     const transport = new FakeSshTransport([
