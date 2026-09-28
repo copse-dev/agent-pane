@@ -68852,6 +68852,7 @@ function mountProjectsPane(root, store2, api2) {
   const prBackfillRequested = /* @__PURE__ */ new Map();
   const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
   const prBackfillRetryTimers = /* @__PURE__ */ new Set();
+  let prBackfillRowsByKey = /* @__PURE__ */ new Map();
   let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
@@ -69873,6 +69874,9 @@ function mountProjectsPane(root, store2, api2) {
       else list.append(renderProjectEntry(node2.project));
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+    );
     if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
       const rowThreads = new Map(
         prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
@@ -69914,9 +69918,11 @@ function mountProjectsPane(root, store2, api2) {
               const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
               const timer = setTimeout(() => {
                 prBackfillRetryTimers.delete(timer);
-                if (prBackfillObserver !== observer) return;
-                for (const { row: row2 } of batch) {
-                  if (row2.isConnected) observer.observe(row2);
+                const currentObserver = prBackfillObserver;
+                if (!currentObserver) return;
+                for (const { threadId } of batch) {
+                  const row2 = prBackfillRowsByKey.get(`${projectId}\0${threadId}`);
+                  if (row2?.isConnected) currentObserver.observe(row2);
                 }
               }, delay);
               prBackfillRetryTimers.add(timer);
@@ -69958,6 +69964,7 @@ function mountProjectsPane(root, store2, api2) {
     prBackfillRetryTimers.clear();
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
+    prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
     dismissContextMenu();
     renaming = null;
