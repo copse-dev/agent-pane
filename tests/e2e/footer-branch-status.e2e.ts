@@ -242,4 +242,41 @@ describe('footer branch status for a detached thread worktree', () => {
 
     await saveElementScreenshot('#input-bar', 'footer-branch-rebase-in-progress.png')
   })
+
+  it('commits a pick that failed to sign before continuing the rebase', async function () {
+    this.timeout(90_000)
+    // Start from main so the conflicting commit from the previous case does
+    // not stop this rebase first.
+    git(worktreeRoot, ['rebase', '--abort'])
+    const baseBranch = git(projectRoot, ['branch', '--show-current'])
+    git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
+    writeFileSync(join(worktreeRoot, 'thread.txt'), 'thread\n')
+    git(worktreeRoot, ['add', 'thread.txt'])
+    git(worktreeRoot, ['commit', '-qm', 'thread file'])
+    const picked = git(worktreeRoot, ['rev-parse', 'HEAD'])
+    writeFileSync(join(projectRoot, 'main.txt'), 'main\n')
+    git(projectRoot, ['add', 'main.txt'])
+    git(projectRoot, ['commit', '-qm', 'main file'])
+    // A signing key that cannot load fails the pick's commit the way a
+    // sandboxed agent without the user's ssh-agent does.
+    expect(() =>
+      git(worktreeRoot, [
+        '-c',
+        'gpg.format=ssh',
+        '-c',
+        'user.signingkey=/nonexistent/copse-e2e-key',
+        'rebase',
+        '-S',
+        baseBranch,
+      ]),
+    ).toThrow()
+
+    const button = await $('.branch-reattach-button')
+    await expect(button).toHaveText('Commit and continue', { wait: 20_000 })
+    await expect(button).toBeEnabled()
+    await expect(button).toHaveAttribute('title', expect.stringContaining(picked.slice(0, 7)))
+    await expectOnBranchLine(button)
+
+    await saveElementScreenshot('#input-bar', 'footer-branch-uncommitted-pick.png')
+  })
 })

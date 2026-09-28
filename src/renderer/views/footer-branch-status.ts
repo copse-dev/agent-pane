@@ -25,6 +25,9 @@ let nextPickerId = 0
 type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' }>
 
 function detachedTitle(detached: DetachedAttachment): string {
+  if (detached.uncommittedPick) {
+    return `This checkout is detached from ${detached.branch} because the rebase applied ${detached.uncommittedPick.commit.slice(0, 7)} but could not commit it, usually because signing failed. This commits the staged changes with that commit's message in a terminal for this thread, then continues the rebase.`
+  }
   return detached.recovery
     ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.`
     : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`
@@ -33,10 +36,18 @@ function detachedTitle(detached: DetachedAttachment): string {
 /**
  * The command that finishes an interrupted Git operation. It runs in the
  * user's own shell rather than main's sandboxed Git: that shell has their
- * signing key, and a stopped rebase is often waiting on exactly that.
+ * signing key, and a stopped rebase is often waiting on exactly that. A pick
+ * whose commit failed is committed first, or `--continue` refuses its staged
+ * changes.
  */
-function recoveryCommand(recovery: NonNullable<DetachedAttachment['recovery']>): string {
-  return `git ${recovery} --continue`
+function recoveryCommand(
+  detached: DetachedAttachment,
+  recovery: NonNullable<DetachedAttachment['recovery']>,
+): string {
+  const pick = detached.uncommittedPick
+  if (!pick) return `git ${recovery} --continue`
+  const sign = pick.signOption ? `${pick.signOption} ` : ''
+  return `git commit ${sign}-C ${pick.commit} && git rebase --continue`
 }
 
 /**
@@ -291,6 +302,14 @@ export function mountFooterBranchStatus(
     trigger.title = title
     reattachButton.title = title
     reattachButton.disabled = reattaching
+    if (current.uncommittedPick) {
+      reattachButton.setAttribute(
+        'aria-label',
+        `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`,
+      )
+      reattachButton.textContent = 'Commit and continue'
+      return
+    }
     if (current.recovery) {
       reattachButton.setAttribute(
         'aria-label',
@@ -327,7 +346,7 @@ export function mountFooterBranchStatus(
     if (current.recovery) {
       // A reattach would strand the half-applied state, so finish the
       // operation instead; the terminal scopes to the active thread's checkout.
-      store.emit('request_terminal_command', recoveryCommand(current.recovery))
+      store.emit('request_terminal_command', recoveryCommand(current, current.recovery))
       return
     }
     reattaching = true

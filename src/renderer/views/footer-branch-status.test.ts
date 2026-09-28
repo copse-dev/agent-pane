@@ -147,7 +147,12 @@ describe('footer branch status', () => {
         worktreeAttachment: async () =>
           attached
             ? { state: 'attached' }
-            : { state: 'detached', branch: 'copse/thread-branch', recovery: null },
+            : {
+                state: 'detached',
+                branch: 'copse/thread-branch',
+                recovery: null,
+                uncommittedPick: null,
+              },
         reattachWorktree: async (projectId, threadId) => {
           reattachCalls.push(`${projectId}/${threadId}`)
           attached = true
@@ -191,6 +196,7 @@ describe('footer branch status', () => {
             state: 'detached',
             branch: 'copse/thread-branch',
             recovery: 'rebase',
+            uncommittedPick: null,
           }),
           reattachWorktree: async () => {
             reattachCalled = true
@@ -216,6 +222,39 @@ describe('footer branch status', () => {
       assert.equal(reattachCalled, false)
     })
 
+    it('commits a pick that failed to sign before continuing the rebase', async () => {
+      const store = detachedStore()
+      const commands: string[] = []
+      store.on('request_terminal_command', (command) => {
+        commands.push(command)
+      })
+      const commit = 'aad0cc78baea8ca39676cbdf2de560c6f04d8417'
+      const host = mountDetached(
+        {
+          branchStatus: detachedStatus,
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'rebase',
+            uncommittedPick: { commit, signOption: '-S' },
+          }),
+        },
+        store,
+      )
+      await settle()
+
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.textContent, 'Commit and continue')
+      assert.equal(
+        button.getAttribute('aria-label'),
+        'Commit the staged pick and continue the rebase on copse/thread-branch in a terminal',
+      )
+      assert.match(button.title, /applied aad0cc7 but could not commit it/)
+      button.click()
+      await settle()
+      assert.deepEqual(commands, [`git commit -S -C ${commit} && git rebase --continue`])
+    })
+
     it('keeps the button and reports the failure when git refuses to reattach', async () => {
       const host = mountDetached({
         branchStatus: detachedStatus,
@@ -223,6 +262,7 @@ describe('footer branch status', () => {
           state: 'detached',
           branch: 'copse/thread-branch',
           recovery: null,
+          uncommittedPick: null,
         }),
         reattachWorktree: async () => {
           throw new Error('Cannot reattach thread worktree: local changes would be overwritten')

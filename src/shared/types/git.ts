@@ -81,7 +81,24 @@ export interface GitBranchStatus {
  */
 export type ThreadWorktreeAttachment =
   | { state: 'attached' }
-  | { state: 'detached'; branch: string; recovery: 'rebase' | 'cherry-pick' | null }
+  | {
+      state: 'detached'
+      branch: string
+      recovery: 'rebase' | 'cherry-pick' | null
+      /**
+       * A rebase pick that applied but could not be committed (usually a
+       * signing failure). Git reschedules the pick and leaves its changes
+       * staged, and `git rebase --continue` refuses until they are committed.
+       */
+      uncommittedPick: UncommittedRebasePick | null
+    }
+
+export interface UncommittedRebasePick {
+  /** Full SHA of the commit being picked; its message and author are reused. */
+  commit: string
+  /** The rebase's own signing option (`-S` or `-S<keyid>`), so the commit is signed the same way. */
+  signOption: string | null
+}
 
 /** What `reattachWorktree` did to put the checkout back on its branch. */
 export interface ThreadWorktreeReattachResult {
