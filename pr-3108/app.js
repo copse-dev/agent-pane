@@ -129922,19 +129922,18 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    if (!await desktopViewerEnabled()) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff();
+      return;
+    }
     let discoveryError = "";
-    const [viewerEnabled, canStoreCredentials, devices] = await Promise.all([
-      desktopViewerEnabled(),
+    const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
       api2.simulatorDesktop.list().catch((error62) => {
         discoveryError = error62 instanceof Error ? error62.message : String(error62);
         return [];
       })
     ]);
-    if (!viewerEnabled) {
-      if (!simulatorSessionId && !channel) showDesktopViewerOff();
-      return;
-    }
     secureCredentialStorage = canStoreCredentials;
     simulatorDevices = devices;
     await refreshSshHosts(preferred);
