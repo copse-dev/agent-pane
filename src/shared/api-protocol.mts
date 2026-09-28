@@ -50,5 +50,8 @@
 // v21 conservatively versions the optional Copse Reviewer report initiator on
 // thread payloads and `review_report` chunks.
 // v22 versions mobile-device decision actors and the resulting decisions:list shape.
-// v23 versions persisted reviewer-input answers on thread payloads.
-export const API_PROTOCOL_VERSION = 23 as const
+// v27 conservatively versions schedule-scoped automation permissions in list/upsert
+// payloads. v22–v26 are claimed by open PRs, so this skips them to avoid collisions.
+// v28 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
+// v29 versions persisted reviewer-input answers on thread payloads.
+export const API_PROTOCOL_VERSION = 29 as const
