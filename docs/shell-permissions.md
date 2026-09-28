@@ -32,8 +32,9 @@ legacy execution name fails closed rather than inheriting another server's grant
 
 Always allow is unavailable where the product contract requires a fresh operation-specific
 approval: worktree preparation, mutating GitHub actions, and custom tools declared with
-`requiresApproval`. An approval prompt's existing “remember” action writes the same explicit
-Always allow policy when that policy is available.
+`requiresApproval`. Mutating GitHub actions may instead receive the narrower, exact
+schedule-scoped automation opt-in described below. An approval prompt's existing “remember” action
+writes the same explicit Always allow policy when that policy is available.
 
 ## Platform matrix
 
@@ -341,8 +342,9 @@ While active:
 - Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
   `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
   one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
-  Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still always prompt. Read-only `gh`
-  carve-outs keep the normal sandboxed path.
+  Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still prompt unless the owning automation
+  has the exact project-scoped grant described below. Read-only `gh` carve-outs keep the normal
+  sandboxed path.
 - Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
   executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
   it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
@@ -465,6 +467,24 @@ configuration-file argument cannot accidentally be inspected in place of the lau
 
 Update this document and the Guarded YOLO / harm / read-outside tests with any intentional change.
 
+## Automation-scoped tool grants
+
+Automation schedules default to no extra approvals. A user may opt one schedule into exact MCP
+tool names and a fixed catalogue of mutating Copse GitHub actions. These grants are stored with the
+schedule, never as ambient thread or application trust, and the gate resolves them only from the
+latest thread that main recorded as created by that schedule. Renderer-visible thread metadata is
+only a claim: the gate corroborates its schedule, thread id, and trigger time against the
+main-owned schedule run record before using a grant. Read-only mode and tool-gate hooks still run
+first. A global **Blocked** policy rejects before the schedule grant, and **Always ask** forces a
+fresh prompt without offering to remember the answer back to the schedule.
+
+Copse GitHub grants cover the current project repository only. Passing an explicit `owner` or
+`repo` keeps the normal per-call prompt. Shell commands, file changes, web/browser origins,
+sensitive-data reveals, ACP agent permission kinds, and model-spend approvals are deliberately not
+eligible. An eligible prompt raised inside an automation offers to add that exact action or MCP
+tool to the owning schedule; ordinary threads retain their existing global MCP “always allow”
+behavior.
+
 ## Implementation map
 
 Sandboxed native commands and ACP processes redirect `TMPDIR`, `TMP`, `TEMP`, and zsh's
@@ -521,6 +541,9 @@ the registry still fails contained and offers to run outside.
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
+- `automations/automation-service.ts`: exact schedule-owned Copse/MCP grants, the selectable
+  permission catalogue, and corroboration of renderer-visible provenance against the schedule's
+  main-owned latest-run record.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
   reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the
