@@ -1170,21 +1170,21 @@ function mountVncSession(
       .getState()
       .projects.find((project) => project.id === store.getState().activeProjectId)
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous
+    // Every discovery IPC refuses while the viewer is off, so check the setting
+    // first and send none of them; say so once instead of surfacing each
+    // refusal as a raw per-machine error.
+    if (!(await desktopViewerEnabled())) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff()
+      return
+    }
     let discoveryError = ''
-    const [viewerEnabled, canStoreCredentials, devices] = await Promise.all([
-      desktopViewerEnabled(),
+    const [canStoreCredentials, devices] = await Promise.all([
       api.vnc.canStoreCredentials().catch(() => false),
       api.simulatorDesktop.list().catch((error: unknown) => {
         discoveryError = error instanceof Error ? error.message : String(error)
         return []
       }),
     ])
-    // Every discovery IPC refuses while the viewer is off; say so once instead
-    // of surfacing each refusal as a raw per-machine error.
-    if (!viewerEnabled) {
-      if (!simulatorSessionId && !channel) showDesktopViewerOff()
-      return
-    }
     secureCredentialStorage = canStoreCredentials
     simulatorDevices = devices
     await refreshSshHosts(preferred)
