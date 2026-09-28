@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import {
   THIRD_PARTY_LICENSE_JSON,
+  THIRD_PARTY_LICENSE_REPORT_VERSION,
   THIRD_PARTY_LICENSES_DIR,
 } from '../src/shared/third-party-licenses.mts'
 import {
@@ -33,7 +34,10 @@ function withReport(
   extra: Record<string, unknown>,
 ): AsarArchive {
   const files: Record<string, unknown> = Object.fromEntries(LICENSE_FILES.map((f) => [f, '']))
-  files[`${THIRD_PARTY_LICENSES_DIR}/${THIRD_PARTY_LICENSE_JSON}`] = { components }
+  files[`${THIRD_PARTY_LICENSES_DIR}/${THIRD_PARTY_LICENSE_JSON}`] = {
+    version: THIRD_PARTY_LICENSE_REPORT_VERSION,
+    components,
+  }
   return fakeArchive({ ...files, ...extra })
 }
 
@@ -70,6 +74,17 @@ describe('packaged licence check', () => {
     })
     assert.deepEqual(findPackagedLicenseProblems(archive), [
       `a@1.0.0 (node_modules/a/package.json) ships without an entry in ${THIRD_PARTY_LICENSE_JSON}`,
+    ])
+  })
+
+  it('fails closed when the report is malformed', () => {
+    const reportPath = `${THIRD_PARTY_LICENSES_DIR}/${THIRD_PARTY_LICENSE_JSON}`
+    const archive = withReport([{ name: 'a', version: '1.0.0' }], {
+      [reportPath]: '{"version":2,"components":[]}',
+      'node_modules/a/package.json': { name: 'a', version: '1.0.0', license: 'MIT' },
+    })
+    assert.deepEqual(findPackagedLicenseProblems(archive), [
+      `${reportPath} is unreadable or does not match the expected schema`,
     ])
   })
 

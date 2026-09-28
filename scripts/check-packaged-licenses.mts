@@ -23,6 +23,7 @@ import {
   CHROMIUM_LICENSES_FILE,
   COPSE_LICENSE_FILE,
   THIRD_PARTY_LICENSE_JSON,
+  THIRD_PARTY_LICENSE_REPORT_VERSION,
   THIRD_PARTY_LICENSE_TEXT,
   THIRD_PARTY_LICENSES_DIR,
 } from '../src/shared/third-party-licenses.mts'
@@ -75,6 +76,7 @@ export function packagedPackages(archive: AsarArchive): PackagedPackage[] {
 }
 
 const reportSchema = z.object({
+  version: z.literal(THIRD_PARTY_LICENSE_REPORT_VERSION),
   components: z.array(z.object({ name: z.string(), version: z.string() })),
 })
 
@@ -92,9 +94,13 @@ export function findPackagedLicenseProblems(
   if (!chromiumNoticesPresent) {
     problems.push(`${CHROMIUM_LICENSES_FILE} is not beside the packaged Electron runtime`)
   }
-  const report = archive.files.includes(reportPath)
+  const reportPresent = archive.files.includes(reportPath)
+  const report = reportPresent
     ? safeJsonParse(archive.readFile(reportPath).toString('utf8'), decodeWithSchema(reportSchema))
     : null
+  if (reportPresent && report === null) {
+    problems.push(`${reportPath} is unreadable or does not match the expected schema`)
+  }
   const listed = new Set((report?.components ?? []).map((c) => `${c.name}@${c.version}`))
 
   for (const pkg of packagedPackages(archive)) {
