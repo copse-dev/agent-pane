@@ -132,7 +132,7 @@ describe('window ask_user handler', () => {
     window.answer(['Postgres', 'Yes'])
 
     assert.deepEqual(await pending, { answers: ['Postgres', 'Yes'] })
-    assert.deepEqual(window.sent, ['agent:ask-user-request'])
+    assert.deepEqual(window.sent, ['agent:ask-user-request', 'agent:ask-user-cancelled'])
   })
 
   it('withdraws an open question as cancelled when the run stops', async () => {

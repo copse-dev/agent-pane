@@ -27,6 +27,7 @@ import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
+import { buildMobileAssets } from './mobile-build.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
 import { writeThirdPartyLicenses } from './write-third-party-licenses.mts'
 
@@ -213,6 +214,7 @@ async function bundle(options: esbuild.BuildOptions): Promise<void> {
 }
 
 if (!isDemo) {
+  await buildMobileAssets()
   const bundledCursorSkills = await assertBundledCursorSkillsSnapshot()
   console.log(
     `[build] bundled Cursor skills verified @ ${bundledCursorSkills.commit.slice(0, 12)} ` +

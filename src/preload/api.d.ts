@@ -151,6 +151,12 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  mobile: {
+    onChat: (
+      handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
+    ) => () => void
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) => Promise<void>
+  }
   windowState: {
     getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
     setNavigation: (
