@@ -61,7 +61,7 @@ const COPSE_AUTOMATION_ACTIONS: readonly CopseAutomationAction[] = [
   },
 ]
 
-function isAutomationPermission(value: unknown): value is AutomationPermission {
+function isAutomationPermission(value: unknown): boolean {
   if (!isRecord(value)) return false
   return (
     (value['kind'] === 'copse-action' || value['kind'] === 'mcp-tool') &&
