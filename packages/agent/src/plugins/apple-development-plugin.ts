@@ -2,7 +2,7 @@ import { definePlugin, type RegisteredPlugin } from './plugin-manifest.ts'
 
 export const APPLE_DEVELOPMENT_PLUGIN_ID = 'copse.apple-development'
 export const APPLE_DEVELOPMENT_PANEL_ID = 'apple-development'
-export const APPLE_DEVELOPMENT_TOOL_NAMES = ['open_simulator_desktop'] as const
+export const APPLE_DEVELOPMENT_TOOL_NAMES = ['open_simulator_desktop', 'device_hub'] as const
 
 /**
  * Apple Development is a first-party plugin because its typed host driver and
