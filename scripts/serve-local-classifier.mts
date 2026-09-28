@@ -19,8 +19,9 @@ import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-interface ServerSpec {
+export interface ServerSpec {
   repository: string
   revision: string
   /** Commands run once in the checkout, in order. */
@@ -94,7 +95,17 @@ function run(command: string[], cwd: string, env: NodeJS.ProcessEnv): void {
   }
 }
 
-function prepare(name: string, spec: ServerSpec): CachePaths {
+function output(command: string[], cwd: string, env: NodeJS.ProcessEnv): string {
+  const [program, ...args] = command
+  if (!program) throw new Error('Empty command.')
+  const result = spawnSync(program, args, { cwd, env, encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error(`${command.join(' ')} exited with ${String(result.status ?? result.signal)}`)
+  }
+  return result.stdout.trim()
+}
+
+export function prepareClassifierCache(name: string, spec: ServerSpec): CachePaths {
   const root = cacheRoot()
   const paths: CachePaths = {
     root,
@@ -105,7 +116,27 @@ function prepare(name: string, spec: ServerSpec): CachePaths {
   mkdirSync(join(root, name), { recursive: true })
   if (!existsSync(join(paths.checkout, '.git'))) {
     run(['git', 'clone', '--quiet', spec.repository, paths.checkout], root, env)
-    run(['git', 'checkout', '--quiet', spec.revision], paths.checkout, env)
+  }
+  const origin = output(['git', 'remote', 'get-url', 'origin'], paths.checkout, env)
+  if (origin !== spec.repository) {
+    throw new Error(
+      `${paths.checkout} has unexpected origin ${origin}; expected ${spec.repository}`,
+    )
+  }
+  const revision = spawnSync('git', ['cat-file', '-e', `${spec.revision}^{commit}`], {
+    cwd: paths.checkout,
+    env,
+    stdio: 'ignore',
+  })
+  if (revision.status !== 0) {
+    run(['git', 'fetch', '--quiet', 'origin', spec.revision], paths.checkout, env)
+  }
+  // A clone interrupted after creating `.git`, or a cache checkout moved by hand,
+  // must never turn the claimed pinned revision into the repository's default head.
+  run(['git', 'checkout', '--quiet', '--detach', spec.revision], paths.checkout, env)
+  const head = output(['git', 'rev-parse', 'HEAD'], paths.checkout, env)
+  if (head !== spec.revision) {
+    throw new Error(`${paths.checkout} is at ${head}; expected ${spec.revision}`)
   }
   const marker = join(paths.checkout, '.copse-setup-complete')
   if (!existsSync(marker)) {
@@ -126,7 +157,7 @@ function main(): number {
     )
     return 2
   }
-  const paths = prepare(name, spec)
+  const paths = prepareClassifierCache(name, spec)
   console.log(`[classifier:serve] ${name} ready in ${paths.checkout}`)
   if (args.includes('--setup-only')) return 0
   const passthrough = args.slice(1).filter((arg) => arg !== '--setup-only')
@@ -149,4 +180,6 @@ function main(): number {
   return 0
 }
 
-process.exitCode = main()
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exitCode = main()
+}
