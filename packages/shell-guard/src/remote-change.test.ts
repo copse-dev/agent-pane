@@ -27,18 +27,38 @@ describe('remoteChangeReasons', () => {
       'docker push registry.example.com/app:latest',
       'docker buildx build --push -t app .',
       'npm dist-tag add pkg@1.0.0 latest',
+      'npm --prefix view publish',
+      'docker --context ps push registry.example.com/app:latest',
     ])
-    assertReads(['npm pack', 'cargo build --release', 'docker build -t app .', 'npm view pkg'])
+    assertReads([
+      'npm pack',
+      'npm --version',
+      'npm --json view pkg',
+      'npm view publish',
+      'cargo build --release',
+      'docker build -t app .',
+      'npm view pkg',
+    ])
   })
 
   it('allows only the read subcommands of cluster, infrastructure and deploy CLIs', () => {
     assertChanges([
       'kubectl delete pods --all',
+      'kubectl --namespace logs delete pod victim',
+      'kubectl --context get delete pod victim',
       'kubectl apply -f k8s/',
       'kubectl exec pod -- ls',
       'helm upgrade app ./chart',
       'terraform apply -auto-approve',
       'terraform state rm module.x',
+      'helm --namespace list uninstall release',
+      'helm repo add internal https://charts.example.com',
+      'helm plugin install https://example.com/plugin.git',
+      'helm dependency update chart/',
+      'pulumi --cwd preview destroy --yes',
+      'pulumi --color preview destroy --yes',
+      'vercel --cwd ls',
+      'vercel --global-config ls',
       'pulumi up --yes',
       'vercel deploy --prod',
       'vercel',
@@ -48,12 +68,20 @@ describe('remoteChangeReasons', () => {
     ])
     assertReads([
       'kubectl get pods -A',
+      'kubectl --namespace prod get pods',
+      'kubectl --context prod rollout status deploy/api',
       'kubectl logs deploy/api',
       'kubectl port-forward svc/app 8080:80',
       'kubectl rollout status deploy/api',
       'helm list -A',
       'terraform plan',
       'terraform workspace select dev',
+      'helm --namespace prod list',
+      'helm --kube-context prod repo list',
+      'pulumi --cwd preview preview',
+      'pulumi --cwd=preview preview',
+      'vercel --cwd project ls',
+      'vercel --cwd=project ls',
       'pulumi preview',
       'vercel ls',
       'vercel --version',
@@ -84,13 +112,19 @@ describe('remoteChangeReasons', () => {
   it('asks before charging money or changing data', () => {
     assertChanges([
       'stripe charges create --amount 5000',
+      'stripe charges create --description list',
       'psql -c "DROP DATABASE app;"',
       'mysql -e "DELETE FROM users"',
       "mongosh --eval 'db.audit.drop()'",
       'redis-cli FLUSHALL',
       'dropdb app',
     ])
-    assertReads(['stripe customers list', 'psql -c "select 1"', 'redis-cli ping'])
+    assertReads([
+      'stripe customers list',
+      'stripe customers retrieve cus_123 --expand list',
+      'psql -c "select 1"',
+      'redis-cli ping',
+    ])
   })
 
   it('asks for containers with host access and for stopping containers', () => {
@@ -102,11 +136,18 @@ describe('remoteChangeReasons', () => {
       'docker kill app',
       'podman stop app',
       'docker system prune -af',
+      'docker --context ps rm db',
+      'docker context use prod',
+      'docker context rm old-prod',
     ])
     assertReads([
       'docker run --rm -v ./src:/app/src node:24 npm test',
       'docker ps',
       'docker logs app',
+      'docker --context prod ps',
+      'docker --context=prod images',
+      'docker context ls',
+      'docker context inspect prod',
     ])
   })
 
@@ -139,6 +180,41 @@ describe('remoteChangeReasons', () => {
       'curl -X POST -d x http://localhost:3000/hook',
       'curl -d x http://127.0.0.1:8080/api',
       'nc -z localhost 5432',
+    ])
+  })
+
+  it('asks for tools pointed at another host or loading a database', () => {
+    assertChanges([
+      'python3 -m pytest --runner-url=https://prod.example.com tests/',
+      'pytest --base-url https://staging.example.com',
+      'artillery run --target https://api.example.com load.yml',
+      'act -W https://logs.example.io/ci.yml',
+      'pg_loader --contrib --host 127.0.0.1 -c load.cfg',
+      'pg_restore -d app dump.sql',
+      'pg_restore dump.custom',
+      'pg_restore -f out.sql -d app dump.custom',
+      'influx write -b metrics -f points.lp',
+      'influx delete --bucket metrics --start 2020-01-01T00:00:00Z --stop now',
+      'influx bucket delete -n metrics',
+      'mongorestore --drop dump/',
+      'psql -f migrate.sql app',
+      'redis-cli --pipe',
+    ])
+    assertReads([
+      'python3 -m pytest tests/ -q',
+      'pytest --base-url http://localhost:8000',
+      'npx playwright test',
+      'act -W .github/workflows/ci.yml',
+      'psql -c "select 1"',
+      'mysql -f -e "select 1"',
+      'mariadb --force -e "select 1"',
+      'pg_restore -f out.sql dump.custom',
+      'pg_restore --list dump.custom',
+      'influx query "from(bucket:\\"m\\") |> range(start: -1h)"',
+      'influx query --org write "from(bucket:\\"m\\") |> range(start: -1h)"',
+      'influx bucket list --org delete',
+      'influx ping',
+      'influx version',
     ])
   })
 })
