@@ -12,15 +12,17 @@ function statusLabel(status: ThreadReview['status']): string {
       return 'Reviewing…'
     case 'error':
       return 'Review failed'
-    // Not reached from the transcript today: mountConversation renders no card
-    // for a skipped review. Kept so this label stays total over every status a
-    // ThreadReview can carry, rather than a skipped card silently reading as a
-    // finished "Review" if a caller ever renders one.
     case 'skipped':
       return 'Review skipped'
     default:
       return 'Review'
   }
+}
+
+function skippedReviewReason(summary: string): string {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, '')
+  if (!reason) return 'No review ran.'
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`
 }
 
 /** Clean reviews (explicit `issuesFound: false`) collapse by default so a
@@ -48,6 +50,11 @@ function appendReviewHeader(panel: HTMLElement, review: ThreadReview, onRetry?: 
   if (review.status === 'error' && onRetry) {
     header.append(createRetryButton(onRetry))
   }
+  if (review.status === 'skipped') {
+    header.append(
+      el('span', { class: 'review-panel-skipped-summary' }, skippedReviewReason(review.summary)),
+    )
+  }
   panel.append(header)
 }
 
@@ -68,7 +75,7 @@ export function createReviewCardEl(
 
   appendReviewHeader(panel, review, onRetry)
 
-  if (review.status === 'running') return panel
+  if (review.status === 'running' || review.status === 'skipped') return panel
 
   const body = el('div', { class: 'review-panel-body message-text streaming-markdown' })
   // The verdict asked for follow-up but the turn stopped without acting on it
