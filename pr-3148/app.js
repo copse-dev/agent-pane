@@ -3387,7 +3387,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -3408,11 +3408,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f4]) => f4.l && f4.r).map(([k2]) => k2);
@@ -37389,6 +37389,7 @@ function createDemoApi(scenario, options = {}) {
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
+    bundledSkillPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
@@ -62047,6 +62048,43 @@ var init_command_routing = __esm({
   }
 });
 
+// packages/shell-guard/src/trusted-ssh-hosts.ts
+function normalizeSshHost(host) {
+  return host.trim().toLowerCase().replace(/\.$/, "");
+}
+function collect(entries2) {
+  const out = [];
+  for (const entry of entries2) {
+    if (typeof entry !== "string") continue;
+    const host = normalizeSshHost(entry);
+    if (!host || out.includes(host) || !VALID_HOST.test(host)) continue;
+    out.push(host);
+  }
+  return out;
+}
+function parseTrustedSshHosts(text2) {
+  return collect(
+    text2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+  );
+}
+function sanitizeTrustedSshHosts(value) {
+  return Array.isArray(value) ? collect(value) : [];
+}
+var TRUSTED_SSH_HOSTS_SETTING, VALID_HOST;
+var init_trusted_ssh_hosts = __esm({
+  "packages/shell-guard/src/trusted-ssh-hosts.ts"() {
+    TRUSTED_SSH_HOSTS_SETTING = "trustedSshHosts";
+    VALID_HOST = /^[a-z0-9._:-]+$/;
+  }
+});
+
+// src/shared/trusted-ssh-hosts.ts
+var init_trusted_ssh_hosts2 = __esm({
+  "src/shared/trusted-ssh-hosts.ts"() {
+    init_trusted_ssh_hosts();
+  }
+});
+
 // src/shared/developer-mode.ts
 var DEVELOPER_MODE_SETTING;
 var init_developer_mode = __esm({
@@ -62613,6 +62651,21 @@ function mountSettingsDialog(store2, api2) {
                   project folder (for example <code>xcodebuild</code>). These run with no prompt.
                   A line that also does something destructive or reaches the network still asks.
                   Only applies in a project you trust and while the first option above is on.
+                </span>
+              </label>
+              <label>
+                Trusted SSH hosts
+                <textarea
+                  name="trustedSshHosts"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="build-box.local"
+                ></textarea>
+                <span class="field-hint">
+                  One host name or <code>~/.ssh/config</code> alias per line. In Guarded YOLO,
+                  <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
+                  without asking; any other host asks first. A destructive remote command still
+                  asks.
                 </span>
               </label>
             </fieldset>
@@ -64940,12 +64993,13 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     const statusEl = qsRequired(overlay, "#plugins-reload-status");
     statusEl.textContent = "Loading\u2026";
     try {
-      const [result, cursorPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api2.plugins.list(),
-        api2.cursorPlugins.list().catch(() => [])
+        api2.cursorPlugins.list().catch(() => []),
+        api2.bundledSkillPlugins.list().catch(() => [])
       ]);
       listEl.innerHTML = "";
-      if (result.plugins.length === 0 && cursorPlugins.length === 0) {
+      if (result.plugins.length === 0 && cursorPlugins.length === 0 && bundledPlugins.length === 0) {
         const empty = document.createElement("span");
         empty.className = "plugins-empty";
         empty.textContent = "No plugins installed.";
@@ -64961,6 +65015,11 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
             id: plugin.name,
             enabled: true,
             render: () => makeCursorPluginRow(plugin)
+          })),
+          ...bundledPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: plugin.enabled && !plugin.suppressed,
+            render: () => makeBundledSkillPluginRow(plugin)
           }))
         ].sort((a3, b4) => Number(!a3.enabled) - Number(!b4.enabled) || a3.id.localeCompare(b4.id));
         let lastEnabled = null;
@@ -65071,6 +65130,105 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     path.className = "plugin-source-path";
     path.textContent = plugin.root;
     row2.append(path);
+    return row2;
+  }
+  function makeBundledSkillPluginRow(plugin) {
+    const row2 = document.createElement("div");
+    row2.className = "plugin-row";
+    row2.dataset["pluginId"] = plugin.name;
+    row2.dataset["pluginOrigin"] = "bundled";
+    row2.dataset["enabled"] = String(plugin.enabled && !plugin.suppressed);
+    const header = document.createElement("div");
+    header.className = "plugin-row-header";
+    const icon = document.createElement("span");
+    icon.className = "plugin-icon plugin-icon-cursor";
+    icon.setAttribute("aria-hidden", "true");
+    const mark2 = document.createElement("img");
+    mark2.src = "./cursor-mark.svg";
+    mark2.alt = "";
+    icon.append(mark2);
+    header.append(icon);
+    const title = document.createElement("div");
+    title.className = "plugin-row-title";
+    const originBadge = document.createElement("span");
+    originBadge.className = "plugin-badge plugin-badge-cursor";
+    originBadge.textContent = "Cursor \xB7 Bundled";
+    originBadge.title = "Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.";
+    title.append(originBadge);
+    const nameLine = document.createElement("div");
+    nameLine.className = "plugin-row-name-line";
+    const nameEl = document.createElement("span");
+    nameEl.className = "plugin-name";
+    nameEl.textContent = plugin.name;
+    nameLine.append(nameEl);
+    if (plugin.version) {
+      const versionEl = document.createElement("span");
+      versionEl.className = "plugin-version";
+      versionEl.textContent = plugin.version;
+      nameLine.append(versionEl);
+    }
+    title.append(nameLine);
+    const toggleControl = document.createElement("div");
+    toggleControl.className = "plugin-toggle-control";
+    const makeStateLabel = (side) => {
+      const stateEl = document.createElement("span");
+      stateEl.className = "plugin-toggle-state";
+      stateEl.dataset["side"] = side;
+      stateEl.textContent = side === "on" ? "On" : "Off";
+      stateEl.setAttribute("aria-hidden", "true");
+      return stateEl;
+    };
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "toggle-switch plugin-toggle";
+    toggleLabel.title = plugin.suppressed ? "All bundled skills are off \u2014 turn them on under Agent \u2192 Skills." : plugin.enabled ? "Turn off this plugin" : "Turn on this plugin";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = plugin.enabled;
+    toggle.disabled = plugin.suppressed;
+    toggle.className = "plugin-toggle-input";
+    toggle.setAttribute("aria-label", `${plugin.name} plugin enabled`);
+    const track = document.createElement("span");
+    track.className = "toggle-switch-track";
+    track.setAttribute("aria-hidden", "true");
+    toggle.addEventListener("change", () => {
+      toggle.disabled = true;
+      void (async () => {
+        const stored = await api2.settings.get("bundledSkillPluginOverrides");
+        await api2.settings.set("bundledSkillPluginOverrides", {
+          ...isRecord(stored) ? stored : {},
+          [plugin.name]: toggle.checked
+        });
+        await refreshPlugins();
+        store2.emit("settings_changed");
+      })().catch(() => {
+        toggle.checked = !toggle.checked;
+      }).finally(() => {
+        toggle.disabled = plugin.suppressed;
+      });
+    });
+    toggleLabel.append(toggle, track);
+    toggleControl.append(makeStateLabel("off"), toggleLabel, makeStateLabel("on"));
+    header.append(title, toggleControl);
+    row2.append(header);
+    if (plugin.description) {
+      const desc = document.createElement("div");
+      desc.className = "plugin-row-desc";
+      desc.textContent = plugin.description;
+      row2.append(desc);
+    }
+    if (plugin.offByDefaultReason) {
+      const note = document.createElement("p");
+      note.className = "field-hint plugin-default-off-note";
+      note.textContent = `Off by default. ${plugin.offByDefaultReason}`;
+      row2.append(note);
+    }
+    const chips = document.createElement("div");
+    chips.className = "plugin-chips";
+    const chip2 = document.createElement("span");
+    chip2.className = "plugin-chip";
+    chip2.textContent = `${String(plugin.skillCount)} ${plugin.skillCount === 1 ? "skill" : "skills"}`;
+    chips.append(chip2);
+    row2.append(chips);
     return row2;
   }
   function mcpOriginChip(s16) {
@@ -65483,6 +65641,9 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         textareaControl(form, "trustedShellCommands").value = formatTrustedCommands(
           sanitizeTrustedCommands(await api2.settings.get(TRUSTED_COMMANDS_SETTING))
         );
+        textareaControl(form, "trustedSshHosts").value = sanitizeTrustedSshHosts(
+          await api2.settings.get(TRUSTED_SSH_HOSTS_SETTING)
+        ).join("\n");
         selectControl(form, "shellAutoApprovalLevel").value = sanitizeAutoApprovalLevel(
           await api2.settings.get(AUTO_APPROVAL_LEVEL_SETTING)
         );
@@ -65685,6 +65846,14 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
           })
         );
       }
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api2.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING))
+          )
+        );
+      }
       await Promise.all(writes);
       store2.setState({
         theme,
@@ -65763,6 +65932,7 @@ var init_settings_dialog = __esm({
     init_web_origins();
     init_provider_hosts();
     init_command_routing();
+    init_trusted_ssh_hosts2();
     init_unknown_value3();
     init_developer_mode();
     init_terminal_history();
