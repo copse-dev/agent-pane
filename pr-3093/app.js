@@ -22169,6 +22169,29 @@ function sumSubagentUsage(messages) {
   }
   return totals;
 }
+function sumLegacyFoldedSubagentUsage(messages, trailingTurnRunning) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  let turnStart = 0;
+  const collectTurn = (turnEnd, isTrailingTurn) => {
+    if (trailingTurnRunning && isTrailingTurn) return;
+    let outcome;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const candidate = messages[i2]?.turnOutcome;
+      if (candidate !== void 0) outcome = candidate;
+    }
+    if (outcome !== void 0 && outcome.status !== "completed") return;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const message2 = messages[i2];
+      if (message2) collectSubagentUsage(message2.toolCalls, totals);
+    }
+  };
+  for (let i2 = 1; i2 <= messages.length; i2 += 1) {
+    if (i2 < messages.length && messages[i2]?.role !== "user") continue;
+    collectTurn(i2, i2 === messages.length);
+    turnStart = i2;
+  }
+  return totals;
+}
 function estimateAssistantOutputTokens(messages) {
   let chars = 0;
   for (const message2 of messages) {
@@ -22182,20 +22205,23 @@ function estimateAssistantOutputTokens(messages) {
   }
   return Math.round(chars / CHARS_PER_TOKEN);
 }
-function foldedSubagentShare(measured, sessions) {
+function foldedSubagentShare(measured, legacyFoldedSessions) {
   if (measured.subagentInputTokens !== void 0 || measured.subagentOutputTokens !== void 0) {
     return {
       inputTokens: measured.subagentInputTokens ?? 0,
       outputTokens: measured.subagentOutputTokens ?? 0
     };
   }
-  return sessions;
+  return legacyFoldedSessions;
 }
 function resolveFooterUsage(input2) {
   const { inputTokens, outputTokens } = input2.measured;
   if (inputTokens || outputTokens) {
     const subagents = sumSubagentUsage(input2.messages);
-    const folded = foldedSubagentShare(input2.measured, subagents);
+    const folded = foldedSubagentShare(
+      input2.measured,
+      sumLegacyFoldedSubagentUsage(input2.messages, input2.running)
+    );
     return {
       inputTokens: Math.max(0, inputTokens - folded.inputTokens),
       outputTokens: Math.max(0, outputTokens - folded.outputTokens),
@@ -22710,7 +22736,7 @@ function foldedSubagentUsage(thread, incoming) {
     };
   }
   if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 };
-  const recorded = sumSubagentUsage(thread.messages);
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === "running");
   const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0));
   const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0));
   return {
