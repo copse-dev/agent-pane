@@ -35,11 +35,12 @@ describe('Settings → About', () => {
       timeoutMsg: 'the licence report never rendered its components',
     })
 
-    // A packaged app reports package.json's version. An unpackaged macOS run
-    // reports either the patched dev-bundle version or Electron's bundle version
-    // when generated icon assets have not been installed into the shared cache.
+    // A packaged app reports package.json's version. An unpackaged run reports
+    // either the patched dev-bundle version or Electron's platform bundle
+    // version (`0.0` on the Linux CI bundle) when generated app metadata has not
+    // been installed into the shared cache.
     const version = await about.$('.about-version').getText()
-    assert.match(version, /^(?:dev-[0-9a-f]+|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)
+    assert.match(version, /^(?:dev-[0-9a-f]+|0\.0|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)
 
     const idOf = async (name: string): Promise<string> =>
       about.$(`li[data-search^="${name} "] .about-license-id`).getText()
