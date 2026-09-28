@@ -149,6 +149,34 @@ describe('trackGuestScroll', () => {
     }
   })
 
+  it('kick refreshes layout even when the guest offset is unchanged', async () => {
+    const timers = fakeTimer()
+    const { target } = wheelTarget()
+    const seen: GuestScrollPosition[] = []
+    const tracker = trackGuestScroll({
+      wheelTarget: target,
+      fetchPosition: () => Promise.resolve({ x: 12, y: 42 }),
+      onScroll: (p) => {
+        seen.push(p)
+      },
+      timer: timers,
+    })
+    try {
+      await flush()
+      assert.deepEqual(seen, [{ x: 12, y: 42 }])
+
+      tracker.kick()
+      await flush()
+      assert.deepEqual(seen, [
+        { x: 12, y: 42 },
+        { x: 12, y: 42 },
+      ])
+    } finally {
+      tracker.dispose()
+      target.remove()
+    }
+  })
+
   it('keeps polling while a pointer stroke is down, and stops after dispose', async () => {
     const timers = fakeTimer()
     const { target } = wheelTarget()

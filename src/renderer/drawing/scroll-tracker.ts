@@ -37,7 +37,11 @@ const CAPTURE = true
 
 /** A guest scroll tracker; see {@link trackGuestScroll}. */
 export interface GuestScrollTracker {
-  /** Caller-driven nudge: navigation committed, size changed, layer shown. No-op while disabled. */
+  /**
+   * Caller-driven nudge: navigation committed, size changed, layer shown. Replays the last known
+   * offset so consumers can refresh size-dependent layout even when the guest did not scroll.
+   * No-op while disabled.
+   */
   kick(): void
   /**
    * Run only while it is worth an IPC per poll — marks exist or the layer is
@@ -64,7 +68,7 @@ export function trackGuestScroll(options: {
   wheelTarget: WheelTarget
   /** Reads the guest's current offsets; returns null when it cannot answer. */
   fetchPosition: () => Promise<GuestScrollPosition | null>
-  /** Called only when the position actually changed. */
+  /** Called when the position changes or a caller-driven refresh replays the last known offset. */
   onScroll: (position: GuestScrollPosition) => void
   /** Injected for tests; defaults to the window timers. */
   timer?: ScrollTimer
@@ -113,8 +117,11 @@ export function trackGuestScroll(options: {
       })
   }
 
-  const wake = (): void => {
+  const wake = (refreshLayout = false): void => {
     if (!enabled) return
+    if (refreshLayout && lastX !== null && lastY !== null) {
+      options.onScroll({ x: lastX, y: lastY })
+    }
     polling = true
     scheduleIdleStop()
     poll()
@@ -133,7 +140,7 @@ export function trackGuestScroll(options: {
     strokeDepth = Math.max(0, strokeDepth - 1)
   }
 
-  const start = (): void => {
+  const start = (refreshLayout = false): void => {
     enabled = true
     interval = timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS)
     safetyInterval = timer.setInterval(() => {
@@ -145,7 +152,7 @@ export function trackGuestScroll(options: {
     // only settles a counter and never polls.
     window.addEventListener('pointerup', onPointerUp, CAPTURE)
     window.addEventListener('pointercancel', onPointerUp, CAPTURE)
-    wake()
+    wake(refreshLayout)
   }
 
   const stop = (): void => {
@@ -167,10 +174,12 @@ export function trackGuestScroll(options: {
   start()
 
   return {
-    kick: wake,
+    kick: () => {
+      wake(true)
+    },
     setEnabled(next: boolean): void {
       if (disposed || next === enabled) return
-      if (next) start()
+      if (next) start(true)
       else stop()
     },
     dispose(): void {
