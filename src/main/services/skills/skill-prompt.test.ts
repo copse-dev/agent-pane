@@ -67,6 +67,23 @@ describe('buildSkillsCatalogBlock', () => {
     assert.match(block, /Demo skill for tests/)
   })
 
+  it('leads each entry with the name read_skill takes, and names the owning plugin', () => {
+    setSkillsForTest([
+      demoSkill,
+      {
+        ...demoSkill,
+        name: 'how',
+        source: 'bundled',
+        plugin: 'pstack',
+        skillPath: '/app/bundled-cursor-skills/plugins/pstack/skills/how/SKILL.md',
+      },
+    ])
+    const block = buildSkillsCatalogBlock()
+    assert.match(block, /<agent_skill name="demo-skill" fullPath=/)
+    assert.match(block, /<agent_skill name="how" plugin="pstack" fullPath=/)
+    assert.match(block, /its name is not a skill name/)
+  })
+
   it('excludes disable-model-invocation skills from the catalog but keeps model-invocable ones', () => {
     setSkillsForTest([
       { ...demoSkill, name: 'checkup', source: 'bundled', disableModelInvocation: true },
