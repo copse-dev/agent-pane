@@ -24,6 +24,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { showMobileCompanion } from '../windows/mobile-desktop.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -523,6 +524,11 @@ export function registerAllHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
+  ipcMain.handle('mobile:manage', async (event) => {
+    assertMainFrameSender(event, win)
+    await showMobileCompanion(win)
+  })
+
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,

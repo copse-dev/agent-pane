@@ -3,6 +3,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 const EXPERIMENTAL = '.settings-section[data-section="experimental"]'
+const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(#mobile-companion-manage)`
 const VNC_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="vncEnabled"])`
 const DEVELOPER_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="developerMode"])`
 const SSH_AGENT_FIELDSET =
@@ -15,6 +16,18 @@ describe('browser-hosted Experimental settings copy', () => {
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="experimental"]').click()
     await $(EXPERIMENTAL).waitForDisplayed()
+  })
+
+  it('puts Mobile Companion setup and network guidance in Settings', async () => {
+    const fieldset = $(MOBILE_FIELDSET)
+    await expect(fieldset).toBeDisplayed()
+    await expect(fieldset.$('#mobile-companion-manage')).toHaveText('Set up or manage…')
+    const hint = await fieldset.$('.field-hint').getText()
+    assert.match(hint, /same local network/)
+    assert.match(hint, /must stay awake/)
+
+    await fieldset.scrollIntoView()
+    await saveElementScreenshot(MOBILE_FIELDSET, 'settings-mobile-companion.png')
   })
 
   it('describes the Desktop pane as it ships: control mode, discovery, and device views', async () => {

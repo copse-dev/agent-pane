@@ -141,6 +141,11 @@ describe('experimental settings section', () => {
       'device agents must leave Settings > Experimental',
     )
 
+    const mobileCompanion = await experimental.$('legend=Mobile Companion').parentElement()
+    await expect(mobileCompanion).toBeDisplayed()
+    await expect(mobileCompanion.$('#mobile-companion-manage')).toHaveText('Set up or manage…')
+    assert.match(await mobileCompanion.$('.field-hint').getText(), /same local network/i)
+
     // The classifier is described in plain terms: how hard the task is and which
     // model suits it, with no internal tool or scale vocabulary.
     const classifierHint = await experimental
