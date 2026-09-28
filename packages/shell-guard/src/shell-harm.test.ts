@@ -428,7 +428,7 @@ describe('Guarded YOLO shell harm gate', () => {
     assert.equal(action('pkill -9 -u tester'), 'deny')
     // A single named process is ordinary process management.
     assert.equal(action('kill -9 4321'), 'allow')
-    assert.equal(action('pkill -f "node scripts/watch"'), 'allow')
+    assert.equal(action('pkill -f "node scripts/watch"'), 'prompt')
   })
 
   it('denies whole-device destruction that names no /dev node pattern', () => {
@@ -778,8 +778,55 @@ describe('Guarded YOLO shell harm gate — shapes the public test set found', ()
     assert.equal(action('/Users/tester/other/deploy.sh', withScripts), 'prompt')
     assert.equal(action('/Users/tester/other/lint.sh', withScripts), 'allow')
     assert.equal(action('/usr/local/bin/node --version'), 'allow')
-    // A missing or compiled program outside the workspace is still an installed program.
+    // A binary where toolchains install programs is an installed program.
     assert.equal(action('/Users/tester/.cargo/bin/cargo-nextest run'), 'allow')
+    assert.equal(action('/Users/tester/.nvm/versions/node/v24.0.0/bin/node -v'), 'allow')
+    // An unreadable program anywhere else outside the workspace is not.
+    assert.equal(action('/Users/tester/other/bin/tool'), 'prompt')
+    assert.equal(action("find ./src -exec /outside/checker '{}' ';'"), 'prompt')
+    // Paths the fallback lexer or a substitution leaves in command position are not run.
+    const readsEverything: Partial<ShellHarmContext> = { readScript: () => 'rm -rf ~\n' }
+    assert.equal(action('sed -n "s|/etc/hosts|x|p" src/a.ts', readsEverything), 'allow')
+    assert.equal(action('ls $(xcode-select -p)/Platforms'), 'allow')
+  })
+
+  it('inspects a program whose path is written with $HOME or quoting', () => {
+    // The shell runs the same file however its path is spelled, so each spelling
+    // must reach the script reader rather than slipping past as an unparsed head.
+    for (const command of [
+      '$HOME/other/deploy.sh',
+      '"$HOME/other/deploy.sh"',
+      '${HOME}/other/deploy.sh',
+      '"$HOME"/other/deploy.sh',
+      "'/Users/tester/other/deploy.sh'",
+      '/Users/tester/other/"deploy.sh"',
+      '/Users/tester/other/deploy\\.sh',
+      'cd src && $HOME/other/deploy.sh',
+    ]) {
+      assert.equal(action(command, withScripts), 'prompt', command)
+    }
+    assert.equal(action('$HOME/other/bin/tool'), 'prompt')
+    assert.equal(action('"$HOME/other/lint.sh"', withScripts), 'allow')
+  })
+
+  it('prompts when expansion selects the program to execute', () => {
+    for (const command of [
+      '$(pwd)/deploy.sh',
+      '"$(pwd)/deploy.sh"',
+      'env FOO=x $(pwd)/deploy.sh',
+      '$TOOL --version',
+      '"$TOOL" --version',
+      'command "$TOOL" -v',
+      '%TOOL% --version',
+      '`pwd`/deploy.sh',
+      'tool-$MODE --version',
+      './"$TOOL" --version',
+      'C:\\tools\\%TOOL%.exe --version',
+    ]) {
+      assert.equal(action(command), 'prompt', command)
+    }
+    assert.equal(action('echo "$(pwd)/deploy.sh"'), 'allow')
+    assert.equal(action('command -v "$TOOL"'), 'allow')
   })
 
   it('inspects what a container exec runs', () => {

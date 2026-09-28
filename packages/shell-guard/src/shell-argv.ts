@@ -563,6 +563,14 @@ function withoutRawRedirects(argv: string[]): string[] {
 }
 
 /**
+ * Quote-aware fallback argv for one already-separated shell segment. This keeps
+ * Windows separators and unknown variable spellings while dropping redirects.
+ */
+export function rawShellArgv(segment: string): string[] {
+  return withoutRawRedirects(rawTokens(segment))
+}
+
+/**
  * Argv arrays for every simple command in a command line, from two lexers whose
  * results are unioned:
  *
@@ -642,7 +650,7 @@ export function shellSegments(command: string, includeRawFallback = true): strin
   // made `1` a command head, and that phantom head's "not a plain read" blocker
   // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
   for (const segment of command.split(/&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/)) {
-    const argv = withoutRawRedirects(rawTokens(segment))
+    const argv = rawShellArgv(segment)
     if (argv.length > 0) segments.push(argv)
   }
 

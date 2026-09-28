@@ -364,8 +364,8 @@ While active:
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;
   - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
-    `pkill`/`killall` of a bare name (a path or multi-word command line names the agent's own
-    process and runs);
+    every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
+    `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
   - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
     package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
     `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
@@ -408,13 +408,23 @@ While active:
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
   has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
-  name. A program run by absolute path is inspected unless it lives under an installed-program
-  root (`/usr`, `/bin`, `/opt`, `/System`, …): a script's text is assessed, and a binary or missing
-  file outside the workspace still runs as an installed program. Anything run from a temporary
+  name. A program run by absolute path is an installed program when it lives under a system root
+  (`/usr`, `/bin`, `/opt`, `/System`, …) or a home toolchain directory (`~/.cargo/bin`,
+  `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
+  text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
+  command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. A program in command position
+  is inspected however its path is spelled (`$HOME/x.sh`, `"$HOME/x.sh"`, `'/abs/x.sh'`); a spelling
+  the gate cannot match to the parse is inspected rather than skipped. Anything run from a temporary
   directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
-  allows them.
+  allows them. When a classifier connection is chosen under Settings → Classifiers → Safety
+  screening, such a command first gets its second opinion (`tier-screening.ts`). A P(`ask`) of at
+  least 0.5 turns the allow into the harm gate's one-time confirmation. The classifier can only add
+  a prompt: a missing, slow or failing connection leaves the harm gate's allow standing. A command
+  that stays inside the project sandbox is not asked. Every confirmation ends "Approve this command
+  once?", because an ask-once prompt need not be destructive.
 - A shell builtin that assigns variables for later commands (currently `printf -v`) requires the
   one-time harm confirmation; changing `PATH` can otherwise replace the command being authorized.
 
@@ -499,6 +509,11 @@ the registry still fails contained and offers to run outside.
   are additionally capped at `read` if a caller reaches the level helper without a sandbox. A
   segment that names a secret file (`secrets.ts`) is never approved, even inside the workspace,
   and `gh auth status --show-token` is not the `gh auth status` read.
+- `tier-screening.ts`: the classifier second opinion. In Guarded YOLO it may add the confirmation
+  above. In standard mode it only records a `tier-shadow` decision, in the background, for each
+  shell prompt: what a local-write blend (deterministic tiers, or P(`read`/`local-write`) ≥ 0.95
+  with a harm-gate allow) would have approved. The shadow record keeps a SHA-256 of the command,
+  not its text. It is evidence for a later decision, and it approves nothing.
 - `host-reach.ts`, `secrets.ts`, `remote-change.ts`: the Guarded YOLO ask-once rules above. The
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
   verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
