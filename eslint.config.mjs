@@ -67,6 +67,9 @@ export default ts.config(
       // Review-bench cases: the head trees carry the defects the reviewer is
       // measured on (an unused timer is one of them), so a linter must not "fix" them.
       'benchmarks/review/cases/**',
+      // Byte-exact, hash-verified upstream Cursor plugin files (pnpm sync:cursor-skills);
+      // a skill's referenced scripts are its authors' code, not ours to lint.
+      'vendor/bundled-cursor-skills/**',
     ],
   },
   js.configs.recommended,
@@ -422,7 +425,7 @@ export default ts.config(
   {
     // Reproducible research runners are native Node ESM, not TypeScript app code.
     // Keep ordinary JS linting; typed adapter libraries use the scoped project above.
-    files: ['benchmarks/shell-scope/scripts/**/*.mjs'],
+    files: ['benchmarks/shell-scope/scripts/**/*.mjs', 'benchmarks/escalation-review/**/*.mjs'],
     extends: [ts.configs.disableTypeChecked],
     languageOptions: {
       sourceType: 'module',
@@ -438,6 +441,7 @@ export default ts.config(
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         structuredClone: 'readonly',
+        fetch: 'readonly',
       },
     },
     // TypeScript-only annotation requirements cannot be expressed in these .mjs files.

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { extractSkillFileReferences } from './extract-skill-references.ts'
+import { extractSkillFileReferences } from './extract-skill-references.mts'
 
 describe('extractSkillFileReferences', () => {
   it('returns no references for text without bundle-relative paths', () => {
@@ -21,6 +21,11 @@ describe('extractSkillFileReferences', () => {
   it('extracts scripts/ and assets/ paths too', () => {
     const text = 'Run `scripts/setup.sh` then check assets/logo.png.'
     assert.deepEqual(extractSkillFileReferences(text), ['assets/logo.png', 'scripts/setup.sh'])
+  })
+
+  it('extracts playbooks/ paths (the pstack layout)', () => {
+    const text = 'Open `playbooks/bug-fix.md` and copy its steps in verbatim.'
+    assert.deepEqual(extractSkillFileReferences(text), ['playbooks/bug-fix.md'])
   })
 
   it('de-duplicates and sorts', () => {
