@@ -2085,6 +2085,9 @@ export function loadProjectCatalog(projectId: string, query?: string): Promise<T
  * orphans from issue #997. `knownProjectIds` are the ids currently in config; a
  * store id not among them (and holding at least one thread) is surfaced so it
  * can be re-attached. Empty stores are skipped (nothing to recover).
+ *
+ * Each row carries a few recent titles from the store catalog so the sidebar can
+ * show what would be recovered instead of only a bare count.
  */
 export function listOrphanProjectStores(knownProjectIds: string[]): Promise<OrphanProjectStore[]> {
   const known = new Set(knownProjectIds)
@@ -2093,8 +2096,20 @@ export function listOrphanProjectStores(knownProjectIds: string[]): Promise<Orph
     for (const id of listProjectStoreIds()) {
       if (known.has(id)) continue
       const threadCount = countThreadDirs(id)
-      if (threadCount > 0) orphans.push({ id, threadCount })
+      if (threadCount === 0) continue
+      const entries = [...ensureCatalogMap(id).values()].sort((a, b) => b.updatedAt - a.updatedAt)
+      const sampleTitles = entries
+        .map((entry) => entry.title.trim())
+        .filter((title) => title.length > 0)
+        .slice(0, 3)
+      orphans.push({
+        id,
+        threadCount,
+        sampleTitles,
+        updatedAt: entries[0]?.updatedAt ?? null,
+      })
     }
+    orphans.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
     return orphans
   })
 }
