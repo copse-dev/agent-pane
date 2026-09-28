@@ -589,6 +589,91 @@ describe('blank thread reuse', () => {
     assert.equal(footer.outputTokens, 100)
   })
 
+  it('does not seed a failed legacy turn as folded on the next usage delta', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) =>
+        thread.id !== threadId
+          ? thread
+          : {
+              ...thread,
+              usage: { inputTokens: 300, outputTokens: 30 },
+              messages: [
+                {
+                  id: 'u1',
+                  role: 'user',
+                  content: 'Delegate this',
+                  createdAt: 1,
+                  toolCalls: [],
+                },
+                {
+                  id: 'a1',
+                  role: 'assistant',
+                  content: '',
+                  createdAt: 2,
+                  toolCalls: [
+                    {
+                      id: 't1',
+                      name: 'explore',
+                      args: {},
+                      status: 'done',
+                      result: 'done',
+                      subagent: {
+                        id: 'sub-1',
+                        kind: 'explore',
+                        status: 'done',
+                        prompt: 'q',
+                        summary: null,
+                        messages: [],
+                        usage: { inputTokens: 200, outputTokens: 20 },
+                      },
+                    },
+                  ],
+                },
+                {
+                  id: 'a2',
+                  role: 'assistant',
+                  content: '',
+                  createdAt: 3,
+                  toolCalls: [],
+                  turnOutcome: {
+                    status: 'failed',
+                    stopReason: 'error',
+                    source: 'provider',
+                    executor: 'local',
+                    provider: 'anthropic',
+                    model: 'claude-opus-4-8',
+                    endedAt: 3,
+                  },
+                },
+              ],
+            },
+      ),
+    })
+
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 200,
+      outputTokens: 20,
+    })
+
+    const thread = getThreadById(store, threadId)
+    assert.ok(thread)
+    assert.equal(thread.usage.inputTokens, 500)
+    assert.equal(thread.usage.outputTokens, 50)
+    assert.equal(thread.usage.subagentInputTokens, 0)
+    assert.equal(thread.usage.subagentOutputTokens, 0)
+    const footer = resolveFooterUsage({
+      measured: thread.usage,
+      messages: thread.messages,
+      running: false,
+    })
+    assert.ok(footer)
+    assert.equal(footer.inputTokens, 500)
+    assert.equal(footer.outputTokens, 50)
+  })
+
   it('addUsageDelta omits cache fields when the provider reports none', () => {
     const store = createStore()
     const threadId = createThread(store)

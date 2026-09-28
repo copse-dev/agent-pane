@@ -71,6 +71,45 @@ export function sumSubagentUsage(messages: Message[]): SubagentUsageTotals {
   return totals
 }
 
+/**
+ * Best available reconstruction for threads saved before the folded-subagent
+ * counters existed. A failed or cancelled parent loop never emitted its
+ * aggregate subagent-usage chunk, so sessions from a turn with that durable
+ * outcome are not part of the thread total. While a turn is live, its trailing
+ * outcome-less messages are likewise not evidence of a fold yet. Older turns
+ * without an outcome retain the legacy assumption that their sessions folded.
+ */
+export function sumLegacyFoldedSubagentUsage(
+  messages: Message[],
+  trailingTurnRunning: boolean,
+): SubagentUsageTotals {
+  const totals: SubagentUsageTotals = { runs: 0, inputTokens: 0, outputTokens: 0 }
+  let turnStart = 0
+
+  const collectTurn = (turnEnd: number, isTrailingTurn: boolean): void => {
+    if (trailingTurnRunning && isTrailingTurn) return
+
+    let outcome: Message['turnOutcome']
+    for (let i = turnStart; i < turnEnd; i += 1) {
+      const candidate = messages[i]?.turnOutcome
+      if (candidate !== undefined) outcome = candidate
+    }
+    if (outcome !== undefined && outcome.status !== 'completed') return
+
+    for (let i = turnStart; i < turnEnd; i += 1) {
+      const message = messages[i]
+      if (message) collectSubagentUsage(message.toolCalls, totals)
+    }
+  }
+
+  for (let i = 1; i <= messages.length; i += 1) {
+    if (i < messages.length && messages[i]?.role !== 'user') continue
+    collectTurn(i, i === messages.length)
+    turnStart = i
+  }
+  return totals
+}
+
 export interface FooterUsageInput {
   measured: ThreadUsage
   running: boolean
@@ -96,12 +135,12 @@ export function estimateAssistantOutputTokens(messages: Message[]): number {
 
 /**
  * The subagent share of `measured` — only what was actually folded into it.
- * Usage recorded before the share was tracked falls back to the finished
- * sessions, which is what a completed run folded in.
+ * Usage recorded before the share was tracked falls back to the sessions in
+ * turns that are not known to have failed or been cancelled.
  */
 function foldedSubagentShare(
   measured: ThreadUsage,
-  sessions: SubagentUsageTotals,
+  legacyFoldedSessions: SubagentUsageTotals,
 ): { inputTokens: number; outputTokens: number } {
   if (measured.subagentInputTokens !== undefined || measured.subagentOutputTokens !== undefined) {
     return {
@@ -109,7 +148,7 @@ function foldedSubagentShare(
       outputTokens: measured.subagentOutputTokens ?? 0,
     }
   }
-  return sessions
+  return legacyFoldedSessions
 }
 
 /**
@@ -124,7 +163,10 @@ export function resolveFooterUsage(input: FooterUsageInput): FooterUsageDisplay 
   const { inputTokens, outputTokens } = input.measured
   if (inputTokens || outputTokens) {
     const subagents = sumSubagentUsage(input.messages)
-    const folded = foldedSubagentShare(input.measured, subagents)
+    const folded = foldedSubagentShare(
+      input.measured,
+      sumLegacyFoldedSubagentUsage(input.messages, input.running),
+    )
     return {
       inputTokens: Math.max(0, inputTokens - folded.inputTokens),
       outputTokens: Math.max(0, outputTokens - folded.outputTokens),

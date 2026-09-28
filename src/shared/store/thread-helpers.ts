@@ -40,7 +40,7 @@ import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
 
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
-import { sumSubagentUsage } from '@shared/usage/footer-usage-summary.ts'
+import { sumLegacyFoldedSubagentUsage } from '@shared/usage/footer-usage-summary.ts'
 export {
   isHumanUserPrompt,
   lastHumanPromptAt,
@@ -789,8 +789,8 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
 
 /**
  * The subagent share already folded into `thread.usage`. Usage recorded before
- * the share was tracked starts from its finished subagent sessions, which is
- * what the fold added for every run that completed.
+ * the share was tracked starts from sessions in turns that are not known to
+ * have failed or been cancelled, excluding the still-live trailing turn.
  */
 function foldedSubagentUsage(
   thread: Thread,
@@ -804,7 +804,7 @@ function foldedSubagentUsage(
     }
   }
   if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 }
-  const recorded = sumSubagentUsage(thread.messages)
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === 'running')
   // A subagent session is persisted before the main process emits the usage
   // chunk that folds it into the thread total. On the first post-upgrade fold,
   // the legacy seed therefore already contains the incoming delta; remove it

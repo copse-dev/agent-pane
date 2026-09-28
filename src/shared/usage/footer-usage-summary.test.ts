@@ -293,6 +293,54 @@ describe('resolveFooterUsage subtracts only the folded subagent share', () => {
     })
   })
 
+  it('does not infer a fold from a known failed legacy parent turn', () => {
+    const failedTurnMessages: Message[] = [
+      { id: 'u1', role: 'user', content: 'Delegate this', toolCalls: [], createdAt: 1 },
+      ...withExplore({ inputTokens: 200, outputTokens: 20 }),
+      {
+        id: 'a2',
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        createdAt: 3,
+        turnOutcome: {
+          status: 'failed',
+          stopReason: 'error',
+          source: 'provider',
+          executor: 'local',
+          provider: 'anthropic',
+          model: 'claude-opus-4-8',
+          endedAt: 3,
+        },
+      },
+    ]
+
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 500, outputTokens: 50 },
+      running: false,
+      messages: failedTurnMessages,
+    })
+
+    assert.deepEqual(resolved, {
+      inputTokens: 500,
+      outputTokens: 50,
+      estimated: false,
+      subagentInputTokens: 200,
+      subagentOutputTokens: 20,
+    })
+  })
+
+  it('does not infer a fold from the trailing outcome-less turn while it is live', () => {
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 50_000, outputTokens: 2_000 },
+      running: true,
+      messages: explore,
+    })
+
+    assert.equal(resolved?.inputTokens, 50_000)
+    assert.equal(resolved.outputTokens, 2_000)
+  })
+
   it('does not drop mid-turn, between subagent_done and the fold', () => {
     const midTurn = resolveFooterUsage({
       measured: {
