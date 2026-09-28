@@ -8,9 +8,60 @@
 // (model AND harm gate)" using the committed deterministic.jsonl snapshot, as score.mjs does for
 // the private eval. Choose prompts and thresholds on dev before reading a holdout score.
 import { pathToFileURL } from 'node:url'
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { MODES, TIERS, approvers, score } from '../scripts/score.mjs'
 import { jsonl } from './build.mjs'
 import { SNAPSHOT } from './gates.mjs'
+import { TESTSET } from './paths.mjs'
+
+function fixtureSets() {
+  const directory = join(TESTSET, 'fixtures')
+  return readdirSync(directory)
+    .filter((name) => /^tier-[a-z0-9-]+\.jsonl$/u.test(name))
+    .sort()
+    .map((name) => ({ name, records: jsonl(join(directory, name)) }))
+}
+
+/** Require one complete fixture output, rather than scoring a flattering subset. */
+export function validateCompleteOutput(records, fixtures, path = 'output') {
+  const ids = new Set()
+  for (const record of records) {
+    if (typeof record.id !== 'string' || !record.id) {
+      throw new Error(`${path}: every record must have an id`)
+    }
+    if (ids.has(record.id)) throw new Error(`${path}: duplicate record ${record.id}`)
+    ids.add(record.id)
+  }
+
+  const candidates = fixtures.map((fixture) => {
+    const expectedIds = new Set(fixture.records.map((record) => record.id))
+    const missing = [...expectedIds].filter((id) => !ids.has(id))
+    const unexpected = [...ids].filter((id) => !expectedIds.has(id))
+    return { ...fixture, missing, unexpected }
+  })
+  const fixture = candidates.find(
+    (candidate) => candidate.missing.length === 0 && candidate.unexpected.length === 0,
+  )
+  if (!fixture) {
+    const closest = candidates.sort(
+      (a, b) => a.missing.length + a.unexpected.length - (b.missing.length + b.unexpected.length),
+    )[0]
+    const detail = closest
+      ? `; closest is ${closest.name} (${closest.missing.length} missing, ${closest.unexpected.length} unexpected)`
+      : ''
+    throw new Error(`${path}: output is not one complete tier fixture${detail}`)
+  }
+
+  const expected = new Map(fixture.records.map((record) => [record.id, record.expected?.tier]))
+  for (const record of records) {
+    const tier = expected.get(record.id)
+    if (record.expected?.tier !== tier) {
+      throw new Error(`${path}: ${record.id} has a changed reference tier`)
+    }
+  }
+  return fixture.name
+}
 
 /** The likeliest tier, or null when the record carries no usable answer. */
 export function predicted(record) {
@@ -92,10 +143,12 @@ export function main(argv = process.argv.slice(2)) {
     return 2
   }
   const deterministic = new Map(jsonl(SNAPSHOT).map((v) => [v.id, v]))
+  const fixtures = fixtureSets()
   for (const [name, path] of inputs) {
     const records = jsonl(path)
     const missing = records.filter((r) => !deterministic.has(r.id))
     if (missing.length) throw new Error(`${path}: ${missing[0].id} is not in the test set`)
+    validateCompleteOutput(records, fixtures, path)
     const a = accuracy(records)
     console.log(
       `# ${name}: ${a.correct}/${a.planned} tiers correct (${a.valid} usable answers); ` +
