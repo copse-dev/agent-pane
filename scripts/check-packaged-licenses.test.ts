@@ -14,11 +14,9 @@ import {
 } from './check-packaged-licenses.mts'
 import { openAsar, type AsarArchive } from './lib/asar-archive.mts'
 
-const LICENSE_FILES = [
-  'third-party-licenses.json',
-  'THIRD_PARTY_LICENSES.txt',
-  'LICENSE.txt',
-].map((name) => `${THIRD_PARTY_LICENSES_DIR}/${name}`)
+const LICENSE_FILES = ['third-party-licenses.json', 'THIRD_PARTY_LICENSES.txt', 'LICENSE.txt'].map(
+  (name) => `${THIRD_PARTY_LICENSES_DIR}/${name}`,
+)
 
 function fakeArchive(files: Record<string, unknown>): AsarArchive {
   return {
@@ -97,13 +95,10 @@ describe('packaged licence check', () => {
     const archive = fakeArchive({
       'node_modules/a/package.json': { name: 'a', version: '1.0.0', license: 'MIT' },
     })
-    assert.deepEqual(
-      findPackagedLicenseProblems(archive, false),
-      [
-        ...LICENSE_FILES.map((path) => `${path} is not in the app`),
-        'LICENSES.chromium.html is not beside the packaged Electron runtime',
-      ],
-    )
+    assert.deepEqual(findPackagedLicenseProblems(archive, false), [
+      ...LICENSE_FILES.map((path) => `${path} is not in the app`),
+      'LICENSES.chromium.html is not beside the packaged Electron runtime',
+    ])
   })
 
   it('finds electron-builder notices beside each packaged runtime', () => {
