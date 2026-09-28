@@ -54,4 +54,5 @@
 // payloads. v22–v26 are claimed by open PRs, so this skips them to avoid collisions.
 // v28 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
 // v29 versions persisted reviewer-input answers on thread payloads.
-export const API_PROTOCOL_VERSION = 29 as const
+// v30 versions automation worktree-limit status in list/upsert payloads.
+export const API_PROTOCOL_VERSION = 30 as const
