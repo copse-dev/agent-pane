@@ -1067,6 +1067,13 @@
           4
         ]
       },
+      "mobile:manage": {
+        "api": "mobile.manage",
+        "args": [
+          0,
+          0
+        ]
+      },
       "mobile:reply": {
         "api": "mobile.reply",
         "args": [
