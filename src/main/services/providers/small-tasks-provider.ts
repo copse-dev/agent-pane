@@ -79,8 +79,3 @@ export async function resolveSmallTasksRoute(): Promise<SmallTasksRoute | null> 
     return resolveSmallTasksFallbackRoute()
   }
 }
-
-/** Provider-only compatibility wrapper for existing small-task services. */
-export async function resolveSmallTasksProvider(): Promise<LLMProvider | null> {
-  return (await resolveSmallTasksRoute())?.provider ?? null
-}

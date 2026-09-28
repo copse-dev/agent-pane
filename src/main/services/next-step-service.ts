@@ -1,8 +1,5 @@
 import type { FollowUpContext } from '@shared/follow-ups/types.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { getSetting } from './storage/settings.ts'
@@ -58,9 +55,8 @@ export async function suggestNextStep(context: FollowUpContext): Promise<string 
     return mockNextStepHint()
   }
 
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const toolSummary =
     context.toolNames.length > 0 ? `\nTools used: ${context.toolNames.join(', ')}` : ''
@@ -79,10 +75,10 @@ export async function suggestNextStep(context: FollowUpContext): Promise<string 
     toolSummary
 
   try {
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 15_000)
+    const { text, usage } = await completeTextWithUsage(route.provider, prompt, 15_000)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model,
+        model: route.model,
         source: 'small-tasks',
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,

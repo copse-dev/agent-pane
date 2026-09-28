@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import {
   resolveSmallTasksFallbackRoute,
   resolveSmallTasksModelId,
-  resolveSmallTasksProvider,
   resolveSmallTasksRoute,
 } from './small-tasks-provider.ts'
 import { setSetting } from '../storage/settings.ts'
@@ -47,6 +46,10 @@ describe('resolveSmallTasksModelId', () => {
       'small-tasks': 'auto:role:advisor',
       advisor: 'lmstudio:advisor-small',
     })
+
+    // The selector is not the model that actually runs. Small-task callers
+    // must consume the route so usage is attributed to this concrete model.
+    assert.equal(resolveSmallTasksModelId(), 'auto:role:advisor')
     const route = await resolveSmallTasksRoute()
     assert.equal(route?.model, 'lmstudio:advisor-small')
   })
@@ -59,7 +62,6 @@ describe('resolveSmallTasksModelId', () => {
       await setSetting('model', 'lmstudio:local-chat')
       assert.equal(await resolveSmallTasksRoute(), null)
       assert.equal(await resolveSmallTasksFallbackRoute(), null)
-      assert.equal(await resolveSmallTasksProvider(), null)
     } finally {
       if (previousMock === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
       else process.env['COPSE_PANEL_MOCK_LLM'] = previousMock

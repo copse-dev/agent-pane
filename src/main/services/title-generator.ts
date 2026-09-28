@@ -1,8 +1,6 @@
 import { mockScenarioTitle } from '@copse/llm/mock-script.ts'
 import {
   resolveSmallTasksFallbackRoute,
-  resolveSmallTasksModelId,
-  resolveSmallTasksProvider,
   resolveSmallTasksRoute,
   type SmallTasksRoute,
 } from './providers/small-tasks-provider.ts'
@@ -104,9 +102,8 @@ function cleanPhrase(out: string, max = 64): string | null {
 // than two commands are supplied (nothing to roll up).
 export async function suggestCommandSummary(commands: string[]): Promise<string | null> {
   if (!Array.isArray(commands) || commands.length < 2) return null
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const list = commands
     .slice(0, 12)
@@ -120,8 +117,8 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
     'Commands:\n' +
     list
   try {
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
+    const { text, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
     return cleanPhrase(text)
   } catch {
     return null
@@ -135,9 +132,8 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
  */
 export async function suggestToolTurnSummary(actions: string[]): Promise<string | null> {
   if (!Array.isArray(actions) || actions.length < 2) return null
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const list = actions
     .slice(0, 16)
@@ -151,8 +147,8 @@ export async function suggestToolTurnSummary(actions: string[]): Promise<string 
     'No quotes, no trailing punctuation, no tool counts.\n\nActions:\n' +
     list
   try {
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
+    const { text, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
     return cleanPhrase(text, 72)
   } catch {
     return null
@@ -163,9 +159,8 @@ export async function suggestToolTurnSummary(actions: string[]): Promise<string 
 // the configured small-tasks model; returns null on failure so the caller can
 // keep the default "Terminal N" label.
 export async function suggestTerminalTitle(text: string): Promise<string | null> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const prompt =
     'Reply with ONLY a concise 2-4 word label in Title Case describing what this ' +
@@ -173,8 +168,8 @@ export async function suggestTerminalTitle(text: string): Promise<string | null>
     '"Git Status", "Dev Server"). No quotes, no trailing punctuation.\n\nTerminal output:\n' +
     text.slice(-1500)
   try {
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
+    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
     return cleanPhrase(out, 60)
   } catch {
     return null
@@ -203,14 +198,13 @@ export function roadmapTitlePrompt(text: string): string {
 // returns null on failure so the caller can fall back to the plain truncation
 // (roadmapTitleFromPrompt in tools/roadmap-tools.ts).
 export async function suggestRoadmapTitle(text: string): Promise<string | null> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const prompt = roadmapTitlePrompt(text)
   try {
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 20_000)
-    recordSmallTasksUsage(model, usage)
+    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
+    recordSmallTasksUsage(route.model, usage)
     return cleanPhrase(out, 60)
   } catch {
     return null
