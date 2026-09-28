@@ -1,7 +1,7 @@
 import { submitComposer } from './helpers/composer.ts'
 import { prepareMockToolTurn } from './helpers/mock-scenario.ts'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData } from './helpers/seed-config.ts'
+import { resetUserData, seedStableWorkspace } from './helpers/seed-config.ts'
 import { seedProjectConfig, waitForAgentIdle } from './helpers.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
@@ -11,7 +11,7 @@ describe('read_skill error guidance', () => {
     process.env.ANTHROPIC_API_KEY = ''
     process.env.OPENAI_API_KEY = ''
     resetUserData()
-    await seedProjectConfig(process.cwd(), {
+    await seedProjectConfig(seedStableWorkspace(), {
       projectId: 'read-skill-error-project',
       threadId: 'read-skill-error-thread',
     })
@@ -62,6 +62,7 @@ describe('read_skill error guidance', () => {
       containing: true,
       wait: 10_000,
     })
+    await expect(failedTool).toHaveText('Settings → Agent → Skills', { containing: true })
     await expect(failedTool).toHaveText('Settings → Customise → Plugins', { containing: true })
     await saveElementScreenshot(selector, 'read-skill-switched-off-plugin-guidance.png')
   })
@@ -83,7 +84,7 @@ describe('read_skill error guidance', () => {
       wait: 10_000,
     })
     await expect(failedTool).toHaveText('Available skills:', { containing: true })
-    await expect(failedTool).toHaveText('agent-run-eval', { containing: true })
+    await expect(failedTool).toHaveText('cursor-sdk', { containing: true })
     await saveElementScreenshot(selector, 'read-skill-unknown-guidance.png')
   })
 })
