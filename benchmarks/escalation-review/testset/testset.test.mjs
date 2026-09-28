@@ -4,7 +4,7 @@ import { TIERS } from '../scripts/score.mjs'
 import { build, family, joinLabels, jsonl, relocateShellScope } from './build.mjs'
 import { SNAPSHOT, analyzeTestset, drift, loadTestset, violations } from './gates.mjs'
 import { parseCsv, shuffle } from './sample-hf.mjs'
-import { accuracy, predicted } from './score-models.mjs'
+import { accuracy, predicted, validateCompleteOutput } from './score-models.mjs'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { TESTSET } from './paths.mjs'
@@ -90,6 +90,36 @@ test('model scoring treats failures as wrong and ties as ask', () => {
   assert.equal(result.valid, 2)
   assert.equal(result.askRecall, 0)
   assert.equal(result.confusion.ask.none, 1)
+})
+
+test('model scoring requires exactly one complete, unchanged fixture', () => {
+  const fixtures = [
+    {
+      name: 'tier-dev.jsonl',
+      records: [
+        { id: 'a', expected: { tier: 'read' } },
+        { id: 'b', expected: { tier: 'ask' } },
+      ],
+    },
+  ]
+  const complete = fixtures[0].records.map((record) => ({ ...record }))
+  assert.equal(validateCompleteOutput(complete, fixtures), 'tier-dev.jsonl')
+  assert.throws(
+    () => validateCompleteOutput(complete.slice(0, 1), fixtures),
+    /one complete tier fixture/u,
+  )
+  assert.throws(
+    () => validateCompleteOutput([...complete, complete[0]], fixtures),
+    /duplicate record a/u,
+  )
+  assert.throws(
+    () =>
+      validateCompleteOutput(
+        [complete[0], { ...complete[1], expected: { tier: 'read' } }],
+        fixtures,
+      ),
+    /b has a changed reference tier/u,
+  )
 })
 
 test('helpers: family, relocation, CSV and the seeded shuffle', () => {
