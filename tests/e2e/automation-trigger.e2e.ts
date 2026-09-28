@@ -16,6 +16,7 @@ import {
   writeSeedConfig,
   writeSeedSupervisedTask,
 } from './helpers/seed-config.ts'
+import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
 
 const PROJECT_ID = 'e2e-automation-trigger'
 const OTHER_PROJECT_ID = 'e2e-automation-trigger-other'
@@ -305,6 +306,9 @@ describe('cron automation trigger', function () {
       '.automation-schedule-runs',
       /^Latest · .+$/,
       'Latest · Jan 1, 2026, 12:00 AM',
+    )
+    await assertScheduleHeadingKeepsTitle(
+      `.automation-schedule-group[data-schedule-id="${SCHEDULE_ID}"]`,
     )
     await saveElementScreenshot('.automation-threads-group', 'automation-thread-group.png')
     await restoreRunTime()

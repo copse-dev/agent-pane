@@ -19,8 +19,8 @@ import {
   loadCarryOutForAdoption,
   hasRecordedRuns,
   loadRunForContinuation,
-  runThreadInContainer,
   providerOrigin,
+  runThreadInContainer,
   secretCanaryCheck,
   WORKER_UID,
   writeCarryInBundle,
@@ -490,6 +490,8 @@ describe('run key delivery', () => {
               apiKey: key,
               budgets: { wallClockMs: 60_000, tokenCeiling: 1_000 },
               egressAllowlist: ['model.copse.internal:8080'],
+              // As a real run does: the alias is dialled on the host's loopback (A16).
+              egressResolve: { 'model.copse.internal': '127.0.0.1' },
             },
             { runtimeId: 'run-key-delivery', onLog: () => {} },
           ),
@@ -681,6 +683,79 @@ describe('secretCanaryCheck', () => {
       writeFileSync(join(dir, 'run.json'), '{"prompt":"canary-123"}')
       assert.equal(secretCanaryCheck(dir, 'canary-123').present, true)
     } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('runThreadInContainer and the host-local alias (A16)', () => {
+  // The guest sends its key over plain http to the alias, so a run is refused
+  // before anything starts unless the broker will dial the alias on the host's
+  // loopback — the CLI takes the URL, allowlist and remap from its caller.
+  const url = 'http://model.copse.internal:1234/v1'
+  const aliasRun = (dir: string, egressResolve: Record<string, string>): Promise<unknown> =>
+    runThreadInContainer({
+      workspace: join(dir, 'missing-checkout'),
+      runtimesDir: join(dir, 'runtimes'),
+      prompt: 'hello',
+      model: 'm',
+      provider: {
+        kind: 'openai-compatible',
+        model: 'm',
+        apiKeySlug: 'cli',
+        url,
+        label: 'the --provider-url endpoint',
+        local: true,
+        includeUsage: true,
+        apiStyle: null,
+        extraBody: null,
+        params: {},
+      },
+      apiKey: 'sk-test',
+      budgets: { wallClockMs: 60_000, tokenCeiling: 1000 },
+      egressAllowlist: ['model.copse.internal:1234'],
+      egressResolve,
+    })
+
+  it('refuses a run whose alias the broker would dial off the loopback', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
+    try {
+      for (const egressResolve of [
+        { 'model.copse.internal': '203.0.113.5' },
+        { 'model.copse.internal': 'models.lan:1234' },
+        { 'model.copse.internal': 'localhost.lan' },
+        { 'model.copse.internal': '127.0.0.2' },
+        { 'model.copse.internal': '[::2]:1234' },
+        {},
+      ]) {
+        await assert.rejects(
+          aliasRun(dir, egressResolve),
+          /model\.copse\.internal .*loopback/,
+          JSON.stringify(egressResolve),
+        )
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('lets a run map the alias to a loopback literal or localhost', async () => {
+    // The checkout does not exist, so an admitted run still stops before any
+    // container starts — at the engine check, or at the carry-in — but never
+    // at the alias guard.
+    const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
+    const canary = process.env['COPSE_SECRET_CANARY']
+    try {
+      for (const dial of ['127.0.0.1', '::1', '[::1]:1234', 'localhost', 'LOCALHOST:1234']) {
+        await assert.rejects(
+          aliasRun(dir, { 'model.copse.internal': dial }),
+          (error: unknown) => error instanceof Error && !/loopback/.test(error.message),
+          dial,
+        )
+      }
+    } finally {
+      if (canary === undefined) delete process.env['COPSE_SECRET_CANARY']
+      else process.env['COPSE_SECRET_CANARY'] = canary
       rmSync(dir, { recursive: true, force: true })
     }
   })

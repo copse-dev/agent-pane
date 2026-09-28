@@ -85,6 +85,12 @@ products remain in Copse-owned per-operation scratch directories, with ownership
 duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
 so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
 
+The native `device_hub` tool also requires an enabled Apple Development plugin and an enrolled
+local macOS project. Device discovery, screenshots, app launch, and simulator input request tool
+approval by default because they access host devices outside the project sandbox. Explicit tool
+permission overrides apply, but read-only mode and enrollment checks still fail closed. Showing a
+simulator does not enable renderer control; discrete agent input is a separate approved call.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
@@ -177,8 +183,22 @@ approves one invocation without a grant.
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
 and must prove it is a plain read through a fail-closed allow-list. An unknown command head, write
 flag, redirect, environment variable, or privilege wrapper falls back to the ordinary prompt.
+Shell-builtin assignment forms such as `printf -v` also fall back: they can change `PATH` and
+replace a later reader without containing a leading `NAME=value` token.
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
 paths as broad as `~` or `/` are never eligible.
+The Copse LAN certificate and device directory (`<COPSE_DIR>/lan`, normally
+`~/.copse/lan`) and its ancestors are also ineligible for a standing read
+grant; a directory read of the whole profile must not sweep in its CA key.
+
+The proof follows a `cd` to an absolute or home-relative directory when it runs in sequence (`&&`
+or `;`), not in a pipeline, subshell, background job, or after `||`. Later relative operands
+resolve against that directory; every operand after it is treated as a path, so
+`cd ~/other && cat .env` meets the credential rules; a command with no operand, and any `git`
+command, reads the directory itself. `cd` alone, `cd -`, and relative targets stay ineligible. A
+`sed` is a read only in the filter shape the read tier already admits (no `-i`, no `-f`, no
+`r`/`w`/`e` command), and its script is not a path. The Guarded YOLO harm gate carries the same
+`cd` forward, so `cd ~/.ssh && cat id_rsa` is refused like `cat ~/.ssh/id_rsa`.
 
 This applies on every platform. Off macOS/Linux there is no seatbelt/bubblewrap to leave, but the
 access is still outside the project and requires the same narrowly reasoned permission.
@@ -318,11 +338,98 @@ While active:
   non-credential paths auto-run; on macOS/Linux they stay contained with a widened `allowRead`
   seatbelt rather than a full sandbox escape. Credential targets and paths as broad as `~` or `/`
   remain hard-denied by the harm gate.
-- Writing or opaque GitHub CLI forms (`gh pr create`, `gh api`, …) prompt via the harm gate.
+- Writing or opaque GitHub CLI forms (`gh pr create`, `gh api -X POST`, `gh api -f …`,
+  `gh api graphql`, …) prompt via the harm gate. A `gh api` call is a read only as a plain GET:
+  one REST endpoint (no full URL), no method other than `GET`, no field, `--input` or header flag.
   Dedicated mutating GitHub tools (`GITHUB_WRITE_TOOLS`) still always prompt. Read-only `gh`
   carve-outs keep the normal sandboxed path.
+- Direct execution of a workspace file the gate cannot read as text prompts, except a compiled
+  executable (ELF, Mach-O, PE header) inside the workspace: it has no text to inspect, and running
+  it is no riskier than the `cargo run` or `make` that built it. A word starting with `#` in
+  command position is a comment, not a script to inspect.
+- Commands that reach past this machine's project without deleting anything ask once
+  (`host-reach.ts`):
+  - `ssh`, `scp`, `sftp`, `mosh`, and remote `rsync` to a host not listed under Settings →
+    Permissions → Trusted SSH hosts (empty by default; every `-J`/`ProxyJump` host and any
+    command-line `Hostname` override must be listed too). A trusted host still asks when the client
+    would load or run local code (`-o ProxyCommand`, provider/helper options, `-F`,
+    `scp`/`sftp -S`, `mosh --ssh`/`--client`, or `rsync -e`/`--rsh`), forwards a local capability
+    (`-A`, `-K`, `-X`, `-Y`, or their `-o` forms), opens a forwarding or tunnel (`-L`, `-R`, `-D`,
+    `-W`, `-w`, `-O forward`/`proxy`, or the equivalent `-o` options), forwards a secret-looking
+    variable with `SendEnv`/`SetEnv`, weakens host authentication, selects a local control socket,
+    or activates command-line hostname canonicalization. Remote commands (including
+    `RemoteCommand`, `mosh --server`, and `rsync --rsync-path`) still receive the destructive-pattern
+    check. Each client has its own option grammar, and clustered OpenSSH options such as `-fL…` and
+    `-vJ…` receive the same checks. Trusting a host otherwise hands it commands as if it were this
+    machine, including reads of its secrets. An SSH-family command under `xargs` always asks because
+    stdin can append an uninspected destination or remote command.
+  - printing the environment (`env`, `printenv`, `export -p`, `declare -x`, bare `set`), a
+    secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
+    any network command (`curl`, `wget`, …) whose line references a secret-named variable;
+  - `launchctl`, `systemctl`, `crontab`, and `defaults` writes, `screencapture`, `osascript`, and
+    every `pkill`/`killall` (a pattern cannot be scoped to the agent's own processes, so even
+    `pkill -f "node scripts/watch"` can stop the user's watcher; `kill` by PID or job runs);
+  - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
+    package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
+    `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
+    which download code before running it;
+  - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
+    line (`… | sudo sh`);
+  - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
+    heredoc code that downloads and runs code or posts data (`python3 -c "exec(urlopen(…))"`,
+    `perl - <<EOF` with an HTTP POST), and running or `chmod +x` on a file the same command
+    downloaded;
+  - a temporary directory on `PATH` (`export PATH=/tmp/x:$PATH`);
+  - a secret file inside the workspace (`.env*` except templates such as `.env.example`, `*.pem`,
+    `*.key`, `id_rsa`, `.npmrc`, …) read, searched, encoded or sent by a program that shows its
+    contents, and CLIs whose output is a secret (`gh auth status --show-token`,
+    `gcloud auth print-access-token`, `aws configure get`, `npm token`, `kubectl get secret`,
+    `helm get values`, `security dump-keychain`, `git credential fill`, a `credential.helper`
+    change);
+  - any command other than the store's own client that names a credential store (`~/.ssh`,
+    `~/.aws`, `~/.config/gh`, `~/Library/Keychains`, shell history files, …), such as
+    `tar -czf - ~/.ssh` or `cp ~/.ssh/id_rsa /tmp/k`;
+  - publishing (`npm`/`cargo`/`gem`/`twine` publish, `docker push`), deploying and changing
+    infrastructure (`kubectl`, `helm`, `terraform`, `pulumi`, `vercel`, `netlify`, `fly`,
+    `firebase`, `heroku`, `wrangler`, whose read subcommands are an allow-list), cloud writes
+    (`aws`/`gcloud`/`az`/`doctl` verbs that create, delete, deploy or change IAM), Stripe calls
+    other than reads, and SQL or Mongo statements that drop, delete, truncate, alter or grant;
+  - containers with host access (`--privileged`, `--pid=host`, mounting `/`, `/etc`, home or the
+    Docker socket), stopping or removing containers, and the payload of `docker exec` or
+    `kubectl exec`, which is inspected as a command;
+  - installing from a registry other than the default (`GOPROXY`, `GOSUMDB=off`,
+    `--registry`, `--index-url`, …);
+  - sending a request body or upload to a host other than loopback (`curl -d`, `-T`, `-X POST`,
+    `wget --post-file`), opening a listener or relay (`nc -l`, `nc -e`, `socat`), and mail;
+  - test and load runners pointed at a non-loopback URL (`pytest --base-url https://…`,
+    `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
+    `pg_restore` into a database, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`),
+    `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
+    from a file or stdin (`psql -f`, `mysql db < dump.sql`, `cat dump.sql | psql db`);
+  - filtering shell history for a secret-named word (`history | grep -i token`);
+  - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
+    `find /x | xargs rm`), and `git filter-repo`.
+- Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
+  has no workspace root. A shell's first operand (`bash ./payload`) is inspected whatever its
+  name. A program run by absolute path is an installed program when it lives under a system root
+  (`/usr`, `/bin`, `/opt`, `/System`, …) or a home toolchain directory (`~/.cargo/bin`,
+  `~/.local/bin`, nvm, Volta, mise, asdf, pyenv, Xcode's DerivedData, …). Anywhere else a script's
+  text is assessed and an unreadable or missing program prompts. Only a word the shell parse puts in
+  command position counts: a path the fallback lexer cuts out of quoted text (`sed "s|/etc/x|y|"`)
+  or one glued to a substitution (`$(…)/Platforms`) is not executed. A program in command position
+  is inspected however its path is spelled (`$HOME/x.sh`, `"$HOME/x.sh"`, `'/abs/x.sh'`); a spelling
+  the gate cannot match to the parse is inspected rather than skipped. Anything run from a temporary
+  directory (`/tmp`, `/var/folders`, …) is inspected or prompts, and so is the program an
+  `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
-  allows them.
+  allows them. When a classifier connection is chosen under Settings → Classifiers → Safety
+  screening, such a command first gets its second opinion (`tier-screening.ts`). A P(`ask`) of at
+  least 0.5 turns the allow into the harm gate's one-time confirmation. The classifier can only add
+  a prompt: a missing, slow or failing connection leaves the harm gate's allow standing. A command
+  that stays inside the project sandbox is not asked. Every confirmation ends "Approve this command
+  once?", because an ask-once prompt need not be destructive.
+- A shell builtin that assigns variables for later commands (currently `printf -v`) requires the
+  one-time harm confirmation; changing `PATH` can otherwise replace the command being authorized.
 
 Host shutdown/reboot hard denials require a parsed command invocation, including wrappers and
 nested shell payloads. Filenames, ordinary arguments, quoted text, and shell comments are not
@@ -331,6 +438,27 @@ the existing one-time harm confirmation; literal child-process shell payloads ar
 and can be hard-denied. The confirmation shows the exact command, the uncertainty, and whether it
 will run inside or outside the project sandbox. Approval applies only to that invocation and cannot
 be remembered; declining prevents execution. It does not override a confirmed hard denial.
+
+A `PATH=` or `export PATH=` value is not an outside path either. It names directories to search
+and opens none of them, and a program found through it still runs inside the sandbox, so
+`export PATH="$HOME/.cargo/bin:$PATH"; …` no longer forces a contained command outside.
+Auto-approval, which runs commands outside the sandbox, still refuses the assignment.
+
+Text that names no file is not a path. The pattern of a `grep`/`rg` search and the operands of an
+`echo`/`printf` whose output is not piped onward are masked before the outside-path rules run, so
+`grep -v "//"` is not a read of the filesystem root and `echo "/tmp/x"` does not leave the
+workspace. Recognition is an allow-list (`inert-operands.ts`): one unknown search flag, any
+substitution, or a head that turns text into commands or paths (`xargs`, a shell, an interpreter)
+disables it, and a masked path that appears in any other word stays visible. `sed` and `awk` scripts
+are not masked: they can read and write files.
+
+`~/…` and `$HOME/…` (either spelling) that resolve inside the workspace are the workspace. `$HOME`
+is trusted only when nothing else in the command mentions `HOME`, so `HOME=/ …` and `unset HOME`
+keep it an expansion that prompts.
+
+A pipe into an interpreter prompts, except into a `python`/`node` program given inline as the first
+argument (`python3 -c …`, `node -e …`) whose source has no execution, dynamic-import, or file-write
+primitive: that program reads the pipe as data.
 
 Interpreter inspection recognizes Node's `.mts` and `.cts` launchers as well as `.mjs`, so a later
 configuration-file argument cannot accidentally be inspected in place of the launcher.
@@ -381,7 +509,18 @@ the registry still fails contained and offers to run outside.
   uses the same choice; through a connection it shares without asking only at P(safe) ≥ 0.80.
 - `auto-approval.ts` / `auto-approval-config.ts`: deterministic shape allow-list; honoured only
   while the project sandbox is active, auto-run is on, and the workspace is trusted. Write tiers
-  are additionally capped at `read` if a caller reaches the level helper without a sandbox.
+  are additionally capped at `read` if a caller reaches the level helper without a sandbox. A
+  segment that names a secret file (`secrets.ts`) is never approved, even inside the workspace,
+  and `gh auth status --show-token` is not the `gh auth status` read.
+- `tier-screening.ts`: the classifier second opinion. In Guarded YOLO it may add the confirmation
+  above. In standard mode it only records a `tier-shadow` decision, in the background, for each
+  shell prompt: what a local-write blend (deterministic tiers, or P(`read`/`local-write`) ≥ 0.95
+  with a harm-gate allow) would have approved. The shadow record keeps a SHA-256 of the command,
+  not its text. It is evidence for a later decision, and it approves nothing.
+- `host-reach.ts`, `secrets.ts`, `remote-change.ts`: the Guarded YOLO ask-once rules above. The
+  public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
+  verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
+  reviewed and updated.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
   reads, the file-index listing, fs-gateway reads) use `readOnlyWorkspaceSandboxOverlay` or the
