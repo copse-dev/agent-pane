@@ -25,7 +25,9 @@ interface Harness {
   allowed: () => number
 }
 
-function mount(suggestion: AppleProjectSuggestion): Harness {
+function mount(
+  suggestion: AppleProjectSuggestion | ((projectId: string) => AppleProjectSuggestion),
+): Harness {
   const base = createFakeApi()
   const probes: string[] = []
   const enabled: Array<[string, boolean]> = []
@@ -45,7 +47,9 @@ function mount(suggestion: AppleProjectSuggestion): Harness {
       ...base.appleDevelopment,
       suggestion: (projectId) => {
         probes.push(projectId)
-        return Promise.resolve(suggestion)
+        return Promise.resolve(
+          typeof suggestion === 'function' ? suggestion(projectId) : suggestion,
+        )
       },
       answerSuggestion: (projectId, answer) => {
         answers.push([projectId, answer])
@@ -158,6 +162,39 @@ describe('Apple project suggestion', () => {
     await tick()
     assert.equal(harness.host.hidden, true)
     assert.deepEqual(harness.answers, [['myapp', 'dismissed']])
+  })
+
+  it('keeps each snoozed project reminder when switching between projects', async () => {
+    const harness = mount(() => ({ offer: 'reminder', pluginEnabled: false }))
+    await tick()
+    assert.match(harness.host.textContent, /Apple development is off for MyApp\./)
+
+    harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
+    harness.store.emit('workspace_changed')
+    await tick()
+    assert.match(harness.host.textContent, /Apple development is off for site\./)
+
+    harness.store.setState({ activeProjectId: 'myapp', activeThreadId: 'thread-1' })
+    harness.store.emit('workspace_changed')
+    await tick()
+    assert.equal(harness.host.hidden, false)
+    assert.match(harness.host.textContent, /Apple development is off for MyApp\./)
+  })
+
+  it('replaces an open dialog when the active project changes instead of stacking prompts', async () => {
+    const harness = mount(() => ({ offer: 'dialog', pluginEnabled: false }))
+    await tick()
+    assert.equal(document.querySelectorAll('#apple-suggestion-dialog').length, 1)
+    assert.match(dialog()?.textContent ?? '', /MyApp looks like an Apple project/)
+
+    harness.store.setState({ activeProjectId: 'site', activeThreadId: 'thread-2' })
+    harness.store.emit('workspace_changed')
+    await tick()
+    await tick()
+
+    assert.equal(document.querySelectorAll('#apple-suggestion-dialog').length, 1)
+    assert.match(dialog()?.textContent ?? '', /site looks like an Apple project/)
+    assert.deepEqual(harness.answers, [])
   })
 
   it('asks each project at most once per session', async () => {

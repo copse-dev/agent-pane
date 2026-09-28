@@ -53,7 +53,8 @@ function pluginCard(): HTMLElement {
 export function showAppleSuggestionDialog(options: {
   projectName: string
   pluginEnabled: boolean
-}): Promise<AppleSuggestionChoice> {
+  signal?: AbortSignal
+}): Promise<AppleSuggestionChoice | null> {
   const { dialog, open, close } = createOverlayDialog({ id: 'apple-suggestion-dialog' })
   dialog.setAttribute('aria-labelledby', 'apple-suggestion-title')
   const { projectName, pluginEnabled } = options
@@ -94,10 +95,23 @@ export function showAppleSuggestionDialog(options: {
   )
   dialog.append(heading, lede, pluginCard(), actions)
 
+  if (options.signal?.aborted) {
+    dialog.remove()
+    return Promise.resolve(null)
+  }
+
   return new Promise((resolve) => {
     let choice: AppleSuggestionChoice = 'not-now'
+    let deferred = false
+    let chosen = false
     const choose = (next: AppleSuggestionChoice): void => {
       choice = next
+      chosen = true
+      close()
+    }
+    const defer = (): void => {
+      if (chosen) return
+      deferred = true
       close()
     }
     dontAsk.addEventListener('click', () => {
@@ -112,11 +126,13 @@ export function showAppleSuggestionDialog(options: {
     dialog.addEventListener(
       'close',
       () => {
+        options.signal?.removeEventListener('abort', defer)
         dialog.remove()
-        resolve(choice)
+        resolve(deferred ? null : choice)
       },
       { once: true },
     )
+    options.signal?.addEventListener('abort', defer, { once: true })
     open()
     accept.focus()
   })
@@ -152,7 +168,8 @@ export function mountAppleProjectSuggestions(
     dismissLink,
   )
   const asked = new Set<string>()
-  let reminder: Reminder | null = null
+  const reminders = new Map<string, Reminder>()
+  let pendingDialog: { projectId: string; controller: AbortController } | null = null
 
   const projectName = (projectId: string): string => {
     const project = store.getState().projects.find((candidate) => candidate.id === projectId)
@@ -161,7 +178,8 @@ export function mountAppleProjectSuggestions(
 
   const renderReminder = (): void => {
     const active = store.getState().activeProjectId
-    if (!reminder || reminder.projectId !== active) {
+    const reminder = active ? reminders.get(active) : undefined
+    if (!reminder) {
       host.hidden = true
       return
     }
@@ -174,7 +192,7 @@ export function mountAppleProjectSuggestions(
   }
 
   const accept = async (projectId: string, pluginEnabled: boolean): Promise<void> => {
-    reminder = null
+    reminders.delete(projectId)
     renderReminder()
     const threadId = store.getState().activeThreadId
     if (!threadId || store.getState().activeProjectId !== projectId) return
@@ -204,21 +222,31 @@ export function mountAppleProjectSuggestions(
 
   const offer = async (projectId: string, suggestion: AppleProjectSuggestion): Promise<void> => {
     if (suggestion.offer === 'reminder') {
-      reminder = { projectId, pluginEnabled: suggestion.pluginEnabled }
+      reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled })
       renderReminder()
       return
     }
     if (suggestion.offer !== 'dialog') return
+    const controller = new AbortController()
+    pendingDialog = { projectId, controller }
     const choice = await showAppleSuggestionDialog({
       projectName: projectName(projectId),
       pluginEnabled: suggestion.pluginEnabled,
+      signal: controller.signal,
     })
+    if (pendingDialog?.controller === controller) pendingDialog = null
+    if (choice === null) {
+      asked.delete(projectId)
+      void evaluate()
+      return
+    }
     if (choice === 'turn-on') await accept(projectId, suggestion.pluginEnabled)
     else answer(projectId, choice === 'dont-ask' ? 'dismissed' : 'snoozed')
   }
 
   const evaluate = async (): Promise<void> => {
     renderReminder()
+    if (pendingDialog) return
     const { activeProjectId, activeThreadId } = store.getState()
     if (!activeProjectId || !activeThreadId || asked.has(activeProjectId)) return
     asked.add(activeProjectId)
@@ -239,17 +267,27 @@ export function mountAppleProjectSuggestions(
   }
 
   acceptLink.addEventListener('click', () => {
+    const active = store.getState().activeProjectId
+    const reminder = active ? reminders.get(active) : undefined
     if (reminder) void accept(reminder.projectId, reminder.pluginEnabled)
   })
   dismissLink.addEventListener('click', () => {
+    const active = store.getState().activeProjectId
+    const reminder = active ? reminders.get(active) : undefined
     if (!reminder) return
     // The reminder was the one second chance; dismissing it ends the ask.
     answer(reminder.projectId, 'dismissed')
-    reminder = null
+    reminders.delete(reminder.projectId)
     renderReminder()
   })
 
-  store.on('workspace_changed', () => void evaluate())
+  store.on('workspace_changed', () => {
+    const activeProjectId = store.getState().activeProjectId
+    if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
+      pendingDialog.controller.abort()
+    }
+    void evaluate()
+  })
   // Launch may restore the project before this mounts.
   void evaluate()
   return host
