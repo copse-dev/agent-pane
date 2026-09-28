@@ -93,12 +93,16 @@ describe('localWorkspaceFs', () => {
       // A FIFO reports size zero; bytes arrive after the stat and the writer stays
       // open. An unbounded readFile would wait forever rather than enforce the cap.
       const reading = localWorkspaceFs.readFileBytes(path, { maxBytes: 64 })
+      // Attach the expectation before awaiting anything else: the read can reject
+      // while the write below is still in flight, and a rejection with no handler
+      // yet is reported as unhandled rather than asserted.
+      const rejected = assert.rejects(reading, WorkspaceFileTooLargeError)
       const writer = await open(path, 'w')
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
         await writer.write(Buffer.alloc(65, 255))
         await Promise.race([
-          assert.rejects(reading, WorkspaceFileTooLargeError),
+          rejected,
           new Promise<never>((_resolve, reject) => {
             timer = setTimeout(() => {
               reject(new Error('read waited for EOF past the byte limit'))

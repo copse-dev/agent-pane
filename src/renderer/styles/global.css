@@ -34,11 +34,13 @@
 @import './global/command-palette.css';
 @import './global/keyboard-shortcuts.css';
 @import './global/process-manager.css';
+@import './global/activity-panel.css';
 @import './global/conversation-search.css';
 @import './global/todo.css';
 @import './global/apple-development.css';
 @import './global/app-run.css';
 @import './global/thread-proposal.css';
+@import './global/reviewer-input.css';
 @import './global/toasts.css';
 @import './global/tooltip.css';
 @import './global/pr-link-preview.css';
