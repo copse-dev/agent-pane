@@ -508,11 +508,11 @@ function databaseLoadReason(head: string, argv: readonly string[]): string | nul
     const verb = influxWriteVerb(argv)
     return verb ? `changes database data (influx ${verb})` : null
   }
-  if (
-    (head === 'psql' || head === 'mysql' || head === 'mariadb') &&
-    argv.some((arg) => /^(?:-f|--file(?:=|$))/.test(arg))
-  ) {
-    return `runs SQL from a file the gate does not read (${head} -f)`
+  // Only psql uses -f/--file for SQL input. In mysql and mariadb, -f is
+  // --force (continue after an SQL error), so treating it as a file would turn
+  // ordinary read queries into false-positive approval prompts.
+  if (head === 'psql' && argv.some((arg) => /^(?:-f|--file(?:=|$))/.test(arg))) {
+    return 'runs SQL from a file the gate does not read (psql -f)'
   }
   if (head === 'redis-cli' && argv.includes('--pipe'))
     return 'loads data into a database (redis-cli --pipe)'
