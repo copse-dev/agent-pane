@@ -170,7 +170,7 @@ export function mountAppleProjectSuggestions(
   const asked = new Set<string>()
   const reminders = new Map<string, Reminder>()
   let pendingDialog: { projectId: string; controller: AbortController } | null = null
-  let disposed = false
+  const lifetime = new AbortController()
 
   const projectName = (projectId: string): string => {
     const project = store.getState().projects.find((candidate) => candidate.id === projectId)
@@ -222,7 +222,6 @@ export function mountAppleProjectSuggestions(
   }
 
   const offer = async (projectId: string, suggestion: AppleProjectSuggestion): Promise<void> => {
-    if (disposed) return
     if (suggestion.offer === 'reminder') {
       reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled })
       renderReminder()
@@ -236,7 +235,7 @@ export function mountAppleProjectSuggestions(
       pluginEnabled: suggestion.pluginEnabled,
       signal: controller.signal,
     })
-    if (disposed) return
+    if (lifetime.signal.aborted) return
     if (pendingDialog.controller === controller) pendingDialog = null
     if (choice === null) {
       asked.delete(projectId)
@@ -248,7 +247,6 @@ export function mountAppleProjectSuggestions(
   }
 
   const evaluate = async (): Promise<void> => {
-    if (disposed) return
     renderReminder()
     if (pendingDialog) return
     const { activeProjectId, activeThreadId } = store.getState()
@@ -262,7 +260,7 @@ export function mountAppleProjectSuggestions(
       asked.delete(activeProjectId)
       return
     }
-    if (disposed) return
+    if (lifetime.signal.aborted) return
     // The user moved on while the probe ran; ask when they come back.
     if (store.getState().activeProjectId !== activeProjectId) {
       asked.delete(activeProjectId)
@@ -298,7 +296,7 @@ export function mountAppleProjectSuggestions(
   return {
     element: host,
     destroy: (): void => {
-      disposed = true
+      lifetime.abort()
       unsubscribeWorkspace()
       pendingDialog?.controller.abort()
       pendingDialog = null
