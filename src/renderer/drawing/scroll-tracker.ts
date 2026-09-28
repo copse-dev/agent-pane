@@ -14,8 +14,6 @@ export interface ScrollTimer {
 
 /** Minimum gap between guest scroll polls; scroll events arrive in bursts. */
 export const SCROLL_TRACK_INTERVAL_MS = 80
-/** Covers keyboard, scrollbar, and guest-process scrolling invisible to the embedder. */
-export const SCROLL_SAFETY_INTERVAL_MS = 1_000
 /** Wheel noise dies down within a turn; an active stroke keeps polling alive. */
 const IDLE_STOP_MS = 1_000
 
@@ -59,9 +57,9 @@ export interface GuestScrollTracker {
  * notification crossing the boundary. This tracker watches for the signals
  * that precede movement — wheel input over the host, a stroke started on the
  * host, or a navigation/size change the caller reports — and polls the guest's
- * `window.scrollX/Y` through `fetchPosition` while any of them is live, then
- * goes quiet. A slow safety poll covers keyboard/scrollbar drags, which the
- * embedder cannot observe at all. Nothing runs while the tracker is disabled.
+ * `window.scrollX/Y` through `fetchPosition` during that bounded activity
+ * burst, then clears its polling timer and goes quiet. Nothing runs while the
+ * tracker is disabled or idle.
  */
 export function trackGuestScroll(options: {
   /** Receives wheel and stroke-start input on the overlay's host element. */
@@ -84,7 +82,6 @@ export function trackGuestScroll(options: {
   let inFlight = false
   let idleTimer: number | null = null
   let interval: number | null = null
-  let safetyInterval: number | null = null
 
   const emit = (position: GuestScrollPosition): void => {
     if (position.x === lastX && position.y === lastY) return
@@ -93,16 +90,26 @@ export function trackGuestScroll(options: {
     options.onScroll(position)
   }
 
+  const stopPolling = (): void => {
+    if (interval !== null) timer.clearInterval(interval)
+    interval = null
+  }
+
+  const startPolling = (): void => {
+    interval ??= timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS)
+  }
+
   const scheduleIdleStop = (): void => {
     if (idleTimer !== null) timer.clearTimeout(idleTimer)
     idleTimer = timer.setTimeout(() => {
       idleTimer = null
       polling = false
+      if (strokeDepth === 0) stopPolling()
     }, IDLE_STOP_MS)
   }
 
-  const poll = (force = false): void => {
-    if (disposed || !enabled || inFlight || (!force && !polling && strokeDepth === 0)) return
+  function poll(): void {
+    if (disposed || !enabled || inFlight || (!polling && strokeDepth === 0)) return
     inFlight = true
     void options
       .fetchPosition()
@@ -123,6 +130,7 @@ export function trackGuestScroll(options: {
       options.onScroll({ x: lastX, y: lastY })
     }
     polling = true
+    startPolling()
     scheduleIdleStop()
     poll()
   }
@@ -134,18 +142,16 @@ export function trackGuestScroll(options: {
   // window-wide listener would make every click anywhere cost one IPC per tracker.
   const onPointerDown = (): void => {
     strokeDepth += 1
+    startPolling()
     poll()
   }
   const onPointerUp = (): void => {
     strokeDepth = Math.max(0, strokeDepth - 1)
+    if (strokeDepth === 0 && !polling) stopPolling()
   }
 
   const start = (refreshLayout = false): void => {
     enabled = true
-    interval = timer.setInterval(poll, SCROLL_TRACK_INTERVAL_MS)
-    safetyInterval = timer.setInterval(() => {
-      poll(true)
-    }, SCROLL_SAFETY_INTERVAL_MS)
     options.wheelTarget.addEventListener('wheel', onWheel, { passive: true })
     options.wheelTarget.addEventListener('pointerdown', onPointerDown, CAPTURE)
     // The release can land outside the host, so it is heard window-wide; it
@@ -159,10 +165,7 @@ export function trackGuestScroll(options: {
     enabled = false
     polling = false
     strokeDepth = 0
-    if (interval !== null) timer.clearInterval(interval)
-    if (safetyInterval !== null) timer.clearInterval(safetyInterval)
-    interval = null
-    safetyInterval = null
+    stopPolling()
     if (idleTimer !== null) timer.clearTimeout(idleTimer)
     idleTimer = null
     options.wheelTarget.removeEventListener('wheel', onWheel)

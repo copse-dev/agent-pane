@@ -1,12 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  trackGuestScroll,
-  SCROLL_SAFETY_INTERVAL_MS,
-  SCROLL_TRACK_INTERVAL_MS,
-  type ScrollTimer,
-} from './scroll-tracker.ts'
+import { trackGuestScroll, SCROLL_TRACK_INTERVAL_MS, type ScrollTimer } from './scroll-tracker.ts'
 import type { GuestScrollPosition } from '@shared/browser-guest-scroll.ts'
 
 interface FakeTimer extends ScrollTimer {
@@ -71,9 +66,13 @@ describe('trackGuestScroll', () => {
     const { target, wheel } = wheelTarget()
     const positions: GuestScrollPosition[] = []
     let current: GuestScrollPosition = { x: 0, y: 0 }
+    let calls = 0
     const tracker = trackGuestScroll({
       wheelTarget: target,
-      fetchPosition: () => Promise.resolve(current),
+      fetchPosition: () => {
+        calls += 1
+        return Promise.resolve(current)
+      },
       onScroll: (p) => {
         positions.push(p)
       },
@@ -105,16 +104,12 @@ describe('trackGuestScroll', () => {
 
       // Polling stops once the idle timeout fires — no wheel, no work.
       timers.runTimeouts()
+      const callsAtIdle = calls
       current = { x: 0, y: 100 }
       timers.fireInterval()
       await flush()
       assert.equal(positions.length, 3, 'idle tracker does not poll')
-
-      // Keyboard and scrollbar movement happens inside the guest and cannot
-      // wake the embedder, so the slower safety interval still observes it.
-      timers.fireInterval(SCROLL_SAFETY_INTERVAL_MS)
-      await flush()
-      assert.deepEqual(positions.at(-1), { x: 0, y: 100 })
+      assert.equal(calls, callsAtIdle, 'idle tracker makes no guest IPC calls')
 
       // Fresh wheel activity wakes it again.
       current = { x: 0, y: 80 }
@@ -310,7 +305,6 @@ describe('trackGuestScroll lifecycle', () => {
       t.target.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
       t.tracker.kick()
       t.timers.fireInterval()
-      t.timers.fireInterval(SCROLL_SAFETY_INTERVAL_MS)
       await flush()
       assert.equal(t.calls(), before, 'no timers, listeners or kicks while disabled')
 
