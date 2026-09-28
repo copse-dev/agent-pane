@@ -174,7 +174,7 @@ export function trackGuestScroll(options: {
   start()
 
   return {
-    kick: () => {
+    kick: (): void => {
       wake(true)
     },
     setEnabled(next: boolean): void {
