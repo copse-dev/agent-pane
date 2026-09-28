@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { scanShellComposition } from './command-routing.ts'
 import { CODE_INTERPRETERS, commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
 import { remoteChangeReasons } from './remote-change.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
@@ -656,15 +657,15 @@ function searchesForSecrets(argv: readonly string[]): boolean {
  * newlines, then into stages at `|`; a searcher must follow the history stage.
  */
 function historySearchReason(command: string): string | null {
-  for (const pipeline of command.split(/\|\||&&|;|\n|(?<![|>&])&(?![&>])/)) {
-    const stages = pipeline.split(/(?<!\|)\|(?!\|)/).map((stage) => {
-      const [argv = []] = shellSegments(stage)
-      return unwrapWrappers(argv)
-    })
-    const history = stages.findIndex(isHistoryStage)
-    if (history !== -1 && stages.slice(history + 1).some(searchesForSecrets)) {
-      return 'searches shell history for secrets'
-    }
+  const composition = scanShellComposition(command)
+  if (!composition) return null
+  let readsHistory = false
+  for (const [index, segment] of composition.segments.entries()) {
+    if (index > 0 && composition.operators[index - 1] !== '|') readsHistory = false
+    const [rawArgv = []] = shellSegments(segment)
+    const argv = unwrapWrappers(rawArgv)
+    if (readsHistory && searchesForSecrets(argv)) return 'searches shell history for secrets'
+    if (isHistoryStage(argv)) readsHistory = true
   }
   return null
 }
