@@ -610,6 +610,21 @@ export function switchProject(
   activate(store, api, id, proj.path, proj.sshHost, pendingThreadId)
 }
 
+/** Activate the existing project through the normal workspace/trust path for a phone submission. */
+export async function activateMobileProject(
+  store: AppStore,
+  api: ApiClient,
+  id: string,
+): Promise<void> {
+  const project = store.getState().projects.find((item) => item.id === id)
+  if (!project || project.missing) throw new Error('Project unavailable on the desktop.')
+  if (store.getState().activeProjectId === id) {
+    cancelPendingSwitch(store, api)
+    return
+  }
+  await activateAndWait(store, api, id, project.path, project.sshHost)
+}
+
 export function switchProjectThread(
   store: AppStore,
   api: ApiClient,

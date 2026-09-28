@@ -42,6 +42,14 @@ describe('claudeReasonNeedsLogin', () => {
       claudeReasonNeedsLogin('Claude usage response had no recognizable plan windows'),
       false,
     )
+    // A lapsed access token is Claude Code's to refresh; signing in again would
+    // be the very re-login this state exists to avoid.
+    assert.equal(
+      claudeReasonNeedsLogin(
+        'Claude’s access token has expired. Usage updates the next time Claude Code refreshes it (any `claude` session or Claude agent turn).',
+      ),
+      false,
+    )
   })
 })
 

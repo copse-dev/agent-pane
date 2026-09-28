@@ -235,6 +235,14 @@ export interface ThreadReviewReport {
   status: 'running' | 'done' | 'error'
   /** When the run started (ms since epoch). */
   startedAt: number
+  /**
+   * Who asked for the run: `user` for the Review button or the "Review changes"
+   * bubble, `agent` for the model's own `review_changes` call (which already
+   * reads the result as its tool result). A completed `user` run is handed to
+   * the model with the next prompt (#2519). Absent on reports from before it
+   * was recorded, which are never handed on.
+   */
+  initiator?: 'user' | 'agent'
   /** The reviewer model, and the challenger/reproducer model when verification ran. */
   models: { reviewer: string; challenger: string | null }
   lenses: string[]
