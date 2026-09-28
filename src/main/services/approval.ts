@@ -29,6 +29,13 @@ import { deferApproval } from './security/deferred-approval-store.ts'
 import type { UserAlertSender } from './user-alerts.ts'
 import { resolveRendererPromptTarget } from './renderer-prompt-target.ts'
 import { getAgentExecutionRoot } from './execution-root.ts'
+import {
+  mobileDecisions,
+  mobileDecisionSource,
+  type MobilePrincipal,
+} from './mobile/mobile-decisions.ts'
+import { getActiveProjectId } from './workspace.ts'
+import { getThreadExecutionContext } from './thread-execution-context.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 /**
@@ -164,6 +171,8 @@ export interface ApprovalRequest {
 }
 
 export interface ApprovalResponse {
+  /** Set only by the authenticated mobile decision transport. */
+  device?: MobilePrincipal
   approved: boolean
   remember: boolean
   /** Scope selected for this approval; absent is the backwards-compatible one-shot grant. */
@@ -238,6 +247,7 @@ export function runWithApprovalHandler<T>(next: ApprovalHandler, fn: () => T): T
 interface InflightApproval {
   /** Aborts the underlying handler prompt once every waiter has left. */
   controller: AbortController
+  request: ApprovalRequest
   waiters: Set<InflightWaiter>
 }
 
@@ -320,16 +330,20 @@ export function parkedApprovalCount(): number {
 
 /** A stored verdict handed to an identical retry: the user's answer, replayed. */
 function recordReplayedDecision(req: ApprovalRequest, response: ApprovalResponse): void {
+  const projectId = response.device ? getThreadExecutionContext()?.projectId : undefined
   recordDecision({
     kind: req.type,
-    actor: 'user',
+    ...(projectId ? { projectId } : {}),
+    actor: response.device ? 'mobile-device' : 'user',
     verdict: response.approved ? 'approved' : 'denied',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
     ...(req.cause ? { cause: req.cause } : {}),
     ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     remembered: response.remember,
-    source: 'abandoned-call-replay',
+    source: response.device
+      ? `${mobileDecisionSource(response.device)}; abandoned-call-replay`
+      : 'abandoned-call-replay',
   })
 }
 
@@ -340,9 +354,13 @@ function recordApprovalDecision(
   resolutionOverride?: string,
 ): void {
   const resolution = resolutionOverride ?? response.resolution ?? 'user'
+  // Phone decisions belong to the run even when another project is selected.
+  // Preserve other hosts' existing audit routing, including headless isolation.
+  const projectId = response.device ? getThreadExecutionContext()?.projectId : undefined
   recordDecision({
     kind: req.type,
-    actor: resolution === 'user' ? 'user' : 'system',
+    ...(projectId ? { projectId } : {}),
+    actor: resolution === 'user' ? (response.device ? 'mobile-device' : 'user') : 'system',
     verdict:
       resolution === 'user'
         ? response.approved
@@ -358,7 +376,11 @@ function recordApprovalDecision(
     ...(req.cause ? { cause: req.cause } : {}),
     ...(req.reasons?.length ? { reasons: req.reasons } : {}),
     remembered: response.remember,
-    ...(resolution === 'user' ? {} : { source: resolution }),
+    ...(resolution === 'user'
+      ? response.device
+        ? { source: mobileDecisionSource(response.device) }
+        : {}
+      : { source: resolution }),
   })
 }
 
@@ -461,6 +483,24 @@ export function pendingApprovalCountForThread(threadId: string): number {
     }
   }
   return count
+}
+
+/** Read-only details of decisions currently waiting for a thread. */
+export function pendingApprovalRequestsForThread(
+  threadId: string,
+): Array<Pick<ApprovalRequest, 'title' | 'body' | 'bodyAdvice' | 'bodyFooter'>> {
+  const requests: Array<Pick<ApprovalRequest, 'title' | 'body' | 'bodyAdvice' | 'bodyFooter'>> = []
+  for (const entry of inflight.values()) {
+    if ([...entry.waiters].some((waiter) => waiter.threadId === threadId)) {
+      requests.push({
+        title: entry.request.title,
+        body: entry.request.body,
+        ...(entry.request.bodyAdvice === undefined ? {} : { bodyAdvice: entry.request.bodyAdvice }),
+        ...(entry.request.bodyFooter === undefined ? {} : { bodyFooter: entry.request.bodyFooter }),
+      })
+    }
+  }
+  return requests
 }
 
 /**
@@ -622,7 +662,7 @@ function requestApprovalUnpaused(
     let entry = inflight.get(key)
     const isLeader = !entry
     if (!entry) {
-      entry = { controller: new AbortController(), waiters: new Set() }
+      entry = { controller: new AbortController(), request: req, waiters: new Set() }
       inflight.set(key, entry)
     }
     const active = entry
@@ -828,11 +868,38 @@ export function initApproval(
         // a still-visible dialog (timeout never sent approval_cancelled).
         const onAbort = (): void => {
           if (!pending.has(id)) return
-          if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
           settle(id, { approved: false, remember: false })
         }
         signal?.addEventListener('abort', onAbort, { once: true })
+        const projectId = getThreadExecutionContext()?.projectId ?? getActiveProjectId()
+        const removeMobile =
+          projectId && threadId
+            ? mobileDecisions.register(
+                projectId,
+                threadId,
+                {
+                  id,
+                  kind: 'approval',
+                  title: req.title,
+                  body: req.body,
+                  ...(req.bodyAdvice !== undefined ? { advice: req.bodyAdvice } : {}),
+                  ...(req.bodyFooter !== undefined ? { footer: req.bodyFooter } : {}),
+                },
+                (answer, device) => {
+                  if (answer.kind === 'approval')
+                    settle(id, {
+                      approved: answer.approved,
+                      remember: false,
+                      grantScope: 'once',
+                      resolution: 'user',
+                      device,
+                    })
+                },
+              )
+            : (): void => {}
         pending.set(id, (response) => {
+          removeMobile()
+          if (!dest.isDestroyed()) dest.send('agent:approval-cancelled', { id })
           signal?.removeEventListener('abort', onAbort)
           stopAlert()
           resolve(response)

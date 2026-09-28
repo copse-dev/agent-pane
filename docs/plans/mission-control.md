@@ -1,9 +1,93 @@
 # Knowing what your agents are doing
 
-Status: **Proposed.** No implementation is on `develop`. This is a specification for one
-capability, written from the user's side. It covers R-04, R-06, R-20 and R-22 from
+Status: **Active (slice 1 landed).** Job 1's core — the Activity panel with Needs you,
+Working and Recently finished, and answering an approval without switching threads — is
+implemented; see [Slice 1 — what shipped](#slice-1--what-shipped). Everything else below is
+still specification. It covers R-04, R-06, R-20 and R-22 from
 [`user-control-surface-gaps.md`](user-control-surface-gaps.md), which collapse into a
 single surface and should be one issue rather than four.
+
+## Slice 1 — what shipped
+
+**Design decision: the panel sits beside the sidebar, as an overlay like the Process
+Manager — not the sidebar growing up.** The projects pane is a navigation tree: threads
+nest under the one expanded project, automations collapse under their own disclosure, and
+rows sort by last human prompt. Regrouping it by attention would fight all three, and
+answering approvals inside a 240px column would crowd the rows it exists to show. A right
+panel mode was the other candidate, but panel modes are workspace-scoped and compete with
+Explorer, Terminal and Changes for one slot. The Process Manager already proved the
+overlay shape (`createOverlayDialog`) for "what is running across threads", so the Activity
+panel reuses that shell rather than adding a new surface kind. The sidebar keeps its
+per-thread bells and gains one header bell that counts waiting threads and opens the panel.
+
+What is in:
+
+- `src/renderer/views/activity-panel.ts` — the overlay. Groups: **Needs you** (pending
+  approval or `ask_user` question, longest-waiting first) → **Working** (running, newest run
+  first) → **Recently finished** (runs this session saw end or that ended unseen; failed
+  before finished, capped at 10 with the full count).
+  A list on the left, the selected thread in full on the right. Each row is two lines: an
+  outline glyph, the thread name and its age, then a state word (never colour alone), what
+  it wants or is doing (the command, the question, the latest activity) and the project.
+  Opened with Cmd/Ctrl+Shift+A, the sidebar header bell, or the command palette's
+  **Activity**.
+- `src/renderer/controller/activity-model.ts` — pure derivation over thread **metadata**
+  (id, title, status, `unreadAt`), the live request queues, and run timings observed from
+  `thread_status_changed` / `agent_activity`. It never reads `messages`; tests pin that with
+  a transcript that throws when touched.
+- **Approvals are answered through the existing path.** `mountApprovalDialog` now returns an
+  `ApprovalRequests` handle (`pending`, `answerOnce`, `onChange`). `answerOnce` removes the
+  request from the dialog's own queue exactly as a cancellation does, then calls the same
+  `approval.respond` IPC with the narrowest answer the prompt offers: approve this request
+  once (`remember: false`, `grantScope: 'once'`) or reject. No new IPC, no remembered grant,
+  no task lease; anything broader is still answered on the prompt itself. It returns false
+  and sends nothing when the request is no longer pending, so a double click, a stale row, or
+  a request answered on the prompt or cancelled by main is harmless.
+- **Approve requires the full request to be visible.** A list row is for scanning — its
+  command is truncated — so it carries no answer at all. The detail pane shows the selected
+  request exactly as the approval prompt presents it, rendered by the prompt's own
+  `approvalRequestDetails`: full title, advice, the whole untruncated body (monospaced for
+  shell, wrapping and scrolling, never cut) and the footer. **Approve once** and **Reject**
+  exist only in that pane's action bar, beside **Open thread**, so a request cannot be
+  approved from a view that shows less than the prompt would.
+- The approval dialog's clickjack guard carries over: Approve pauses for
+  `APPROVAL_SETTLE_MS` whenever a request it has not shown yet takes the detail pane (on
+  open, on selecting another request, or when an answered one hands over to the next) and
+  when the Needs-you list changes while the panel is open; Reject stays live.
+- **Questions go to their thread.** `mountAskUserDialog` returns a read-only
+  `AskUserRequests` handle. The detail lists every question, and **Answer in thread** opens
+  its thread, where the existing ask dialog surfaces it — the dialog stays the only thing
+  that answers.
+- Re-rendering is throttled to one pass per 250ms, ages refresh every 30s while open, and
+  the selection and focus stay on the same row (or its place in the list) across
+  re-renders. The panel has a fixed height, so a new selection never resizes it.
+- Keyboard: arrows/Home/End move the selection (roving tab stop) and the detail follows,
+  Tab reaches the detail's Open thread / Reject / Approve once, Esc closes. Each list is
+  labelled by its group heading and each row's accessible name leads with its state.
+- The empty state explains what the panel will show.
+
+Evidence: `activity-model.test.ts`, `activity-panel.test.ts`,
+`approval-dialog-requests.test.ts`, and `tests/e2e/activity-panel.e2e.ts`, which approves a
+background thread's real shell prompt from the panel and waits for that thread's tool to run
+and its turn to finish while another thread keeps working (screenshots
+`activity-panel-needs-you.png`, `activity-panel-approved.png`).
+
+### Remaining work (not in slice 1)
+
+- Stalled detection (Job 2) and its threshold; the row's progress signal is not built.
+- The `delegated` runtime state.
+- User-set disposition (`working` / `ready` / `done` / `backlog` / `abandoned`), its store
+  field and the `archivedAt` migration.
+- Delivery state (branch, PR, checks, review) and artifacts on the row.
+- Filter and search.
+- Notifications (one per stop, coalesced) — the panel is pull-only today.
+- Cross-window aggregation: a prompt routed to a pop-out window's renderer is listed there,
+  not in the main window's panel.
+- Threads from projects not opened this session. The panel sees exactly what the sidebar
+  sees (`getSidebarThreads` reads the active project plus projects visited this session), so
+  an unvisited project's threads — and the project name of a request from one — are absent.
+- Broader answers the prompt offers (such as "Always allow" or a task lease) are not
+  offered in the panel; the prompt in the thread remains one click away.
 
 ## The problem
 
@@ -45,8 +129,8 @@ attention to the right thread at the right moment.
 ### Job 1 — "Which of these needs me right now?"
 
 Some threads are working, some have stopped and are waiting for an approval or an answer.
-Nothing tells the user, so they poll by eye. Nothing in the main process even constructs a
-notification.
+The main process now sends desktop alerts for approvals and questions, but until slice 1's
+Activity panel there was no grouped view that told the user which thread needs attention.
 
 > "I'm confused why some approval prompts end up hapening twice. Is this just the model or
 > a race?" — `ca6b52c0`
@@ -257,8 +341,11 @@ start collecting for this.
 
 - **Making the agent more autonomous.** This helps a person supervise; it does not reduce
   what they approve.
-- **Cross-machine or cross-user visibility.** No hosted backend, and nothing in the
+- **Cross-user or hosted visibility.** No hosted backend, and nothing in the
   evidence asks for it.
+- **A LAN view of this desktop session** is specified separately in
+  [`mobile-web-experience.md`](mobile-web-experience.md). It needs the running
+  desktop and does not create a hosted or shared workspace.
 - **Cloud-agent integration.** Roughly ten roadmap items concern remote runs. They will
   want a row here, so the row format should not assume a local process, but they are not
   specified here.
@@ -268,9 +355,9 @@ start collecting for this.
 
 ## Open questions
 
-- **Is the panel the sidebar, or beside it?** The projects pane already lists threads and
-  shows some status. This may be that pane growing up, which would be cheaper and less
-  duplicative. Needs a design call before build.
+- ~~**Is the panel the sidebar, or beside it?**~~ Decided in slice 1: beside it, as an
+  overlay sharing the Process Manager's shell. See
+  [Slice 1 — what shipped](#slice-1--what-shipped).
 - **What is the stall threshold really?** Five minutes is a guess. It should come from
   timing real runs, and a semantic-search or benchmark run may legitimately exceed any
   fixed number.

@@ -15,6 +15,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  mobile: {
+    manage: () => ipcRenderer.invoke('mobile:manage'),
+    onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/mobile-chat.ts').MobileChatCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('mobile:chat', listener)
+      return (): void => {
+        ipcRenderer.off('mobile:chat', listener)
+      }
+    },
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) =>
+      ipcRenderer.invoke('mobile:reply', id, result),
+  },
   windowState: {
     getNavigation: () => ipcRenderer.invoke('main-window:get-navigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
@@ -1317,6 +1334,8 @@ const api: ApiClient = {
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
+    permissionOptions: (projectId: string) =>
+      ipcRenderer.invoke('automations:permission-options', projectId),
     upsert: (projectId: string, input: unknown) =>
       ipcRenderer.invoke('automations:upsert', projectId, input),
     remove: (projectId: string, scheduleId: string) =>
@@ -1444,6 +1463,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:current-branch', projectId, threadId),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branch-status', projectId, threadId, forBranch),
+    worktreeAttachment: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:worktree-attachment', projectId, threadId),
+    reattachWorktree: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:reattach-worktree', projectId, threadId),
     promptState: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>

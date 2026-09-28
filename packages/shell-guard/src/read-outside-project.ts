@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { isAbsolute, basename, resolve, sep } from 'node:path'
+import { isAbsolute, basename, join, resolve, sep } from 'node:path'
 import { parse as parseShell } from 'shell-quote'
 import {
   commandName,
@@ -204,6 +204,18 @@ function isInsideProject(resolved: string, workspaceRoot: string): boolean {
  */
 export function sensitiveTargetReason(token: string, resolved: string): string | null {
   const lowerResolved = resolved.toLowerCase()
+  const configured = process.env['COPSE_DIR']?.trim()
+  const lanRoot = resolve(
+    configured && configured.length > 0 ? configured : join(homedir(), '.copse'),
+    'lan',
+  ).toLowerCase()
+  if (
+    lowerResolved === lanRoot ||
+    lowerResolved.startsWith(`${lanRoot}${sep}`) ||
+    lanRoot.startsWith(`${lowerResolved}${sep}`)
+  ) {
+    return `Copse LAN credentials (${token})`
+  }
   for (const fragment of SENSITIVE_PATH_FRAGMENTS) {
     if (lowerResolved.includes(fragment)) return `credential store (${token})`
   }
