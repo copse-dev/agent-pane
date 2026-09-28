@@ -570,6 +570,7 @@ const CONTAINER_GLOBAL_OPTIONS: ReadonlyMap<string, GlobalOptions> = new Map([
 const CONTAINER_NESTED_COMMANDS = new Set([
   'buildx',
   'container',
+  'context',
   'image',
   'network',
   'system',
@@ -590,6 +591,13 @@ function containerReason(
   if (words === null) return `may change container state (${head}: unrecognized global option)`
   const [first = '', second = ''] = words
   const verb = first === 'container' || first === 'image' ? second : first
+  if (
+    head === 'docker' &&
+    first === 'context' &&
+    /^(?:create|import|rm|remove|update|use)$/.test(second)
+  ) {
+    return `changes Docker context configuration (docker context ${second})`
+  }
   if (verb === 'run' || verb === 'create') {
     for (let i = 1; i < argv.length; i++) {
       const arg = argv[i] ?? ''
