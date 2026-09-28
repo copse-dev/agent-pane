@@ -533,19 +533,24 @@ export async function timelineEvidence(
   const out: RiskEvidence[] = []
   for (const event of events) {
     const issue = event.source?.issue
-    if (event.event !== 'cross-referenced' || issue === undefined || issue.number === number)
+    if (
+      event.event !== 'cross-referenced' ||
+      event.created_at === undefined ||
+      issue === undefined ||
+      issue.number === number
+    )
       continue
     const ref = `#${String(issue.number)}`
     // Date the reference, not the issue it came from: a comment on an older
-    // issue can still name this change inside the window.
-    const at = event.created_at ?? issue.created_at
-    const after = Date.parse(at) - Date.parse(mergedAt)
+    // issue can still name this change inside the window. Compare raw times,
+    // so a reference minutes after the merge does not round to day 0.
+    const after = Date.parse(event.created_at) - Date.parse(mergedAt)
     if (known.has(ref) || after <= 0 || after > windowDays * DAY_MS) continue
     out.push({
       source: 'reference',
       ref,
       title: issue.title,
-      daysAfterMerge: daysBetween(mergedAt, at),
+      daysAfterMerge: daysBetween(mergedAt, event.created_at),
       excerpt: '(cross-referenced from a comment or commit, not the description)',
       verdict: 'unverified',
     })

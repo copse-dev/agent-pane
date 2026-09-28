@@ -207,15 +207,17 @@ export type CaseTruth =
   | { readonly labelled: false; readonly pending: readonly string[] }
 
 /**
- * The outcome-based truth for one case. A change that has not merged has no
- * outcome to judge, and any unverified evidence leaves a merged one
- * unlabelled too. A functional regression the change caused is High; a
- * cosmetic regression, or a correction to something it left incomplete, is
- * Medium; nothing, or only unrelated mentions, is Low.
+ * The outcome-based truth for one merged case. An unmerged change has no
+ * outcome window, and any unverified evidence leaves a merged change
+ * unlabelled. A functional regression the change caused is High; a cosmetic
+ * regression, or a correction to something it left incomplete, is Medium;
+ * nothing, or only unrelated mentions, is Low.
  */
 export function caseTruth(riskCase: RiskCase): CaseTruth {
-  if (riskCase.state !== 'merged')
-    return { labelled: false, pending: [`not merged (${riskCase.state})`] }
+  if (riskCase.state !== 'merged') return { labelled: false, pending: ['not merged'] }
+  if (riskCase.mergedAt === null) {
+    return { labelled: false, pending: ['missing merge timestamp'] }
+  }
   const pending = riskCase.evidence
     .filter((item) => item.verdict === 'unverified')
     .map((item) => `${item.source} ${item.ref}`)

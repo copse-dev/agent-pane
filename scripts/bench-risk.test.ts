@@ -213,9 +213,12 @@ const NONE: SampleTier = 'none'
 
 describe('timelineEvidence', () => {
   it('reads cross-references from every page of a long timeline', async () => {
-    const crossRef = (number: number, day: string): unknown => ({
+    const crossRef = (number: number, day: string, sourceCreatedAt = day): unknown => ({
       event: 'cross-referenced',
-      source: { issue: { number, title: `Fix ${String(number)}`, created_at: day } },
+      created_at: day,
+      source: {
+        issue: { number, title: `Fix ${String(number)}`, created_at: sourceCreatedAt },
+      },
     })
     const filler = Array.from({ length: 99 }, () => ({ event: 'commented' }))
     const requested: string[] = []
@@ -268,6 +271,31 @@ describe('timelineEvidence', () => {
     assert.deepEqual(
       found.map((item) => [item.ref, item.daysAfterMerge]),
       [['#2', 1]],
+    )
+  })
+
+  it('uses when the cross-reference happened, not when its source issue was created', async () => {
+    const client: GitHubClient = {
+      get: () =>
+        Promise.resolve([
+          {
+            event: 'cross-referenced',
+            created_at: '2026-09-12T00:00:00Z',
+            source: {
+              issue: {
+                number: 201,
+                title: 'An older issue linked after the merge',
+                created_at: '2026-08-01T00:00:00Z',
+              },
+            },
+          },
+        ]),
+    }
+
+    const found = await timelineEvidence(client, 100, MERGED, 7, new Set())
+    assert.deepEqual(
+      found.map((item) => [item.ref, item.daysAfterMerge]),
+      [['#201', 2]],
     )
   })
 })
