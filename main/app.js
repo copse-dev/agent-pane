@@ -25245,6 +25245,23 @@ function handIcon(className = DEFAULT) {
     className
   );
 }
+function bellIcon(className = DEFAULT) {
+  return outlineIcon(
+    "bell",
+    [
+      "M10.27 21a2 2 0 0 0 3.46 0",
+      "M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33"
+    ],
+    className
+  );
+}
+function messageQuestionIcon(className = DEFAULT) {
+  return outlineIcon(
+    "message-circle-question",
+    ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    className
+  );
+}
 function banIcon(className = DEFAULT) {
   return outlineIcon(
     "ban",
@@ -66835,11 +66852,1285 @@ function setAttentionThreads(store2, source, threadIds) {
 function isThreadAwaitingAttention(threadId) {
   return union2.has(threadId);
 }
+function getAttentionThreadIds() {
+  return [...union2];
+}
 var bySource, union2;
 var init_attention = __esm({
   "src/renderer/controller/attention.ts"() {
     bySource = /* @__PURE__ */ new Map();
     union2 = /* @__PURE__ */ new Set();
+  }
+});
+
+// src/renderer/controller/activity-model.ts
+function truncateText(text2, max = WANT_MAX_CHARS) {
+  const flat = text2.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}\u2026`;
+}
+function threadName(thread) {
+  const title = thread?.title.trim();
+  return title && title.length > 0 ? title : UNTITLED_THREAD;
+}
+function requestThreadFields(threadId, byId) {
+  if (threadId === void 0) {
+    return { threadId: null, threadTitle: "No thread", projectId: null, projectName: null };
+  }
+  const thread = byId.get(threadId);
+  return {
+    threadId,
+    threadTitle: threadName(thread),
+    projectId: thread?.projectId ?? null,
+    projectName: thread?.projectName ?? null
+  };
+}
+function questionWant(questions) {
+  const first = questions[0] ?? "";
+  const extra = questions.length > 1 ? ` (+${String(questions.length - 1)} more)` : "";
+  return `${truncateText(first, WANT_MAX_CHARS - extra.length)}${extra}`;
+}
+function deriveActivity(input2) {
+  const byId = new Map(input2.threads.map((thread) => [thread.id, thread]));
+  const needsYou = [
+    ...input2.approvals.map((req) => ({
+      key: `approval:${req.id}`,
+      state: "needs-approval",
+      ...requestThreadFields(req.threadId, byId),
+      want: truncateText(req.title),
+      detail: req.body.trim() === "" ? null : truncateText(req.body),
+      requestId: req.id,
+      requestType: req.type,
+      approval: req,
+      since: req.receivedAt
+    })),
+    ...input2.questions.map((req) => ({
+      key: `question:${req.id}`,
+      state: "needs-answer",
+      ...requestThreadFields(req.threadId, byId),
+      want: questionWant(req.questions),
+      detail: null,
+      requestId: req.id,
+      requestType: null,
+      approval: null,
+      since: req.receivedAt
+    }))
+  ].sort((a3, b4) => (a3.since ?? 0) - (b4.since ?? 0));
+  const waitingThreads = new Set(needsYou.flatMap((row2) => row2.threadId ? [row2.threadId] : []));
+  const threadRow = (thread, state, want, since) => ({
+    key: `thread:${thread.id}`,
+    state,
+    threadId: thread.id,
+    threadTitle: threadName(thread),
+    projectId: thread.projectId,
+    projectName: thread.projectName,
+    want,
+    detail: null,
+    requestId: null,
+    requestType: null,
+    approval: null,
+    since
+  });
+  const working = [];
+  const recent = [];
+  for (const thread of input2.threads) {
+    if (waitingThreads.has(thread.id)) continue;
+    const run2 = input2.runs.get(thread.id);
+    if (thread.status === "running") {
+      working.push(
+        threadRow(
+          thread,
+          "working",
+          truncateText(run2?.activity ?? "Working\u2026"),
+          run2?.startedAt ?? null
+        )
+      );
+    } else {
+      const endedAt = run2?.endedAt ?? thread.unreadAt;
+      if (endedAt === void 0) continue;
+      recent.push(
+        thread.status === "error" ? threadRow(thread, "failed", "Ended with an error", endedAt) : threadRow(thread, "finished", "Finished", endedAt)
+      );
+    }
+  }
+  const newestFirst = (a3, b4) => (b4.since ?? Number.NEGATIVE_INFINITY) - (a3.since ?? Number.NEGATIVE_INFINITY) || a3.threadTitle.localeCompare(b4.threadTitle);
+  working.sort(newestFirst);
+  recent.sort((a3, b4) => a3.state === b4.state ? newestFirst(a3, b4) : a3.state === "failed" ? -1 : 1);
+  const groups = [
+    { id: "needs-you", label: GROUP_LABELS["needs-you"], rows: needsYou, total: needsYou.length },
+    { id: "working", label: GROUP_LABELS.working, rows: working, total: working.length },
+    {
+      id: "recent",
+      label: GROUP_LABELS.recent,
+      rows: recent.slice(0, RECENT_ROW_LIMIT),
+      total: recent.length
+    }
+  ];
+  return groups;
+}
+function collectActivityThreads(store2) {
+  const { projects, backgroundThreads } = store2.getState();
+  const out = /* @__PURE__ */ new Map();
+  for (const project2 of projects) {
+    const projectName = projectDisplayName(project2);
+    for (const thread of getSidebarThreads(store2, project2.id)) {
+      out.set(thread.id, {
+        id: thread.id,
+        title: thread.title,
+        status: thread.status,
+        ...thread.unreadAt !== void 0 ? { unreadAt: thread.unreadAt } : {},
+        projectId: project2.id,
+        projectName
+      });
+    }
+  }
+  for (const carried of backgroundThreads) {
+    const project2 = projects.find((p2) => p2.id === carried.projectId);
+    if (!project2 || carried.thread.archivedAt != null) continue;
+    out.set(carried.thread.id, {
+      id: carried.thread.id,
+      title: carried.thread.title,
+      status: carried.thread.status,
+      ...carried.thread.unreadAt !== void 0 ? { unreadAt: carried.thread.unreadAt } : {},
+      projectId: project2.id,
+      projectName: projectDisplayName(project2)
+    });
+  }
+  return [...out.values()];
+}
+function trackRunTimings(store2, now) {
+  const runs = /* @__PURE__ */ new Map();
+  const unsubs = [
+    store2.on("thread_status_changed", (threadId, status) => {
+      const previous = runs.get(threadId);
+      if (status === "running") {
+        if (previous?.startedAt !== void 0 && previous.endedAt === void 0) return;
+        runs.set(threadId, { startedAt: now() });
+        return;
+      }
+      if (status === "error" || previous?.startedAt !== void 0 && previous.endedAt === void 0) {
+        runs.set(threadId, { ...previous, endedAt: now(), activity: null });
+      }
+    }),
+    store2.on("agent_activity", (threadId, label) => {
+      const previous = runs.get(threadId);
+      if (!previous || previous.endedAt !== void 0) return;
+      runs.set(threadId, { ...previous, activity: label });
+    })
+  ];
+  return {
+    runs,
+    dispose: () => {
+      unsubs.forEach((unsub) => {
+        unsub();
+      });
+    }
+  };
+}
+function formatAge(elapsedMs) {
+  if (elapsedMs < MINUTE) return "now";
+  if (elapsedMs < HOUR) return `${String(Math.floor(elapsedMs / MINUTE))}m`;
+  if (elapsedMs < DAY) return `${String(Math.floor(elapsedMs / HOUR))}h`;
+  return `${String(Math.floor(elapsedMs / DAY))}d`;
+}
+function formatAgeLong(elapsedMs) {
+  const unit = (count, name) => `${String(count)} ${name}${count === 1 ? "" : "s"}`;
+  if (elapsedMs < MINUTE) return "just now";
+  if (elapsedMs < HOUR) return unit(Math.floor(elapsedMs / MINUTE), "minute");
+  if (elapsedMs < DAY) return unit(Math.floor(elapsedMs / HOUR), "hour");
+  return unit(Math.floor(elapsedMs / DAY), "day");
+}
+var RECENT_ROW_LIMIT, WANT_MAX_CHARS, UNTITLED_THREAD, GROUP_LABELS, MINUTE, HOUR, DAY;
+var init_activity_model = __esm({
+  "src/renderer/controller/activity-model.ts"() {
+    init_projects();
+    RECENT_ROW_LIMIT = 10;
+    WANT_MAX_CHARS = 140;
+    UNTITLED_THREAD = "New thread";
+    GROUP_LABELS = {
+      "needs-you": "Needs you",
+      working: "Working",
+      recent: "Recently finished"
+    };
+    MINUTE = 6e4;
+    HOUR = 60 * MINUTE;
+    DAY = 24 * HOUR;
+  }
+});
+
+// src/renderer/views/approval-dialog.ts
+function approvalCopyElement(className, text2) {
+  const root = el("div", { class: className });
+  let list = null;
+  let lines = [];
+  const flushLines = () => {
+    if (lines.length > 0) root.append(lines.join("\n"));
+    lines = [];
+  };
+  for (const line of text2.split("\n")) {
+    if (line.startsWith(REASON_BULLET)) {
+      flushLines();
+      if (!list) {
+        list = el("ul", { class: "approval-reasons" });
+        root.append(list);
+      }
+      list.append(el("li", {}, line.slice(REASON_BULLET.length)));
+    } else {
+      list = null;
+      lines.push(line);
+    }
+  }
+  flushLines();
+  return root;
+}
+function approvalRequestDetails(req) {
+  const parts = [];
+  if (req.bodyAdvice) parts.push(approvalCopyElement("approval-advice", req.bodyAdvice));
+  parts.push(
+    el(
+      "div",
+      { class: req.type === "shell" ? "approval-body approval-body-code" : "approval-body" },
+      req.body
+    )
+  );
+  if (req.bodyFooter) parts.push(approvalCopyElement("approval-footer", req.bodyFooter));
+  return parts;
+}
+function mergeApprovalAdvice(values) {
+  const unique = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  if (unique.length <= 1) return unique[0];
+  const lines = unique.map((value) => value.split("\n"));
+  const sharedLead = lines[0]?.[0];
+  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
+    return unique.join("\n\n");
+  }
+  const merged = [sharedLead];
+  const seenDetails = /* @__PURE__ */ new Set();
+  for (const parts of lines) {
+    const details = parts.slice(1).join("\n");
+    if (!details || seenDetails.has(details)) continue;
+    seenDetails.add(details);
+    merged.push(details);
+  }
+  return merged.join("\n");
+}
+function mountApprovalDialog(api2, store2, options = {}) {
+  const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
+  const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
+  const setTimer = options.setTimer ?? defaultTimer;
+  const rememberLabel = el(
+    "label",
+    { class: "approval-remember" },
+    el("input", { type: "checkbox", class: "approval-remember-input" }),
+    "Always allow this tool"
+  );
+  const turnTreeLeaseLabel = el(
+    "label",
+    { class: "approval-remember approval-turn-tree" },
+    el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
+    "Allow retries for this task (up to 10, for 15 minutes)"
+  );
+  const heading = el("h3", { class: "approval-heading" });
+  const items = el("div", { class: "approval-items" });
+  const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
+  const approveOnceButton = el("button", {
+    type: "button",
+    class: "ui-btn ui-btn-secondary approval-approve-once",
+    hidden: ""
+  });
+  const approveButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary approval-approve" },
+    "Approve"
+  );
+  const rejectButton = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary approval-reject" },
+    "Reject"
+  );
+  const dialog2 = el("dialog", { id: "approval-dialog" });
+  dialog2.append(
+    heading,
+    items,
+    rememberLabel,
+    turnTreeLeaseLabel,
+    uiActions(approveOnceButton, approveButton, rejectButton, {
+      className: "approval-buttons",
+      align: "end"
+    })
+  );
+  const chatPane = document.getElementById("pane-chat") ?? document.body;
+  chatPane.append(chatScrim, dialog2);
+  const rememberInput = qsRequired(rememberLabel, ".approval-remember-input");
+  const turnTreeLeaseInput = qsRequired(
+    turnTreeLeaseLabel,
+    ".approval-turn-tree-input"
+  );
+  const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1];
+  if (!turnTreeLeaseTextNode) throw new Error("approval dialog missing lease label text node");
+  const turnTreeLeaseText = turnTreeLeaseTextNode;
+  const rememberLabelTextNode = rememberLabel.childNodes[1];
+  if (!rememberLabelTextNode) throw new Error("approval dialog missing remember label text node");
+  const rememberLabelText = rememberLabelTextNode;
+  const changeListeners = /* @__PURE__ */ new Set();
+  let arrivals = 0;
+  const queue = [];
+  let batch = [];
+  let active2 = false;
+  let coalesceScheduled = false;
+  let cancelCoalesce = null;
+  let cancelSettle = null;
+  let detailsExpanded = false;
+  function closeDialog() {
+    dialog2.close();
+    chatScrim.hidden = true;
+  }
+  function isWindowHidden() {
+    return typeof document !== "undefined" && document.visibilityState === "hidden";
+  }
+  function isShowable(req) {
+    if (isWindowHidden()) return false;
+    if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
+    return !req.threadId || req.threadId === store2.getState().activeThreadId;
+  }
+  function syncAttention() {
+    const activeThreadId = store2.getState().activeThreadId;
+    const hidden = isWindowHidden();
+    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
+    setAttentionThreads(store2, "approval", waiting);
+    for (const listener of [...changeListeners]) listener();
+  }
+  function drainShowableIntoBatch() {
+    let moved = 0;
+    for (let i2 = 0; i2 < queue.length; ) {
+      const req = queue[i2];
+      if (req && isShowable(req)) {
+        queue.splice(i2, 1);
+        batch.push(req);
+        moved++;
+      } else {
+        i2++;
+      }
+    }
+    return moved;
+  }
+  function rememberGrant() {
+    if (batch.length === 0) return null;
+    if (!batch.every((req) => req.allowRemember)) return null;
+    const label = batch[0]?.rememberLabel;
+    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
+    return label;
+  }
+  function soloRequest() {
+    return batch.length === 1 ? batch[0] ?? null : null;
+  }
+  function approveOnceGrant() {
+    return soloRequest()?.approveOnceLabel ?? "";
+  }
+  function detailsToggle() {
+    const toggle = el(
+      "button",
+      {
+        class: "approval-details-toggle",
+        type: "button",
+        "aria-expanded": detailsExpanded ? "true" : "false"
+      },
+      detailsExpanded ? "Hide details" : "Show details"
+    );
+    toggle.addEventListener("click", () => {
+      detailsExpanded = !detailsExpanded;
+      renderBatch();
+    });
+    return toggle;
+  }
+  function renderBatch() {
+    const count = batch.length;
+    const collapseDetails = soloRequest()?.collapseDetails === true;
+    const uniqueTitles = new Set(batch.map((req) => req.title));
+    const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
+    const showRowTitles = count > 1 && sharedTitle === null;
+    const presentationGroups = [];
+    for (const req of batch) {
+      const previousGroup = presentationGroups.at(-1);
+      const previous = previousGroup?.[0];
+      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
+        previousGroup.push(req);
+      } else {
+        presentationGroups.push([req]);
+      }
+    }
+    heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
+    const requestBody = (req) => {
+      const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
+      const body = el("div", { class: bodyClass }, req.body);
+      if (collapseDetails && !detailsExpanded) body.hidden = true;
+      return body;
+    };
+    items.replaceChildren(
+      ...presentationGroups.map((group) => {
+        const firstRequest = group[0];
+        if (!firstRequest) throw new Error("approval presentation group must not be empty");
+        const rowChildren = [];
+        if (showRowTitles) {
+          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
+        }
+        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
+        if (advice) {
+          rowChildren.push(approvalCopyElement("approval-advice", advice));
+        }
+        if (collapseDetails) rowChildren.push(detailsToggle());
+        if (group.length > 1) {
+          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
+          rowChildren.push(
+            el(
+              "div",
+              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
+              ...group.map((req) => {
+                const body = requestBody(req);
+                body.setAttribute("role", "listitem");
+                return body;
+              })
+            )
+          );
+        } else {
+          rowChildren.push(requestBody(firstRequest));
+        }
+        if (firstRequest.bodyFooter) {
+          rowChildren.push(approvalCopyElement("approval-footer", firstRequest.bodyFooter));
+        }
+        return el("div", { class: "approval-item" }, ...rowChildren);
+      })
+    );
+    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
+    rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
+    const onceLabel = approveOnceGrant();
+    const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
+    approveOnceButton.hidden = !showOnce;
+    if (showOnce) approveOnceButton.textContent = onceLabel;
+    const grant = onceLabel !== "" ? null : rememberGrant();
+    rememberLabel.hidden = grant === null;
+    if (grant === null) rememberInput.checked = false;
+    else rememberLabelText.textContent = grant;
+    const leaseLabel = batch[0]?.turnTreeLeaseLabel;
+    const leaseSubject = batch[0]?.turnTreeLeaseSubject;
+    const offersTurnTreeLease = batch.length > 0 && leaseLabel !== void 0 && leaseSubject !== void 0 && batch.every(
+      (request) => request.allowTurnTreeLease === true && request.turnTreeLeaseLabel === leaseLabel && request.turnTreeLeaseSubject === leaseSubject
+    );
+    turnTreeLeaseLabel.hidden = !offersTurnTreeLease;
+    if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false;
+    else {
+      turnTreeLeaseText.textContent = leaseLabel;
+      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true);
+    }
+  }
+  function clearSettle() {
+    if (cancelSettle) {
+      cancelSettle();
+      cancelSettle = null;
+    }
+    approveButton.disabled = false;
+    approveOnceButton.disabled = false;
+  }
+  function startSettle() {
+    clearSettle();
+    approveButton.disabled = true;
+    approveOnceButton.disabled = true;
+    cancelSettle = setTimer(() => {
+      cancelSettle = null;
+      approveButton.disabled = false;
+      approveOnceButton.disabled = false;
+    }, settleMs);
+  }
+  function show2() {
+    if (active2) return;
+    if (cancelCoalesce) {
+      cancelCoalesce();
+      cancelCoalesce = null;
+    }
+    coalesceScheduled = false;
+    if (drainShowableIntoBatch() === 0) {
+      syncAttention();
+      return;
+    }
+    clearSettle();
+    rememberInput.checked = false;
+    detailsExpanded = false;
+    renderBatch();
+    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
+    if (shouldShowModal) {
+      dialog2.showModal();
+    } else {
+      chatScrim.hidden = false;
+      dialog2.show();
+    }
+    active2 = true;
+    syncAttention();
+  }
+  function scheduleShow2() {
+    if (active2 || coalesceScheduled) return;
+    if (!queue.some(isShowable)) {
+      syncAttention();
+      return;
+    }
+    coalesceScheduled = true;
+    cancelCoalesce = setTimer(() => {
+      coalesceScheduled = false;
+      cancelCoalesce = null;
+      show2();
+    }, coalesceMs);
+  }
+  function withdrawUnshowable() {
+    if (!active2) return;
+    const withdrawn = batch.filter((req) => !isShowable(req));
+    if (withdrawn.length === 0) return;
+    batch = batch.filter((req) => isShowable(req));
+    queue.unshift(...withdrawn);
+    if (batch.length === 0) {
+      closeDialog();
+      active2 = false;
+      clearSettle();
+      return;
+    }
+    detailsExpanded = false;
+    renderBatch();
+    startSettle();
+  }
+  function appendToOpen() {
+    if (!active2) return;
+    if (drainShowableIntoBatch() > 0) {
+      renderBatch();
+      startSettle();
+    }
+    syncAttention();
+  }
+  function removeCancelled(id) {
+    const queueIdx = queue.findIndex((req) => req.id === id);
+    if (queueIdx >= 0) queue.splice(queueIdx, 1);
+    const wasInBatch = batch.some((req) => req.id === id);
+    batch = batch.filter((req) => req.id !== id);
+    if (wasInBatch && active2) {
+      if (batch.length === 0) {
+        closeDialog();
+        active2 = false;
+        clearSettle();
+        show2();
+      } else {
+        renderBatch();
+        startSettle();
+      }
+    }
+    syncAttention();
+  }
+  function resolve(approved, remember) {
+    if (!active2 || batch.length === 0) return;
+    const answered = batch;
+    const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
+    closeDialog();
+    batch = [];
+    active2 = false;
+    turnTreeLeaseInput.checked = false;
+    clearSettle();
+    for (const req of answered) {
+      void api2.approval.respond(req.id, approved, remember, grantScope);
+    }
+    show2();
+  }
+  api2.agent.onApprovalRequest(
+    ({
+      id,
+      threadId,
+      title,
+      body,
+      bodyAdvice,
+      bodyFooter,
+      type,
+      allowRemember,
+      rememberLabel: rememberLabel2,
+      collapseDetails,
+      approveOnceLabel,
+      showWhileSettingsOpen,
+      allowTurnTreeLease,
+      turnTreeLeaseLabel: turnTreeLeaseLabel2,
+      turnTreeLeaseDefault,
+      turnTreeLeaseSubject
+    }) => {
+      const pending = {
+        id,
+        threadId,
+        title,
+        body,
+        bodyAdvice,
+        bodyFooter,
+        type,
+        allowRemember,
+        rememberLabel: rememberLabel2,
+        collapseDetails,
+        approveOnceLabel,
+        showWhileSettingsOpen,
+        allowTurnTreeLease,
+        turnTreeLeaseLabel: turnTreeLeaseLabel2,
+        turnTreeLeaseDefault,
+        turnTreeLeaseSubject,
+        receivedAt: Date.now(),
+        arrival: arrivals++
+      };
+      queue.push(pending);
+      if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
+        queue.unshift(...batch);
+        batch = [];
+        closeDialog();
+        active2 = false;
+        clearSettle();
+        show2();
+      } else if (active2) appendToOpen();
+      else scheduleShow2();
+      syncAttention();
+    }
+  );
+  api2.agent.onApprovalCancelled(({ id }) => {
+    removeCancelled(id);
+  });
+  store2.on("threads_changed", () => {
+    withdrawUnshowable();
+    if (active2) appendToOpen();
+    else show2();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      withdrawUnshowable();
+      syncAttention();
+    } else show2();
+  });
+  onSettingsDialogClose(() => {
+    show2();
+  });
+  approveButton.addEventListener("click", () => {
+    if (approveButton.disabled) return;
+    resolve(true, approveOnceGrant() !== "" ? true : rememberInput.checked);
+  });
+  approveOnceButton.addEventListener("click", () => {
+    if (approveOnceButton.disabled) return;
+    resolve(true, false);
+  });
+  rejectButton.addEventListener("click", () => {
+    resolve(false, false);
+  });
+  return {
+    pending: () => [...batch, ...queue].sort((a3, b4) => a3.arrival - b4.arrival).map((req) => ({
+      id: req.id,
+      threadId: req.threadId,
+      title: req.title,
+      body: req.body,
+      bodyAdvice: req.bodyAdvice,
+      bodyFooter: req.bodyFooter,
+      type: req.type,
+      receivedAt: req.receivedAt
+    })),
+    answerOnce: (id, approved) => {
+      if (!batch.some((req) => req.id === id) && !queue.some((req) => req.id === id)) return false;
+      removeCancelled(id);
+      void api2.approval.respond(id, approved, false, "once");
+      return true;
+    },
+    onChange: (listener) => {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    }
+  };
+}
+var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
+var init_approval_dialog = __esm({
+  "src/renderer/views/approval-dialog.ts"() {
+    init_helpers();
+    init_settings_dialog();
+    init_attention();
+    init_actions();
+    APPROVAL_COALESCE_MS = 120;
+    APPROVAL_SETTLE_MS = 500;
+    REASON_BULLET = "\u2022 ";
+    defaultTimer = (fn2, ms2) => {
+      const handle = setTimeout(fn2, ms2);
+      return () => {
+        clearTimeout(handle);
+      };
+    };
+  }
+});
+
+// src/renderer/views/activity-panel.ts
+function stateGlyph(state) {
+  const className = "ui-icon ui-icon-sm activity-glyph";
+  switch (state) {
+    case "needs-approval":
+      return handIcon(className);
+    case "needs-answer":
+      return messageQuestionIcon(className);
+    case "working":
+      return runningStatusIcon(`${className} activity-glyph-running`);
+    case "failed":
+      return warningIcon(className);
+    case "finished":
+      return checkIcon(className);
+  }
+}
+function openActivityPanel() {
+  openActive?.();
+}
+function mountActivityPanel(api2, store2, sources3, deps = {}) {
+  const now = deps.now ?? Date.now;
+  const setTimer = deps.setTimer ?? defaultTimer2;
+  const timings = trackRunTimings(store2, now);
+  const { dialog: dialog2, open: open2, close, isOpen } = createOverlayDialog({
+    id: "activity-panel",
+    className: "activity-panel-overlay"
+  });
+  dialog2.setAttribute("aria-labelledby", "activity-panel-title");
+  dialog2.setAttribute("aria-describedby", "activity-panel-summary");
+  const closeButton = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-ghost activity-panel-close",
+      "aria-label": "Close activity"
+    },
+    closeIcon()
+  );
+  closeButton.addEventListener("click", close);
+  const summary = el("p", { id: "activity-panel-summary", class: "activity-panel-summary" });
+  const list = el("nav", { class: "activity-list", "aria-label": "Threads" });
+  const detail = el("section", {
+    class: "activity-detail",
+    "aria-labelledby": "activity-detail-title"
+  });
+  const body = el("div", { class: "activity-panel-body" }, list, detail);
+  const status = el("p", {
+    class: "activity-panel-status",
+    role: "status",
+    "aria-live": "polite"
+  });
+  dialog2.append(
+    el(
+      "div",
+      { class: "activity-panel-shell" },
+      el(
+        "header",
+        { class: "activity-panel-header" },
+        el("h2", { id: "activity-panel-title" }, "Activity"),
+        summary,
+        closeButton
+      ),
+      body,
+      el(
+        "footer",
+        { class: "activity-panel-footer" },
+        el("span", {}, "\u2191 \u2193 choose \xB7 Tab to act \xB7 Esc closes"),
+        status
+      )
+    )
+  );
+  let renderScheduled = false;
+  let cancelRender = null;
+  let lastRenderAt = Number.NEGATIVE_INFINITY;
+  let cancelAgeTick = null;
+  let needsYouSignature = null;
+  let cancelSettle = null;
+  let settling = false;
+  let selectedKey = null;
+  let selectedIndex = 0;
+  let shownKey = null;
+  function canOpen(row2) {
+    if (!row2.threadId || !row2.projectId) return false;
+    const { projectId } = row2;
+    return store2.getState().projects.some((project2) => project2.id === projectId);
+  }
+  function openThread(row2) {
+    if (!row2.threadId || !row2.projectId || !canOpen(row2)) return;
+    close();
+    switchProjectThread(store2, api2, row2.projectId, row2.threadId);
+  }
+  function ageText(row2, at3) {
+    if (row2.since === null) return null;
+    const long = formatAgeLong(Math.max(0, at3 - row2.since));
+    const verb = AGE_VERB[row2.state];
+    return long === "just now" ? `${verb} just now` : `${verb} ${long} ago`;
+  }
+  function rowLabel(row2, at3) {
+    const want = row2.detail ? `${row2.want} \u2014 ${row2.detail}` : row2.want;
+    const parts = [
+      `${STATE_LONG[row2.state]}: ${want}`,
+      row2.projectName ? `${row2.threadTitle}, ${row2.projectName}` : row2.threadTitle
+    ];
+    const age = ageText(row2, at3);
+    if (age) parts.push(age);
+    return parts.join(". ");
+  }
+  function answerApproval(row2, approved) {
+    if (!row2.requestId) return;
+    for (const button2 of detail.querySelectorAll(
+      ".activity-approve, .activity-reject"
+    )) {
+      button2.disabled = true;
+      button2.dataset["answered"] = "true";
+    }
+    const sent = sources3.approvals.answerOnce(row2.requestId, approved);
+    status.textContent = !sent ? "That request was already answered." : approved ? `Approved once for ${row2.threadTitle}.` : `Rejected for ${row2.threadTitle}.`;
+    scheduleRender();
+  }
+  function button(className, control, label, onClick, ariaLabel) {
+    const node2 = el(
+      "button",
+      {
+        type: "button",
+        class: `ui-btn ${className}`,
+        "data-control": control,
+        ...ariaLabel ? { "aria-label": ariaLabel } : {}
+      },
+      label
+    );
+    node2.addEventListener("click", () => {
+      if (!node2.disabled) onClick();
+    });
+    return node2;
+  }
+  function openThreadButton(row2) {
+    const node2 = button("ui-btn-ghost activity-open-thread", "open-thread", "Open thread", () => {
+      openThread(row2);
+    });
+    node2.disabled = !canOpen(row2);
+    return node2;
+  }
+  function detailContent(row2) {
+    if (row2.state === "needs-approval" && row2.approval) {
+      const request = row2.approval;
+      return [
+        el(
+          "div",
+          {
+            class: "activity-review",
+            role: "region",
+            "aria-label": `Approval request: ${request.title}`
+          },
+          el("p", { class: "activity-review-title" }, request.title),
+          ...approvalRequestDetails(request)
+        )
+      ];
+    }
+    if (row2.state === "needs-answer") {
+      const asked = sources3.questions.pending().find((request) => request.id === row2.requestId);
+      const questions = asked?.questions ?? [row2.want];
+      return [
+        el(
+          "ol",
+          { class: "activity-questions" },
+          ...questions.map((question) => el("li", {}, question))
+        ),
+        el(
+          "p",
+          { class: "activity-detail-note" },
+          "Answer in the thread, where the question is waiting for you."
+        )
+      ];
+    }
+    if (row2.state === "working") {
+      return [
+        el("p", { class: "activity-detail-label" }, "Latest activity"),
+        el("p", { class: "activity-detail-text" }, row2.want)
+      ];
+    }
+    return [el("p", { class: "activity-detail-text" }, row2.want)];
+  }
+  function detailActions(row2) {
+    const actions = [openThreadButton(row2), el("span", { class: "activity-spacer" })];
+    if (row2.state === "needs-approval" && row2.approval) {
+      const title = row2.approval.title;
+      actions.push(
+        button(
+          "ui-btn-secondary activity-reject",
+          "reject",
+          "Reject",
+          () => {
+            answerApproval(row2, false);
+          },
+          `Reject: ${title} (${row2.threadTitle})`
+        )
+      );
+      const approve = button(
+        "ui-btn-primary activity-approve",
+        "approve",
+        "Approve once",
+        () => {
+          answerApproval(row2, true);
+        },
+        `Approve once: ${title} (${row2.threadTitle})`
+      );
+      approve.disabled = settling;
+      actions.push(approve);
+    } else if (row2.state === "needs-answer") {
+      const answer = button("ui-btn-primary activity-answer", "answer", "Answer in thread", () => {
+        if (row2.threadId === null) close();
+        else openThread(row2);
+      });
+      answer.disabled = row2.threadId !== null && !canOpen(row2);
+      actions.push(answer);
+    }
+    return el("div", { class: "activity-detail-actions" }, ...actions);
+  }
+  function renderDetail(row2, at3) {
+    if (!row2) {
+      detail.replaceChildren();
+      detail.hidden = true;
+      return;
+    }
+    detail.hidden = false;
+    detail.dataset["rowKey"] = row2.key;
+    detail.dataset["state"] = row2.state;
+    const meta3 = [row2.projectName, ageText(row2, at3)].filter((part) => part !== null).join(" \xB7 ");
+    detail.replaceChildren(
+      el(
+        "header",
+        { class: "activity-detail-header" },
+        el(
+          "p",
+          { class: "activity-detail-meta" },
+          el("span", { class: "activity-detail-state" }, STATE_LONG[row2.state]),
+          meta3
+        ),
+        el("h3", { id: "activity-detail-title", class: "activity-detail-title" }, row2.threadTitle)
+      ),
+      el("div", { class: "activity-detail-body" }, ...detailContent(row2)),
+      detailActions(row2)
+    );
+  }
+  function rowElement(row2, at3) {
+    const elapsed = row2.since === null ? null : Math.max(0, at3 - row2.since);
+    const selected = row2.key === selectedKey;
+    const second = el(
+      "span",
+      { class: "activity-row-second" },
+      el("span", { class: "activity-state" }, STATE_SHORT[row2.state])
+    );
+    if (row2.state !== "failed" && row2.state !== "finished") {
+      second.append(
+        el(
+          "span",
+          {
+            class: row2.requestType === "shell" && row2.detail ? "activity-want-text activity-want-code" : "activity-want-text"
+          },
+          row2.requestType === "shell" && row2.detail ? row2.detail : row2.want
+        )
+      );
+    }
+    const opener = el(
+      "button",
+      {
+        type: "button",
+        class: "activity-row-open",
+        "data-control": "open",
+        tabindex: selected ? "0" : "-1",
+        "aria-label": rowLabel(row2, at3),
+        ...selected ? { "aria-current": "true" } : {}
+      },
+      stateGlyph(row2.state),
+      el("span", { class: "activity-thread", title: row2.threadTitle }, row2.threadTitle),
+      elapsed === null || row2.since === null ? el("span", { class: "activity-age" }) : el(
+        "time",
+        { class: "activity-age", datetime: new Date(row2.since).toISOString() },
+        formatAge(elapsed)
+      ),
+      second,
+      el("span", { class: "activity-project" }, row2.projectName ?? "")
+    );
+    opener.addEventListener("click", () => {
+      select(row2.key);
+    });
+    return el(
+      "li",
+      {
+        class: "activity-row",
+        "data-row-key": row2.key,
+        "data-state": row2.state,
+        ...selected ? { "data-selected": "true" } : {},
+        ...row2.threadId ? { "data-thread-id": row2.threadId } : {},
+        ...row2.requestId ? { "data-request-id": row2.requestId } : {}
+      },
+      opener
+    );
+  }
+  function groupElement(group, at3) {
+    const titleId = `activity-group-${group.id}`;
+    const hidden = group.total - group.rows.length;
+    const count = hidden > 0 ? `${String(group.rows.length)} of ${String(group.total)}` : String(group.total);
+    return el(
+      "section",
+      { class: "activity-group", "data-group": group.id },
+      el(
+        "h4",
+        { id: titleId, class: "activity-group-title" },
+        group.label,
+        el("span", { class: "activity-group-count" }, count)
+      ),
+      el(
+        "ul",
+        { class: "activity-rows", role: "list", "aria-labelledby": titleId },
+        ...group.rows.map((row2) => rowElement(row2, at3))
+      )
+    );
+  }
+  function emptyState() {
+    return el(
+      "div",
+      { class: "activity-empty" },
+      el("p", { class: "activity-empty-title" }, "Nothing is running or waiting on you."),
+      el(
+        "p",
+        { class: "activity-empty-body" },
+        "When an agent stops for your approval or asks a question, it is listed here first, and you can answer an approval without leaving the thread you are in. Agents that are working come next, then runs that recently finished or failed."
+      )
+    );
+  }
+  function rowOpeners() {
+    return [...list.querySelectorAll(".activity-row-open")];
+  }
+  function selectedOpener() {
+    return rowOpeners().find((opener) => opener.getAttribute("aria-current") === "true");
+  }
+  function captureFocus() {
+    const active2 = document.activeElement;
+    if (!(active2 instanceof HTMLElement)) return null;
+    if (list.contains(active2)) return { area: "list" };
+    if (detail.contains(active2)) {
+      return {
+        area: "detail",
+        key: detail.dataset["rowKey"] ?? "",
+        control: active2.dataset["control"] ?? ""
+      };
+    }
+    return null;
+  }
+  function restoreFocus(spot) {
+    if (!spot) return;
+    if (spot.area === "detail" && spot.key === selectedKey) {
+      const control = detail.querySelector(`[data-control="${spot.control}"]`);
+      if (control && !control.disabled) {
+        control.focus();
+        return;
+      }
+    }
+    const opener = selectedOpener();
+    if (opener) opener.focus();
+    else closeButton.focus();
+  }
+  function armSettle() {
+    cancelSettle?.();
+    settling = true;
+    for (const approve of detail.querySelectorAll(".activity-approve")) {
+      approve.disabled = true;
+    }
+    cancelSettle = setTimer(() => {
+      cancelSettle = null;
+      settling = false;
+      for (const approve of detail.querySelectorAll(".activity-approve")) {
+        if (!approve.dataset["answered"]) approve.disabled = false;
+      }
+    }, APPROVAL_SETTLE_MS);
+  }
+  function render() {
+    renderScheduled = false;
+    cancelRender = null;
+    const at3 = now();
+    lastRenderAt = at3;
+    const focus = captureFocus();
+    const groups = deriveActivity({
+      threads: collectActivityThreads(store2),
+      approvals: sources3.approvals.pending(),
+      questions: sources3.questions.pending(),
+      runs: timings.runs
+    });
+    const needsYou = groups.find((group) => group.id === "needs-you");
+    const working = groups.find((group) => group.id === "working");
+    const signature = needsYou?.rows.map((row2) => row2.key).join("\n") ?? "";
+    const listChanged = needsYouSignature !== null && signature !== needsYouSignature;
+    needsYouSignature = signature;
+    const rows = groups.flatMap((group) => group.rows);
+    let selected = rows.find((row2) => row2.key === selectedKey);
+    if (!selected) {
+      selected = rows[Math.min(selectedIndex, rows.length - 1)];
+      selectedKey = selected?.key ?? null;
+    }
+    selectedIndex = selected ? rows.indexOf(selected) : 0;
+    if (listChanged || selectedKey !== shownKey && selected?.state === "needs-approval") {
+      armSettle();
+    }
+    shownKey = selectedKey;
+    const needCount = needsYou?.total ?? 0;
+    const workCount = working?.total ?? 0;
+    summary.textContent = needCount === 0 && workCount === 0 ? "Threads in the projects open this session, most urgent first." : `${needCount === 0 ? "Nothing needs" : `${String(needCount)} ${needCount === 1 ? "needs" : "need"}`} you \xB7 ${String(workCount)} working`;
+    const populated = groups.filter((group) => group.rows.length > 0);
+    if (populated.length === 0) {
+      list.hidden = true;
+      list.replaceChildren();
+      body.dataset["empty"] = "true";
+      detail.hidden = false;
+      detail.replaceChildren(emptyState());
+      delete detail.dataset["rowKey"];
+      delete detail.dataset["state"];
+    } else {
+      list.hidden = false;
+      delete body.dataset["empty"];
+      const children = [];
+      if (!needsYou || needsYou.rows.length === 0) {
+        children.push(el("p", { class: "activity-quiet" }, "Nothing needs you right now."));
+      }
+      children.push(...populated.map((group) => groupElement(group, at3)));
+      list.replaceChildren(...children);
+      renderDetail(selected, at3);
+    }
+    dialog2.dataset["needsYou"] = String(needCount);
+    restoreFocus(focus);
+  }
+  function select(rowKey2) {
+    if (rowKey2 !== selectedKey) {
+      selectedKey = rowKey2;
+      renderNow();
+    }
+    selectedOpener()?.focus();
+  }
+  function renderNow() {
+    cancelRender?.();
+    render();
+  }
+  function scheduleRender() {
+    if (!isOpen() || renderScheduled) return;
+    renderScheduled = true;
+    const wait = Math.max(0, lastRenderAt + ACTIVITY_RENDER_INTERVAL_MS - now());
+    cancelRender = setTimer(render, wait);
+  }
+  function tickAges() {
+    cancelAgeTick = setTimer(() => {
+      cancelAgeTick = null;
+      if (!isOpen()) return;
+      scheduleRender();
+      tickAges();
+    }, ACTIVITY_AGE_REFRESH_MS);
+  }
+  function moveSelection(event) {
+    const openers = rowOpeners();
+    if (openers.length === 0) return;
+    const current = event.target instanceof Element ? event.target.closest(".activity-row") : null;
+    const opener = current?.querySelector(".activity-row-open");
+    const index = opener ? openers.indexOf(opener) : -1;
+    let next;
+    switch (event.key) {
+      case "ArrowDown":
+        next = index < 0 ? 0 : Math.min(openers.length - 1, index + 1);
+        break;
+      case "ArrowUp":
+        next = index < 0 ? 0 : Math.max(0, index - 1);
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = openers.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const target = openers[next]?.closest(".activity-row")?.dataset["rowKey"];
+    if (target) select(target);
+  }
+  list.addEventListener("keydown", moveSelection);
+  const onChange = () => {
+    scheduleRender();
+  };
+  sources3.approvals.onChange(onChange);
+  sources3.questions.onChange(onChange);
+  store2.on("threads_changed", onChange);
+  store2.on("thread_status_changed", onChange);
+  store2.on("projects_changed", onChange);
+  store2.on("agent_activity", onChange);
+  dialog2.addEventListener("close", () => {
+    cancelRender?.();
+    cancelRender = null;
+    renderScheduled = false;
+    cancelAgeTick?.();
+    cancelAgeTick = null;
+    cancelSettle?.();
+    cancelSettle = null;
+    settling = false;
+    needsYouSignature = null;
+    selectedKey = null;
+    selectedIndex = 0;
+    shownKey = null;
+    status.textContent = "";
+  });
+  const panel = {
+    open: () => {
+      if (isOpen()) return;
+      open2();
+      needsYouSignature = null;
+      selectedKey = null;
+      selectedIndex = 0;
+      shownKey = null;
+      render();
+      const first = selectedOpener();
+      if (first) first.focus();
+      else closeButton.focus();
+      tickAges();
+    },
+    close,
+    isOpen
+  };
+  openActive = panel.open;
+  return panel;
+}
+var ACTIVITY_RENDER_INTERVAL_MS, ACTIVITY_AGE_REFRESH_MS, STATE_SHORT, STATE_LONG, AGE_VERB, openActive, defaultTimer2;
+var init_activity_panel = __esm({
+  "src/renderer/views/activity-panel.ts"() {
+    init_helpers();
+    init_icons();
+    init_projects();
+    init_activity_model();
+    init_dialog_shell();
+    init_approval_dialog();
+    ACTIVITY_RENDER_INTERVAL_MS = 250;
+    ACTIVITY_AGE_REFRESH_MS = 3e4;
+    STATE_SHORT = {
+      "needs-approval": "Approval",
+      "needs-answer": "Question",
+      working: "Running",
+      failed: "Failed",
+      finished: "Done"
+    };
+    STATE_LONG = {
+      "needs-approval": "Needs approval",
+      "needs-answer": "Needs an answer",
+      working: "Running",
+      failed: "Failed",
+      finished: "Finished"
+    };
+    AGE_VERB = {
+      "needs-approval": "waiting",
+      "needs-answer": "waiting",
+      working: "started",
+      failed: "ended",
+      finished: "ended"
+    };
+    openActive = null;
+    defaultTimer2 = (fn2, ms2) => {
+      const handle = setTimeout(fn2, ms2);
+      return () => {
+        clearTimeout(handle);
+      };
+    };
   }
 });
 
@@ -67377,7 +68668,39 @@ function mountProjectsPane(root, store2, api2) {
     },
     plusIcon("ui-icon ui-icon-sm")
   );
-  const header = el("div", { class: "pane-projects-header" }, title, searchToggle, addBtn);
+  const activityCount = el("span", { class: "projects-activity-count", hidden: true });
+  const activityBtn = el(
+    "button",
+    {
+      class: "projects-activity-btn",
+      "aria-label": "Activity",
+      "data-tooltip": "Activity: what needs you and what is running"
+    },
+    bellIcon("ui-icon ui-icon-sm"),
+    activityCount
+  );
+  activityBtn.addEventListener("click", () => {
+    openActivityPanel();
+  });
+  const syncActivityButton = () => {
+    const waiting = getAttentionThreadIds().length;
+    activityBtn.classList.toggle("has-attention", waiting > 0);
+    activityCount.hidden = waiting === 0;
+    activityCount.textContent = waiting > 0 ? String(waiting) : "";
+    activityBtn.setAttribute(
+      "aria-label",
+      waiting === 0 ? "Activity" : `Activity: ${String(waiting)} ${waiting === 1 ? "thread needs" : "threads need"} you`
+    );
+  };
+  syncActivityButton();
+  const header = el(
+    "div",
+    { class: "pane-projects-header" },
+    title,
+    searchToggle,
+    activityBtn,
+    addBtn
+  );
   let threadFilter = "";
   const contentFilter = createThreadFilter(store2, api2, () => {
     render();
@@ -68512,6 +69835,7 @@ function mountProjectsPane(root, store2, api2) {
       render();
     }),
     store2.on("attention_changed", render),
+    store2.on("attention_changed", syncActivityButton),
     // Recovering an orphan or relocating a project changes the project set, which
     // in turn changes which store dirs count as orphaned — re-scan on that.
     store2.on("projects_changed", refreshOrphans)
@@ -68551,6 +69875,7 @@ var init_projects_pane = __esm({
     init_thread_sort();
     init_sidebar_thread();
     init_attention();
+    init_activity_panel();
     init_ssh_workspace_ui();
     init_thread_naming();
     init_project_tree();
@@ -132511,471 +133836,6 @@ var init_ssh_status_banner = __esm({
   }
 });
 
-// src/renderer/views/approval-dialog.ts
-function approvalCopyElement(className, text2) {
-  const root = el("div", { class: className });
-  let list = null;
-  let lines = [];
-  const flushLines = () => {
-    if (lines.length > 0) root.append(lines.join("\n"));
-    lines = [];
-  };
-  for (const line of text2.split("\n")) {
-    if (line.startsWith(REASON_BULLET)) {
-      flushLines();
-      if (!list) {
-        list = el("ul", { class: "approval-reasons" });
-        root.append(list);
-      }
-      list.append(el("li", {}, line.slice(REASON_BULLET.length)));
-    } else {
-      list = null;
-      lines.push(line);
-    }
-  }
-  flushLines();
-  return root;
-}
-function mergeApprovalAdvice(values) {
-  const unique = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const value of values) {
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    unique.push(value);
-  }
-  if (unique.length <= 1) return unique[0];
-  const lines = unique.map((value) => value.split("\n"));
-  const sharedLead = lines[0]?.[0];
-  if (sharedLead === void 0 || !lines.every((parts) => parts[0] === sharedLead)) {
-    return unique.join("\n\n");
-  }
-  const merged = [sharedLead];
-  const seenDetails = /* @__PURE__ */ new Set();
-  for (const parts of lines) {
-    const details = parts.slice(1).join("\n");
-    if (!details || seenDetails.has(details)) continue;
-    seenDetails.add(details);
-    merged.push(details);
-  }
-  return merged.join("\n");
-}
-function mountApprovalDialog(api2, store2, options = {}) {
-  const coalesceMs = options.coalesceMs ?? APPROVAL_COALESCE_MS;
-  const settleMs = options.settleMs ?? APPROVAL_SETTLE_MS;
-  const setTimer = options.setTimer ?? defaultTimer;
-  const rememberLabel = el(
-    "label",
-    { class: "approval-remember" },
-    el("input", { type: "checkbox", class: "approval-remember-input" }),
-    "Always allow this tool"
-  );
-  const turnTreeLeaseLabel = el(
-    "label",
-    { class: "approval-remember approval-turn-tree" },
-    el("input", { type: "checkbox", class: "approval-turn-tree-input" }),
-    "Allow retries for this task (up to 10, for 15 minutes)"
-  );
-  const heading = el("h3", { class: "approval-heading" });
-  const items = el("div", { class: "approval-items" });
-  const chatScrim = el("div", { class: "approval-chat-scrim", "aria-hidden": "true", hidden: "" });
-  const approveOnceButton = el("button", {
-    type: "button",
-    class: "ui-btn ui-btn-secondary approval-approve-once",
-    hidden: ""
-  });
-  const approveButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-primary approval-approve" },
-    "Approve"
-  );
-  const rejectButton = el(
-    "button",
-    { type: "button", class: "ui-btn ui-btn-secondary approval-reject" },
-    "Reject"
-  );
-  const dialog2 = el("dialog", { id: "approval-dialog" });
-  dialog2.append(
-    heading,
-    items,
-    rememberLabel,
-    turnTreeLeaseLabel,
-    uiActions(approveOnceButton, approveButton, rejectButton, {
-      className: "approval-buttons",
-      align: "end"
-    })
-  );
-  const chatPane = document.getElementById("pane-chat") ?? document.body;
-  chatPane.append(chatScrim, dialog2);
-  const rememberInput = qsRequired(rememberLabel, ".approval-remember-input");
-  const turnTreeLeaseInput = qsRequired(
-    turnTreeLeaseLabel,
-    ".approval-turn-tree-input"
-  );
-  const turnTreeLeaseTextNode = turnTreeLeaseLabel.childNodes[1];
-  if (!turnTreeLeaseTextNode) throw new Error("approval dialog missing lease label text node");
-  const turnTreeLeaseText = turnTreeLeaseTextNode;
-  const rememberLabelTextNode = rememberLabel.childNodes[1];
-  if (!rememberLabelTextNode) throw new Error("approval dialog missing remember label text node");
-  const rememberLabelText = rememberLabelTextNode;
-  const queue = [];
-  let batch = [];
-  let active2 = false;
-  let coalesceScheduled = false;
-  let cancelCoalesce = null;
-  let cancelSettle = null;
-  let detailsExpanded = false;
-  function closeDialog() {
-    dialog2.close();
-    chatScrim.hidden = true;
-  }
-  function isWindowHidden() {
-    return typeof document !== "undefined" && document.visibilityState === "hidden";
-  }
-  function isShowable(req) {
-    if (isWindowHidden()) return false;
-    if (isSettingsDialogOpen() && !req.showWhileSettingsOpen) return false;
-    return !req.threadId || req.threadId === store2.getState().activeThreadId;
-  }
-  function syncAttention() {
-    const activeThreadId = store2.getState().activeThreadId;
-    const hidden = isWindowHidden();
-    const waiting = queue.map((req) => req.threadId).filter((id) => !!id && (hidden || id !== activeThreadId));
-    setAttentionThreads(store2, "approval", waiting);
-  }
-  function drainShowableIntoBatch() {
-    let moved = 0;
-    for (let i2 = 0; i2 < queue.length; ) {
-      const req = queue[i2];
-      if (req && isShowable(req)) {
-        queue.splice(i2, 1);
-        batch.push(req);
-        moved++;
-      } else {
-        i2++;
-      }
-    }
-    return moved;
-  }
-  function rememberGrant() {
-    if (batch.length === 0) return null;
-    if (!batch.every((req) => req.allowRemember)) return null;
-    const label = batch[0]?.rememberLabel;
-    if (!label || !batch.every((req) => req.rememberLabel === label)) return null;
-    return label;
-  }
-  function soloRequest() {
-    return batch.length === 1 ? batch[0] ?? null : null;
-  }
-  function approveOnceGrant() {
-    return soloRequest()?.approveOnceLabel ?? "";
-  }
-  function detailsToggle() {
-    const toggle = el(
-      "button",
-      {
-        class: "approval-details-toggle",
-        type: "button",
-        "aria-expanded": detailsExpanded ? "true" : "false"
-      },
-      detailsExpanded ? "Hide details" : "Show details"
-    );
-    toggle.addEventListener("click", () => {
-      detailsExpanded = !detailsExpanded;
-      renderBatch();
-    });
-    return toggle;
-  }
-  function renderBatch() {
-    const count = batch.length;
-    const collapseDetails = soloRequest()?.collapseDetails === true;
-    const uniqueTitles = new Set(batch.map((req) => req.title));
-    const sharedTitle = uniqueTitles.size === 1 ? batch[0]?.title ?? "" : null;
-    const showRowTitles = count > 1 && sharedTitle === null;
-    const presentationGroups = [];
-    for (const req of batch) {
-      const previousGroup = presentationGroups.at(-1);
-      const previous = previousGroup?.[0];
-      if (previousGroup && previous && req.type === previous.type && req.title === previous.title && req.bodyFooter === previous.bodyFooter) {
-        previousGroup.push(req);
-      } else {
-        presentationGroups.push([req]);
-      }
-    }
-    heading.textContent = count <= 1 ? batch[0]?.title ?? "" : sharedTitle ?? `${String(count)} requests`;
-    const requestBody = (req) => {
-      const bodyClass = req.type === "shell" ? "approval-body approval-body-code" : "approval-body";
-      const body = el("div", { class: bodyClass }, req.body);
-      if (collapseDetails && !detailsExpanded) body.hidden = true;
-      return body;
-    };
-    items.replaceChildren(
-      ...presentationGroups.map((group) => {
-        const firstRequest = group[0];
-        if (!firstRequest) throw new Error("approval presentation group must not be empty");
-        const rowChildren = [];
-        if (showRowTitles) {
-          rowChildren.push(el("div", { class: "approval-item-title" }, firstRequest.title));
-        }
-        const advice = mergeApprovalAdvice(group.map((request) => request.bodyAdvice));
-        if (advice) {
-          rowChildren.push(approvalCopyElement("approval-advice", advice));
-        }
-        if (collapseDetails) rowChildren.push(detailsToggle());
-        if (group.length > 1) {
-          const bodyLabel = firstRequest.type === "shell" ? "Commands requiring approval" : "Requests";
-          rowChildren.push(
-            el(
-              "div",
-              { class: "approval-body-list", role: "list", "aria-label": bodyLabel },
-              ...group.map((req) => {
-                const body = requestBody(req);
-                body.setAttribute("role", "listitem");
-                return body;
-              })
-            )
-          );
-        } else {
-          rowChildren.push(requestBody(firstRequest));
-        }
-        if (firstRequest.bodyFooter) {
-          rowChildren.push(approvalCopyElement("approval-footer", firstRequest.bodyFooter));
-        }
-        return el("div", { class: "approval-item" }, ...rowChildren);
-      })
-    );
-    approveButton.textContent = count > 1 ? `Approve all (${String(count)})` : "Approve";
-    rejectButton.textContent = count > 1 ? `Reject all (${String(count)})` : "Reject";
-    const onceLabel = approveOnceGrant();
-    const showOnce = onceLabel !== "" && (!collapseDetails || detailsExpanded);
-    approveOnceButton.hidden = !showOnce;
-    if (showOnce) approveOnceButton.textContent = onceLabel;
-    const grant = onceLabel !== "" ? null : rememberGrant();
-    rememberLabel.hidden = grant === null;
-    if (grant === null) rememberInput.checked = false;
-    else rememberLabelText.textContent = grant;
-    const leaseLabel = batch[0]?.turnTreeLeaseLabel;
-    const leaseSubject = batch[0]?.turnTreeLeaseSubject;
-    const offersTurnTreeLease = batch.length > 0 && leaseLabel !== void 0 && leaseSubject !== void 0 && batch.every(
-      (request) => request.allowTurnTreeLease === true && request.turnTreeLeaseLabel === leaseLabel && request.turnTreeLeaseSubject === leaseSubject
-    );
-    turnTreeLeaseLabel.hidden = !offersTurnTreeLease;
-    if (!offersTurnTreeLease) turnTreeLeaseInput.checked = false;
-    else {
-      turnTreeLeaseText.textContent = leaseLabel;
-      turnTreeLeaseInput.checked = batch.every((request) => request.turnTreeLeaseDefault === true);
-    }
-  }
-  function clearSettle() {
-    if (cancelSettle) {
-      cancelSettle();
-      cancelSettle = null;
-    }
-    approveButton.disabled = false;
-    approveOnceButton.disabled = false;
-  }
-  function startSettle() {
-    clearSettle();
-    approveButton.disabled = true;
-    approveOnceButton.disabled = true;
-    cancelSettle = setTimer(() => {
-      cancelSettle = null;
-      approveButton.disabled = false;
-      approveOnceButton.disabled = false;
-    }, settleMs);
-  }
-  function show2() {
-    if (active2) return;
-    if (cancelCoalesce) {
-      cancelCoalesce();
-      cancelCoalesce = null;
-    }
-    coalesceScheduled = false;
-    if (drainShowableIntoBatch() === 0) {
-      syncAttention();
-      return;
-    }
-    clearSettle();
-    rememberInput.checked = false;
-    detailsExpanded = false;
-    renderBatch();
-    const shouldShowModal = isSettingsDialogOpen() || document.documentElement.classList.contains("is-popout");
-    if (shouldShowModal) {
-      dialog2.showModal();
-    } else {
-      chatScrim.hidden = false;
-      dialog2.show();
-    }
-    active2 = true;
-    syncAttention();
-  }
-  function scheduleShow2() {
-    if (active2 || coalesceScheduled) return;
-    if (!queue.some(isShowable)) {
-      syncAttention();
-      return;
-    }
-    coalesceScheduled = true;
-    cancelCoalesce = setTimer(() => {
-      coalesceScheduled = false;
-      cancelCoalesce = null;
-      show2();
-    }, coalesceMs);
-  }
-  function withdrawUnshowable() {
-    if (!active2) return;
-    const withdrawn = batch.filter((req) => !isShowable(req));
-    if (withdrawn.length === 0) return;
-    batch = batch.filter((req) => isShowable(req));
-    queue.unshift(...withdrawn);
-    if (batch.length === 0) {
-      closeDialog();
-      active2 = false;
-      clearSettle();
-      return;
-    }
-    detailsExpanded = false;
-    renderBatch();
-    startSettle();
-  }
-  function appendToOpen() {
-    if (!active2) return;
-    if (drainShowableIntoBatch() > 0) {
-      renderBatch();
-      startSettle();
-    }
-    syncAttention();
-  }
-  function removeCancelled(id) {
-    const queueIdx = queue.findIndex((req) => req.id === id);
-    if (queueIdx >= 0) queue.splice(queueIdx, 1);
-    const wasInBatch = batch.some((req) => req.id === id);
-    batch = batch.filter((req) => req.id !== id);
-    if (wasInBatch && active2) {
-      if (batch.length === 0) {
-        closeDialog();
-        active2 = false;
-        clearSettle();
-        show2();
-      } else {
-        renderBatch();
-        startSettle();
-      }
-    }
-    syncAttention();
-  }
-  function resolve(approved, remember) {
-    if (!active2 || batch.length === 0) return;
-    const answered = batch;
-    const grantScope = approved && !turnTreeLeaseLabel.hidden && turnTreeLeaseInput.checked ? "turn-tree" : "once";
-    closeDialog();
-    batch = [];
-    active2 = false;
-    turnTreeLeaseInput.checked = false;
-    clearSettle();
-    for (const req of answered) {
-      void api2.approval.respond(req.id, approved, remember, grantScope);
-    }
-    show2();
-  }
-  api2.agent.onApprovalRequest(
-    ({
-      id,
-      threadId,
-      title,
-      body,
-      bodyAdvice,
-      bodyFooter,
-      type,
-      allowRemember,
-      rememberLabel: rememberLabel2,
-      collapseDetails,
-      approveOnceLabel,
-      showWhileSettingsOpen,
-      allowTurnTreeLease,
-      turnTreeLeaseLabel: turnTreeLeaseLabel2,
-      turnTreeLeaseDefault,
-      turnTreeLeaseSubject
-    }) => {
-      const pending = {
-        id,
-        threadId,
-        title,
-        body,
-        bodyAdvice,
-        bodyFooter,
-        type,
-        allowRemember,
-        rememberLabel: rememberLabel2,
-        collapseDetails,
-        approveOnceLabel,
-        showWhileSettingsOpen,
-        allowTurnTreeLease,
-        turnTreeLeaseLabel: turnTreeLeaseLabel2,
-        turnTreeLeaseDefault,
-        turnTreeLeaseSubject
-      };
-      queue.push(pending);
-      if (active2 && isSettingsDialogOpen() && pending.showWhileSettingsOpen) {
-        queue.unshift(...batch);
-        batch = [];
-        closeDialog();
-        active2 = false;
-        clearSettle();
-        show2();
-      } else if (active2) appendToOpen();
-      else scheduleShow2();
-      syncAttention();
-    }
-  );
-  api2.agent.onApprovalCancelled(({ id }) => {
-    removeCancelled(id);
-  });
-  store2.on("threads_changed", () => {
-    withdrawUnshowable();
-    if (active2) appendToOpen();
-    else show2();
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      withdrawUnshowable();
-      syncAttention();
-    } else show2();
-  });
-  onSettingsDialogClose(() => {
-    show2();
-  });
-  approveButton.addEventListener("click", () => {
-    if (approveButton.disabled) return;
-    resolve(true, approveOnceGrant() !== "" ? true : rememberInput.checked);
-  });
-  approveOnceButton.addEventListener("click", () => {
-    if (approveOnceButton.disabled) return;
-    resolve(true, false);
-  });
-  rejectButton.addEventListener("click", () => {
-    resolve(false, false);
-  });
-}
-var APPROVAL_COALESCE_MS, APPROVAL_SETTLE_MS, REASON_BULLET, defaultTimer;
-var init_approval_dialog = __esm({
-  "src/renderer/views/approval-dialog.ts"() {
-    init_helpers();
-    init_settings_dialog();
-    init_attention();
-    init_actions();
-    APPROVAL_COALESCE_MS = 120;
-    APPROVAL_SETTLE_MS = 500;
-    REASON_BULLET = "\u2022 ";
-    defaultTimer = (fn2, ms2) => {
-      const handle = setTimeout(fn2, ms2);
-      return () => {
-        clearTimeout(handle);
-      };
-    };
-  }
-});
-
 // src/renderer/views/ask-user-dialog.ts
 function mountAskUserDialog(api2, store2) {
   const form = el("form", { id: "ask-user-form", method: "dialog" });
@@ -132983,6 +133843,8 @@ function mountAskUserDialog(api2, store2) {
   document.body.append(dialog2);
   const queue = [];
   let active2 = null;
+  const changeListeners = /* @__PURE__ */ new Set();
+  let arrivals = 0;
   let inputs = [];
   function isShowable(req) {
     return !req.threadId || req.threadId === store2.getState().activeThreadId;
@@ -132991,6 +133853,7 @@ function mountAskUserDialog(api2, store2) {
     const activeThreadId = store2.getState().activeThreadId;
     const waiting = queue.map((req) => req.threadId).filter((id) => !!id && id !== activeThreadId);
     setAttentionThreads(store2, "ask", waiting);
+    for (const listener of [...changeListeners]) listener();
   }
   function renderActive() {
     if (!active2) return;
@@ -133105,7 +133968,13 @@ function mountAskUserDialog(api2, store2) {
     cancel();
   });
   api2.agent.onAskUserRequest((req) => {
-    queue.push({ id: req.id, threadId: req.threadId, questions: req.questions });
+    queue.push({
+      id: req.id,
+      threadId: req.threadId,
+      questions: req.questions,
+      receivedAt: Date.now(),
+      arrival: arrivals++
+    });
     showNext();
     syncAttention();
   });
@@ -133126,6 +133995,20 @@ function mountAskUserDialog(api2, store2) {
     showNext();
     syncAttention();
   });
+  return {
+    pending: () => [...active2 ? [active2] : [], ...queue].sort((a3, b4) => a3.arrival - b4.arrival).map((req) => ({
+      id: req.id,
+      threadId: req.threadId,
+      questions: req.questions.map((q2) => q2.question),
+      receivedAt: req.receivedAt
+    })),
+    onChange: (listener) => {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    }
+  };
 }
 var init_ask_user_dialog = __esm({
   "src/renderer/views/ask-user-dialog.ts"() {
@@ -133723,6 +134606,7 @@ var init_keyboard_shortcuts_dialog = __esm({
         shortcuts: [
           { label: "Quick open (files, roadmap)", keys: ["Mod", "P"] },
           { label: "Command palette (threads, projects\u2026)", keys: ["Mod", "Shift", "K"] },
+          { label: "Activity (what needs you)", keys: ["Mod", "Shift", "A"] },
           { label: "Find in conversation", keys: ["Mod", "F"] },
           { label: "Next thread", keys: ["Ctrl", "Tab"] },
           { label: "Previous thread", keys: ["Ctrl", "Shift", "Tab"] },
@@ -133828,6 +134712,13 @@ function mountCommandPalette(store2, api2) {
         }
       });
     }
+    commands.push({
+      kind: "command",
+      label: "Activity",
+      run: () => {
+        openActivityPanel();
+      }
+    });
     commands.push({
       kind: "command",
       label: "Settings",
@@ -134019,6 +134910,7 @@ var init_command_palette = __esm({
     init_panels();
     init_settings_dialog();
     init_keyboard_shortcuts_dialog();
+    init_activity_panel();
     init_file_search_dialog();
     init_conversation_search();
     init_github_pr_url2();
@@ -136691,6 +137583,11 @@ function matchCommandPaletteShortcut(e3) {
   const meta3 = e3.ctrlKey || e3.metaKey;
   if (!meta3 || e3.altKey || !e3.shiftKey) return false;
   return e3.key === "k" || e3.key === "K";
+}
+function matchActivityPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "a" || e3.key === "A";
 }
 function matchPanelShortcut(e3) {
   const meta3 = e3.ctrlKey || e3.metaKey;
@@ -145346,8 +146243,8 @@ async function boot() {
   installTooltips();
   mountSettingsDialog(store, api);
   mountOnboardingDialog(store, api);
-  mountApprovalDialog(api, store);
-  mountAskUserDialog(api, store);
+  const approvalRequests = mountApprovalDialog(api, store);
+  const askUserRequests = mountAskUserDialog(api, store);
   mountAlertThreadNavigation(store, api);
   mountSshPromptDialog(api);
   mountUpdatePromptDialog(api);
@@ -145357,6 +146254,7 @@ async function boot() {
   mountCommandPalette(store, api);
   mountKeyboardShortcutsDialog();
   openProcessManager = mountProcessManagerDialog(api, store);
+  mountActivityPanel(api, store, { approvals: approvalRequests, questions: askUserRequests });
   mountSshStatusBanner(store, api);
   mark("renderer:dialogs-mounted");
   const startupSettings = await loadStartupSettings(api.settings);
@@ -145644,6 +146542,10 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       openProcessManager?.();
     }
+    if (matchActivityPanelShortcut(e3)) {
+      e3.preventDefault();
+      openActivityPanel();
+    }
     if (meta3 && !e3.shiftKey && e3.key.toLowerCase() === "p") {
       e3.preventDefault();
       if (store.getState().workspaceRoot) openFileSearchDialog();
@@ -145790,6 +146692,7 @@ var init_main = __esm({
     init_conversation_search();
     init_keyboard_shortcuts_dialog();
     init_process_manager_dialog();
+    init_activity_panel();
     init_agent();
     init_diff_state();
     init_automations2();
