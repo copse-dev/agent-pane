@@ -88,6 +88,7 @@ import {
   resolveTurnParameters,
   buildSubagentRoute,
   buildReviewRoute,
+  buildSpecialistCheckRoute,
   isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
@@ -107,6 +108,12 @@ import {
 } from './post-turn-orchestration.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
+import {
+  createSpecialistCheckBudget,
+  specialistCheckDefinition,
+} from '@copse/agent/specialist-checks.ts'
+import { runSpecialistCheck } from './specialist-check-runner.ts'
+import { runExploreSubagent } from './subagent-service.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
 import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
 import {
@@ -299,7 +306,7 @@ async function changedLinesBelow(min: number): Promise<boolean> {
 // with this model in this chat"). Per-thread, not process-global, so approving a
 // billable review in one project never silently authorizes it in another — the
 // same cross-project prompt-leakage guard the review-spend approval uses.
-const approvedReviewThreads = new Set<string>()
+const approvedReviewRoutes = new Set<string>()
 
 /**
  * Gate a billable post-turn review behind a spend approval, remembered per thread
@@ -312,7 +319,8 @@ async function ensureReviewApproved(
   threadId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (approvedReviewThreads.has(threadId)) return true
+  const approvalKey = `${threadId}\u0000${reviewModel}`
+  if (approvedReviewRoutes.has(approvalKey)) return true
   // Read afresh across the await below: AbortSignal.aborted is mutable, but
   // TypeScript keeps the narrowing from the first check through the await.
   const aborted = (): boolean => signal.aborted
@@ -329,7 +337,7 @@ async function ensureReviewApproved(
     signal,
   )
   if (aborted()) return false
-  if (approved && remember) approvedReviewThreads.add(threadId)
+  if (approved && remember) approvedReviewRoutes.add(approvalKey)
   return approved
 }
 
@@ -2340,16 +2348,26 @@ export async function runAgent(
             !isBillableModel(reviewUsageModel) ||
             (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
 
-          const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+          const recordReviewUsage = (
+            usageModel: string,
+            u: { inputTokens: number; outputTokens: number },
+          ): void => {
             inputTokens += u.inputTokens
             outputTokens += u.outputTokens
             sendChunk({
               type: 'usage',
-              model: reviewUsageModel,
+              model: usageModel,
               inputTokens: u.inputTokens,
               outputTokens: u.outputTokens,
             })
           }
+          const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+            recordReviewUsage(reviewUsageModel, u)
+          }
+          // One hard ceiling spans every review pass and remediation re-review
+          // in this turn. A model cannot multiply the allowance by requesting
+          // another review cycle.
+          const specialistBudget = createSpecialistCheckBudget()
 
           await runPostTurnReviewCycle({
             reviewUsageModel,
@@ -2374,6 +2392,87 @@ export async function runAgent(
                 signal: controller.signal,
                 usageModel: reviewUsageModel,
                 onUsage: onReviewUsage,
+                runSpecialistCheck: async (request) => {
+                  const definition = specialistCheckDefinition(request.checkId)
+                  if (!definition) {
+                    return {
+                      status: 'inconclusive',
+                      claim: '',
+                      evidence: [],
+                      causalChain: [],
+                      counterEvidence: [],
+                      missingEvidence: [`Unknown specialist check: ${request.checkId}`],
+                      confidence: 0,
+                    }
+                  }
+                  const reservation = specialistBudget.tryReserve(request, definition)
+                  if (!reservation.allowed) {
+                    return {
+                      status: 'inconclusive',
+                      claim: '',
+                      evidence: [],
+                      causalChain: [],
+                      counterEvidence: [],
+                      missingEvidence: [reservation.reason],
+                      confidence: 0,
+                    }
+                  }
+                  const route = await buildSpecialistCheckRoute(definition.model)
+                  if (
+                    isBillableModel(route.usageModel) &&
+                    !(await ensureReviewApproved(route.usageModel, threadId, controller.signal))
+                  ) {
+                    return {
+                      status: 'inconclusive',
+                      claim: '',
+                      evidence: [],
+                      causalChain: [],
+                      counterEvidence: [],
+                      missingEvidence: ['Spending on the specialist model was not approved.'],
+                      confidence: 0,
+                    }
+                  }
+                  const explorerRoute = (await buildSubagentRoute(route.usageModel)) ?? {
+                    provider: reviewProvider,
+                    usageModel: reviewUsageModel,
+                    contextWindow: reviewContextWindow,
+                    toolSchemaReserve: reviewToolSchemaReserve,
+                  }
+                  return runSpecialistCheck({
+                    definition,
+                    request,
+                    provider: route.provider,
+                    registry,
+                    contextWindow: route.contextWindow,
+                    toolSchemaReserve: route.toolSchemaReserve,
+                    signal: controller.signal,
+                    usageModel: route.usageModel,
+                    onUsage: recordReviewUsage,
+                    gatherEvidence: async (query, paths, signal) => {
+                      const explored = await runExploreSubagent({
+                        parentToolCallId: 'review-specialist-explorer',
+                        query,
+                        ...(paths.length > 0 ? { paths } : {}),
+                        parentGoal: request.question,
+                        provider: explorerRoute.provider,
+                        registry,
+                        contextWindow: explorerRoute.contextWindow,
+                        toolSchemaReserve: explorerRoute.toolSchemaReserve,
+                        signal,
+                        onChunk: (chunk) => {
+                          if (chunk.type === 'usage') {
+                            recordReviewUsage(explorerRoute.usageModel, {
+                              inputTokens: chunk.inputTokens,
+                              outputTokens: chunk.outputTokens,
+                            })
+                          }
+                        },
+                        usageModel: explorerRoute.usageModel,
+                      })
+                      return explored.summary
+                    },
+                  })
+                },
               }),
             runRemediationTurn: async (nudge) => {
               const remediation = { madeEdits: false }
