@@ -115,6 +115,7 @@ function mountWithSettings(threads: Thread[], activeThreadId: string): HTMLEleme
     'cursorPlugins.list': () => Promise.resolve([]),
     'bundledSkillPlugins.list': () => Promise.resolve([]),
     'automations.list': () => Promise.resolve([schedule]),
+    'automations.permissionOptions': () => Promise.resolve([]),
   })
   const host = document.createElement('div')
   document.body.append(host)

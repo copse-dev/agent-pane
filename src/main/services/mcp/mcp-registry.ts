@@ -97,6 +97,12 @@ interface McpToolMeta {
   bundled?: boolean
 }
 
+export interface McpPermissionCandidate {
+  toolName: string
+  server: string
+  annotations?: McpToolAnnotations
+}
+
 interface CreatedTransport {
   transport: Transport
   stderrOutput: () => string
@@ -136,6 +142,18 @@ export function getMcpServerStatuses(): McpServerStatus[] {
 
 export function getMcpToolMeta(toolName: string): McpToolMeta | undefined {
   return toolMeta.get(toolName)
+}
+
+/** External MCP tools that can meaningfully be granted to an automation. */
+export function listMcpPermissionCandidates(): McpPermissionCandidate[] {
+  return [...toolMeta.entries()]
+    .filter(([, meta]) => meta.bundled !== true)
+    .map(([toolName, meta]) => ({
+      toolName,
+      server: meta.server,
+      ...(meta.annotations ? { annotations: { ...meta.annotations } } : {}),
+    }))
+    .sort((a, b) => a.toolName.localeCompare(b.toolName))
 }
 
 export function isMcpToolRemembered(toolName: string): boolean {
