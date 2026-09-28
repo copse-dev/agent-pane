@@ -238,4 +238,108 @@ describe('projects pane thread PR status (component)', () => {
       refreshingIcon,
     )
   })
+
+  it('re-observes a visible legacy row after a transient backfill failure', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    t.mock.method(console, 'warn', () => {})
+    const originalObserver = globalThis.IntersectionObserver
+    const observed = new Set<Element>()
+    let deliver: IntersectionObserverCallback | undefined
+    let observer: IntersectionObserver | undefined
+    class FakeIntersectionObserver implements IntersectionObserver {
+      readonly root = null
+      readonly rootMargin = '0px'
+      readonly thresholds = [0]
+
+      constructor(callback: IntersectionObserverCallback) {
+        deliver = callback
+        observer = this
+      }
+
+      observe(target: Element): void {
+        observed.add(target)
+      }
+
+      unobserve(target: Element): void {
+        observed.delete(target)
+      }
+
+      disconnect(): void {
+        observed.clear()
+      }
+
+      takeRecords(): IntersectionObserverEntry[] {
+        return []
+      }
+    }
+    Object.defineProperty(globalThis, 'IntersectionObserver', {
+      configurable: true,
+      writable: true,
+      value: FakeIntersectionObserver,
+    })
+
+    let attempts = 0
+    const base = apiWithPrDetails(async () => null)
+    const api = {
+      ...base,
+      threads: {
+        ...base.threads,
+        backfillPrRefs: async (): Promise<void> => {
+          attempts += 1
+          if (attempts === 1) throw new Error('transient backfill failure')
+        },
+      },
+    } satisfies ApiClient
+    const store = createStore({
+      projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
+      activeProjectId: 'p1',
+      expandedProjectId: 'p1',
+      workspaceRoot: '/proj',
+      threads: [thread('legacy', 'Legacy thread')],
+      activeThreadId: 'legacy',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const cleanup = mountProjectsPane(host, store, api)
+    try {
+      const row = rowByTitle('Legacy thread')
+      assert.ok(row)
+      assert.ok(deliver)
+      assert.ok(observer)
+      assert.equal(observed.has(row), true)
+      const rect = row.getBoundingClientRect()
+      const entry = {
+        target: row,
+        isIntersecting: true,
+        intersectionRatio: 1,
+        boundingClientRect: rect,
+        intersectionRect: rect,
+        rootBounds: null,
+        time: 0,
+      } satisfies IntersectionObserverEntry
+
+      deliver([entry], observer)
+      await Promise.resolve()
+      await Promise.resolve()
+      assert.equal(attempts, 1)
+      assert.equal(observed.has(row), false)
+
+      t.mock.timers.tick(999)
+      assert.equal(observed.has(row), false)
+      t.mock.timers.tick(1)
+      assert.equal(observed.has(row), true)
+
+      deliver([entry], observer)
+      await Promise.resolve()
+      await Promise.resolve()
+      assert.equal(attempts, 2)
+    } finally {
+      cleanup()
+      Object.defineProperty(globalThis, 'IntersectionObserver', {
+        configurable: true,
+        writable: true,
+        value: originalObserver,
+      })
+    }
+  })
 })

@@ -330,6 +330,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   const visibleThreadCounts = new Map<string, number>()
   const prBackfillRequested = new Map<string, Set<string>>()
+  const prBackfillRetryAttempts = new Map<string, number>()
+  const prBackfillRetryTimers = new Set<ReturnType<typeof setTimeout>>()
   let prBackfillObserver: IntersectionObserver | null = null
   // Automation history is collated in one workspace-level section (#2511)
   // rather than tucked inside each project, so it reads as one place to check
@@ -813,6 +815,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(): void {
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer)
+    prBackfillRetryTimers.clear()
     prBackfillObserver?.disconnect()
     prBackfillObserver = null
     clear(list)
@@ -1500,7 +1504,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       )
       const observer = new IntersectionObserver((entries) => {
         if (prBackfillObserver !== observer) return
-        const pending = new Map<string, string[]>()
+        const pending = new Map<string, Array<{ threadId: string; row: Element }>>()
         for (const entry of entries) {
           if (!entry.isIntersecting) continue
           observer.unobserve(entry.target)
@@ -1510,18 +1514,42 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           prBackfillRequested.set(thread.projectId, requested)
           if (requested.has(thread.threadId)) continue
           requested.add(thread.threadId)
-          const ids = pending.get(thread.projectId) ?? []
-          ids.push(thread.threadId)
-          pending.set(thread.projectId, ids)
+          const rows = pending.get(thread.projectId) ?? []
+          rows.push({ threadId: thread.threadId, row: entry.target })
+          pending.set(thread.projectId, rows)
         }
-        for (const [projectId, threadIds] of pending) {
+        for (const [projectId, rows] of pending) {
           const requested = prBackfillRequested.get(projectId)
-          for (let i = 0; i < threadIds.length; i += 10) {
-            const batch = threadIds.slice(i, i + 10)
-            void api.threads.backfillPrRefs(projectId, batch).catch((err: unknown) => {
-              for (const threadId of batch) requested?.delete(threadId)
-              console.warn('[threads] visible PR-ref backfill failed:', err)
-            })
+          for (let i = 0; i < rows.length; i += 10) {
+            const batch = rows.slice(i, i + 10)
+            const threadIds = batch.map(({ threadId }) => threadId)
+            void api.threads
+              .backfillPrRefs(projectId, threadIds)
+              .then(() => {
+                for (const threadId of threadIds) {
+                  prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`)
+                }
+              })
+              .catch((err: unknown) => {
+                let attempt = 1
+                for (const threadId of threadIds) {
+                  requested?.delete(threadId)
+                  const key = `${projectId}\0${threadId}`
+                  const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1
+                  prBackfillRetryAttempts.set(key, nextAttempt)
+                  attempt = Math.max(attempt, nextAttempt)
+                }
+                const delay = Math.min(1_000 * 2 ** (attempt - 1), 30_000)
+                const timer = setTimeout(() => {
+                  prBackfillRetryTimers.delete(timer)
+                  if (prBackfillObserver !== observer) return
+                  for (const { row } of batch) {
+                    if (row.isConnected) observer.observe(row)
+                  }
+                }, delay)
+                prBackfillRetryTimers.add(timer)
+                console.warn('[threads] visible PR-ref backfill failed:', err)
+              })
           }
         }
       })
@@ -1557,6 +1585,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   refreshOrphans()
   return () => {
     contentFilter.cancel()
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer)
+    prBackfillRetryTimers.clear()
     prBackfillObserver?.disconnect()
     prBackfillObserver = null
     prStatusGeneration += 1
