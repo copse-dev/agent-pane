@@ -11,7 +11,7 @@ import { createHostProcessBackend } from './host-process-backend.ts'
 import { cellEnvironment, serializeCell, type ExecutionCell } from './isolation.ts'
 import { ScriptedProvider, type ScriptedStep } from './scripted-provider.ts'
 import { verifyFindings, type Stage4Options } from './stage4.ts'
-import { createTestRepo, type TestRepo } from './test-repo.ts'
+import { createTestRepo, toolText, type TestRepo } from './test-repo.ts'
 import { openReviewGround, prepareVerificationBase, runStage0Checks } from './stage0.ts'
 import { createVerifierToolExecutor, REPRODUCER_DIR } from './verifier-tools.ts'
 
@@ -341,7 +341,7 @@ describe('verifyFindings', () => {
         signal,
         'collision',
       )
-      assert.match(result, /test filename must start/)
+      assert.match(toolText(result), /test filename must start/)
       await assert.rejects(access(join(checkouts.head, path)))
     }
   })

@@ -85,6 +85,12 @@ products remain in Copse-owned per-operation scratch directories, with ownership
 duration, and log bounds enforced. A host restart invalidates the panel operation authority epoch,
 so a recovered task cannot launch a second Xcode process whose predecessor may still be alive.
 
+The native `device_hub` tool also requires an enabled Apple Development plugin and an enrolled
+local macOS project. Device discovery, screenshots, app launch, and simulator input request tool
+approval by default because they access host devices outside the project sandbox. Explicit tool
+permission overrides apply, but read-only mode and enrollment checks still fail closed. Showing a
+simulator does not enable renderer control; discrete agent input is a separate approved call.
+
 ## ACP MCP mediation
 
 The Codex ACP preset allows the macOS `com.apple.trustd.agent` service for TLS
@@ -177,6 +183,8 @@ approves one invocation without a grant.
 The grant authorizes no command by itself. `read-outside-project.ts` re-analyzes every later command
 and must prove it is a plain read through a fail-closed allow-list. An unknown command head, write
 flag, redirect, environment variable, or privilege wrapper falls back to the ordinary prompt.
+Shell-builtin assignment forms such as `printf -v` also fall back: they can change `PATH` and
+replace a later reader without containing a leading `NAME=value` token.
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
 paths as broad as `~` or `/` are never eligible.
 
@@ -339,10 +347,19 @@ While active:
 - Commands that reach past this machine's project without deleting anything ask once
   (`host-reach.ts`):
   - `ssh`, `scp`, `sftp`, `mosh`, and remote `rsync` to a host not listed under Settings →
-    Permissions → Trusted SSH hosts (empty by default; every jump host must be listed too). A
-    trusted host still asks when the client would run a local command (`-o ProxyCommand`, `-F`,
-    `rsync -e`/`--rsh`) or the remote command matches a destructive pattern. Trusting a host
-    otherwise hands it commands as if it were this machine, including reads of its secrets.
+    Permissions → Trusted SSH hosts (empty by default; every `-J`/`ProxyJump` host and any
+    command-line `Hostname` override must be listed too). A trusted host still asks when the client
+    would load or run local code (`-o ProxyCommand`, provider/helper options, `-F`,
+    `scp`/`sftp -S`, `mosh --ssh`/`--client`, or `rsync -e`/`--rsh`), forwards a local capability
+    (`-A`, `-K`, `-X`, `-Y`, or their `-o` forms), opens a forwarding or tunnel (`-L`, `-R`, `-D`,
+    `-W`, `-w`, `-O forward`/`proxy`, or the equivalent `-o` options), forwards a secret-looking
+    variable with `SendEnv`/`SetEnv`, weakens host authentication, selects a local control socket,
+    or activates command-line hostname canonicalization. Remote commands (including
+    `RemoteCommand`, `mosh --server`, and `rsync --rsync-path`) still receive the destructive-pattern
+    check. Each client has its own option grammar, and clustered OpenSSH options such as `-fL…` and
+    `-vJ…` receive the same checks. Trusting a host otherwise hands it commands as if it were this
+    machine, including reads of its secrets. An SSH-family command under `xargs` always asks because
+    stdin can append an uninspected destination or remote command.
   - printing the environment (`env`, `printenv`, `export -p`, `declare -x`, bare `set`), a
     secret-named variable (`printenv GITHUB_TOKEN`), `gh auth token`, or a keychain password, and
     any network command (`curl`, `wget`, …) whose line references a secret-named variable;
@@ -350,7 +367,9 @@ While active:
     `pkill`/`killall` of a bare name (a path or multi-word command line names the agent's own
     process and runs);
   - `npx`/`npm exec` of anything but a binary installed in the workspace's `node_modules/.bin`,
-    and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`, which always download.
+    package-manager initializer commands (`npm create`/named `npm init`, `pnpm create`,
+    `yarn create`, `bun create`), and `pnpm dlx`, `yarn dlx`, `bunx`, `uvx`, and `pipx run`,
+    which download code before running it;
   - running anything as another user (`sudo`, `doas`, `pkexec`, `su`), wherever it sits in the
     line (`… | sudo sh`);
   - running code a substitution downloads (`eval "$(curl …)"`, `bash <(curl …)`), inline or
@@ -390,6 +409,8 @@ While active:
   `rg --pre` or `tar --to-command` flag names.
 - Other network / outside-workspace commands may still auto-run unsandboxed when the harm gate
   allows them.
+- A shell builtin that assigns variables for later commands (currently `printf -v`) requires the
+  one-time harm confirmation; changing `PATH` can otherwise replace the command being authorized.
 
 Host shutdown/reboot hard denials require a parsed command invocation, including wrappers and
 nested shell payloads. Filenames, ordinary arguments, quoted text, and shell comments are not
