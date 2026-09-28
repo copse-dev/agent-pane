@@ -351,6 +351,32 @@ describe('hostReachReasons — privilege, PATH and downloads', () => {
   })
 })
 
+describe('hostReachReasons — database input', () => {
+  it('prompts when a SQL client executes redirected or piped input', () => {
+    for (const command of [
+      'mysql app < dump.sql',
+      'mariadb app < dump.sql',
+      'psql app <<< "delete from users"',
+      'cat dump.sql | mysql app',
+      'zcat dump.sql.gz | env psql app',
+    ]) {
+      assert.ok(reaches(command), command)
+    }
+  })
+
+  it('does not treat output redirects or an unrelated pipeline as SQL input', () => {
+    for (const command of [
+      'mysql -e "select 1" > rows.txt',
+      'mysql -e "select 1 < 2"',
+      'mysql -e "select 1" | jq .',
+      'cat dump.sql | wc -l; mysql -e "select 1"',
+      'mysql app 3< metadata.txt',
+    ]) {
+      assert.deepEqual(reasons(command), [], command)
+    }
+  })
+})
+
 describe('hostReachReasons — shell history', () => {
   it('prompts when history is searched for secret-named words', () => {
     assert.ok(reaches('history | grep -i token'))
