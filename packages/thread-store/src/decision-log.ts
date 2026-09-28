@@ -40,7 +40,7 @@ export const DECISION_LOG_MEDIA_TYPE = 'application/vnd.copse.decision-log+jsonl
 export const DECISION_LOG_CONFORMANCE = 'draft-vaughan-machine-readability' as const
 
 /** Who made the decision. */
-const DECISION_ACTORS = ['user', 'classifier', 'hook', 'system'] as const
+const DECISION_ACTORS = ['user', 'classifier', 'hook', 'system', 'mobile-device'] as const
 
 export type DecisionActor = (typeof DECISION_ACTORS)[number]
 

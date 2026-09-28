@@ -2,7 +2,6 @@ import {
   fetchClaudePlanUsageFromCandidates,
   fetchClaudePlanUsageFromCredentials,
   type ClaudeCredentialInput,
-  type ClaudePlanUsageFetchOptions,
 } from './claude.ts'
 import { fetchCodexPlanUsage, type CodexPlanUsageAuth } from './codex.ts'
 import { fetchCursorPlanUsage } from './cursor.ts'
@@ -16,13 +15,11 @@ export interface PlanUsageCredentials {
   /** Tried in order; Keychain login tokens should come before env setup-tokens. */
   claudeOAuthTokens?: ReadonlyArray<string | null | undefined>
   /**
-   * Full Claude credentials (with refresh tokens). Preferred over
-   * `claudeOAuthTokens` — lets the fetch refresh an expired access token
-   * instead of surfacing a "credentials were rejected" error.
+   * Claude credentials with their expiry. Preferred over `claudeOAuthTokens` —
+   * an expired access token reads as "waiting for Claude Code to refresh it"
+   * instead of a "credentials were rejected" sign-in prompt.
    */
   claudeCredentials?: ReadonlyArray<ClaudeCredentialInput>
-  /** Persist a rotated Claude token back to its store after a refresh. */
-  onClaudeTokenRefreshed?: ClaudePlanUsageFetchOptions['onTokenRefreshed']
   codex?: CodexPlanUsageAuth | null
   /** HF user token (`HF_TOKEN`, Settings key, or `hf auth login` cache). */
   huggingfaceToken?: string | null
@@ -51,12 +48,7 @@ export async function getPlanUsageSnapshot(
 
   const claudeResult =
     credentials.claudeCredentials && credentials.claudeCredentials.length > 0
-      ? fetchClaudePlanUsageFromCredentials(credentials.claudeCredentials, {
-          ...options,
-          ...(credentials.onClaudeTokenRefreshed
-            ? { onTokenRefreshed: credentials.onClaudeTokenRefreshed }
-            : {}),
-        })
+      ? fetchClaudePlanUsageFromCredentials(credentials.claudeCredentials, options)
       : fetchClaudePlanUsageFromCandidates(claudeTokens, options)
 
   try {
