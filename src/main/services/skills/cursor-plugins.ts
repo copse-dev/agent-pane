@@ -29,7 +29,7 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-async function readPluginManifest(pluginRoot: string): Promise<PluginManifest | null> {
+export async function readPluginManifest(pluginRoot: string): Promise<PluginManifest | null> {
   const manifestPath = join(pluginRoot, '.cursor-plugin', 'plugin.json')
   try {
     const raw = await fsp.readFile(manifestPath, 'utf-8')
@@ -88,6 +88,12 @@ export async function resolvePluginSkillsDir(pluginRoot: string): Promise<string
   const skillsRel = manifest?.skills ?? './skills/'
   const resolved = resolve(pluginRoot, skillsRel)
   return (await pathExists(resolved)) ? resolved : null
+}
+
+/** Display name of a Cursor plugin: its manifest `name`, else its folder name. */
+export async function readCursorPluginName(pluginRoot: string): Promise<string> {
+  const manifest = await readPluginManifest(pluginRoot)
+  return nonEmptyStringOr(manifest?.name?.trim(), basename(pluginRoot))
 }
 
 /**

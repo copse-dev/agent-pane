@@ -37,6 +37,7 @@ import {
   EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS,
 } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ARTIFACT_CHECKPOINT_PLUGIN_ID } from '@copse/agent/plugins/artifact-checkpoint-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import {
   AGENTS_MD_INSTRUCTION_FILES_SETTING_ID,
@@ -57,6 +58,7 @@ import {
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { BACKGROUND_TASKS_PLUGIN_ID } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
+import { DARK_FACTORY_PLUGIN_ID } from '@copse/agent/plugins/dark-factory-plugin.ts'
 import { storageGet, storageListKeys, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
@@ -111,8 +113,15 @@ const PLUGINS_SEEN_KEY = 'pluginsSeen'
  * written into `packDisabled` on a profile that has never had one. This makes a
  * forgotten rollout-list update impossible when a new experiment is added.
  *
- * The capability plugins added in #1188 remain experimental because each replaces
- * a retired opt-in boolean (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`).
+ * This seed only reaches a profile with no list. A plugin added later is off on
+ * an existing profile only if a one-time `migrate*Enablement` seed below adds it.
+ *
+ * The capability plugins added in #1188 remain experimental because each took
+ * over a retired opt-in boolean (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`).
+ * No migration ever read those booleans: a profile that already had a disable
+ * list when the plugins arrived got them enabled, whatever the old boolean said.
+ * They, and `copse.forced-planning`, deliberately have no upgrade seed now —
+ * one would switch off features established profiles have been running with.
  * `copse.background-tasks` graduated to stable/default-on: its ordinary sandboxed
  * process support needs no extra authority, while `loopback-bind` still requires
  * a separate per-project grant at the point of use.
@@ -134,6 +143,10 @@ const PARALLEL_SEARCH_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.parallelSearch
 
 /** One-time default-off seed for the delayed artifact-checkpoint experiment. */
 const ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.artifactCheckpointEnablement'
+const REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.reviewerInputEnablement'
+
+/** One-time default-off seed for the dark-factory PR sensor on upgraded profiles. */
+const DARK_FACTORY_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.darkFactoryEnablement'
 
 /** One-time default-off seed for Apple Development on upgraded profiles. */
 const APPLE_DEVELOPMENT_ENABLEMENT_MIGRATION_KEY = 'pluginMigration.appleDevelopmentEnablement'
@@ -313,6 +326,29 @@ function migrateArtifactCheckpointEnablement(): void {
   disabled.add(ARTIFACT_CHECKPOINT_PLUGIN_ID)
   storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
   storageSet(ARTIFACT_CHECKPOINT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/** Existing profiles own their disabled list, so add this new experiment off once. */
+function migrateReviewerInputEnablement(): void {
+  if (storageGet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(REVIEWER_INPUT_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(REVIEWER_INPUT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * `copse.dark-factory` arrived after most profiles already owned their disable
+ * list, so the fresh-profile seed never reached them and the fleet PR sensor
+ * started enabled on upgrade. Seed it off exactly once; a later opt-in stays
+ * user-owned because the marker prevents re-entry.
+ */
+function migrateDarkFactoryEnablement(): void {
+  if (storageGet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(DARK_FACTORY_PLUGIN_ID)
+  storageSet(PLUGIN_DISABLED_KEY, [...disabled].sort())
+  storageSet(DARK_FACTORY_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /**
@@ -869,6 +905,8 @@ export function getPluginService(): PluginService {
   migrateAutomationsEnablement()
   migrateParallelSearchEnablement()
   migrateArtifactCheckpointEnablement()
+  migrateReviewerInputEnablement()
+  migrateDarkFactoryEnablement()
   migrateReviewPluginFromModelComparison()
   const registry = createFirstPartyPluginRegistry()
   migrateAppleDevelopmentEnablement()

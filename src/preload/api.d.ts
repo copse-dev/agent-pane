@@ -16,7 +16,10 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { AgentsListResult } from '@shared/types/agents.ts'
-import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
+import type {
+  BundledSkillPluginSummary,
+  CursorPluginSummary,
+} from '@shared/types/cursor-plugins.ts'
 import type {
   HooksListResult,
   HookRunDetail,
@@ -25,6 +28,7 @@ import type {
 } from '@shared/types/hooks.ts'
 import type { PluginsListResult } from '@shared/types/plugins.ts'
 import type {
+  AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
@@ -48,6 +52,8 @@ import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  ThreadWorktreeAttachment,
+  ThreadWorktreeReattachResult,
   GitPromptState,
   GitBranchInfo,
   SessionBackup,
@@ -148,6 +154,13 @@ export interface DetectedEnvKey {
 }
 
 export interface ApiClient {
+  mobile: {
+    manage: () => Promise<void>
+    onChat: (
+      handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
+    ) => () => void
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) => Promise<void>
+  }
   windowState: {
     getNavigation: () => Promise<import('@shared/types/main-window.ts').MainWindowNavigation>
     setNavigation: (
@@ -1061,6 +1074,13 @@ export interface ApiClient {
   cursorPlugins: {
     list: () => Promise<CursorPluginSummary[]>
   }
+  /**
+   * Cursor plugins whose skills ship inside Copse. Each has its own switch,
+   * saved with `settings.set('bundledSkillPluginOverrides', …)`.
+   */
+  bundledSkillPlugins: {
+    list: () => Promise<BundledSkillPluginSummary[]>
+  }
   hooks: {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
@@ -1080,6 +1100,7 @@ export interface ApiClient {
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>
+    permissionOptions: (projectId: string) => Promise<AutomationPermissionOption[]>
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
@@ -1203,6 +1224,10 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** Whether the thread's isolated checkout is detached, without throwing for it. */
+    worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
+    /** Put a detached thread checkout back on its branch, keeping any detached commits. */
+    reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>

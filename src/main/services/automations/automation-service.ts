@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import type {
+  AutomationPermission,
+  AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
   Thread,
 } from '@shared/types'
+import { automationPermissionKey } from '@shared/types'
 import { getPluginService } from '../plugins/plugin-service.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
 import { releaseCompletedAutomationWorktree } from '../worktree-parking.ts'
+import { listMcpPermissionCandidates } from '../mcp/mcp-registry.ts'
+import { parseMcpToolName } from '../mcp/mcp-config.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import { cronMatches, validateCronExpression } from './cron.ts'
 import {
   getTaskSupervisor,
@@ -21,31 +27,138 @@ import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 const STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
 const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 
-function isSchedule(value: unknown): value is AutomationSchedule {
-  if (typeof value !== 'object' || value === null) return false
-  const row = value as Partial<AutomationSchedule>
-  const maxLiveWorktrees: unknown = Reflect.get(value, 'maxLiveWorktrees')
+interface CopseAutomationAction {
+  toolName: string
+  label: string
+  detail: string
+}
+
+const COPSE_AUTOMATION_ACTIONS: readonly CopseAutomationAction[] = [
+  {
+    toolName: 'gh_pr_create',
+    label: 'Create pull requests',
+    detail: 'Pushes the current thread branch and opens a pull request in this project repository.',
+  },
+  {
+    toolName: 'gh_pr_rerun_failed_ci',
+    label: 'Re-run failed CI',
+    detail: 'Re-runs failed checks for pull requests in this project repository.',
+  },
+  {
+    toolName: 'gh_pr_approve',
+    label: 'Approve pull requests',
+    detail: 'Submits a GitHub approval for pull requests in this project repository.',
+  },
+  {
+    toolName: 'gh_pr_mark_ready',
+    label: 'Mark pull requests ready',
+    detail: 'Moves draft pull requests in this project repository into review.',
+  },
+  {
+    toolName: 'gh_pr_enable_auto_merge',
+    label: 'Enable pull request auto-merge',
+    detail: 'Enables the repository-preferred auto-merge strategy for a pull request.',
+  },
+]
+
+function isAutomationPermission(value: unknown): boolean {
+  if (!isRecord(value)) return false
   return (
-    typeof row.id === 'string' &&
-    typeof row.projectId === 'string' &&
-    typeof row.name === 'string' &&
-    typeof row.cron === 'string' &&
-    typeof row.prompt === 'string' &&
-    typeof row.model === 'string' &&
-    typeof row.enabled === 'boolean' &&
+    (value['kind'] === 'copse-action' || value['kind'] === 'mcp-tool') &&
+    typeof value['toolName'] === 'string' &&
+    value['toolName'].length > 0 &&
+    value['toolName'].length <= 512
+  )
+}
+
+function normalizePermissions(
+  permissions: readonly AutomationPermission[],
+): AutomationPermission[] {
+  const unique = new Map<string, AutomationPermission>()
+  for (const permission of permissions) {
+    unique.set(automationPermissionKey(permission), permission)
+  }
+  return [...unique.values()]
+}
+
+function humanizeToolName(toolName: string): string {
+  const spaced = toolName.replace(/[_-]+/g, ' ').trim()
+  return spaced ? `${spaced.charAt(0).toUpperCase()}${spaced.slice(1)}` : toolName
+}
+
+function mcpPermissionDetail(
+  candidate: ReturnType<typeof listMcpPermissionCandidates>[number],
+): string {
+  const hints: string[] = [`${candidate.server} MCP server`]
+  if (candidate.annotations?.destructiveHint) hints.push('marked destructive')
+  else if (candidate.annotations?.readOnlyHint) hints.push('marked read-only')
+  if (candidate.annotations?.openWorldHint) hints.push('may access external systems')
+  return hints.join(' · ')
+}
+
+function permissionOptions(): AutomationPermissionOption[] {
+  const copse = COPSE_AUTOMATION_ACTIONS.map((action): AutomationPermissionOption => ({
+    permission: { kind: 'copse-action', toolName: action.toolName },
+    label: action.label,
+    detail: action.detail,
+  }))
+  const mcp = listMcpPermissionCandidates().map((candidate): AutomationPermissionOption => {
+    const parsed = parseMcpToolName(candidate.toolName)
+    const annotatedTitle = candidate.annotations?.title?.trim()
+    return {
+      permission: { kind: 'mcp-tool', toolName: candidate.toolName },
+      label:
+        annotatedTitle && annotatedTitle.length > 0
+          ? annotatedTitle
+          : humanizeToolName(parsed?.tool ?? candidate.toolName),
+      detail: mcpPermissionDetail(candidate),
+    }
+  })
+  return [...copse, ...mcp]
+}
+
+function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean {
+  if (!isAutomationPermission(permission)) return false
+  if (permission.kind === 'copse-action') {
+    return COPSE_AUTOMATION_ACTIONS.some((action) => action.toolName === permission.toolName)
+  }
+  const parsed = parseMcpToolName(permission.toolName)
+  return parsed !== null && parsed.server.length > 0 && parsed.tool.length > 0
+}
+
+function isSchedule(value: unknown): value is AutomationSchedule {
+  if (!isRecord(value)) return false
+  const maxLiveWorktrees = value['maxLiveWorktrees']
+  const permissions = value['permissions']
+  return (
+    typeof value['id'] === 'string' &&
+    typeof value['projectId'] === 'string' &&
+    typeof value['name'] === 'string' &&
+    typeof value['cron'] === 'string' &&
+    typeof value['prompt'] === 'string' &&
+    typeof value['model'] === 'string' &&
+    typeof value['enabled'] === 'boolean' &&
     (maxLiveWorktrees === undefined ||
       maxLiveWorktrees === 1 ||
       maxLiveWorktrees === 2 ||
       maxLiveWorktrees === 3) &&
-    typeof row.createdAt === 'number' &&
-    typeof row.updatedAt === 'number'
+    (permissions === undefined ||
+      (Array.isArray(permissions) && permissions.every(isAutomationPermission))) &&
+    typeof value['createdAt'] === 'number' &&
+    typeof value['updatedAt'] === 'number'
   )
 }
 
 function readSchedules(): AutomationSchedule[] {
   const raw = storageGet(STORAGE_KEY)
   if (!Array.isArray(raw)) return []
-  return raw.filter(isSchedule)
+  return raw
+    .filter(isSchedule)
+    .map((schedule) =>
+      schedule.permissions
+        ? { ...schedule, permissions: normalizePermissions(schedule.permissions) }
+        : schedule,
+    )
 }
 
 function minuteStamp(timestamp: number): number {
@@ -54,6 +167,18 @@ function minuteStamp(timestamp: number): number {
 
 export interface AutomationService {
   list(projectId: string): AutomationSchedule[]
+  permissionOptions(): AutomationPermissionOption[]
+  permissionPreferenceForThread(
+    projectId: string,
+    threadId: string,
+    automation: NonNullable<Thread['automation']>,
+    permission: AutomationPermission,
+  ): { scheduleName: string; allowed: boolean } | null
+  grantPermission(
+    projectId: string,
+    scheduleId: string,
+    permission: AutomationPermission,
+  ): Promise<boolean>
   upsert(projectId: string, input: AutomationScheduleInput): Promise<AutomationSchedule>
   remove(projectId: string, scheduleId: string): Promise<void>
   runNow(projectId: string, scheduleId: string): Promise<AutomationTriggerEvent>
@@ -282,6 +407,47 @@ export function createAutomationService(
         .filter((schedule) => schedule.projectId === projectId)
         .sort((a, b) => a.createdAt - b.createdAt)
     },
+    permissionOptions,
+    permissionPreferenceForThread(projectId, threadId, automation, permission) {
+      const schedule = service
+        .list(projectId)
+        .find(
+          (candidate) =>
+            candidate.id === automation.scheduleId &&
+            candidate.lastCreatedThreadId === threadId &&
+            candidate.lastRunAt === automation.triggeredAt,
+        )
+      if (!schedule) return null
+      const key = automationPermissionKey(permission)
+      return {
+        scheduleName: schedule.name,
+        allowed: (schedule.permissions ?? []).some(
+          (candidate) => automationPermissionKey(candidate) === key,
+        ),
+      }
+    },
+    async grantPermission(projectId, scheduleId, permission) {
+      if (!canGrantPermissionFromPrompt(permission)) return false
+      let found = false
+      await storageUpdate(STORAGE_KEY, (raw) => {
+        const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+        return schedules.map((schedule) => {
+          if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
+          found = true
+          const key = automationPermissionKey(permission)
+          if (
+            (schedule.permissions ?? []).some(
+              (candidate) => automationPermissionKey(candidate) === key,
+            )
+          ) {
+            return schedule
+          }
+          const permissions = normalizePermissions([...(schedule.permissions ?? []), permission])
+          return { ...schedule, permissions, updatedAt: dependencies.now() }
+        })
+      })
+      return found
+    },
     async upsert(projectId, input) {
       validateCronExpression(input.cron)
       const existing = input.id
@@ -291,6 +457,20 @@ export function createAutomationService(
         : undefined
       if (input.id && !existing) throw new Error('Automation schedule not found in this project')
       const now = dependencies.now()
+      const permissions = normalizePermissions(input.permissions ?? existing?.permissions ?? [])
+      const selectable = new Set(
+        service.permissionOptions().map((option) => automationPermissionKey(option.permission)),
+      )
+      const retained = new Set(
+        (existing?.permissions ?? []).map((permission) => automationPermissionKey(permission)),
+      )
+      const unavailable = permissions.find((permission) => {
+        const key = automationPermissionKey(permission)
+        return !selectable.has(key) && !retained.has(key)
+      })
+      if (unavailable) {
+        throw new Error(`Automation permission is not available: ${unavailable.toolName}`)
+      }
       const schedule: AutomationSchedule = {
         id: existing?.id ?? randomUUID(),
         projectId,
@@ -300,6 +480,7 @@ export function createAutomationService(
         model: input.model.trim(),
         enabled: input.enabled,
         maxLiveWorktrees: input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1,
+        ...(permissions.length > 0 ? { permissions } : {}),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         ...(existing?.lastRunAt !== undefined ? { lastRunAt: existing.lastRunAt } : {}),
