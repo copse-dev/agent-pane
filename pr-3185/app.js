@@ -71940,7 +71940,7 @@ function runKey(pre, command) {
     if (other === pre) break;
     if (other.closest("[data-message-id]") !== message2) continue;
     const otherCode = other.querySelector("code");
-    if (otherCode && copyButtonText(otherCode).trim() === command) occurrence++;
+    if (otherCode && runnableCommand(otherCode) === command) occurrence++;
   }
   return `${messageId}\0${String(occurrence)}\0${command}`;
 }
@@ -71974,6 +71974,10 @@ function looksLikeUnlabelledCommand(source) {
   const slash = Math.max(head.lastIndexOf("/"), head.lastIndexOf("\\"));
   const basename3 = (slash >= 0 ? head.slice(slash + 1) : head).toLowerCase();
   return COMMON_SHELL_COMMANDS.has(basename3);
+}
+function runnableCommand(code) {
+  const command = copyButtonText(code).trim();
+  return command.includes("\n") ? command : command.replace(/^\$\s+/, "");
 }
 function isRunnableCodeBlock(code) {
   const language = explicitCodeLanguage(code);
@@ -72109,7 +72113,7 @@ function attachCodeBlockCopyButtons(root, options = {}) {
       event.stopPropagation();
       const currentCode = pre.querySelector("code");
       if (!currentCode) return;
-      const command = copyButtonText(currentCode).trim();
+      const command = runnableCommand(currentCode);
       if (!command) return;
       const run2 = { id: crypto.randomUUID(), state: "running", outcome: null };
       const key = runKey(pre, command);
@@ -72124,7 +72128,7 @@ function attachCodeBlockCopyButtons(root, options = {}) {
     });
     if (runsByBlock.size > 0) {
       queueMicrotask(() => {
-        const command = copyButtonText(code).trim();
+        const command = runnableCommand(code);
         const key = runKey(pre, command);
         const run2 = key ? runsByBlock.get(key) : void 0;
         if (run2 && !runBtn.dataset["runId"]) showRun(runShell, runBtn, run2);
