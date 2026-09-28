@@ -1,8 +1,11 @@
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import type {
-  AutomationLiveWorktreeLimit,
-  AutomationSchedule,
-  AutomationScheduleInput,
+import {
+  automationPermissionKey,
+  type AutomationPermission,
+  type AutomationPermissionOption,
+  type AutomationLiveWorktreeLimit,
+  type AutomationSchedule,
+  type AutomationScheduleInput,
 } from '@shared/types'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -181,7 +184,7 @@ export function createAutomationPluginSettings(
   )
   const pluginNotice = (): string =>
     pluginEnabled
-      ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Normal tool permission prompts still apply.'
+      ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses.'
       : 'Enable this plugin to arm schedules. Existing schedules remain editable while disabled.'
   const notice = el('p', { class: 'automation-notice' }, pluginNotice())
   const status = el('div', { class: 'automation-status', role: 'status', hidden: true })
@@ -272,6 +275,30 @@ export function createAutomationPluginSettings(
     el('option', { value: '2' }, '2 — allow one retained checkout'),
     el('option', { value: '3' }, '3 — allow two retained checkouts'),
   )
+  const permissionsFieldset = el('fieldset', { class: 'automation-permissions' })
+  const permissionFilterInput = el('input', {
+    type: 'search',
+    class: 'automation-input automation-permission-filter',
+    placeholder: 'Filter actions and MCP tools…',
+    'aria-label': 'Filter automation permissions',
+    autocomplete: 'off',
+    spellcheck: false,
+  })
+  const permissionCount = el('span', {
+    class: 'automation-permission-count',
+    'aria-live': 'polite',
+  })
+  const permissionsList = el('div', { class: 'automation-permission-list' })
+  permissionsFieldset.append(
+    el('legend', {}, 'Allowed without asking'),
+    el(
+      'p',
+      { class: 'automation-hint automation-permissions-hint' },
+      'Optional and schedule-specific. Shell commands, file approvals, new websites, sensitive data, and model spend still ask.',
+    ),
+    el('div', { class: 'automation-permission-toolbar' }, permissionFilterInput, permissionCount),
+    permissionsList,
+  )
   const saveButton = el(
     'button',
     { type: 'submit', class: 'ui-btn ui-btn-primary automation-save-btn' },
@@ -299,6 +326,7 @@ export function createAutomationPluginSettings(
         'Higher limits let fresh runs start while older changes wait for review.',
       ),
     ),
+    permissionsFieldset,
     el('label', { class: 'automation-enabled-label' }, enabledInput, 'Schedule enabled'),
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
@@ -314,6 +342,9 @@ export function createAutomationPluginSettings(
   })
 
   let schedules: AutomationSchedule[] = []
+  let availablePermissions: AutomationPermissionOption[] = []
+  let permissionValuesByKey = new Map<string, AutomationPermission>()
+  let selectedPermissionKeys = new Set<string>()
   let editingId: string | null = null
   let customCron: string | null = null
   // Consumed by the first successful load; later refreshes (a save, a delete)
@@ -410,6 +441,142 @@ export function createAutomationPluginSettings(
     updateScheduleControls()
   }
 
+  function unavailablePermissionOption(
+    permission: AutomationPermission,
+  ): AutomationPermissionOption {
+    const parts = permission.toolName.split('__')
+    const mcpLabel =
+      parts[0] === 'mcp' && parts.length >= 3
+        ? `${parts[1] ?? 'MCP'} / ${parts.slice(2).join('__')}`
+        : permission.toolName
+    return {
+      permission,
+      label: permission.kind === 'mcp-tool' ? mcpLabel : permission.toolName,
+      detail: 'Not currently available. Kept so the approval works if this tool returns.',
+    }
+  }
+
+  function permissionRow(option: AutomationPermissionOption, unavailable = false): HTMLElement {
+    const key = automationPermissionKey(option.permission)
+    const checkbox = el('input', {
+      type: 'checkbox',
+      role: 'switch',
+      class: 'automation-permission-input',
+      'data-permission-key': key,
+    })
+    checkbox.checked = selectedPermissionKeys.has(key)
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedPermissionKeys.add(key)
+      else selectedPermissionKeys.delete(key)
+    })
+    const switchControl = el(
+      'span',
+      { class: 'toggle-switch automation-permission-switch' },
+      checkbox,
+      el('span', { class: 'toggle-switch-track', 'aria-hidden': 'true' }),
+    )
+    return el(
+      'label',
+      {
+        class: `automation-permission-row${unavailable ? ' automation-permission-unavailable' : ''}`,
+        title: option.permission.toolName,
+      },
+      el(
+        'span',
+        { class: 'automation-permission-copy' },
+        el(
+          'span',
+          { class: 'automation-permission-heading' },
+          el('span', { class: 'automation-permission-label' }, option.label),
+          el(
+            'span',
+            {
+              class: `automation-permission-kind automation-permission-kind-${option.permission.kind}`,
+            },
+            unavailable
+              ? 'Unavailable'
+              : option.permission.kind === 'copse-action'
+                ? 'Copse action'
+                : 'MCP tool',
+          ),
+        ),
+        el('span', { class: 'automation-permission-detail' }, option.detail),
+        el('code', { class: 'automation-permission-id' }, option.permission.toolName),
+      ),
+      switchControl,
+    )
+  }
+
+  function renderPermissionChoices(): void {
+    clear(permissionsList)
+    const availableKeys = new Set(
+      availablePermissions.map((option) => automationPermissionKey(option.permission)),
+    )
+    const unavailable = [...permissionValuesByKey.values()]
+      .filter((permission) => !availableKeys.has(automationPermissionKey(permission)))
+      .map(unavailablePermissionOption)
+    const allOptions = [
+      ...availablePermissions.map((option) => ({ option, unavailable: false })),
+      ...unavailable.map((option) => ({ option, unavailable: true })),
+    ]
+    const query = permissionFilterInput.value.trim().toLowerCase()
+    const terms = query ? query.split(/\s+/) : []
+    const matches = allOptions.filter(({ option }) => {
+      const haystack = [
+        option.label,
+        option.detail,
+        option.permission.toolName,
+        option.permission.kind === 'copse-action' ? 'Copse action' : 'MCP tool',
+      ]
+        .join(' ')
+        .toLowerCase()
+      return terms.every((term) => haystack.includes(term))
+    })
+    permissionCount.textContent = query
+      ? `${String(matches.length)} of ${String(allOptions.length)} permissions`
+      : `${String(allOptions.length)} permission${allOptions.length === 1 ? '' : 's'}`
+    if (matches.length === 0) {
+      permissionsList.append(
+        el(
+          'p',
+          { class: 'automation-permission-empty' },
+          query
+            ? `No permissions match “${permissionFilterInput.value.trim()}”.`
+            : 'No permissions are available.',
+        ),
+      )
+      return
+    }
+    permissionsList.append(
+      ...matches.map(({ option, unavailable: isUnavailable }) =>
+        permissionRow(option, isUnavailable),
+      ),
+    )
+  }
+
+  function setPermissionChoices(permissions: readonly AutomationPermission[]): void {
+    permissionValuesByKey = new Map(
+      availablePermissions.map((option) => [
+        automationPermissionKey(option.permission),
+        option.permission,
+      ]),
+    )
+    for (const permission of permissions) {
+      permissionValuesByKey.set(automationPermissionKey(permission), permission)
+    }
+    selectedPermissionKeys = new Set(permissions.map(automationPermissionKey))
+    renderPermissionChoices()
+  }
+
+  function selectedPermissions(): AutomationPermission[] {
+    return [...selectedPermissionKeys].flatMap((key) => {
+      const permission = permissionValuesByKey.get(key)
+      return permission ? [{ ...permission }] : []
+    })
+  }
+
+  permissionFilterInput.addEventListener('input', renderPermissionChoices)
+
   async function openForm(schedule?: AutomationSchedule): Promise<void> {
     hideStatus()
     editingId = schedule?.id ?? null
@@ -421,6 +588,8 @@ export function createAutomationPluginSettings(
     promptInput.value = schedule?.prompt ?? ''
     enabledInput.checked = schedule?.enabled ?? true
     worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1)
+    permissionFilterInput.value = ''
+    setPermissionChoices(schedule?.permissions ?? [])
     // An existing schedule keeps whatever it stored (including a model pinned
     // before schedules moved to dynamic selection — the picker surfaces it as a
     // pinned row). A new one starts from best value rather than inheriting the
@@ -462,6 +631,13 @@ export function createAutomationPluginSettings(
             'span',
             {},
             `${String(schedule.maxLiveWorktrees ?? 1)} live worktree${(schedule.maxLiveWorktrees ?? 1) === 1 ? '' : 's'} max`,
+          ),
+          el(
+            'span',
+            {},
+            (schedule.permissions?.length ?? 0) === 0
+              ? 'No unattended approvals'
+              : `${String(schedule.permissions?.length ?? 0)} unattended approval${(schedule.permissions?.length ?? 0) === 1 ? '' : 's'}`,
           ),
         ),
         el('div', { class: 'automation-row-last-run' }, lastRunLabel(schedule.lastRunAt)),
@@ -555,7 +731,12 @@ export function createAutomationPluginSettings(
   async function refresh(): Promise<void> {
     if (!projectId) return
     try {
-      schedules = await api.automations.list(projectId)
+      const [loadedSchedules, loadedPermissions] = await Promise.all([
+        api.automations.list(projectId),
+        api.automations.permissionOptions(projectId),
+      ])
+      schedules = loadedSchedules
+      availablePermissions = loadedPermissions
       renderList()
       revealLinkedSchedule()
       if (pendingCreate) {
@@ -599,6 +780,7 @@ export function createAutomationPluginSettings(
       model: modelSelect.value,
       enabled: enabledInput.checked,
       maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
+      permissions: selectedPermissions(),
     }
     void api.automations
       .upsert(projectId, input)

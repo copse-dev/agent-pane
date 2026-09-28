@@ -17,6 +17,7 @@ import {
   syncParallelSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
+  syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
@@ -26,6 +27,7 @@ import { setGhAvailableForTest } from './tool-availability.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
@@ -283,6 +285,30 @@ describe('syncRoadmapPlanTools', () => {
     pluginRegistry.disable(ROADMAP_PLANS_PLUGIN_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
+  })
+})
+
+describe('syncReviewerInputTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('registers the request tool only while the experimental plugin is enabled', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), false)
+
+    plugins.enable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), true)
+
+    plugins.disable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), false)
   })
 })
 

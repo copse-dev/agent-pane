@@ -11,8 +11,12 @@ export interface CodeBlockRunRequest {
 
 export interface CodeBlockRunResult {
   id: string
+  projectId: string
   threadId: string
   exitCode: number | null
+  /** The terminal's text alone, for showing under the command's code block. */
+  output: string
+  /** The attachment the agent receives: command, exit code and output. */
   shell: {
     tabId: string
     label: string
@@ -34,6 +38,8 @@ export interface StoreEvents {
   thread_status_changed: [threadId: string, status: ThreadStatus]
   agent_activity: [threadId: string, label: string | null]
   threads_changed: []
+  reviewer_input_open: [requestId: string]
+  reviewer_input_jump: [messageId: string, requestId: string]
   // Draft composer text changed for a thread. Kept separate from
   // `threads_changed` so high-cost listeners (e.g. the conversation rebuild)
   // are not re-run on every keystroke while the user is typing.
