@@ -152,12 +152,29 @@ export function isPrivateOrLinkLocalHost(hostname: string): boolean {
   return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80
 }
 
+export interface CredentialUrlOptions {
+  /**
+   * Names the caller's own transport carries only to its host's loopback, which
+   * therefore count as loopback here: plain http is allowed to them. The one
+   * caller is the container guest, whose `model.copse.internal` leaves the
+   * guest only over the container's stdio link and is dialled by the host
+   * broker on the host's loopback (`docs/plans/thread-in-container.md`, A16).
+   * Nothing on the desktop passes one; a name here is not a trusted host
+   * anywhere else.
+   */
+  loopbackAliases?: readonly string[]
+}
+
 /**
  * Validate a base URL that will carry a secret credential. Returns the
  * normalized URL string, or throws on invalid input. `label` prefixes the error
  * messages so callers can name the field (e.g. "Remote agent base URL").
  */
-export function validateCredentialBaseUrl(value: string, label = 'Base URL'): string {
+export function validateCredentialBaseUrl(
+  value: string,
+  label = 'Base URL',
+  options: CredentialUrlOptions = {},
+): string {
   const raw = value.trim()
   if (!raw) throw new Error(`${label} cannot be blank`)
 
@@ -172,7 +189,10 @@ export function validateCredentialBaseUrl(value: string, label = 'Base URL'): st
     throw new Error(`${label} must not include embedded credentials`)
   }
 
-  const loopback = isLoopbackHostname(url.hostname)
+  const host = normalizeHostname(url.hostname)
+  const loopback =
+    isLoopbackHostname(host) ||
+    (options.loopbackAliases ?? []).some((alias) => normalizeHostname(alias) === host)
 
   if (url.protocol === 'http:') {
     if (loopback) return url.toString()
