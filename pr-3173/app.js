@@ -91229,7 +91229,10 @@ var init_thread_branch = __esm({
 
 // src/renderer/views/footer-branch-status.ts
 function detachedTitle(detached) {
-  return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} is still in progress. Finish or abort it in the thread terminal, then reattach.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
+  return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
+}
+function recoveryCommand(recovery) {
+  return `git ${recovery} --continue`;
 }
 function reportBranchFailure(what, error62) {
   console.warn(`[footer-branch-status] failed to ${what}:`, error62);
@@ -91408,7 +91411,15 @@ function mountFooterBranchStatus(host, store2, api2) {
     const title = detachedTitle(current);
     trigger.title = title;
     reattachButton.title = title;
-    reattachButton.disabled = reattaching || current.recovery !== null;
+    reattachButton.disabled = reattaching;
+    if (current.recovery) {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Continue the ${current.recovery} on ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = `Continue ${current.recovery}`;
+      return;
+    }
     reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
     reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
   }
@@ -91427,7 +91438,11 @@ function mountFooterBranchStatus(host, store2, api2) {
   async function reattach() {
     const owner = getActiveThreadOwner(store2);
     const current = activeDetached();
-    if (!owner || !current || current.recovery || reattaching) return;
+    if (!owner || !current || reattaching) return;
+    if (current.recovery) {
+      store2.emit("request_terminal_command", recoveryCommand(current.recovery));
+      return;
+    }
     reattaching = true;
     renderReattach();
     try {
