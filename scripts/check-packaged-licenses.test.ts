@@ -7,13 +7,16 @@ import {
   THIRD_PARTY_LICENSE_JSON,
   THIRD_PARTY_LICENSES_DIR,
 } from '../src/shared/third-party-licenses.mts'
-import { findPackagedLicenseProblems, packageManifestPaths } from './check-packaged-licenses.mts'
+import {
+  findPackagedLicenseProblems,
+  packageManifestPaths,
+  packagedChromiumLicensePath,
+} from './check-packaged-licenses.mts'
 import { openAsar, type AsarArchive } from './lib/asar-archive.mts'
 
 const LICENSE_FILES = [
   'third-party-licenses.json',
   'THIRD_PARTY_LICENSES.txt',
-  'LICENSES.chromium.html.gz',
   'LICENSE.txt',
 ].map((name) => `${THIRD_PARTY_LICENSES_DIR}/${name}`)
 
@@ -95,8 +98,22 @@ describe('packaged licence check', () => {
       'node_modules/a/package.json': { name: 'a', version: '1.0.0', license: 'MIT' },
     })
     assert.deepEqual(
-      findPackagedLicenseProblems(archive),
-      LICENSE_FILES.map((path) => `${path} is not in the app`),
+      findPackagedLicenseProblems(archive, false),
+      [
+        ...LICENSE_FILES.map((path) => `${path} is not in the app`),
+        'LICENSES.chromium.html is not beside the packaged Electron runtime',
+      ],
+    )
+  })
+
+  it('finds electron-builder notices beside each packaged runtime', () => {
+    assert.equal(
+      packagedChromiumLicensePath('/Applications/Copse.app/Contents/Resources'),
+      '/Applications/Copse.app/Contents/Resources/LICENSES.chromium.html',
+    )
+    assert.equal(
+      packagedChromiumLicensePath('/opt/Copse/resources'),
+      '/opt/Copse/LICENSES.chromium.html',
     )
   })
 })

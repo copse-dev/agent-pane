@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { GORTEX_VERSION } from './lib/native-artifacts.mts'
 import {
@@ -9,14 +10,15 @@ import {
   findLicenseProblems,
   isLicenseFileName,
   productionPackageDirs,
+  readManifest,
   readPackageLicenseFiles,
 } from './lib/third-party-licenses.mts'
 import {
   COPIED_PACKAGES,
-  ELECTRON_NOTICES,
   LICENSE_OVERRIDES,
   VENDORED_COMPONENTS,
   applyLicenseOverrides,
+  electronComponent,
   readGortexLicenses,
   vendoredComponents,
 } from './third-party-vendored.mts'
@@ -70,7 +72,27 @@ describe('third-party licence inputs', () => {
       }
     }
     assert.deepEqual([...copied].sort(), [...COPIED_PACKAGES].sort())
-    assert.ok(ELECTRON_NOTICES.startsWith('node_modules/electron/dist/'))
+  })
+
+  it('reads Electron licence metadata without an extracted runtime', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'copse-electron-license-'))
+    try {
+      const electron = join(fixture, 'node_modules', 'electron')
+      mkdirSync(electron, { recursive: true })
+      writeFileSync(join(electron, 'package.json'), '{"version":"44.4.1"}')
+      writeFileSync(join(electron, 'LICENSE'), 'MIT License')
+      assert.deepEqual(electronComponent(fixture), {
+        name: 'electron',
+        version: '44.4.1',
+        license: 'MIT',
+        source: 'https://github.com/electron/electron',
+        shippedAs: ['vendored'],
+        partOf: null,
+        files: [{ name: 'LICENSE', text: 'MIT License' }],
+      })
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
   })
 
   it('keeps the gortex licence data in step with the gortex the app ships', () => {
@@ -112,6 +134,14 @@ describe('third-party licence inputs', () => {
       [],
       'sharp/libvips (LGPL) must stay out of app.asar: see THIRD_PARTY_NOTICES.md',
     )
+  })
+
+  it('covers every optional keyring binary on every packaging platform', () => {
+    const keyring = readManifest(realpathSync(resolve('node_modules/@napi-rs/keyring')))
+    const missing = Object.keys(keyring.optionalDependencies ?? {}).filter(
+      (name) => name.startsWith('@napi-rs/keyring-') && !LICENSE_OVERRIDES[name],
+    )
+    assert.deepEqual(missing, [])
   })
 
   it("ships noVNC's full MPL-2.0 text, not only its summary", () => {

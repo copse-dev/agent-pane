@@ -1,8 +1,5 @@
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdir, readFile, rename } from 'node:fs/promises'
-import { pipeline } from 'node:stream/promises'
-import { createGunzip } from 'node:zlib'
-import { basename, join } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import {
@@ -17,7 +14,7 @@ import {
 } from '@shared/third-party-licenses.mts'
 
 /**
- * The licence files the build writes beside `dist/main` (see
+ * The report files the build writes beside `dist/main` (see
  * scripts/write-third-party-licenses.mts). In a packaged app they are unpacked
  * from app.asar, so the path handed to another application has to name the
  * `app.asar.unpacked` copy: nothing outside Electron can read inside the asar.
@@ -35,29 +32,40 @@ const FILE_FOR_KIND: Readonly<Record<LicenseFileKind, string>> = {
   copse: COPSE_LICENSE_FILE,
 }
 
-export function licenseFilePath(kind: LicenseFileKind, dir: string = licensesDir()): string {
+/**
+ * electron-builder keeps Chromium's notices beside the executable on Windows
+ * and Linux, and moves them into Contents/Resources on macOS.
+ */
+export function chromiumLicensePath(options: {
+  platform: NodeJS.Platform
+  resourcesPath: string
+  execPath: string
+  isPackaged: boolean
+}): string {
+  if (options.platform !== 'darwin') {
+    return join(dirname(options.execPath), CHROMIUM_LICENSES_FILE)
+  }
+  return options.isPackaged
+    ? join(options.resourcesPath, CHROMIUM_LICENSES_FILE)
+    : resolve(options.resourcesPath, '..', '..', '..', CHROMIUM_LICENSES_FILE)
+}
+
+export function licenseFilePath(
+  kind: LicenseFileKind,
+  dir: string = licensesDir(),
+  chromiumPath?: string,
+): string {
+  if (kind === 'chromium' && chromiumPath) return chromiumPath
   return join(dir, FILE_FOR_KIND[kind])
 }
 
-/**
- * A path another application can open for `kind`. The Chromium notices ship
- * gzipped, so they are decompressed into `tempDir` first.
- */
-export async function openableLicenseFile(
+/** A plain path another application can open for `kind`. */
+export function openableLicenseFile(
   kind: LicenseFileKind,
-  tempDir: string,
   dir: string = licensesDir(),
-): Promise<string> {
-  const shipped = licenseFilePath(kind, dir)
-  if (!shipped.endsWith('.gz')) return shipped
-  const outDir = join(tempDir, 'copse-licenses')
-  const out = join(outDir, basename(shipped, '.gz'))
-  await mkdir(outDir, { recursive: true })
-  // Write beside and rename, so a viewer never opens a half-written file.
-  const partial = `${out}.${String(process.pid)}.partial`
-  await pipeline(createReadStream(shipped), createGunzip(), createWriteStream(partial))
-  await rename(partial, out)
-  return out
+  chromiumPath?: string,
+): string {
+  return licenseFilePath(kind, dir, chromiumPath)
 }
 
 const reportSchema = z.object({

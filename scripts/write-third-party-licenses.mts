@@ -8,11 +8,12 @@
  * are plain files inside Copse.app):
  * - `THIRD_PARTY_LICENSES.txt` — every component and its licence texts.
  * - `third-party-licenses.json` — the same, for Settings → About.
- * - `LICENSES.chromium.html` — Chromium's and Node's notices, from Electron.
  * - `LICENSE.txt` — Copse's own licence.
+ *
+ * electron-builder retains Electron's `LICENSES.chromium.html` beside the
+ * packaged runtime. It is deliberately not duplicated in this directory.
  */
-import { copyFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { gzipSync } from 'node:zlib'
+import { copyFileSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   THIRD_PARTY_LICENSE_JSON,
@@ -32,7 +33,6 @@ import {
 } from './lib/third-party-licenses.mts'
 import {
   COPIED_PACKAGES,
-  ELECTRON_NOTICES,
   applyLicenseOverrides,
   markPatchedPackages,
   vendoredComponents,
@@ -51,8 +51,8 @@ components listed below, each under its own licence, which applies to that
 component alone.
 
 The Electron runtime Copse is built on also contains Chromium, Node.js and their
-dependencies. Their licences are in ${CHROMIUM_LICENSES_FILE} (gzip-compressed
-HTML) beside this file.
+dependencies. electron-builder retains their licences in ${CHROMIUM_LICENSES_FILE}
+beside the packaged runtime.
 
 The Source Code Form of each component under the Mozilla Public License 2.0 is
 available from the Source address listed with it. Any change Copse makes to a
@@ -103,10 +103,6 @@ export function writeThirdPartyLicenses(
   writeFileSync(
     join(outDir, THIRD_PARTY_LICENSE_TEXT),
     renderLicenseReportText(report, licenseReportPreamble(report.components.length)),
-  )
-  writeFileSync(
-    join(outDir, CHROMIUM_LICENSES_FILE),
-    gzipSync(readFileSync(join(rootDir, ELECTRON_NOTICES)), { level: 9 }),
   )
   copyFileSync(join(rootDir, 'LICENSE'), join(outDir, COPSE_LICENSE_FILE))
   return report

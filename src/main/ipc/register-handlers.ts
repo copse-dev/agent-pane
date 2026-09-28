@@ -2,6 +2,7 @@ import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
 import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
 import {
+  chromiumLicensePath,
   openableLicenseFile,
   readThirdPartyLicenseReport,
 } from '../services/about/third-party-licenses.ts'
@@ -2820,9 +2821,15 @@ export function registerAllHandlers(
   })
   ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
     assertMainFrameSender(event, win)
-    const file = await openableLicenseFile(
+    const file = openableLicenseFile(
       parseIpcArgs(z.enum(LICENSE_FILE_KINDS), [kind]),
-      app.getPath('temp'),
+      undefined,
+      chromiumLicensePath({
+        platform: process.platform,
+        resourcesPath: process.resourcesPath,
+        execPath: process.execPath,
+        isPackaged: app.isPackaged,
+      }),
     )
     // openPath resolves to an error message rather than rejecting.
     const error = await shell.openPath(file)

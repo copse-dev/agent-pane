@@ -81,6 +81,12 @@ interface LicenseOverride {
   origin: string
 }
 
+const KEYRING_BINARY_LICENSE_OVERRIDE: LicenseOverride = {
+  declared: 'MIT',
+  licenseFile: 'vendor/licenses/npm/@napi-rs/keyring/LICENSE',
+  origin: 'Brooooooklyn/keyring-node LICENSE (the platform binary packages ship none)',
+}
+
 /**
  * npm packages that ship without the licence text they declare. Keyed by name,
  * not version: a new release that still ships no file keeps the same upstream
@@ -108,14 +114,40 @@ export const LICENSE_OVERRIDES: Readonly<Record<string, LicenseOverride>> = {
     origin: 'the "License" section of wilsonpage/fastdom README.md (the repo has no LICENSE file)',
   },
   '@napi-rs/keyring-darwin-arm64': {
-    declared: 'MIT',
-    licenseFile: 'vendor/licenses/npm/@napi-rs/keyring/LICENSE',
-    origin: 'Brooooooklyn/keyring-node LICENSE (the platform binary packages ship none)',
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
   },
   '@napi-rs/keyring-darwin-x64': {
-    declared: 'MIT',
-    licenseFile: 'vendor/licenses/npm/@napi-rs/keyring/LICENSE',
-    origin: 'Brooooooklyn/keyring-node LICENSE (the platform binary packages ship none)',
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-freebsd-x64': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-linux-arm-gnueabihf': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-linux-arm64-gnu': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-linux-arm64-musl': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-linux-riscv64-gnu': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-linux-x64-gnu': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-linux-x64-musl': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-win32-arm64-msvc': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-win32-ia32-msvc': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
+  },
+  '@napi-rs/keyring-win32-x64-msvc': {
+    ...KEYRING_BINARY_LICENSE_OVERRIDE,
   },
   'lazy-val': {
     declared: 'MIT',
@@ -253,13 +285,11 @@ export function cursorPluginComponents(rootDir: string): CollectedComponent[] {
 }
 
 /**
- * The Electron runtime. electron-builder copies only `Electron.app`, which
- * carries neither Electron's MIT licence nor Chromium's 20 MB of third-party
- * notices (`LICENSES.chromium.html`); both sit beside it in electron's `dist/`.
- * The build copies the Chromium notices next to the report ({@link ELECTRON_NOTICES}).
+ * The Electron runtime. The npm package always carries Electron's MIT licence,
+ * even on CI hosts where its platform runtime has not been downloaded yet.
+ * electron-builder retains the runtime's Chromium notices in the packaged app;
+ * the packaging check verifies that file separately.
  */
-export const ELECTRON_NOTICES = 'node_modules/electron/dist/LICENSES.chromium.html'
-
 export function electronComponent(rootDir: string): CollectedComponent {
   const dir = join(rootDir, 'node_modules', 'electron')
   const version = safeJsonParse(
@@ -267,11 +297,6 @@ export function electronComponent(rootDir: string): CollectedComponent {
     decodeWithSchema(z.object({ version: z.string() })),
   )?.version
   if (!version) throw new Error('[licenses] cannot read the installed electron version')
-  const distVersion = readFileSync(join(dir, 'dist', 'version'), 'utf8').trim()
-  if (distVersion !== version) {
-    // A stale ~/.copse/cache/electron-dist link would ship the wrong notices.
-    throw new Error(`[licenses] electron ${version} has a ${distVersion} dist/ — reinstall`)
-  }
   return {
     name: 'electron',
     version,
@@ -279,7 +304,7 @@ export function electronComponent(rootDir: string): CollectedComponent {
     source: 'https://github.com/electron/electron',
     shippedAs: ['vendored'],
     partOf: null,
-    files: [readRepoFile(rootDir, 'node_modules/electron/dist/LICENSE')],
+    files: [readRepoFile(rootDir, 'node_modules/electron/LICENSE')],
   }
 }
 

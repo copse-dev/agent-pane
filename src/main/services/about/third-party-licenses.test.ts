@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { gzipSync } from 'node:zlib'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import {
+  chromiumLicensePath,
   licenseFilePath,
   licensesDir,
   openableLicenseFile,
@@ -22,28 +22,54 @@ describe('shipped licence files', () => {
 
   it('names each file by what it covers', () => {
     assert.equal(licenseFilePath('third-party', '/l'), '/l/THIRD_PARTY_LICENSES.txt')
-    assert.equal(licenseFilePath('chromium', '/l'), '/l/LICENSES.chromium.html.gz')
+    assert.equal(
+      licenseFilePath('chromium', '/l', '/runtime/LICENSES.chromium.html'),
+      '/runtime/LICENSES.chromium.html',
+    )
     assert.equal(licenseFilePath('copse', '/l'), '/l/LICENSE.txt')
   })
 
-  it('decompresses the Chromium notices to a file a browser can open', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'copse-about-open-'))
-    try {
-      const shipped = join(dir, 'licenses')
-      mkdirSync(shipped)
-      writeFileSync(join(shipped, 'LICENSES.chromium.html.gz'), gzipSync('<html>credits</html>'))
-      writeFileSync(join(shipped, 'THIRD_PARTY_LICENSES.txt'), 'all')
-      const temp = join(dir, 'tmp')
-      const html = await openableLicenseFile('chromium', temp, shipped)
-      assert.equal(html, join(temp, 'copse-licenses', 'LICENSES.chromium.html'))
-      assert.equal(readFileSync(html, 'utf8'), '<html>credits</html>')
+  it('finds electron-builder notices on macOS, Windows and Linux', () => {
+    assert.equal(
+      chromiumLicensePath({
+        platform: 'darwin',
+        resourcesPath: '/Applications/Copse.app/Contents/Resources',
+        execPath: '/Applications/Copse.app/Contents/MacOS/Copse',
+        isPackaged: true,
+      }),
+      '/Applications/Copse.app/Contents/Resources/LICENSES.chromium.html',
+    )
+    assert.equal(
+      chromiumLicensePath({
+        platform: 'darwin',
+        resourcesPath: '/repo/node_modules/electron/dist/Copse.app/Contents/Resources',
+        execPath: '/repo/node_modules/electron/dist/Copse.app/Contents/MacOS/Electron',
+        isPackaged: false,
+      }),
+      '/repo/node_modules/electron/dist/LICENSES.chromium.html',
+    )
+    for (const platform of ['linux', 'win32'] as const) {
       assert.equal(
-        await openableLicenseFile('third-party', temp, shipped),
-        join(shipped, 'THIRD_PARTY_LICENSES.txt'),
+        chromiumLicensePath({
+          platform,
+          resourcesPath: '/opt/Copse/resources',
+          execPath: '/opt/Copse/copse',
+          isPackaged: true,
+        }),
+        '/opt/Copse/LICENSES.chromium.html',
       )
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('returns plain files that another application can open', () => {
+    assert.equal(
+      openableLicenseFile('chromium', '/licenses', '/runtime/LICENSES.chromium.html'),
+      '/runtime/LICENSES.chromium.html',
+    )
+    assert.equal(
+      openableLicenseFile('third-party', '/licenses', '/runtime/LICENSES.chromium.html'),
+      '/licenses/THIRD_PARTY_LICENSES.txt',
+    )
   })
 
   describe('report', () => {

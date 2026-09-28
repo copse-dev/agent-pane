@@ -82,7 +82,7 @@ module.exports = async function afterPack(context) {
 /**
  * Read the packaged app.asar and fail when a package in it has no entry in the
  * shipped licence report, is GPL-family only, or is sharp/libvips — or when the
- * licence files themselves are missing. See scripts/check-packaged-licenses.mts.
+ * report/runtime notice files are missing. See scripts/check-packaged-licenses.mts.
  * Runs before the macOS steps below so it covers every platform; the keyring
  * binary they delete is in the report either way.
  */

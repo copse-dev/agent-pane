@@ -9,12 +9,8 @@ export const THIRD_PARTY_LICENSE_REPORT_VERSION = 1
 export const THIRD_PARTY_LICENSES_DIR = 'dist/resources/licenses'
 export const THIRD_PARTY_LICENSE_JSON = 'third-party-licenses.json'
 export const THIRD_PARTY_LICENSE_TEXT = 'THIRD_PARTY_LICENSES.txt'
-/**
- * Chromium's, Node's and their dependencies' notices, from Electron's dist/,
- * gzipped: the HTML is 20 MB and the app is near its size budget. Settings →
- * About decompresses it to a temporary file to open it.
- */
-export const CHROMIUM_LICENSES_FILE = 'LICENSES.chromium.html.gz'
+/** Chromium's, Node's and their dependencies' notices retained by electron-builder. */
+export const CHROMIUM_LICENSES_FILE = 'LICENSES.chromium.html'
 /** Copse's own licence. */
 export const COPSE_LICENSE_FILE = 'LICENSE.txt'
 

@@ -14,9 +14,9 @@ copied source, and the Electron runtime). The build fails if any of them lacks i
 licence text or is GPL-family only, and packaging (`scripts/after-pack.cjs`)
 checks the real archive again. In the app the files are in
 `Copse.app/Contents/Resources/app.asar.unpacked/dist/resources/licenses/`
-(`THIRD_PARTY_LICENSES.txt`, `LICENSES.chromium.html.gz` for Chromium and Node.js,
-and `LICENSE.txt`), and **Settings → About** lists every component with its
-licence.
+(`THIRD_PARTY_LICENSES.txt` and `LICENSE.txt`), while electron-builder retains
+Chromium and Node.js's `LICENSES.chromium.html` beside the packaged runtime.
+**Settings → About** lists every component with its licence.
 
 ## Copse interface fonts
 

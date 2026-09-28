@@ -11,13 +11,13 @@
  *   out only because electron-builder does not follow Rampart's optional peer
  *   dependency on @huggingface/transformers (THIRD_PARTY_NOTICES.md, "Not
  *   shipped: sharp and libvips"); nothing else would notice if that changed;
- * - the licence files themselves are missing.
+ * - the report files or electron-builder's runtime notices are missing.
  *
  * Runs from scripts/after-pack.cjs on every package, and by hand against any
  * app: `node scripts/check-packaged-licenses.mts /Applications/Copse.app`.
  */
 import { existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { z } from 'zod'
 import {
   CHROMIUM_LICENSES_FILE,
@@ -78,18 +78,19 @@ const reportSchema = z.object({
   components: z.array(z.object({ name: z.string(), version: z.string() })),
 })
 
-export function findPackagedLicenseProblems(archive: AsarArchive): string[] {
+export function findPackagedLicenseProblems(
+  archive: AsarArchive,
+  chromiumNoticesPresent = true,
+): string[] {
   const problems: string[] = []
   const reportPath = `${THIRD_PARTY_LICENSES_DIR}/${THIRD_PARTY_LICENSE_JSON}`
-  for (const name of [
-    THIRD_PARTY_LICENSE_JSON,
-    THIRD_PARTY_LICENSE_TEXT,
-    CHROMIUM_LICENSES_FILE,
-    COPSE_LICENSE_FILE,
-  ]) {
+  for (const name of [THIRD_PARTY_LICENSE_JSON, THIRD_PARTY_LICENSE_TEXT, COPSE_LICENSE_FILE]) {
     if (!archive.files.includes(`${THIRD_PARTY_LICENSES_DIR}/${name}`)) {
       problems.push(`${THIRD_PARTY_LICENSES_DIR}/${name} is not in the app`)
     }
+  }
+  if (!chromiumNoticesPresent) {
+    problems.push(`${CHROMIUM_LICENSES_FILE} is not beside the packaged Electron runtime`)
   }
   const report = archive.files.includes(reportPath)
     ? safeJsonParse(archive.readFile(reportPath).toString('utf8'), decodeWithSchema(reportSchema))
@@ -117,10 +118,22 @@ export function resourcesDir(appPath: string): string {
     : join(appPath, 'resources')
 }
 
+/** Location where electron-builder retains the runtime's Chromium notices. */
+export function packagedChromiumLicensePath(resources: string): string {
+  const isMacBundle =
+    basename(resources) === 'Resources' && basename(dirname(resources)) === 'Contents'
+  return isMacBundle
+    ? join(resources, CHROMIUM_LICENSES_FILE)
+    : join(dirname(resources), CHROMIUM_LICENSES_FILE)
+}
+
 export function assertPackagedLicenses(resources: string): void {
   const asarPath = join(resources, 'app.asar')
   if (!existsSync(asarPath)) throw new Error(`[licenses] no app.asar in ${resources}`)
-  const problems = findPackagedLicenseProblems(openAsar(asarPath))
+  const problems = findPackagedLicenseProblems(
+    openAsar(asarPath),
+    existsSync(packagedChromiumLicensePath(resources)),
+  )
   if (problems.length > 0) {
     throw new Error(
       `[licenses] the packaged app fails its licence checks:\n  ${problems.join('\n  ')}`,
