@@ -66,6 +66,31 @@ describe('validateCredentialBaseUrl', () => {
     assert.equal(isSafeCredentialBaseUrl('https://169.254.169.254/latest'), false)
   })
 
+  it('counts a caller-named loopback alias as loopback, and nothing else', () => {
+    const options = { loopbackAliases: ['model.copse.internal'] }
+    assert.equal(
+      validateCredentialBaseUrl('http://model.copse.internal:1234/v1', 'Base URL', options),
+      'http://model.copse.internal:1234/v1',
+    )
+    assert.equal(
+      validateCredentialBaseUrl('http://MODEL.copse.internal.:443/v1', 'Base URL', options),
+      'http://model.copse.internal.:443/v1',
+    )
+    for (const url of [
+      'http://model.copse.internal.attacker.example/v1',
+      'http://copse.internal/v1',
+      'http://attacker.example/v1',
+    ]) {
+      assert.throws(() => validateCredentialBaseUrl(url, 'Base URL', options), /may only use http/)
+    }
+    // Without the option (every desktop caller) the alias is an ordinary host.
+    assert.throws(
+      () => validateCredentialBaseUrl('http://model.copse.internal:1234/v1'),
+      /may only use http/,
+    )
+    assert.equal(isSafeCredentialBaseUrl('http://model.copse.internal:1234/v1'), false)
+  })
+
   it('treats only localhost/127.0.0.1/::1 as loopback', () => {
     assert.equal(isLoopbackHostname('localhost'), true)
     assert.equal(isLoopbackHostname('127.0.0.1'), true)
