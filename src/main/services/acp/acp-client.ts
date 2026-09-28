@@ -794,7 +794,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
-  dispose: () => void
+  dispose: () => Promise<void>
 }
 
 /**
@@ -841,7 +841,7 @@ export function refreshAcpSessionState(
 /** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
 export interface AcpTransport {
   stream: Stream
-  dispose: () => void
+  dispose: () => void | Promise<void>
   /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
   resourceFault?: () => AcpAgentResourceFault | null
 }
@@ -973,9 +973,7 @@ async function spawnTransport(
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   return {
     stream: ndJsonStream(writable, readable),
-    dispose: (): void => {
-      void shutdownAcpChild(child)
-    },
+    dispose: () => shutdownAcpChild(child),
     resourceFault: stderr.resourceFault,
   }
 }
@@ -1123,11 +1121,13 @@ export async function openAcpSession(
 
   const connection = app.connect(stream)
   let disposed = false
-  const dispose = (): void => {
-    if (disposed) return
+  let disposal: Promise<void> | null = null
+  const dispose = (): Promise<void> => {
+    if (disposal) return disposal
     disposed = true
     connection.close()
-    transport.dispose()
+    disposal = Promise.resolve(transport.dispose())
+    return disposal
   }
 
   try {
@@ -1286,7 +1286,7 @@ export async function openAcpSession(
     startAcpUpdatePump(open)
     return open
   } catch (err) {
-    dispose()
+    await dispose()
     throw err
   }
 }
@@ -1422,7 +1422,7 @@ export async function runAcpSessionPrompt(
     if (outcome === 'grace-expired') {
       // The agent never acknowledged the cancel. Tear the session down so the
       // stuck process can't keep the turn alive; the pool respawns next turn.
-      open.dispose()
+      await open.dispose()
       return { stopReason: 'cancelled' }
     }
     return outcome

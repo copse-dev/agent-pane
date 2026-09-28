@@ -354,7 +354,7 @@ describe('ACP session continuity across a new agent process', () => {
       assert.equal(open.restoredBy, 'load')
       assert.deepEqual(seen, [], 'replayed history must not be rendered as new output')
     } finally {
-      open.dispose()
+      await open.dispose()
     }
   })
 })

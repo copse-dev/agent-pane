@@ -38,6 +38,7 @@ function promptText(prompt: PromptRequest['prompt']): string {
 function fakeAgentFactory(
   storage: Storage,
   capabilities: { load: boolean; resume: boolean; delete?: boolean },
+  seedReply = 'OK',
 ): {
   createTransport: TransportFactory
   spawnedIn: string[]
@@ -104,7 +105,7 @@ function fakeAgentFactory(
         const session = live.get(ctx.params.sessionId)
         if (!session) throw RequestError.resourceNotFound(ctx.params.sessionId)
         const text = promptText(ctx.params.prompt)
-        let reply = 'OK'
+        let reply = seedReply
         if (text.startsWith('Remember')) {
           session.transcript.push(text)
         } else {
@@ -204,6 +205,25 @@ describe('probeAgentContinuity', () => {
       true,
     )
     assert.equal(fake.store.size, 0, 'probe sessions must not outlive the probe')
+  })
+
+  it('deletes a seeded session when the seed turn is inconclusive', async () => {
+    const fake = fakeAgentFactory(
+      'global',
+      { load: true, resume: false, delete: true },
+      'authentication required',
+    )
+    const result = await probeAgentContinuity(CONFIG, {
+      createTransport: fake.createTransport,
+      codeword,
+      methods: ['load'],
+    })
+    assert.ok(result.ok)
+    assert.equal(
+      result.snapshot.trials.every((trial) => trial.error?.includes('did not acknowledge')),
+      true,
+    )
+    assert.equal(fake.store.size, 0, 'an inconclusive seed must still be cleaned up')
   })
 
   it('does not try a method the agent does not advertise', async () => {

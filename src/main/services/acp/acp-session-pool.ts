@@ -334,9 +334,9 @@ export async function acquireAcpSession(opts: AcquireAcpSessionOptions): Promise
     lastUsedAt: Date.now(),
     dispose: () => {
       if (disposal) return disposal
-      open.dispose()
+      const agentDisposal = open.dispose()
       bridgeAbort.abort()
-      disposal = bridge?.close() ?? Promise.resolve()
+      disposal = Promise.all([agentDisposal, bridge?.close() ?? Promise.resolve()]).then(() => {})
       return disposal
     },
   }

@@ -187,6 +187,54 @@ describe('acp-session-pool', () => {
     assert.equal(acpSessionPoolSize(), 2)
   })
 
+  it('waits for the old agent transport to stop before reattaching its session', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const underlying = makeResumableTransportFactory(log)
+    let releaseShutdown!: () => void
+    const shutdown = new Promise<void>((resolve) => {
+      releaseShutdown = resolve
+    })
+    let markShutdownStarted!: () => void
+    const shutdownStarted = new Promise<void>((resolve) => {
+      markShutdownStarted = resolve
+    })
+    const createTransport = async (): Promise<AcpTransport> => {
+      const transport = await underlying()
+      if (log.spawns !== 1) return transport
+      return {
+        ...transport,
+        dispose: async (): Promise<void> => {
+          transport.dispose()
+          markShutdownStarted()
+          await shutdown
+        },
+      }
+    }
+
+    const first = await acquireAcpSession({
+      threadId: 'single-writer',
+      config: CONFIG,
+      createTransport,
+    })
+    first.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(first.entry.open, 'one', undefined)
+
+    const replacement = acquireAcpSession({
+      threadId: 'single-writer',
+      config: { ...CONFIG, cwd: '/tmp/pool-test-moved' },
+      createTransport,
+    })
+    await shutdownStarted
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    try {
+      assert.equal(log.spawns, 1, 'the replacement must wait until the old writer has stopped')
+    } finally {
+      releaseShutdown()
+      await replacement
+    }
+    assert.equal(log.spawns, 2)
+  })
+
   it('dispose and idle-reap evict; non-resumable agents reacquire fresh', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)

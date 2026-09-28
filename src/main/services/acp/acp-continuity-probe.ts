@@ -113,7 +113,7 @@ export interface AcpContinuityProbeOptions {
     args?: string[]
     env?: Record<string, string>
     cwd: string
-  }) => Promise<{ stream: Stream; dispose: () => void }>
+  }) => Promise<{ stream: Stream; dispose: () => void | Promise<void> }>
 }
 
 const WORDS = ['HERON', 'LANTERN', 'QUARRY', 'MARIGOLD', 'TUNDRA', 'BISCUIT', 'COMET', 'FJORD']
@@ -177,7 +177,7 @@ interface ProbeConnection {
   /** Updates received for any session, in arrival order. */
   updates: SessionUpdate[]
   agent: ClientConnection['agent']
-  dispose: () => void
+  dispose: () => Promise<void>
 }
 
 async function connect(
@@ -201,9 +201,9 @@ async function connect(
       outcome: { outcome: 'cancelled' as const },
     }))
   const connection = app.connect(transport.stream)
-  const dispose = (): void => {
+  const dispose = async (): Promise<void> => {
     connection.close()
-    transport.dispose()
+    await transport.dispose()
   }
   try {
     const init = await connection.agent.request(methods.agent.initialize, {
@@ -212,7 +212,7 @@ async function connect(
     })
     return { init, updates, agent: connection.agent, dispose }
   } catch (err) {
-    dispose()
+    await dispose()
     throw err
   }
 }
@@ -342,7 +342,7 @@ export async function probeAgentContinuity(
     const del = first.init.agentCapabilities?.sessionCapabilities?.delete
     canDelete = del !== undefined && del !== null
     agentVersion = first.init.agentInfo?.version ?? null
-    first.dispose()
+    await first.dispose()
   } catch (err) {
     return { ok: false, error: acpProbeErrorMessage(err) }
   }
@@ -403,7 +403,16 @@ async function runTrial(
   // 1. Seed a session in the origin directory, then kill that process. A seed
   // turn that did not answer (an auth or model error rendered as text) makes the
   // trial inconclusive — scoring it `forgot` would blame the session store.
-  let sessionId: string
+  const seedState: { sessionId: string | null; reply: string | null } = {
+    sessionId: null,
+    reply: null,
+  }
+  const deleteSeed = async (): Promise<void> => {
+    const createdSessionId = seedState.sessionId
+    if (canDelete && createdSessionId !== null) {
+      await deleteProbeSession(config, createdSessionId, createTransport)
+    }
+  }
   try {
     const seed = await connect(config, config.originCwd, createTransport)
     try {
@@ -411,17 +420,21 @@ async function runTrial(
         cwd: config.originCwd,
         mcpServers: [],
       })
-      sessionId = created.sessionId
-      await pinModel(seed, sessionId, created, modelHint)
-      const reply = await ask(seed, sessionId, seedPrompt(codeword), turnTimeoutMs)
-      if (!/\bOK\b/i.test(reply)) {
-        return { ...trial, error: `seed turn did not acknowledge: ${reply.slice(0, 200)}` }
-      }
+      seedState.sessionId = created.sessionId
+      await pinModel(seed, seedState.sessionId, created, modelHint)
+      seedState.reply = await ask(seed, seedState.sessionId, seedPrompt(codeword), turnTimeoutMs)
     } finally {
-      seed.dispose()
+      await seed.dispose()
     }
   } catch (err) {
+    await deleteSeed()
     return { ...trial, error: `seeding failed: ${acpProbeErrorMessage(err)}` }
+  }
+  const sessionId = seedState.sessionId
+  const seedReplyText = seedState.reply
+  if (!/\bOK\b/i.test(seedReplyText)) {
+    await deleteSeed()
+    return { ...trial, error: `seed turn did not acknowledge: ${seedReplyText.slice(0, 200)}` }
   }
 
   // 2. A fresh process in the target directory reattaches and is asked back.
@@ -452,7 +465,7 @@ async function runTrial(
         replayHadCodeword: replay.some((update) => textOf(update).includes(codeword)),
       }
     } finally {
-      conn.dispose()
+      await conn.dispose()
     }
   }
 
@@ -505,7 +518,7 @@ async function deleteProbeSession(
     try {
       await conn.agent.request(methods.agent.session.delete, { sessionId })
     } finally {
-      conn.dispose()
+      await conn.dispose()
     }
   } catch {
     // Leaving a stray session behind is untidy, not a probe failure.
