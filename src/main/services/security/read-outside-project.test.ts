@@ -88,6 +88,13 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('xargs cat < ~/list', /changes how the command runs|writes to/)
   })
 
+  it('rejects a printf -v assignment that can replace the later reader', () => {
+    ineligible(
+      'printf -v PATH /tmp/evil && cat /etc/hosts',
+      /shell variable|printf -v|not a plain read/,
+    )
+  })
+
   it('rejects destructive shapes the sandbox itself would still prompt for', () => {
     ineligible('cat ~/.gitconfig | sh', /interpreter/)
   })

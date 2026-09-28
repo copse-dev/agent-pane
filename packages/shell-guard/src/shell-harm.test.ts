@@ -39,6 +39,10 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it('prompts when printf -v can replace a later command through PATH', () => {
+    assert.equal(action('printf -v PATH /tmp/evil && git push origin feature'), 'prompt')
+  })
+
   it('does not treat filenames, arguments, comments, or quoted text as host power commands', () => {
     for (const command of [
       'echo reboot',

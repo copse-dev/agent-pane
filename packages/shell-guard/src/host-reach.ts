@@ -30,12 +30,30 @@ export interface HostReachContext {
 /** OpenSSH client options that take a separate value. */
 const SSH_VALUE_FLAGS = new Set('BbcDEeFIiJLlmOoPpQRSWw'.split('').map((l) => `-${l}`))
 
+/** Options that open listeners, forward connections, or create tunnel devices. */
+const SSH_FORWARD_FLAGS = new Set(['-D', '-L', '-R', '-W', '-w'])
+const SSH_FORWARD_OPTIONS = new Set([
+  'dynamicforward',
+  'localforward',
+  'remoteforward',
+  'tunnel',
+  'tunneldevice',
+])
+
 /**
  * Options that make the client run a *local* command or read a config that can:
  * `-o ProxyCommand=…` executes on this machine before any host is contacted.
  */
 const SSH_LOCAL_EXECUTION =
   /^(?:proxycommand|localcommand|permitlocalcommand|knownhostscommand|match)\b/i
+
+/** Options that read another config or load a caller-selected local executable/library. */
+const SSH_LOCAL_CODE_OPTIONS = new Set([
+  'include',
+  'pkcs11provider',
+  'securitykeyprovider',
+  'xauthlocation',
+])
 
 /** `user@host`, `ssh://user@host:22/path` → `host`. */
 function sshDestinationHost(destination: string): string {
@@ -55,19 +73,36 @@ function remoteOperandHost(operand: string): string | null {
   return sshDestinationHost(operand.slice(0, colon))
 }
 
+/** `ProxyJump=x`, `ProxyJump x` -> a case-insensitive OpenSSH option/value pair. */
+function openSshOption(raw: string): { name: string; value: string } {
+  const option = raw.trim()
+  const match = /^([A-Za-z][A-Za-z0-9]*)(?:\s*=\s*|\s+)([\s\S]*)$/.exec(option)
+  return {
+    name: (match?.[1] ?? option).toLowerCase(),
+    value: (match?.[2] ?? '').trim(),
+  }
+}
+
 interface SshInvocation {
   hosts: string[]
   /** The command the remote shell runs, when one is given. */
   remoteCommand: string | null
   localExecution: boolean
+  forwarding: boolean
 }
 
 function parseSshClient(head: string, args: readonly string[]): SshInvocation {
   const hosts: string[] = []
   const operands: string[] = []
   let localExecution = false
+  let forwarding = false
   for (let i = 0; i < args.length; i++) {
     const token = args[i] ?? ''
+    if (head === 'mosh' && (token === '--ssh' || token.startsWith('--ssh='))) {
+      localExecution = true
+      if (token === '--ssh') i++
+      continue
+    }
     if (!token.startsWith('-') || token === '-') {
       operands.push(token)
       continue
@@ -76,9 +111,35 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
     const flag = token.slice(0, 2)
     if (!SSH_VALUE_FLAGS.has(flag)) continue
     const value = token.length > 2 ? token.slice(2) : (args[++i] ?? '')
-    if (flag === '-o' && SSH_LOCAL_EXECUTION.test(value.replace(/^\s+/, ''))) localExecution = true
+    if ((head === 'ssh' || head === 'autossh') && SSH_FORWARD_FLAGS.has(flag)) forwarding = true
+    if ((head === 'ssh' || head === 'autossh') && flag === '-I' && value.toLowerCase() !== 'none') {
+      localExecution = true
+    }
+    if ((head === 'scp' || head === 'sftp') && (flag === '-D' || flag === '-S')) {
+      localExecution = true
+    }
+    if (flag === '-o') {
+      const option = openSshOption(value)
+      if (SSH_LOCAL_EXECUTION.test(value.replace(/^\s+/, ''))) localExecution = true
+      if (SSH_LOCAL_CODE_OPTIONS.has(option.name) && !/^(?:internal|none)$/i.test(option.value)) {
+        localExecution = true
+      }
+      if (SSH_FORWARD_OPTIONS.has(option.name)) forwarding = true
+      if (option.name === 'proxyjump' && option.value.toLowerCase() !== 'none') {
+        for (const jump of option.value.split(',')) {
+          const host = sshDestinationHost(jump.trim())
+          if (host) hosts.push(host)
+        }
+      }
+      if (option.name === 'hostname' && !/^%(?:h|n)$/i.test(option.value)) {
+        const host = sshDestinationHost(option.value)
+        if (host) hosts.push(host)
+      }
+    }
     if (flag === '-F') localExecution = true
-    if (flag === '-J') for (const jump of value.split(',')) hosts.push(sshDestinationHost(jump))
+    if (flag === '-J' && value.toLowerCase() !== 'none') {
+      for (const jump of value.split(',')) hosts.push(sshDestinationHost(jump))
+    }
     // rsync's `-e`/`--rsh` names the transport program itself.
     if (head === 'rsync' && flag === '-e') localExecution = true
   }
@@ -89,13 +150,14 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
       hosts,
       remoteCommand: head === 'ssh' && remote.length > 0 ? remote.join(' ') : null,
       localExecution,
+      forwarding,
     }
   }
   for (const operand of operands) {
     const host = remoteOperandHost(operand)
     if (host) hosts.push(host)
   }
-  return { hosts, remoteCommand: null, localExecution }
+  return { hosts, remoteCommand: null, localExecution, forwarding }
 }
 
 const SSH_CLIENTS = new Set(['ssh', 'scp', 'sftp', 'rsync', 'mosh', 'autossh'])
@@ -107,7 +169,10 @@ function remoteReasons(head: string, args: readonly string[], context: HostReach
   const invocation = parseSshClient(head, args)
   const reasons: string[] = []
   if (invocation.localExecution) {
-    reasons.push(`${head} runs a local command from its options or a custom config`)
+    reasons.push(`${head} loads or runs local code from its options or a custom config`)
+  }
+  if (invocation.forwarding) {
+    reasons.push(`${head} opens a tunnel or forwards network traffic`)
   }
   const trusted = new Set((context.trustedSshHosts ?? []).map(normalizeSshHost))
   const untrusted = [...new Set(invocation.hosts)].filter((host) => host && !trusted.has(host))
@@ -244,6 +309,15 @@ function alwaysDownloads(argv: readonly string[]): string | null {
   const head = commandName(argv[0])
   const sub = argv[1] ?? ''
   if ((head === 'pnpm' || head === 'yarn') && sub === 'dlx') return `${head} dlx`
+  const initializer = argv[2] ?? ''
+  if (
+    initializer &&
+    !initializer.startsWith('-') &&
+    ((head === 'npm' && (sub === 'create' || sub === 'init')) ||
+      ((head === 'pnpm' || head === 'yarn' || head === 'bun') && sub === 'create'))
+  ) {
+    return `${head} ${sub}`
+  }
   if (head === 'bun' && sub === 'x') return 'bun x'
   if (head === 'bunx' || head === 'uvx') return head
   if (head === 'pipx' && sub === 'run') return 'pipx run'

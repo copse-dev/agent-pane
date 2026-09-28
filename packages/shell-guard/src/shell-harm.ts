@@ -5,6 +5,7 @@ import {
   SHELL_LANGUAGE_INTERPRETERS,
   commandName,
   inlineCodeBody,
+  printfAssignsShellVariable,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
@@ -1381,6 +1382,9 @@ function inspectCommandLine(
   for (const segment of shellSegments(expanded)) {
     const argv = unwrapWrappers(segment)
     if (argv.length === 0) continue
+    if (printfAssignsShellVariable(argv)) {
+      addUnique(out.prompt, 'printf -v assigns a shell variable used by later commands')
+    }
     inspectDeletion(argv, context, out)
     inspectOwnershipChange(argv, context, out)
     inspectRelocation(argv, context, out)
