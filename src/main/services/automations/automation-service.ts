@@ -129,6 +129,7 @@ function canGrantPermissionFromPrompt(permission: AutomationPermission): boolean
 function isSchedule(value: unknown): value is AutomationSchedule {
   if (!isRecord(value)) return false
   const maxLiveWorktrees = value['maxLiveWorktrees']
+  const lastWorktreeLimitAt = value['lastWorktreeLimitAt']
   const permissions = value['permissions']
   return (
     typeof value['id'] === 'string' &&
@@ -142,6 +143,8 @@ function isSchedule(value: unknown): value is AutomationSchedule {
       maxLiveWorktrees === 1 ||
       maxLiveWorktrees === 2 ||
       maxLiveWorktrees === 3) &&
+    (lastWorktreeLimitAt === undefined ||
+      (typeof lastWorktreeLimitAt === 'number' && Number.isFinite(lastWorktreeLimitAt))) &&
     (permissions === undefined ||
       (Array.isArray(permissions) && permissions.every(isAutomationPermission))) &&
     typeof value['createdAt'] === 'number' &&
@@ -232,6 +235,24 @@ export function createAutomationService(
     })
   }
 
+  async function recordWorktreeLimit(
+    projectId: string,
+    scheduleId: string,
+    triggeredAt: number,
+    attemptedLimit: number,
+  ): Promise<void> {
+    await storageUpdate(STORAGE_KEY, (raw) => {
+      const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
+      return schedules.map((schedule) =>
+        schedule.projectId === projectId &&
+        schedule.id === scheduleId &&
+        (schedule.maxLiveWorktrees ?? 1) === attemptedLimit
+          ? { ...schedule, lastWorktreeLimitAt: triggeredAt }
+          : schedule,
+      )
+    })
+  }
+
   async function recordScheduleRun(
     projectId: string,
     scheduleId: string,
@@ -240,16 +261,17 @@ export function createAutomationService(
   ): Promise<void> {
     await storageUpdate(STORAGE_KEY, (raw) => {
       const schedules = Array.isArray(raw) ? raw.filter(isSchedule) : []
-      return schedules.map((schedule) =>
-        schedule.projectId === projectId && schedule.id === scheduleId
-          ? {
-              ...schedule,
-              updatedAt: Math.max(schedule.updatedAt, triggeredAt),
-              lastRunAt: triggeredAt,
-              lastCreatedThreadId: threadId,
-            }
-          : schedule,
-      )
+      return schedules.map((schedule) => {
+        if (schedule.projectId !== projectId || schedule.id !== scheduleId) return schedule
+        const updated = {
+          ...schedule,
+          updatedAt: Math.max(schedule.updatedAt, triggeredAt),
+          lastRunAt: triggeredAt,
+          lastCreatedThreadId: threadId,
+        }
+        delete updated.lastWorktreeLimitAt
+        return updated
+      })
     })
   }
 
@@ -354,6 +376,7 @@ export function createAutomationService(
       }
       const maxLiveWorktrees = schedule.maxLiveWorktrees ?? 1
       if (retainedWorktrees >= maxLiveWorktrees) {
+        await recordWorktreeLimit(schedule.projectId, schedule.id, triggeredAt, maxLiveWorktrees)
         return {
           projectId: schedule.projectId,
           scheduleId: schedule.id,
@@ -457,6 +480,7 @@ export function createAutomationService(
         : undefined
       if (input.id && !existing) throw new Error('Automation schedule not found in this project')
       const now = dependencies.now()
+      const maxLiveWorktrees = input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1
       const permissions = normalizePermissions(input.permissions ?? existing?.permissions ?? [])
       const selectable = new Set(
         service.permissionOptions().map((option) => automationPermissionKey(option.permission)),
@@ -479,7 +503,7 @@ export function createAutomationService(
         prompt: input.prompt.trim(),
         model: input.model.trim(),
         enabled: input.enabled,
-        maxLiveWorktrees: input.maxLiveWorktrees ?? existing?.maxLiveWorktrees ?? 1,
+        maxLiveWorktrees,
         ...(permissions.length > 0 ? { permissions } : {}),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -487,9 +511,19 @@ export function createAutomationService(
         ...(existing?.lastCreatedThreadId !== undefined
           ? { lastCreatedThreadId: existing.lastCreatedThreadId }
           : {}),
+        ...(existing?.lastWorktreeLimitAt !== undefined &&
+        maxLiveWorktrees === (existing.maxLiveWorktrees ?? 1)
+          ? { lastWorktreeLimitAt: existing.lastWorktreeLimitAt }
+          : {}),
       }
       await replaceSchedule(schedule)
-      if (disposeSupervisorHandler) await ensureSupervisorTask()
+      // The minute tick reads schedule settings from storage. Editing fields such
+      // as the worktree limit does not change the supervisor's single scheduler
+      // task, so a slow supervisor must not hold up an already-saved edit.
+      const schedulerMembershipChanged = existing
+        ? existing.enabled !== schedule.enabled
+        : schedule.enabled
+      if (disposeSupervisorHandler && schedulerMembershipChanged) await ensureSupervisorTask()
       return schedule
     },
     async remove(projectId, scheduleId) {

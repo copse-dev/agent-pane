@@ -41,6 +41,8 @@ export interface AutomationSchedule {
   updatedAt: number
   lastRunAt?: number
   lastCreatedThreadId?: string
+  /** Most recent trigger skipped because retained worktrees filled the limit. */
+  lastWorktreeLimitAt?: number
 }
 
 /** Editable fields accepted by create/update IPC. Project ownership is separate. */

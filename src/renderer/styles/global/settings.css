@@ -2344,6 +2344,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-status-error {
   color: var(--error);
 }
+.automation-attention {
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-base));
+  padding: var(--spacing-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
 .automation-list {
   display: flex;
   flex-direction: column;
@@ -2363,9 +2371,16 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-sm);
   background: var(--bg-base);
 }
+.automation-row-blocked {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+.automation-row-blocked-message {
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
 /* A paused schedule dims its copy only. Its Edit / Run now / Delete stay live,
    and fading them too dropped the filled Delete label to ~3:1 on its fill. */
-.automation-row-paused .automation-row-copy {
+.automation-row-paused:not(.automation-row-blocked) .automation-row-copy {
   opacity: 0.7;
 }
 .automation-row-copy {

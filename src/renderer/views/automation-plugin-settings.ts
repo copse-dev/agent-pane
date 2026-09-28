@@ -187,10 +187,15 @@ export function createAutomationPluginSettings(
       ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses.'
       : 'Enable this plugin to arm schedules. Existing schedules remain editable while disabled.'
   const notice = el('p', { class: 'automation-notice' }, pluginNotice())
+  const attention = el('div', {
+    class: 'automation-attention',
+    role: 'status',
+    hidden: true,
+  })
   const status = el('div', { class: 'automation-status', role: 'status', hidden: true })
   const list = el('div', { class: 'automation-list' })
 
-  const form = el('form', { class: 'automation-form', hidden: true })
+  const form = el('form', { class: 'automation-form', hidden: true, novalidate: true })
   const formTitle = el('h4', { class: 'automation-form-title' }, 'New automation')
   const nameInput = el('input', {
     type: 'text',
@@ -330,7 +335,7 @@ export function createAutomationPluginSettings(
     el('label', { class: 'automation-enabled-label' }, enabledInput, 'Schedule enabled'),
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
-  root.append(heading, scope, notice, status, list, form)
+  root.append(heading, scope, notice, attention, status, list, form)
   // A schedule fires unattended, potentially months after it was written, so it
   // stores a rule rather than a model id — the same treatment every plugin-owned
   // model setting gets. The rule resolves when the task is created, against the
@@ -608,6 +613,12 @@ export function createAutomationPluginSettings(
 
   function renderList(): void {
     clear(list)
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== undefined)
+    attention.hidden = blocked.length === 0
+    attention.textContent =
+      blocked.length === 0
+        ? ''
+        : `${String(blocked.length)} automation${blocked.length === 1 ? '' : 's'} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`
     if (!projectId) return
     if (schedules.length === 0) {
       list.append(el('div', { class: 'automation-empty' }, 'No schedules for this project yet.'))
@@ -615,7 +626,7 @@ export function createAutomationPluginSettings(
     }
     for (const schedule of schedules) {
       const row = el('article', {
-        class: `automation-row${schedule.enabled ? '' : ' automation-row-paused'}`,
+        class: `automation-row${schedule.enabled ? '' : ' automation-row-paused'}${schedule.lastWorktreeLimitAt === undefined ? '' : ' automation-row-blocked'}`,
         'data-schedule-id': schedule.id,
       })
       const copy = el('div', { class: 'automation-row-copy' })
@@ -642,6 +653,15 @@ export function createAutomationPluginSettings(
         ),
         el('div', { class: 'automation-row-last-run' }, lastRunLabel(schedule.lastRunAt)),
       )
+      if (schedule.lastWorktreeLimitAt !== undefined) {
+        copy.append(
+          el(
+            'div',
+            { class: 'automation-row-blocked-message' },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`,
+          ),
+        )
+      }
       const actions = el('div', { class: 'automation-row-actions' })
       const edit = el(
         'button',
@@ -764,6 +784,24 @@ export function createAutomationPluginSettings(
     event.preventDefault()
     if (!projectId) return
     hideStatus()
+    // The model picker owns a hidden native select. Browser constraint validation
+    // can silently suppress submit when that select is invalid, leaving Save
+    // looking inert. Validate here so every failed save has visible feedback.
+    if (!nameInput.value.trim()) {
+      showStatus('Enter a name before saving.', true)
+      nameInput.focus()
+      return
+    }
+    if (!promptInput.value.trim()) {
+      showStatus('Enter a prompt before saving.', true)
+      promptInput.focus()
+      return
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus('Choose a model before saving.', true)
+      modelPicker.openMenu()
+      return
+    }
     const cron = cronFromScheduleControls()
     if (cron === null) {
       showStatus('Choose a valid schedule before saving.', true)

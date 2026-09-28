@@ -154,6 +154,61 @@ describe('automation plugin settings detail', () => {
     assert.equal(runButton.disabled, true)
   })
 
+  it('keeps a worktree-limit block visible when the panel opens', async () => {
+    const { api } = stubApi([
+      {
+        id: 'schedule-a',
+        projectId: 'project-a',
+        name: 'Morning review',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review the project.',
+        model: BEST_VALUE_CHAT_MODEL,
+        enabled: true,
+        maxLiveWorktrees: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        lastRunAt: 2,
+        lastWorktreeLimitAt: 3,
+      },
+    ])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+
+    assert.match(
+      root.querySelector('.automation-attention')?.textContent ?? '',
+      /1 automation had a run skipped/,
+    )
+    assert.match(
+      root.querySelector('.automation-row-blocked-message')?.textContent ?? '',
+      /Last attempt skipped/,
+    )
+    assert.ok(root.querySelector('.automation-row-blocked'))
+  })
+
+  it('explains an invalid save instead of silently leaving the editor open', async () => {
+    const { api, upserts } = stubApi([])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    root
+      .querySelector<HTMLFormElement>('.automation-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    assert.deepEqual(upserts, [])
+    assert.match(root.querySelector('.automation-status')?.textContent ?? '', /Enter a name/)
+  })
+
   it('submits a project-scoped schedule with the selected model rule', async () => {
     const { api, upserts } = stubApi([])
     const store = createStore({
