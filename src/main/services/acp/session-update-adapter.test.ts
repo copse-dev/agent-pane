@@ -186,6 +186,18 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
 })
 
 describe('sessionUpdateToStreamChunks (client role)', () => {
+  it('drops notices when notice capability is not advertised', () => {
+    assert.deepEqual(
+      sessionUpdateToStreamChunks({
+        sessionUpdate: 'notice',
+        severity: 'warning',
+        title: 'Attention required',
+        description: 'This client does not advertise notice support.',
+      }),
+      [],
+    )
+  })
+
   for (const status of ['completed', 'failed'] as const) {
     it(`preserves an initial ${status} status even without output`, () => {
       assert.deepEqual(

@@ -25,6 +25,9 @@ schemas/vendor/*.json
 # Pinned Cursor plugin snapshot — upstream manifests, licenses, and skills are
 # content-addressed and must remain byte-identical to the downloaded commit.
 vendor/bundled-cursor-skills/plugins/
+# Its provenance record, written by `pnpm sync:cursor-skills` and re-read by the
+# build; a reformat would make the next sync show a spurious diff.
+vendor/bundled-cursor-skills/SOURCE.json
 # Hook wire-payload snapshots (G4) — a generated artifact written byte-exact by
 # payload-snapshots.test.ts (UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1); the test compares
 # against these bytes, so prettier must not reformat them (decision 14).

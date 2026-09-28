@@ -14,6 +14,13 @@ export interface SkillMetadata extends SkillSummary {
   disableModelInvocation: boolean
   paths: string[]
   /**
+   * Name of the plugin that ships this skill (a bundled or installed Cursor
+   * plugin, or an Agent Plugins package). Absent for skills installed directly
+   * under a skills tree. Lets `read_skill` resolve `plugin/skill` and tell a
+   * caller that a bare plugin name is a set of skills, not one skill.
+   */
+  plugin?: string
+  /**
    * Bundle-relative paths (`references/…`, `scripts/…`, `assets/…`) the
    * skill's SKILL.md mentions but that do not exist under `skillRoot`.
    * Computed once at discovery time so a broken bundle is flagged before the

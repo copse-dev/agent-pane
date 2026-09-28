@@ -6,9 +6,11 @@ import {
   SCRIPT_EXTENSIONS,
   TRUST_TRANSPARENT_WRAPPERS,
   commandName,
+  hasShellInputRedirect,
   inlineCodeBody,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
+  printfAssignsShellVariable,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
@@ -110,6 +112,15 @@ describe('unwrapWrappers', () => {
   })
 })
 
+describe('printfAssignsShellVariable', () => {
+  it('recognises the shell builtin assignment form without treating data as an option', () => {
+    assert.equal(printfAssignsShellVariable(['printf', '-v', 'PATH', '/tmp/evil']), true)
+    assert.equal(printfAssignsShellVariable(['printf', '-vPATH', '/tmp/evil']), true)
+    assert.equal(printfAssignsShellVariable(['printf', '%s', '-v']), false)
+    assert.equal(printfAssignsShellVariable(['printf', '--', '-v', 'PATH']), false)
+  })
+})
+
 describe('shared interpreter and script tables', () => {
   it('covers PowerShell alongside the POSIX interpreters', () => {
     for (const exe of ['sh', 'bash', 'zsh', 'node', 'python3', 'ruby', 'perl', 'pwsh']) {
@@ -172,6 +183,27 @@ describe('shellRedirects', () => {
       assert.notEqual(argv[0], '2>/dev/null')
     }
     assert.deepEqual(shellRedirects(command), [{ target: '/dev/null', truncates: true }])
+  })
+})
+
+describe('hasShellInputRedirect', () => {
+  it('recognises stdin redirection without mistaking quoted text or output redirects', () => {
+    for (const command of [
+      'mysql app < dump.sql',
+      'mysql app 0< dump.sql',
+      'mysql app 00< dump.sql',
+      'mysql app <<< "select 1"',
+      'mysql app <&3',
+    ]) {
+      assert.equal(hasShellInputRedirect(command), true, command)
+    }
+    for (const command of [
+      'mysql -e "select 1 < 2"',
+      'mysql app > output.txt',
+      'mysql app 3< metadata.txt',
+    ]) {
+      assert.equal(hasShellInputRedirect(command), false, command)
+    }
   })
 })
 
