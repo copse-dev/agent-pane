@@ -246,7 +246,8 @@ describe('hostReachReasons — the desktop and other processes', () => {
       'kill %1',
       'kill 4321',
       'pkill -0 -f "node scripts/watch"',
-      'pkill -s 0 vite',
+      'pkill --signal 0 -f "node scripts/watch"',
+      'killall -s 0 node',
       'killall -l',
     ]) {
       assert.deepEqual(reasons(command), [], command)
@@ -257,6 +258,9 @@ describe('hostReachReasons — the desktop and other processes', () => {
     for (const command of [
       'pkill -f "node scripts/watch"',
       'pkill -f debug/examples/helloworld',
+      'pkill -s 0 vite',
+      'pkill -l vite',
+      'pkill -0 --signal KILL vite',
       'killall node',
     ]) {
       assert.notDeepEqual(reasons(command), [], command)

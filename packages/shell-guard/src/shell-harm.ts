@@ -6,12 +6,13 @@ import {
   commandName,
   inlineCodeBody,
   printfAssignsShellVariable,
+  rawShellArgv,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
 import { classifyGhSegment } from './gh-argv.ts'
-import { splitSegments } from './command-routing.ts'
+import { scanShellComposition, splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
 import { hostReachReasons } from './host-reach.ts'
 import {
@@ -1057,6 +1058,23 @@ function isGluedToSubstitution(text: string, word: string): boolean {
   return glued
 }
 
+/** A command selected by expansion cannot be matched to a file for inspection. */
+function inspectDynamicCommandHead(
+  rawArgv: readonly string[],
+  argv: readonly string[],
+  out: MutableDecision,
+): void {
+  // `command -v/-V "$name"` only describes how a name would resolve; it does
+  // not execute the expanded name despite `command` otherwise being a wrapper.
+  if (commandName(rawArgv[0]) === 'command' && (rawArgv[1] === '-v' || rawArgv[1] === '-V')) {
+    return
+  }
+  const head = argv[0] ?? ''
+  if (/(?:\$|`|%[A-Za-z_][A-Za-z0-9_]*%)/.test(head)) {
+    addUnique(out.prompt, `dynamic command path could not be inspected safely: ${head}`)
+  }
+}
+
 /**
  * How a piece of inspected text should be read. {@link assess} lexes its input
  * as a shell command line, which is right for a command, a `sh -c` body, or a
@@ -1717,6 +1735,11 @@ function inspectCommandLine(
 
   const nestedCommands: string[][] = []
   const argvs: string[][] = []
+  const sourceSegments = scanShellComposition(expanded)?.segments ?? [expanded]
+  for (const sourceSegment of sourceSegments) {
+    const rawArgv = rawShellArgv(sourceSegment)
+    inspectDynamicCommandHead(rawArgv, unwrapWrappers(rawArgv), out)
+  }
   const parsedHeads = new Set(
     shellSegments(expanded, false)
       .map((segment) => unwrapWrappers(segment)[0] ?? '')

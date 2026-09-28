@@ -458,16 +458,31 @@ function hostControlReasons(argv: readonly string[]): string[] {
     case 'pkill':
     case 'killall': {
       // Signal 0 only checks that a process exists, and `killall -l` lists signals.
-      const probes = argv.some(
-        (arg, i) =>
-          /^-(?:0|s0|SIG0|l)$/i.test(arg) ||
-          arg === '--signal=0' ||
-          ((arg === '-s' || arg === '--signal') && argv[i + 1] === '0'),
-      )
+      // On procps `pkill`, however, `-s 0` selects this session and still sends
+      // SIGTERM; on BSD `pkill -l` still kills and merely prints what it did.
+      const listsSignals =
+        head === 'killall' && argv.some((arg) => arg === '-l' || arg === '--list')
+      const signals: string[] = []
+      for (let index = 1; index < argv.length; index++) {
+        const arg = argv[index] ?? ''
+        const short =
+          /^-(\d+|(?:SIG)?(?:HUP|INT|QUIT|ILL|TRAP|ABRT|EMT|FPE|KILL|BUS|SEGV|SYS|PIPE|ALRM|TERM|URG|STOP|TSTP|CONT|CHLD|TTIN|TTOU|IO|XCPU|XFSZ|VTALRM|PROF|WINCH|INFO|USR1|USR2))$/i.exec(
+            arg,
+          )
+        if (short) signals.push(short[1] ?? '')
+        const long = /^--signal=(.+)$/i.exec(arg)
+        if (long) signals.push(long[1] ?? '')
+        if (arg === '--signal' || (head === 'killall' && arg === '-s')) {
+          signals.push(argv[++index] ?? '')
+        }
+        if (head === 'killall' && /^-s.+/.test(arg)) signals.push(arg.slice(2))
+      }
+      const probe = listsSignals || signals.some((signal) => /^(?:0|SIG0)$/i.test(signal))
+      const otherSignal = signals.some((signal) => !/^(?:0|SIG0)$/i.test(signal))
       // A pattern cannot be scoped to this agent's processes: `pkill -f "node
       // scripts/watch"` also stops the user's own watcher in another terminal.
       // The agent can stop what it started by PID or job (`kill %1`) without asking.
-      return probes
+      return probe && !otherSignal
         ? []
         : [`${head} kills every process matching a pattern, not only ones this agent started`]
     }
