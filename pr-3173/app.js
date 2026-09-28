@@ -91971,9 +91971,13 @@ function detachedTitle(detached) {
   if (detached.uncommittedPick) {
     return `This checkout is detached from ${detached.branch} because the rebase applied ${detached.uncommittedPick.commit.slice(0, 7)} but could not commit it, usually because signing failed. This commits the staged changes with that commit's message in a terminal for this thread, then continues the rebase.`;
   }
+  if (detached.recovery === "bisect") {
+    return `This checkout is detached from ${detached.branch} because Git bisect is in progress. Reset the bisect in a terminal for this thread to return to the branch.`;
+  }
   return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
 }
 function recoveryCommand(detached, recovery) {
+  if (recovery === "bisect") return "git bisect reset";
   const pick2 = detached.uncommittedPick;
   if (!pick2) return `git ${recovery} --continue`;
   const sign = pick2.signOption ? `${pick2.signOption} ` : "";
@@ -92163,6 +92167,14 @@ function mountFooterBranchStatus(host, store2, api2) {
         `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`
       );
       reattachButton.textContent = "Commit and continue";
+      return;
+    }
+    if (current.recovery === "bisect") {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Reset the bisect and return to ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = "Reset bisect";
       return;
     }
     if (current.recovery) {
