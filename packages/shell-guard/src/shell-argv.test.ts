@@ -6,6 +6,7 @@ import {
   SCRIPT_EXTENSIONS,
   TRUST_TRANSPARENT_WRAPPERS,
   commandName,
+  hasShellInputRedirect,
   inlineCodeBody,
   isReadOnlySimpleCommand,
   isStructurallyReadOnlyShellCommand,
@@ -182,6 +183,27 @@ describe('shellRedirects', () => {
       assert.notEqual(argv[0], '2>/dev/null')
     }
     assert.deepEqual(shellRedirects(command), [{ target: '/dev/null', truncates: true }])
+  })
+})
+
+describe('hasShellInputRedirect', () => {
+  it('recognises stdin redirection without mistaking quoted text or output redirects', () => {
+    for (const command of [
+      'mysql app < dump.sql',
+      'mysql app 0< dump.sql',
+      'mysql app 00< dump.sql',
+      'mysql app <<< "select 1"',
+      'mysql app <&3',
+    ]) {
+      assert.equal(hasShellInputRedirect(command), true, command)
+    }
+    for (const command of [
+      'mysql -e "select 1 < 2"',
+      'mysql app > output.txt',
+      'mysql app 3< metadata.txt',
+    ]) {
+      assert.equal(hasShellInputRedirect(command), false, command)
+    }
   })
 })
 

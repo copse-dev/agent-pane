@@ -1,6 +1,12 @@
 import { join } from 'node:path'
 import { scanShellComposition } from './command-routing.ts'
-import { CODE_INTERPRETERS, commandName, shellSegments, unwrapWrappers } from './shell-argv.ts'
+import {
+  CODE_INTERPRETERS,
+  commandName,
+  hasShellInputRedirect,
+  shellSegments,
+  unwrapWrappers,
+} from './shell-argv.ts'
 import { remoteChangeReasons } from './remote-change.ts'
 import { secretFileExposure, tokenPrinterReason } from './secrets.ts'
 import { dangerousInSandboxReasons } from './shell-scope.ts'
@@ -633,6 +639,29 @@ function downloadThenRunReason(segments: readonly (readonly string[])[]): string
   return null
 }
 
+const SQL_STDIN_CLIENTS = new Set(['psql', 'mysql', 'mariadb'])
+
+/**
+ * SQL clients execute stdin as SQL. Their argv contains neither a redirect target
+ * nor an upstream pipeline, so the per-argv remote-change rules cannot see that
+ * `mysql app < dump.sql` or `cat dump.sql | psql app` loads uninspected input.
+ */
+function databaseInputReason(command: string): string | null {
+  const composition = scanShellComposition(command)
+  if (!composition) return null
+  for (const [index, segment] of composition.segments.entries()) {
+    const [rawArgv = []] = shellSegments(segment, false)
+    const argv = unwrapWrappers(rawArgv)
+    const head = commandName(argv[0])
+    if (!SQL_STDIN_CLIENTS.has(head)) continue
+    const piped = composition.operators[index - 1]?.startsWith('|') === true
+    if (piped || hasShellInputRedirect(segment)) {
+      return `runs uninspected SQL input (${head} stdin)`
+    }
+  }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'awk', 'sed'])
@@ -694,6 +723,7 @@ export function hostReachReasons(command: string, context: HostReachContext): st
   for (const reason of [
     temporaryPathReason(command),
     downloadThenRunReason(segments),
+    databaseInputReason(command),
     historySearchReason(command),
   ]) {
     if (reason !== null) reasons.add(reason)
