@@ -51,7 +51,9 @@ describe('default Anthropic cloud model', () => {
     expect(cloudModels.indexOf('claude-sonnet-5')).toBeLessThan(
       cloudModels.indexOf('claude-sonnet-4-6'),
     )
-    await expect(menu.$('[data-value="claude-sonnet-5-5"]')).toBeDisplayed()
+    const defaultOption = menu.$('[data-value="claude-sonnet-5-5"]')
+    await expect(defaultOption).toBeDisplayed()
+    await expect(defaultOption).toHaveText('Claude Sonnet 5.5')
 
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
