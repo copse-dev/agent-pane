@@ -33947,6 +33947,15 @@ function switchProject(store2, api2, id, pendingThreadId = null) {
   if (!proj) return;
   activate(store2, api2, id, proj.path, proj.sshHost, pendingThreadId);
 }
+async function activateMobileProject(store2, api2, id) {
+  const project2 = store2.getState().projects.find((item) => item.id === id);
+  if (!project2 || project2.missing) throw new Error("Project unavailable on the desktop.");
+  if (store2.getState().activeProjectId === id) {
+    cancelPendingSwitch(store2, api2);
+    return;
+  }
+  await activateAndWait(store2, api2, id, project2.path, project2.sshHost);
+}
 function switchProjectThread(store2, api2, projectId, threadId) {
   const { activeProjectId, expandedProjectId } = store2.getState();
   if (projectId === activeProjectId) {
@@ -36737,6 +36746,9 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
+    mobile: { onChat: () => () => {
+    }, reply: async () => {
+    } },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -37942,6 +37954,79 @@ var init_autoplay = __esm({
     DEFAULT_CHARS_PER_SECOND2 = 28;
     DEFAULT_START_DELAY_MS = 1200;
     DEFAULT_LOOP_PAUSE_MS = 2e4;
+  }
+});
+
+// src/renderer/controller/mobile-chat.ts
+async function acceptMobileChat(store2, api2, command) {
+  let ownedThread = null;
+  const checkCurrent = () => {
+    if (Date.now() >= command.expiresAt) throw new Error("This send expired. Try again.");
+    if (store2.getState().activeProjectId !== command.projectId)
+      throw new Error("The desktop changed projects during this send. Try again.");
+  };
+  try {
+    if (Date.now() >= command.expiresAt) throw new Error("This send expired. Try again.");
+    await activateMobileProject(store2, api2, command.projectId);
+    checkCurrent();
+    const threadId = command.threadId ?? createThread(store2);
+    const initial = getThreadById(store2, threadId);
+    if (!initial || initial.archivedAt !== void 0) throw new Error("Thread unavailable.");
+    if (!beginThreadSubmission(store2, threadId))
+      throw new Error("Another message is being submitted to this thread. Try again shortly.");
+    ownedThread = threadId;
+    switchThread(store2, threadId);
+    await awaitPendingThreadPersistence();
+    await ensureThreadMessages(command.projectId, threadId);
+    checkCurrent();
+    if (hydrationFailed(threadId) || getThreadById(store2, threadId)?.messagesLoaded === false)
+      throw new Error("The desktop could not load the conversation. Try again.");
+    if (!initial.worktreeChoice && initial.messages.length === 0) {
+      const prepared = await api2.agent.prepareCheckout(
+        command.projectId,
+        threadId,
+        command.text,
+        "automatic",
+        initial.model
+      );
+      checkCurrent();
+      applyPreparedThreadCheckout(store2, threadId, prepared);
+    }
+    const current = getThreadById(store2, threadId);
+    if (!current || current.archivedAt !== void 0) throw new Error("Thread unavailable.");
+    checkCurrent();
+    const payload = { content: command.text };
+    const messageId = addMessage(store2, threadId, "user", command.text);
+    const queued = { messageId, payload, createdAt: Date.now() };
+    const running = current.status === "running";
+    if (running) enqueueUserMessage(store2, threadId, queued);
+    else {
+      startHumanTurnTree(store2, threadId);
+      dispatchAgentRun(store2, api2, threadId, payload, queued);
+    }
+    return { ok: true, threadId, queued: running };
+  } catch (error62) {
+    return {
+      ok: false,
+      error: error62 instanceof Error ? error62.message : "The desktop could not send this message."
+    };
+  } finally {
+    if (ownedThread) endThreadSubmission(store2, ownedThread);
+  }
+}
+function attachMobileChat(store2, api2, ready3) {
+  return api2.mobile.onChat((command) => {
+    void ready3.then(() => acceptMobileChat(store2, api2, command)).then((result) => api2.mobile.reply(command.id, result));
+  });
+}
+var init_mobile_chat = __esm({
+  "src/renderer/controller/mobile-chat.ts"() {
+    init_thread_helpers();
+    init_pending_submissions();
+    init_projects();
+    init_persistence();
+    init_thread_hydration();
+    init_message_queue();
   }
 });
 
@@ -144654,9 +144739,15 @@ async function boot() {
   };
   applyExternalLinkMarks();
   store.on("settings_changed", applyExternalLinkMarks);
+  let mobileRestored = () => {
+  };
+  const mobileReady = new Promise((resolve) => {
+    mobileRestored = resolve;
+  });
   if (!popoutMode) {
     startAgentController(store, api);
     attachAutosave(store, api);
+    attachMobileChat(store, api, mobileReady);
     attachBestValueDefaultResolver(store, api);
     attachAutomationController(store, api);
     attachPrPanelFollow(store, api);
@@ -144762,6 +144853,7 @@ async function boot() {
       ensureLayout();
     });
   }
+  mobileRestored();
   if (popoutMode && store.getState().workspaceRoot) {
     await activatePopoutPane(popoutMode);
     return;
@@ -144978,6 +145070,7 @@ function switchToNextThread() {
 var sanitizerReady, highlighterReady, store, api, POPOUT_MODES, isPopoutMode, popoutMode, layoutMounted, unmountPopoutTitlebar, handleStopShortcut, openProcessManager;
 var init_main = __esm({
   async "src/renderer/main.ts"() {
+    init_mobile_chat();
     init_tokens();
     init_default();
     init_global();
