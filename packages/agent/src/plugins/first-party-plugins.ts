@@ -108,6 +108,7 @@ import { parallelSearchPlugin } from './parallel-search-plugin.ts'
 import { darkFactoryPlugin } from './dark-factory-plugin.ts'
 import { siteBuildingPlugin } from './site-building-plugin.ts'
 import { artifactCheckpointPlugin } from './artifact-checkpoint-plugin.ts'
+import { reviewerInputPlugin } from './reviewer-input-plugin.ts'
 import { appleDevelopmentPlugin } from './apple-development-plugin.ts'
 import { claudeMdPlugin } from './claude-md-plugin.ts'
 import { agentsMdPlugin } from './agents-md-plugin.ts'
@@ -146,6 +147,7 @@ export const FIRST_PARTY_PLUGINS: readonly RegisteredPlugin[] = [
   parallelSearchPlugin,
   darkFactoryPlugin,
   artifactCheckpointPlugin,
+  reviewerInputPlugin,
   siteBuildingPlugin,
 ]
 
