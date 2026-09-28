@@ -5,7 +5,7 @@ import { saveElementScreenshot } from './helpers/screenshot.ts'
 describe('default Anthropic cloud model', () => {
   before(async () => {
     process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-e2e-sonnet-5'
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-e2e-sonnet-5-5'
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-cloud-model-default', {
       model: 'auto:best-value',
@@ -21,7 +21,7 @@ describe('default Anthropic cloud model', () => {
     delete process.env.ANTHROPIC_API_KEY
   })
 
-  it('lists Sonnet 5 before the retained Sonnet 4.6 option', async () => {
+  it('lists Sonnet 5.5 before the retained Sonnet 5 and 4.6 options', async () => {
     const picker = $('.footer-model-host .model-picker')
     await picker.$('.model-picker-trigger').click()
     await picker.$('.model-picker-browse').click()
@@ -42,16 +42,20 @@ describe('default Anthropic cloud model', () => {
       }
       return values
     })
+    expect(cloudModels).toContain('claude-sonnet-5-5')
     expect(cloudModels).toContain('claude-sonnet-5')
     expect(cloudModels).toContain('claude-sonnet-4-6')
+    expect(cloudModels.indexOf('claude-sonnet-5-5')).toBeLessThan(
+      cloudModels.indexOf('claude-sonnet-5'),
+    )
     expect(cloudModels.indexOf('claude-sonnet-5')).toBeLessThan(
       cloudModels.indexOf('claude-sonnet-4-6'),
     )
-    await expect(menu.$('[data-value="claude-sonnet-5"]')).toBeDisplayed()
+    await expect(menu.$('[data-value="claude-sonnet-5-5"]')).toBeDisplayed()
 
     await saveElementScreenshot(
       '.footer-model-host .model-picker-menu',
-      'cloud-model-default-sonnet-5.png',
+      'cloud-model-default-sonnet-5-5.png',
     )
   })
 })

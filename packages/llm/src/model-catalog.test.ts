@@ -82,8 +82,8 @@ describe('model catalog', () => {
   })
 
   it('maps tracked cloud ids to friendly display labels', () => {
-    assert.equal(DEFAULT_CLOUD_MODEL, 'claude-sonnet-5')
-    assert.equal(cloudModelDisplayLabel('claude-sonnet-5'), 'Claude Sonnet 5')
+    assert.equal(DEFAULT_CLOUD_MODEL, 'claude-sonnet-5-5')
+    assert.equal(cloudModelDisplayLabel('claude-sonnet-5-5'), 'Claude Sonnet 5.5')
     assert.equal(cloudModelDisplayLabel('claude-sonnet-4-6'), 'Claude Sonnet 4.6')
     assert.equal(cloudModelDisplayLabel('claude-opus-4-8'), 'Claude Opus 4.8')
     assert.equal(cloudModelDisplayLabel('gpt-4o-mini'), 'GPT-4o mini')
@@ -117,6 +117,7 @@ describe('model catalog', () => {
     // included, so leading-system placement is the common path.
     assert.equal(supportsMidConversationSystem('claude-sonnet-4-6'), false)
     assert.equal(supportsMidConversationSystem('claude-sonnet-5'), false)
+    assert.equal(supportsMidConversationSystem('claude-sonnet-5-5'), false)
     assert.equal(supportsMidConversationSystem('claude-haiku-4-5'), false)
     // Unknown ids default to the safe path rather than guessing.
     assert.equal(supportsMidConversationSystem('claude-unknown'), false)
