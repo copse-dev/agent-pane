@@ -3,17 +3,17 @@
  *
  * A SKILL.md commonly points at sibling files under its own bundle —
  * `references/patterns.md`, `scripts/setup.sh`, `assets/logo.png` — either as a
- * markdown link or as a bare/backticked path in prose. Those are the three
- * directories `read_skill` itself documents (scripts/, references/, assets/),
- * so matching on them keeps this deterministic and free of false positives
- * from unrelated slash-separated text.
+ * markdown link or as a bare/backticked path in prose. Matching is limited to
+ * the three directories `read_skill` itself documents (scripts/, references/,
+ * assets/) plus `playbooks/` (the pstack layout), which keeps it deterministic
+ * and free of false positives from unrelated slash-separated text.
  *
  * Only paths with a file extension are kept, so a prose mention of the
  * `references/` directory in general (no filename) is not treated as a
  * reference to a specific missing file.
  */
 
-const REFERENCE_RE = /(?:^|[\s(`'"[])((?:references|scripts|assets)\/[^\s)`'"\]]+)/g
+const REFERENCE_RE = /(?:^|[\s(`'"[])((?:references|scripts|assets|playbooks)\/[^\s)`'"\]]+)/g
 
 /** Strip trailing sentence/markdown punctuation a bare-text match may have swept up. */
 function trimTrailingPunctuation(path: string): string {

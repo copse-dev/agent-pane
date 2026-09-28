@@ -5,13 +5,16 @@ import {
   SHELL_LANGUAGE_INTERPRETERS,
   commandName,
   inlineCodeBody,
+  printfAssignsShellVariable,
+  rawShellArgv,
   shellRedirects,
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
 import { classifyGhSegment } from './gh-argv.ts'
-import { splitSegments } from './command-routing.ts'
+import { scanShellComposition, splitSegments } from './command-routing.ts'
 import { analyzeReadOutsideProject } from './read-outside-project.ts'
+import { hostReachReasons } from './host-reach.ts'
 import {
   REASON_FIND_DELETE,
   REASON_RECURSIVE_DELETE,
@@ -29,8 +32,21 @@ export interface ShellHarmContext {
   homeDir: string
   /** Resolve symlinks when possible. Falls back to lexical resolution when absent/throwing. */
   canonicalizePath?: (path: string) => string
-  /** Read an interpreter/direct-execution script. Null means missing, unreadable, or too large. */
+  /** Read an interpreter/direct-execution script. Null means missing, unreadable, too large, or binary. */
   readScript?: (path: string) => string | null
+  /**
+   * Whether a file `readScript` could not read is a compiled executable (ELF,
+   * Mach-O, PE). Consulted only for direct execution of a file inside the
+   * workspace; absent, every unreadable file prompts.
+   */
+  isCompiledProgram?: (path: string) => boolean
+  /**
+   * Hosts (or `~/.ssh/config` aliases) the user trusts with `ssh`, `scp`,
+   * `rsync`, and `sftp`, lower-case. Any other host prompts. Empty by default.
+   */
+  trustedSshHosts?: readonly string[]
+  /** Whether a path exists; lets `npx <tool>` run a project dependency's own binary. */
+  pathExists?: (path: string) => boolean
 }
 
 interface MutableDecision {
@@ -874,7 +890,24 @@ function findExecPayloads(argv: string[]): string[][] {
 }
 
 /** The script an interpreter was handed, from its arguments only. */
+/** Shell options that take a separate value (`bash -o pipefail x`). */
+const SHELL_VALUE_OPTIONS = new Set(['-o', '+o', '-O', '+O'])
+
 function interpreterScriptOperand(argv: string[]): string | null {
+  // A shell runs its first operand as a script whatever it is called:
+  // `bash ./payload` was never read, while `bash ./payload.sh` was.
+  if (SHELL_LANGUAGE_INTERPRETERS.has(commandName(argv[0]))) {
+    for (let i = 1; i < argv.length; i++) {
+      const arg = argv[i] ?? ''
+      if (arg === '--') return argv[i + 1] ?? null
+      if (arg.startsWith('-') || arg.startsWith('+')) {
+        if (SHELL_VALUE_OPTIONS.has(arg)) i++
+        continue
+      }
+      return arg
+    }
+    return null
+  }
   for (const arg of argv.slice(1)) {
     if (arg.startsWith('-')) continue
     if (SCRIPT_EXTENSIONS.test(arg)) return arg
@@ -910,15 +943,136 @@ function isExecutablePathShape(token: string): boolean {
   return !NON_PATH_CHARACTERS.test(token)
 }
 
+/** Where installed programs live. Executing one of these is not running a script. */
+const INSTALLED_PROGRAM_ROOTS = [
+  '/usr/',
+  '/bin/',
+  '/sbin/',
+  '/opt/',
+  '/System/',
+  '/Library/',
+  '/Applications/',
+  '/nix/',
+  '/snap/',
+]
+
+/** Directories anyone (or any download) can write to. */
+const TEMPORARY_ROOTS = [
+  '/tmp',
+  '/private/tmp',
+  '/var/tmp',
+  '/private/var/tmp',
+  '/var/folders',
+  '/private/var/folders',
+  '/dev/shm',
+]
+
 /**
- * The workspace-relative file argv[0] itself names, when the shell executes it
- * directly (`./deploy.sh`, `bin/build`). Absolute paths are excluded: they are
- * installed binaries, not agent-authored scripts.
+ * Home-directory places toolchains install programs: version managers, language
+ * package managers' bin directories, and Xcode's build products.
  */
-function directExecutionOperand(argv: string[]): string | null {
+const HOME_PROGRAM_DIRS = [
+  '.cargo/bin',
+  '.rustup/toolchains',
+  '.local/bin',
+  'go/bin',
+  '.bun/bin',
+  '.deno/bin',
+  '.volta',
+  '.nvm/versions',
+  '.fnm',
+  '.local/share/fnm',
+  '.local/share/mise',
+  '.asdf',
+  '.pyenv',
+  '.rbenv',
+  '.sdkman',
+  '.dotnet/tools',
+  '.npm-global/bin',
+  'Library/pnpm',
+  'Library/Developer',
+  'bin',
+]
+
+/** Whether a program lives where programs are installed rather than where files are dropped. */
+function isInstalledProgramPath(resolved: string, context: ShellHarmContext): boolean {
+  if (TEMPORARY_ROOTS.some((root) => isAtOrAbove(root, resolved))) return false
+  if (INSTALLED_PROGRAM_ROOTS.some((root) => resolved.startsWith(root))) return true
+  return HOME_PROGRAM_DIRS.some((dir) => {
+    const path = isWindowsPath(context.homeDir)
+      ? win32.join(context.homeDir, dir)
+      : `${context.homeDir}/${dir}`
+    return isAtOrAbove(path, resolved)
+  })
+}
+
+/**
+ * The file argv[0] itself names, when the shell executes it directly
+ * (`./deploy.sh`, `bin/build`, `/tmp/tool`). Programs under the installed-program
+ * roots are excluded. Other absolute paths used to be excluded too, as installed
+ * binaries, which let `/tmp/tool` and another checkout's `deploy.sh` run
+ * uninspected; {@link inspectInterpreter} now reads them.
+ */
+function directExecutionOperand(
+  argv: string[],
+  parsedHeads: ReadonlySet<string>,
+  context: ShellHarmContext,
+): string | null {
   const head = argv[0]
-  if (head && head.includes('/') && !isAbsolute(head) && isExecutablePathShape(head)) return head
-  return null
+  // A word starting with `#` in command position opens a comment; the shell runs
+  // nothing. A heredoc body's `#!/bin/sh` line reached here through the
+  // line-splitting fallback lexer and prompted as an uninspectable script.
+  if (head?.startsWith('#')) return null
+  if (!head || !head.includes('/') || isWindowsPath(head) || !isExecutablePathShape(head)) {
+    return null
+  }
+  if (isAbsolute(head)) {
+    if (isInstalledProgramPath(expandPathToken(head, context), context)) return null
+    // The line-splitting fallback lexer cuts quoted text at `|` and newlines, so
+    // `sed -n "s|/etc/hosts|x|p"` hands it a phantom `/etc/hosts` head. Only a
+    // head the real shell parse also puts in command position is executed.
+    if (!parsedHeads.has(head)) return null
+  }
+  return head
+}
+
+/**
+ * Whether a parsed head is only the tail of a word glued to a substitution:
+ * shell-quote reads `ls $(xcode-select -p)/Platforms` as ending a substitution
+ * and then running `/Platforms`.
+ *
+ * This needs positive evidence — the word written straight after a `)` and
+ * nowhere at a command boundary. The parse hands back the word the shell runs,
+ * with quotes removed and `$HOME` expanded, so its spelling in the text often
+ * differs (`"$HOME/x.sh"`, `'/abs/x.sh'`, `/abs/"x.sh"`). Requiring the text to
+ * spell a head at a boundary dropped every such head uninspected; a head whose
+ * spelling cannot be found is kept, so it is read or prompts.
+ */
+function isGluedToSubstitution(text: string, word: string): boolean {
+  let glued = false
+  for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + 1)) {
+    const before = text[at - 1] ?? ''
+    if (at === 0 || /[\s;&|(`]/.test(before)) return false
+    if (before === ')') glued = true
+  }
+  return glued
+}
+
+/** A command selected by expansion cannot be matched to a file for inspection. */
+function inspectDynamicCommandHead(
+  rawArgv: readonly string[],
+  argv: readonly string[],
+  out: MutableDecision,
+): void {
+  // `command -v/-V "$name"` only describes how a name would resolve; it does
+  // not execute the expanded name despite `command` otherwise being a wrapper.
+  if (commandName(rawArgv[0]) === 'command' && (rawArgv[1] === '-v' || rawArgv[1] === '-V')) {
+    return
+  }
+  const head = argv[0] ?? ''
+  if (/(?:\$|`|%[A-Za-z_][A-Za-z0-9_]*%)/.test(head)) {
+    addUnique(out.prompt, `dynamic command path could not be inspected safely: ${head}`)
+  }
 }
 
 /**
@@ -989,10 +1143,11 @@ function inspectInterpreter(
   out: MutableDecision,
   depth: number,
   seenScripts: Set<string>,
+  parsedHeads: ReadonlySet<string>,
 ): void {
   const head = commandName(argv[0])
   const isInterpreter = CODE_INTERPRETERS.has(head)
-  const directExecution = directExecutionOperand(argv)
+  const directExecution = directExecutionOperand(argv, parsedHeads, context)
   // Only an interpreter's *arguments* can name a script. Scanning every command's
   // arguments meant any absolute-path invocation with a script-shaped argument
   // prompted spuriously: `/usr/bin/git add build.sh` reported "script contents
@@ -1026,6 +1181,20 @@ function inspectInterpreter(
   if (seenScripts.has(resolved)) return
   seenScripts.add(resolved)
   const contents = context.readScript?.(resolved) ?? null
+  // A program the project compiled (`./target/debug/app`) has no text to
+  // inspect, and running it is no riskier than the `cargo run` or `make` that
+  // built it, which the gate already lets through. Only for direct execution of
+  // a file inside the workspace: an interpreter never runs a compiled binary,
+  // and a binary elsewhere is not the project's.
+  if (
+    contents === null &&
+    !isInterpreter &&
+    context.workspaceRoot !== null &&
+    isAtOrAbove(canonicalPath(context.workspaceRoot, context), resolved) &&
+    context.isCompiledProgram?.(resolved) === true
+  ) {
+    return
+  }
   if (contents === null || depth >= MAX_SCRIPT_DEPTH || scriptContentsLookBinary(contents)) {
     addUnique(out.prompt, `script contents could not be inspected safely: ${operand}`)
     return
@@ -1206,6 +1375,7 @@ const DESTRUCTIVE_VCS: Array<{ re: RegExp; reason: string }> = [
   { re: /\bgit\s+reflog\s+expire\b/i, reason: 'git reflog expire discards the recovery log' },
   { re: /\bgit\s+update-ref\s+-d\b/i, reason: 'git update-ref -d deletes a ref' },
   { re: /\bgit\s+filter-branch\b/i, reason: 'git filter-branch rewrites history' },
+  { re: /\bgit\s+filter-repo\b/i, reason: 'git filter-repo rewrites history' },
   { re: /\bgit\s+stash\s+(?:clear|drop)\b/i, reason: 'git stash clear/drop discards stashed work' },
   // `git checkout -- .` is already covered by the shared list; this is the form
   // without the `--` separator, which discards the same changes.
@@ -1274,19 +1444,264 @@ function inspectRefusedOutsideReads(
   context: ShellHarmContext,
   out: MutableDecision,
 ): void {
-  if (!context.workspaceRoot) return
+  // With no workspace, relative paths resolve against the process directory, as
+  // `expandPathToken` does. Returning early here skipped the credential deny.
+  const workspaceRoot = context.workspaceRoot ?? process.cwd()
   // Judge each top-level command independently. A non-read sibling must not
   // launder a credential read (`cat ~/.ssh/id && touch marker`) by contributing
   // a whole-line "not a plain read" blocker that suppresses the refusal.
   const segments = splitSegments(command)
+  // A `cd` moves the segments after it: `cd ~/.ssh && cat id_rsa` reads the key
+  // exactly as `cat ~/.ssh/id_rsa` does. Carry the latest one into each later
+  // segment's analysis, which resolves relative operands against it.
+  let cdPrefix = ''
   for (const segment of segments.length > 0 ? segments : [command]) {
-    const analysis = analyzeReadOutsideProject(segment, context.workspaceRoot, {
+    if (/^\s*cd\s+\S+\s*$/.test(segment)) {
+      cdPrefix = `${segment.trim()} && `
+      continue
+    }
+    const analysis = analyzeReadOutsideProject(`${cdPrefix}${segment}`, workspaceRoot, {
       homeDir: context.homeDir,
     })
     const refused = analysis.blockers.filter(isRefusedOutsideReadBlocker)
     if (refused.length === 0) continue
     if (analysis.blockers.some(isNonReadCommandShapeBlocker)) continue
     for (const blocker of refused) addUnique(out.deny, blocker)
+  }
+}
+
+/**
+ * Flags whose value is a program the command runs: `rg --pre /tmp/tool`,
+ * `tar --to-command=…`. The value is inspected as a command of its own.
+ */
+function programFlagPayloads(argv: string[]): string[][] {
+  const head = commandName(argv[0])
+  const flags =
+    head === 'rg'
+      ? ['--pre']
+      : head === 'tar' || head === 'gtar' || head === 'bsdtar'
+        ? ['--to-command', '--use-compress-program', '-I']
+        : []
+  const payloads: string[][] = []
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i] ?? ''
+    for (const flag of flags) {
+      const value =
+        arg === flag
+          ? argv[i + 1]
+          : arg.startsWith(`${flag}=`)
+            ? arg.slice(flag.length + 1)
+            : undefined
+      if (value) payloads.push(value.split(/\s+/))
+    }
+  }
+  return payloads
+}
+
+const CONTAINER_EXEC_VALUE_FLAGS = new Set([
+  '-e',
+  '--env',
+  '-u',
+  '--user',
+  '-w',
+  '--workdir',
+  '--env-file',
+  '--detach-keys',
+])
+
+/**
+ * The command `docker exec box sh -c '…'` or `kubectl exec pod -- …` runs. It
+ * runs in a container, which may mount host files and reach the network, so its
+ * payload is inspected like any other command.
+ */
+function containerExecPayload(argv: string[]): string[] | null {
+  const head = commandName(argv[0])
+  if (head === 'kubectl' || head === 'oc') {
+    if (!argv.slice(1).includes('exec')) return null
+    const separator = argv.indexOf('--')
+    return separator === -1 ? null : argv.slice(separator + 1)
+  }
+  if (head !== 'docker' && head !== 'podman' && head !== 'nerdctl') return null
+  let i = argv[1] === 'container' ? 2 : 1
+  if (argv[i] !== 'exec') return null
+  for (i += 1; i < argv.length; i++) {
+    const arg = argv[i] ?? ''
+    if (!arg.startsWith('-')) break
+    if (CONTAINER_EXEC_VALUE_FLAGS.has(arg)) i++
+  }
+  const payload = argv.slice(i + 1)
+  return payload.length > 0 ? payload : null
+}
+
+/** Join argv back into a command line the lexer reads as the same words. */
+function quoteWords(argv: readonly string[]): string {
+  return argv
+    .map((word) => (/^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`))
+    .join(' ')
+}
+
+const FETCHERS = new Set(['curl', 'wget', 'fetch', 'http', 'https', 'xh', 'aria2c'])
+const CODE_RUNNERS = new Set(['eval', 'source', '.', ...CODE_INTERPRETERS])
+
+/**
+ * `eval "$(curl …)"`, `bash <(curl …)`, `sh -c "$(wget -qO- …)"`: the download
+ * is a substitution, so no pipe into an interpreter appears, and the fetch on its
+ * own is a plain read.
+ */
+function inspectFetchedSubstitution(command: string, out: MutableDecision): void {
+  const fetches = substitutionBodies(command).some((body) =>
+    shellSegments(body).some((argv) => FETCHERS.has(commandName(unwrapWrappers(argv)[0]))),
+  )
+  if (!fetches) return
+  const runs = shellSegments(command).some((argv) =>
+    CODE_RUNNERS.has(commandName(unwrapWrappers(argv)[0])),
+  )
+  if (runs) addUnique(out.prompt, 'runs code it downloads at run time')
+}
+
+/** Network calls in Python, JavaScript, Perl, Ruby and PowerShell source. */
+const NETWORK_CODE =
+  /\b(?:urlopen|urllib\.request|urllib2|requests\.(?:get|post|put|request)|http\.client|httpx|aiohttp|fetch\s*\(|https?\.(?:get|request)\s*\(|axios|LWP::UserAgent|HTTP::Tiny|Net::HTTP|open-uri|URI\.open|Invoke-WebRequest|Invoke-RestMethod)/
+/** Running a string as code. `.exec(` (a regex method) is not. */
+const EXEC_CODE =
+  /(?<![.\w])(?:exec|eval|execfile|instance_eval)\s*\(|\bnew\s+Function\s*\(|\bvm\.run\w*\s*\(|\b(?:Invoke-Expression|iex)\b/
+/** Sending a request body. */
+const SEND_CODE =
+  /(?:\.|->)\s*(?:post|put|patch)\s*\(|\bmethod\s*[:=]\s*['"](?:POST|PUT|PATCH|DELETE)['"]|HTTP::Request->new\(\s*['"]?(?:POST|PUT)/i
+
+/** Source code that downloads and runs code, or sends data somewhere. */
+function inspectNetworkCode(source: string, out: MutableDecision): void {
+  if (!NETWORK_CODE.test(source)) return
+  if (EXEC_CODE.test(source)) addUnique(out.prompt, 'code downloads and runs code')
+  if (SEND_CODE.test(source)) addUnique(out.prompt, 'code sends data over the network')
+}
+
+const HEREDOC = /<<-?\s*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?:\n|$)/g
+
+/**
+ * `perl - <<'PERL' … PERL` and `python3 - <<EOF`: the program arrives on stdin
+ * from a heredoc. Shell heredocs are already lexed line by line; code is not.
+ */
+function heredocPrograms(command: string, argv: string[]): string[] {
+  const head = commandName(argv[0])
+  if (!CODE_INTERPRETERS.has(head) || SHELL_LANGUAGE_INTERPRETERS.has(head)) return []
+  if (inlineCodeBody(argv) !== null) return []
+  if (argv.slice(1).some((arg) => !arg.startsWith('-'))) return []
+  return [...command.matchAll(HEREDOC)].map((match) => match[3] ?? '')
+}
+
+/**
+ * Credential stores, relative to home. Reading one is refused outright
+ * ({@link inspectRefusedOutsideReads}); any other command that names one — `tar
+ * -czf - ~/.ssh | curl -T -`, `cp ~/.ssh/id_rsa /tmp/k` — can carry its contents
+ * away, so it asks.
+ */
+const CREDENTIAL_STORES = [
+  '.ssh',
+  '.aws',
+  '.gnupg',
+  '.kube',
+  '.docker/config.json',
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+  '.git-credentials',
+  '.config/gh',
+  '.config/gcloud',
+  '.azure',
+  'Library/Keychains',
+  '.password-store',
+  '.zsh_history',
+  '.bash_history',
+]
+
+/** Programs that use a credential store as its owner, by design. */
+const CREDENTIAL_OWNERS = new Set([
+  'ssh',
+  'scp',
+  'sftp',
+  'mosh',
+  'autossh',
+  'ssh-add',
+  'ssh-keygen',
+  'ssh-copy-id',
+  'ssh-keyscan',
+  'gpg',
+  'gpg2',
+  'kubectl',
+  'helm',
+  'oc',
+  'aws',
+  'gcloud',
+  'az',
+  'docker',
+  'gh',
+  'git',
+  'npm',
+  'pnpm',
+  'yarn',
+  'pip',
+  'pip3',
+  'twine',
+])
+
+function inspectCredentialStoreOperands(
+  argv: string[],
+  context: ShellHarmContext,
+  out: MutableDecision,
+): void {
+  if (CREDENTIAL_OWNERS.has(commandName(argv[0]))) return
+  for (const arg of argv.slice(1)) {
+    const token = arg.includes('=') && arg.startsWith('-') ? arg.slice(arg.indexOf('=') + 1) : arg
+    if (!/^(?:~|\/)/.test(token) || isRunTimePlaceholder(token)) continue
+    const resolved = expandPathToken(destructiveTargetBase(token), context)
+    for (const store of CREDENTIAL_STORES) {
+      const path = isWindowsPath(context.homeDir)
+        ? win32.join(context.homeDir, store)
+        : `${context.homeDir}/${store}`
+      if (isAtOrAbove(path, resolved)) {
+        addUnique(out.prompt, `names a credential store (~/${store}): ${token}`)
+        break
+      }
+    }
+  }
+}
+
+const DELETERS = new Set(['rm', 'unlink', 'shred', 'rmdir', 'trash'])
+
+/**
+ * `find /elsewhere -exec rm {} +` and `find /elsewhere … | xargs rm`: the deletion
+ * targets are `{}` or stdin, which the deletion inspector cannot resolve, and the
+ * search root is what says where they are.
+ */
+function inspectFindDeletion(
+  argvs: string[][],
+  context: ShellHarmContext,
+  out: MutableDecision,
+): void {
+  if (context.workspaceRoot === null) return
+  const bareDeleter = argvs.some(
+    (argv) =>
+      DELETERS.has(commandName(argv[0])) &&
+      nonOptionArgs(argv.slice(1)).every((target) => isRunTimePlaceholder(target)),
+  )
+  for (const argv of argvs) {
+    if (commandName(argv[0]) !== 'find') continue
+    const roots: string[] = []
+    for (const arg of argv.slice(1)) {
+      if (arg.startsWith('-') || arg === '(' || arg === '!' || arg === '\\(') break
+      roots.push(arg)
+    }
+    const outside = roots.filter(
+      (root) => !isRunTimePlaceholder(root) && !isInsideWorkspace(root, context),
+    )
+    if (outside.length === 0) continue
+    const execDeletes = findExecPayloads(argv).some((payload) =>
+      DELETERS.has(commandName(unwrapWrappers(payload)[0])),
+    )
+    if (execDeletes || bareDeleter || argv.includes('-delete')) {
+      addUnique(out.prompt, `deletes files found outside the workspace (find ${outside.join(' ')})`)
+    }
   }
 }
 
@@ -1319,9 +1734,36 @@ function inspectCommandLine(
   inspectRedirects(expanded, context, out)
 
   const nestedCommands: string[][] = []
+  const argvs: string[][] = []
+  const sourceSegments = scanShellComposition(expanded)?.segments ?? [expanded]
+  for (const sourceSegment of sourceSegments) {
+    const rawArgv = rawShellArgv(sourceSegment)
+    inspectDynamicCommandHead(rawArgv, unwrapWrappers(rawArgv), out)
+  }
+  const parsedHeads = new Set(
+    shellSegments(expanded, false)
+      .map((segment) => unwrapWrappers(segment)[0] ?? '')
+      .filter((head) => !isAbsolute(head) || !isGluedToSubstitution(expanded, head)),
+  )
   for (const segment of shellSegments(expanded)) {
     const argv = unwrapWrappers(segment)
     if (argv.length === 0) continue
+    if (printfAssignsShellVariable(argv)) {
+      addUnique(out.prompt, 'printf -v assigns a shell variable used by later commands')
+    }
+    argvs.push(argv)
+    inspectCredentialStoreOperands(argv, context, out)
+    nestedCommands.push(...programFlagPayloads(argv))
+    const containerPayload = containerExecPayload(argv)
+    // Re-quote: the payload's own words (`sh -c 'a | b'`) must survive the join.
+    if (containerPayload) nestedCommands.push([quoteWords(containerPayload)])
+    for (const program of heredocPrograms(command, argv)) {
+      if (depth >= MAX_SCRIPT_DEPTH) {
+        addUnique(out.prompt, 'nested heredoc program could not be fully inspected')
+        break
+      }
+      mergeDecision(out, assess(program, context, depth + 1, seenScripts, 'code'))
+    }
     inspectDeletion(argv, context, out)
     inspectOwnershipChange(argv, context, out)
     inspectRelocation(argv, context, out)
@@ -1329,7 +1771,7 @@ function inspectCommandLine(
     inspectArgumentWrites(argv, context, out)
     inspectMirrorDeletion(argv, context, out)
     inspectProcessKill(argv, out)
-    inspectInterpreter(argv, context, out, depth, seenScripts)
+    inspectInterpreter(argv, context, out, depth, seenScripts, parsedHeads)
     nestedCommands.push(...findExecPayloads(argv))
     // `eval "rm -rf /"` hands a string to the shell. Unlike the pass-through
     // wrappers, its argument is code, not argv, so it has to be re-assessed.
@@ -1337,6 +1779,9 @@ function inspectCommandLine(
       nestedCommands.push(argv.slice(1))
     }
   }
+
+  inspectFindDeletion(argvs, context, out)
+  inspectFetchedSubstitution(command, out)
 
   for (const nested of nestedCommands) {
     if (depth >= MAX_SCRIPT_DEPTH) {
@@ -1382,8 +1827,12 @@ function assess(
   if (language === 'shell') {
     inspectGithubCliWrites(inspectableCommand, out)
     inspectRefusedOutsideReads(inspectableCommand, context, out)
+    for (const reason of hostReachReasons(inspectableCommand, context))
+      addUnique(out.prompt, reason)
     inspectCommandLine(inspectableCommand, context, out, depth, seenScripts)
   }
+
+  if (language === 'code') inspectNetworkCode(inspectableCommand, out)
 
   // Programmatic exec/system/popen calls carry shell strings inside code.
   // Shell interpreter arguments already recurse above; scanning shell text here
