@@ -22,6 +22,11 @@ We design for that.
   the user's environment.
 - **Outbound network** — the ability to exfiltrate data or pull in further
   instructions/payloads.
+- **The Mobile Companion root key** — `~/.copse/lan/ca.key` can sign certificates
+  for private-network IP addresses trusted by a phone that installed the root.
+  Name constraints prevent it from vouching for public IPs or websites, but it
+  could impersonate another private-network device. Local roots do not require
+  Certificate Transparency, so such issuance is not externally observable.
 
 ## Adversary model
 
@@ -43,15 +48,16 @@ human approval** before it can reach the host or the network, and should leave a
 
 ## Trust boundaries
 
-| Boundary                   | Trusted side                           | Untrusted side                                          |
-| -------------------------- | -------------------------------------- | ------------------------------------------------------- |
-| Workspace vs. host         | The host and the user's own config     | The opened project's contents                           |
-| User dir vs. workspace     | `<userData>/tools/`, global MCP config | Project-supplied `.mcp.json` / `.cursor/mcp.json`       |
-| Main process vs. renderer  | Electron main, `contextBridge` API     | Rendered web/markdown/browser content                   |
-| Approved vs. auto-run      | Commands the user OK'd                 | Agent-proposed shell commands and writes                |
-| Local control vs. SSH host | Local UI, approvals, thread store      | The remote account, filesystem, processes, network      |
-| Copse vs. managed agent    | Local handoff and local record         | Provider-managed runtime and retained remote state      |
-| Session vs. runtime        | Durable thread and execution metadata  | Replaceable process, container, VM, or provider session |
+| Boundary                   | Trusted side                            | Untrusted side                                          |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------- |
+| Workspace vs. host         | The host and the user's own config      | The opened project's contents                           |
+| User dir vs. workspace     | `<userData>/tools/`, global MCP config  | Project-supplied `.mcp.json` / `.cursor/mcp.json`       |
+| Main process vs. renderer  | Electron main, `contextBridge` API      | Rendered web/markdown/browser content                   |
+| Approved vs. auto-run      | Commands the user OK'd                  | Agent-proposed shell commands and writes                |
+| Local control vs. SSH host | Local UI, approvals, thread store       | The remote account, filesystem, processes, network      |
+| Copse vs. managed agent    | Local handoff and local record          | Provider-managed runtime and retained remote state      |
+| Session vs. runtime        | Durable thread and execution metadata   | Replaceable process, container, VM, or provider session |
+| This device vs. LAN peers  | Desktop approval and local thread store | Other devices on the selected private network           |
 
 The existing design already encodes several of these: custom tools load **only**
 from the user-controlled `<userData>/tools/` directory (never the workspace),
@@ -96,6 +102,26 @@ project-defined MCP servers are gated behind workspace trust, the
    fails during create, checkpoint, or teardown, leaving work lost or a billable
    runtime alive. _Backstop target:_ persisted desired/observed state, idempotent
    reconciliation, TTL/idle reap, and complete-only checkpoints.
+10. **LAN control-surface compromise.** A peer attempts DNS rebinding, cross-origin
+    requests, bearer guessing, or pairing without the person at the desktop.
+    _Backstop:_ Mobile Companion is off by default; when enabled it binds one chosen
+    private IPv4 address and requires exact Host and Origin checks. Desktop-approved
+    pairing grants reads; a separate per-device control grant permits bounded chat,
+    question, approve-once/deny, and exact-run Stop actions. Existing pairings stay
+    read-only until upgraded. Every write rechecks access and project/thread ownership;
+    strict envelopes reject arbitrary IPC, remembered approvals, and broader leases.
+    Request IDs deduplicate deliveries within a server session; session IDs and issue
+    times reject stale replays, and prompt/run IDs prevent acting on replaced work.
+    Phone decisions record the device UUID and label in the durable decision log.
+    Device tokens are individually revocable and only their hashes are persisted.
+    The enabled choice and paired devices persist across restarts; the
+    listener has no inactivity expiry and stays bound to its selected interface
+    while the app runs. The root must
+    be transferred directly to the phone; a certificate-warning click-through
+    is a weaker trust path and does not authorize phone-side decisions. The desktop
+    asks the person granting control to confirm installation and trust; browsers
+    cannot attest this to the server. The primary renderer remains the sole chat
+    writer, and accepted work can finish after a device is downgraded or revoked.
 
 ## Internal Git execution
 
@@ -281,6 +307,14 @@ The target runtime, egress, credential, lifecycle, and checkpoint architecture i
 
 These are the places where the posture above is aspirational rather than
 enforced, ordered by how much they widen the blast radius:
+
+- **Mobile bearer tokens have no automatic expiry.** A stolen device bearer can
+  be reused until revocation, including for new actions when that device has
+  control. Write-envelope deduplication and expiry do not prevent an attacker
+  holding the bearer from creating fresh requests. The experimental companion
+  relies on manually installing and trusting the local root; physical-device
+  certificate setup, live certificate renewal and live IP rebinding remain
+  outstanding. Simulator and local HTTPS tests do not establish those guarantees.
 
 - **No OS sandbox on Windows (or after ASRT init failure).** The project sandbox
   runs on macOS (seatbelt) and Linux (bubblewrap). On Windows, and after a sandbox
