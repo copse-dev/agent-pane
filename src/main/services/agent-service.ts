@@ -1577,6 +1577,7 @@ export async function runAgent(
         getAgentProjectRoot(),
         getAgentExecutionRoot(),
         controller.signal,
+        registry,
       )
     }
     const invokedSkills = options?.invokedSkills ?? []

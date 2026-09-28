@@ -3,7 +3,6 @@ import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData } from './helpers/seed-config.ts'
-import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { setComposerValue, submitComposer } from './helpers/composer.ts'
 import { waitForAgentIdle } from './helpers.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
@@ -110,7 +109,6 @@ describe('agent coordination in Electron (scripted mock)', () => {
   })
 
   after(() => {
-    writeE2eEnv({ COPSE_COORDINATION_DEMO: '0' })
     resetUserData()
   })
 })

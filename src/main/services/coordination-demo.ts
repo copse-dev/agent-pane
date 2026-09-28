@@ -26,15 +26,26 @@ const OFFER =
 const REPLY =
   'Agreed. I will own THIRD_PARTY_NOTICES.md and reuse your collector. Please keep your edits to the collector.'
 const WAIT_MS = 30_000
+const COORDINATION_DEMO_TOOL_NAMES = [
+  'coordination_check',
+  'coordination_note',
+  'coordination_read',
+] as const
 
 let broker: CoordinationBroker | undefined
 let runContext: AsyncLocalStorage<Session> | undefined
+const activeRegistryRuns = new WeakMap<CoordinationDemoRegistry, number>()
+
+interface CoordinationDemoRegistry {
+  has(name: string): boolean
+  register<TArgs>(tool: ToolDefinition<TArgs>): void
+  unregister(name: string): void
+}
 
 export function coordinationDemoEnabled(): boolean {
   return (
     typeof __COPSE_TEST_SCENARIOS__ !== 'undefined' &&
     __COPSE_TEST_SCENARIOS__ &&
-    process.env['COPSE_COORDINATION_DEMO'] === '1' &&
     process.env['COPSE_E2E'] === '1' &&
     process.env['COPSE_PANEL_MOCK_LLM'] === '1'
   )
@@ -72,11 +83,7 @@ async function waitFor<T>(
   return undefined
 }
 
-/** Called only inside the compile-time dev guard in registry-bootstrap. */
-export function registerCoordinationDemoTools(registry: {
-  register<TArgs>(tool: ToolDefinition<TArgs>): void
-}): void {
-  if (!coordinationDemoEnabled()) return
+function registerCoordinationDemoTools(registry: CoordinationDemoRegistry): void {
   const checkTool = defineTool({
     name: 'coordination_check',
     description:
@@ -188,6 +195,29 @@ export function registerCoordinationDemoTools(registry: {
   registry.register(checkTool)
   registry.register(noteTool)
   registry.register(readTool)
+}
+
+/** Install the fixture tools only for the lifetime of an exact scripted run. */
+function acquireCoordinationDemoTools(registry: CoordinationDemoRegistry): () => void {
+  const active = activeRegistryRuns.get(registry) ?? 0
+  if (active === 0) {
+    const collision = COORDINATION_DEMO_TOOL_NAMES.find((name) => registry.has(name))
+    if (collision) throw new Error(`Coordination demo tool already registered: ${collision}`)
+    registerCoordinationDemoTools(registry)
+  }
+  activeRegistryRuns.set(registry, active + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const remaining = (activeRegistryRuns.get(registry) ?? 1) - 1
+    if (remaining > 0) {
+      activeRegistryRuns.set(registry, remaining)
+      return
+    }
+    activeRegistryRuns.delete(registry)
+    for (const name of COORDINATION_DEMO_TOOL_NAMES) registry.unregister(name)
+  }
 }
 
 /** A deterministic provider fixture; every result is read from actual tool history. */
@@ -309,6 +339,7 @@ export function startCoordinationDemoRun(
   projectRoot: string | null,
   checkoutRoot: string | null,
   signal: AbortSignal,
+  registry: CoordinationDemoRegistry,
 ): CoordinationDemoRun | undefined {
   if (!coordinationDemoEnabled() || !projectRoot || !checkoutRoot) return undefined
   if (prompt !== COLLECTOR_DEMO_PROMPT && prompt !== LINT_DEMO_PROMPT) return undefined
@@ -321,16 +352,34 @@ export function startCoordinationDemoRun(
     checkoutId: checkoutRoot,
     optedIn: true,
   })
-  const revoke = (): void => {
+  let releaseTools: () => void
+  try {
+    releaseTools = acquireCoordinationDemoTools(registry)
+  } catch (error) {
     session.stop()
+    throw error
+  }
+  const revoke = (): void => {
+    try {
+      session.stop()
+    } catch {
+      // The broker revokes before recording Stop, so a full journal is safe.
+    }
   }
   signal.addEventListener('abort', revoke, { once: true })
+  let stopped = false
   return {
     provider: new CoordinationDemoProvider(prompt === COLLECTOR_DEMO_PROMPT),
     execute: <T>(operation: () => T): T => context.run(session, operation),
     stop: (): void => {
+      if (stopped) return
+      stopped = true
       signal.removeEventListener('abort', revoke)
-      session.stop()
+      try {
+        session.stop()
+      } finally {
+        releaseTools()
+      }
     },
   }
 }

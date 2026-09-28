@@ -396,7 +396,6 @@ if (isRelease) {
     'test:setMockScenario',
     'test:releaseMockScenario',
     'Mock scenario',
-    'COPSE_COORDINATION_DEMO',
     'No host-authorized coordination demo run',
     'Run the scripted coordination demo as the license collector.',
     'Scripted coordination demo — completed',

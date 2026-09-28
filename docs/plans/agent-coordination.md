@@ -47,10 +47,10 @@ the isolated profile to `.tmp/coordination-demo/profile` for local viewing.
 This tests the protocol and application wiring, not autonomous model judgment.
 
 The adapter in `src/main/services/coordination-demo.ts` requires a development
-build plus all three host flags: `COPSE_COORDINATION_DEMO=1`, `COPSE_E2E=1`, and
-`COPSE_PANEL_MOCK_LLM=1`. Only the two exact scripted prompts create a run-bound
+build plus the standard E2E mock environment (`COPSE_E2E=1` and
+`COPSE_PANEL_MOCK_LLM=1`). Only the two exact scripted prompts create a run-bound
 session; other tasks have no coordination capability. The release build guard
-checks that the demo flag and fixture have been eliminated. No real provider is
+checks that the fixture has been eliminated. No real provider is
 used for the exchange, and there is no production consent bypass.
 
 The demo's note tool waits up to 30 seconds for an explicit recipient read in

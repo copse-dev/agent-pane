@@ -7,13 +7,12 @@ import {
   COLLECTOR_DEMO_PROMPT,
   LINT_DEMO_PROMPT,
   coordinationDemoJournal,
-  registerCoordinationDemoTools,
   startCoordinationDemoRun,
 } from './coordination-demo.ts'
 import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
 import { runWithAgentRunReadonly } from './agent-run-readonly.ts'
 
-const keys = ['COPSE_COORDINATION_DEMO', 'COPSE_E2E', 'COPSE_PANEL_MOCK_LLM']
+const keys = ['COPSE_E2E', 'COPSE_PANEL_MOCK_LLM']
 const original = keys.map((key) => process.env[key])
 beforeEach(() => {
   for (const key of keys) process.env[key] = '1'
@@ -30,11 +29,10 @@ afterEach(() => {
 
 test('two real loops exchange notes through the registry and release the shared intention', async () => {
   const registry = new ToolRegistry()
-  registerCoordinationDemoTools(registry)
   const chunks: AgentStreamChunk[] = []
   const run = async (id: string, prompt: string): Promise<void> => {
     const controller = new AbortController()
-    const demo = startCoordinationDemoRun(id, prompt, '/demo', '/demo', controller.signal)
+    const demo = startCoordinationDemoRun(id, prompt, '/demo', '/demo', controller.signal, registry)
     assert.ok(demo)
     const messages: LLMMessage[] = [{ role: 'user', content: prompt }]
     try {
@@ -61,13 +59,13 @@ test('two real loops exchange notes through the registry and release the shared 
   assert.equal(records.filter((entry) => entry.kind === 'sent').length, 2)
   assert.equal(records.filter((entry) => entry.kind === 'received').length, 2)
   assert.equal(records.filter((entry) => entry.kind === 'stopped').length, 2)
+  assert.deepEqual(registry.names(), [])
 })
 
-test('demo requires every host gate and an exact demo prompt', () => {
+test('demo requires the standard E2E mock gates and an exact demo prompt', () => {
   for (const key of keys) {
     Reflect.deleteProperty(process.env, key)
     const registry = new ToolRegistry()
-    registerCoordinationDemoTools(registry)
     assert.deepEqual(registry.names(), [])
     assert.equal(
       startCoordinationDemoRun(
@@ -76,11 +74,13 @@ test('demo requires every host gate and an exact demo prompt', () => {
         '/demo',
         '/demo',
         new AbortController().signal,
+        registry,
       ),
       undefined,
     )
     process.env[key] = '1'
   }
+  const ordinaryRegistry = new ToolRegistry()
   assert.equal(
     startCoordinationDemoRun(
       'normal',
@@ -88,14 +88,15 @@ test('demo requires every host gate and an exact demo prompt', () => {
       '/demo',
       '/demo',
       new AbortController().signal,
+      ordinaryRegistry,
     ),
     undefined,
   )
+  assert.deepEqual(ordinaryRegistry.names(), [])
 })
 
 test('registry permission denial and read-only mode still block coordination', async () => {
   const registry = new ToolRegistry()
-  registerCoordinationDemoTools(registry)
   const controller = new AbortController()
   const demo = startCoordinationDemoRun(
     'guarded',
@@ -103,6 +104,7 @@ test('registry permission denial and read-only mode still block coordination', a
     '/demo',
     '/demo',
     controller.signal,
+    registry,
   )
   assert.ok(demo)
   const before = coordinationDemoJournal().filter((entry) => entry.kind === 'claimed').length
@@ -132,7 +134,6 @@ test('registry permission denial and read-only mode still block coordination', a
 
 test('Stop aborts an in-flight wait immediately and revokes the session', async () => {
   const registry = new ToolRegistry()
-  registerCoordinationDemoTools(registry)
   const controller = new AbortController()
   const demo = startCoordinationDemoRun(
     'stopped-waiter',
@@ -140,6 +141,7 @@ test('Stop aborts an in-flight wait immediately and revokes the session', async 
     '/separate',
     '/separate',
     controller.signal,
+    registry,
   )
   assert.ok(demo)
   const wait = demo.execute(() =>
