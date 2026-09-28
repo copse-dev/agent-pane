@@ -14,23 +14,30 @@ function analyze(
   command: string,
   root: string | null = ROOT,
 ): ReturnType<typeof analyzeReadOutsideProject> {
-  return analyzeReadOutsideProject(command, root, { homeDir: HOME })
+  const previous = process.env['COPSE_DIR']
+  process.env['COPSE_DIR'] = `${HOME}/.copse`
+  try {
+    return analyzeReadOutsideProject(command, root, { homeDir: HOME })
+  } finally {
+    if (previous === undefined) delete process.env['COPSE_DIR']
+    else process.env['COPSE_DIR'] = previous
+  }
 }
 
 describe('analyzeReadOutsideProject — eligible reads', () => {
   it('accepts a listing of a home-directory folder', () => {
-    const analysis = analyze('ls -la ~/.copse')
+    const analysis = analyze('ls -la ~/.copse/workspace')
     assert.equal(analysis.eligible, true)
-    assert.deepEqual(analysis.targets, ['~/.copse'])
+    assert.deepEqual(analysis.targets, ['~/.copse/workspace'])
   })
 
   it('accepts the compound read the sandbox prompt was reported for', () => {
     const analysis = analyze(
-      'echo "=== ~/.copse top ==="; ls -la ~/.copse 2>/dev/null; echo; ' +
-        'find ~/.copse -maxdepth 2 2>/dev/null | head -100',
+      'echo "=== ~/.copse/workspace top ==="; ls -la ~/.copse/workspace 2>/dev/null; echo; ' +
+        'find ~/.copse/workspace -maxdepth 2 2>/dev/null | head -100',
     )
     assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
-    assert.deepEqual(analysis.targets, ['~/.copse'])
+    assert.deepEqual(analysis.targets, ['~/.copse/workspace'])
   })
 
   it('accepts absolute and $HOME-rooted reads outside the project', () => {
@@ -87,6 +94,13 @@ describe('analyzeReadOutsideProject — ineligible commands', () => {
     ineligible('xargs cat < ~/list', /changes how the command runs|writes to/)
   })
 
+  it('rejects a printf -v assignment that can replace the later reader', () => {
+    ineligible(
+      'printf -v PATH /tmp/evil && cat /etc/hosts',
+      /shell variable|printf -v|not a plain read/,
+    )
+  })
+
   it('rejects destructive shapes the sandbox itself would still prompt for', () => {
     ineligible('cat ~/.gitconfig | sh', /interpreter/)
   })
@@ -116,6 +130,9 @@ describe('analyzeReadOutsideProject — credentials and breadth', () => {
     refused('cat ~/projects/other/.env.production')
     refused('cat ~/.env*')
     refused('cat ~/deploy.pem')
+    refused('cat ~/.copse/lan/ca.key')
+    refused('ls -la ~/.copse/lan')
+    refused('ls -la ~/.copse')
     refused('cat ~/.netrc')
     refused('cat ~/service-credentials.json')
   })
@@ -152,18 +169,18 @@ describe('sensitiveTargetReason', () => {
 
 describe('readOutsideProjectGrantTargets', () => {
   it('returns the resolved paths a seatbelt can name, not the tokens as written', () => {
-    assert.deepEqual(readOutsideProjectGrantTargets('ls -la ~/.copse', ROOT, { homeDir: HOME }), [
-      `${HOME}/.copse`,
+    assert.deepEqual(readOutsideProjectGrantTargets('ls -la ~/notes', ROOT, { homeDir: HOME }), [
+      `${HOME}/notes`,
     ])
   })
 
   it('resolves every distinct target of a compound read', () => {
     const targets = readOutsideProjectGrantTargets(
-      'ls -la ~/.copse 2>/dev/null; cat ~/notes/todo.md',
+      'ls -la ~/reading 2>/dev/null; cat ~/notes/todo.md',
       ROOT,
       { homeDir: HOME },
     )
-    assert.deepEqual(targets, [`${HOME}/.copse`, `${HOME}/notes/todo.md`])
+    assert.deepEqual(targets, [`${HOME}/reading`, `${HOME}/notes/todo.md`])
   })
 
   it('refuses a command the read analysis will not account for', () => {
@@ -210,5 +227,93 @@ describe('read-outside prompt copy', () => {
     assert.match(parts.bodyFooter ?? '', /Other paths ask again/)
     assert.match(parts.bodyFooter ?? '', /Writes, installs, and network access/)
     assert.match(parts.bodyFooter ?? '', /credential/)
+  })
+
+  it('keeps the sensitive-locations warning and says what the grant covers', () => {
+    const analysis = analyze('ls -la ~/.copse/workspace')
+    const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse/workspace', analysis)
+    assert.equal(parts.command, 'ls -la ~/.copse/workspace')
+    assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
+    assert.match(parts.bodyAdvice ?? '', /sensitive files/)
+    assert.match(parts.bodyFooter ?? '', /rest of this thread/)
+    assert.match(parts.bodyFooter ?? '', /Other paths ask again/)
+    assert.match(parts.bodyFooter ?? '', /Writes, installs, and network access/)
+    assert.match(parts.bodyFooter ?? '', /credential/)
+  })
+})
+
+describe('analyzeReadOutsideProject — search patterns', () => {
+  it('does not read a grep pattern as a path', () => {
+    const pattern = analyze('grep -rn TODO src | grep -v "//"')
+    assert.ok(
+      !pattern.blockers.some((b) => b.includes('whole filesystem')),
+      pattern.blockers.join('; '),
+    )
+    const target = analyze('grep -rn TODO /')
+    assert.ok(
+      target.blockers.some((b) => b.includes('whole filesystem')),
+      target.blockers.join('; '),
+    )
+  })
+
+  it('still reads a pattern file as a target', () => {
+    const analysis = analyze('grep -f ~/.ssh/id_rsa src')
+    assert.ok(
+      analysis.blockers.some((b) => b.includes('credential')),
+      analysis.blockers.join('; '),
+    )
+  })
+})
+
+describe('analyzeReadOutsideProject — cd and sed', () => {
+  it('follows a sequential cd into another checkout', () => {
+    const log = analyze('cd /work/other && git log --oneline -5')
+    assert.equal(log.eligible, true, log.blockers.join('; '))
+    assert.deepEqual(log.resolvedTargets, ['/work/other'])
+    const file = analyze('cd ~/other; sed -n 1,40p src/a.rs')
+    assert.equal(file.eligible, true, file.blockers.join('; '))
+    assert.deepEqual(file.resolvedTargets, ['/home/dev/other/src/a.rs'])
+  })
+
+  it('does not read the directory for commands that open no file', () => {
+    const analysis = analyze('cd / && echo done && pwd')
+    assert.ok(
+      !analysis.blockers.some((b) => b.includes('whole filesystem')),
+      analysis.blockers.join('; '),
+    )
+  })
+
+  it('checks bare filenames after cd against the credential rules', () => {
+    for (const command of ['cd /work/other && cat .env', 'cd ~/.ssh && cat id_rsa', 'cd ~ && ls']) {
+      assert.equal(analyze(command).eligible, false, command)
+    }
+  })
+
+  it('refuses a cd it cannot follow', () => {
+    for (const command of [
+      'cd /work/other | cat notes.md',
+      'cd /work/other || cat notes.md',
+      'cd /work/other & cat notes.md',
+      '(cd /work/other && cat notes.md)',
+      'cd other && cat notes.md',
+      'cd && ls',
+      'cd - && ls',
+      'env cd /work/other && ls',
+    ]) {
+      assert.equal(analyze(command).eligible, false, command)
+    }
+  })
+
+  it('admits only a print-only sed, and not its script as a path', () => {
+    const print = analyze('sed -n "/^## /p" ~/notes.md')
+    assert.equal(print.eligible, true, print.blockers.join('; '))
+    assert.deepEqual(print.resolvedTargets, ['/home/dev/notes.md'])
+    for (const command of [
+      'sed -i s/a/b/ ~/notes.md',
+      'sed -n "w /tmp/out" ~/notes.md',
+      'sed -f script.sed ~/notes.md',
+    ]) {
+      assert.equal(analyze(command).eligible, false, command)
+    }
   })
 })

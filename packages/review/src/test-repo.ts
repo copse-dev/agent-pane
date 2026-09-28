@@ -5,6 +5,12 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { ReviewerToolOutput } from './reviewer-tools.ts'
+
+/** A tool result's text, whether or not it carried images. */
+export function toolText(output: ReviewerToolOutput): string {
+  return typeof output === 'string' ? output : output.result
+}
 
 export interface TestRepo {
   readonly root: string
