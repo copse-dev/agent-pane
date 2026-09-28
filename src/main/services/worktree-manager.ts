@@ -1082,6 +1082,7 @@ const GIT_RECOVERY_MARKERS = [
   ['rebase-merge', 'rebase'],
   ['rebase-apply', 'rebase'],
   ['CHERRY_PICK_HEAD', 'cherry-pick'],
+  ['BISECT_START', 'bisect'],
 ] as const
 
 type GitRecoveryKind = (typeof GIT_RECOVERY_MARKERS)[number][1]
@@ -1358,8 +1359,8 @@ async function isAncestor(cwd: string, ancestor: string, descendant: string): Pr
  * branch follows HEAD whenever HEAD holds commits the branch lacks; a diverged
  * branch tip is first saved under a backup branch. A HEAD already contained in
  * the branch simply switches back to it. Git's own refusal protects
- * uncommitted changes, and an in-progress rebase or cherry-pick is refused
- * because switching away would strand its half-applied state.
+ * uncommitted changes, and an in-progress rebase, cherry-pick, or bisect is
+ * refused because switching away would strand its recovery state.
  */
 export async function reattachThreadWorktree(
   input: ValidateWorktreeInput,

@@ -151,8 +151,8 @@ export function resolveThreadExecutionContext(
 
 /**
  * Resolve a terminal root through the ordinary strict path first. A detached
- * checkout gets one narrower fallback so the user can repair a rebase or
- * cherry-pick that Git left in progress.
+ * checkout gets one narrower fallback so the user can repair a rebase,
+ * cherry-pick, or bisect that Git left in progress.
  */
 export async function resolveThreadTerminalExecutionContext(
   projectId: string,

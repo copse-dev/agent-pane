@@ -222,6 +222,46 @@ describe('footer branch status', () => {
       assert.equal(reattachCalled, false)
     })
 
+    it('resets an active bisect in a terminal instead of stranding its state', async () => {
+      let reattachCalled = false
+      const store = detachedStore()
+      const commands: string[] = []
+      store.on('request_terminal_command', (command) => {
+        commands.push(command)
+      })
+      const host = mountDetached(
+        {
+          branchStatus: detachedStatus,
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'bisect',
+            uncommittedPick: null,
+          }),
+          reattachWorktree: async () => {
+            reattachCalled = true
+            return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+          },
+        },
+        store,
+      )
+      await settle()
+
+      const button = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
+      assert.equal(button.hidden, false)
+      assert.equal(button.disabled, false)
+      assert.equal(button.textContent, 'Reset bisect')
+      assert.equal(
+        button.getAttribute('aria-label'),
+        'Reset the bisect and return to copse/thread-branch in a terminal',
+      )
+      assert.match(button.title, /Git bisect is in progress\. Reset the bisect in a terminal/)
+      button.click()
+      await settle()
+      assert.deepEqual(commands, ['git bisect reset'])
+      assert.equal(reattachCalled, false)
+    })
+
     it('commits a pick that failed to sign before continuing the rebase', async () => {
       const store = detachedStore()
       const commands: string[] = []

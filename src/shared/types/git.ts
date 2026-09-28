@@ -76,15 +76,15 @@ export interface GitBranchStatus {
 
 /**
  * Whether an isolated thread checkout is still on its branch. `recovery` names
- * a rebase or cherry-pick Git left in progress: reattaching then would discard
- * the half-applied state, so the user finishes or aborts it in the terminal.
+ * a rebase, cherry-pick, or bisect Git left in progress: reattaching then would
+ * strand that state, so the user finishes or resets it in the terminal.
  */
 export type ThreadWorktreeAttachment =
   | { state: 'attached' }
   | {
       state: 'detached'
       branch: string
-      recovery: 'rebase' | 'cherry-pick' | null
+      recovery: 'rebase' | 'cherry-pick' | 'bisect' | null
       /**
        * A rebase pick that applied but could not be committed (usually a
        * signing failure). Git reschedules the pick and leaves its changes

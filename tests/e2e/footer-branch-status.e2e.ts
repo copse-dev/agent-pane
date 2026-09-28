@@ -279,4 +279,24 @@ describe('footer branch status for a detached thread worktree', () => {
 
     await saveElementScreenshot('#input-bar', 'footer-branch-uncommitted-pick.png')
   })
+
+  it('offers to reset an active bisect without stranding it', async function () {
+    this.timeout(90_000)
+    git(worktreeRoot, ['rebase', '--abort'])
+    const baseBranch = git(projectRoot, ['branch', '--show-current'])
+    git(worktreeRoot, ['reset', '-q', '--hard', baseBranch])
+    git(worktreeRoot, ['bisect', 'start', 'HEAD', 'HEAD~2'])
+    expect(git(worktreeRoot, ['branch', '--show-current'])).toBe('')
+
+    const button = await $('.branch-reattach-button')
+    await expect(button).toHaveText('Reset bisect', { wait: 20_000 })
+    await expect(button).toBeEnabled()
+    await expect(button).toHaveAttribute(
+      'aria-label',
+      `Reset the bisect and return to ${detachedBranch} in a terminal`,
+    )
+    await expectOnBranchLine(button)
+
+    await saveElementScreenshot('#input-bar', 'footer-branch-bisect-in-progress.png')
+  })
 })

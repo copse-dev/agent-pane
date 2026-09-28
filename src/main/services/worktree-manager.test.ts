@@ -811,6 +811,25 @@ describe('worktree manager', () => {
       assert.equal((await inspectThreadWorktreeAttachment(input)).state, 'detached')
     })
 
+    it('reports an active bisect and refuses to strand it by reattaching', async () => {
+      const { input, path, branch } = await detachedWorktree()
+      await commitFile(path, 'first.txt')
+      await commitFile(path, 'second.txt')
+      git(path, ['bisect', 'start', 'HEAD', 'HEAD~2'])
+
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), {
+        state: 'detached',
+        branch,
+        recovery: 'bisect',
+        uncommittedPick: null,
+      })
+      await assert.rejects(reattachThreadWorktree(input), /bisect is still in progress/)
+
+      git(path, ['bisect', 'reset'])
+      assert.equal(headBranch(path), branch)
+      assert.deepEqual(await inspectThreadWorktreeAttachment(input), { state: 'attached' })
+    })
+
     /** Rebase the thread branch onto a new `main` commit, expecting the rebase to stop. */
     function stoppedRebase(path: string, args: string[] = ['rebase', 'main']): void {
       assert.throws(() => git(path, args))
