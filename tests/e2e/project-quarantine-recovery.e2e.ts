@@ -73,6 +73,11 @@ describe('project quarantine and orphan recovery', () => {
     await expect(orphanSection.$('.orphan-meta')).toHaveText('1 thread')
     await expect(orphanSection.$('.orphan-recover-btn')).toHaveText('Recover…')
     await expect(orphanSection.$('.orphan-dismiss-btn')).toHaveText('Dismiss')
+    const titleFits = await browser.execute(() => {
+      const title = document.querySelector<HTMLElement>('.orphan-name')
+      return title !== null && title.scrollWidth <= title.clientWidth
+    })
+    assert.equal(titleFits, true, 'the recoverable thread title should not be truncated')
 
     await orphanSection.$('.orphan-recover-btn').click()
     const confirm = await $('#confirm-dialog')
@@ -100,6 +105,8 @@ describe('project quarantine and orphan recovery', () => {
       timeout: 10_000,
       timeoutMsg: 'orphans section should leave after dismiss',
     })
-    await saveElementScreenshot('#pane-projects', 'project-quarantine-recovery-dismissed.png')
+    await expect($('.project-row*=Healthy project')).toBeDisplayed()
+    await expect($('.project-row.missing')).toBeDisplayed()
+    await saveElementScreenshot('.projects-list', 'project-quarantine-recovery-dismissed.png')
   })
 })
