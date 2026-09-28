@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
-import type { StreamChunk } from '@shared/types'
+import type { StreamChunk, Thread } from '@shared/types'
 import { agentErrorNotice, classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
@@ -37,6 +37,11 @@ export interface ThreadExecutionContext {
   readonly root: string
   readonly checkoutMode: ThreadCheckoutMode
   readonly branch: string | null
+  /**
+   * Renderer-visible schedule claim from thread metadata. Permission consumers
+   * must corroborate it against main-owned automation state before trusting it.
+   */
+  readonly automation?: NonNullable<Thread['automation']>
 }
 
 export type ThreadExecutionOwner = Pick<ThreadExecutionContext, 'projectId' | 'threadId'>
@@ -50,6 +55,7 @@ export interface ThreadExecutionContextDependencies {
     readonly id: string
     readonly gitBranch?: string
     readonly worktree?: ThreadWorktree
+    readonly automation?: NonNullable<Thread['automation']>
   } | null>
   validateWorktree?: (input: {
     projectId: string
@@ -196,6 +202,7 @@ export async function resolveThreadTerminalExecutionContext(
     root: worktree.root,
     checkoutMode: 'worktree',
     branch: null,
+    ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
   })
 }
 
@@ -300,6 +307,7 @@ async function resolveThreadExecutionContextUncached(
       root: worktree.root,
       checkoutMode: 'worktree',
       branch: worktree.branch,
+      ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
     })
   }
 
@@ -310,6 +318,7 @@ async function resolveThreadExecutionContextUncached(
     root: projectRoot,
     checkoutMode: 'shared',
     branch: threadMeta.gitBranch ?? null,
+    ...(threadMeta.automation ? { automation: { ...threadMeta.automation } } : {}),
   })
 }
 
