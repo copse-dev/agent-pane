@@ -18,8 +18,8 @@ import {
 } from '../ssh-workspace/remote-env.ts'
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
 import {
-  getRemoteProcessMeta,
   registerRemoteProcessMeta,
+  takeRemoteProcessMeta,
 } from '../ssh-workspace/remote-process-meta.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 import { killRemoteProcessGroup } from '../exec/remote-process-kill.ts'
@@ -645,7 +645,7 @@ export async function spawnRemoteAcpTransport(
     stream: ndJsonStream(writable, fromAgent.readable),
     dispose: (): Promise<void> => {
       if (disposal) return disposal
-      const remote = getRemoteProcessMeta(child)
+      const remote = takeRemoteProcessMeta(child)
       if (!remote) {
         terminateProcessTree(child)
         disposal = Promise.resolve()

@@ -392,6 +392,45 @@ describe('acp-session-pool', () => {
     assert.deepEqual(log.promptSessions, [originalSessionId, originalSessionId])
   })
 
+  it('starts fresh when the old writer cannot be confirmed stopped', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const underlying = makeResumableTransportFactory(log)
+    const createTransport = async (): Promise<AcpTransport> => {
+      const transport = await underlying()
+      if (log.spawns !== 1) return transport
+      return {
+        ...transport,
+        dispose: async (): Promise<void> => {
+          transport.dispose()
+          throw new Error('remote stop failed')
+        },
+      }
+    }
+
+    const first = await acquireAcpSession({
+      threadId: 'failed-stop',
+      config: CONFIG,
+      createTransport,
+    })
+    first.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(first.entry.open, 'one', undefined)
+    const originalSessionId = first.entry.open.session.sessionId
+
+    await assert.rejects(
+      () => disposeAcpSession('failed-stop', { preserveForResume: true }),
+      /remote stop failed/,
+    )
+    const reacquired = await acquireAcpSession({
+      threadId: 'failed-stop',
+      config: CONFIG,
+      createTransport,
+    })
+
+    assert.equal(reacquired.fresh, true)
+    assert.equal(reacquired.entry.open.resumed, false)
+    assert.notEqual(reacquired.entry.open.session.sessionId, originalSessionId)
+  })
+
   it('replaces an agent process that ran out of file descriptors, resuming its session', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const fault: AcpAgentResourceFault = {

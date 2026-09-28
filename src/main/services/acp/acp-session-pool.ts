@@ -162,7 +162,11 @@ export function acpSessionLineage(config: AcpAgentSpawnConfig): string {
 function ensureReaper(): void {
   if (reaper) return
   reaper = setInterval(() => {
-    void reapIdleAcpSessions()
+    void reapIdleAcpSessions().catch((err: unknown) => {
+      console.warn(
+        `[acp-pool] idle session cleanup failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
   }, REAP_INTERVAL_MS)
   reaper.unref()
 }
@@ -182,6 +186,28 @@ function rememberCarryOver(threadId: string, entry: PooledAcpSession): void {
   })
 }
 
+/**
+ * Remove a process from the live pool and wait until it is no longer able to
+ * write its agent session. A failed shutdown must also discard the resumable
+ * session ID: otherwise a later acquire could attach a second process to the
+ * same session while the first one is still alive.
+ */
+async function evictAcpSession(
+  threadId: string,
+  entry: PooledAcpSession,
+  preserveForResume: boolean,
+): Promise<void> {
+  if (preserveForResume) rememberCarryOver(threadId, entry)
+  else carryOverCandidates.delete(threadId)
+  pool.delete(threadId)
+  try {
+    await entry.dispose()
+  } catch (err) {
+    carryOverCandidates.delete(threadId)
+    throw err
+  }
+}
+
 /** Evict sessions idle past `idleMs`. Exported with injectable `now` for tests. */
 export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): Promise<string[]> {
   const reaped: string[] = []
@@ -198,9 +224,7 @@ export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): P
       // or `session/load` instead of replaying the transcript (#830). Keep the
       // thread operation until disposal settles so no replacement can become a
       // second writer for that session in the meantime.
-      rememberCarryOver(threadId, entry)
-      pool.delete(threadId)
-      await entry.dispose()
+      await evictAcpSession(threadId, entry, true)
       return true
     })
     if (didReap) reaped.push(threadId)
@@ -272,9 +296,7 @@ async function acquireAcpSessionUnlocked(
     // permission mode. The departing process's session is the one to carry
     // over. The old process is disposed first: two processes must never write
     // one agent session.
-    rememberCarryOver(opts.threadId, existing)
-    pool.delete(opts.threadId)
-    await existing.dispose()
+    await evictAcpSession(opts.threadId, existing, true)
   }
   // A different agent (or host) never inherits the session: that is a
   // conversation handed to someone else, which the transcript preamble covers.
@@ -406,13 +428,7 @@ async function disposeAcpSessionUnlocked(
     if (!options.preserveForResume) carryOverCandidates.delete(threadId)
     return false
   }
-  if (options.preserveForResume) {
-    rememberCarryOver(threadId, entry)
-  } else {
-    carryOverCandidates.delete(threadId)
-  }
-  pool.delete(threadId)
-  await entry.dispose()
+  await evictAcpSession(threadId, entry, options.preserveForResume === true)
   notifyThreadResourceFinished(threadId)
   return true
 }
