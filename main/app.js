@@ -36982,7 +36982,8 @@ function createDemoApi(scenario, options = {}) {
     typeof scenarioModel === "string" ? scenarioModel : void 0
   );
   const api2 = {
-    mobile: { onChat: () => () => {
+    mobile: { manage: async () => {
+    }, onChat: () => () => {
     }, reply: async () => {
     } },
     windowState: {
@@ -63696,6 +63697,20 @@ function mountSettingsDialog(store2, api2) {
             </p>
 
             <fieldset>
+              <legend>Mobile Companion</legend>
+              <p class="field-hint">
+                Open your Copse threads from a phone on the same local network. Choose the network
+                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
+                and this computer must stay awake.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
+                  Set up or manage\u2026
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
@@ -63902,6 +63917,13 @@ function mountSettingsDialog(store2, api2) {
   };
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
+  qsRequired(overlay, "#mobile-companion-manage").addEventListener(
+    "click",
+    () => {
+      closeSettingsDialog();
+      void api2.mobile.manage();
+    }
+  );
   const navBtns = overlay.querySelectorAll(".settings-nav-btn");
   const sections = overlay.querySelectorAll(".settings-section");
   const contentEl = qsRequired(overlay, ".settings-content");
