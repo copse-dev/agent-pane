@@ -1,11 +1,11 @@
 import { $, browser, expect } from '@wdio/globals'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('default Anthropic cloud model', () => {
   before(async () => {
-    process.env.COPSE_PANEL_MOCK_LLM = '1'
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-e2e-sonnet-5-5'
+    writeE2eEnv({ ANTHROPIC_API_KEY: 'sk-ant-e2e-sonnet-5-5' })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-cloud-model-default', {
       model: 'auto:best-value',
@@ -18,7 +18,7 @@ describe('default Anthropic cloud model', () => {
 
   after(() => {
     resetUserData()
-    delete process.env.ANTHROPIC_API_KEY
+    writeE2eEnv({ ANTHROPIC_API_KEY: '' })
   })
 
   it('lists Sonnet 5.5 before the retained Sonnet 5 and 4.6 options', async () => {
@@ -27,6 +27,8 @@ describe('default Anthropic cloud model', () => {
     await picker.$('.model-picker-browse').click()
     const menu = picker.$('.model-picker-menu')
     await menu.waitForDisplayed({ timeout: 15_000 })
+    const defaultOption = menu.$('[data-value="claude-sonnet-5-5"]')
+    await defaultOption.waitForDisplayed({ timeout: 15_000 })
 
     const cloudModels = await browser.execute(() => {
       const values: string[] = []
@@ -51,7 +53,6 @@ describe('default Anthropic cloud model', () => {
     expect(cloudModels.indexOf('claude-sonnet-5')).toBeLessThan(
       cloudModels.indexOf('claude-sonnet-4-6'),
     )
-    const defaultOption = menu.$('[data-value="claude-sonnet-5-5"]')
     await expect(defaultOption).toBeDisplayed()
     await expect(defaultOption).toHaveText('Claude Sonnet 5.5')
 
