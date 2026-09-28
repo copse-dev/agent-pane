@@ -1330,6 +1330,33 @@ the project scope above the form, and use the identical editor inside Settings.
 Do not recreate the editor when plugin enablement changes: it may contain a draft.
 Spec: [`tests/e2e/automation-dialog.e2e.ts`](../tests/e2e/automation-dialog.e2e.ts).
 
+## Activity panel: attention first, answer in place
+
+The Activity panel ([`activity-panel.ts`](../src/renderer/views/activity-panel.ts),
+[`activity-panel.css`](../src/renderer/styles/global/activity-panel.css)) is a sibling of the
+Process Manager overlay, not a new surface kind.
+
+- **Grouped by claim on attention, not recency.** Needs you → Working → Recently finished.
+  An empty Needs you still says so ("Nothing needs you right now.") above the other groups.
+- **State is glyph + word.** Each state has its own outline glyph (hand, question bubble,
+  three dots, triangle, check) and a short label beside it. Colour is a third, redundant
+  channel. The running dots are held still here; the sidebar already animates them.
+- **List and detail, not a wide table.** Rows are two lines in a narrow list — the thread
+  name leads, age on its right; the state word, what it wants and the project beneath — so
+  the eye never crosses the panel to connect a thread to its state. The selected row shows
+  in full in the pane beside it.
+- **One action bar per selection.** Open thread sits on the left, the answers on the right
+  (Reject, then `ui-btn-primary` Approve once; outlined chips with `--border-strong`). List
+  rows carry no buttons.
+- **Approve once is the only in-place grant, and only beside the full request.** The detail
+  renders the request with the prompt's own advice / body / footer classes and never
+  truncates. Broader answers stay on the prompt in the thread.
+- **Nothing moves under a click.** The panel has a fixed height, re-renders are throttled,
+  selection and focus are restored to the same row, and Approve pauses whenever a request it
+  has not shown yet takes the detail pane or the waiting list changes.
+
+Spec: [`tests/e2e/activity-panel.e2e.ts`](../tests/e2e/activity-panel.e2e.ts).
+
 ## Settings → Usage worth-it card
 
 The plan worth-it block sits between subscription bars and the local ledger: one short verdict, one
