@@ -24,11 +24,23 @@ function stylesheets(): { file: string; css: string }[] {
     }))
 }
 
-/** Flat `selector { … }` rule bodies whose selector list contains `selector`. */
-function bodyOf(css: string, selector: string): string | null {
+/** Flat rule bodies whose selector list contains `selector`, including qualified forms. */
+function bodiesOf(css: string, selector: string): string[] {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const rule = new RegExp(`(?:^|[},])\\s*${escaped}\\s*\\{([^}]*)\\}`, 'm')
-  return rule.exec(css)?.[1] ?? null
+  const selectorToken = new RegExp(`${escaped}(?![-_a-zA-Z0-9])`)
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((match) => match[1]?.split(',').some((part) => selectorToken.test(part)))
+    .flatMap((match) => (match[2] === undefined ? [] : [match[2]]))
+}
+
+function assertNoStatusFill(css: string, selector: string): void {
+  for (const body of bodiesOf(css, selector)) {
+    assert.doesNotMatch(
+      body,
+      /background:\s*var\(--(success|error|danger)\)/,
+      `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
+    )
+  }
 }
 
 /**
@@ -71,13 +83,16 @@ describe('status colours come from tokens (#3065)', () => {
     // git-changes-pane.ts); the stylesheet must not paint them in status hues.
     const diff = stylesheets().find((sheet) => sheet.file === 'diff.css')?.css ?? ''
     for (const selector of ['.diff-accept-btn', '.diff-reject-btn']) {
-      const body = bodyOf(diff, selector)
-      if (body === null) continue
-      assert.doesNotMatch(
-        body,
-        /background:\s*var\(--(success|error|danger)\)/,
-        `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
-      )
+      assertNoStatusFill(diff, selector)
     }
+  })
+
+  it('checks qualified and pseudo-class button selectors', () => {
+    const css = `
+      .ui-btn-primary.diff-accept-btn:hover:not(:disabled),
+      button.diff-reject-btn.is-active { background: var(--success); }
+    `
+    assert.throws(() => assertNoStatusFill(css, '.diff-accept-btn'), /must not be/)
+    assert.throws(() => assertNoStatusFill(css, '.diff-reject-btn'), /must not be/)
   })
 })
