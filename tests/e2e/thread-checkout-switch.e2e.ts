@@ -176,9 +176,20 @@ describe('switching threads during first-message checkout', () => {
     )
     console.info('[checkout-switch] switch result', switched)
     assert.equal(switched, 'Switched and sent')
-    await $('.msg-user').waitForExist({ timeout: 15_000 })
-    console.info('[checkout-switch] other message', await $('.msg-user').getText())
-    await expect($('.msg-user')).toHaveText(expect.stringContaining(OTHER_PROMPT))
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (prompt) =>
+            [...document.querySelectorAll<HTMLElement>('.msg-user')].some((message) =>
+              message.textContent?.includes(prompt),
+            ),
+          OTHER_PROMPT,
+        ),
+      {
+        timeout: 15_000,
+        timeoutMsg: 'Other thread did not record its submitted prompt',
+      },
+    )
     console.info('[checkout-switch] other prompt recorded')
     await setComposerValue(NEXT_DRAFT)
 

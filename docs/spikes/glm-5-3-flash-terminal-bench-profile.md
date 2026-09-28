@@ -1,13 +1,20 @@
 # GLM-5.3-Flash Terminal-Bench profile
 
-Status: **evidence-backed experimental product recommendation**. The recommendation is opt-in; it is not a
-claim about the model's published limits and is not yet suitable as the automatic default.
+Status: **evidence-backed experimental product recommendation**. It is not a claim about the model's
+published limits.
+
+Since #3139 every curated recipe, this one included, applies by default: a GLM-5.3-Flash turn sends
+this profile unless the user sets a field in Settings → Models → Model parameters, which replaces that
+one value. That was a product decision to give the model a tuned default rather than none, taken with
+the evidence below still limited to one benchmark on the pre-release route. The conclusions that call
+this an opt-in preset rather than a default describe the evidence, and they still hold: the row stays
+labelled experimental, and the re-run below is what would settle the numbers.
 
 Every run recorded below was collected against the stealth route `openrouter:stealth/ox-alpha`, before
 Zhipu revealed it on 26 August 2026 as GLM-5.3-Flash (`zai-org/GLM-5.3-Flash`, MIT, 320B total / 18B
 active). The weights are the same model, so the observations carry, but they were gathered against the
 pre-release endpoint and have not been re-run against the released one. A repeat on
-`openrouter:z-ai/glm-5.3-flash` is the first thing to do before this profile is argued up to a default,
+`openrouter:z-ai/glm-5.3-flash` is the first thing to do before this profile loses its experimental label,
 because serving configuration — not just weights — decides where a response ceiling bites.
 
 ## Profile

@@ -1,11 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Message, Thread } from '@shared/types'
+import type { Message, Thread, ThreadReviewReport } from '@shared/types'
 import { at } from '@shared/array-utils.ts'
 import {
   addMessage,
   createThread,
+  setMessageReviewReport,
   setQueuePaused,
   setThreadStatus,
   setThreadTodos,
@@ -240,6 +241,98 @@ test('dispatchAgentRun omits model when the thread has none, so main uses the gl
 
   const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
   assert.equal('model' in payload, false)
+})
+
+function userReview(overrides: Partial<ThreadReviewReport> = {}): ThreadReviewReport {
+  return {
+    status: 'done',
+    startedAt: 1,
+    initiator: 'user',
+    models: { reviewer: 'gpt-5', challenger: null },
+    lenses: ['correctness'],
+    baseRef: 'main',
+    headCommit: 'abc1234',
+    dirtyWorkingTree: true,
+    execution: { backend: 'os-sandbox', strength: 'os-sandbox', executed: true, reason: '' },
+    checks: [],
+    notChecked: [],
+    findings: [
+      {
+        id: 'f1',
+        path: 'src/math.ts',
+        startLine: 3,
+        claim: 'add subtracts its second argument.',
+        class: 'contract',
+        severity: 'high',
+        confidence: 'high',
+        verdict: { status: 'confirmed', reason: 'reproducer' },
+        raisedBy: ['gpt-5 (correctness)'],
+        corroboratedBy: [],
+        challengedBy: [],
+        evidence: [],
+      },
+    ],
+    appendix: 0,
+    refuted: 0,
+    reviewers: [],
+    verification: null,
+    durationMs: 1,
+    ...overrides,
+  }
+}
+
+// #2519: a review the user started from the Review button is not something the
+// model asked for, so its result reaches the model with the next prompt — once.
+test('dispatchAgentRun hands a review the user ran to the model with the next prompt', () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  addMessage(store, threadId, 'user', 'Make the change.')
+  const turn = addMessage(store, threadId, 'assistant', 'Done.')
+  setMessageReviewReport(store, threadId, turn, userReview())
+  addMessage(store, threadId, 'user', 'Fix what the review found.')
+
+  dispatchAgentRun(store, api, threadId, { content: 'Fix what the review found.' })
+
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['content'], 'Fix what the review found.', 'the prompt itself is unchanged')
+  const reviewContext = payload['reviewContext']
+  assert.equal(typeof reviewContext, 'string')
+  assert.match(String(reviewContext), /the user ran Copse Reviewer/)
+  assert.match(String(reviewContext), /src\/math\.ts:3 — add subtracts its second argument\./)
+})
+
+test('dispatchAgentRun does not resend a review the model already replied after', () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const turn = addMessage(store, threadId, 'assistant', 'Done.')
+  setMessageReviewReport(store, threadId, turn, userReview())
+  addMessage(store, threadId, 'user', 'Fix it.')
+  addMessage(store, threadId, 'assistant', 'Fixed.')
+  addMessage(store, threadId, 'user', 'Thanks — now the docs.')
+
+  // A stale summary riding on a queued payload is dropped, not forwarded.
+  dispatchAgentRun(store, api, threadId, {
+    content: 'Thanks — now the docs.',
+    reviewContext: '<copse_review_report>stale</copse_review_report>',
+  })
+
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(Object.hasOwn(payload, 'reviewContext'), false)
+})
+
+test('dispatchAgentRun never re-sends the agent’s own review_changes result', () => {
+  const store = createProjectStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const turn = addMessage(store, threadId, 'assistant', 'Reviewing my change.')
+  setMessageReviewReport(store, threadId, turn, userReview({ initiator: 'agent' }))
+
+  dispatchAgentRun(store, api, threadId, { content: 'go on' })
+
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(Object.hasOwn(payload, 'reviewContext'), false)
 })
 
 test('drainMessageQueue does nothing while the thread is running', () => {

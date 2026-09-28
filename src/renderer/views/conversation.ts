@@ -130,6 +130,8 @@ import {
   isThreadProposalCall,
   threadProposalCardSignature,
 } from './thread-proposal-tool-card.ts'
+import { createReviewerInputToolCard, mountReviewerInput } from './reviewer-input.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
@@ -611,6 +613,10 @@ function createIndividualToolCard(
     const proposalCard = createThreadProposalToolCard(tc, store, api, threadId)
     if (proposalCard) return proposalCard
   }
+  if (store && isReviewerInputCall(tc)) {
+    const inputCard = createReviewerInputToolCard(tc, store)
+    if (inputCard) return inputCard
+  }
 
   const card = el('details', {
     class: 'tool-card',
@@ -958,8 +964,7 @@ function syncSubagentTimeline(
       desired.push(node)
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const innerToolCalls = msg.toolCalls ?? []
+    const innerToolCalls = msg.toolCalls
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`
       const sig = renderSignature(innerToolCalls)
@@ -2527,12 +2532,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  root.append(roadmapOrigin.element, scrollArea, queuedHost)
+  const reviewerInput = mountReviewerInput(store, api)
+  const transcriptAndInput = el(
+    'div',
+    { class: 'conversation-reviewer-body' },
+    scrollArea,
+    reviewerInput.panel,
+  )
+  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
     if (!projectId || !threadId) {
-      setCodeBlockRunOutcome(list, id, null)
+      setCodeBlockRunOutcome(list, id, { exitCode: null, output: '' })
       return
     }
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
@@ -3011,7 +3023,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = scrollTop
       return
     }
-    if (scrollTop < lastScrollTop - 1) {
+    // A drop that lands flush with the bottom is the browser clamping scrollTop
+    // after the content shrank (a finished turn's disclosures compacting), not
+    // the reader: scrolling up always leaves the bottom by at least the scroll.
+    // A clamp says nothing about what the reader wants, so it keeps the pin
+    // state it found: a pinned view keeps following (treating the clamp as a
+    // scroll-up used to unpin it), and one the reader scrolled away from is not
+    // re-pinned just because layout pulled it onto the bottom.
+    const dropped = scrollTop < lastScrollTop - 1
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1
+    if (clamped) {
+      // Layout, not the reader; the pin state stands.
+    } else if (dropped) {
       userScrolledUpAt = Date.now()
       pinnedToBottom = false
     } else if (isNearBottom()) {
@@ -3437,7 +3460,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       } else if (
         card &&
         !card.classList.contains('thread-proposal') &&
-        !(item.type === 'individual' && isThreadProposalCall(item.toolCall))
+        !(item.type === 'individual' && isThreadProposalCall(item.toolCall)) &&
+        !(item.type === 'individual' && isReviewerInputCall(item.toolCall))
       ) {
         // Patch the existing disclosure shell so status/result changes preserve
         // focus, open state, and the browser's scroll anchor.
@@ -3522,8 +3546,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const anchor = thread?.messages.find((m) => m.id === run.anchorId)
     const anchorEl = list.querySelector<HTMLElement>(`[data-message-id="${run.anchorId}"]`)
     if (!anchor || !anchorEl) return
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(anchorEl, anchor.toolCalls ?? [], {
+    renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
       run,
       liveStepId: liveStepMessageId(thread),
@@ -3542,8 +3565,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (!memberEl?.querySelector(':scope > .tool-card-rollup')) continue
       const msg = thread?.messages.find((m) => m.id === id)
       if (!msg) continue
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      renderToolCards(memberEl, msg.toolCalls ?? [], {
+      renderToolCards(memberEl, msg.toolCalls, {
         ...messageToolCardOpts(msg),
         run,
         liveStepId: liveStepMessageId(thread),
@@ -3646,9 +3668,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // inside that run's rollup, so it never paints a body-level trail of its own
     // — not even when it contributed reasoning but no tools.
     const nestReasoning =
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      shouldNestReasoningInTools(msg.toolCalls ?? []) ||
-      multiStepRunFor(thread, msgId) !== undefined
+      shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== undefined
     appendMessageContent(body, msg, api, acpWorkspaceRoot(store), {
       ...(nestReasoning ? { nestReasoningInTools: true } : {}),
     })
@@ -3677,8 +3697,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     hydrateRemoteArtifactImages(list, api)
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
@@ -4312,8 +4331,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const wasPinned = pinnedToBottom
     const readingAnchor = wasPinned ? null : captureReadingAnchor()
     const run = multiStepRunFor(thread, msgId)
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
@@ -4326,9 +4344,46 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else restoreReadingAnchor(readingAnchor, prevScrollTop)
   }
 
+  function jumpToReviewerInput(messageId: string, requestId: string): void {
+    const activeThreadId = store.getState().activeThreadId
+    let attempts = 0
+    const tryJump = (): void => {
+      if (disposed || store.getState().activeThreadId !== activeThreadId) return
+      const message = Array.from(list.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+        (item) => item.dataset['messageId'] === messageId,
+      )
+      if (!message) {
+        // Older messages load in background chunks. Wait for the original
+        // assistant bubble rather than jumping to a newer approximation.
+        if (attempts++ < 300) requestAnimationFrame(tryJump)
+        return
+      }
+      const card = Array.from(message.querySelectorAll<HTMLElement>('[data-tool-id]')).find(
+        (item) => item.dataset['toolId'] === requestId,
+      )
+      if (card instanceof HTMLDetailsElement) card.open = true
+      const target = card ?? message
+      pinnedToBottom = false
+      userScrolledUpAt = Date.now()
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target.classList.add('reviewer-input-highlight')
+      setTimeout(() => {
+        target.classList.remove('reviewer-input-highlight')
+      }, 3000)
+    }
+    tryJump()
+  }
+
   const unsubs = [
+    store.on('reviewer_input_open', (requestId) => {
+      reviewerInput.open(requestId)
+    }),
+    store.on('reviewer_input_jump', jumpToReviewerInput),
     store.on('code_block_run_finished', (result) => {
-      setCodeBlockRunOutcome(list, result.id, result.exitCode)
+      setCodeBlockRunOutcome(list, result.id, {
+        exitCode: result.exitCode,
+        output: result.output,
+      })
     }),
     store.on('settings_changed', () => {
       agentNamesRequested = false
@@ -4470,13 +4525,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
+      reviewerInput.sync()
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
+      reviewerInput.sync()
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
+      reviewerInput.sync()
     }),
     store.on('todos_changed', () => {
       syncTodoPanel()
@@ -4550,6 +4608,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
+  reviewerInput.sync()
   return () => {
     disposed = true
     avatarMotion.dispose()

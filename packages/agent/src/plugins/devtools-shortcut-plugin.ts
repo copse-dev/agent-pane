@@ -10,12 +10,13 @@
 // `devtoolsShortcutEnabled` standalone setting, so a Settings > Plugins disable
 // unregisters the shortcut in one atomic flag flip (decision 15).
 //
-// **Default DISABLED.** The shortcut was opt-in (off by default via
-// `devtoolsShortcutEnabled`); this plugin must not silently enable it for existing
-// users. Default-off is expressed the same way as every other experimental plugin:
-// the plugin-service enablement migration seeds the persisted `pluginDisabled` set
-// (an absent/false old setting → disabled) before the shared registry is built.
-// A user who had previously turned the setting on keeps the shortcut enabled.
+// **Default DISABLED on fresh profiles.** The shortcut was opt-in (off by default
+// via `devtoolsShortcutEnabled`). Default-off is expressed the same way as every
+// other experimental plugin: `experimental` stability puts the id in the
+// `pluginDisabled` set seeded on a profile that has none. No migration ever read
+// the retired setting, so a profile that already owned a disable list when this
+// plugin arrived (#1197) got the shortcut enabled whatever the old setting said —
+// see `DEFAULT_DISABLED_PLUGIN_IDS` in `plugin-service.ts`.
 //
 // **No-double-registration.** The `devtoolsShortcutEnabled` standalone setting is
 // gone (removed from the zod schema and the settings dialog) — the plugin
@@ -41,7 +42,7 @@ const DEVTOOLS_SHORTCUT_CAPABILITY_DECL: PluginCapabilityDecl = {
   name: DEVTOOLS_SHORTCUT_CAPABILITY,
   title: 'DevTools keyboard shortcut',
   description:
-    'Register Ctrl+Shift+I to toggle the Electron DevTools window, for debugging the app itself (not the agent conversation). While off, no shortcut is registered and the DevTools window cannot be opened.',
+    'Register Ctrl+Shift+I to toggle the Electron DevTools window, for debugging the app itself (not the agent conversation). While on, the shortcut is registered system-wide, so other apps do not receive Ctrl+Shift+I while Copse is running. While off, no shortcut is registered; Developer mode still offers View > Developer Tools.',
 }
 
 /**
@@ -54,7 +55,7 @@ export const devtoolsShortcutPlugin: RegisteredPlugin = definePlugin(
   {
     name: DEVTOOLS_SHORTCUT_PLUGIN_ID,
     description:
-      'Registers the Ctrl+Shift+I keyboard shortcut that toggles the Electron DevTools window, for debugging the app itself.',
+      'Registers a system-wide Ctrl+Shift+I shortcut that toggles the Electron DevTools window, for debugging the app itself.',
     trust: 'first-party',
     stability: 'experimental',
     capabilities: [DEVTOOLS_SHORTCUT_CAPABILITY_DECL],
