@@ -764,7 +764,7 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
           usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier),
         )
   byModel[delta.model] = mergeModelUsage(prev, usage)
-  const subagentShare = foldedSubagentUsage(thread)
+  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : undefined)
   updateUsage(
     store,
     threadId,
@@ -790,7 +790,10 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
  * the share was tracked starts from its finished subagent sessions, which is
  * what the fold added for every run that completed.
  */
-function foldedSubagentUsage(thread: Thread): { inputTokens: number; outputTokens: number } {
+function foldedSubagentUsage(
+  thread: Thread,
+  incoming?: Pick<UsageDelta, 'inputTokens' | 'outputTokens'>,
+): { inputTokens: number; outputTokens: number } {
   const { usage } = thread
   if (usage.subagentInputTokens !== undefined || usage.subagentOutputTokens !== undefined) {
     return {
@@ -800,9 +803,15 @@ function foldedSubagentUsage(thread: Thread): { inputTokens: number; outputToken
   }
   if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 }
   const recorded = sumSubagentUsage(thread.messages)
+  // A subagent session is persisted before the main process emits the usage
+  // chunk that folds it into the thread total. On the first post-upgrade fold,
+  // the legacy seed therefore already contains the incoming delta; remove it
+  // here because addUsageDelta adds that same delta immediately afterwards.
+  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0))
+  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0))
   return {
-    inputTokens: Math.min(recorded.inputTokens, usage.inputTokens),
-    outputTokens: Math.min(recorded.outputTokens, usage.outputTokens),
+    inputTokens: Math.min(priorInput, usage.inputTokens),
+    outputTokens: Math.min(priorOutput, usage.outputTokens),
   }
 }
 

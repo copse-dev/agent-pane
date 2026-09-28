@@ -25,6 +25,7 @@ import {
 } from './thread-helpers.ts'
 import type { AppStore } from './store.ts'
 import type { Thread } from '@shared/types'
+import { resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 
 describe('addMessage prompt provenance', () => {
   it('stamps startingCommit and dirty onto the message when captured', () => {
@@ -523,6 +524,69 @@ describe('blank thread reuse', () => {
     const usage = getThreadById(store, threadId)?.usage
     assert.equal(usage?.subagentInputTokens, 3000)
     assert.equal(usage.subagentOutputTokens, 40)
+  })
+
+  it('counts the first tracked subagent fold on a legacy thread exactly once', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) =>
+        thread.id !== threadId
+          ? thread
+          : {
+              ...thread,
+              usage: { inputTokens: 5000, outputTokens: 100 },
+              messages: [
+                {
+                  id: 'a1',
+                  role: 'assistant',
+                  content: '',
+                  createdAt: 1,
+                  toolCalls: [
+                    {
+                      id: 't1',
+                      name: 'explore',
+                      args: {},
+                      status: 'done',
+                      result: 'done',
+                      subagent: {
+                        id: 'sub-1',
+                        kind: 'explore',
+                        status: 'done',
+                        prompt: 'q',
+                        summary: null,
+                        messages: [],
+                        usage: { inputTokens: 3000, outputTokens: 40 },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+      ),
+    })
+
+    addUsageDelta(store, threadId, {
+      model: 'claude-opus-4-8',
+      inputTokens: 3000,
+      outputTokens: 40,
+      subagentUsage: true,
+    })
+
+    const thread = getThreadById(store, threadId)
+    assert.ok(thread)
+    assert.equal(thread.usage.inputTokens, 8000)
+    assert.equal(thread.usage.outputTokens, 140)
+    assert.equal(thread.usage.subagentInputTokens, 3000)
+    assert.equal(thread.usage.subagentOutputTokens, 40)
+    const footer = resolveFooterUsage({
+      measured: thread.usage,
+      messages: thread.messages,
+      running: false,
+    })
+    assert.ok(footer)
+    assert.equal(footer.inputTokens, 5000)
+    assert.equal(footer.outputTokens, 100)
   })
 
   it('addUsageDelta omits cache fields when the provider reports none', () => {
