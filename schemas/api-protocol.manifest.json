@@ -1067,6 +1067,13 @@
           4
         ]
       },
+      "mobile:reply": {
+        "api": "mobile.reply",
+        "args": [
+          2,
+          2
+        ]
+      },
       "model-cards:resolve": {
         "api": "modelCards.resolve",
         "args": [
@@ -2357,6 +2364,13 @@
         "args": [
           0,
           0
+        ]
+      },
+      "mobile:chat": {
+        "api": "mobile.onChat",
+        "args": [
+          1,
+          1
         ]
       },
       "plugins:browser-tab-request": {

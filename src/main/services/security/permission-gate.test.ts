@@ -2422,14 +2422,14 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('asks the read-access question, with the command behind the details toggle', async () => {
     await withRoot(async (root) => {
       const { permitted, prompt } = await runGate(
-        'ls -la ~/.copse',
+        'ls -la ~/.copse/workspace',
         { approved: false, remember: false },
         root,
       )
       assert.equal(permitted, false)
       assert.ok(prompt)
       assert.equal(prompt.title, 'Allow read access outside of the project?')
-      assert.equal(prompt.body, 'ls -la ~/.copse')
+      assert.equal(prompt.body, 'ls -la ~/.copse/workspace')
       assert.match(prompt.bodyAdvice, /read from sensitive locations on your computer/)
       assert.equal(prompt.collapseDetails, true)
       assert.equal(prompt.approveOnceLabel, 'Approve this command')
@@ -2439,7 +2439,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('grants the thread read access when the primary button is used', async () => {
     await withRoot(async (root) => {
       const granted = await runWithActiveRunIdentity('thread-read-grant', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
       assert.equal(granted.permitted, true)
 
@@ -2454,10 +2454,10 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('keeps the grant to one thread', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-a', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
       const other = await runWithActiveRunIdentity('thread-b', () =>
-        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       assert.equal(other.permitted, false)
       assert.ok(other.prompt)
@@ -2468,7 +2468,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('approves only the one command when the secondary button is used', async () => {
     await withRoot(async (root) => {
       const once = await runWithActiveRunIdentity('thread-once', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       assert.equal(once.permitted, true)
 
@@ -2484,7 +2484,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('never covers credential files with the grant', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-secrets', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
       const secret = await runWithActiveRunIdentity('thread-secrets', () =>
         runGate('cat ~/.ssh/id_ed25519', { approved: false, remember: false }, root),
@@ -2498,9 +2498,9 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records the grant, and everything it later covers, in the decision log', async () => {
     await withRoot(async (root) => {
       const granted = await runWithActiveRunIdentity('thread-audit', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
-      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse'])
+      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse/workspace'])
 
       await runWithActiveRunIdentity('thread-audit', () =>
         runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
@@ -2523,7 +2523,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             actor: 'user',
             verdict: 'approved',
             remembered: true,
-            reasons: ['reads outside the project: ~/.copse'],
+            reasons: ['reads outside the project: ~/.copse/workspace'],
             threadId: 'thread-audit',
             source: undefined,
           },
@@ -2544,7 +2544,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records a one-command approval as a decision that granted nothing', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-audit-once', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       const [event] = await recordedDecisions()
       assert.ok(event)
@@ -2556,12 +2556,12 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records a refusal to widen read access', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-audit-denied', () =>
-        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       const [event] = await recordedDecisions()
       assert.ok(event)
       assert.equal(event.verdict, 'denied')
-      assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
+      assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse/workspace'])
     })
   })
 
@@ -2594,7 +2594,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('spends the read grant on containment, not also on a full sandbox escape', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-spent', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
 
       // A command the grant covers that has NOT yet been given the relaxation is

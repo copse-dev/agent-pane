@@ -188,6 +188,9 @@ Shell-builtin assignment forms such as `printf -v` also fall back: they can chan
 replace a later reader without containing a leading `NAME=value` token.
 Credential targets (`.env*`, `*.pem`, `~/.ssh`, `~/.aws`, `.netrc`, `.config/gh`, and similar) and
 paths as broad as `~` or `/` are never eligible.
+The Copse LAN certificate and device directory (`<COPSE_DIR>/lan`, normally
+`~/.copse/lan`) and its ancestors are also ineligible for a standing read
+grant; a directory read of the whole profile must not sweep in its CA key.
 
 The proof follows a `cd` to an absolute or home-relative directory when it runs in sequence (`&&`
 or `;`), not in a pipeline, subshell, background job, or after `||`. Later relative operands
