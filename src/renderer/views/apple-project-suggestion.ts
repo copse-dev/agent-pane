@@ -234,7 +234,7 @@ export function mountAppleProjectSuggestions(
       pluginEnabled: suggestion.pluginEnabled,
       signal: controller.signal,
     })
-    if (pendingDialog?.controller === controller) pendingDialog = null
+    if (pendingDialog.controller === controller) pendingDialog = null
     if (choice === null) {
       asked.delete(projectId)
       void evaluate()
