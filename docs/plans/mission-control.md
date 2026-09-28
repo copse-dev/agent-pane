@@ -129,8 +129,8 @@ attention to the right thread at the right moment.
 ### Job 1 — "Which of these needs me right now?"
 
 Some threads are working, some have stopped and are waiting for an approval or an answer.
-The main process now sends desktop alerts for approvals and questions, but there is
-still no grouped activity view that tells the user which thread needs attention.
+The main process now sends desktop alerts for approvals and questions, but until slice 1's
+Activity panel there was no grouped view that told the user which thread needs attention.
 
 > "I'm confused why some approval prompts end up hapening twice. Is this just the model or
 > a race?" — `ca6b52c0`
