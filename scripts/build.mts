@@ -28,6 +28,7 @@ import {
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
+import { buildMobileAssets } from './mobile-build.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -199,6 +200,7 @@ const nodeOpts = {
 }
 
 if (!isDemo) {
+  await buildMobileAssets()
   const bundledCursorSkills = await assertBundledCursorSkillsSnapshot()
   console.log(
     `[build] bundled Cursor skills verified @ ${bundledCursorSkills.commit.slice(0, 12)} ` +

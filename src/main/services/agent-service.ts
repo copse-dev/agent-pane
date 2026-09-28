@@ -313,7 +313,10 @@ async function ensureReviewApproved(
   signal: AbortSignal,
 ): Promise<boolean> {
   if (approvedReviewThreads.has(threadId)) return true
-  if (signal.aborted) return false
+  // Read afresh across the await below: AbortSignal.aborted is mutable, but
+  // TypeScript keeps the narrowing from the first check through the await.
+  const aborted = (): boolean => signal.aborted
+  if (aborted()) return false
   const { approved, remember } = await requestApproval(
     {
       type: 'review-spend',
@@ -325,8 +328,7 @@ async function ensureReviewApproved(
     },
     signal,
   )
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
-  if (signal.aborted) return false
+  if (aborted()) return false
   if (approved && remember) approvedReviewThreads.add(threadId)
   return approved
 }
@@ -2477,6 +2479,26 @@ export async function runAgent(
 
 export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
+}
+
+const mobileRunIds = new WeakMap<AbortController, string>()
+
+/** A stop from a delayed phone page must never abort a newer run. */
+export function mobileRunId(threadId: string): string | null {
+  const controller = abortMap.get(threadId)
+  if (!controller || controller.signal.aborted) return null
+  let id = mobileRunIds.get(controller)
+  if (!id) {
+    id = crypto.randomUUID()
+    mobileRunIds.set(controller, id)
+  }
+  return id
+}
+
+export function stopMobileRun(threadId: string, runId: string): boolean {
+  if (mobileRunId(threadId) !== runId) return false
+  abortAgent(threadId)
+  return true
 }
 
 /**

@@ -73,7 +73,7 @@ export function getCustomToolsDir(): string {
 // Hidden behind `new Function` so esbuild's CJS output leaves it as a native
 // runtime `import()` (the Node ESM loader) instead of rewriting it to a bundled
 // `require` — user tool files live outside the bundle and may be ESM.
-// eslint-disable-next-line @typescript-eslint/no-implied-eval
+// eslint-disable-next-line @typescript-eslint/no-implied-eval -- the only way to keep a native import() through esbuild's CJS output (see above)
 const dynamicImportValue: unknown = new Function('p', 'return import(p)')
 if (!isDynamicImport(dynamicImportValue)) throw new TypeError('Could not create dynamic import')
 const dynamicImport = dynamicImportValue

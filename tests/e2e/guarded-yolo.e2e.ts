@@ -133,6 +133,29 @@ describe('Guarded YOLO shell mode', function () {
     await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
   })
 
+  it('asks once before running anything as another user', async () => {
+    const banner = await $('.guarded-yolo-banner')
+    await expect(banner).toHaveAttribute('data-phase', 'active')
+    await prepareMockToolTurn(
+      'Install curl with the system package manager.',
+      { name: 'run_shell', args: { command: 'sudo apt-get install -y curl' } },
+      'The install was declined.',
+    )
+    await $('.submit-btn').click()
+
+    const dialog = await $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
+    const advice = await dialog.$('.approval-advice').getText()
+    expect(advice).toContain('runs a command as another user (sudo)')
+    expect(advice).toContain('Approve this command once?')
+    expect(advice).not.toContain('destructive')
+    await saveElementScreenshot('#approval-dialog', 'guarded-yolo-ask-once-prompt.png')
+    await dialog.$('.approval-reject').click()
+    await waitForAgentIdle()
+    await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
+  })
+
   it('runs uncertain script code only after one-time consent', async () => {
     const marker = join(workspaceRoot, 'consent-marker.txt')
     writeFileSync(
