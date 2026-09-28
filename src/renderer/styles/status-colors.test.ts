@@ -92,7 +92,11 @@ describe('status colours come from tokens (#3065)', () => {
       .ui-btn-primary.diff-accept-btn:hover:not(:disabled),
       button.diff-reject-btn.is-active { background: var(--success); }
     `
-    assert.throws(() => assertNoStatusFill(css, '.diff-accept-btn'), /must not be/)
-    assert.throws(() => assertNoStatusFill(css, '.diff-reject-btn'), /must not be/)
+    assert.throws(() => {
+      assertNoStatusFill(css, '.diff-accept-btn')
+    }, /must not be/)
+    assert.throws(() => {
+      assertNoStatusFill(css, '.diff-reject-btn')
+    }, /must not be/)
   })
 })
