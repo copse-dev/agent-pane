@@ -36,7 +36,15 @@ function withReport(
   const files: Record<string, unknown> = Object.fromEntries(LICENSE_FILES.map((f) => [f, '']))
   files[`${THIRD_PARTY_LICENSES_DIR}/${THIRD_PARTY_LICENSE_JSON}`] = {
     version: THIRD_PARTY_LICENSE_REPORT_VERSION,
-    components,
+    components: components.map((component) => ({
+      ...component,
+      license: 'MIT',
+      source: null,
+      shippedAs: ['node_modules'],
+      partOf: null,
+      files: [{ name: 'LICENSE', text: 0 }],
+    })),
+    texts: ['MIT License'],
   }
   return fakeArchive({ ...files, ...extra })
 }
@@ -80,7 +88,7 @@ describe('packaged licence check', () => {
   it('fails closed when the report is malformed', () => {
     const reportPath = `${THIRD_PARTY_LICENSES_DIR}/${THIRD_PARTY_LICENSE_JSON}`
     const archive = withReport([{ name: 'a', version: '1.0.0' }], {
-      [reportPath]: '{"version":2,"components":[]}',
+      [reportPath]: '{"version":1,"components":[]}',
       'node_modules/a/package.json': { name: 'a', version: '1.0.0', license: 'MIT' },
     })
     assert.deepEqual(findPackagedLicenseProblems(archive), [

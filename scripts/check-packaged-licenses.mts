@@ -24,6 +24,7 @@ import {
   COPSE_LICENSE_FILE,
   THIRD_PARTY_LICENSE_JSON,
   THIRD_PARTY_LICENSE_REPORT_VERSION,
+  THIRD_PARTY_SHIPPED_AS,
   THIRD_PARTY_LICENSE_TEXT,
   THIRD_PARTY_LICENSES_DIR,
 } from '../src/shared/third-party-licenses.mts'
@@ -77,7 +78,19 @@ export function packagedPackages(archive: AsarArchive): PackagedPackage[] {
 
 const reportSchema = z.object({
   version: z.literal(THIRD_PARTY_LICENSE_REPORT_VERSION),
-  components: z.array(z.object({ name: z.string(), version: z.string() })),
+  components: z.array(
+    z.object({
+      name: z.string(),
+      version: z.string(),
+      license: z.string(),
+      source: z.string().nullable(),
+      shippedAs: z.array(z.enum(THIRD_PARTY_SHIPPED_AS)),
+      partOf: z.string().nullable(),
+      note: z.string().optional(),
+      files: z.array(z.object({ name: z.string(), text: z.number().int().nonnegative() })),
+    }),
+  ),
+  texts: z.array(z.string()),
 })
 
 export function findPackagedLicenseProblems(
