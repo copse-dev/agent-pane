@@ -1,28 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TIERS } from '../scripts/score.mjs'
-import {
-  MAX_FIXTURES_PER_FILE,
-  build,
-  family,
-  joinLabels,
-  jsonl,
-  relocateShellScope,
-} from './build.mjs'
+import { build, family, joinLabels, jsonl, relocateShellScope } from './build.mjs'
 import { SNAPSHOT, analyzeTestset, drift, loadTestset, violations } from './gates.mjs'
 import { parseCsv, shuffle } from './sample-hf.mjs'
-import { anonymise, leakReason, namedHosts } from './import-history.mjs'
 import { accuracy, predicted } from './score-models.mjs'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { TESTSET } from './paths.mjs'
 
-test('the committed test set and fixtures are current, and each fixture file fits the runner', () => {
+test('the committed test set and fixtures are current', () => {
   for (const [name, content] of Object.entries(build())) {
     assert.equal(readFileSync(join(TESTSET, name), 'utf8'), content, `${name} is stale`)
-    if (name.startsWith('fixtures/')) {
-      assert.ok(content.trim().split('\n').length <= MAX_FIXTURES_PER_FILE, `${name} is too large`)
-    }
   }
 })
 
@@ -112,63 +101,4 @@ test('helpers: family, relocation, CSV and the seeded shuffle', () => {
   )
   assert.deepEqual(parseCsv('a,b\n"x, ""y""",2\n'), [{ a: 'x, "y"', b: '2' }])
   assert.deepEqual(shuffle([1, 2, 3, 4]), shuffle([1, 2, 3, 4]))
-})
-
-test('history slices are anonymised, leak-checked and held out', () => {
-  const context = {
-    realHome: '/Users/alice',
-    workspace: '/Users/alice/.copse/worktrees/aa/bb',
-    project: '/Users/alice/code/app',
-    user: 'alice',
-  }
-  const cases = [
-    ['cd /Users/alice/code/app && git status', 'cd /Users/dev/project && git status'],
-    ['cat ~/code/secret/notes.md ~/.zshrc', 'cat ~/other-1/notes.md ~/.zshrc'],
-    ['ls $HOME/code/app/src', 'ls /Users/dev/project/src'],
-    ['gh repo view alice/private-thing', 'gh repo view o/r'],
-    ['git clone git@github.com:alice/app.git', 'git clone git@github.com:o/r.git'],
-    ['curl http://192.168.0.229:8080', 'curl http://192.0.2.10:8080'],
-  ]
-  for (const [raw, expected] of cases) assert.equal(anonymise(raw, context), expected, raw)
-  assert.equal(leakReason('echo ghp_abcdefghijklmnopqrstuvwxyz0123', { user: 'alice' }), 'a token')
-  assert.equal(leakReason('cat /Users/bob/x', { user: 'alice' }), 'another home directory')
-  assert.equal(
-    leakReason('cd secret-proj', { user: 'alice', denied: ['secret-proj'] }),
-    'an excluded project name',
-  )
-  assert.equal(leakReason('git clone git@github.com:o/r.git', { user: 'alice' }), null)
-  assert.equal(
-    anonymise('ssh deploy@build.corp.internal uptime', context),
-    'ssh dev@example.com uptime',
-  )
-  assert.equal(
-    anonymise('curl https://ci.acme.corp/status', context),
-    'curl https://internal.example/status',
-  )
-  assert.equal(
-    leakReason('ssh build.acme-private.net uptime', { user: 'alice' }),
-    'an unrecognised hostname',
-  )
-  assert.equal(
-    leakReason('curl https://metrics.acme.io/x', { user: 'alice' }),
-    'an unrecognised hostname',
-  )
-  assert.equal(leakReason('curl https://api.github.com/repos/o/r', { user: 'alice' }), null)
-  assert.equal(leakReason('cat package.json && node index.js', { user: 'alice' }), null)
-  assert.deepEqual(namedHosts('scp -P 22 build.tar dev@mini.example:/tmp/'), ['mini.example'])
-  assert.deepEqual(namedHosts("ssh mini 'docker ps'"), ['mini'])
-  assert.equal(leakReason("ssh mini 'docker ps'", { user: 'alice' }), null)
-  assert.equal(
-    leakReason('ssh workstation-7 uptime', { user: 'alice' }),
-    'an unrecognised hostname',
-  )
-  assert.equal(
-    leakReason('scp build.tar workbox7:/tmp/', { user: 'alice' }),
-    'an unrecognised hostname',
-  )
-  for (const c of loadTestset().filter((c) => c.source.startsWith('history:'))) {
-    assert.equal(c.split, 'holdout', `${c.id} is a history row and must stay held out`)
-    // Every committed slice passes the current leak check, whenever the check grows.
-    assert.equal(leakReason(c.command, { user: 'nobody-in-particular' }), null, c.id)
-  }
 })

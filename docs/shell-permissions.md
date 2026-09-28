@@ -516,7 +516,7 @@ the registry still fails contained and offers to run outside.
   not its text. It is evidence for a later decision, and it approves nothing.
 - `host-reach.ts`, `secrets.ts`, `remote-change.ts`: the Guarded YOLO ask-once rules above. The
   public command test set (`benchmarks/escalation-review/testset/`) pins every deterministic
-  verdict on its labelled commands (1,899 in September 2026, and growing); `gates.mjs --check` fails on any change until the snapshot is
+  verdict on 782 labelled commands; `gates.mjs --check` fails on any change until the snapshot is
   reviewed and updated.
 - `project-sandbox/`: ASRT on macOS and bubblewrap on Linux. `isProjectSandboxEnabled()` is false
   on Windows and after init failure. Copse's own subprocesses that only read the checkout (Git
