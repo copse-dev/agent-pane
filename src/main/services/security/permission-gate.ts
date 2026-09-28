@@ -313,6 +313,11 @@ async function resolveReadOutsideProject(
   workspaceRoot: string | null,
   signal?: AbortSignal,
 ): Promise<boolean | null> {
+  // The analysis judges paths against this machine's home and root; on an SSH
+  // workspace the command reads the remote account's files, which those
+  // boundaries say nothing about. Leave it to the caller's ordinary prompt, and
+  // never let a thread grant made for local paths cover it.
+  if (spawnRunsOnSshTarget(workspaceRoot)) return null
   const analysis = analyzeReadOutsideProject(command, workspaceRoot)
   if (!analysis.eligible) return null
 

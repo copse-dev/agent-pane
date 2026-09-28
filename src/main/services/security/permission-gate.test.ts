@@ -40,7 +40,7 @@ import { decideMcpPermission, describeMcpAnnotations } from './permission-policy
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
-import { clearReadOutsideProjectGrants } from './read-outside-grant.ts'
+import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
 import { SHELL_DECISION_SUBJECT, type DecisionEvent } from '@shared/threads/decision-log.ts'
 import { readDecisionLog } from './decision-log-store.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
@@ -952,6 +952,25 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
       await setSetting('sshWorkspaceHosts', [])
     }
   }
+
+  it('does not let a thread read grant cover a read on the SSH host', async () => {
+    // The grant's eligibility is judged against this machine's home and root,
+    // which say nothing about the remote account's files, so a remote read must
+    // ask on its own merits rather than ride a grant made for local paths.
+    const READ = 'cat /home/alice/.bash_history'
+    const thread = 'thread-ssh-read-grant'
+    clearReadOutsideProjectGrants()
+    grantReadOutsideProject(thread)
+    try {
+      const local = await runWithActiveRunIdentity(thread, () => runGate(READ, 'local'))
+      assert.deepEqual(local, { permitted: true, prompts: [] }, 'the grant covers a local read')
+      const remote = await runWithActiveRunIdentity(thread, () => runGate(READ, 'ssh'))
+      assert.equal(remote.permitted, false)
+      assert.equal(remote.prompts.length, 1, 'the SSH read asks despite the grant')
+    } finally {
+      clearReadOutsideProjectGrants()
+    }
+  })
 
   it('auto-runs an ambiguous command locally but prompts for it on the SSH host', async () => {
     assert.deepEqual(await runGate(AMBIGUOUS, 'local'), { permitted: true, prompts: [] })
