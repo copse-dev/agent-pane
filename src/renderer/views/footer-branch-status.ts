@@ -26,8 +26,17 @@ type DetachedAttachment = Extract<ThreadWorktreeAttachment, { state: 'detached' 
 
 function detachedTitle(detached: DetachedAttachment): string {
   return detached.recovery
-    ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} is still in progress. Finish or abort it in the thread terminal, then reattach.`
+    ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.`
     : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`
+}
+
+/**
+ * The command that finishes an interrupted Git operation. It runs in the
+ * user's own shell rather than main's sandboxed Git: that shell has their
+ * signing key, and a stopped rebase is often waiting on exactly that.
+ */
+function recoveryCommand(recovery: NonNullable<DetachedAttachment['recovery']>): string {
+  return `git ${recovery} --continue`
 }
 
 /**
@@ -281,7 +290,15 @@ export function mountFooterBranchStatus(
     const title = detachedTitle(current)
     trigger.title = title
     reattachButton.title = title
-    reattachButton.disabled = reattaching || current.recovery !== null
+    reattachButton.disabled = reattaching
+    if (current.recovery) {
+      reattachButton.setAttribute(
+        'aria-label',
+        `Continue the ${current.recovery} on ${current.branch} in a terminal`,
+      )
+      reattachButton.textContent = `Continue ${current.recovery}`
+      return
+    }
     reattachButton.setAttribute('aria-label', `Reattach checkout to ${current.branch}`)
     reattachButton.textContent = reattaching ? 'Reattaching…' : 'Reattach'
   }
@@ -306,7 +323,13 @@ export function mountFooterBranchStatus(
   async function reattach(): Promise<void> {
     const owner = getActiveThreadOwner(store)
     const current = activeDetached()
-    if (!owner || !current || current.recovery || reattaching) return
+    if (!owner || !current || reattaching) return
+    if (current.recovery) {
+      // A reattach would strand the half-applied state, so finish the
+      // operation instead; the terminal scopes to the active thread's checkout.
+      store.emit('request_terminal_command', recoveryCommand(current.recovery))
+      return
+    }
     reattaching = true
     renderReattach()
     try {

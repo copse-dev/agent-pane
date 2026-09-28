@@ -1,7 +1,7 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from '@shared/store/store.ts'
+import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
@@ -112,13 +112,19 @@ describe('footer branch status', () => {
   })
 
   describe('a detached thread checkout', () => {
-    function mountDetached(git: Partial<ApiClient['git']>): HTMLElement {
-      const store = createStore({
+    function detachedStore(): AppStore {
+      return createStore({
         workspaceRoot: '/repo',
         activeProjectId: 'project-1',
         activeThreadId: 'thread-1',
         threads: [thread('copse/thread-branch', true)],
       })
+    }
+
+    function mountDetached(
+      git: Partial<ApiClient['git']>,
+      store: AppStore = detachedStore(),
+    ): HTMLElement {
       const host = document.createElement('div')
       document.body.append(host)
       const base = createApi({ currentBranch: null, pr: null })
@@ -171,28 +177,42 @@ describe('footer branch status', () => {
       assert.equal(trigger.classList.contains('is-detached'), false)
     })
 
-    it('disables reattach while a rebase is still in progress', async () => {
+    it('continues an interrupted rebase in a terminal instead of reattaching', async () => {
       let reattachCalled = false
-      const host = mountDetached({
-        branchStatus: detachedStatus,
-        worktreeAttachment: async () => ({
-          state: 'detached',
-          branch: 'copse/thread-branch',
-          recovery: 'rebase',
-        }),
-        reattachWorktree: async () => {
-          reattachCalled = true
-          return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
-        },
+      const store = detachedStore()
+      const commands: string[] = []
+      store.on('request_terminal_command', (command) => {
+        commands.push(command)
       })
+      const host = mountDetached(
+        {
+          branchStatus: detachedStatus,
+          worktreeAttachment: async () => ({
+            state: 'detached',
+            branch: 'copse/thread-branch',
+            recovery: 'rebase',
+          }),
+          reattachWorktree: async () => {
+            reattachCalled = true
+            return { branch: 'copse/thread-branch', keptDetachedCommits: false, backupBranch: null }
+          },
+        },
+        store,
+      )
       await settle()
 
       const reattach = qsRequired<HTMLButtonElement>(host, '.branch-reattach-button')
       assert.equal(reattach.hidden, false)
-      assert.equal(reattach.disabled, true)
-      assert.match(reattach.title, /a rebase is still in progress\. Finish or abort it/)
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.textContent, 'Continue rebase')
+      assert.equal(
+        reattach.getAttribute('aria-label'),
+        'Continue the rebase on copse/thread-branch in a terminal',
+      )
+      assert.match(reattach.title, /a rebase stopped part-way\. Continue it in a terminal/)
       reattach.click()
       await settle()
+      assert.deepEqual(commands, ['git rebase --continue'])
       assert.equal(reattachCalled, false)
     })
 
