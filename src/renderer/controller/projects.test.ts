@@ -1160,6 +1160,22 @@ test('dismissOrphanProject appends the store id once', async () => {
   assert.deepEqual(writes, [{ key: 'dismissedOrphanStores', value: ['already', 'new-one'] }])
 })
 
+test('concurrent orphan dismissals cannot overwrite each other', async () => {
+  let dismissed: string[] = []
+  const api = makeApi({
+    storageGet: async (key) => (key === 'dismissedOrphanStores' ? dismissed : null),
+    storageSet: async (key, value) => {
+      if (key === 'dismissedOrphanStores' && Array.isArray(value)) {
+        dismissed = value.filter((id): id is string => typeof id === 'string')
+      }
+    },
+  })
+
+  await Promise.all([dismissOrphanProject(api, 'first'), dismissOrphanProject(api, 'second')])
+
+  assert.deepEqual(dismissed, ['first', 'second'])
+})
+
 test('recoverOrphanProject confirms, attaches the store, and clears dismiss', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({

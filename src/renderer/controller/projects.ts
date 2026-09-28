@@ -900,6 +900,7 @@ export async function relocateProject(
 }
 
 const KEY_DISMISSED_ORPHAN_STORES: RendererStorageKey = 'dismissedOrphanStores'
+let dismissedOrphanStoresChain: Promise<unknown> = Promise.resolve()
 
 /** Parse the dismissed-orphan list from config; ignore anything that is not string ids. */
 export function parseDismissedOrphanStores(value: unknown): string[] {
@@ -912,6 +913,27 @@ export function parseDismissedOrphanStores(value: unknown): string[] {
     ids.push(item)
   }
   return ids
+}
+
+/** Keep each dismissed-store read/modify/write transaction in submission order. */
+function updateDismissedOrphanStores(
+  api: ApiClient,
+  update: (current: string[]) => string[],
+): Promise<void> {
+  const next = dismissedOrphanStoresChain
+    .catch(() => undefined)
+    .then(async () => {
+      const current = parseDismissedOrphanStores(await api.storage.get(KEY_DISMISSED_ORPHAN_STORES))
+      const updated = update(current)
+      if (
+        updated.length === current.length &&
+        updated.every((storeId, index) => storeId === current[index])
+      )
+        return
+      await serializedSet(api, KEY_DISMISSED_ORPHAN_STORES, updated)
+    })
+  dismissedOrphanStoresChain = next
+  return next
 }
 
 /**
@@ -930,9 +952,9 @@ export async function listOrphanProjects(api: ApiClient): Promise<OrphanProjectS
 
 /** Hide an orphan store from the Recoverable threads list without deleting it. */
 export async function dismissOrphanProject(api: ApiClient, storeId: string): Promise<void> {
-  const current = parseDismissedOrphanStores(await api.storage.get(KEY_DISMISSED_ORPHAN_STORES))
-  if (current.includes(storeId)) return
-  await serializedSet(api, KEY_DISMISSED_ORPHAN_STORES, [...current, storeId])
+  await updateDismissedOrphanStores(api, (current) =>
+    current.includes(storeId) ? current : [...current, storeId],
+  )
 }
 
 /**
@@ -960,14 +982,9 @@ export async function recoverOrphanProject(
   })
   store.emit('projects_changed')
   // A recovered store should not stay on the dismissed list if the user brings it back later.
-  const dismissed = parseDismissedOrphanStores(await api.storage.get(KEY_DISMISSED_ORPHAN_STORES))
-  if (dismissed.includes(storeId)) {
-    await serializedSet(
-      api,
-      KEY_DISMISSED_ORPHAN_STORES,
-      dismissed.filter((id) => id !== storeId),
-    )
-  }
+  await updateDismissedOrphanStores(api, (current) =>
+    current.includes(storeId) ? current.filter((id) => id !== storeId) : current,
+  )
   await activateAndWait(store, api, storeId, path)
   return true
 }
@@ -981,6 +998,7 @@ export function resetProjectSwitchStateForTest(): void {
   liveCacheProjectId = null
   projectViewState.clear()
   activationWaiters.clear()
+  dismissedOrphanStoresChain = Promise.resolve()
 }
 
 /** Test hook — seed sidebar thread cache for a project. */
