@@ -432,6 +432,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    mobile: { onChat: () => () => {}, reply: async () => {} },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
