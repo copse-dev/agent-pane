@@ -8,10 +8,12 @@ import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { dispatchAgentRun, enqueueUserMessage, startHumanTurnTree } from './message-queue.ts'
 import { ensureThreadMessages, needsHydration } from './thread-hydration.ts'
+import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 
 export interface CodeBlockRunSendApi {
   agent: Pick<ApiClient['agent'], 'run'>
   git: Pick<ApiClient['git'], 'currentBranch' | 'promptState'>
+  settings: Pick<ApiClient['settings'], 'get'>
 }
 
 /**
@@ -31,11 +33,23 @@ export async function sendCodeBlockRunResult(
   result: CodeBlockRunResult,
 ): Promise<boolean> {
   const { projectId, threadId, shell } = result
+  // Renderer thread ids are scoped to their project. If the user changed
+  // projects while the command ran, a same-id thread in the newly active
+  // project must not receive the old project's output.
+  if (store.getState().activeProjectId !== projectId) return false
   // An evicted transcript must be loaded before a message is appended to it,
   // or the thread persists as a conversation that begins with this result.
   await ensureThreadMessages(projectId, threadId)
+  if (store.getState().activeProjectId !== projectId) return false
   const thread = getThreadById(store, threadId)
   if (!thread || needsHydration(thread)) return false
+  // Play still shows its output inline, but disabling terminal reads promises
+  // that terminal contents stay private until the user explicitly sends the
+  // fallback chip. A settings read failure must not turn sharing back on.
+  const readTerminalEnabled = await api.settings
+    .get(READ_TERMINAL_ENABLED_SETTING)
+    .catch(() => false)
+  if (readTerminalEnabled === false) return false
   const [branchResult, promptResult] = await Promise.allSettled([
     api.git.currentBranch(projectId, threadId),
     api.git.promptState(projectId, threadId),

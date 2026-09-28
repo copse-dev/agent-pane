@@ -55,6 +55,9 @@ function sendApi(): { api: CodeBlockRunSendApi; runs: string[] } {
         currentBranch: async () => 'main',
         promptState: async () => ({ startingCommit: 'a'.repeat(40), dirty: true }),
       },
+      settings: {
+        get: async () => true,
+      },
     },
   }
 }
@@ -93,6 +96,36 @@ test('a result for a thread that no longer exists is not sent', async () => {
   const { api, runs } = sendApi()
 
   assert.equal(await sendCodeBlockRunResult(store, api, result('deleted-thread')), false)
+
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
+})
+
+test('a result from a background project cannot target a same-id active thread', async () => {
+  const thread = runThread('idle')
+  const store = createStore({
+    projects: [
+      { id: 'project-1', name: 'Origin', path: '/origin' },
+      { id: 'project-2', name: 'Active', path: '/active' },
+    ],
+    activeProjectId: 'project-2',
+    activeThreadId: thread.id,
+    threads: [thread],
+  })
+  const { api, runs } = sendApi()
+
+  assert.equal(await sendCodeBlockRunResult(store, api, result()), false)
+
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, thread.id)?.messages.length, 1)
+})
+
+test('a result stays as a draft attachment when terminal sharing is disabled', async () => {
+  const store = storeWith(runThread('idle'))
+  const { api, runs } = sendApi()
+  api.settings.get = async (): Promise<boolean> => false
+
+  assert.equal(await sendCodeBlockRunResult(store, api, result()), false)
 
   assert.deepEqual(runs, [])
   assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
