@@ -225,6 +225,24 @@ function parseSshClient(head: string, args: readonly string[]): SshInvocation {
 
 const SSH_CLIENTS = new Set(['ssh', 'scp', 'sftp', 'rsync', 'mosh', 'autossh'])
 
+function dynamicRemoteDispatcherReasons(
+  rawArgv: readonly string[],
+  argv: readonly string[],
+): string[] {
+  const head = commandName(argv[0])
+  if (!SSH_CLIENTS.has(head)) return []
+  // unwrapWrappers returns a suffix of the original argv. `xargs` is transparent
+  // for inspecting fixed destructive operands, but it also appends words read
+  // from stdin at run time. Those words can become an SSH destination or remote
+  // command that is absent from `argv`: `printf evil | xargs ssh` and
+  // `printf 'rm -rf /' | xargs ssh trusted`. Never grant host trust across that
+  // unknown tail.
+  const wrapperPrefix = rawArgv.slice(0, Math.max(0, rawArgv.length - argv.length))
+  return wrapperPrefix.some((token) => commandName(token) === 'xargs')
+    ? [`xargs can add uninspected arguments to ${head}`]
+    : []
+}
+
 function remoteReasons(head: string, args: readonly string[], context: HostReachContext): string[] {
   if (head === 'rsync' && args.some((arg) => arg === '--rsh' || arg.startsWith('--rsh='))) {
     return ['rsync runs a custom remote-shell program (--rsh)']
@@ -440,6 +458,7 @@ export function hostReachReasons(command: string, context: HostReachContext): st
     const head = commandName(argv[0])
     const found = [
       ...(SSH_CLIENTS.has(head) ? remoteReasons(head, argv.slice(1), context) : []),
+      ...dynamicRemoteDispatcherReasons(rawArgv, argv),
       ...secretReasons(rawArgv, argv),
       ...hostControlReasons(argv),
       ...fetchedCodeReasons(argv, context),

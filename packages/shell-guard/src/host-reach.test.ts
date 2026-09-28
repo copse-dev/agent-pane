@@ -69,6 +69,17 @@ describe('hostReachReasons — other machines', () => {
     }
   })
 
+  it('prompts when xargs can append an uninspected destination or remote command', () => {
+    const trustedSshHosts = ['mini']
+    for (const command of [
+      'printf evil.example | xargs ssh',
+      "printf 'rm -rf /' | xargs ssh mini",
+      'env xargs ssh',
+    ]) {
+      assert.ok(reaches(command, { trustedSshHosts }), command)
+    }
+  })
+
   it('prompts when a trusted host invocation opens a tunnel or forwards traffic', () => {
     const trustedSshHosts = ['mini']
     for (const command of [
