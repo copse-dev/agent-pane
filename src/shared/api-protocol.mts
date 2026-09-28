@@ -50,7 +50,7 @@
 // v21 conservatively versions the optional Copse Reviewer report initiator on
 // thread payloads and `review_report` chunks.
 // v22 versions mobile-device decision actors and the resulting decisions:list shape.
-// v23 is claimed by the open reviewer-input persistence change (#3252), so this
-// change skips it to avoid a collision whichever PR lands first.
-// v24 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
-export const API_PROTOCOL_VERSION = 24 as const
+// v27 conservatively versions schedule-scoped automation permissions in list/upsert
+// payloads. v22–v26 are claimed by open PRs, so this skips them to avoid collisions.
+// v28 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
+export const API_PROTOCOL_VERSION = 28 as const
