@@ -113,7 +113,9 @@ function mountWithSettings(threads: Thread[], activeThreadId: string): HTMLEleme
   const api = createPendingApi({
     'plugins.list': () => Promise.resolve({ plugins: [automationsPlugin] }),
     'cursorPlugins.list': () => Promise.resolve([]),
+    'bundledSkillPlugins.list': () => Promise.resolve([]),
     'automations.list': () => Promise.resolve([schedule]),
+    'automations.permissionOptions': () => Promise.resolve([]),
   })
   const host = document.createElement('div')
   document.body.append(host)
@@ -534,6 +536,7 @@ describe('workspace-level automations section (#2511)', () => {
     const api = createPendingApi({
       'plugins.list': () => Promise.resolve({ plugins: [automationsPlugin] }),
       'cursorPlugins.list': () => Promise.resolve([]),
+      'bundledSkillPlugins.list': () => Promise.resolve([]),
       'automations.list': (projectId: string) => {
         requestedProjects.push(projectId)
         return Promise.resolve([{ ...schedule, id: 'schedule-issues', projectId: 'b' }])

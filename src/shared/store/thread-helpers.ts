@@ -26,6 +26,7 @@ import type {
   Thread,
   ThreadReview,
   ThreadReviewReport,
+  ReviewerInputAnswer,
 } from '@shared/types'
 import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/worktree.ts'
 import {
@@ -33,6 +34,7 @@ import {
   recordThreadProposalDecision,
   type ThreadProposalDecision,
 } from '@shared/threads/thread-proposal.ts'
+import { parseReviewerInputAnswers } from '@shared/threads/reviewer-input.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
@@ -1120,6 +1122,25 @@ export function setThreadProposalDecision(
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
     threadProposals: recordThreadProposalDecision(t.threadProposals, decision),
+    updatedAt: Date.now(),
+  }))
+  store.emit('threads_changed')
+}
+
+/** One answer per saved review question. The ordinary user message carries it to the model. */
+export function setReviewerInputAnswer(
+  store: AppStore,
+  threadId: string,
+  answer: ReviewerInputAnswer,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    reviewerInputAnswers: [
+      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
+        (entry) => entry.id !== answer.id,
+      ),
+      answer,
+    ],
     updatedAt: Date.now(),
   }))
   store.emit('threads_changed')
