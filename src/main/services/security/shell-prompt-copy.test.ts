@@ -122,9 +122,10 @@ describe('outside-sandbox approval copy', () => {
   })
 
   it('truncates long commands the same way on the post-failure escalation path', () => {
-    const mega = Array.from({ length: SHELL_APPROVAL_COMMAND_MAX_LINES + 5 }, (_, i) => `echo ${i}`).join(
-      '\n',
-    )
+    const mega = Array.from(
+      { length: SHELL_APPROVAL_COMMAND_MAX_LINES + 5 },
+      (_, i) => `echo ${i}`,
+    ).join('\n')
     const prior =
       'git fetch needs network access that was denied\n\n' +
       `${PRIOR_DENIAL_MARKER} (matched command: "git fetch origin main").`
@@ -133,7 +134,10 @@ describe('outside-sandbox approval copy', () => {
 
     assert.match(fields.bodyAdvice ?? '', new RegExp(PRIOR_DENIAL_MARKER))
     assert.match(fields.bodyAdvice ?? '', /failed inside the project sandbox \(sandbox violation\)/)
-    assert.doesNotMatch(fields.bodyAdvice ?? '', /failed inside the project sandbox \(.*Earlier in this thread/)
+    assert.doesNotMatch(
+      fields.bodyAdvice ?? '',
+      /failed inside the project sandbox \(.*Earlier in this thread/,
+    )
     assert.match(fields.body, /\n… \(\+/)
     assert.equal(fields.bodyFooter, 'Allow running it once without sandbox restrictions?')
   })

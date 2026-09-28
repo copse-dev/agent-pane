@@ -133,8 +133,7 @@ export function cachedDenialNote(
     advice: entry.advice,
     priorCommandDisplay,
     text:
-      `${entry.advice}\n\n${PRIOR_DENIAL_MARKER} ` +
-      `(matched command: "${priorCommandDisplay}").`,
+      `${entry.advice}\n\n${PRIOR_DENIAL_MARKER} ` + `(matched command: "${priorCommandDisplay}").`,
   }
 }
 
