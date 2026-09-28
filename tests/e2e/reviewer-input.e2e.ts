@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { expectAssistantReply, installMockScenario } from './helpers/mock-scenario.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -9,6 +10,8 @@ import {
 
 const PROJECT_ID = 'e2e-reviewer-input-project'
 const THREAD_ID = 'e2e-reviewer-input-thread'
+const ANSWER_PROMPT = 'Answer to your review question “Block on the token over-count?”: Fix first'
+const ANSWER_REPLY = 'I’ll fix the token count before proceeding.'
 
 describe('saved reviewer input', () => {
   before(async () => {
@@ -144,11 +147,17 @@ describe('saved reviewer input', () => {
   })
 
   it('sends a saved answer and keeps it after reopening the task', async () => {
+    const scenario = await installMockScenario({
+      title: 'Review answer',
+      turns: [{ user: ANSWER_PROMPT, responses: [{ text: ANSWER_REPLY }] }],
+    })
     const panel = $('.reviewer-input-panel')
     const row = panel.$('[data-reviewer-input-id="request-tokens"]')
     await row.$('.reviewer-input-question').click()
     await row.$('.reviewer-input-option').click()
     await row.$('.ui-btn-primary').click()
+    await expectAssistantReply(ANSWER_REPLY)
+    await scenario.assertComplete()
     await expect($('.reviewer-input-toggle')).toHaveText('2 questions')
     await panel.$('[data-reviewer-input-id="request-tokens"] .reviewer-input-question').click()
     await expect(
