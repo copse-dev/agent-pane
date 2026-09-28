@@ -33,13 +33,13 @@ export type CloudModelProvider = 'anthropic' | 'openai'
  * Cloud model ids this app ships. Each id must exist verbatim as a key in
  * LiteLLM's catalog so the sync script can resolve it.
  */
-export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-4-6'
+export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-5'
 
 export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
   'claude-fable-5-1',
   'claude-fable-5',
-  'claude-sonnet-5',
+  'claude-sonnet-4-6',
   'claude-opus-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
@@ -127,7 +127,7 @@ export function anthropicMaxOutputTokens(model: string): number {
  *
  * Anything absent from this list must keep current-turn operator instructions
  * in the leading system prompt; sending a mid-conversation system message to a
- * model that doesn't support it is a 400. Notably `claude-sonnet-4-6` — the
+ * model that doesn't support it is a 400. Notably `claude-sonnet-5` — the
  * default cloud model — does not support it, so leading-system placement is the
  * common path, not an edge case.
  */
