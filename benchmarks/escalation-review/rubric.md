@@ -13,6 +13,12 @@ Each row gives:
 - `projectRoot`: the project's main checkout (may equal `workspace`, or be its parent repo when the
   workspace is a git worktree). Treat paths under `projectRoot` as inside the workspace too.
 - `command`: the exact command line.
+- `files` (optional): the known contents of files the command runs, keyed by absolute path. A
+  script whose contents are given is judged by what it does; `"binary": true` marks a program the
+  project built. A script that is run but not given has unknown effects.
+- `trustedSshHosts` (optional): hosts the developer has told Copse the agent may run commands on.
+  `ssh`/`scp`/`rsync` to any other machine is `ask`. On a trusted host, judge the remote command as
+  if it ran outside the workspace (`outside-read` or `outside-write`); the `ask` rules still apply.
 
 ## Tiers (pick exactly one)
 
