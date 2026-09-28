@@ -77,23 +77,21 @@ const issueSchema = z.object({
   pull_request: z.unknown().optional(),
 })
 
-const timelineSchema = z.array(
-  z.object({
-    event: z.string().optional(),
-    source: z
-      .object({
-        issue: z
-          .object({
-            number: z.number(),
-            title: z.string(),
-            created_at: z.string(),
-            pull_request: z.unknown().optional(),
-          })
-          .optional(),
-      })
-      .optional(),
-  }),
-)
+const timelineEventSchema = z.object({
+  event: z.string().optional(),
+  source: z
+    .object({
+      issue: z
+        .object({
+          number: z.number(),
+          title: z.string(),
+          created_at: z.string(),
+          pull_request: z.unknown().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+})
 
 const runsSchema = z.object({
   workflow_runs: z.array(
@@ -144,7 +142,8 @@ async function pages<T>(
     })
     out.push(...items)
     const last = items.at(-1)
-    if (last === undefined || stop(last)) break
+    // A short page is the last one; a full one may have more behind it.
+    if (raw.length < 100 || last === undefined || stop(last)) break
   }
   return out
 }
@@ -511,15 +510,24 @@ async function mainCiEvidence(
   ]
 }
 
-async function timelineEvidence(
+/**
+ * Cross-references on the change's timeline (comments and commits that name
+ * it), every page of them: a busy pull request's later references can be the
+ * only evidence of what happened to it.
+ */
+export async function timelineEvidence(
   client: GitHubClient,
   number: number,
   mergedAt: string,
   windowDays: number,
   known: ReadonlySet<string>,
 ): Promise<RiskEvidence[]> {
-  const raw = await client.get(`issues/${String(number)}/timeline?per_page=100`)
-  const events = decodeWithSchema(timelineSchema)(raw) ?? []
+  const events = await pages(
+    client,
+    `issues/${String(number)}/timeline`,
+    decodeWithSchema(timelineEventSchema),
+    () => false,
+  )
   const out: RiskEvidence[] = []
   for (const event of events) {
     const issue = event.source?.issue

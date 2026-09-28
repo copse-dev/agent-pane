@@ -30,8 +30,10 @@ import {
   pickMature,
   ratingSource,
   runRatings,
+  timelineEvidence,
   type BenchIo,
   type EvidenceInput,
+  type GitHubClient,
   type SampleTier,
 } from './bench-risk-lib.mts'
 
@@ -208,6 +210,32 @@ describe('evidence', () => {
 const BLAMED: SampleTier = 'blamed'
 const EVIDENCE: SampleTier = 'evidence'
 const NONE: SampleTier = 'none'
+
+describe('timelineEvidence', () => {
+  it('reads cross-references from every page of a long timeline', async () => {
+    const crossRef = (number: number, day: string): unknown => ({
+      event: 'cross-referenced',
+      source: { issue: { number, title: `Fix ${String(number)}`, created_at: day } },
+    })
+    const filler = Array.from({ length: 99 }, () => ({ event: 'commented' }))
+    const requested: string[] = []
+    const client: GitHubClient = {
+      get: (path) => {
+        requested.push(path)
+        const page = /[?&]page=(\d+)/.exec(path)?.[1]
+        if (page === '1') return Promise.resolve([crossRef(201, '2026-09-11T00:00:00Z'), ...filler])
+        if (page === '2') return Promise.resolve([crossRef(202, '2026-09-12T00:00:00Z')])
+        return Promise.resolve([])
+      },
+    }
+    const found = await timelineEvidence(client, 100, MERGED, 7, new Set(['#999']))
+    assert.deepEqual(
+      found.map((item) => item.ref),
+      ['#201', '#202'],
+    )
+    assert.equal(requested.length, 2, 'a short page ends the walk')
+  })
+})
 
 describe('ratingSource', () => {
   it('names the provider and model a run passed through', () => {
