@@ -137,6 +137,8 @@ describe('remoteChangeReasons', () => {
       'podman stop app',
       'docker system prune -af',
       'docker --context ps rm db',
+      'docker context use prod',
+      'docker context rm old-prod',
     ])
     assertReads([
       'docker run --rm -v ./src:/app/src node:24 npm test',
@@ -144,6 +146,8 @@ describe('remoteChangeReasons', () => {
       'docker logs app',
       'docker --context prod ps',
       'docker --context=prod images',
+      'docker context ls',
+      'docker context inspect prod',
     ])
   })
 
