@@ -5,13 +5,15 @@
 //
 // Sources, all anonymised to the regression set's machine (home /Users/dev, workspace
 // /Users/dev/project):
-// - regression: every case in ../regression/cases.jsonl, with its script files and hosts;
+// - regression: every case in ../regression/cases.jsonl that has a reviewed label in
+//   labels.jsonl, with its script files and hosts. The regression suite may grow independently;
+//   new rows join this adjudicated set only after they are labelled;
 // - shell-scope: the 200-command corpus in benchmarks/shell-scope, paths moved onto the
 //   anonymised machine, keeping its reviewed sandbox/external label and dev/holdout split;
 // - authored: sources/authored.jsonl, written for this set;
 // - hf: sources/hf-*.jsonl, sampled by sample-hf.mjs.
 //
-// labels.jsonl holds the reference tier for every row (rubric.md). The build writes
+// labels.jsonl holds the reference tier for every row included in the set (rubric.md). The build writes
 // cases.jsonl and fixtures/tier-{dev,holdout}.jsonl for `pnpm run eval:classifier`. With
 // --check it only verifies those files are current. --batches writes blind labelling rows.
 import { createHash } from 'node:crypto'
@@ -136,6 +138,26 @@ export function fixture(row) {
   }
 }
 
+export function joinLabels(rows, labels) {
+  return rows.flatMap((row) => {
+    const label = labels.get(row.id)
+    if (!label) {
+      if (row.source === 'regression') return []
+      throw new Error(`${row.id} has no reference label`)
+    }
+    if (!TIERS.includes(label.tier)) throw new Error(`${row.id}: unknown tier ${label.tier}`)
+    return [
+      {
+        ...row,
+        tier: label.tier,
+        effects: label.effects,
+        rationale: label.rationale,
+        labellers: label.labellers,
+      },
+    ]
+  })
+}
+
 export function build() {
   const rows = collect()
   const ids = new Set()
@@ -147,18 +169,7 @@ export function build() {
   for (const id of labels.keys()) {
     if (!ids.has(id)) throw new Error(`labels.jsonl names ${id}, which no source provides`)
   }
-  const cases = rows.map((row) => {
-    const label = labels.get(row.id)
-    if (!label) throw new Error(`${row.id} has no reference label`)
-    if (!TIERS.includes(label.tier)) throw new Error(`${row.id}: unknown tier ${label.tier}`)
-    return {
-      ...row,
-      tier: label.tier,
-      effects: label.effects,
-      rationale: label.rationale,
-      labellers: label.labellers,
-    }
-  })
+  const cases = joinLabels(rows, labels)
   const line = (value) => JSON.stringify(value)
   const text = (values) => values.map(line).join('\n') + '\n'
   return {

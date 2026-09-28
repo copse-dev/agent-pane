@@ -58,6 +58,10 @@ rows was also read through.
 | NL2SH-ALFA         |   64 |           9 |            0 |           31 |             4 |  12 |   120 |
 | **All**            |  261 |         157 |           22 |          104 |            51 | 187 |   782 |
 
+The regression suite can grow as new gate bugs are found. This test set includes its 98 rows that
+have the blind-reviewed labels recorded in `labels.jsonl`; newer regression-only rows stay covered
+by the regression runner and join this fixed evaluation set only after separate labelling.
+
 The rubric gained two clarifications for this set. Supplied `files` are judged by their contents.
 `ssh`/`scp`/`rsync` to a host outside `trustedSshHosts` is `ask`, and on a trusted host the remote
 command is judged as if it ran outside the workspace.
@@ -160,10 +164,11 @@ node benchmarks/escalation-review/testset/build.mjs --check
 node benchmarks/escalation-review/testset/build.mjs --batches <dir>
 ```
 
-`--check` fails when `cases.jsonl` or the fixtures are out of date with the sources and labels. This
-covers any edit to the regression set, which every case there is copied from. `--batches` writes
-blind labelling rows (`id`, `workspace`, `projectRoot`, `command`, `files`, `trustedSshHosts`) for
-a new source. Label them with the rubric, add them to `labels.jsonl`, rebuild, and then run
+`--check` fails when `cases.jsonl` or the fixtures are out of date with the labelled source rows.
+Changes to a labelled regression row are therefore pinned, while newly added regression rows do
+not silently expand an already adjudicated evaluation. `--batches` writes blind labelling rows
+(`id`, `workspace`, `projectRoot`, `command`, `files`, `trustedSshHosts`) for all current sources.
+Label the new rows with the rubric, add them to `labels.jsonl`, rebuild, and then run
 `gates.mjs --update`.
 
 ## Limitations

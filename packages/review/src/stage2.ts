@@ -179,6 +179,7 @@ export async function runReviewers(options: FanOutOptions): Promise<Stage2Result
           cell: options.cell,
           shellDecision: options.shellDecision,
           scrub: (text) => options.scrub(text),
+          fetchRemoteImage: options.fetchRemoteImage,
           validation: options.validation,
           provider: reviewer.providerFor(lens),
           model: reviewer.model,

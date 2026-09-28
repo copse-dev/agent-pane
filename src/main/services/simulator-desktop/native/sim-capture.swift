@@ -51,6 +51,7 @@ guard let SimServiceContext = NSClassFromString("SimServiceContext") as? NSObjec
 
 // Resolve developer dir
 func developerDir() -> String {
+    // xcode-select resolves DEVELOPER_DIR, including an Xcode.app bundle path.
     let p = Process(); p.launchPath = "/usr/bin/xcode-select"; p.arguments = ["-p"]
     let pipe = Pipe(); p.standardOutput = pipe
     do { try p.run() } catch { return "/Applications/Xcode.app/Contents/Developer" }

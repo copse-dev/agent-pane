@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  assertPopoutModesAllShown,
+  assertPopoutModesOverflowAt,
+} from './helpers/popout-panel-bar.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-popout-proposed-project'
@@ -135,7 +139,12 @@ describe('proposed diffs across embed and pop-out (#1753)', function () {
       timeout: 15_000,
       timeoutMsg: `pop-out lost colouring on the second proposal: ${await describeViewer()}`,
     })
+    // A Changes badge widens its button; the roomy titlebar still shows every
+    // mode rather than folding Browser into the … menu.
+    await assertPopoutModesAllShown()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-popout-proposed.png'))
+    // …while a narrow pop-out still folds trailing modes into the … menu.
+    await assertPopoutModesOverflowAt(360)
 
     // Approve the selected diff in the pop-out; both windows fall back to the
     // remaining proposal and must colour it.

@@ -309,6 +309,14 @@ describe('assessAutoApproval — shell-level escapes', () => {
     prompts('FOO=bar ls', 'read')
   })
 
+  it('refuses printf -v shell assignments before a later command', () => {
+    // Bash's printf builtin can rewrite PATH without using NAME=value syntax.
+    // Once the command runs outside the sandbox, the next bare command can be
+    // replaced by an attacker-controlled executable.
+    prompts('printf -v PATH /tmp/evil && ls', 'read')
+    prompts('printf -v PATH /tmp/evil && git push origin main', 'remote-write')
+  })
+
   it('refuses a gh write flag that reads a local file', () => {
     // `--body-file` would post the contents of an arbitrary local path to GitHub.
     prompts('gh pr create --title t --body-file /etc/passwd')
