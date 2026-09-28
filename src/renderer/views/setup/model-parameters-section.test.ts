@@ -164,69 +164,155 @@ describe('model parameters section', () => {
   it('explains rather than offering controls for a selection that owns its own settings', async () => {
     const { api } = stubSettings()
     const section = createModelParametersSection(api)
-    await section.refresh('acp:claude-code#opus')
+    await section.refresh('auto:balanced')
+    // The chat model never lands the section on an agent, but its picker can.
+    const picker = selectControl(section.root, 'model-parameter-model')
+    const option = document.createElement('option')
+    option.value = 'acp:claude-code#opus'
+    picker.append(option)
+    picker.value = option.value
+    fire(picker)
 
     assert.equal(control(section.root, 'model-parameter-reasoning'), null)
     assert.equal(control(section.root, 'model-parameter-temperature'), null)
     assert.match(section.root.textContent, /own agent/)
   })
 
-  it('points at pinning a model when the selection is a rule', async () => {
+  it('asks for a model rather than tuning a rule when the chat model is one', async () => {
     const { api } = stubSettings()
     const section = createModelParametersSection(api)
     await section.refresh('auto:best-value')
 
     assert.equal(control(section.root, 'model-parameter-reasoning'), null)
-    assert.match(section.root.textContent, /pin one to tune it/)
+    assert.match(section.root.textContent, /Choose a model to tune/)
+    // The picker is there to choose with; the default stays a rule.
+    assert.ok(control(section.root, 'model-parameter-model'))
   })
 
-  it('offers the published recipe for a model that has one, and fills the fields', async () => {
+  it('tunes a model picked in its own picker without touching the chat model', async () => {
+    const { api, store } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('auto:balanced')
+
+    const picker = selectControl(section.root, 'model-parameter-model')
+    // The picker has no name, so the settings form never saves it as a setting.
+    assert.equal(picker.name, '')
+    const option = document.createElement('option')
+    option.value = 'lmstudio:qwen/qwen3.6-35b-a3b'
+    picker.append(option)
+    picker.value = 'lmstudio:qwen/qwen3.6-35b-a3b'
+    fire(picker)
+    const presence = inputControl(section.root, 'model-parameter-presence-penalty')
+    presence.value = '1'
+    fire(presence)
+    await section.save()
+
+    assert.deepEqual(store.saved['modelParameters'], {
+      'lmstudio:qwen/qwen3.6-35b-a3b': { presencePenalty: 1 },
+    })
+    assert.equal(store.saved['model'], undefined)
+  })
+
+  it('keeps the tuned model when the chat model changes to a rule', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('gpt-4o')
+    section.setModel('auto:balanced')
+    assert.equal(selectControl(section.root, 'model-parameter-model').value, 'gpt-4o')
+    assert.ok(control(section.root, 'model-parameter-temperature'))
+  })
+
+  it('lists customised models and switches to one on click', async () => {
+    const { api } = stubSettings({ 'gpt-4o': { temperature: 0.4 } })
+    const section = createModelParametersSection(api)
+    await section.refresh('auto:balanced')
+
+    const row = control(section.root, 'model-parameter-customised')
+    assert.ok(row)
+    assert.equal(row.hasAttribute('hidden'), false)
+    const chip = qs(row, '[data-model="gpt-4o"]')
+    assert.ok(chip)
+    chip.click()
+    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '0.4')
+    // Chips re-render on selection, so look the current one up again.
+    assert.equal(qs(row, '[data-model="gpt-4o"]')?.getAttribute('aria-pressed'), 'true')
+  })
+
+  it('hides the customised list when nothing is tuned', async () => {
+    const { api } = stubSettings()
+    const section = createModelParametersSection(api)
+    await section.refresh('gpt-4o')
+    assert.equal(control(section.root, 'model-parameter-customised')?.hasAttribute('hidden'), true)
+  })
+
+  it('shows the applied recipe as placeholders, leaving the fields blank', async () => {
     const { api, store } = stubSettings()
     const section = createModelParametersSection(api)
     await section.refresh('openrouter:deepseek/deepseek-v4-flash-0731')
 
-    const recommend = buttonControl(section.root, 'model-parameter-recommend')
-    assert.equal(recommend.closest('.model-parameter-recommend')?.hasAttribute('hidden'), false)
+    const recommend = control(section.root, 'model-parameter-recommend')
+    assert.equal(recommend?.hasAttribute('hidden'), false)
+    assert.match(section.root.textContent, /Applied by default/)
     assert.match(section.root.textContent, /model card/)
 
-    recommend.click()
-    assert.equal(selectControl(section.root, 'model-parameter-reasoning').value, 'max')
-    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '1')
-    assert.equal(inputControl(section.root, 'model-parameter-top-p').value, '0.95')
+    const reasoning = selectControl(section.root, 'model-parameter-reasoning')
+    assert.equal(reasoning.value, '')
+    assert.equal(reasoning.options[0]?.textContent, 'Recommended (Max)')
+    const temperature = inputControl(section.root, 'model-parameter-temperature')
+    assert.equal(temperature.value, '')
+    assert.equal(temperature.placeholder, '1')
+    assert.equal(inputControl(section.root, 'model-parameter-top-p').placeholder, '0.95')
+    // A knob the recipe leaves alone still falls to the model's own default.
+    assert.equal(
+      inputControl(section.root, 'model-parameter-presence-penalty').placeholder,
+      'Model default',
+    )
 
+    // Looking is not tuning: the recipe applies without anything being saved.
     await section.save()
-    assert.deepEqual(store.saved['modelParameters'], {
-      'openrouter:deepseek/deepseek-v4-flash-0731': {
-        reasoning: 'max',
-        temperature: 1,
-        topP: 0.95,
-      },
-    })
+    assert.equal(store.writes, 0)
   })
 
-  it('fills and saves the experimental GLM-5.3-Flash balanced profile', async () => {
-    const { api, store } = stubSettings()
+  it('shows the experimental GLM-5.3-Flash profile, cap included', async () => {
+    const { api } = stubSettings()
     const section = createModelParametersSection(api)
     await section.refresh('openrouter:z-ai/glm-5.3-flash')
 
-    buttonControl(section.root, 'model-parameter-recommend').click()
-    assert.equal(selectControl(section.root, 'model-parameter-reasoning').value, 'medium')
-    assert.equal(inputControl(section.root, 'model-parameter-max-output-tokens').value, '16384')
-    // The vendor half of the row: Z.ai's published sampling lands in the visible
-    // fields alongside Copse's reasoning and cap.
-    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '1')
-    assert.equal(inputControl(section.root, 'model-parameter-top-p').value, '0.95')
+    assert.equal(
+      selectControl(section.root, 'model-parameter-reasoning').options[0]?.textContent,
+      'Recommended (Medium)',
+    )
+    assert.equal(
+      inputControl(section.root, 'model-parameter-max-output-tokens').placeholder,
+      '16384',
+    )
     assert.match(section.root.textContent, /paired Terminal-Bench record/)
+  })
 
+  it('resets a tuned model back to its recipe', async () => {
+    const model = 'lmstudio:qwen/qwen3.6-35b-a3b'
+    const { api, store } = stubSettings({ [model]: { temperature: 0.2 } })
+    const section = createModelParametersSection(api)
+    await section.refresh(model)
+
+    const reset = buttonControl(section.root, 'model-parameter-reset')
+    assert.equal(reset.hasAttribute('hidden'), false)
+    assert.equal(reset.textContent, 'Reset to recommended')
+    reset.click()
+    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '')
+    assert.equal(reset.hasAttribute('hidden'), true)
     await section.save()
-    assert.deepEqual(store.saved['modelParameters'], {
-      'openrouter:z-ai/glm-5.3-flash': {
-        reasoning: 'medium',
-        maxOutputTokens: 16_384,
-        temperature: 1,
-        topP: 0.95,
-      },
-    })
+    assert.deepEqual(store.saved['modelParameters'], {})
+  })
+
+  it('offers to clear custom values on a model with no recipe', async () => {
+    const { api } = stubSettings({ 'gpt-4o': { temperature: 0.4 } })
+    const section = createModelParametersSection(api)
+    await section.refresh('gpt-4o')
+    assert.equal(
+      buttonControl(section.root, 'model-parameter-reset').textContent,
+      'Clear custom values',
+    )
   })
 
   it('links to the source rather than asserting the numbers itself', async () => {
@@ -281,27 +367,18 @@ describe('model parameters section', () => {
     assert.equal(control(section.root, 'model-parameter-presence-penalty'), null)
   })
 
-  it('fills all six from Qwen’s published recipe', async () => {
-    const { api, store } = stubSettings()
+  it('shows all six of Qwen’s published recipe as what blank fields send', async () => {
+    const { api } = stubSettings()
     const section = createModelParametersSection(api)
     await section.refresh('openrouter:qwen/qwen3.6-35b-a3b')
 
-    buttonControl(section.root, 'model-parameter-recommend').click()
-    assert.equal(inputControl(section.root, 'model-parameter-temperature').value, '1')
-    assert.equal(inputControl(section.root, 'model-parameter-top-k').value, '20')
-    assert.equal(inputControl(section.root, 'model-parameter-presence-penalty').value, '1.5')
-
-    await section.save()
-    assert.deepEqual(store.saved['modelParameters'], {
-      'openrouter:qwen/qwen3.6-35b-a3b': {
-        temperature: 1,
-        topP: 0.95,
-        topK: 20,
-        minP: 0,
-        presencePenalty: 1.5,
-        repetitionPenalty: 1,
-      },
-    })
+    const placeholder = (testid: string): string => inputControl(section.root, testid).placeholder
+    assert.equal(placeholder('model-parameter-temperature'), '1')
+    assert.equal(placeholder('model-parameter-top-k'), '20')
+    assert.equal(placeholder('model-parameter-min-p'), '0')
+    assert.equal(placeholder('model-parameter-presence-penalty'), '1.5')
+    assert.equal(placeholder('model-parameter-repetition-penalty'), '1')
+    assert.match(section.root.textContent, /Blank sends the recommended 1\.5\./)
   })
 
   it('says which levels bring the card’s output ceiling with them', async () => {

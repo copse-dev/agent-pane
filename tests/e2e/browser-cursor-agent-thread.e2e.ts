@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { navigateActiveBrowserTab } from './helpers/browser-address.ts'
 import { writeE2eEnv } from './helpers/e2e-env.ts'
 import {
   resetUserData,
@@ -15,20 +16,6 @@ interface Guest extends HTMLElement {
 }
 
 const AGENTS_URL = 'https://cursor.com/agents/bc-e2e-linked-agent'
-
-async function navigateActiveTab(url: string): Promise<void> {
-  await browser.execute((targetUrl) => {
-    const input = document.querySelector<HTMLInputElement>(
-      '.browser-tab-panel.is-active .browser-url-input',
-    )
-    if (!input) return
-    input.value = targetUrl
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    document
-      .querySelector<HTMLButtonElement>('.browser-tab-panel.is-active .browser-go-btn')
-      ?.click()
-  }, url)
-}
 
 /**
  * Record every main-frame navigation the active guest starts, and stop the one
@@ -100,7 +87,7 @@ describe('browser Cursor agent URL navigation', () => {
     )
 
     await recordGuestNavigations(AGENTS_URL)
-    await navigateActiveTab(AGENTS_URL)
+    await navigateActiveBrowserTab(AGENTS_URL)
 
     // The pane keeps the requested URL in the address bar rather than resetting it
     // to the page a thread handoff would have left in place.

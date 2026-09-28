@@ -3015,7 +3015,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = scrollTop
       return
     }
-    if (scrollTop < lastScrollTop - 1) {
+    // A drop that lands flush with the bottom is the browser clamping scrollTop
+    // after the content shrank (a finished turn's disclosures compacting), not
+    // the reader: scrolling up always leaves the bottom by at least the scroll.
+    // A clamp says nothing about what the reader wants, so it keeps the pin
+    // state it found: a pinned view keeps following (treating the clamp as a
+    // scroll-up used to unpin it), and one the reader scrolled away from is not
+    // re-pinned just because layout pulled it onto the bottom.
+    const dropped = scrollTop < lastScrollTop - 1
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1
+    if (clamped) {
+      // Layout, not the reader; the pin state stands.
+    } else if (dropped) {
       userScrolledUpAt = Date.now()
       pinnedToBottom = false
     } else if (isNearBottom()) {

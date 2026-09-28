@@ -2,7 +2,7 @@ import { definePlugin, type RegisteredPlugin } from './plugin-manifest.ts'
 
 export const APPLE_DEVELOPMENT_PLUGIN_ID = 'copse.apple-development'
 export const APPLE_DEVELOPMENT_PANEL_ID = 'apple-development'
-export const APPLE_DEVELOPMENT_TOOL_NAMES = ['open_simulator_desktop'] as const
+export const APPLE_DEVELOPMENT_TOOL_NAMES = ['open_simulator_desktop', 'device_hub'] as const
 /** Offer Apple development when an Apple project opens; on unless the user opts out. */
 export const APPLE_DEVELOPMENT_SUGGEST_SETTING_ID = 'suggest-projects'
 
