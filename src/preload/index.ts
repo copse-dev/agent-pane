@@ -1294,6 +1294,11 @@ const api: ApiClient = {
   cursorPlugins: {
     list: () => ipcRenderer.invoke('cursor-plugins:list'),
   },
+  // Cursor plugins whose skills ship inside Copse, each with its own switch
+  // (saved through settings.set('bundledSkillPluginOverrides', …)).
+  bundledSkillPlugins: {
+    list: () => ipcRenderer.invoke('bundled-skill-plugins:list'),
+  },
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
