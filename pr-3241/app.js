@@ -22401,9 +22401,9 @@ function setMessageToolSummary(store2, messageId, toolSummary) {
   });
   store2.emit("tool_call_updated", messageId, "");
 }
-function setMessageRunSummary(store2, messageId, runSummary) {
+function setMessageRunSummary(store2, messageId, runSummary2) {
   updateMessage(store2, messageId, (m2) => {
-    m2.runSummary = runSummary;
+    m2.runSummary = runSummary2;
   });
   store2.emit("tool_call_updated", messageId, "");
 }
@@ -23785,7 +23785,7 @@ function runningToolName(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
     const m2 = thread.messages[i2];
     if (!m2) continue;
-    const toolCalls = m2.toolCalls ?? [];
+    const toolCalls = m2.toolCalls;
     for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
       const tc2 = toolCalls[j3];
       if (!tc2) continue;
@@ -24352,13 +24352,11 @@ function queuedPayloadText(payload) {
 }
 function withPayloadText(content, text2) {
   if (typeof content === "string") return text2;
-  let replaced = false;
-  const next = content.map((block) => {
-    if (block.type !== "text" || replaced) return block;
-    replaced = true;
-    return { ...block, text: text2 };
-  });
-  return replaced ? next : [...next, { type: "text", text: text2 }];
+  const firstText = content.findIndex((block) => block.type === "text");
+  if (firstText === -1) return [...content, { type: "text", text: text2 }];
+  return content.map(
+    (block, index) => index === firstText && block.type === "text" ? { ...block, text: text2 } : block
+  );
 }
 function updateQueuedMessageText(store2, threadId, messageId, text2) {
   const thread = store2.getState().threads.find((t2) => t2.id === threadId);
@@ -51888,6 +51886,7 @@ function toExtraProviderModel(slug2, modelId) {
 var DEFAULT_EXTRA_PROVIDER_CONTEXT, BUILTIN_EXTRA_PROVIDERS, BUILTIN_EXTRA_PROVIDER_SLUGS, BUILTIN_BY_SLUG;
 var init_extra_providers = __esm({
   "packages/llm/src/extra-providers.ts"() {
+    init_unknown_value();
     init_credential_url();
     init_provider_metadata2();
     init_model_selection();
@@ -66720,8 +66719,7 @@ function copyMessage(message2) {
   return {
     ...rest,
     id: randomUUID2(),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    toolCalls: (toolCalls ?? []).map((toolCall) => ({ ...toolCall })),
+    toolCalls: toolCalls.map((toolCall) => ({ ...toolCall })),
     ...images !== void 0 ? { images: [...images] } : {},
     ...canvasArtefacts !== void 0 ? { canvasArtefacts: canvasArtefacts.map((artefact) => ({ ...artefact })) } : {},
     ...visualEvidence !== void 0 ? {
@@ -73484,6 +73482,27 @@ var init_container_run_card = __esm({
 });
 
 // src/renderer/markdown/code-block-copy.ts
+function runKey(pre, command) {
+  const message2 = pre.closest("[data-message-id]");
+  const messageId = message2?.dataset["messageId"];
+  if (!message2 || !messageId) return null;
+  let occurrence = 0;
+  for (const other of message2.querySelectorAll("pre")) {
+    if (other === pre) break;
+    if (other.closest("[data-message-id]") !== message2) continue;
+    const otherCode = other.querySelector("code");
+    if (otherCode && runnableCommand(otherCode) === command) occurrence++;
+  }
+  return `${messageId}\0${String(occurrence)}\0${command}`;
+}
+function rememberRun(key, run2) {
+  runsByBlock.delete(key);
+  runsByBlock.set(key, run2);
+  for (const oldest of runsByBlock.keys()) {
+    if (runsByBlock.size <= REMEMBERED_RUN_LIMIT) break;
+    runsByBlock.delete(oldest);
+  }
+}
 function copyButtonText(code) {
   return code.textContent.trimStart();
 }
@@ -73507,6 +73526,10 @@ function looksLikeUnlabelledCommand(source) {
   const basename3 = (slash >= 0 ? head.slice(slash + 1) : head).toLowerCase();
   return COMMON_SHELL_COMMANDS.has(basename3);
 }
+function runnableCommand(code) {
+  const command = copyButtonText(code).trim();
+  return command.includes("\n") ? command : command.replace(/^\$\s+/, "");
+}
 function isRunnableCodeBlock(code) {
   const language = explicitCodeLanguage(code);
   if (language !== null) return SHELL_LANGUAGES.has(language);
@@ -73522,15 +73545,15 @@ function setRunButtonState(button, state) {
     button.replaceChildren(spinnerIcon("ui-icon ui-icon-sm"));
   } else if (state === "succeeded") {
     button.setAttribute("aria-label", "Run command again");
-    button.setAttribute("data-tooltip", "Result attached \xB7 Run again");
+    button.setAttribute("data-tooltip", "Run again");
     button.replaceChildren(checkIcon("ui-icon ui-icon-sm"));
   } else if (state === "failed") {
     button.setAttribute("aria-label", "Run command again");
-    button.setAttribute("data-tooltip", "Command failed \xB7 Result attached \xB7 Run again");
+    button.setAttribute("data-tooltip", "Command failed \xB7 Run again");
     button.replaceChildren(warningIcon("ui-icon ui-icon-sm"));
   } else {
     button.setAttribute("aria-label", "Run command");
-    button.setAttribute("data-tooltip", "Run in background and attach result");
+    button.setAttribute("data-tooltip", "Run and send the result to the agent");
     button.replaceChildren(playIcon("ui-icon ui-icon-sm"));
   }
 }
@@ -73547,12 +73570,49 @@ function bindCodeBlockRunRequests(root, handler) {
     root.removeEventListener(CODE_BLOCK_RUN_REQUEST_EVENT, listener);
   };
 }
-function setCodeBlockRunOutcome(root, requestId, exitCode) {
+function runSummary(run2) {
+  if (!run2.outcome) return "Running\u2026";
+  const { exitCode } = run2.outcome;
+  return exitCode === null ? "Could not run" : `Output \xB7 exit ${String(exitCode)}`;
+}
+function renderRunOutput(shell3, run2) {
+  let panel = shell3.querySelector(":scope > .code-block-output");
+  if (!panel) {
+    panel = el("details", { class: "code-block-output", open: true });
+    shell3.append(panel);
+  }
+  panel.dataset["runState"] = run2.state;
+  const summary = el("summary", { class: "code-block-output-summary" }, runSummary(run2));
+  if (!run2.outcome) {
+    panel.replaceChildren(summary);
+    return;
+  }
+  const output2 = run2.outcome.output.trimEnd();
+  panel.replaceChildren(
+    summary,
+    output2 ? el("div", { class: "code-block-output-text" }, output2) : el("div", { class: "code-block-output-empty" }, "No output")
+  );
+}
+function showRun(shell3, button, run2) {
+  button.dataset["runId"] = run2.id;
+  setRunButtonState(button, run2.state);
+  renderRunOutput(shell3, run2);
+}
+function setCodeBlockRunOutcome(root, requestId, outcome) {
+  const state = outcome.exitCode === 0 ? "succeeded" : "failed";
+  let run2;
+  for (const remembered of runsByBlock.values()) {
+    if (remembered.id !== requestId) continue;
+    remembered.state = state;
+    remembered.outcome = outcome;
+    run2 = remembered;
+  }
+  run2 ??= { id: requestId, state, outcome };
   const buttons = root.querySelectorAll(".code-block-run");
   for (const button of buttons) {
     if (button.dataset["runId"] !== requestId) continue;
-    setRunButtonState(button, exitCode === 0 ? "succeeded" : "failed");
-    return;
+    const shell3 = button.closest(".code-block-shell");
+    if (shell3) showRun(shell3, button, run2);
   }
 }
 function attachCodeBlockCopyButtons(root, options = {}) {
@@ -73598,27 +73658,37 @@ function attachCodeBlockCopyButtons(root, options = {}) {
     if (!actions || actions.querySelector(".code-block-run")) continue;
     const runBtn = el("button", { class: "code-block-run", type: "button" });
     setRunButtonState(runBtn, "idle");
+    const runShell = shell3;
     runBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const currentCode = pre.querySelector("code");
       if (!currentCode) return;
-      const command = copyButtonText(currentCode).trim();
+      const command = runnableCommand(currentCode);
       if (!command) return;
-      const id = crypto.randomUUID();
-      runBtn.dataset["runId"] = id;
-      setRunButtonState(runBtn, "running");
+      const run2 = { id: crypto.randomUUID(), state: "running", outcome: null };
+      const key = runKey(pre, command);
+      if (key) rememberRun(key, run2);
+      showRun(runShell, runBtn, run2);
       runBtn.dispatchEvent(
         new CustomEvent(CODE_BLOCK_RUN_REQUEST_EVENT, {
           bubbles: true,
-          detail: { id, command }
+          detail: { id: run2.id, command }
         })
       );
     });
+    if (runsByBlock.size > 0) {
+      queueMicrotask(() => {
+        const command = runnableCommand(code);
+        const key = runKey(pre, command);
+        const run2 = key ? runsByBlock.get(key) : void 0;
+        if (run2 && !runBtn.dataset["runId"]) showRun(runShell, runBtn, run2);
+      });
+    }
     actions.prepend(runBtn);
   }
 }
-var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS, CODE_BLOCK_RUN_REQUEST_EVENT, SHELL_LANGUAGES, COMMON_SHELL_COMMANDS;
+var COPY_LABEL, COPIED_LABEL, FEEDBACK_MS, CODE_BLOCK_RUN_REQUEST_EVENT, SHELL_LANGUAGES, COMMON_SHELL_COMMANDS, REMEMBERED_RUN_LIMIT, runsByBlock;
 var init_code_block_copy = __esm({
   "src/renderer/markdown/code-block-copy.ts"() {
     init_unknown_value3();
@@ -73688,6 +73758,8 @@ var init_code_block_copy = __esm({
       "yarn",
       "zsh"
     ]);
+    REMEMBERED_RUN_LIMIT = 100;
+    runsByBlock = /* @__PURE__ */ new Map();
   }
 });
 
@@ -79361,7 +79433,7 @@ function syncSubagentTimeline(timeline, session, status, api2) {
       }
       desired.push(node2);
     }
-    const innerToolCalls = msg.toolCalls ?? [];
+    const innerToolCalls = msg.toolCalls;
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`;
       const sig = renderSignature(innerToolCalls);
@@ -80453,7 +80525,7 @@ function mountConversation(root, store2, api2) {
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store2.getState();
     if (!projectId || !threadId) {
-      setCodeBlockRunOutcome(list, id, null);
+      setCodeBlockRunOutcome(list, id, { exitCode: null, output: "" });
       return;
     }
     store2.emit("code_block_run_requested", { id, command, projectId, threadId });
@@ -81171,7 +81243,7 @@ function mountConversation(root, store2, api2) {
     const anchor2 = thread?.messages.find((m2) => m2.id === run2.anchorId);
     const anchorEl = list.querySelector(`[data-message-id="${run2.anchorId}"]`);
     if (!anchor2 || !anchorEl) return;
-    renderToolCards(anchorEl, anchor2.toolCalls ?? [], {
+    renderToolCards(anchorEl, anchor2.toolCalls, {
       ...messageToolCardOpts(anchor2),
       run: run2,
       liveStepId: liveStepMessageId(thread)
@@ -81184,7 +81256,7 @@ function mountConversation(root, store2, api2) {
       if (!memberEl?.querySelector(":scope > .tool-card-rollup")) continue;
       const msg = thread?.messages.find((m2) => m2.id === id);
       if (!msg) continue;
-      renderToolCards(memberEl, msg.toolCalls ?? [], {
+      renderToolCards(memberEl, msg.toolCalls, {
         ...messageToolCardOpts(msg),
         run: run2,
         liveStepId: liveStepMessageId(thread)
@@ -81244,10 +81316,7 @@ function mountConversation(root, store2, api2) {
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
     if (origin) body.append(buildMessageOriginMarker(origin, msg.editedByUser === true));
-    const nestReasoning = (
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      shouldNestReasoningInTools(msg.toolCalls ?? []) || multiStepRunFor(thread, msgId) !== void 0
-    );
+    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== void 0;
     appendMessageContent(body, msg, api2, acpWorkspaceRoot(store2), {
       ...nestReasoning ? { nestReasoningInTools: true } : {}
     });
@@ -81265,7 +81334,7 @@ function mountConversation(root, store2, api2) {
     if (!msg || !msgEl) return;
     hydrateRemoteArtifactImages(list, api2);
     const run2 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
     });
@@ -81700,7 +81769,7 @@ function mountConversation(root, store2, api2) {
     const wasPinned = pinnedToBottom;
     const readingAnchor = wasPinned ? null : captureReadingAnchor();
     const run2 = multiStepRunFor(thread, msgId);
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
       ...run2 ? { run: run2, liveStepId: liveStepMessageId(thread) } : {}
@@ -81744,7 +81813,10 @@ function mountConversation(root, store2, api2) {
     }),
     store2.on("reviewer_input_jump", jumpToReviewerInput),
     store2.on("code_block_run_finished", (result) => {
-      setCodeBlockRunOutcome(list, result.id, result.exitCode);
+      setCodeBlockRunOutcome(list, result.id, {
+        exitCode: result.exitCode,
+        output: result.output
+      });
     }),
     store2.on("settings_changed", () => {
       agentNamesRequested = false;
@@ -93031,6 +93103,19 @@ var init_wire_types2 = __esm({
   }
 });
 
+// src/shared/git/thread-branch.ts
+function threadGitBranchMismatch(threadBranch, currentBranch, options = {}) {
+  if (options.isolatedWorktree) return false;
+  return Boolean(threadBranch && currentBranch && threadBranch !== currentBranch);
+}
+function threadGitBranchMismatchMessage(threadBranch) {
+  return `This thread is for branch "${threadBranch}". Check it out, or continue on the current branch.`;
+}
+var init_thread_branch = __esm({
+  "src/shared/git/thread-branch.ts"() {
+  }
+});
+
 // src/shared/terminal/read-terminal.ts
 var READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT, READ_TERMINAL_DEFAULT_LINES;
 var init_read_terminal = __esm({
@@ -93038,6 +93123,78 @@ var init_read_terminal = __esm({
     READ_TERMINAL_ENABLED_SETTING = "readTerminalEnabled";
     READ_TERMINAL_ENABLED_DEFAULT = true;
     READ_TERMINAL_DEFAULT_LINES = 200;
+  }
+});
+
+// src/renderer/controller/code-block-runs.ts
+async function sendCodeBlockRunResult(store2, api2, result) {
+  const { projectId, threadId, shell: shell3 } = result;
+  if (store2.getState().activeProjectId !== projectId) return false;
+  await ensureThreadMessages(projectId, threadId);
+  if (store2.getState().activeProjectId !== projectId) return false;
+  const thread = getThreadById(store2, threadId);
+  if (!thread || needsHydration(thread)) return false;
+  const readTerminalEnabled = await api2.settings.get(READ_TERMINAL_ENABLED_SETTING).catch(() => false);
+  if (readTerminalEnabled === false) return false;
+  const [branchResult, promptResult] = await Promise.allSettled([
+    api2.git.currentBranch(projectId, threadId),
+    api2.git.promptState(projectId, threadId)
+  ]);
+  if (branchResult.status === "rejected") return false;
+  if (store2.getState().activeProjectId !== projectId) return false;
+  const currentBranch = branchResult.value;
+  const promptState = promptResult.status === "fulfilled" ? promptResult.value : null;
+  const current = getThreadById(store2, threadId);
+  if (!current) return false;
+  if (threadGitBranchMismatch(current.gitBranch, currentBranch, {
+    isolatedWorktree: current.worktree !== void 0
+  }))
+    return false;
+  const content = buildTextWithAttachments(
+    "",
+    [],
+    [{ label: `Shell: ${shell3.label}`, content: shell3.content }]
+  );
+  const workingBrief = nextWorkingBrief(current.workingBrief, content);
+  if (workingBrief && workingBrief !== current.workingBrief) {
+    setThreadWorkingBrief(store2, threadId, workingBrief);
+  }
+  const payload = {
+    content,
+    invokedSkills: [],
+    priorTodos: current.todos ?? [],
+    ...workingBrief !== void 0 ? { workingBrief } : {}
+  };
+  const messageId = addMessage(
+    store2,
+    threadId,
+    "user",
+    "",
+    void 0,
+    [{ kind: "shell", label: shell3.label, content: shell3.content }],
+    promptState ? {
+      ...promptState.startingCommit !== null ? { startingCommit: promptState.startingCommit } : {},
+      dirty: promptState.dirty
+    } : void 0
+  );
+  const queued = { messageId, payload, createdAt: Date.now() };
+  if (getThreadById(store2, threadId)?.status === "running") {
+    enqueueUserMessage(store2, threadId, queued);
+  } else {
+    startHumanTurnTree(store2, threadId);
+    dispatchAgentRun(store2, api2, threadId, payload, queued);
+  }
+  return true;
+}
+var init_code_block_runs = __esm({
+  "src/renderer/controller/code-block-runs.ts"() {
+    init_thread_helpers();
+    init_thread_branch();
+    init_build_text_with_attachments();
+    init_working_brief();
+    init_message_queue();
+    init_thread_hydration();
+    init_read_terminal();
   }
 });
 
@@ -93796,19 +93953,6 @@ var init_footer_model_picker = __esm({
     init_model_picker();
     init_acp_config_options();
     init_footer_reasoning_group();
-  }
-});
-
-// src/shared/git/thread-branch.ts
-function threadGitBranchMismatch(threadBranch, currentBranch, options = {}) {
-  if (options.isolatedWorktree) return false;
-  return Boolean(threadBranch && currentBranch && threadBranch !== currentBranch);
-}
-function threadGitBranchMismatchMessage(threadBranch) {
-  return `This thread is for branch "${threadBranch}". Check it out, or continue on the current branch.`;
-}
-var init_thread_branch = __esm({
-  "src/shared/git/thread-branch.ts"() {
   }
 });
 
@@ -95003,14 +95147,14 @@ function collectSubagentUsage(toolCalls, totals) {
       totals.outputTokens += session.usage.outputTokens;
     }
     for (const message2 of session.messages) {
-      collectSubagentUsage(message2.toolCalls ?? [], totals);
+      collectSubagentUsage(message2.toolCalls, totals);
     }
   }
 }
 function sumSubagentUsage(messages) {
   const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
   for (const message2 of messages) {
-    collectSubagentUsage(message2.toolCalls ?? [], totals);
+    collectSubagentUsage(message2.toolCalls, totals);
   }
   return totals;
 }
@@ -95019,7 +95163,7 @@ function estimateAssistantOutputTokens(messages) {
   for (const message2 of messages) {
     if (message2.role !== "assistant") continue;
     chars += message2.content.length;
-    for (const toolCall of message2.toolCalls ?? []) {
+    for (const toolCall of message2.toolCalls) {
       for (const subMessage of toolCall.subagent?.messages ?? []) {
         if (subMessage.role === "assistant") chars += subMessage.content.length;
       }
@@ -95463,7 +95607,7 @@ function lastExchange(store2, threadId) {
   const lastUser = userMessages.at(-1);
   const lastAssistant = assistantMessages.at(-1);
   if (!lastUser?.content.trim() || !lastAssistant) return null;
-  const toolNames = (lastAssistant.toolCalls ?? []).map((tc2) => tc2.name);
+  const toolNames = lastAssistant.toolCalls.map((tc2) => tc2.name);
   const openTodos = normalizeFollowUpOpenTodos(
     (thread.todos ?? []).filter((t2) => t2.status === "pending" || t2.status === "in_progress").map((t2) => t2.content)
   );
@@ -98739,15 +98883,20 @@ ${description}
       refreshSkillsCache();
       scheduleContextEstimate(0);
     }),
+    // A Play run's result goes straight to its thread's agent. Only when the
+    // thread cannot take it now does it fall back to a chip on that thread's
+    // draft, so the output is never lost.
     store2.on("code_block_run_finished", (result) => {
-      const active2 = result.threadId === activeComposerThreadId;
-      placeStoredShell(result.threadId, result.shell);
-      if (!active2) return;
-      targetSelect.value = "thread";
-      showToast(
-        result.exitCode === 0 ? "Command finished \u2014 result attached." : `Command ${result.exitCode === null ? "could not start" : `exited with code ${String(result.exitCode)}`} \u2014 result attached.`,
-        result.exitCode === 0 ? void 0 : { variant: "error" }
-      );
+      void sendCodeBlockRunResult(store2, api2, result).catch((error62) => {
+        console.error("[code-block-run] Could not send the result:", error62);
+        return false;
+      }).then((sent) => {
+        if (sent) return;
+        placeStoredShell(result.threadId, result.shell);
+        if (result.threadId !== activeComposerThreadId) return;
+        targetSelect.value = "thread";
+        showToast("Command finished \u2014 result attached to your next message.");
+      });
     }),
     store2.on("new_thread_opened", () => {
       void api2.agent.refreshModelContext().finally(() => {
@@ -98893,6 +99042,7 @@ var init_input_bar = __esm({
     init_pending_submissions();
     init_thread_helpers();
     init_message_queue();
+    init_code_block_runs();
     init_working_brief();
     init_build_text_with_attachments();
     init_composer_editor();
@@ -109235,12 +109385,12 @@ function mountTerminalsPane(listRoot, viewerRoot, store2, api2) {
     const tab = [...tabs.values()].find((t2) => t2.sessionId === id);
     if (!tab) return;
     tab.sessionId = null;
+    tab.term.write("", () => {
+      finishCodeBlockRun(tab, code);
+    });
     tab.term.writeln(
       code === -1 ? "\r\n\x1B[90m[Terminal stopped]\x1B[0m" : `\r
-\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`,
-      () => {
-        finishCodeBlockRun(tab, code);
-      }
+\x1B[90m[Process exited with code ${String(code)}]\x1B[0m`
     );
   });
   function createXterm() {
@@ -109278,8 +109428,10 @@ ${output2}` : "Terminal output: (none)"
     ].join("\n\n");
     store2.emit("code_block_run_finished", {
       id: request.id,
+      projectId: request.projectId,
       threadId: request.threadId,
       exitCode,
+      output: output2,
       shell: {
         tabId: tab.id,
         label: `${tab.label} \xB7 exit ${exitLabel}`,
@@ -109303,9 +109455,10 @@ ${output2}` : "Terminal output: (none)"
     const text2 = readTerminalText(tab);
     if (text2.length < 8) return;
     tab.naming = true;
+    const renamedByUser = () => tab.renamed;
     try {
       const title = await api2.agent.suggestTerminalTitle(text2);
-      if (title && !tab.renamed) {
+      if (title && !renamedByUser()) {
         setTabLabel(tab, title);
         tab.autoNamed = true;
       }
