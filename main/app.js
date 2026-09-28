@@ -37722,6 +37722,9 @@ function createDemoApi(scenario, options = {}) {
         currentBranch: forBranch ?? currentBranch,
         pr: null
       }),
+      // The demo has no linked worktrees, so there is never a detached one.
+      worktreeAttachment: () => resolved({ state: "attached" }),
+      reattachWorktree: () => Promise.reject(new Error("The demo has no thread worktrees")),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId, _threadId, branch) => {
         currentBranch = branch;
@@ -93806,6 +93809,22 @@ var init_thread_branch = __esm({
 });
 
 // src/renderer/views/footer-branch-status.ts
+function detachedTitle(detached) {
+  if (detached.uncommittedPick) {
+    return `This checkout is detached from ${detached.branch} because the rebase applied ${detached.uncommittedPick.commit.slice(0, 7)} but could not commit it, usually because signing failed. This commits the staged changes with that commit's message in a terminal for this thread, then continues the rebase.`;
+  }
+  if (detached.recovery === "bisect") {
+    return `This checkout is detached from ${detached.branch} because Git bisect is in progress. Reset the bisect in a terminal for this thread to return to the branch.`;
+  }
+  return detached.recovery ? `This checkout is detached from ${detached.branch} because a ${detached.recovery} stopped part-way. Continue it in a terminal for this thread; it puts the checkout back on the branch when it finishes.` : `This checkout is detached from ${detached.branch}. Your files are preserved. Reattach to put it back on the branch.`;
+}
+function recoveryCommand(detached, recovery) {
+  if (recovery === "bisect") return "git bisect reset";
+  const pick2 = detached.uncommittedPick;
+  if (!pick2) return `git ${recovery} --continue`;
+  const sign = pick2.signOption ? `${pick2.signOption} ` : "";
+  return `git commit ${sign}-C ${pick2.commit} && git rebase --continue`;
+}
 function reportBranchFailure(what, error62) {
   console.warn(`[footer-branch-status] failed to ${what}:`, error62);
 }
@@ -93838,6 +93857,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     chevronDownIcon("ui-icon ui-icon-sm")
   );
   trigger.append(label, chevron);
+  const reattachButton = el(
+    "button",
+    { type: "button", class: "branch-reattach-button", hidden: "" },
+    "Reattach"
+  );
   const menu = el("div", { class: "branch-picker-menu", hidden: "" });
   const filterInput = el("input", {
     type: "search",
@@ -93857,9 +93881,11 @@ function mountFooterBranchStatus(host, store2, api2) {
     "aria-label": "Branches"
   });
   menu.append(filterInput, list);
-  wrap.append(trigger, menu);
+  wrap.append(trigger, reattachButton, menu);
   host.append(wrap);
   let status = null;
+  let detached = null;
+  let reattaching = false;
   let refreshTimer = null;
   let branchToCopy = null;
   let branches = [];
@@ -93916,6 +93942,7 @@ function mountFooterBranchStatus(host, store2, api2) {
       wrap.hidden = true;
       branchToCopy = null;
       setOpen(false);
+      renderReattach();
       return;
     }
     const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
@@ -93963,6 +93990,79 @@ function mountFooterBranchStatus(host, store2, api2) {
           mismatch ? `${mismatchMessage} Copy branch name.` : `Copy branch name: ${displayBranch}`
         );
       }
+    }
+    renderReattach();
+  }
+  function renderReattach() {
+    const current = activeDetached();
+    const shown = current !== null && !isPickerMode() && !wrap.hidden;
+    reattachButton.hidden = !shown;
+    trigger.classList.toggle("is-detached", shown);
+    if (!shown) return;
+    const title = detachedTitle(current);
+    trigger.title = title;
+    reattachButton.title = title;
+    reattachButton.disabled = reattaching;
+    if (current.uncommittedPick) {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = "Commit and continue";
+      return;
+    }
+    if (current.recovery === "bisect") {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Reset the bisect and return to ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = "Reset bisect";
+      return;
+    }
+    if (current.recovery) {
+      reattachButton.setAttribute(
+        "aria-label",
+        `Continue the ${current.recovery} on ${current.branch} in a terminal`
+      );
+      reattachButton.textContent = `Continue ${current.recovery}`;
+      return;
+    }
+    reattachButton.setAttribute("aria-label", `Reattach checkout to ${current.branch}`);
+    reattachButton.textContent = reattaching ? "Reattaching\u2026" : "Reattach";
+  }
+  function activeDetached() {
+    return detached?.threadId === store2.getState().activeThreadId ? detached : null;
+  }
+  async function readDetachedAttachment(owner) {
+    try {
+      const attachment = await api2.git.worktreeAttachment(owner.projectId, owner.threadId);
+      return attachment.state === "detached" ? attachment : null;
+    } catch (error62) {
+      reportBranchFailure("inspect worktree attachment", error62);
+      return null;
+    }
+  }
+  async function reattach() {
+    const owner = getActiveThreadOwner(store2);
+    const current = activeDetached();
+    if (!owner || !current || reattaching) return;
+    if (current.recovery) {
+      store2.emit("request_terminal_command", recoveryCommand(current, current.recovery));
+      return;
+    }
+    reattaching = true;
+    renderReattach();
+    try {
+      const result = await api2.git.reattachWorktree(owner.projectId, owner.threadId);
+      showToast(
+        result.backupBranch ? `Reattached to ${result.branch}. Its previous tip is saved as ${result.backupBranch}.` : `Reattached to ${result.branch}`
+      );
+      store2.emit("git_branch_changed");
+    } catch (error62) {
+      showErrorToast("Could not reattach the checkout", error62);
+    } finally {
+      reattaching = false;
+      refreshNow();
     }
   }
   function filteredRows() {
@@ -94123,6 +94223,7 @@ function mountFooterBranchStatus(host, store2, api2) {
     const threadBranch = getActiveThreadBranch();
     branches = [];
     defaultBranch = null;
+    let nextDetached = null;
     try {
       const nextStatus = await api2.git.branchStatus(owner.projectId, owner.threadId, threadBranch);
       if (token !== refreshToken) return;
@@ -94131,7 +94232,11 @@ function mountFooterBranchStatus(host, store2, api2) {
       if (token !== refreshToken) return;
       reportBranchFailure("read branch status", error62);
       status = null;
+      const attachment = await readDetachedAttachment(owner);
+      if (token !== refreshToken) return;
+      nextDetached = attachment ? { ...attachment, threadId: owner.threadId } : null;
     }
+    detached = nextDetached;
     if (isPickerMode()) {
       try {
         await loadBranches(token);
@@ -94180,6 +94285,9 @@ function mountFooterBranchStatus(host, store2, api2) {
       showErrorToast("Failed to copy branch name", error62);
     });
   }
+  reattachButton.addEventListener("click", () => {
+    void reattach();
+  });
   trigger.addEventListener("click", () => {
     if (!isPickerMode()) {
       const url2 = getVisiblePr()?.url;
