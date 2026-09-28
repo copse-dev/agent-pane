@@ -173,6 +173,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-sonnet-5-5": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 2.5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "gpt-4o": {
         inputPricePerMTok: 2.5,
         outputPricePerMTok: 10,
@@ -610,11 +618,12 @@ var init_model_catalog = __esm({
     init_model_catalog_generated();
     init_model_label();
     init_model_selection();
-    DEFAULT_CLOUD_MODEL = "claude-sonnet-5";
+    DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
       "claude-fable-5-1",
       "claude-fable-5",
+      "claude-sonnet-5",
       "claude-sonnet-4-6",
       "claude-opus-5",
       "claude-opus-4-8",
@@ -635,6 +644,7 @@ var init_model_catalog = __esm({
       "claude-fable-5-1": "Claude Fable 5.1",
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
+      "claude-sonnet-5-5": "Claude Sonnet 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
