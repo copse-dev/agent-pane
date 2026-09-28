@@ -118,6 +118,11 @@ import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-re
 import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/plugins/background-tasks-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
 import { assessShellHarm, type ShellHarmContext } from './shell-harm.ts'
+import {
+  guardedYoloTierReason,
+  shadowTierScreening,
+  tierScreeningClassifier,
+} from './tier-screening.ts'
 import { isCompiledProgram, readScriptForHarm } from '@copse/shell-guard/script-files.ts'
 import {
   TRUSTED_SSH_HOSTS_SETTING,
@@ -1169,7 +1174,10 @@ export async function ensureShellCommandPermitted(
   const outsideSandbox =
     shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
     (guardedYolo && sandboxEnabled && routeShellCommand(command).outcome === 'allow')
-  const auditGuardedYolo = (userResponse: 'approved' | 'declined' | 'not-required'): void => {
+  const auditGuardedYolo = (
+    userResponse: 'approved' | 'declined' | 'not-required',
+    promptedBy?: string[],
+  ): void => {
     if (!guardedYolo || !harmDecision) return
     const originalCommand = opts.originalCommand ?? command
     recordPermissionDecision({
@@ -1179,10 +1187,23 @@ export async function ensureShellCommandPermitted(
       effectiveMode: 'guarded-yolo',
       sandboxState: sandboxEnabled && !outsideSandbox ? 'project-sandbox' : 'unsandboxed',
       harmDecision: harmDecision.action,
-      policyDecision: effectiveAction,
-      reasons: effectiveReasons,
+      policyDecision: promptedBy ? 'prompt' : effectiveAction,
+      reasons: promptedBy ?? effectiveReasons,
       userResponse,
     })
+  }
+
+  // Guarded YOLO's second opinion (tier-screening.ts). A classifier connection
+  // chosen for safety screening may turn an unsandboxed allow into the harm
+  // gate's one-time confirmation; it can never allow what the gate did not.
+  // A contained command needs no second opinion: the sandbox bounds it.
+  if (guardedYolo && effectiveAction === 'allow' && (!sandboxEnabled || outsideSandbox)) {
+    const tierReason = await guardedYoloTierReason(command, workspaceRoot, opts.signal)
+    if (tierReason) {
+      const approved = await promptGuardedYoloHarm(command, [tierReason], false, opts.signal)
+      auditGuardedYolo(approved ? 'approved' : 'declined', [tierReason])
+      return approved
+    }
   }
 
   if (effectiveAction === 'allow') {
@@ -1224,6 +1245,20 @@ export async function ensureShellCommandPermitted(
     )
   )
     return true
+
+  // Record, in the background, what a classifier connection would have approved
+  // here. The prompt below does not wait for it and nothing changes.
+  if (!forceAsk && tierScreeningClassifier()) {
+    const harm = assessShellHarm(command, {
+      workspaceRoot,
+      homeDir: homedir(),
+      canonicalizePath: realpathSync.native,
+      readScript: readScriptForHarm,
+      isCompiledProgram,
+      ...harmHostReachContext(),
+    })
+    void shadowTierScreening(command, workspaceRoot, harm.action)
+  }
 
   // A user may explicitly authorize one constituent for bounded exact retries in
   // this human turn tree. Conservative top-level composition is allowed only

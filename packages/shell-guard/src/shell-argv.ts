@@ -563,6 +563,14 @@ function withoutRawRedirects(argv: string[]): string[] {
 }
 
 /**
+ * Quote-aware fallback argv for one already-separated shell segment. This keeps
+ * Windows separators and unknown variable spellings while dropping redirects.
+ */
+export function rawShellArgv(segment: string): string[] {
+  return withoutRawRedirects(rawTokens(segment))
+}
+
+/**
  * Argv arrays for every simple command in a command line, from two lexers whose
  * results are unioned:
  *
@@ -642,7 +650,7 @@ export function shellSegments(command: string, includeRawFallback = true): strin
   // made `1` a command head, and that phantom head's "not a plain read" blocker
   // laundered a credential read: `ls ~/.ssh/id_* 2>&1` escaped the hard deny.
   for (const segment of command.split(/&&|\|\||(?<![<>])&(?!>)|[;|(\r\n]+/)) {
-    const argv = withoutRawRedirects(rawTokens(segment))
+    const argv = rawShellArgv(segment)
     if (argv.length > 0) segments.push(argv)
   }
 
@@ -653,6 +661,46 @@ export interface ShellRedirect {
   target: string
   /** True for `>` — the file's previous contents are gone whether or not the write succeeds. */
   truncates: boolean
+}
+
+/** Whether a command redirects descriptor 0 from a file, heredoc/string, or another descriptor. */
+export function hasShellInputRedirect(command: string): boolean {
+  // Let the shared parser reject malformed source, then retain the source text so
+  // `3< file` (descriptor 3) can be distinguished from `< file` (stdin). The
+  // parser's token stream drops that adjacency and reports both as the same `<`.
+  try {
+    parseShellCommand(command)
+  } catch {
+    return false
+  }
+  let quote: '"' | "'" | null = null
+  for (let index = 0; index < command.length; index++) {
+    const char = command.charAt(index)
+    if (quote !== null) {
+      if (quote === '"' && char === '\\') index++
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '\\') {
+      index++
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char !== '<' || command.charAt(index + 1) === '(') continue
+
+    let digitStart = index
+    while (digitStart > 0 && /\d/.test(command.charAt(digitStart - 1))) digitStart--
+    if (digitStart === index) return true
+    const beforeDigits = command.charAt(digitStart - 1)
+    // Digits are an IO-number only when they begin a shell word. In `arg3<file`,
+    // `arg3` remains an argument and the redirect still targets stdin.
+    if (digitStart > 0 && !/[\s;&|()]/.test(beforeDigits)) return true
+    if (/^0+$/.test(command.slice(digitStart, index))) return true
+  }
+  return false
 }
 
 /**
