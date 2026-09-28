@@ -141,6 +141,17 @@ describe('caseTruth', () => {
     assert.deepEqual(cosmetic, { labelled: true, level: 'medium', because: ['reference #2'] })
   })
 
+  it('has no truth for a change that never merged, so it is not scored', () => {
+    const open = riskCase(1, { state: 'open', mergedAt: null, observedDays: 0 })
+    assert.deepEqual(caseTruth(open), { labelled: false, pending: ['not merged (open)'] })
+    const score = scoreRatings(
+      corpus([open]),
+      ratings([{ number: 1, risk: 'high', reason: 'IPC.' }]),
+    )
+    assert.equal(score.all.scored, 0)
+    assert.deepEqual(score.unlabelled, [{ number: 1, pending: ['not merged (open)'] }])
+  })
+
   it('stays unlabelled while any item is unverified', () => {
     const truth = caseTruth(
       riskCase(1, { evidence: [evidence('regression'), evidence('unverified', '#9')] }),

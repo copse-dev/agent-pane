@@ -235,6 +235,41 @@ describe('timelineEvidence', () => {
     )
     assert.equal(requested.length, 2, 'a short page ends the walk')
   })
+
+  it('dates a cross-reference by when it was made, not by the referencing issue', async () => {
+    const client: GitHubClient = {
+      get: (path) =>
+        Promise.resolve(
+          path.includes('page=1')
+            ? [
+                {
+                  event: 'cross-referenced',
+                  created_at: '2026-09-11T00:00:00Z',
+                  source: {
+                    issue: { number: 2, title: 'Older issue', created_at: '2026-09-01T00:00:00Z' },
+                  },
+                },
+                {
+                  event: 'cross-referenced',
+                  created_at: '2026-09-09T00:00:00Z',
+                  source: {
+                    issue: {
+                      number: 3,
+                      title: 'Before the merge',
+                      created_at: '2026-09-01T00:00:00Z',
+                    },
+                  },
+                },
+              ]
+            : [],
+        ),
+    }
+    const found = await timelineEvidence(client, 100, MERGED, 7, new Set())
+    assert.deepEqual(
+      found.map((item) => [item.ref, item.daysAfterMerge]),
+      [['#2', 1]],
+    )
+  })
 })
 
 describe('ratingSource', () => {

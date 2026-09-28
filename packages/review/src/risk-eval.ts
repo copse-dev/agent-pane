@@ -207,12 +207,15 @@ export type CaseTruth =
   | { readonly labelled: false; readonly pending: readonly string[] }
 
 /**
- * The outcome-based truth for one case. Any unverified evidence leaves it
- * unlabelled. A functional regression the change caused is High; a cosmetic
- * regression, or a correction to something it left incomplete, is Medium;
- * nothing, or only unrelated mentions, is Low.
+ * The outcome-based truth for one case. A change that has not merged has no
+ * outcome to judge, and any unverified evidence leaves a merged one
+ * unlabelled too. A functional regression the change caused is High; a
+ * cosmetic regression, or a correction to something it left incomplete, is
+ * Medium; nothing, or only unrelated mentions, is Low.
  */
 export function caseTruth(riskCase: RiskCase): CaseTruth {
+  if (riskCase.state !== 'merged')
+    return { labelled: false, pending: [`not merged (${riskCase.state})`] }
   const pending = riskCase.evidence
     .filter((item) => item.verdict === 'unverified')
     .map((item) => `${item.source} ${item.ref}`)
@@ -510,7 +513,7 @@ export function renderRiskReport(score: RiskScore): string {
     `## Risk-rating calibration: ${score.label}`,
     '',
     `Ratings from ${score.source}; truth from verified outcomes within ${String(score.windowDays)} days of merge (eval v${String(score.evalVersion)}).`,
-    `Scored ${String(score.cases.length)}; unrated ${String(score.unrated.length)}; awaiting verdicts ${String(score.unlabelled.length)}.`,
+    `Scored ${String(score.cases.length)}; unrated ${String(score.unrated.length)}; without a truth yet (unmerged or awaiting verdicts) ${String(score.unlabelled.length)}.`,
     '',
     ...calibrationLines('All scored cases', score.all),
     ...calibrationLines(`Mature cases (full ${String(score.windowDays)}-day window)`, score.mature),

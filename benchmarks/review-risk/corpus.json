@@ -42,6 +42,24 @@
           "excerpt": "Give the New project dialog its accent back, and a test that keeps it A follow-up from #1642, found while chasing that PR's CI rather than by looking for it. ## The Create button was never accented `new-project-dialog.ts` asked for `class: 'ui-btn pr…",
           "verdict": "unrelated",
           "note": "#1768 fixes a pre-existing missing accent found while chasing #1642's CI (\"was never accented\")."
+        },
+        {
+          "source": "reference",
+          "ref": "#1535",
+          "title": "perf: collapse the duplicate open-PR lookup a thread switch fires",
+          "daysAfterMerge": 0,
+          "excerpt": "Second occurrence of the same thing, fixed in `2b1f1332`. `main` moved to `c27fd069` (#1642, \"Run model comparison from a bubble instead of a prompt\"), which re-rendered the screenshot corpus again. The merge at `53836e60` brought it in and once more settled the binary conflicts in favour of this branch — this time two files: - `portrait-…",
+          "verdict": "unrelated",
+          "note": "A base-branch merge note; #1642 re-rendered screenshots it had to reconcile."
+        },
+        {
+          "source": "reference",
+          "ref": "#1533",
+          "title": "perf: batch the transcript rebuild's per-message passes on a thread switch",
+          "daysAfterMerge": 0.9,
+          "excerpt": "…failures across all three is not a plausible mechanism. Both shards were green on this branch earlier today. What did change is the base. `main` moved from `ba745a5a` to `9503a3d0` in a few hours, landing the VNC feature (#1759), model comparison (#1642), a batch of auto-approval work, and a dependency bump (#1771) — and this branch's merge caught that mid-flight. So `14025596` brings the branch to current `main` and nothing else; the diff against `main` is still exactly: ``` src/renderer/views/c…",
+          "verdict": "unrelated",
+          "note": "Lists #1642 among changes that moved main; does not blame it."
         }
       ]
     },
@@ -73,6 +91,24 @@
           "excerpt": "(cross-referenced from a comment or commit, not the description)",
           "verdict": "unrelated",
           "note": "Cross-reference only; #1768 does not blame #1683."
+        },
+        {
+          "source": "reference",
+          "ref": "#1676",
+          "title": "Add a plan for a user-facing documentation site",
+          "daysAfterMerge": 0,
+          "excerpt": "Base branch is fixed by #1683, so I've merged `main` in (`c33a63d`) and CI is re-running against it. Closing the loop on the two comments above — no further action needed from anyone here. Worth noting #1683 took the harder path rather than swapping the expected values: it re-p…",
+          "verdict": "unrelated",
+          "note": "Notes #1683 fixed the base branch."
+        },
+        {
+          "source": "reference",
+          "ref": "#1642",
+          "title": "Run model comparison from a bubble instead of a prompt",
+          "daysAfterMerge": 0.1,
+          "excerpt": "## Merge commit `a96e3c9`: `check` green, e2e worse (6/8 red), nothing from this diff Merged `main` in and resolved the one non-screenshot conflict. **#1683 landed the same wire-trace fix this branch carried in `fd3d726`** — both re-point the three stale assertions at the concrete MCP tool name. I took main's side wholesale, so this branch is byte-identical to main on that file and `fd3d726` nets to not…",
+          "verdict": "unrelated",
+          "note": "Notes #1683 landed the same fix #1642 carried."
         }
       ]
     },
@@ -121,6 +157,15 @@
           "excerpt": "Send a terminal's output to the window that opened it Follow-up to #1715, from the same investigation into #1704. That PR fixed the Changes pop-out; this is the Terminal one, which was worse. ## The problem A pane pop-out could op…",
           "verdict": "unrelated",
           "note": "Same as #1769: the terminal half of the investigation."
+        },
+        {
+          "source": "reference",
+          "ref": "#1723",
+          "title": "Bind the captured createModel so lint passes on main",
+          "daysAfterMerge": 0,
+          "excerpt": "Closing — **`main` already has this fix.** #1715 (`6df6cbf4`) landed the identical change while this was queued: ```ts // Bound eagerly: the spy below replaces `monaco.editor.createModel`, so the // original has to be captured now rather than looked up at call time. const createModel = monaco.edi…",
+          "verdict": "unrelated",
+          "note": "Closed as already fixed on main by #1715."
         }
       ]
     },
@@ -305,6 +350,24 @@
           "excerpt": "(cross-referenced from a comment or commit, not the description)",
           "verdict": "unrelated",
           "note": "Cross-reference only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1792",
+          "title": "fix(settings): give the Settings title the interface face, not the serif",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…sidebar padding failure I suggested `--ui-scale` was the likely lever and said I had not confirmed it. It was not that. Both of the remaining failures come from one change — `e9b693fb`, \"Give sidebar, PR, and roadmap list rows one vertical rhythm\" (#1790): ```diff - padding: var(--spacing-md) var(--projects-action-inset) var(--spacing-md) 28px; + padding: var(--list-row-padding-block) var(--projects-action-inset) … ``` ```css --list-row-padding-block: var(--spacing-sm); /* 8px */ ``` So `.cha…",
+          "verdict": "incomplete",
+          "note": "\"Both of the remaining failures come from one change — #1790\": e2e expectations its padding change broke; test-suite only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1533",
+          "title": "perf: batch the transcript rebuild's per-message passes on a thread switch",
+          "daysAfterMerge": 1.1,
+          "excerpt": "…settings-styling` now passes (#1792 landed), and the VNC failure is gone (#1793). Three blockers remain, none in this diff — which is still `conversation.ts` plus its test. | shard | spec | cause | |---|---|---| | 3 | `list-row-rhythm.e2e.ts:145` | #1790's own new spec — \"expected two seeded roadmap rows\" has never passed | | 6 | `settings-model-parameters.e2e.ts:135` | **new** — `Expected: 7, Received: 8` | | 7 | `thread-sidebar-selection.e2e.ts:108` | stale since #1790 moved `.chat-row` to 8px; st…",
+          "verdict": "incomplete",
+          "note": "\"#1790's own new spec — expected two seeded roadmap rows — has never passed\"; test-suite only."
         }
       ]
     },
@@ -709,7 +772,26 @@
       ],
       "posted": null,
       "observedDays": 7,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1910",
+          "title": "fix(canvas): key previews strictly on the artefact's own thread",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…n the result. That trade-off is recorded at the site. Say the word if you'd rather have the round trip. ## Verification Re-run on the current head, which merges `main` (`fc3d9d7`) into the branch — taken to pick up the `markQuit` teardown fix from #1922, without which the `multiple-main-windows` shard was red here: | check | result | | --- | --- | | unit tier | **7631 pass / 0 fail / 1 skipped** | | `typecheck`, `lint`, `format:check` | clean | | merge of `main` | clean — no conflicts, diff still…",
+          "verdict": "unrelated",
+          "note": "Picks up a teardown fix from #1922."
+        },
+        {
+          "source": "reference",
+          "ref": "#1767",
+          "title": "Public-readiness docs, templates, and proposed acceptances",
+          "daysAfterMerge": 0.3,
+          "excerpt": "…d `site/privacy.html` described the old scheme — including \"Windows DPAPI\", now Credential Manager. Both now match the wording #1898 landed in `docs/privacy-data-flow.md` / `docs/profiles.md`, including the read-and-rewrite path for older blobs. - **#1922** added the environment scan to first-run setup, not just Settings. - **#1763 has merged and #1248 is closed**, so the N1 row in the ledger reads as landed rather than planned. Re-checked against `main` and unchanged: macOS 26+ `arm64`/`x64`, the f…",
+          "verdict": "unrelated",
+          "note": "Docs note describing what #1922 added."
+        }
+      ]
     },
     {
       "number": 1924,
@@ -1013,6 +1095,42 @@
           "excerpt": "test(settings): commit the scroll-reserve reference screenshot Follow-up to #2106. One PNG, nothing else. ## What was missed #2106 added the scroll-reserve case to `tests/demo/settings-footer.demo.ts`, which ends with `saveElementScreensho…",
           "verdict": "incomplete",
           "note": "#2106 added a screenshot case without committing its reference."
+        },
+        {
+          "source": "reference",
+          "ref": "#2068",
+          "title": "Accept valid flip-up placement in the Settings model-picker eval",
+          "daysAfterMerge": 0,
+          "excerpt": "…is on `main`, credited to this PR. It could not go in on its own: the sticky action bar intercepted the click before the spec ever reached the assertion, so this PR stayed red for a reason that had nothing to do with its diff. The interception fix (#2106) had the mirror problem — removing the interception let the spec run and it then failed here, at `Expected: >= 3, Received: -324`. Neither half was green alone, so #2106 carried this change **verbatim** rather than waiting on merge order. The blob…",
+          "verdict": "unrelated",
+          "note": "#2106 let #2068's own spec run; the failing assertion was #2068's."
+        },
+        {
+          "source": "reference",
+          "ref": "#2067",
+          "title": "Keep settings controls clickable beneath the sticky footer",
+          "daysAfterMerge": 0,
+          "excerpt": "Closing as superseded by #2106, which has landed (`ecb4e373`). The diagnosis here was correct, and this PR independently corroborated it: removing the interception via `pointer-events: none` surfaced the identical `-324` in `settings-model-picker-bounds.e2e.ts` that #2106 hit by…",
+          "verdict": "unrelated",
+          "note": "Closed as superseded by #2106."
+        },
+        {
+          "source": "reference",
+          "ref": "#2134",
+          "title": "chore: add oxfmt alongside Prettier as a formatter trial",
+          "daysAfterMerge": 0,
+          "excerpt": "…ot this PR: all four failures (`settings-automations`, `settings-model-picker-bounds`, `settings-plugins`, `settings-saved-provider-key`) were `element click intercepted ... <div class=\"settings-buttons\">` — the exact bug, coordinates included, that #2106 fixed. That fix landed at 20:51:21 UTC; this PR's shard started at 20:51:14 UTC, seven seconds earlier. The rebase picks it up. Not verified: anything needing `node_modules` (`typecheck`, `lint`, the unit suite). This branch adds a dev dependency,…",
+          "verdict": "unrelated",
+          "note": "Failures were the bug #2106 fixed; rebase picks it up."
+        },
+        {
+          "source": "reference",
+          "ref": "#2138",
+          "title": "chore(e2e): review screenshots for #1965",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…the content, and the shots are shorter — the elements are being captured with more of their lower portion clipped or veiled than before. ### Cause not yet isolated The obvious suspect was the `scroll-padding-bottom` added to `.settings-content` in #2106, since these specs `scrollIntoView` and then immediately screenshot: ```js await $('#advisorModel').scrollIntoView({ block: 'center' }) await saveElementScreenshot(ADVISOR_PLUGIN_ROW, 'advisor-pair-hint-warn.png') ``` **Tested, and it is not that.…",
+          "verdict": "unrelated",
+          "note": "Names #2106 as a suspect later ruled out (#2151)."
         }
       ]
     },
@@ -1180,6 +1298,15 @@
           "excerpt": "fix(ci): pin oxfmt, not prettier, for the site-markdown deploy ## Bug I broke this in #2260. The Pages job builds the site's Markdown twins in a scratch npm prefix, pinning each dependency's range from this repo's manifest and treating a missing entry…",
           "verdict": "regression",
           "note": "\"I broke this in #2260\": the Pages deploy pinned prettier, not oxfmt."
+        },
+        {
+          "source": "reference",
+          "ref": "#2256",
+          "title": "Classify browser hosts by parsing the address, not by string prefix",
+          "daysAfterMerge": 0,
+          "excerpt": "…which is why it removes more than it adds. Every test both PRs added is kept. ## Verification on the rebased head - `pnpm run check` — **8,169/8,169 passed**, all static gates green - `oxfmt --check .` — clean (rebased past the formatter switch in #2260) - `browser-origin-policy` 23/23, `credential-url` 17/17 - 14/14 on the probe above Happy to narrow this to just the four cases and leave both parsers in place if the consolidation is what made it read as a duplicate — say the word.",
+          "verdict": "unrelated",
+          "note": "Rebased past the formatter switch."
         }
       ]
     },
@@ -1225,6 +1352,33 @@
           "excerpt": "merged 2026-09-03T22:05:54Z",
           "verdict": "unrelated",
           "note": "The failing step was `pnpm audit --audit-level=high` (an advisory), not the extraction."
+        },
+        {
+          "source": "reference",
+          "ref": "#2314",
+          "title": "docs(plans): library splits map and Qwen Code as an ACP backend",
+          "daysAfterMerge": 0,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only; no text blames #2319."
+        },
+        {
+          "source": "reference",
+          "ref": "#2331",
+          "title": "fix(permissions): say why the sandbox blocks a command in plain English",
+          "daysAfterMerge": 0,
+          "excerpt": "Thanks — all of it addressed, in `7b204d4` (merge) and `af961db` (fixes). ### Blocking: rebase and re-target Merged `origin/main` and resolved both conflicts in favour of main, then re-applied the platform fix where #2319 moved the code: - `packages/hooks-dialects/src/command-hook-runner.ts:213` — the `runtimeError` string. - `packages/hooks-dialects/src/sandbox-failure-detection.ts:2` — the header comment. You were right that resolving in favour of `main` alone dr…",
+          "verdict": "unrelated",
+          "note": "Re-applied a fix where #2319 moved the code."
+        },
+        {
+          "source": "reference",
+          "ref": "#2303",
+          "title": "Library splits: extract reusable packages from agent-pane (tracking)",
+          "daysAfterMerge": 2.2,
+          "excerpt": "…utilities | `packages/std` | 832a6e7 (#2315) | | `@copse/shell-guard` | `packages/shell-guard` | 6ff7639 (#2316) | | `@copse/thread-store` | `packages/thread-store` | abbada3 (#2317) | | `@copse/hooks-dialects` | `packages/hooks-dialects` | f3930bc (#2319) | | `@copse/plugin-sdk` | `packages/plugin-sdk` | 3b5bedc (#2335) | | Process diagnostics → `@copse/procwatch` | `packages/procwatch` | e4b19c1 (#2349) | That is every Easy/Medium item at the top of the register plus one of the High-value Mediums.…",
+          "verdict": "unrelated",
+          "note": "Tracking-issue table listing the extraction."
         }
       ]
     },
@@ -1462,7 +1616,17 @@
         "reviewIssues": null
       },
       "observedDays": 0,
-      "evidence": [],
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3251",
+          "title": "Measure Copse Reviewer's PR risk rating against what happened after merge",
+          "daysAfterMerge": 0,
+          "excerpt": "…*Size and change shape:** no change under 100 source lines regressed (0 of 37). But every regression came from a mostly *additive* change that altered an existing decision or behaviour, so an added-vs-deleted ratio is not a safe proxy for \"low\". - **#3079** was rated High for crossing \"renderer-to-main dispatch and persisted thread review metadata … an API protocol version bump\". The reason names surfaces touched, not what the change does to them (optional fields, no migration). It merged today, so i…",
+          "verdict": "unrelated",
+          "note": "This eval's own description."
+        }
+      ],
       "note": "Case study from the task: rated High for an optional field on a persisted report type, an optional field on the renderer-to-main run payload (API protocol 20 -> 21), and a gated prompt paragraph; no migration, nothing existing changed shape. Merged 2026-09-27, so its outcome window has barely started."
     },
     {
@@ -1554,7 +1718,17 @@
         "reviewIssues": null
       },
       "observedDays": 0.9,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3244",
+          "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+          "daysAfterMerge": 0,
+          "excerpt": "…'s stale-pane render. I took CI's Linux render instead of restoring the older blob `2d672cd`. - Its unstaged list still shows the sandbox `.bashrc`, which #3181 and #3191 cover. - `process-manager` and `process-manager-agent-working` are left out: #3121 changed them on `main`, and `main`'s copies win. **24 references re-rendered by the fixes above**, stable across runs D, E and F. ## Risk and review Low. The diff touches only e2e specs, the wdio harness, two capture helpers and reference PNGs. I…",
+          "verdict": "unrelated",
+          "note": "Screenshot re-baseline for the intended change."
+        }
+      ]
     },
     {
       "number": 3123,
@@ -1593,6 +1767,15 @@
           "excerpt": "…38) **114 stale references**, taken from run 36271978692 (`289ebf9`) and stable across runs A, B and C below. - Most of the drift is UI already on `main`: - #3123's header bands, group headers and row rhythm (Explorer, Changes, Shells, Tabs, Roadmap) - the badge recipe - the Classifiers nav item - copy casing and i…",
           "verdict": "unrelated",
           "note": "Screenshot references re-baselined for the intended UI change."
+        },
+        {
+          "source": "reference",
+          "ref": "#3240",
+          "title": "Four e2e screenshot problems on main: tiny canvas render, truncated automation names, clipped Hooks chip, mid-load reference",
+          "daysAfterMerge": 0,
+          "excerpt": "5. **`git-changes-committed-diff.png` on main shows the wrong diff.** #3123 merged with the render from its commit 5856148 (blob `32ef764`), which captured the stale `staged.ts` diff rather than the committed file's diff (see https://github.com/copse-dev/agent-pane/pull/3123#issuecomment-5847901551). The previous reference…",
+          "verdict": "incomplete",
+          "note": "#3123 merged a reference screenshot captured from the stale diff; test references only."
         }
       ]
     },
@@ -1673,6 +1856,15 @@
           "excerpt": "Keep an acronym canonical next to punctuation in humanized tool names ## Outcome Fixes a regression from #3128: a tool named `MCP: tool` rendered as \"Mcp: tool\". The regression shows in the `empty-mcp-tool-details` screenshot on current CI runs. The cause is that `huma…",
           "verdict": "cosmetic",
           "note": "\"Fixes a regression from #3128\": a tool named `MCP: tool` rendered as \"Mcp: tool\"."
+        },
+        {
+          "source": "reference",
+          "ref": "#3126",
+          "title": "Keep ACP activity compact and normalize Copse tool labels",
+          "daysAfterMerge": 0.2,
+          "excerpt": "## Outcome ACP activity stays compact by default, and Copse tool labels from Codex and Claude ACP are normalized. This is reconciled with current `main` in merge 35dc1cb32. Where the two conflicted, it keeps main's sentence-case tool names (#3128) and main's grouping of an expanded run into steps by assistant message. It does not use the flat list or Title Case this PR originally had. What this PR adds on top of main: - **Reasoning is closed by default, even while live.** Blank reasoning is…",
+          "verdict": "unrelated",
+          "note": "Keeps #3128's sentence-case names in a merge."
         }
       ]
     },
@@ -1774,7 +1966,17 @@
         "reviewIssues": null
       },
       "observedDays": 1.2,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3214",
+          "title": "Add four missing e2e reference screenshots",
+          "daysAfterMerge": 0,
+          "excerpt": "…release bump) declined its screenshot review so the release does not carry unrelated references. The other four candidates on that PR are already on `main` and are not included. A fifth, `thread-reference-sent-inline.png`, was committed to `main` by #3132 while this was open; the merge keeps that copy. ## Validation - Each file is absent from `origin/main` and added unchanged from the compare commit. - Resolution matches the committed siblings (2x: e.g. `acp-prompt-interruption-*` 2400×1276, `visua…",
+          "verdict": "unrelated",
+          "note": "Notes a screenshot #3132 committed."
+        }
+      ]
     },
     {
       "number": 3133,
@@ -1802,7 +2004,17 @@
         "reviewIssues": null
       },
       "observedDays": 1.2,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3135",
+          "title": "Theme the terminal and Monaco editors from the interface tokens",
+          "daysAfterMerge": 0,
+          "excerpt": "…e`. This isn't this PR's. It's main's regression in the tool-result cache watcher. Arming it blocks the first cacheable tool call on Linux. The fix is #3195, which isn't merged yet, so I ported it here as c9dec4720. I also merged the latest `main` (#3133) into the same push, c39dde24e. CI re-runs on that. --- _Generated by [Claude Code](https://claude.ai/code)_",
+          "verdict": "unrelated",
+          "note": "Merge note."
+        }
+      ]
     },
     {
       "number": 3135,
@@ -2053,6 +2265,15 @@
           "excerpt": "…about it: - It makes the specs behind the drift deterministic. - It re-baselines the references that were stale on `main`, from CI's Linux renders, following #3189. **138 reference PNGs change.** Each one was viewed, and each matched at least two independent CI renders of the same code within the filter's noise threshold…",
           "verdict": "unrelated",
           "note": "\"#3189's regression list\" is the list of real bugs #3189 recorded, not bugs it caused."
+        },
+        {
+          "source": "reference",
+          "ref": "#3123",
+          "title": "Give right-panel panes one header band, one group-header recipe and one row rhythm",
+          "daysAfterMerge": 0,
+          "excerpt": "…-committed-diff.png`. In the new render the Committed row (`committed.ts`) is selected, but the viewer shows the `staged.ts` diff (the helper file with `value = 1 → 2`), not the one-line `committed.ts` insert. That is the early-capture bug from the #3189 triage. It is the same candidate `ab4e9a07` deliberately left out. The fix is the spec wait in #3209, not this PR's pane-chrome change. Please restore this file to main's version: ```sh git checkout origin/main -- tests/e2e/screenshots/git-changes…",
+          "verdict": "unrelated",
+          "note": "Refers to a bug #3189's triage recorded, not one it caused."
         }
       ]
     },
@@ -2344,7 +2565,17 @@
         "reviewIssues": 0
       },
       "observedDays": 1.1,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3079",
+          "title": "Finish three nearly-resolved backlog issues (#2450, #2493, #2519)",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…very #3181 file matches `main` exactly. The diff against `main` is back to the three backlog fixes (32 files, +924/−29), so the high-risk sandbox note in the generated summary no longer applies. - **API protocol version conflict:** `main` is at v20 (#3208), and its comment leaves v18 and v19 for open PRs. This PR's optional `initiator` on the review report still counts as a shape change against `main`, so I moved it to **v21**, regenerated `schemas/api-protocol.manifest.json`, and `gen-api-protocol -…",
+          "verdict": "unrelated",
+          "note": "API protocol version bookkeeping note."
+        }
+      ]
     },
     {
       "number": 3209,
@@ -2713,6 +2944,33 @@
           "excerpt": "Let the PR opener answer for agent-authored commits in the CLA check, and let it comment ## Outcome The CLA check from #3231 failed every pull request that contains agent-written commits. On #3123 it reported `@claude` as an unsigned author. **Cause of the false failure.** Agent and…",
           "verdict": "regression",
           "note": "\"The CLA check from #3231 failed every pull request that contains agent-written commits.\""
+        },
+        {
+          "source": "reference",
+          "ref": "#3148",
+          "title": "Add the Activity panel: answer background approvals without switching threads",
+          "daysAfterMerge": 0,
+          "excerpt": "On fad7cc3 (the merge of main), the `CLA` status and the CLA workflow's `check` job are red. Both come from the CLA workflow added on main in #3231, not from this PR's code. **1. Agent-authored commits count as an unsigned human author.** - Every commit here has the author `Claude <noreply@anthropic.com>`, and GitHub resolves that email to the `claude` user account. - `.github/workflows/cla.ym…",
+          "verdict": "regression",
+          "note": "CLA status red on this PR from the CLA workflow #3231 added; same breakage as #3234/#3235."
+        },
+        {
+          "source": "reference",
+          "ref": "#3236",
+          "title": "Fix five flaky tests: image-diff focus, fixture git clean, retired-branch timing, FIFO limit race, Changes refresh selector",
+          "daysAfterMerge": 0,
+          "excerpt": "**`CLA` status and CLA `check` job failing. The cause isn't in this PR.** The CLA workflow from #3231 runs on `pull_request_target`, so it always uses `main`'s copy of `.github/workflows/cla.yml`. Nothing in this branch can change the result. It trips on two things: 1. **Agent-authored commits count as outside authors.** This PR's commit is authore…",
+          "verdict": "regression",
+          "note": "Same CLA-check breakage from #3231 on another PR."
+        },
+        {
+          "source": "reference",
+          "ref": "#3251",
+          "title": "Measure Copse Reviewer's PR risk rating against what happened after merge",
+          "daysAfterMerge": 1.1,
+          "excerpt": "…; the rated cohort has only 0–1.3 days of outcome history) | predicted ↓ / truth → | low | medium | high | | --- | --: | --: | --: | | low | 10 | 0 | 0 | | medium | 19 | 2 | 0 | | high | 11 | 0 | 1 | - **Under-rated: 0 of 43.** The one regression (#3231, the CLA check) was rated High. - **Over-rated: 30 of 43 (70%).** This is an upper bound until outcomes mature. - **High is issued far more often than regressions happen:** on 30% of merged PRs and 71% of open ones. Only about 3% of the 517 changes…",
+          "verdict": "unrelated",
+          "note": "This eval's own description."
         }
       ]
     },
@@ -2764,6 +3022,15 @@
           "excerpt": "Pin the CLA workflow's comment permission and agent-author attribution ## Outcome #3234 fixed the two CLA-check bugs seen on #3207 (job 108467455706): - Commits authored as `Claude <noreply@anthropic.com>` were flagged as the unsigned `@claude` a…",
           "verdict": "unrelated",
           "note": "Test-only pin of #3234's fixes."
+        },
+        {
+          "source": "reference",
+          "ref": "#3235",
+          "title": "Fix the CLA check failing maintainer PRs with Claude-authored commits",
+          "daysAfterMerge": 0.1,
+          "excerpt": "Closing as superseded by #3234, which fixed both CLA-check bugs on main: agent-authored commits (`noreply@anthropic.com`) are now attributed to the PR opener, and the job can comment. This branch now conflicts with main and drops `issues: write`, which #3234 found commenting need…",
+          "verdict": "unrelated",
+          "note": "Closed as superseded by #3234."
         }
       ]
     },

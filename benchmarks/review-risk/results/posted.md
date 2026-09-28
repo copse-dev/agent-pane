@@ -1,17 +1,17 @@
 ## Risk-rating calibration: posted
 
 Ratings from posted; truth from verified outcomes within 7 days of merge (eval v1).
-Scored 43; unrated 38; awaiting verdicts 0.
+Scored 43; unrated 38; without a truth yet (unmerged or awaiting verdicts) 0.
 
 ### All scored cases (43 cases)
 
 | predicted ↓ / truth → | low | medium | high |
 | --------------------- | --: | -----: | ---: |
 | low | 10 | 0 | 0 |
-| medium | 19 | 2 | 0 |
+| medium | 18 | 3 | 0 |
 | high | 11 | 0 | 1 |
 
-- Exact: 13 (30%); over-rated: 30 (70%); under-rated: 0 (0%).
+- Exact: 14 (33%); over-rated: 29 (67%); under-rated: 0 (0%).
 - Changes that caused a regression: 1; rated below High: 0.
 
 ### Mature cases (full 7-day window) (0 cases)
@@ -30,14 +30,14 @@ Scored 43; unrated 38; awaiting verdicts 0.
 | size | rated low | rated medium | rated high | truth low | truth medium | truth high |
 | ---- | --------: | -----------: | ---------: | --------: | -----------: | ---------: |
 | small | 10 | 11 | 2 | 22 | 1 | 0 |
-| medium | 0 | 9 | 7 | 15 | 0 | 1 |
+| medium | 0 | 9 | 7 | 14 | 1 | 1 |
 | large | 0 | 1 | 3 | 3 | 1 | 0 |
 
 ### High-risk rubric clauses cited in the reason
 
 | clause | cited | rated high | over-rated | under-rated | small changes |
 | ------ | ----: | ---------: | ---------: | ----------: | ------------: |
-| cross-cutting | 13 | 4 | 11 | 0 | 2 |
+| cross-cutting | 13 | 4 | 10 | 0 | 2 |
 | process-ipc | 12 | 6 | 11 | 0 | 3 |
 | dependency-build | 12 | 7 | 8 | 0 | 7 |
 | permissions-sandboxing | 11 | 4 | 7 | 0 | 6 |
@@ -54,7 +54,7 @@ Scored 43; unrated 38; awaiting verdicts 0.
 | #3097 | medium ↑ | low (immature) | 56 | cross-cutting | — |
 | #3106 | low | low (immature) | 0 | permissions-sandboxing | — |
 | #3121 | medium ↑ | low (immature) | 416 | process-ipc | — |
-| #3123 | medium ↑ | low (immature) | 204 | cross-cutting | — |
+| #3123 | medium | medium (immature) | 204 | cross-cutting | reference #3240 |
 | #3124 | medium ↑ | low (immature) | 57 | — | — |
 | #3128 | medium | medium (immature) | 583 | permissions-sandboxing, cross-cutting | reference #3227 |
 | #3129 | medium ↑ | low (immature) | 239 | — | — |
@@ -86,7 +86,7 @@ Scored 43; unrated 38; awaiting verdicts 0.
 | #3228 | medium ↑ | low (immature) | 81 | auth-secrets, dependency-build | — |
 | #3229 | low | low (immature) | 0 | dependency-build | — |
 | #3230 | high ↑ | low (immature) | 4 | dependency-build | — |
-| #3231 | high | high (immature) | 209 | permissions-sandboxing, dependency-build | reference #3246; reference #3235; reference #3234 |
+| #3231 | high | high (immature) | 209 | permissions-sandboxing, dependency-build | reference #3246; reference #3235; reference #3234; reference #3148; reference #3236 |
 | #3234 | medium ↑ | low (immature) | 17 | permissions-sandboxing, dependency-build | — |
 | #3237 | low | low (immature) | 0 | dependency-build | — |
 | #3244 | medium ↑ | low (immature) | 22 | concurrency | — |
@@ -120,8 +120,8 @@ Scored 43; unrated 38; awaiting verdicts 0.
 
 | changes that… | cases | truth low | truth medium | truth high | medium or high |
 | ------------- | ----: | --------: | -----------: | ---------: | -------------: |
-| all | 81 | 67 | 9 | 5 | 17% |
-| touches no high-risk surface | 41 | 36 | 4 | 1 | 12% |
+| all | 81 | 66 | 10 | 5 | 19% |
+| touches no high-risk surface | 41 | 35 | 5 | 1 | 15% |
 | touches a high-risk surface | 40 | 31 | 5 | 4 | 23% |
 |   security | 7 | 4 | 2 | 1 | 43% |
 |   permissions-sandboxing | 9 | 5 | 3 | 1 | 44% |
@@ -131,9 +131,9 @@ Scored 43; unrated 38; awaiting verdicts 0.
 |   dependency-build | 16 | 14 | 0 | 2 | 13% |
 |   cross-cutting | 15 | 10 | 2 | 3 | 33% |
 | small (source lines) | 37 | 32 | 5 | 0 | 14% |
-| medium (source lines) | 33 | 25 | 3 | 5 | 24% |
+| medium (source lines) | 33 | 24 | 4 | 5 | 27% |
 | large (source lines) | 11 | 10 | 1 | 0 | 9% |
 | mostly additive | 57 | 46 | 6 | 5 | 19% |
-| rewrites existing code (≥25% deletions) | 24 | 21 | 3 | 0 | 13% |
+| rewrites existing code (≥25% deletions) | 24 | 20 | 4 | 0 | 17% |
 | touches a surface, under 100 source lines | 9 | 8 | 1 | 0 | 11% |
 | touches a surface, 100 or more source lines | 31 | 23 | 4 | 4 | 26% |

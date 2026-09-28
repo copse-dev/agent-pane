@@ -79,6 +79,8 @@ const issueSchema = z.object({
 
 const timelineEventSchema = z.object({
   event: z.string().optional(),
+  /** When the reference was made; the referencing issue itself may be older. */
+  created_at: z.string().optional(),
   source: z
     .object({
       issue: z
@@ -534,13 +536,16 @@ export async function timelineEvidence(
     if (event.event !== 'cross-referenced' || issue === undefined || issue.number === number)
       continue
     const ref = `#${String(issue.number)}`
-    const days = daysBetween(mergedAt, issue.created_at)
-    if (known.has(ref) || days <= 0 || days > windowDays) continue
+    // Date the reference, not the issue it came from: a comment on an older
+    // issue can still name this change inside the window.
+    const at = event.created_at ?? issue.created_at
+    const after = Date.parse(at) - Date.parse(mergedAt)
+    if (known.has(ref) || after <= 0 || after > windowDays * DAY_MS) continue
     out.push({
       source: 'reference',
       ref,
       title: issue.title,
-      daysAfterMerge: days,
+      daysAfterMerge: daysBetween(mergedAt, at),
       excerpt: '(cross-referenced from a comment or commit, not the description)',
       verdict: 'unverified',
     })

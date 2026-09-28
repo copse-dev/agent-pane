@@ -72,8 +72,8 @@ or `incomplete`, and **Low** otherwise. A case with any `unverified` item is not
 merged case is **mature** once its full window has been observed. Re-collecting keeps every
 verdict and note.
 
-In this corpus, 59 evidence items were ruled on: 7 regressions, 1 cosmetic, 9 incomplete and
-42 unrelated. Most fix-overlaps and many references turn out to be noise (a formatter switch
+In this corpus, 88 evidence items were ruled on: 9 regressions, 1 cosmetic, 12 incomplete and
+66 unrelated. Most fix-overlaps and many references turn out to be noise (a formatter switch
 shares a file with every later fix; screenshot re-baselines list the PRs whose UI they
 capture), which is why every item needs a ruling.
 
@@ -131,13 +131,13 @@ this harness does not know). The 38 mature cases have no posted rating, and are 
 | predicted ↓ / truth → | low | medium | high |
 | --------------------- | --: | -----: | ---: |
 | low                   |  10 |      0 |    0 |
-| medium                |  19 |      2 |    0 |
+| medium                |  18 |      3 |    0 |
 | high                  |  11 |      0 |    1 |
 
 - **Under-rated: 0 of 43.** The one regression (#3231: the new required CLA check failed
-  every pull request with agent-written commits) was rated High. The one `incomplete` case
-  (#3181) and the one `cosmetic` case (#3128) were both rated Medium.
-- **Over-rated: 30 of 43 (70%)**, but truth here covers at most 1.3 days, so this figure is
+  every pull request with agent-written commits) was rated High. The two `incomplete` cases
+  (#3123, #3181) and the one `cosmetic` case (#3128) were all rated Medium.
+- **Over-rated: 29 of 43 (67%)**, but truth here covers at most 1.3 days, so this figure is
   an upper bound, not a finding.
 - **The rate at which High is issued is the stronger signal, and it needs no outcomes.**
   - High went on 14 of 46 merged PRs (30%) and 24 of 34 open PRs (71%) that carried a block
@@ -225,7 +225,7 @@ wrongly lower them.
    - The reasons most often cite IPC, persisted data and build surfaces, which are the
      weakest predictors of a bad outcome in this repository.
 2. **The opposite error was not observed.** No change with a recorded regression, cosmetic
-   regression or incomplete fix was rated below its outcome (0 of 3 in the rated cohort). The
+   regression or incomplete fix was rated below its outcome (0 of 4 in the rated cohort). The
    mature cohort, with 4 regressions and 7 incomplete changes, has no ratings yet. It is the
    real test of under-rating and needs a model run.
 3. **"Additive" is not a safe proxy for "low".** The regressions in this corpus were all
