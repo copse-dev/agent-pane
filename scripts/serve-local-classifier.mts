@@ -16,7 +16,7 @@
  * Winnow on a machine without room for its 64K default. Nothing here is part of the app.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -105,6 +105,18 @@ function output(command: string[], cwd: string, env: NodeJS.ProcessEnv): string 
   return result.stdout.trim()
 }
 
+function setupMarker(spec: ServerSpec): string {
+  return `${JSON.stringify({ version: 1, repository: spec.repository, revision: spec.revision })}\n`
+}
+
+function readMarker(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
+}
+
 export function prepareClassifierCache(name: string, spec: ServerSpec): CachePaths {
   const root = cacheRoot()
   const paths: CachePaths = {
@@ -123,6 +135,10 @@ export function prepareClassifierCache(name: string, spec: ServerSpec): CachePat
       `${paths.checkout} has unexpected origin ${origin}; expected ${spec.repository}`,
     )
   }
+  const dirty = output(['git', 'status', '--short', '--untracked-files=no'], paths.checkout, env)
+  if (dirty) {
+    throw new Error(`${paths.checkout} has tracked modifications; refusing to run unpinned code`)
+  }
   const revision = spawnSync('git', ['cat-file', '-e', `${spec.revision}^{commit}`], {
     cwd: paths.checkout,
     env,
@@ -139,10 +155,11 @@ export function prepareClassifierCache(name: string, spec: ServerSpec): CachePat
     throw new Error(`${paths.checkout} is at ${head}; expected ${spec.revision}`)
   }
   const marker = join(paths.checkout, '.copse-setup-complete')
-  if (!existsSync(marker)) {
+  const expectedMarker = setupMarker(spec)
+  if (readMarker(marker) !== expectedMarker) {
     mkdirSync(paths.models, { recursive: true })
     for (const command of spec.setup(paths)) run(command, paths.checkout, env)
-    writeFileSync(marker, `${new Date().toISOString()}\n`)
+    writeFileSync(marker, expectedMarker)
   }
   return paths
 }
