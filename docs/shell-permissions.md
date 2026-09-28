@@ -402,7 +402,7 @@ While active:
     `artillery run --target …`), `act -W` with a workflow URL, bulk database loaders (`pgloader`,
     `pg_restore` into a database, `mongorestore`, `mongoimport`, `mysqlimport`, `redis-cli --pipe`),
     `influx` verbs that write or delete (`write`, `delete`, `restore`, …) and SQL run
-    from a file (`psql -f`);
+    from a file or stdin (`psql -f`, `mysql db < dump.sql`, `cat dump.sql | psql db`);
   - `find` deletions rooted outside the workspace (`find /x -exec rm {} +`,
     `find /x | xargs rm`), and `git filter-repo`.
 - Credential reads stay hard-denied when a redirect such as `2>&1` follows them and when the gate
