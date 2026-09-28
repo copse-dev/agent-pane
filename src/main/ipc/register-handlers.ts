@@ -210,6 +210,7 @@ import {
   waitForAgentsRegistryRefresh,
 } from '../services/agents/agents-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
+import { listBundledSkillPlugins } from '../services/skills/bundled-cursor-skills.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import {
@@ -228,11 +229,14 @@ import { setPluginBrowserService } from '../services/plugins/plugin-browser-serv
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
+  pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
   syncAdvisorStrategyTools,
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
+  syncModelClassifierTools,
+  syncOrchestrationStrategyTools,
   syncReviewTools,
   syncImageGenerationTools,
   syncBackgroundTasksTools,
@@ -267,6 +271,8 @@ import {
 
 import { createSupervisedTaskClient } from '../services/supervisor/task-client.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
+import { MODEL_CLASSIFIER_ENABLED_SETTING } from '../services/providers/model-classifier.ts'
+import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from '../services/orchestration-strategy.ts'
 import { EXTERNAL_CONTEXT_FIELD, MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE } from '@shared/roadmap/note.ts'
 import { createRoadmapWriteHandlers } from './roadmap-write-handlers.ts'
@@ -351,6 +357,7 @@ import { createPrForThread } from '../services/github/pr-create-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
+  reloadMcpServersForPluginToggle,
   setMcpServerUserEnabled,
   setWorkspaceTrustAndReload,
 } from '../services/mcp/mcp-registry.ts'
@@ -430,6 +437,11 @@ import { explainContainerModel } from '../services/providers/container-provider.
 
 const discoverExternalCursorAgentsFromIpc = createBestEffortExternalCursorAgentDiscovery()
 
+const zAutomationPermission = z.object({
+  kind: z.enum(['copse-action', 'mcp-tool']),
+  toolName: z.string().trim().min(1).max(512),
+})
+
 const zAutomationScheduleInput = z.object({
   id: z.string().min(1).max(256).optional(),
   name: z.string().trim().min(1).max(160),
@@ -438,11 +450,13 @@ const zAutomationScheduleInput = z.object({
   model: z.string().trim().min(1).max(1024),
   enabled: z.boolean(),
   maxLiveWorktrees: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  permissions: z.array(zAutomationPermission).max(256).optional(),
 })
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
   'bundledCursorSkillsEnabled',
+  'bundledSkillPluginOverrides',
   'skillPluginPaths',
 ])
 
@@ -1324,6 +1338,13 @@ export function registerAllHandlers(
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
+    // Experimental tool toggles: apply live instead of waiting for a restart.
+    if (k === MODEL_CLASSIFIER_ENABLED_SETTING) {
+      syncModelClassifierTools(registry)
+    }
+    if (k === ORCHESTRATION_STRATEGY_ENABLED_SETTING) {
+      syncOrchestrationStrategyTools(registry)
+    }
     // Keep the native diagnostics menu in sync with Developer mode. The
     // Ctrl+Shift+I shortcut is owned independently by its first-party plugin.
     if (k === DEVELOPER_MODE_SETTING) {
@@ -2019,6 +2040,7 @@ export function registerAllHandlers(
     return listAgents()
   })
   ipcMain.handle('cursor-plugins:list', () => listCursorPlugins())
+  ipcMain.handle('bundled-skill-plugins:list', () => listBundledSkillPlugins())
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
@@ -2139,6 +2161,8 @@ export function registerAllHandlers(
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    const refusal = pluginEnableRefusal(id, enabled)
+    if (refusal) throw new IpcValidationError(refusal)
     const pluginService = getPluginService()
     await pluginService.setEnabled(id, enabled)
     if (pluginService.hasUserPlugin(id)) {
@@ -2205,6 +2229,11 @@ export function registerAllHandlers(
     if (id === DARK_FACTORY_PLUGIN_ID) {
       syncDarkFactorySensor()
     }
+    // The `copse.mcp-ui-canvas` plugin gates the bundled canvas server, so its
+    // `render_html_artefact` tool must connect or disconnect with the toggle —
+    // the same live reload the Apple Development toggle does below.
+    const bundledMcpStatuses = await reloadMcpServersForPluginToggle(registry, id)
+    if (bundledMcpStatuses) win.webContents.send('mcp:status-changed', bundledMcpStatuses)
     if (id === AUTOMATIONS_PLUGIN_ID) {
       getTaskSupervisor().syncCronTasks()
       await getAutomationService().sync()
@@ -2246,6 +2275,11 @@ export function registerAllHandlers(
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     return getAutomationService().list(projectId)
   })
+  ipcMain.handle('automations:permission-options', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    parseIpcArgs(zProjectId, [rawProjectId])
+    return getAutomationService().permissionOptions()
+  })
   ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
     assertMainFrameSender(event, win)
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
@@ -2257,6 +2291,8 @@ export function registerAllHandlers(
       prompt: input.prompt,
       model: input.model,
       enabled: input.enabled,
+      ...(input.maxLiveWorktrees !== undefined ? { maxLiveWorktrees: input.maxLiveWorktrees } : {}),
+      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
     })
   })
   ipcMain.handle(

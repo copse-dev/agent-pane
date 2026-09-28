@@ -41,7 +41,7 @@ import type {
 import type { ThreadContainerRecord } from '@shared/types/container-run.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { decodeWorkerPhase, type WorkerPhase } from './worker-events.ts'
-import { EgressBroker } from './egress-broker.ts'
+import { EgressBroker, hostLocalAliasRefusal } from './egress-broker.ts'
 import {
   findEgressRule,
   formatEgressRule,
@@ -1193,6 +1193,10 @@ export async function runThreadInContainer(
       )
     }
   }
+  // Before anything starts: the guest sends its key to the alias over plain
+  // http, so the run must not exist unless the broker dials it on loopback.
+  const aliasRefusal = hostLocalAliasRefusal(egress, request.egressResolve ?? {})
+  if (aliasRefusal !== null) throw new Error(aliasRefusal)
   const apiKeyEnv = request.apiKeyEnv ?? null
   if (apiKeyEnv && !process.env[apiKeyEnv]) {
     throw new Error(`Provider key variable ${apiKeyEnv} is not set on the host`)

@@ -265,7 +265,7 @@ jobs:
           test "$author_id" = 338988 && test "$head_repo_id" = 1274237362 && test "$base_repo_id" = 1274237362
           test "$opted_out" = false
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: copse-review-nightly-ground-${{ needs.select.outputs.number }}
           path: ground
