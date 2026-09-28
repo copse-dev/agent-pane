@@ -24,7 +24,7 @@
  * and did not get is exactly what a reviewer wants to see.
  */
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
-import { connect, type Socket, type TcpSocketConnectOpts } from 'node:net'
+import { connect, isIP, type Socket, type TcpSocketConnectOpts } from 'node:net'
 import type { Readable } from 'node:stream'
 import type { EgressLogEntry } from '@shared/types/container-run.ts'
 import { EgressLink, type EgressLinkOutput, type MuxStream } from './egress-link.ts'
@@ -170,7 +170,16 @@ function dialAddress(
 ): { host: string; port: number } {
   const mapped = resolve[host]
   if (mapped === undefined) return { host, port }
-  const remapped = parseEgressTarget(mapped)
+  const bracketedIpv6 = /^\[([^\]]+)\]:(\d{1,5})$/.exec(mapped.trim())
+  const bracketedPort = Number(bracketedIpv6?.[2])
+  const remappedIpv6 =
+    bracketedIpv6?.[1] !== undefined &&
+    isIP(bracketedIpv6[1]) === 6 &&
+    bracketedPort >= 1 &&
+    bracketedPort <= 65535
+      ? { host: bracketedIpv6[1], port: bracketedPort }
+      : null
+  const remapped = parseEgressTarget(mapped) ?? remappedIpv6
   return remapped ?? { host: mapped, port }
 }
 

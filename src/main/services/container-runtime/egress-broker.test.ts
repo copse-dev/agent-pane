@@ -205,6 +205,8 @@ describe('EgressBroker and the host-local alias (A16)', () => {
       { 'model.copse.internal': 'localhost.' },
       { 'model.copse.internal': '127.0.0.2' },
       { 'model.copse.internal': '0.0.0.0' },
+      { 'model.copse.internal': '[::2]:1234' },
+      { 'model.copse.internal': '[::ffff:127.0.0.1]:1234' },
       { 'MODEL.copse.internal': '127.0.0.1' },
     ]) {
       assert.throws(
@@ -228,6 +230,7 @@ describe('EgressBroker and the host-local alias (A16)', () => {
       '127.0.0.1',
       '::1',
       '127.0.0.1:5555',
+      '[::1]:5555',
       'localhost',
       'LOCALHOST:1234',
       'LocalHost',

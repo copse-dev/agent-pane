@@ -678,7 +678,7 @@ guarantee, and the record must say so.
   endpoint, allowlist and `--resolve` from its caller and has no such rewrite, so the
   invariant is held where every run meets it: an allowlist that admits the alias
   (exactly or by a wildcard) needs `egressResolve` to map it to `127.0.0.1`, `::1` or
-  `localhost` (by that name, any case, optional `:port`), or `runThreadInContainer`
+  `localhost` (by that name, any case; port overrides use `host:port` or `[::1]:port`), or `runThreadInContainer`
   refuses the run before anything starts and `EgressBroker` refuses to be built
   (`hostLocalAliasRefusal`) — never left to DNS, never a LAN name or another address
   (`127.0.0.2` and the rest of `127.0.0.0/8` included). `localhost` is admitted because

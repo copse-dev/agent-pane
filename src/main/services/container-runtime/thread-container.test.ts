@@ -587,6 +587,7 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
         { 'model.copse.internal': 'models.lan:1234' },
         { 'model.copse.internal': 'localhost.lan' },
         { 'model.copse.internal': '127.0.0.2' },
+        { 'model.copse.internal': '[::2]:1234' },
         {},
       ]) {
         await assert.rejects(
@@ -607,7 +608,7 @@ describe('runThreadInContainer and the host-local alias (A16)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'copse-tc-alias-'))
     delete process.env['COPSE_TEST_ALIAS_UNSET']
     try {
-      for (const dial of ['127.0.0.1', '::1', 'localhost', 'LOCALHOST:1234']) {
+      for (const dial of ['127.0.0.1', '::1', '[::1]:1234', 'localhost', 'LOCALHOST:1234']) {
         await assert.rejects(
           aliasRun(dir, { 'model.copse.internal': dial }, 'COPSE_TEST_ALIAS_UNSET'),
           /COPSE_TEST_ALIAS_UNSET is not set on the host/,
