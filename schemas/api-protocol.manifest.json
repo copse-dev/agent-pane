@@ -395,6 +395,13 @@
           3
         ]
       },
+      "bundled-skill-plugins:list": {
+        "api": "bundledSkillPlugins.list",
+        "args": [
+          0,
+          0
+        ]
+      },
       "canvas:list-artefacts": {
         "api": "canvas.listArtefacts",
         "args": [
