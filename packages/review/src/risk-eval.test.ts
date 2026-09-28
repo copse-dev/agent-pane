@@ -147,6 +147,17 @@ describe('caseTruth', () => {
     )
     assert.deepEqual(truth, { labelled: false, pending: ['reference #9'] })
   })
+
+  it('does not infer Low truth before a change merges', () => {
+    assert.deepEqual(caseTruth(riskCase(1, { state: 'open', mergedAt: null })), {
+      labelled: false,
+      pending: ['not merged'],
+    })
+    assert.deepEqual(caseTruth(riskCase(2, { state: 'closed', mergedAt: null })), {
+      labelled: false,
+      pending: ['not merged'],
+    })
+  })
 })
 
 describe('rubric clauses and surfaces', () => {
@@ -194,6 +205,7 @@ describe('scoreRatings', () => {
     riskCase(3, { evidence: [evidence('incomplete')], observedDays: 1 }),
     riskCase(4, { evidence: [evidence('unverified')] }),
     riskCase(5),
+    riskCase(6, { state: 'open', mergedAt: null, cohort: 'case-study', observedDays: 0 }),
   ])
 
   it('fills the confusion matrix and separates over- from under-rating', () => {
@@ -205,6 +217,7 @@ describe('scoreRatings', () => {
         { number: 3, risk: 'medium', reason: 'A bounded runtime change.' },
         { number: 4, risk: 'low', reason: 'Docs.' },
         { number: 5, error: 'the summary did not complete' },
+        { number: 6, risk: 'low', reason: 'No outcome evidence.' },
       ]),
     )
     assert.equal(score.all.scored, 3)
@@ -215,7 +228,10 @@ describe('scoreRatings', () => {
     assert.deepEqual([score.all.regressions, score.all.missedRegressions], [1, 1])
     assert.equal(score.mature.scored, 2, 'the one-day case is not mature')
     assert.deepEqual(score.unrated, [5])
-    assert.deepEqual(score.unlabelled, [{ number: 4, pending: ['reference #2'] }])
+    assert.deepEqual(score.unlabelled, [
+      { number: 4, pending: ['reference #2'] },
+      { number: 6, pending: ['not merged'] },
+    ])
     const sandbox = score.clauses.find((stat) => stat.clause === 'permissions-sandboxing')
     assert.deepEqual(
       sandbox && [sandbox.cited, sandbox.ratedHigh, sandbox.overRated, sandbox.smallChanges],

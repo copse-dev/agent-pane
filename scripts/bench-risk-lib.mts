@@ -79,6 +79,7 @@ const issueSchema = z.object({
 
 const timelineEventSchema = z.object({
   event: z.string().optional(),
+  created_at: z.string().optional(),
   source: z
     .object({
       issue: z
@@ -531,10 +532,15 @@ export async function timelineEvidence(
   const out: RiskEvidence[] = []
   for (const event of events) {
     const issue = event.source?.issue
-    if (event.event !== 'cross-referenced' || issue === undefined || issue.number === number)
+    if (
+      event.event !== 'cross-referenced' ||
+      event.created_at === undefined ||
+      issue === undefined ||
+      issue.number === number
+    )
       continue
     const ref = `#${String(issue.number)}`
-    const days = daysBetween(mergedAt, issue.created_at)
+    const days = daysBetween(mergedAt, event.created_at)
     if (known.has(ref) || days <= 0 || days > windowDays) continue
     out.push({
       source: 'reference',
