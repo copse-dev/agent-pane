@@ -129,8 +129,8 @@ attention to the right thread at the right moment.
 ### Job 1 — "Which of these needs me right now?"
 
 Some threads are working, some have stopped and are waiting for an approval or an answer.
-Nothing tells the user, so they poll by eye. Nothing in the main process even constructs a
-notification.
+The main process now sends desktop alerts for approvals and questions, but until slice 1's
+Activity panel there was no grouped view that told the user which thread needs attention.
 
 > "I'm confused why some approval prompts end up hapening twice. Is this just the model or
 > a race?" — `ca6b52c0`
@@ -341,8 +341,11 @@ start collecting for this.
 
 - **Making the agent more autonomous.** This helps a person supervise; it does not reduce
   what they approve.
-- **Cross-machine or cross-user visibility.** No hosted backend, and nothing in the
+- **Cross-user or hosted visibility.** No hosted backend, and nothing in the
   evidence asks for it.
+- **A LAN view of this desktop session** is specified separately in
+  [`mobile-web-experience.md`](mobile-web-experience.md). It needs the running
+  desktop and does not create a hosted or shared workspace.
 - **Cloud-agent integration.** Roughly ten roadmap items concern remote runs. They will
   want a row here, so the row format should not assume a local process, but they are not
   specified here.

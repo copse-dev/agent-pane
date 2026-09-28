@@ -15,23 +15,30 @@ function analyze(
   command: string,
   root: string | null = ROOT,
 ): ReturnType<typeof analyzeReadOutsideProject> {
-  return analyzeReadOutsideProject(command, root, { homeDir: HOME })
+  const previous = process.env['COPSE_DIR']
+  process.env['COPSE_DIR'] = `${HOME}/.copse`
+  try {
+    return analyzeReadOutsideProject(command, root, { homeDir: HOME })
+  } finally {
+    if (previous === undefined) delete process.env['COPSE_DIR']
+    else process.env['COPSE_DIR'] = previous
+  }
 }
 
 describe('analyzeReadOutsideProject — eligible reads', () => {
   it('accepts a listing of a home-directory folder', () => {
-    const analysis = analyze('ls -la ~/.copse')
+    const analysis = analyze('ls -la ~/.copse/workspace')
     assert.equal(analysis.eligible, true)
-    assert.deepEqual(analysis.targets, ['~/.copse'])
+    assert.deepEqual(analysis.targets, ['~/.copse/workspace'])
   })
 
   it('accepts the compound read the sandbox prompt was reported for', () => {
     const analysis = analyze(
-      'echo "=== ~/.copse top ==="; ls -la ~/.copse 2>/dev/null; echo; ' +
-        'find ~/.copse -maxdepth 2 2>/dev/null | head -100',
+      'echo "=== ~/.copse/workspace top ==="; ls -la ~/.copse/workspace 2>/dev/null; echo; ' +
+        'find ~/.copse/workspace -maxdepth 2 2>/dev/null | head -100',
     )
     assert.equal(analysis.eligible, true, analysis.blockers.join('; '))
-    assert.deepEqual(analysis.targets, ['~/.copse'])
+    assert.deepEqual(analysis.targets, ['~/.copse/workspace'])
   })
 
   it('accepts absolute and $HOME-rooted reads outside the project', () => {
@@ -124,6 +131,9 @@ describe('analyzeReadOutsideProject — credentials and breadth', () => {
     refused('cat ~/projects/other/.env.production')
     refused('cat ~/.env*')
     refused('cat ~/deploy.pem')
+    refused('cat ~/.copse/lan/ca.key')
+    refused('ls -la ~/.copse/lan')
+    refused('ls -la ~/.copse')
     refused('cat ~/.netrc')
     refused('cat ~/service-credentials.json')
   })
@@ -160,18 +170,18 @@ describe('sensitiveTargetReason', () => {
 
 describe('readOutsideProjectGrantTargets', () => {
   it('returns the resolved paths a seatbelt can name, not the tokens as written', () => {
-    assert.deepEqual(readOutsideProjectGrantTargets('ls -la ~/.copse', ROOT, { homeDir: HOME }), [
-      `${HOME}/.copse`,
+    assert.deepEqual(readOutsideProjectGrantTargets('ls -la ~/notes', ROOT, { homeDir: HOME }), [
+      `${HOME}/notes`,
     ])
   })
 
   it('resolves every distinct target of a compound read', () => {
     const targets = readOutsideProjectGrantTargets(
-      'ls -la ~/.copse 2>/dev/null; cat ~/notes/todo.md',
+      'ls -la ~/reading 2>/dev/null; cat ~/notes/todo.md',
       ROOT,
       { homeDir: HOME },
     )
-    assert.deepEqual(targets, [`${HOME}/.copse`, `${HOME}/notes/todo.md`])
+    assert.deepEqual(targets, [`${HOME}/reading`, `${HOME}/notes/todo.md`])
   })
 
   it('refuses a command the read analysis will not account for', () => {
@@ -206,9 +216,9 @@ describe('readOutsideProjectGrantTargets', () => {
 
 describe('read-outside prompt copy', () => {
   it('keeps the sensitive-locations warning and says what the grant covers', () => {
-    const analysis = analyze('ls -la ~/.copse')
-    const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse', analysis)
-    assert.equal(parts.command, 'ls -la ~/.copse')
+    const analysis = analyze('ls -la ~/.copse/workspace')
+    const parts = formatReadOutsideProjectPromptParts('ls -la ~/.copse/workspace', analysis)
+    assert.equal(parts.command, 'ls -la ~/.copse/workspace')
     assert.match(parts.bodyAdvice ?? '', /~\/\.copse/)
     assert.match(parts.bodyAdvice ?? '', /read from sensitive locations on your computer/)
     assert.match(parts.bodyFooter ?? '', /rest of this thread/)

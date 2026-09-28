@@ -2479,6 +2479,26 @@ export function abortAgent(threadId: string): void {
   abortMap.get(threadId)?.abort()
 }
 
+const mobileRunIds = new WeakMap<AbortController, string>()
+
+/** A stop from a delayed phone page must never abort a newer run. */
+export function mobileRunId(threadId: string): string | null {
+  const controller = abortMap.get(threadId)
+  if (!controller || controller.signal.aborted) return null
+  let id = mobileRunIds.get(controller)
+  if (!id) {
+    id = crypto.randomUUID()
+    mobileRunIds.set(controller, id)
+  }
+  return id
+}
+
+export function stopMobileRun(threadId: string, runId: string): boolean {
+  if (mobileRunId(threadId) !== runId) return false
+  abortAgent(threadId)
+  return true
+}
+
 /**
  * Thread ids with a live in-process run right now. Lets a renderer that's just
  * (re)loaded a project's threads tell a genuinely still-running turn apart from
