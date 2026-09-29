@@ -9,7 +9,11 @@ import type {
 import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
-import { isOutputCeilingRejectedError, yieldStreamWithRetry } from './stream-retry.ts'
+import {
+  isOutputCeilingRejectedError,
+  isOutputCeilingRejectedMessage,
+  yieldStreamWithRetry,
+} from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
@@ -110,8 +114,8 @@ export class ResponsesProvider implements LLMProvider {
         }))
         let ceiling = self.maxOutputTokens
         let droppedCeiling = false
-        let response
         for (;;) {
+          let response
           try {
             response = await self.client.responses.create(
               {
@@ -136,7 +140,6 @@ export class ResponsesProvider implements LLMProvider {
               },
               { signal },
             )
-            break
           } catch (err) {
             if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
               droppedCeiling = true
@@ -145,13 +148,29 @@ export class ResponsesProvider implements LLMProvider {
             }
             throw err
           }
-        }
 
-        // Reasoning items seen in *this* response, in order. Flushed onto each
-        // tool call the model emits after them.
-        const turnReasoning: ReasoningItem[] = []
-        for await (const event of response) {
-          yield* streamEventChunks(event, self.model, self, turnReasoning)
+          // Reasoning items seen in *this* response, in order. Flushed onto each
+          // tool call the model emits after them.
+          const turnReasoning: ReasoningItem[] = []
+          let yielded = false
+          let ceilingRejected = false
+          for await (const event of response) {
+            // Some endpoints reject the ceiling in the stream instead of the
+            // request. Retrying is only safe before anything reached the caller.
+            if (!yielded && !droppedCeiling && ceiling !== undefined) {
+              if (ceilingRejectedInStream(event)) {
+                ceilingRejected = true
+                break
+              }
+            }
+            for (const chunk of streamEventChunks(event, self.model, self, turnReasoning)) {
+              yielded = true
+              yield chunk
+            }
+          }
+          if (!ceilingRejected) return
+          droppedCeiling = true
+          ceiling = undefined
         }
       },
       { ...(signal ? { signal } : {}) },
@@ -183,6 +202,15 @@ function toReasoningItem(item: { type: string; id?: string }): ReasoningItem | n
   const encrypted = 'encrypted_content' in item ? item.encrypted_content : undefined
   if (typeof encrypted !== 'string' || encrypted === '') return null
   return { type: 'reasoning', id: item.id, summary: [], encrypted_content: encrypted }
+}
+
+/** A stream `error` / `response.failed` event that rejects the output ceiling. */
+function ceilingRejectedInStream(event: ResponseStreamEvent): boolean {
+  if (event.type === 'error') return isOutputCeilingRejectedMessage(event.message, event.param)
+  if (event.type === 'response.failed') {
+    return isOutputCeilingRejectedMessage(event.response.error?.message ?? '')
+  }
+  return false
 }
 
 function* streamEventChunks(
