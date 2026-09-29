@@ -80,6 +80,10 @@
     "label": "Settings scroll + sticky footer geometry"
   },
   {
+    "id": "automation-permissions",
+    "label": "Automation permission preferences"
+  },
+  {
     "id": "model-parameters",
     "label": "Per-model reasoning / temperature / top-p"
   },
