@@ -327,6 +327,16 @@ async function cleanSuccessfulOutput(outputDir: string, keepReport: boolean): Pr
 // bounding that shared OS pressure.
 const TEST_FILE_CONCURRENCY = 4
 
+// Bound each test so a hang fails fast and names itself. CI's unit job has hung
+// twice with no failing test: dots stopped, the runner waited until the job
+// timed out 40 minutes later, and cleanup killed an orphaned `catatonit` and
+// `bash`. A test awaiting a child that never settles now fails by name instead
+// (per-test `timeout` options still win; the slowest suites set 60s). Not
+// `--test-force-exit`: the emitted test files share bundled chunks, and forcing
+// exit once the "known" tests finish drops suites that register later (~200
+// tests per run, nondeterministically).
+const TEST_TIMEOUT_MS = 180_000
+
 async function runTests(testFiles: string[], outputDir: string): Promise<number> {
   // Tests create their own profiles (often under a fake home). Inheriting a
   // developer's profile overrides can both invalidate those fixtures and write
@@ -358,6 +368,7 @@ async function runTests(testFiles: string[], outputDir: string): Promise<number>
     [
       '--test',
       `--test-concurrency=${String(TEST_FILE_CONCURRENCY)}`,
+      `--test-timeout=${String(TEST_TIMEOUT_MS)}`,
       ...reporterArgs(tapLog),
       ...specs,
     ],

@@ -4,6 +4,7 @@ import {
   REMOTE_AGENT_MODEL_PREFIX,
 } from '@copse/llm/reserved-prefixes.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import {
   containerAcpAgent,
@@ -159,6 +160,7 @@ export async function resolveContainerProvider(
   model: string,
   options: ContainerProviderOptions = {},
 ): Promise<ContainerProviderPlan> {
+  assertModelMakerAllowed(model)
   const acp = parseAcpModelSelection(model)
   if (acp) return resolveAcpHarness(model, acp.id, options)
   // Agent-backed selections are the common way to land here, and the reason is

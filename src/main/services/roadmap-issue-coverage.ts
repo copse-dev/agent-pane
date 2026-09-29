@@ -1,9 +1,6 @@
 import { parseIssueRef } from '@shared/git/issue-ref.ts'
 import { parseCoverageMatches, type RoadmapIssueCoverageMatch } from '@shared/roadmap/coverage.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { loadKnowledgeNotes } from './storage/knowledge-store.ts'
@@ -125,13 +122,12 @@ export async function matchOpenIssuesToRoadmapItems(
 }
 
 async function askSmallTasks(ask: string): Promise<string> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) throw new Error('No small-tasks provider')
-  const model = resolveSmallTasksModelId()
-  const { text, usage } = await completeTextWithUsage(provider, ask, MATCH_TIMEOUT_MS)
+  const route = await resolveSmallTasksRoute()
+  if (!route) throw new Error('No small-tasks provider')
+  const { text, usage } = await completeTextWithUsage(route.provider, ask, MATCH_TIMEOUT_MS)
   if (usage.inputTokens || usage.outputTokens) {
     recordUsageEvent({
-      model,
+      model: route.model,
       source: 'small-tasks',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,

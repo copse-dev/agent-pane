@@ -9,8 +9,7 @@ import {
   type RequestPermissionOutcome,
   type StopReason,
 } from '@agentclientprotocol/sdk'
-import { Writable } from 'node:stream'
-import { nodeReadableStream } from './node-readable-stream.ts'
+import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import type { StreamChunk } from '@shared/types'
 import { streamChunkToSessionUpdate } from './session-update-adapter.ts'
 
@@ -170,7 +169,7 @@ export function serveAcpAgentOverStdio(
   runner: AcpTurnRunner,
   options?: AcpAgentOptions,
 ): AgentConnection {
-  const writable = Writable.toWeb(process.stdout) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(process.stdout)
   const readable = nodeReadableStream(process.stdin)
   const stream = ndJsonStream(writable, readable)
   return buildAcpAgentApp(runner, options).connect(stream)
