@@ -12,12 +12,29 @@ describe('resolveAgentChatModel', () => {
     deleteApiKey('anthropic')
     await setSetting('registeredAcpAgents', [])
     await setSetting('preferAcpOverCloudAgent', true)
+    await setSetting('blockedModelMakers', [])
   })
 
   it('passes through a runnable non-remote model unchanged', async () => {
     const resolved = await resolveAgentChatModel('lmstudio:local-x')
     assert.equal(resolved.model, 'lmstudio:local-x')
     assert.equal(resolved.fallbackNotice, undefined)
+  })
+
+  it('rejects saved Grok selections across aggregator and agent routes before a turn', async () => {
+    await setSetting('blockedModelMakers', ['xai'])
+    for (const model of [
+      'openrouter:x-ai/grok-4.5',
+      'remote-agent:cursor#grok-4.5',
+      'acp:cursor#grok-4.5',
+      'lmstudio:grok-4.5',
+    ]) {
+      await assert.rejects(() => resolveAgentChatModel(model), /xAI models are blocked/)
+    }
+    assert.equal(
+      (await resolveAgentChatModel('openrouter:z-ai/glm-5.3')).model,
+      'openrouter:z-ai/glm-5.3',
+    )
   })
 
   it('falls back to the default local chat model when a remote agent has no valid key', async () => {

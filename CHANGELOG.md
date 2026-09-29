@@ -8,18 +8,7 @@ released — rather than copying every published entry.
 
 ## Unreleased
 
-- Curated parameter recipes now apply by default. Qwen3.6-35B-A3B, DeepSeek
-  V4 Flash, and the experimental GLM-5.3-Flash profile run on their recipe
-  unless you set a value yourself. Previously they were only offered, so a
-  Qwen thread on LM Studio ran with no `presence_penalty` and its reasoning
-  could loop. In Settings → Models → Model parameters, blank fields show the
-  recipe value they send, and anything you type replaces that one value.
-- Model parameters has its own model picker and a list of the models you have
-  tuned, so you can tune any model without changing your chat model. That
-  matters most when the chat model is a rule such as Balanced, which has no
-  parameters of its own.
-
-## 0.1.0-beta.10
+## 0.1.0-beta.11
 
 - The update prompt now lists what changed in every release since the one you
   are running, newest first, instead of only naming the new version. Skipping a
@@ -58,6 +47,21 @@ released — rather than copying every published entry.
   on both halves; subscriptions drop their `on` prefix). Every channel that
   differed was renamed on both sides of the bridge, which is protocol
   version 2. Nothing outside the app spoke version 1.
+
+- Recoverable threads in the projects sidebar are easier to deal with when a
+  store no longer matters. Each row shows a recent thread title instead of only
+  a count, Recover… opens a short summary before the folder picker, and Dismiss
+  hides the row while leaving the chats on disk.
+- Curated parameter recipes now apply by default. Qwen3.6-35B-A3B, DeepSeek
+  V4 Flash, and the experimental GLM-5.3-Flash profile run on their recipe
+  unless you set a value yourself. Previously they were only offered, so a
+  Qwen thread on LM Studio ran with no `presence_penalty` and its reasoning
+  could loop. In Settings → Models → Model parameters, blank fields show the
+  recipe value they send, and anything you type replaces that one value.
+- Model parameters has its own model picker and a list of the models you have
+  tuned, so you can tune any model without changing your chat model. That
+  matters most when the chat model is a rule such as Balanced, which has no
+  parameters of its own.
 
 ## Release-note process
 

@@ -70,7 +70,7 @@ describe('ACP tool calls with initial results (#2494)', () => {
         },
       ])
     } finally {
-      open.dispose()
+      await open.dispose()
     }
   })
 })

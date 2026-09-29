@@ -64,7 +64,7 @@ export async function runAcpAdvisorSession(
     const turn = acpTurnUsage(stop.usage, prompt, text)
     return { text, usage: { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens } }
   } finally {
-    open.dispose()
+    await open.dispose()
   }
 }
 

@@ -139,6 +139,27 @@ export function handIcon(className = DEFAULT): SVGSVGElement {
   )
 }
 
+/** Bell — threads that are waiting on the person (the Activity panel's entry point). */
+export function bellIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'bell',
+    [
+      'M10.27 21a2 2 0 0 0 3.46 0',
+      'M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.41 5.96-2.74 7.33',
+    ],
+    className,
+  )
+}
+
+/** Speech bubble with a question mark — the agent has asked the person something. */
+export function messageQuestionIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'message-circle-question',
+    ['M7.9 20A9 9 0 1 0 4 16.1L2 22Z', 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01'],
+    className,
+  )
+}
+
 /** Circle with a slash — the action is blocked before execution. */
 export function banIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon(
@@ -213,6 +234,17 @@ export function imageIcon(className = DEFAULT): SVGSVGElement {
       'm21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21',
       'M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7',
       'M9 9h.01',
+    ],
+    className,
+  )
+}
+
+/** Sparkle — marks a suggestion Copse offers, such as a plugin for this project. */
+export function sparkleIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'sparkle',
+    [
+      'M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z',
     ],
     className,
   )
