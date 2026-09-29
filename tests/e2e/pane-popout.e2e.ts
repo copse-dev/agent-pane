@@ -225,7 +225,7 @@ describe('Pane pop-out (mock gh)', () => {
     await expect(await $('#pane-projects')).toBeDisplayed()
     await expect(await $('.prompt-input')).toBeExisting()
     await expect(await $('.titlebar-popout-btn')).not.toBeExisting()
-    await expect(await $('#browser-tabs-host .pane-popout-btn')).toBeDisplayed()
+    await expect(await $('#roadmap-host .pane-popout-btn')).toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-main.png'))
   })
 })
