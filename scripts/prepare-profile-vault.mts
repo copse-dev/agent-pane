@@ -1,6 +1,10 @@
-import { profileVaultSourceHash } from './lib/profile-vault-source.mts'
+import {
+  PROFILE_VAULT_ARCHITECTURES,
+  PROFILE_VAULT_BUILD_VERSION,
+  profileVaultSourceHash,
+} from './lib/profile-vault-source.mts'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 if (process.platform !== 'darwin') throw new Error('The native profile vault requires macOS.')
@@ -12,27 +16,48 @@ if (!identity || identity.startsWith('--'))
   )
 const root = resolve(import.meta.dirname, '..')
 const directory = resolve(root, 'native/profile-vault/dist')
+const slicesDirectory = resolve(root, '.tmp/profile-vault/slices')
+const deploymentTarget = '26.0'
 mkdirSync(directory, { recursive: true })
+rmSync(slicesDirectory, { recursive: true, force: true })
+mkdirSync(slicesDirectory, { recursive: true })
 for (const [source, filename, identifier] of [
   ['main.swift', 'CopseVault', 'dev.copse.vault'],
   ['probe.swift', 'CopseVaultProbe', 'dev.copse.vault-probe'],
 ]) {
   if (!source || !filename || !identifier) throw new Error('Invalid native build target')
   const output = resolve(directory, filename)
-  execFileSync(
-    '/usr/bin/xcrun',
-    [
-      'swiftc',
-      '-O',
-      '-module-cache-path',
-      resolve(root, '.tmp/profile-vault/module-cache'),
-      '-o',
-      output,
-      resolve(root, 'native/profile-vault', source),
-      ...(source === 'main.swift' ? [resolve(root, 'native/profile-vault/policy.swift')] : []),
-    ],
-    { stdio: 'inherit' },
-  )
+  const slices = PROFILE_VAULT_ARCHITECTURES.map((architecture) => {
+    const slice = resolve(slicesDirectory, `${filename}-${architecture}`)
+    execFileSync(
+      '/usr/bin/xcrun',
+      [
+        'swiftc',
+        '-O',
+        '-target',
+        `${architecture}-apple-macos${deploymentTarget}`,
+        '-module-cache-path',
+        resolve(root, `.tmp/profile-vault/module-cache-${architecture}`),
+        '-o',
+        slice,
+        resolve(root, 'native/profile-vault', source),
+        ...(source === 'main.swift' ? [resolve(root, 'native/profile-vault/policy.swift')] : []),
+      ],
+      { stdio: 'inherit' },
+    )
+    return slice
+  })
+  // One prepared tree feeds either architecture in local packaging and in the
+  // release matrix. Sign the combined binary so neither package can inherit the
+  // runner architecture by accident.
+  execFileSync('/usr/bin/lipo', ['-create', ...slices, '-output', output], {
+    stdio: 'inherit',
+  })
+  for (const architecture of PROFILE_VAULT_ARCHITECTURES) {
+    execFileSync('/usr/bin/lipo', [output, '-verify_arch', architecture], {
+      stdio: 'inherit',
+    })
+  }
   execFileSync(
     '/usr/bin/codesign',
     [
@@ -63,7 +88,8 @@ for (const [source, filename, identifier] of [
 writeFileSync(
   resolve(directory, 'build.json'),
   JSON.stringify({
-    version: 1,
+    version: PROFILE_VAULT_BUILD_VERSION,
+    architectures: PROFILE_VAULT_ARCHITECTURES,
     sourceHash: profileVaultSourceHash(root),
   }) + '\n',
 )

@@ -209,14 +209,60 @@ jobs:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
+          signing_keychain="$RUNNER_TEMP/copse-release-signing.keychain-db"
+          signing_certificate="$RUNNER_TEMP/copse-release-signing.p12"
+          signing_keychain_password="$(openssl rand -base64 32)"
+          original_keychains=()
+          while read -r keychain; do
+            keychain="${keychain#\"}"
+            keychain="${keychain%\"}"
+            original_keychains+=("$keychain")
+          done < <(security list-keychains -d user)
+          cleanup_signing_keychain() {
+            security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+            rm -f "$signing_certificate"
+            if [ "${#original_keychains[@]}" -gt 0 ]; then
+              security list-keychains -d user -s "${original_keychains[@]}"
+            fi
+          }
+          trap cleanup_signing_keychain EXIT
+
+          # build:release must package the independently signed helper before
+          # electron-builder starts. Import the same release identity once and
+          # point electron-builder at this temporary keychain afterwards.
+          node -e '
+            const { writeFileSync } = require("node:fs")
+            const value = process.env.CSC_LINK
+            if (!value) throw new Error("CSC_LINK is unavailable")
+            const certificate = Buffer.from(value, "base64")
+            if (certificate.length === 0) throw new Error("CSC_LINK decoded to an empty certificate")
+            writeFileSync(process.argv[1], certificate, { mode: 0o600 })
+          ' "$signing_certificate"
+          security create-keychain -p "$signing_keychain_password" "$signing_keychain"
+          security unlock-keychain -p "$signing_keychain_password" "$signing_keychain"
+          security set-keychain-settings -lut 21600 "$signing_keychain"
+          security list-keychains -d user -s "$signing_keychain" "${original_keychains[@]}"
+          security import "$signing_certificate" -k "$signing_keychain" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -P "$CSC_KEY_PASSWORD"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$signing_keychain_password" "$signing_keychain"
+          signing_identity="$(
+            security find-identity -v -p codesigning "$signing_keychain" |
+              awk '/"Developer ID Application: .+ \(VRQQV62MK3\)"$/ { print $2; exit }'
+          )"
+          if [ -z "$signing_identity" ]; then
+            echo 'The release certificate has no Copse Developer ID Application identity'
+            exit 1
+          fi
+          export CSC_KEYCHAIN="$signing_keychain"
+          export CSC_NAME="$signing_identity"
+          unset CSC_LINK
+
           # Packaged workers run on a separate, checksum-verified Node (the app's
           # RunAsNode fuse is off). build.mts needs the runner's architecture and
           # after-pack.cjs the target's, so prepare both.
+          pnpm run prepare:vault --identity "$signing_identity"
           pnpm run prepare:node
-          # Still open: build:release also requires the signed
-          # native vault helper (`pnpm run prepare:vault --identity …`). That needs
-          # the Developer ID identity in a keychain before this step; CSC_LINK is
-          # only imported by electron-builder during packaging. See PR #2658.
           pnpm run build:release
           # A clean checkout does not contain the generated .icns. Without this
           # step electron-builder falls back to Electron's icon for the app and
@@ -307,6 +353,12 @@ jobs:
               echo "Bundled gortex architecture $gortex_arch does not match app architecture $app_arch"
               exit 1
             fi
+            vault="$app/Contents/Resources/app.asar.unpacked/dist/resources/profile-vault/CopseVault"
+            test -x "$vault"
+            lipo "$vault" -verify_arch "$expected_arch"
+            codesign --verify --strict \
+              -R '=identifier "dev.copse.vault" and anchor apple generic and certificate leaf[subject.OU] = "VRQQV62MK3"' \
+              "$vault"
             "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex" version
             test -s "$app/Contents/Resources/app-update.yml"
             grep -q '^provider: github$' "$app/Contents/Resources/app-update.yml"

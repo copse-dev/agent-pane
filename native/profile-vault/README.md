@@ -54,11 +54,13 @@ pnpm run prepare:node
 pnpm run build:release
 ```
 
-`prepare:vault` compiles `main.swift` plus `policy.swift`, signs the helper as
+`prepare:vault` compiles universal arm64/x86_64 binaries, signs the helper as
 `dev.copse.vault`, and prepares the synthetic probe. Binaries/signing credentials
 are not committed. Ordinary builds reuse a matching signed helper. Development
 builds omit a missing/stale helper; release builds fail until it is prepared.
-The helper is copied unchanged outside app.asar and excluded from app re-signing.
+Release CI imports its temporary Developer ID keychain before this step and then
+reuses that keychain for app signing. The helper is copied unchanged outside
+app.asar and excluded from app re-signing.
 `prepare:node` verifies official checksums for the `.nvmrc` Node version; packaging
 signs the separate worker runtime and retains only the target architecture.
 
