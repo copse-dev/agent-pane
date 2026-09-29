@@ -18,8 +18,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import { nonEmptyStringOr } from '../../src/shared/unknown-value.mts'
-import { isRecord } from '../../src/shared/unknown-value.mts'
+import { isRecord, nonEmptyStringOr } from '../../packages/std/src/unknown-value.ts'
 
 export const AWS_REGION_ENV = 'AWS_REGION'
 export const DEFAULT_AMI_SSM_PARAMETER =

@@ -1604,4 +1604,26 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'claude-opus-5-5',
     { enabled: false },
   ),
+  {
+    id: 'roadmap-chat-min-width',
+    label: 'Roadmap side panel minimum chat width',
+    project: project('demo-roadmap-chat-min-width-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      layout: { filesPaneWidth: 4000 },
+    },
+    threads: [
+      {
+        id: 'demo-roadmap-chat-min-width-thread',
+        title: 'Roadmap layout bounds',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
 ]

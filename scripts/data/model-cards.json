@@ -56,6 +56,15 @@
       "asOf": "2026-09-02"
     },
     {
+      "modelId": "claude-sonnet-5-5",
+      "publisher": "Anthropic",
+      "kind": "system-card",
+      "title": "Claude Sonnet 5.5 system card",
+      "url": "https://www.anthropic.com/claude-sonnet-5-5-system-card",
+      "source": "Linked from Anthropic's Sonnet 5.5 launch page and verified 2026-09-28; the stable Anthropic URL redirects to the vendor-published PDF.",
+      "asOf": "2026-09-28"
+    },
+    {
       "modelId": "claude-sonnet-5",
       "publisher": "Anthropic",
       "kind": "system-card",
