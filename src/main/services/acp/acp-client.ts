@@ -486,7 +486,7 @@ export async function spawnAcpAgentProcess(
     const release = acquireSandboxNetworkScope({
       domains: overlay.network?.allowedDomains ?? [],
       allowLocalBinding: overlay.network?.allowLocalBinding ?? false,
-      label: `ACP agent: ${config.command}`,
+      label: `agent: ${config.command}`,
     })
     try {
       const command = formatArgvForShell(config.command, config.args ?? [])

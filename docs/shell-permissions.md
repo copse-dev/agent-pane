@@ -49,6 +49,11 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+On macOS, ASRT's network allowlist is process-wide. While a sandboxed ACP agent or background task
+temporarily widens it, a newly started network-capable command could inherit that access. Copse
+therefore pauses auto-run and names the holder in an approval prompt before overlapping the two.
+Structurally read-only commands do not prompt because they cannot open a network connection.
+
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git
