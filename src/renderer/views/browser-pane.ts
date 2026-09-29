@@ -189,8 +189,21 @@ interface BrowserPopoutSeed {
     artefactTitle?: string | null
     artefactThreadId?: string | null
     artefactProjectId?: string | null
+    /** What Download canvas needs, so a popped-out tab keeps its export. */
+    artefact?: { title: string; mimeType: string; body: string } | null
   }>
   activeTabIndex: number
+}
+
+function seededArtefact(value: unknown): CanvasArtefact | null {
+  if (!value || typeof value !== 'object') return null
+  const title = Reflect.get(value, 'title')
+  const mimeType = Reflect.get(value, 'mimeType')
+  const body = Reflect.get(value, 'body')
+  if (typeof title !== 'string' || typeof mimeType !== 'string' || typeof body !== 'string') {
+    return null
+  }
+  return { title, mimeType, body }
 }
 
 function isBrowserPopoutSeed(seed: unknown): seed is BrowserPopoutSeed {
@@ -1549,6 +1562,13 @@ export function mountBrowserPane(
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
           artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact
+            ? {
+                title: tab.artefact.title,
+                mimeType: tab.artefact.mimeType,
+                body: tab.artefact.body,
+              }
+            : null,
         }
       }),
       activeTabIndex: activeIndexOf(ordered),
@@ -1583,6 +1603,7 @@ export function mountBrowserPane(
         tab.artefactProjectId = entry.artefactProjectId ?? null
         tab.artefactContentReady = Boolean(entry.url && entry.url !== 'about:blank')
         tab.urlInput.placeholder = entry.artefactTitle
+        tab.artefact = seededArtefact(entry.artefact)
       }
       if (entry.url && entry.url !== 'about:blank') {
         tab.pendingUrl = entry.url

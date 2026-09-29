@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
+import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.ts'
 import { createPendingApi } from '../fake-api.test-support.ts'
 import { el, qsRequired } from '../dom/helpers.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
@@ -1030,6 +1031,63 @@ describe('browser pane requested URLs', () => {
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
       else Reflect.deleteProperty(globalThis, 'ResizeObserver')
       unmount()
+    }
+  })
+
+  it('keeps Download canvas enabled after a canvas tab moves to a pop-out', async () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const artefact = {
+      title: 'Sales dashboard',
+      mimeType: 'text/html',
+      body: '<!doctype html><h1>Sales</h1>',
+    }
+    const makeApi = (): ReturnType<typeof createPendingApi> =>
+      createPendingApi({
+        'browser.onOpenTab': (): (() => void) => (): void => {},
+        'browser.onShareText': (): (() => void) => (): void => {},
+        'browser.onShareImage': (): (() => void) => (): void => {},
+        'panes.popout': async (): Promise<void> => {},
+      })
+
+    const source = mountBrowserHosts()
+    const sourceStore = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+    const unmountSource = mountBrowserPane(source.list, source.viewer, sourceStore, makeApi())
+    let unmountTarget: (() => void) | undefined
+    try {
+      openCanvasArtefact(sourceStore, artefact)
+      const seed = capturePopoutSeed('browser', sourceStore)
+      unmountSource()
+
+      const target = mountBrowserHosts()
+      const targetStore = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+      unmountTarget = mountBrowserPane(target.list, target.viewer, targetStore, makeApi())
+      await applyPopoutSeed('browser', seed, targetStore)
+
+      const panel = target.viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(panel, 'the seeded canvas tab is active')
+      const item = [...panel.querySelectorAll<HTMLButtonElement>('.browser-menu-item')].find(
+        (candidate) => candidate.textContent === 'Download canvas',
+      )
+      assert.ok(item)
+      assert.equal(item.disabled, false, 'the pop-out keeps the artefact it needs to export')
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmountTarget?.()
     }
   })
 
