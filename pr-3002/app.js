@@ -68248,7 +68248,7 @@ function fallbackThreadTitle(input2) {
     if (title) return title;
   }
   const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
-  return fallback || "New Thread";
+  return fallback && !vagueClause(fallback) ? fallback : "New Thread";
 }
 var MAX_THREAD_TITLE_CHARS, MAX_THREAD_TITLE_WORDS, CONVERSATIONAL_LEADS, CONTROL_CHARS, BIDI_FORMAT_CHARS, MODEL_PREAMBLE;
 var init_thread_title = __esm({
