@@ -110,6 +110,7 @@ import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
+import { mountAppleProjectSuggestions } from './apple-project-suggestion.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
@@ -2509,7 +2510,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     arrowDownIcon('ui-icon'),
   )
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn)
+  const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
+    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
+  )
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn,
+  )
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -4629,6 +4639,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
+    appleSuggestions.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

@@ -103,6 +103,19 @@ export interface AppleProjectDetection {
   supportedHost: boolean
 }
 
+/** The user's answer to the open-time suggestion, persisted per project. */
+export const APPLE_SUGGESTION_ANSWERS = ['snoozed', 'dismissed'] as const
+export type AppleSuggestionAnswer = (typeof APPLE_SUGGESTION_ANSWERS)[number]
+
+/**
+ * What to offer when a project becomes active: nothing, the first-time dialog,
+ * or the one-time reminder after an earlier "Not now".
+ */
+export interface AppleProjectSuggestion {
+  offer: 'none' | 'dialog' | 'reminder'
+  pluginEnabled: boolean
+}
+
 export const appleConfigureInputSchema = z.object({
   candidateId: z.string().min(1).max(512),
   schemeId: z.string().min(1).max(256),
