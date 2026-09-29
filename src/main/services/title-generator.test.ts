@@ -144,6 +144,11 @@ describe('fallbackThreadTitle', () => {
       'Opens the wrong checkout',
     )
   })
+
+  it('keeps the default title when the whole request is vague', () => {
+    assert.equal(fallbackThreadTitle('Can we fix this?'), 'New Thread')
+    assert.equal(fallbackThreadTitle('Please investigate the problem.'), 'New Thread')
+  })
 })
 
 describe('completeThreadTitleWithRoutes', () => {

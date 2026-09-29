@@ -154,6 +154,19 @@ test('maybeNameThread falls back to a deterministic title when suggestTitle fail
   assert.equal(requireThread(store, 't-fallback').title, 'Fix the flicker please now')
 })
 
+test('maybeNameThread does not persist a vague fallback when suggestTitle fails', async () => {
+  const store = createStore({
+    threads: [newThread('t-vague-fallback', [userMessage('Can we fix this?')])],
+    activeThreadId: 't-vague-fallback',
+  })
+  const { api } = apiWithTitle(async () => null)
+
+  maybeNameThread(store, api, 't-vague-fallback')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(requireThread(store, 't-vague-fallback').title, 'New Thread')
+})
+
 // Inline paste and thread-reference chips are stored as U+FFFC placeholders in
 // the message content. They are transcript markup, not words: neither the
 // naming model nor the word-slice fallback may carry one into the title, where

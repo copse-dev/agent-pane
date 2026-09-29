@@ -181,5 +181,5 @@ export function fallbackThreadTitle(input: string): string {
   }
 
   const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true)
-  return fallback || 'New Thread'
+  return fallback && !vagueClause(fallback) ? fallback : 'New Thread'
 }
