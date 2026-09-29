@@ -337,8 +337,22 @@ async function protectUrlNestedPii(
 }
 
 function wrapGuard(guard: PiiGuard, mod: RampartModule): PiiGuard {
+  // Rampart's guard owns the mutable forward/reverse placeholder maps. A
+  // thread can submit overlapping redactions (for example, two queued turns),
+  // but the library does not promise that concurrent protect calls update
+  // those maps atomically. Keep the complete operation — including the second
+  // pass for PII nested in a preserved URL — ordered per guard. A failed call
+  // must not poison the queue for later messages.
+  let tail = Promise.resolve()
   return {
-    protect: (text) => protectUrlNestedPii(guard, mod.detectHeuristics, text),
+    protect: (text): Promise<ScrubResult> => {
+      const operation = tail.then(() => protectUrlNestedPii(guard, mod.detectHeuristics, text))
+      tail = operation.then(
+        () => undefined,
+        () => undefined,
+      )
+      return operation
+    },
     reveal: (reply) => guard.reveal(reply),
   }
 }
