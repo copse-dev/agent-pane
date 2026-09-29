@@ -59,7 +59,13 @@ export interface ProjectStoreScope {
  * resolved against that list, which covers a removal before the turn's first
  * store access.
  */
-const persistedProjectIds = new Set<string>()
+const persistedProjectRoots = new Map<string, Set<string>>()
+
+function rememberPersistedProjectRoot(projectId: string, root: string): void {
+  const roots = persistedProjectRoots.get(projectId) ?? new Set<string>()
+  roots.add(root)
+  persistedProjectRoots.set(projectId, roots)
+}
 
 /**
  * The scope for code running on behalf of a thread: that thread's project.
@@ -72,13 +78,16 @@ const persistedProjectIds = new Set<string>()
 export function threadProjectStoreScope(
   context: Pick<ThreadExecutionContext, 'projectId' | 'projectRoot'>,
 ): ProjectStoreScope {
-  if (
-    getProjectRoot(context.projectId) !== null ||
-    wasThreadContextProjectPersisted(context.projectId)
-  ) {
-    persistedProjectIds.add(context.projectId)
+  const currentRoot = getProjectRoot(context.projectId)
+  if (currentRoot !== null) {
+    rememberPersistedProjectRoot(context.projectId, currentRoot)
+  } else if (wasThreadContextProjectPersisted(context.projectId)) {
+    // Context resolution already verified this id/root pair while the project
+    // was persisted. Keep that pairing after removal so first-use migration
+    // can still adopt this project's legacy path-hash directory.
+    rememberPersistedProjectRoot(context.projectId, context.projectRoot)
   }
-  const persisted = persistedProjectIds.has(context.projectId)
+  const persisted = persistedProjectRoots.has(context.projectId)
   return { projectId: persisted ? context.projectId : null, root: context.projectRoot }
 }
 
@@ -131,7 +140,9 @@ export function projectStoreNamespaceDir(
   // Only adopt the legacy directory when `root` is this project's own persisted
   // path. A root that belongs to some other project (or to none) must never
   // have its data moved under this id.
-  if (legacy !== target && existsSync(legacy) && getProjectRoot(projectId) === root) {
+  const rootBelongsToProject =
+    getProjectRoot(projectId) === root || persistedProjectRoots.get(projectId)?.has(root) === true
+  if (legacy !== target && existsSync(legacy) && rootBelongsToProject) {
     try {
       renameSync(legacy, target)
     } catch {
