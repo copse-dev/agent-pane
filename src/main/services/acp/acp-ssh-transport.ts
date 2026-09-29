@@ -17,8 +17,12 @@ import {
   REMOTE_PGID_PREFIX,
 } from '../ssh-workspace/remote-env.ts'
 import { leaseSshAskpassEnv } from '../ssh-workspace/askpass.ts'
-import { registerRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
+import {
+  registerRemoteProcessMeta,
+  takeRemoteProcessMeta,
+} from '../ssh-workspace/remote-process-meta.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
+import { killRemoteProcessGroup } from '../exec/remote-process-kill.ts'
 import { approveRemoteAcpInstall } from './acp-remote-install-approval.ts'
 import { emitShellOutput } from '../exec/shell-output-context.ts'
 import type { AcpTransport } from './acp-client.ts'
@@ -636,10 +640,21 @@ export async function spawnRemoteAcpTransport(
     .catch(() => {
       /* child exit / dispose aborts the pipe */
     })
+  let disposal: Promise<void> | null = null
   return {
     stream: ndJsonStream(writable, fromAgent.readable),
-    dispose: (): void => {
-      terminateProcessTree(child)
+    dispose: (): Promise<void> => {
+      if (disposal) return disposal
+      const remote = takeRemoteProcessMeta(child)
+      if (!remote) {
+        terminateProcessTree(child)
+        disposal = Promise.resolve()
+        return disposal
+      }
+      disposal = killRemoteProcessGroup(remote.hostId, remote.pgid).finally(() => {
+        terminateProcessTree(child)
+      })
+      return disposal
     },
     resourceFault: faults.current,
   }
