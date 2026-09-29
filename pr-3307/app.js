@@ -35219,14 +35219,20 @@ function openImageExpand(src, alt = "Expanded attachment", returnFocus2) {
   openSingleImage(src, alt, returnFocus2);
 }
 function openImageGallery(items, initialIndex = 0, returnFocus2) {
-  const usableItems = items.filter((item) => item.src.length > 0);
+  const usableItems = [];
+  let usableIndex = 0;
+  for (const [index, item] of items.entries()) {
+    if (item.src.length === 0) continue;
+    if (index < initialIndex) usableIndex += 1;
+    usableItems.push(item);
+  }
   if (usableItems.length === 0) return;
   if (usableItems.length === 1) {
     const item = usableItems[0];
     if (item) openSingleImage(item.src, item.alt, returnFocus2);
     return;
   }
-  openImageGalleryViewer(usableItems, initialIndex, returnFocus2);
+  openImageGalleryViewer(usableItems, usableIndex, returnFocus2);
 }
 function attachImageExpand(img, alt, gallery, galleryIndex) {
   if (img.dataset["imageExpand"] === "true") return;
