@@ -10,11 +10,18 @@ module.exports = async function afterPack(context) {
   // pnpm's isolated linker gives top-level symlinks to direct dependencies alone,
   // so a bare import of it from this script fails to resolve on a clean install.
   // electron-builder is a direct dependency and re-exports the very same enum.
-  const [{ execFileSync }, { renameSync, rmSync }, { join }, { Arch }] = await Promise.all([
+  const [
+    { execFileSync },
+    { renameSync, rmSync },
+    { join },
+    { Arch },
+    { repairVersionedMacosFrameworks },
+  ] = await Promise.all([
     import('node:child_process'),
     import('node:fs'),
     import('node:path'),
     import('electron-builder'),
+    import('./lib/repair-macos-frameworks.mts'),
   ])
 
   const targetArch =
@@ -27,6 +34,9 @@ module.exports = async function afterPack(context) {
     'Contents',
     'Resources',
     'app.asar.unpacked',
+  )
+  repairVersionedMacosFrameworks(
+    join(resources, 'node_modules', 'xcodebuildmcp', 'bundled', 'Frameworks'),
   )
   const binary = join(resources, 'dist', 'resources', 'gortex', 'gortex')
   const archs = execFileSync('lipo', [binary, '-archs'], { encoding: 'utf8' }).trim().split(/\s+/)
