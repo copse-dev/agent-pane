@@ -52,6 +52,8 @@ import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  ThreadWorktreeAttachment,
+  ThreadWorktreeReattachResult,
   GitPromptState,
   GitBranchInfo,
   SessionBackup,
@@ -153,6 +155,7 @@ export interface DetectedEnvKey {
 
 export interface ApiClient {
   mobile: {
+    manage: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -1229,6 +1232,10 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** Whether the thread's isolated checkout is detached, without throwing for it. */
+    worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
+    /** Put a detached thread checkout back on its branch, keeping any detached commits. */
+    reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
