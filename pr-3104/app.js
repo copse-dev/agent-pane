@@ -22271,6 +22271,251 @@ var init_thread_sort = __esm({
   }
 });
 
+// packages/llm/src/estimate-cost.ts
+function isLocalModel(model) {
+  return model === "lm-studio" || model.startsWith("lmstudio:");
+}
+function pricingForModel(model, pricing) {
+  if (isLocalModel(model)) return null;
+  const info = getModelInfo(model) ?? pricing?.[model];
+  if (!info) return null;
+  return info;
+}
+function pricingForTier(model, tier, pricing) {
+  const standard = pricingForModel(model, pricing);
+  if (!standard) return { pricing: null, fallback: false };
+  const tierPricing = standard.serviceTierPricing?.[tier];
+  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
+}
+function hasModelPricing(model, pricing) {
+  return pricingForModel(model, pricing) !== null;
+}
+function hasZeroModelPricing(model, pricing) {
+  const info = pricingForModel(model, pricing);
+  if (!info) return false;
+  return info.inputPricePerMTok === 0 && info.outputPricePerMTok === 0 && (info.cacheReadPricePerMTok ?? 0) === 0 && (info.cacheCreationPricePerMTok ?? 0) === 0;
+}
+function costForUsage(usage, info) {
+  if (!info) return 0;
+  const cacheRead = usage.cacheReadTokens ?? 0;
+  const cacheCreation = usage.cacheCreationTokens ?? 0;
+  const hasCacheBreakdown = usage.cacheReadTokens !== void 0 || usage.cacheCreationTokens !== void 0;
+  const freshInput = hasCacheBreakdown ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation) : usage.inputTokens;
+  const inputRate = info.inputPricePerMTok;
+  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate;
+  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
+  return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
+}
+function costForModelUsageWithDetails(model, usage, pricing) {
+  const standard = pricingForModel(model, pricing);
+  const split = splitServiceTierUsage(usage);
+  let costUsd = costForUsage(split.standard, standard);
+  let tierPricingFallback = false;
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const tierUsage = split.tiers[tier];
+    if (!tierUsage) continue;
+    const resolved3 = pricingForTier(model, tier, pricing);
+    costUsd += costForUsage(tierUsage, resolved3.pricing);
+    tierPricingFallback ||= resolved3.fallback;
+  }
+  return { costUsd, tierPricingFallback };
+}
+function costForModelUsage(model, usage, pricing) {
+  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
+}
+function estimateUsageCost(byModel, pricing, options = {}) {
+  const entries2 = Object.entries(byModel).filter(([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0);
+  if (entries2.length === 0) return "";
+  let totalCost = 0;
+  let hasLocal = false;
+  let hasPricedCloud = false;
+  let hasUnpricedCloud = false;
+  let hasTierPricingFallback = false;
+  for (const [model, usage] of entries2) {
+    if (isLocalModel(model)) {
+      hasLocal = true;
+      continue;
+    }
+    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
+    else hasUnpricedCloud = true;
+    const cost = costForModelUsageWithDetails(model, usage, pricing);
+    totalCost += cost.costUsd;
+    hasTierPricingFallback ||= cost.tierPricingFallback;
+  }
+  if (totalCost === 0) {
+    if (hasUnpricedCloud) return "";
+    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
+    if (hasLocal) return "free (local)";
+    return "";
+  }
+  const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
+  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
+  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
+  return hasLocal && !options.localFreeExplained ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
+}
+function formatThreadUsageCost(usage, fallbackChatModel, pricing, options = {}) {
+  if (usage.byModel && Object.keys(usage.byModel).length > 0) {
+    return estimateUsageCost(usage.byModel, pricing, options);
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return "";
+  return estimateUsageCost(
+    {
+      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
+    },
+    pricing,
+    options
+  );
+}
+var init_estimate_cost = __esm({
+  "packages/llm/src/estimate-cost.ts"() {
+    init_model_catalog();
+    init_model_usage();
+    init_service_tier();
+  }
+});
+
+// src/shared/usage/format-usage-summary.ts
+function formatUsd(amount) {
+  if (amount <= 0) return "$0.00";
+  if (amount < 0.01) return "<$0.01";
+  return `~$${amount.toFixed(2)}`;
+}
+function formatTokenCount(n2) {
+  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
+  if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
+  return String(n2);
+}
+function formatPeriodHeadline(summary) {
+  const localCount = summary.localModels.length;
+  const cloudCount = summary.cloudModels.length;
+  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
+  const parts = [cost];
+  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
+  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
+  return parts.join(" \xB7 ");
+}
+var init_format_usage_summary = __esm({
+  "src/shared/usage/format-usage-summary.ts"() {
+  }
+});
+
+// src/shared/usage/footer-usage-summary.ts
+function collectSubagentUsage(toolCalls, totals) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session) continue;
+    if (session.kind === "container") continue;
+    if (session.usage) {
+      totals.runs += 1;
+      totals.inputTokens += session.usage.inputTokens;
+      totals.outputTokens += session.usage.outputTokens;
+    }
+    for (const message2 of session.messages) {
+      collectSubagentUsage(message2.toolCalls, totals);
+    }
+  }
+}
+function sumSubagentUsage(messages) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  for (const message2 of messages) {
+    collectSubagentUsage(message2.toolCalls, totals);
+  }
+  return totals;
+}
+function sumLegacyFoldedSubagentUsage(messages, trailingTurnRunning) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  let turnStart = 0;
+  const collectTurn = (turnEnd, isTrailingTurn) => {
+    if (trailingTurnRunning && isTrailingTurn) return;
+    let outcome;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const candidate = messages[i2]?.turnOutcome;
+      if (candidate !== void 0) outcome = candidate;
+    }
+    if (outcome !== void 0 && outcome.status !== "completed") return;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const message2 = messages[i2];
+      if (message2) collectSubagentUsage(message2.toolCalls, totals);
+    }
+  };
+  for (let i2 = 1; i2 <= messages.length; i2 += 1) {
+    if (i2 < messages.length && messages[i2]?.role !== "user") continue;
+    collectTurn(i2, i2 === messages.length);
+    turnStart = i2;
+  }
+  return totals;
+}
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function foldedSubagentShare(measured, legacyFoldedSessions) {
+  if (measured.subagentInputTokens !== void 0 || measured.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: measured.subagentInputTokens ?? 0,
+      outputTokens: measured.subagentOutputTokens ?? 0
+    };
+  }
+  return legacyFoldedSessions;
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    const folded = foldedSubagentShare(
+      input2.measured,
+      sumLegacyFoldedSubagentUsage(input2.messages, input2.running)
+    );
+    return {
+      inputTokens: Math.max(0, inputTokens - folded.inputTokens),
+      outputTokens: Math.max(0, outputTokens - folded.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total2 = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total2 && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+  }
+});
+
 // src/shared/store/thread-helpers.ts
 function getThreadById(store2, id) {
   if (!id) return void 0;
@@ -22717,6 +22962,7 @@ function addUsageDelta(store2, threadId, delta) {
     usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
   );
   byModel[delta.model] = mergeModelUsage(prev, usage);
+  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : void 0);
   updateUsage(
     store2,
     threadId,
@@ -22724,13 +22970,32 @@ function addUsageDelta(store2, threadId, delta) {
       {
         inputTokens: thread.usage.inputTokens + delta.inputTokens,
         outputTokens: thread.usage.outputTokens + delta.outputTokens,
-        byModel
+        byModel,
+        subagentInputTokens: subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
+        subagentOutputTokens: subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0)
       },
       thread.usage.cacheReadTokens,
       thread.usage.cacheCreationTokens,
       delta
     )
   );
+}
+function foldedSubagentUsage(thread, incoming) {
+  const { usage } = thread;
+  if (usage.subagentInputTokens !== void 0 || usage.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: usage.subagentInputTokens ?? 0,
+      outputTokens: usage.subagentOutputTokens ?? 0
+    };
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 };
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === "running");
+  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0));
+  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0));
+  return {
+    inputTokens: Math.min(priorInput, usage.inputTokens),
+    outputTokens: Math.min(priorOutput, usage.outputTokens)
+  };
 }
 function updateContextSnapshot(store2, threadId, snapshot) {
   patchThreadAnywhere(store2, threadId, (t2) => ({
@@ -22971,6 +23236,7 @@ var init_thread_helpers = __esm({
     init_thread_proposal2();
     init_reviewer_input();
     init_thread_sort();
+    init_footer_usage_summary();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
@@ -23887,7 +24153,10 @@ var init_tool_display = __esm({
         done: "Ran unattended in a container"
       },
       preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
-      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" }
+      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
+      coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
+      coordination_note: { running: "Sending peer note", done: "Sent peer note" },
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" }
     };
     TOOL_GROUPS = {
       reading: {
@@ -24372,6 +24641,20 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/renderer/controller/send-now-aborts.ts
+function markSendNowAbort(threadId) {
+  sendNowThreads.add(threadId);
+}
+function takeSendNowAbort(threadId) {
+  return sendNowThreads.delete(threadId);
+}
+var sendNowThreads;
+var init_send_now_aborts = __esm({
+  "src/renderer/controller/send-now-aborts.ts"() {
+    sendNowThreads = /* @__PURE__ */ new Set();
+  }
+});
+
 // src/renderer/controller/message-queue.ts
 function isHeldMessage(item) {
   return item.autoDispatch === false;
@@ -24670,6 +24953,7 @@ function sendQueuedMessageNow(store2, api2, threadId, messageId) {
   store2.setState({ threads });
   store2.emit("threads_changed");
   if (thread.status === "running") {
+    markSendNowAbort(threadId);
     void api2.agent.abort(threadId);
   } else {
     drainMessageQueue(store2, api2, threadId);
@@ -24730,6 +25014,7 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_send_now_aborts();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -25570,6 +25855,15 @@ function imageIcon(className = DEFAULT) {
       "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
       "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
       "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
     ],
     className
   );
@@ -37712,6 +38006,10 @@ function createDemoApi(scenario, options = {}) {
       refreshHuggingFaceModels: () => resolved({ ok: false, count: 0, error: "Unavailable in demo" })
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: "demo", report: null }),
+      openLicenseFile: resolvedVoid
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -37922,6 +38220,12 @@ function createDemoApi(scenario, options = {}) {
           supportedHost: state.supportedHost
         });
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) => resolved({
+        offer: "none",
+        pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled
+      }),
+      answerSuggestion: () => resolved(void 0),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId);
         const state = {
@@ -40984,6 +41288,90 @@ var init_lm_studio_defaults = __esm({
   }
 });
 
+// packages/llm/src/model-maker-block.ts
+function parseBlockedModelMakers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => isModelMaker(entry));
+}
+function makerFromName(name) {
+  const normalized = name.toLowerCase();
+  if (normalized === "anthropic" || normalized.startsWith("claude-")) return "anthropic";
+  if (normalized === "openai" || normalized.startsWith("gpt-") || /^o[1-9](?:-|$)/.test(normalized))
+    return "openai";
+  if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
+    return "google";
+  if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
+  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
+    (family) => normalized === family || normalized.startsWith(`${family}-`)
+  ))
+    return "mistral";
+  if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
+    return "xai";
+  return null;
+}
+function makerFromAgent(agent) {
+  const normalized = agent.toLowerCase();
+  if (normalized.startsWith("claude")) return "anthropic";
+  if (normalized.startsWith("codex")) return "openai";
+  if (normalized.startsWith("gemini")) return "google";
+  if (normalized.startsWith("mistral")) return "mistral";
+  if (normalized.startsWith("grok")) return "xai";
+  return null;
+}
+function modelMakerForSelection(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
+  if (selection2.namespace === "remote-agent" && !selection2.id) {
+    return selection2.agent === "anthropic" ? "anthropic" : null;
+  }
+  if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
+  const id = selection2.id.toLowerCase();
+  const parts = id.split("/");
+  const first = parts[0] ?? "";
+  const last = parts.at(-1) ?? "";
+  const fromModel = makerFromName(first) ?? makerFromName(last);
+  if (fromModel) return fromModel;
+  if (selection2.namespace === "acp") return makerFromAgent(selection2.agent);
+  return makerFromName(selection2.slug);
+}
+function blockedModelMaker(selection2, blocked) {
+  const maker = modelMakerForSelection(selection2);
+  return maker && blocked.includes(maker) ? maker : null;
+}
+var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
+var init_model_maker_block = __esm({
+  "packages/llm/src/model-maker-block.ts"() {
+    init_model_selection();
+    init_member_of();
+    MODEL_MAKER_IDS = [
+      "anthropic",
+      "openai",
+      "google",
+      "deepseek",
+      "mistral",
+      "xai"
+    ];
+    MODEL_MAKERS = [
+      { id: "anthropic", label: "Anthropic" },
+      { id: "openai", label: "OpenAI" },
+      { id: "google", label: "Google" },
+      { id: "deepseek", label: "DeepSeek" },
+      { id: "mistral", label: "Mistral" },
+      { id: "xai", label: "xAI" }
+    ];
+    isModelMaker = memberOf(MODEL_MAKER_IDS);
+    MISTRAL_MODEL_FAMILIES = [
+      "mistral",
+      "mixtral",
+      "codestral",
+      "devstral",
+      "magistral",
+      "ministral",
+      "pixtral"
+    ];
+  }
+});
+
 // src/shared/managed-agents.ts
 var DEFAULT_MANAGED_AGENT_MODEL;
 var init_managed_agents = __esm({
@@ -41528,103 +41916,6 @@ var init_acp = __esm({
       ["pnpm", ["dlx", "exec"]],
       ["yarn", ["dlx"]]
     ]);
-  }
-});
-
-// packages/llm/src/estimate-cost.ts
-function isLocalModel(model) {
-  return model === "lm-studio" || model.startsWith("lmstudio:");
-}
-function pricingForModel(model, pricing) {
-  if (isLocalModel(model)) return null;
-  const info = getModelInfo(model) ?? pricing?.[model];
-  if (!info) return null;
-  return info;
-}
-function pricingForTier(model, tier, pricing) {
-  const standard = pricingForModel(model, pricing);
-  if (!standard) return { pricing: null, fallback: false };
-  const tierPricing = standard.serviceTierPricing?.[tier];
-  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
-}
-function hasModelPricing(model, pricing) {
-  return pricingForModel(model, pricing) !== null;
-}
-function costForUsage(usage, info) {
-  if (!info) return 0;
-  const cacheRead = usage.cacheReadTokens ?? 0;
-  const cacheCreation = usage.cacheCreationTokens ?? 0;
-  const hasCacheBreakdown = usage.cacheReadTokens !== void 0 || usage.cacheCreationTokens !== void 0;
-  const freshInput = hasCacheBreakdown ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation) : usage.inputTokens;
-  const inputRate = info.inputPricePerMTok;
-  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate;
-  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
-  return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
-}
-function costForModelUsageWithDetails(model, usage, pricing) {
-  const standard = pricingForModel(model, pricing);
-  const split = splitServiceTierUsage(usage);
-  let costUsd = costForUsage(split.standard, standard);
-  let tierPricingFallback = false;
-  for (const tier of USAGE_SERVICE_TIERS) {
-    const tierUsage = split.tiers[tier];
-    if (!tierUsage) continue;
-    const resolved3 = pricingForTier(model, tier, pricing);
-    costUsd += costForUsage(tierUsage, resolved3.pricing);
-    tierPricingFallback ||= resolved3.fallback;
-  }
-  return { costUsd, tierPricingFallback };
-}
-function costForModelUsage(model, usage, pricing) {
-  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
-}
-function estimateUsageCost(byModel, pricing) {
-  const entries2 = Object.entries(byModel).filter(([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0);
-  if (entries2.length === 0) return "";
-  let totalCost = 0;
-  let hasLocal = false;
-  let hasPricedCloud = false;
-  let hasUnpricedCloud = false;
-  let hasTierPricingFallback = false;
-  for (const [model, usage] of entries2) {
-    if (isLocalModel(model)) {
-      hasLocal = true;
-      continue;
-    }
-    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
-    else hasUnpricedCloud = true;
-    const cost = costForModelUsageWithDetails(model, usage, pricing);
-    totalCost += cost.costUsd;
-    hasTierPricingFallback ||= cost.tierPricingFallback;
-  }
-  if (totalCost === 0) {
-    if (hasUnpricedCloud) return "";
-    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
-    if (hasLocal) return "free (local)";
-    return "";
-  }
-  const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
-  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
-  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
-  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
-}
-function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
-  if (usage.byModel && Object.keys(usage.byModel).length > 0) {
-    return estimateUsageCost(usage.byModel, pricing);
-  }
-  if (!usage.inputTokens && !usage.outputTokens) return "";
-  return estimateUsageCost(
-    {
-      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
-    },
-    pricing
-  );
-}
-var init_estimate_cost = __esm({
-  "packages/llm/src/estimate-cost.ts"() {
-    init_model_catalog();
-    init_model_usage();
-    init_service_tier();
   }
 });
 
@@ -53075,17 +53366,28 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
-  const concreteCount = options.filter(
+  let blockedMakers = parseBlockedModelMakers(null);
+  try {
+    blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+  } catch {
+  }
+  const visibleOptions = options.flatMap((option) => {
+    const maker = blockedModelMaker(option.value, blockedMakers);
+    if (!maker) return [option];
+    if (option.value !== current) return [];
+    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
   ).length;
   if (concreteCount === 0) {
-    options.push({
+    visibleOptions.push({
       value: "",
       label: "No models available \u2014 add a provider or API key in Settings",
       disabled: true
     });
   }
-  return options;
+  return visibleOptions;
 }
 function autoModelOption(label) {
   return { value: "", label };
@@ -53164,6 +53466,7 @@ var init_model_options = __esm({
     init_agent_model_identity();
     init_model_display();
     init_nullish2();
+    init_model_maker_block();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
     CHAT_DEFAULT_GROUP = "Chat default";
@@ -57630,31 +57933,6 @@ var init_model_parameters_section = __esm({
   }
 });
 
-// src/shared/usage/format-usage-summary.ts
-function formatUsd(amount) {
-  if (amount <= 0) return "$0.00";
-  if (amount < 0.01) return "<$0.01";
-  return `~$${amount.toFixed(2)}`;
-}
-function formatTokenCount(n2) {
-  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
-  if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
-  return String(n2);
-}
-function formatPeriodHeadline(summary) {
-  const localCount = summary.localModels.length;
-  const cloudCount = summary.cloudModels.length;
-  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
-  const parts = [cost];
-  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
-  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
-  return parts.join(" \xB7 ");
-}
-var init_format_usage_summary = __esm({
-  "src/shared/usage/format-usage-summary.ts"() {
-  }
-});
-
 // packages/llm/src/frontier-candidates.ts
 function localFrontierCandidates(localModelIds) {
   const out = [];
@@ -60484,6 +60762,170 @@ var init_usage_section = __esm({
   }
 });
 
+// src/renderer/views/setup/about-section.ts
+function describeInclusion(component) {
+  if (component.partOf) return `Compiled into ${component.partOf}`;
+  const labels = component.shippedAs.map((as2) => SHIPPED_AS_LABEL[as2]);
+  const text2 = labels.join(", ");
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+function licenseBody(component, texts) {
+  const meta3 = el("p", { class: "about-license-meta" }, describeInclusion(component));
+  if (component.source) {
+    meta3.append(
+      " \xB7 ",
+      el("a", { href: component.source, target: "_blank", rel: "noopener noreferrer" }, "Source")
+    );
+  }
+  const body = el("div", { class: "about-license-body" }, meta3);
+  if (component.note) body.append(el("p", { class: "about-license-note" }, component.note));
+  for (const file2 of component.files) {
+    body.append(
+      el("div", { class: "about-license-file-name" }, file2.name),
+      el("pre", { class: "about-license-text" }, (texts[file2.text] ?? "").trim())
+    );
+  }
+  return body;
+}
+function componentRow(component, texts) {
+  const summary = el(
+    "summary",
+    { class: "about-license-summary" },
+    el("span", { class: "about-license-name" }, component.name),
+    el("span", { class: "about-license-version" }, component.version),
+    el("span", { class: "about-license-id" }, component.license)
+  );
+  const details = el("details", { class: "about-license" }, summary);
+  details.addEventListener(
+    "toggle",
+    () => {
+      if (details.open && !details.querySelector(".about-license-body")) {
+        details.append(licenseBody(component, texts));
+      }
+    },
+    { passive: true }
+  );
+  return el(
+    "li",
+    { "data-search": `${component.name} ${component.license}`.toLowerCase() },
+    details
+  );
+}
+function createAboutSection(api2) {
+  const versionEl = el("span", { class: "about-version" }, "\u2026");
+  const openButton = (label, kind) => {
+    const button = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
+    button.dataset["licenseFile"] = kind;
+    button.addEventListener("click", () => {
+      void api2.about.openLicenseFile(kind).catch((err2) => {
+        statusEl.textContent = errorMessage(err2);
+      });
+    });
+    return button;
+  };
+  const copse = el(
+    "fieldset",
+    { class: "about-copse" },
+    el("legend", {}, "Copse"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Version ",
+      versionEl,
+      ". Copse is free software, licensed under the GNU Affero General Public License, version 3."
+    ),
+    uiActions(openButton("View licence", "copse"), { align: "start" })
+  );
+  const countEl = el("span", {}, "the open-source components");
+  const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
+  const thirdParty = el(
+    "fieldset",
+    { class: "about-third-party" },
+    el("legend", {}, "Open-source licences"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Copse is built with ",
+      countEl,
+      " listed below, each used under its own licence. Select one to read its licence. The Chromium and Node.js components inside the Electron runtime are listed separately."
+    ),
+    uiActions(
+      openButton("Open all licences", "third-party"),
+      openButton("Chromium and Node.js notices", "chromium"),
+      { align: "start" }
+    )
+  );
+  const filter = el("input", {
+    type: "search",
+    class: "about-licenses-filter",
+    placeholder: "Filter by name or licence",
+    "aria-label": "Filter open-source components",
+    autocomplete: "off",
+    spellcheck: "false"
+  });
+  const list = el("ul", { class: "about-licenses-list", "aria-label": "Open-source components" });
+  const listHost = el("div", { class: "about-licenses", hidden: true }, filter, statusEl, list);
+  let total2 = 0;
+  const applyFilter = () => {
+    const query = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row2 of Array.from(list.children)) {
+      if (!(row2 instanceof HTMLElement)) continue;
+      const match = query === "" || (row2.dataset["search"] ?? "").includes(query);
+      row2.hidden = !match;
+      if (match) shown++;
+    }
+    statusEl.textContent = query === "" ? `${String(total2)} components` : `${String(shown)} of ${String(total2)} components`;
+  };
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+  const render = (report) => {
+    total2 = report.components.length;
+    countEl.textContent = `the ${String(total2)} open-source components`;
+    list.replaceChildren(...report.components.map((c3) => componentRow(c3, report.texts)));
+    listHost.hidden = false;
+    applyFilter();
+  };
+  let loaded = null;
+  const refresh = () => {
+    loaded ??= api2.about.getInfo().then(
+      (info) => {
+        versionEl.textContent = info.version;
+        if (info.report) {
+          render(info.report);
+        } else {
+          statusEl.textContent = "This build has no licence report. Only a full build (pnpm build) generates one.";
+          listHost.hidden = false;
+        }
+      },
+      (err2) => {
+        loaded = null;
+        statusEl.textContent = errorMessage(err2);
+        listHost.hidden = false;
+      }
+    );
+    return loaded;
+  };
+  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  return { root, refresh };
+}
+var SHIPPED_AS_LABEL;
+var init_about_section = __esm({
+  "src/renderer/views/setup/about-section.ts"() {
+    init_errors4();
+    init_helpers();
+    init_ui();
+    SHIPPED_AS_LABEL = {
+      bundled: "compiled into Copse",
+      copied: "files copied into Copse",
+      node_modules: "packaged as a module",
+      vendored: "included with Copse"
+    };
+  }
+});
+
 // src/renderer/views/setup/ssh-workspace-section.ts
 function createSshWorkspaceSection(api2, opts = {}) {
   const hostList = el("div", { class: "ssh-host-list" });
@@ -61944,13 +62386,14 @@ var init_tool_permissions_panel = __esm({
 });
 
 // packages/agent/src/plugins/apple-development-plugin.ts
-var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, appleDevelopmentPlugin;
+var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
   "packages/agent/src/plugins/apple-development-plugin.ts"() {
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
     APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
+    APPLE_DEVELOPMENT_SUGGEST_SETTING_ID = "suggest-projects";
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -61975,6 +62418,14 @@ var init_apple_development_plugin = __esm({
             title: "Apple Development setup"
           }
         ],
+        settings: {
+          [APPLE_DEVELOPMENT_SUGGEST_SETTING_ID]: {
+            kind: "boolean",
+            title: "Suggest for Apple projects",
+            description: "When you open a project with an Xcode project or workspace, offer to turn on Apple development for it. This works while the plugin is off.",
+            default: true
+          }
+        },
         storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID }
       },
       {
@@ -62821,6 +63272,7 @@ function mountSettingsDialog(store2, api2) {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -62865,6 +63317,7 @@ function mountSettingsDialog(store2, api2) {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -63804,6 +64257,15 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
+          </section>
+
           <div class="settings-search-results" id="settings-search-results"></div>
 
           <p class="settings-search-empty" id="settings-search-empty" hidden></p>
@@ -63879,6 +64341,26 @@ function mountSettingsDialog(store2, api2) {
     cloudAgentOptions: qsRequired(overlay, "#settings-cloud-agent-options")
   });
   qsRequired(overlay, "#settings-providers-host").append(providersPanel.root);
+  const makerBlockList = el("div", { class: "model-maker-block-list" });
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        "label",
+        { class: "checkbox-label" },
+        el("input", { type: "checkbox", name: "blockedModelMakers", value: maker.id }),
+        maker.label
+      )
+    );
+  }
+  qsRequired(overlay, "#settings-model-maker-block-host").append(
+    el("h4", { class: "model-role-heading" }, "Blocked model makers"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run."
+    ),
+    makerBlockList
+  );
   const ghCliSection = createGhCliSection(api2);
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
   const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
@@ -63920,6 +64402,8 @@ function mountSettingsDialog(store2, api2) {
   };
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
+  const aboutSection = createAboutSection(api2);
+  qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
   qsRequired(overlay, "#mobile-companion-manage").addEventListener(
     "click",
     () => {
@@ -64144,6 +64628,7 @@ function mountSettingsDialog(store2, api2) {
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
         if (id === "permissions") void toolPermissionsPanel.refresh();
+        if (id === "about") void aboutSection.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
@@ -66089,6 +66574,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
+    if (openedSection === "about") void aboutSection.refresh();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -66127,6 +66613,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       });
       await refreshStage("form-fields", async () => {
         await loadSimpleFields(form, api2);
+        const blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+        for (const input2 of makerBlockList.querySelectorAll("input")) {
+          input2.checked = blockedMakers.some((maker) => maker === input2.value);
+        }
         syncDeveloperOnlySettings();
         wireSafetySliders(form);
         const savedWebOrigins = storedStringArray(
@@ -66267,6 +66757,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         if (dirtyFieldNames.has(name)) writes.push(api2.settings.set(name, value));
       };
       saveIfDirty("model", model);
+      saveIfDirty("blockedModelMakers", parseBlockedModelMakers(data.getAll("blockedModelMakers")));
       saveIfDirty("smallTasksModel", formDataString(data, "smallTasksModel").trim());
       saveIfDirty(
         "orchestrationWorkerModel",
@@ -66398,6 +66889,7 @@ var init_settings_dialog = __esm({
     init_ui_scale();
     init_app_icon_variants();
     init_lm_studio_defaults();
+    init_model_maker_block();
     init_remote_agent();
     init_advisor_strategy();
     init_orchestration_strategy();
@@ -66419,6 +66911,7 @@ var init_settings_dialog = __esm({
     init_model_routing_section();
     init_model_parameters_section();
     init_usage_section();
+    init_about_section();
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
@@ -66440,7 +66933,7 @@ var init_settings_dialog = __esm({
     init_commit_attribution();
     init_appearance();
     init_nullish2();
-    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
       off: "0%",
@@ -66792,43 +67285,106 @@ var init_fork_thread3 = __esm({
 });
 
 // src/renderer/controller/thread-filter.ts
+function filterText(value) {
+  return value.normalize("NFC").toLowerCase();
+}
+function filterableContent(message2) {
+  const cached2 = filterableContentCache.get(message2);
+  if (cached2?.content === message2.content) return cached2.text;
+  const text2 = filterText(message2.content);
+  filterableContentCache.set(message2, { content: message2.content, text: text2 });
+  return text2;
+}
+function residentRequestMatches(messages, query) {
+  if (query.length < MIN_REQUEST_QUERY_LENGTH) return false;
+  return messages.some(
+    (message2) => isHumanUserPrompt(message2) && filterableContent(message2).includes(query)
+  );
+}
 function createThreadFilter(store2, api2, changed) {
   const matches2 = /* @__PURE__ */ new Set();
+  const promptIndex = /* @__PURE__ */ new Map();
+  let promptIndexSize = 0;
   let generation = 0;
   let timer;
   let scan = Promise.resolve();
   let pending = false;
+  let waiting = false;
   let failed = false;
+  const forget = (key) => {
+    const entry = promptIndex.get(key);
+    if (!entry) return;
+    promptIndex.delete(key);
+    promptIndexSize -= entry.size;
+  };
+  const remember = (key, entry) => {
+    forget(key);
+    promptIndex.set(key, entry);
+    promptIndexSize += entry.size;
+    for (const oldest of promptIndex.keys()) {
+      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
+      forget(oldest);
+    }
+  };
+  const savedPrompts = async (projectId, thread) => {
+    const key = `${projectId}/${thread.id}`;
+    const cached2 = promptIndex.get(key);
+    if (cached2 && cached2.updatedAt === thread.updatedAt && cached2.lastPromptAt === thread.lastPromptAt) {
+      return cached2.prompts;
+    }
+    const messages = await api2.threads.loadMessages(projectId, thread.id);
+    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
+    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
+    remember(key, {
+      updatedAt: thread.updatedAt,
+      lastPromptAt: thread.lastPromptAt,
+      prompts,
+      size
+    });
+    return prompts;
+  };
+  const notify = () => {
+    try {
+      changed();
+    } catch (error62) {
+      console.error("[thread-filter] sidebar update failed", error62);
+    }
+  };
   const cancel = () => {
     generation += 1;
     clearTimeout(timer);
     matches2.clear();
     pending = false;
+    waiting = false;
     failed = false;
   };
-  const search = (query) => {
+  const search = (rawQuery) => {
     cancel();
+    const query = filterText(rawQuery);
     const { activeProjectId, threads } = store2.getState();
-    if (!query || !activeProjectId) return;
+    if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
     const current = generation;
     const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
     const candidates = sortThreadsNewestFirst(threads).filter(
-      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+      (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
     );
-    const containsRequest = (messages) => messages.some(
-      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
-    );
-    pending = candidates.length > 0;
+    if (candidates.length === 0) return;
+    waiting = true;
     timer = setTimeout(() => {
+      waiting = false;
+      pending = true;
+      notify();
       scan = scan.then(async () => {
         for (const thread of candidates) {
           if (!isCurrent()) return;
           try {
-            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
+              (prompt) => prompt.includes(query)
+            );
             if (!isCurrent()) return;
             if (matched) {
               matches2.add(thread.id);
-              changed();
+              notify();
             }
           } catch {
             if (!isCurrent()) return;
@@ -66837,9 +67393,15 @@ function createThreadFilter(store2, api2, changed) {
         }
         if (!isCurrent()) return;
         pending = false;
-        changed();
+        notify();
+      }).catch((error62) => {
+        console.error("[thread-filter] request scan failed", error62);
+        if (!isCurrent()) return;
+        pending = false;
+        failed = true;
+        notify();
       });
-    }, 200);
+    }, SCAN_DELAY_MS);
   };
   return {
     search,
@@ -66848,14 +67410,22 @@ function createThreadFilter(store2, api2, changed) {
     get pending() {
       return pending;
     },
+    get waiting() {
+      return waiting;
+    },
     get failed() {
       return failed;
     }
   };
 }
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
 var init_thread_filter = __esm({
   "src/renderer/controller/thread-filter.ts"() {
     init_thread_sort();
+    MIN_REQUEST_QUERY_LENGTH = 2;
+    SCAN_DELAY_MS = 200;
+    PROMPT_INDEX_MAX_CHARS = 8e6;
+    filterableContentCache = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -68750,6 +69320,33 @@ function automationSetupBtn(label, open2, icon = settingsIcon) {
   });
   return btn;
 }
+function startRunNow(api2, target) {
+  void api2.automations.runNow(target.project.id, target.scheduleId).then((event) => {
+    showToast(
+      event.disposition === "started" ? `Started \u201C${target.scheduleName}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${target.scheduleName}\u201D has reached its live worktree limit.` : `\u201C${target.scheduleName}\u201D is already pending or running.`
+    );
+  }).catch((error62) => {
+    showErrorToast(
+      `Could not run \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The run could not start")
+    );
+  });
+}
+function automationMenuEntries(api2, target, openSetup) {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: "Run now",
+      onSelect: () => {
+        startRunNow(api2, target);
+      }
+    },
+    {
+      label: "Automation setup\u2026",
+      onSelect: openSetup
+    }
+  ];
+}
 function mountProjectsPane(root, store2, api2) {
   const title = el("span", {}, "Projects");
   const searchToggle = el(
@@ -68804,8 +69401,15 @@ function mountProjectsPane(root, store2, api2) {
     addBtn
   );
   let threadFilter = "";
+  let filteredProjectId = store2.getState().activeProjectId;
+  let renderFrameQueued = false;
   const contentFilter = createThreadFilter(store2, api2, () => {
-    render();
+    if (renderFrameQueued) return;
+    renderFrameQueued = true;
+    requestAnimationFrame(() => {
+      renderFrameQueued = false;
+      render();
+    });
   });
   const searchInput = el("input", {
     type: "text",
@@ -68834,7 +69438,8 @@ function mountProjectsPane(root, store2, api2) {
     }
   });
   searchInput.addEventListener("input", () => {
-    threadFilter = searchInput.value.trim().toLowerCase();
+    threadFilter = filterText(searchInput.value.trim());
+    filteredProjectId = store2.getState().activeProjectId;
     contentFilter.search(threadFilter);
     render();
   });
@@ -69461,6 +70066,16 @@ function mountProjectsPane(root, store2, api2) {
           // just to reach the editor.
           ...scheduleId ? [
             {
+              label: "Run now",
+              onSelect: () => {
+                startRunNow(api2, {
+                  project: project2,
+                  scheduleName: thread.automation?.scheduleName ?? thread.title,
+                  scheduleId
+                });
+              }
+            },
+            {
               label: "Automation setup\u2026",
               onSelect: () => {
                 openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
@@ -69552,6 +70167,18 @@ function mountProjectsPane(root, store2, api2) {
       toggle.addEventListener("click", () => {
         automationsSectionExpanded = !automationsSectionExpanded;
         render();
+      });
+      toggle.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          {
+            label: "New automation\u2026",
+            onSelect: () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            }
+          }
+        ]);
       });
       section.append(
         el(
@@ -69646,6 +70273,25 @@ function mountProjectsPane(root, store2, api2) {
               })
             )
           );
+          scheduleToggle.addEventListener("contextmenu", (e3) => {
+            e3.preventDefault();
+            e3.stopPropagation();
+            showContextMenu(
+              e3.clientX,
+              e3.clientY,
+              automationMenuEntries(
+                api2,
+                {
+                  project: project2,
+                  scheduleName,
+                  scheduleId
+                },
+                () => {
+                  openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+                }
+              )
+            );
+          });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
             const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
@@ -69831,9 +70477,7 @@ function mountProjectsPane(root, store2, api2) {
         (thread) => thread.archivedAt == null
       ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
-          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
-        )
+        (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
@@ -69880,7 +70524,7 @@ function mountProjectsPane(root, store2, api2) {
             "Some threads could not be searched"
           )
         );
-      } else if (isFiltering && matchingThreads.length === 0) {
+      } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
       for (const thread of visibleThreads) {
@@ -69930,7 +70574,8 @@ function mountProjectsPane(root, store2, api2) {
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
-      closeThreadFilter();
+      if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
+      else if (threadFilter) contentFilter.search(threadFilter);
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
@@ -69970,6 +70615,7 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_ipc_error_message();
     init_confirm_dialog();
     init_toast();
     init_fork_thread3();
@@ -70292,12 +70938,14 @@ function customAgentId(model) {
 }
 function namedAgentTitles(value) {
   const titles2 = /* @__PURE__ */ new Map();
-  const entries2 = Array.isArray(value) ? value : [];
-  for (const entry of entries2) {
-    if (typeof entry === "object" && entry !== null && "id" in entry && typeof entry.id === "string" && "title" in entry && typeof entry.title === "string" && entry.title.trim())
-      titles2.set(entry.id, entry.title.trim());
+  for (const agent of parseAcpAgentConfigs(value)) {
+    const title = agent.title.trim();
+    if (title) titles2.set(agent.id, title);
   }
   return titles2;
+}
+function agentRouteModel(model) {
+  return parseAcpModelSelection(model)?.model ?? parseRemoteAgentModelSelection(model)?.model;
 }
 function chatAgentIdentity(threadId, message2, names) {
   const model = message2.model ?? message2.requestedModel;
@@ -76904,6 +77552,261 @@ var init_todos_plugin = __esm({
   }
 });
 
+// src/renderer/views/apple-project-suggestion.ts
+function pluginCard() {
+  const mark2 = el("img", { src: "./brand-mark.svg", alt: "", width: "40", height: "40" });
+  const icon = el("span", { class: "plugin-icon plugin-icon-copse", "aria-hidden": "true" }, mark2);
+  const stability = el("span", { class: "plugin-badge plugin-badge-experimental" }, "experimental");
+  const nameLine = el(
+    "div",
+    { class: "plugin-row-name-line" },
+    el("span", { class: "plugin-name" }, PLUGIN_NAME),
+    stability
+  );
+  const title = el(
+    "div",
+    { class: "plugin-row-title" },
+    el("span", { class: "plugin-badge plugin-badge-first-party" }, "Copse"),
+    nameLine
+  );
+  return el(
+    "div",
+    { class: "plugin-row apple-suggestion-card" },
+    el("div", { class: "plugin-row-header" }, icon, title),
+    el("div", { class: "plugin-row-desc" }, PLUGIN_DESCRIPTION)
+  );
+}
+function showAppleSuggestionDialog(options) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({ id: "apple-suggestion-dialog" });
+  dialog2.setAttribute("aria-labelledby", "apple-suggestion-title");
+  const { projectName, pluginEnabled } = options;
+  const heading = el(
+    "h2",
+    { id: "apple-suggestion-title" },
+    pluginEnabled ? `Use ${PLUGIN_NAME} in ${projectName}?` : `Turn on ${PLUGIN_NAME}?`
+  );
+  const lede = el(
+    "p",
+    { class: "apple-suggestion-lede" },
+    pluginEnabled ? `${projectName} looks like an Apple project. ${PLUGIN_NAME} is already on \u2014 allow the agent to build, run, and debug this project too.` : `${projectName} looks like an Apple project. Copse has a plugin that lets the agent build, run, and debug it. Turning it on allows it for ${projectName}.`
+  );
+  const dontAsk = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost apple-suggestion-dont-ask" },
+    "Don't ask for this project"
+  );
+  const notNow = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary apple-suggestion-not-now" },
+    "Not now"
+  );
+  const accept = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary apple-suggestion-accept" },
+    pluginEnabled ? "Allow" : "Turn on"
+  );
+  const actions = el(
+    "div",
+    { class: "ui-actions apple-suggestion-actions" },
+    dontAsk,
+    el("span", { class: "apple-suggestion-spacer" }),
+    notNow,
+    accept
+  );
+  dialog2.append(heading, lede, pluginCard(), actions);
+  if (options.signal?.aborted) {
+    dialog2.remove();
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    let choice = "not-now";
+    let deferred = false;
+    let chosen = false;
+    const choose = (next) => {
+      choice = next;
+      chosen = true;
+      close();
+    };
+    const defer = () => {
+      if (chosen) return;
+      deferred = true;
+      close();
+    };
+    dontAsk.addEventListener("click", () => {
+      choose("dont-ask");
+    });
+    notNow.addEventListener("click", () => {
+      choose("not-now");
+    });
+    accept.addEventListener("click", () => {
+      choose("turn-on");
+    });
+    dialog2.addEventListener(
+      "close",
+      () => {
+        options.signal?.removeEventListener("abort", defer);
+        dialog2.remove();
+        resolve(deferred ? null : choice);
+      },
+      { once: true }
+    );
+    options.signal?.addEventListener("abort", defer, { once: true });
+    open2();
+    accept.focus();
+  });
+}
+function mountAppleProjectSuggestions(store2, api2, onAllowed) {
+  const text2 = el("span", { class: "apple-suggestion-notice-text" });
+  const acceptLink = el("button", { type: "button", class: "apple-suggestion-notice-accept" });
+  const dismissLink = el(
+    "button",
+    { type: "button", class: "apple-suggestion-notice-dismiss" },
+    "Dismiss"
+  );
+  const host = el(
+    "div",
+    { class: "apple-suggestion-notice", role: "status", hidden: true },
+    sparkleIcon("ui-icon"),
+    text2,
+    acceptLink,
+    dismissLink
+  );
+  const asked = /* @__PURE__ */ new Set();
+  const reminders = /* @__PURE__ */ new Map();
+  let pendingDialog = null;
+  const lifetime = new AbortController();
+  const projectName = (projectId) => {
+    const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
+    return project2 ? projectDisplayName(project2) : "This project";
+  };
+  const renderReminder = () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) {
+      host.hidden = true;
+      return;
+    }
+    const name = projectName(reminder.projectId);
+    text2.textContent = reminder.pluginEnabled ? `${PLUGIN_NAME} isn't allowed in ${name}.` : `${PLUGIN_NAME} is off for ${name}.`;
+    acceptLink.textContent = reminder.pluginEnabled ? "Allow" : "Turn on";
+    host.hidden = false;
+  };
+  const accept = async (projectId, pluginEnabled) => {
+    reminders.delete(projectId);
+    renderReminder();
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId || store2.getState().activeProjectId !== projectId) return;
+    try {
+      if (!pluginEnabled) {
+        await api2.plugins.setEnabled(APPLE_DEVELOPMENT_PLUGIN_ID, true);
+        store2.emit("settings_changed");
+      }
+      await api2.appleDevelopment.setEnrolled(projectId, threadId, true);
+      onAllowed();
+      const name = projectName(projectId);
+      showToast(
+        pluginEnabled ? `${PLUGIN_NAME} is allowed in ${name}.` : `${PLUGIN_NAME} is on and allowed in ${name}. Change this in Settings \u2192 Plugins.`
+      );
+    } catch (error62) {
+      showErrorToast(`Could not turn on ${PLUGIN_NAME}`, error62);
+    }
+  };
+  const answer = (projectId, choice) => {
+    void api2.appleDevelopment.answerSuggestion(projectId, choice).catch((error62) => {
+      showErrorToast("Could not save your answer", error62);
+    });
+  };
+  const offer = async (projectId, suggestion) => {
+    if (suggestion.offer === "reminder") {
+      reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled });
+      renderReminder();
+      return;
+    }
+    if (suggestion.offer !== "dialog") return;
+    const controller = new AbortController();
+    pendingDialog = { projectId, controller };
+    const choice = await showAppleSuggestionDialog({
+      projectName: projectName(projectId),
+      pluginEnabled: suggestion.pluginEnabled,
+      signal: controller.signal
+    });
+    if (lifetime.signal.aborted) return;
+    if (pendingDialog.controller === controller) pendingDialog = null;
+    if (choice === null) {
+      asked.delete(projectId);
+      void evaluate();
+      return;
+    }
+    if (choice === "turn-on") await accept(projectId, suggestion.pluginEnabled);
+    else answer(projectId, choice === "dont-ask" ? "dismissed" : "snoozed");
+  };
+  const evaluate = async () => {
+    renderReminder();
+    if (pendingDialog) return;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    if (!activeProjectId || !activeThreadId || asked.has(activeProjectId)) return;
+    asked.add(activeProjectId);
+    let suggestion;
+    try {
+      suggestion = await api2.appleDevelopment.suggestion(activeProjectId);
+    } catch {
+      asked.delete(activeProjectId);
+      return;
+    }
+    if (lifetime.signal.aborted) return;
+    if (store2.getState().activeProjectId !== activeProjectId) {
+      asked.delete(activeProjectId);
+      return;
+    }
+    await offer(activeProjectId, suggestion);
+  };
+  acceptLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
+  });
+  dismissLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) return;
+    answer(reminder.projectId, "dismissed");
+    reminders.delete(reminder.projectId);
+    renderReminder();
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    const activeProjectId = store2.getState().activeProjectId;
+    if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
+      pendingDialog.controller.abort();
+    }
+    void evaluate();
+  });
+  void evaluate();
+  return {
+    element: host,
+    destroy: () => {
+      lifetime.abort();
+      unsubscribeWorkspace();
+      pendingDialog?.controller.abort();
+      pendingDialog = null;
+      reminders.clear();
+      host.remove();
+    }
+  };
+}
+var PLUGIN_NAME, PLUGIN_DESCRIPTION;
+var init_apple_project_suggestion = __esm({
+  "src/renderer/views/apple-project-suggestion.ts"() {
+    init_apple_development_plugin();
+    init_projects();
+    init_helpers();
+    init_icons();
+    init_dialog_shell();
+    init_toast();
+    PLUGIN_NAME = "Apple development";
+    PLUGIN_DESCRIPTION = "Build, test, and run local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.";
+  }
+});
+
 // src/renderer/views/retry-button.ts
 function createRetryButton(onRetry) {
   const button = el(
@@ -78971,39 +79874,45 @@ var init_markdown_quote = __esm({
 });
 
 // src/renderer/views/conversation.ts
+function interruptionCause(outcome, next) {
+  if (next?.role !== "user" || next.origin !== void 0) return "user";
+  if (outcome.userAbort !== void 0) return outcome.userAbort === "send_now" ? "message" : "user";
+  return next.createdAt <= outcome.endedAt ? "message" : "user";
+}
 function markUserInterruptedCalls(thread) {
-  if (!thread) return;
+  if (!thread || markedTranscripts.has(thread.messages)) return;
+  markedTranscripts.add(thread.messages);
   let turnCalls = [];
   for (const [index, message2] of thread.messages.entries()) {
     if (message2.role !== "assistant") turnCalls = [];
     else turnCalls.push(...message2.toolCalls);
     if (!message2.turnOutcome) continue;
     const next = thread.messages[index + 1];
-    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    const userCancelled = message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0);
+    const cause = userCancelled ? interruptionCause(message2.turnOutcome, next) : null;
     for (const call of turnCalls) {
-      if (!isHostInterruptedToolCall(call)) continue;
-      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
-        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
-      } else {
-        userInterruptedCalls.delete(call);
-      }
+      if (cause) userInterruptedCalls.set(call, cause);
+      else userInterruptedCalls.delete(call);
     }
     turnCalls = [];
   }
 }
+function userInterruption(call) {
+  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : void 0;
+}
 function cardStatus2(toolCalls) {
   if (toolCalls.some((call) => call.status === "running")) return "running";
-  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+  if (toolCalls.some((call) => call.status === "error" && userInterruption(call) === void 0)) {
     return "error";
   }
-  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
   return "done";
 }
 function interruptionLabel(call) {
-  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+  return userInterruption(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
 }
 function syncRollupInterruptionNote(body, calls) {
-  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const interrupted = calls.find((call) => userInterruption(call) !== void 0);
   const current = body.querySelector(":scope > .tool-interruption-note");
   if (!interrupted) {
     current?.remove();
@@ -79016,6 +79925,7 @@ function syncRollupInterruptionNote(body, calls) {
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
+  if (status === "interrupted") return minusIcon("ui-icon ui-icon-sm");
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
 function createToolArgsSection(args) {
@@ -79140,7 +80050,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
       ...appendIfPresent(argsSection),
-      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
+      ...userInterruption(tc2) !== void 0 ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
         tc2.status,
@@ -79465,7 +80375,14 @@ function subagentCardStatus(tc2, session) {
 function subagentHeaderMarker() {
   return el(
     "span",
-    { class: "tool-subagent-marker", "aria-label": "Subagent", "data-tooltip": "Subagent" },
+    // A named generic `span` is not announced (ARIA 1.2 prohibits naming it),
+    // and the SVG inside is aria-hidden: `img` makes "Subagent" the glyph's name.
+    {
+      class: "tool-subagent-marker",
+      role: "img",
+      "aria-label": "Subagent",
+      "data-tooltip": "Subagent"
+    },
     gitBranchIcon("ui-icon ui-icon-sm")
   );
 }
@@ -79707,13 +80624,13 @@ function toolCardKey(item) {
   return `t:${item.toolCall.id}`;
 }
 function toolCallSignature(call) {
-  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+  return renderSignature({ call, interruption: userInterruption(call) ?? null });
 }
 function toolCardSignature(item, extra) {
   const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
   const base = renderSignature({
     item,
-    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+    interruptions: calls.map((call) => userInterruption(call) ?? null)
   });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
@@ -79967,7 +80884,8 @@ function createAcpToolDiff(item, workspaceRoot) {
   const additions = lines.filter((line) => line.kind === "add").length;
   const deletions = lines.filter((line) => line.kind === "del").length;
   const hasChanges = additions > 0 || deletions > 0;
-  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, "No changes");
+  const unchangedLabel = (item.oldText ?? "") === item.newText ? "No changes" : "Only line endings changed";
+  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, unchangedLabel);
   const details = el(
     "details",
     { class: "acp-tool-diff" },
@@ -80006,11 +80924,11 @@ function createAcpToolDiff(item, workspaceRoot) {
           )
         ];
       }
-      const accessibility = line.kind === "add" ? { "aria-label": `Added line: ${line.text}` } : line.kind === "del" ? { "aria-label": `Deleted line: ${line.text}` } : {};
       const row2 = el(
         "div",
-        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        { class: `acp-diff-line acp-diff-${line.kind}` },
         el("span", { class: "acp-diff-sign", "aria-hidden": "true" }, acpDiffLineSigns[line.kind]),
+        ...line.kind === "context" ? [] : [el("span", { class: "acp-diff-sr" }, acpDiffLineNames[line.kind])],
         el("span", { class: "acp-diff-text" }, line.text)
       );
       return line.noNewlineAtEnd ? [row2, el("div", { class: "acp-diff-line acp-diff-eof" }, "\\ No newline at end of file")] : [row2];
@@ -80573,7 +81491,18 @@ function mountConversation(root, store2, api2) {
     },
     arrowDownIcon("ui-icon")
   );
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn);
+  const appleSuggestions = mountAppleProjectSuggestions(
+    store2,
+    api2,
+    () => appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"))
+  );
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn
+  );
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
@@ -81146,9 +82075,9 @@ function mountConversation(root, store2, api2) {
   }
   function labelUserInterruptions(item) {
     const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
-    if (calls.some((call) => userInterruptedCalls.has(call))) {
+    if (calls.some((call) => userInterruption(call) !== void 0)) {
       const failed = calls.filter(
-        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+        (call) => call.status === "error" && userInterruption(call) === void 0
       ).length;
       const base = item.label.replace(/ · \d+ failed$/, "");
       item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
@@ -81536,6 +82465,7 @@ function mountConversation(root, store2, api2) {
         syncModelLabels();
       }).catch((error62) => {
         console.warn("[conversation] Could not load named agent identities", error62);
+        if (revision === agentNamesRevision) agentNamesRequested = false;
       });
     }
     const show2 = shouldShowPrimaryChatModelLabels(thread.messages);
@@ -81547,6 +82477,7 @@ function mountConversation(root, store2, api2) {
     let prevLabel;
     let prevAgentKey;
     for (const msg of thread.messages) {
+      if (msg.role === "user") prevAgentKey = void 0;
       if (msg.role !== "assistant") continue;
       const msgEl = rendered.get(msg.id);
       if (!msgEl) continue;
@@ -81573,9 +82504,10 @@ function mountConversation(root, store2, api2) {
         header?.remove();
         header = null;
       }
-      if (show2 && model && text2 && text2 !== prevLabel && (!identity || model.includes("#"))) {
+      const routeModel = identity && model ? agentRouteModel(model) : void 0;
+      if (show2 && model && text2 && text2 !== prevLabel && (!identity || routeModel)) {
         const label = existing ?? el("div", { class: "message-model" });
-        label.textContent = identity ? formatPrimaryChatModelLabel(model.slice(model.indexOf("#") + 1), msg.parameters) : text2;
+        label.textContent = routeModel ? formatPrimaryChatModelLabel(routeModel, msg.parameters) : text2;
         if (header) {
           if (label.parentElement !== header) header.append(label);
         } else if (label.parentElement !== msgEl) msgEl.prepend(label);
@@ -82108,6 +83040,7 @@ function mountConversation(root, store2, api2) {
     unbindWorkspaceLinks();
     unbindBrowserLinks();
     unbindCodeBlockRuns();
+    appleSuggestions.destroy();
     roadmapOrigin.destroy();
     unsubs.forEach((u2) => {
       u2();
@@ -82144,7 +83077,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -82195,6 +83128,7 @@ var init_conversation = __esm({
     init_plugin_panel2();
     init_todos_plugin();
     init_apple_development_panel();
+    init_apple_project_suggestion();
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
@@ -82220,6 +83154,7 @@ var init_conversation = __esm({
     init_markdown_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
+    markedTranscripts = /* @__PURE__ */ new WeakSet();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -82234,6 +83169,7 @@ var init_conversation = __esm({
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
     acpDiffLineSigns = { context: " ", add: "+", del: "-" };
+    acpDiffLineNames = { add: "Added: ", del: "Deleted: " };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
@@ -95210,87 +96146,6 @@ var init_debug_trace_prompt2 = __esm({
   }
 });
 
-// src/shared/usage/footer-usage-summary.ts
-function collectSubagentUsage(toolCalls, totals) {
-  for (const toolCall of toolCalls) {
-    const session = toolCall.subagent;
-    if (!session) continue;
-    if (session.kind === "container") continue;
-    if (session.usage) {
-      totals.runs += 1;
-      totals.inputTokens += session.usage.inputTokens;
-      totals.outputTokens += session.usage.outputTokens;
-    }
-    for (const message2 of session.messages) {
-      collectSubagentUsage(message2.toolCalls, totals);
-    }
-  }
-}
-function sumSubagentUsage(messages) {
-  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
-  for (const message2 of messages) {
-    collectSubagentUsage(message2.toolCalls, totals);
-  }
-  return totals;
-}
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    const subagents = sumSubagentUsage(input2.messages);
-    return {
-      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
-      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
-      estimated: false,
-      ...subagents.runs > 0 ? {
-        subagentInputTokens: subagents.inputTokens,
-        subagentOutputTokens: subagents.outputTokens
-      } : {}
-    };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total2 = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total2 && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
 // src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
@@ -95301,7 +96156,7 @@ function modelRowValue(model, usage, pricing) {
 }
 function freeReason(model, pricing) {
   if (isLocalModel(model)) return "local model";
-  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  if (hasZeroModelPricing(model, pricing)) return `${model} is listed at a zero rate`;
   return null;
 }
 function buildFreeNote(models, pricing) {
@@ -95329,7 +96184,14 @@ function buildFooterUsageTooltip(display, opts) {
   if (cacheCreation > 0) {
     threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
   }
-  const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
+  const byModel = Object.entries(usage.byModel ?? {}).filter(
+    ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
+  );
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
+  const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing, {
+    localFreeExplained: pricedModels.some(isLocalModel)
+  });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
@@ -95341,20 +96203,15 @@ function buildFooterUsageTooltip(display, opts) {
   const conversationLabel = subagentRow ? "Excluding subagents" : null;
   const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
-  const byModel = Object.entries(usage.byModel ?? {}).filter(
-    ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
-  );
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
       modelRows.push({ label: model, value: modelRowValue(model, modelUsage, opts.pricing) });
     }
   }
-  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
   const hasUnpricedUsage = pricedModels.some(
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
-  const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
-  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
+  const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models with no listed price" : "No listed price for this model" : null;
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
     conversationLabel,
@@ -135471,6 +136328,16 @@ function mountProcessManagerDialog(api2, store2) {
   let generation = 0;
   let refreshing = false;
   const collapsedGroups = /* @__PURE__ */ new Set();
+  const runGenerations = /* @__PURE__ */ new Map();
+  let sampledRuns = /* @__PURE__ */ new Set();
+  function trackRuns(snapshot) {
+    for (const threadId of snapshot.activeRunThreadIds) {
+      if (!sampledRuns.has(threadId)) {
+        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1);
+      }
+    }
+    sampledRuns = new Set(snapshot.activeRunThreadIds);
+  }
   function projectForThread(threadId, projectId) {
     return projectId ?? getThreadProjectId(store2, threadId);
   }
@@ -135514,7 +136381,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running) {
+  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -135528,6 +136395,10 @@ function mountProcessManagerDialog(api2, store2) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
+          if (stillSameRun && !stillSameRun()) {
+            showToast("That agent run has already finished.");
+            return;
+          }
           stopAgentRun(threadId);
         }
       });
@@ -135564,6 +136435,15 @@ function mountProcessManagerDialog(api2, store2) {
     });
     cell.append(button);
     return cell;
+  }
+  function activityMenuEntries(threadId, projectId) {
+    const run2 = runGenerations.get(threadId);
+    return threadMenuEntries(
+      threadId,
+      projectId,
+      true,
+      () => current?.activeRunThreadIds.includes(threadId) === true && runGenerations.get(threadId) === run2
+    );
   }
   function menuEntries(row2) {
     const entries2 = row2.threadId ? threadMenuEntries(
@@ -135627,7 +136507,7 @@ function mountProcessManagerDialog(api2, store2) {
         showContextMenu(
           event.clientX,
           event.clientY,
-          threadMenuEntries(threadId, projectId, true),
+          activityMenuEntries(threadId, projectId),
           dialog2
         );
       });
@@ -135635,12 +136515,7 @@ function mountProcessManagerDialog(api2, store2) {
         if (event.key !== "F10" || !event.shiftKey) return;
         event.preventDefault();
         const rect = item.getBoundingClientRect();
-        showContextMenu(
-          rect.left,
-          rect.bottom,
-          threadMenuEntries(threadId, projectId, true),
-          dialog2
-        );
+        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog2);
       });
       activityList.append(item);
       if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
@@ -135741,6 +136616,7 @@ function mountProcessManagerDialog(api2, store2) {
       const snapshot = await api2.processManager.snapshot();
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot;
+        trackRuns(snapshot);
         render(snapshot);
       }
     } catch {
@@ -135770,6 +136646,8 @@ function mountProcessManagerDialog(api2, store2) {
     if (timer !== null) clearInterval(timer);
     timer = null;
     refreshing = false;
+    runGenerations.clear();
+    sampledRuns = /* @__PURE__ */ new Set();
   });
   return () => {
     if (dialog2.open) return;
@@ -136353,6 +137231,7 @@ function startAgentController(store2, api2) {
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
+          ...chunk.subagentUsage ? { subagentUsage: true } : {},
           ...chunk.cacheReadTokens !== void 0 ? { cacheReadTokens: chunk.cacheReadTokens } : {},
           ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {},
           ...chunk.requestedServiceTier !== void 0 ? { requestedServiceTier: chunk.requestedServiceTier } : {},
@@ -136502,7 +137381,9 @@ function startAgentController(store2, api2) {
       }
       case "turn_outcome": {
         st2.msgId ??= addAssistantMessage(store2, threadId);
-        setMessageTurnOutcome(store2, threadId, st2.msgId, chunk.outcome);
+        const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
+        const outcome = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
+        setMessageTurnOutcome(store2, threadId, st2.msgId, outcome);
         break;
       }
       case "done": {
@@ -136519,6 +137400,7 @@ function startAgentController(store2, api2) {
           );
           clearReviewReportTarget(store2, threadId);
         }
+        takeSendNowAbort(threadId);
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -136654,6 +137536,7 @@ var init_agent = __esm({
     init_thread_naming();
     init_quiet_runs();
     init_review_report_target();
+    init_send_now_aborts();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
