@@ -44,6 +44,7 @@ import {
   teardownRuntime,
   WORKER_IMAGE,
 } from './thread-container.ts'
+import { takeProviderKeyFromEnv } from './cli-provider-key.ts'
 
 interface Cli {
   flags: Map<string, string[]>
@@ -79,6 +80,10 @@ function required(value: string | undefined, what: string): string {
 
 async function main(): Promise<void> {
   const cli = parseCli(process.argv.slice(2))
+  // Before any Docker command: the key must not sit in the environment every
+  // Docker subprocess inherits.
+  const apiKeyEnv = cli.one('api-key-env')
+  const apiKey = takeProviderKeyFromEnv(apiKeyEnv)
   await assertThreadContainerEngine()
   if (cli.has('list')) {
     for (const runtime of await listManagedRuntimes()) {
@@ -129,8 +134,6 @@ async function main(): Promise<void> {
     if (!host || !addr) throw new Error(`--resolve expects host=addr, got "${entry}"`)
     egressResolve[host] = addr
   }
-  const apiKeyEnv = cli.one('api-key-env')
-  const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : undefined
   if (apiKeyEnv && !apiKey) throw new Error(`Provider key variable ${apiKeyEnv} is not set`)
   const maxSteps = cli.one('max-steps')
   const model = required(cli.one('model') ?? process.env['COPSE_MODEL'], '--model')
