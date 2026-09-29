@@ -2,8 +2,11 @@
 
 Status: **Partially implemented.** Slice A's durable admission/recovery inbox is on
 `main` at `a2880354f`; see [the implemented contract](event-automation-inbox.md).
-It is not installed at app startup and does not run models. The product editor,
-authenticated adapters and dispatch in the remaining slices are still proposals.
+A first branch-specific GitHub Actions adapter now installs it at app startup and
+adds saved branch triggers to the shared Automations editor. It polls while Copse is
+open and creates fresh tasks for newly completed failures on the branch's current
+head. PR-specific check filters, delivery history, and the remaining slice B
+controls are still proposals.
 
 Extends [Project automations](automations.md) and the authenticated-trigger phase of
 [Background supervisor](background-supervisor.md#p6--campaigns--authenticated-trigger-adapters).
@@ -44,12 +47,12 @@ unchanged polling results stay quiet.
 
 ## First adapters, in order
 
-| Adapter              | Concrete first workflow                             | Delivery identity and stale-work rule                                                                                                    |
-| -------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| CI completed         | Investigate a failed check suite on a selected PR   | Repository + PR + head SHA + check-suite/run ID + attempt; a new head supersedes pending work for the old head.                          |
-| PR updated           | Review new commits after a PR leaves draft          | Repository + PR + head SHA + selected transition; ignore metadata-only edits unless explicitly requested.                                |
-| Issue labelled       | Triage issues assigned an explicit automation label | Repository + issue + label transition ID; repeated polls do not create new work, but removing and reapplying the label is a new event.   |
-| Local task completed | Produce a report after a user-started task          | Project + source task + terminal revision; ignore automation-originated tasks by default and retain turn-tree budgets for continuations. |
+| Adapter              | Concrete first workflow                                                               | Delivery identity and stale-work rule                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| CI completed         | Investigate a failed GitHub Actions run on a selected branch; PR check filters follow | Repository + branch + head SHA + workflow run ID + attempt; a new head supersedes pending work for the old head.                         |
+| PR updated           | Review new commits after a PR leaves draft                                            | Repository + PR + head SHA + selected transition; ignore metadata-only edits unless explicitly requested.                                |
+| Issue labelled       | Triage issues assigned an explicit automation label                                   | Repository + issue + label transition ID; repeated polls do not create new work, but removing and reapplying the label is a new event.   |
+| Local task completed | Produce a report after a user-started task                                            | Project + source task + terminal revision; ignore automation-originated tasks by default and retain turn-tree budgets for continuations. |
 
 Start with CI completion through authenticated, app-open GitHub polling. Reuse the
 existing CI-read and supervisor event-source machinery, sharing a source across
