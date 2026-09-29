@@ -55,7 +55,7 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export interface WorktreePreparationPlan {
   root: string
   fingerprint: string
-  ecosystem: 'uv' | 'go' | 'cargo' | null
+  ecosystem: 'uv' | 'pip' | 'go' | 'cargo' | null
   manager: {
     name: PackageManager
     version: string | null
@@ -114,6 +114,31 @@ function parseWorkspacePatterns(text: string): string[] | null {
   } catch {
     return null
   }
+}
+
+/** Automatic pip preparation accepts only exact, hash-locked wheel requirements. */
+function validateHashLockedRequirements(root: string, path: string, problems: string[]): void {
+  const text = readPreparationText(root, path)
+  if (text === null) return
+  const logicalLines = text.replace(/\\\r?\n/g, ' ').split(/\r?\n/)
+  let requirements = 0
+  for (const [index, rawLine] of logicalLines.entries()) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    requirements += 1
+    const tokens = line.split(/\s+/)
+    const requirement = tokens.shift() ?? ''
+    const exact = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?==[^\s;@/]+$/.test(
+      requirement,
+    )
+    const hashes = tokens.filter((token) => /^--hash=sha256:[a-f0-9]{64}$/i.test(token))
+    if (!exact || hashes.length === 0 || hashes.length !== tokens.length) {
+      problems.push(
+        `${path}:${String(index + 1)} must contain one exact name==version requirement followed only by SHA-256 --hash entries.`,
+      )
+    }
+  }
+  if (requirements === 0) problems.push(`${path} must contain at least one locked requirement.`)
 }
 
 function goDirectiveTokens(line: string): string[] {
@@ -237,23 +262,29 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
   // An explicit declaration owns non-JavaScript setup. Mixed roots must choose
   // deliberately; executable availability is never package-manager selection.
   const uvProject = existsSync(join(root, 'uv.lock'))
+  const pipLocks = ['requirements.lock', 'requirements.txt'].filter((path) =>
+    existsSync(join(root, path)),
+  )
+  const pipProject = pipLocks.length > 0
   const goProject = existsSync(join(root, 'go.mod')) || existsSync(join(root, 'go.work'))
   const cargoProject = existsSync(join(root, 'Cargo.toml'))
   const automaticEcosystems = [
     pkg ? 'JavaScript' : null,
-    uvProject ? 'Python' : null,
+    uvProject || pipProject ? 'Python' : null,
     goProject ? 'Go' : null,
     cargoProject ? 'Rust' : null,
   ].filter(Boolean)
   const ecosystem =
     !pkg && !config
-      ? uvProject && !goProject && !cargoProject
+      ? uvProject && !pipProject && !goProject && !cargoProject
         ? 'uv'
-        : goProject && !uvProject && !cargoProject
-          ? 'go'
-          : cargoProject && !uvProject && !goProject
-            ? 'cargo'
-            : null
+        : pipProject && !uvProject && !goProject && !cargoProject
+          ? 'pip'
+          : goProject && !uvProject && !pipProject && !cargoProject
+            ? 'go'
+            : cargoProject && !uvProject && !pipProject && !goProject
+              ? 'cargo'
+              : null
       : null
   if (automaticEcosystems.length > 1 && !config)
     problems.push(
@@ -261,6 +292,18 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     )
   if (ecosystem === 'uv' && !existsSync(join(root, 'pyproject.toml')))
     problems.push('uv.lock requires a pyproject.toml in the selected project.')
+  if (!config && uvProject && pipProject)
+    problems.push(
+      `Conflicting Python locks (uv.lock and ${pipLocks.join(', ')}); select the intended setup in ${PREPARATION_CONFIG}.`,
+    )
+  if (ecosystem === 'pip') {
+    if (pipLocks.length > 1)
+      problems.push(
+        `Conflicting pip locks (${pipLocks.join(', ')}); retain one reviewed requirements lock.`,
+      )
+    const pipLock = pipLocks[0]
+    if (pipLock) validateHashLockedRequirements(root, pipLock, problems)
+  }
   if (
     ecosystem === 'uv' &&
     ['poetry.lock', 'Pipfile.lock'].some((file) => existsSync(join(root, file)))
@@ -434,6 +477,10 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     // Include detection inputs even when absent so adding another ecosystem or
     // a conflicting lock invalidates an already approved plan.
     'uv.lock',
+    'requirements.lock',
+    'requirements.txt',
+    '.python-version',
+    '.python-versions',
     'poetry.lock',
     'Pipfile.lock',
     'go.mod',
@@ -527,6 +574,57 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
           },
         ]
       : []
+  const pipLock = pipLocks[0] ?? 'requirements.lock'
+  const pipInstallArgs = [
+    '-I',
+    '-m',
+    'pip',
+    'install',
+    '--require-hashes',
+    '--only-binary=:all:',
+    '--disable-pip-version-check',
+    '--no-input',
+    '-r',
+    pipLock,
+  ]
+  const pipChecks: PreparationCheck[] =
+    ecosystem === 'pip'
+      ? [
+          {
+            name: 'Python environment',
+            path: '.venv/bin/python',
+            command: {
+              command: '.venv/bin/python',
+              args: [
+                '-I',
+                '-c',
+                'import sys; print(sys.version); print(sys.implementation.cache_tag); print(sys.base_prefix)',
+              ],
+            },
+            fingerprintOutput: true,
+          },
+          {
+            name: 'pip',
+            command: { command: '.venv/bin/python', args: ['-I', '-m', 'pip', '--version'] },
+            outputIncludes: 'pip ',
+            fingerprintOutput: true,
+          },
+          {
+            name: 'Hash-locked Python dependencies',
+            command: {
+              command: '.venv/bin/python',
+              args: [...pipInstallArgs, '--dry-run'],
+            },
+            fingerprintOutput: false,
+          },
+          {
+            name: 'Consistent Python dependencies',
+            command: { command: '.venv/bin/python', args: ['-I', '-m', 'pip', 'check'] },
+            outputIncludes: 'No broken requirements found',
+            fingerprintOutput: false,
+          },
+        ]
+      : []
   const goListArgs = ['list', '-mod=readonly', '-deps', '-test', 'all']
   const goChecks: PreparationCheck[] =
     ecosystem === 'go'
@@ -601,19 +699,26 @@ export function readWorktreePreparationPlan(root: string): WorktreePreparationPl
     prepare:
       ecosystem === 'uv'
         ? [{ command: 'uv', args: uvArgs }]
-        : ecosystem === 'go'
-          ? [{ command: 'go', args: goListArgs }]
-          : ecosystem === 'cargo'
-            ? [{ command: 'cargo', args: cargoFetchArgs }]
-            : (config?.prepare ?? []),
+        : ecosystem === 'pip'
+          ? [
+              { command: 'python3', args: ['-m', 'venv', '.venv'] },
+              { command: '.venv/bin/python', args: pipInstallArgs },
+            ]
+          : ecosystem === 'go'
+            ? [{ command: 'go', args: goListArgs }]
+            : ecosystem === 'cargo'
+              ? [{ command: 'cargo', args: cargoFetchArgs }]
+              : (config?.prepare ?? []),
     checks:
       ecosystem === 'uv'
         ? uvChecks
-        : ecosystem === 'go'
-          ? goChecks
-          : ecosystem === 'cargo'
-            ? cargoChecks
-            : (config?.checks ?? []),
+        : ecosystem === 'pip'
+          ? pipChecks
+          : ecosystem === 'go'
+            ? goChecks
+            : ecosystem === 'cargo'
+              ? cargoChecks
+              : (config?.checks ?? []),
     problems,
   }
 }
@@ -685,18 +790,20 @@ export function formatPreparationPlan(plan: WorktreePreparationPlan, offline: bo
   return [
     `Project: ${plan.root}`,
     `Plan fingerprint: ${plan.fingerprint}`,
-    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : plan.ecosystem === 'go' ? 'Go modules' : plan.ecosystem === 'cargo' ? 'Cargo (Rust)' : 'project-defined setup'}`,
+    `Package manager: ${plan.manager ? `${plan.manager.name}${plan.manager.version ? `@${plan.manager.version}` : ' (version detected locally)'}` : plan.ecosystem === 'uv' ? 'uv (Python)' : plan.ecosystem === 'pip' ? 'pip (hash-locked Python wheels)' : plan.ecosystem === 'go' ? 'Go modules' : plan.ecosystem === 'cargo' ? 'Cargo (Rust)' : 'project-defined setup'}`,
     ...(install
       ? [
           `Install through Socket Firewall: ${JSON.stringify([install.command, ...install.args])} (dependency lifecycle scripts disabled)`,
         ]
       : []),
     ...plan.prepare.map((step) =>
-      plan.ecosystem === 'go'
-        ? `Readonly package metadata load: ${JSON.stringify([step.command, ...step.args])}`
-        : plan.ecosystem === 'cargo'
-          ? `Fetch locked Cargo dependencies: ${JSON.stringify([step.command, ...step.args])}`
-          : `Project setup (executes repository code): ${JSON.stringify([step.command, ...step.args])}`,
+      plan.ecosystem === 'pip'
+        ? `Install hash-locked Python wheels: ${JSON.stringify([step.command, ...step.args])}`
+        : plan.ecosystem === 'go'
+          ? `Readonly package metadata load: ${JSON.stringify([step.command, ...step.args])}`
+          : plan.ecosystem === 'cargo'
+            ? `Fetch locked Cargo dependencies: ${JSON.stringify([step.command, ...step.args])}`
+            : `Project setup (executes repository code): ${JSON.stringify([step.command, ...step.args])}`,
     ),
     ...plan.checks.map(
       (check) =>
@@ -720,28 +827,34 @@ export function formatPreparationApproval(
           : []),
         ...(plan.prepare.length
           ? [
-              plan.ecosystem === 'go'
-                ? 'Load locked Go package metadata:'
-                : plan.ecosystem === 'cargo'
-                  ? 'Fetch locked Cargo dependencies:'
-                  : 'Project setup:',
+              plan.ecosystem === 'pip'
+                ? 'Create the environment and install hash-locked Python wheels:'
+                : plan.ecosystem === 'go'
+                  ? 'Load locked Go package metadata:'
+                  : plan.ecosystem === 'cargo'
+                    ? 'Fetch locked Cargo dependencies:'
+                    : 'Project setup:',
               ...plan.prepare.map((step) => formatArgvForShell(step.command, step.args)),
             ]
           : []),
       ].join('\n') || 'No setup commands; validate the declared checks.',
     bodyAdvice: [
       ...(install ? ['Install locked dependencies with lifecycle scripts disabled.'] : []),
-      ...(plan.ecosystem === 'go'
+      ...(plan.ecosystem === 'pip'
         ? [
-            'Loads package and test import metadata to populate the locked module cache; it does not run go generate, build, or test.',
+            'Creates a project virtual environment and installs exact SHA-256-locked wheels only; source builds and package build scripts are disabled.',
           ]
-        : plan.ecosystem === 'cargo'
+        : plan.ecosystem === 'go'
           ? [
-              'Fetches the locked dependency sources only; it does not compile crates or run build scripts, tests, or binaries.',
+              'Loads package and test import metadata to populate the locked module cache; it does not run go generate, build, or test.',
             ]
-          : plan.prepare.length
-            ? ['Project setup executes repository code.']
-            : []),
+          : plan.ecosystem === 'cargo'
+            ? [
+                'Fetches the locked dependency sources only; it does not compile crates or run build scripts, tests, or binaries.',
+              ]
+            : plan.prepare.length
+              ? ['Project setup executes repository code.']
+              : []),
     ].join(' '),
     bodyFooter: `Network: ${offline ? 'blocked for every subprocess' : 'allowed during preparation; checks stay offline'}. ${plan.ecosystem === 'go' || plan.ecosystem === 'cargo' ? 'The project remains read-only; writes use disposable scratch and Copse-managed caches.' : 'Writes are limited to this project and Copse-managed caches.'}\nProject: ${plan.root}`,
   }

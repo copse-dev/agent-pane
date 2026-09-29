@@ -38,6 +38,7 @@ export function copseManagedPreparationCacheDirs(env: NodeJS.ProcessEnv = proces
     join(root, 'yarn'),
     join(root, 'bun'),
     join(root, 'uv'),
+    join(root, 'pip'),
     join(root, 'go'),
     join(root, 'cargo'),
     join(root, 'electron-downloads'),
