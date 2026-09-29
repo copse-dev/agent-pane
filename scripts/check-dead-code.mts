@@ -41,6 +41,7 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
   'src/main/services/acp/acp-behavior-matrix.ts': 'manual ACP behavior-probe report formatter',
   'src/main/services/acp/acp-behavior-probe.ts': 'manual ACP behavior probe',
   'src/main/services/acp/acp-capability-probe.ts': 'manual ACP capability probe',
+  'src/main/services/acp/acp-continuity-probe.ts': 'manual ACP session-continuity probe',
   'src/main/services/acp/acp-long-run-probe.ts': 'manual ACP long-run probe',
   'src/main/services/acp/acp-protocol-negotiate.ts': 'ACP v2 readiness prototype',
   'src/main/services/acp/acp-support-matrix.ts': 'manual ACP capability report formatter',

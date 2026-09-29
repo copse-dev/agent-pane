@@ -28,6 +28,8 @@ import {
 } from '../../../src/shared/threads/spine-schema.ts'
 import { copseDataRoot, copseUserDataDir } from '../../../src/main/services/storage/copse-paths.ts'
 import { ACP_CANCELLED_TOOL_CALL_RESULT } from '../../../src/main/services/acp/acp-turn-recovery.ts'
+import { isMandatoryWriteDenyMountPath } from '../../../src/main/project-sandbox/mandatory-write-deny.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../../packages/agent/src/plugins/first-party-plugins.ts'
 
 const USER_DATA = copseUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
@@ -39,25 +41,13 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 const E2E_UNREACHABLE_LM_STUDIO_URL = 'http://127.0.0.1:1/v1'
 
 /**
- * Plugins the host turns off on a profile with no `pluginDisabled` list — mirrors
- * `DEFAULT_DISABLED_PLUGIN_IDS` in `src/main/services/plugins/plugin-service.ts`.
- * Seeding the list explicitly means a fixture never depends on that default.
+ * Plugins the host turns off on a profile with no `pluginDisabled` list — the
+ * same experimental-manifest set `plugin-service.ts` seeds, imported rather than
+ * copied so a new experiment can never be left on in e2e while a fresh install
+ * has it off. Seeding the list explicitly means a fixture never depends on the
+ * host's own seed having run.
  */
-const DEFAULT_DISABLED_PLUGIN_IDS = [
-  'copse.apple-development',
-  'copse.advisor-strategy',
-  'copse.artifact-checkpoint',
-  'copse.automations',
-  'copse.ci-investigator',
-  'copse.devtools-shortcut',
-  'copse.dark-factory',
-  'copse.long-horizon-tasks',
-  'copse.mcp-ui-canvas',
-  'copse.okf-memories',
-  'copse.pii-redaction',
-  'copse.review',
-  'copse.roadmap-plans',
-] as const
+const DEFAULT_DISABLED_PLUGIN_IDS: readonly string[] = EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS
 
 export function writeSeedSupervisedTask(task: SupervisedTaskMeta): void {
   const validated = supervisedTaskMetaSchema.parse(task)
@@ -2910,6 +2900,8 @@ export function seedAcpPromptInterruptedFixture(workspaceRoot: string): void {
               executor: 'acp',
               provider: 'codex-acp',
               model: 'acp:codex-acp#gpt-5.6-sol',
+              // Recorded by the renderer when a queued prompt was sent now.
+              userAbort: 'send_now',
               // Send-now queues the human bubble before cancellation settles.
               endedAt: now + 4,
             },
@@ -3458,12 +3450,45 @@ function ensureGitChangesFixtureCommit(): void {
   git('commit', '-q', '-m', 'agent committed work')
 }
 
+/**
+ * `git clean -fd`, tolerant of Linux sandbox placeholders that vanish mid-clean.
+ *
+ * While a writable sandboxed command runs, bwrap creates empty placeholders in
+ * the checkout for the mandatory write-deny paths (`.bashrc`, `.vscode`, ...)
+ * and ASRT deletes them once no sandboxed command is active. `git clean` lists
+ * untracked entries first and then lstat()s each one, dying with "Cannot lstat"
+ * if an entry has gone in between (builtin/clean.c). Re-run only for that race
+ * on a placeholder path: the next listing no longer contains it. Any other
+ * failure, or a vanished path that is not a placeholder, still throws.
+ */
+function cleanUntracked(repoRoot: string): void {
+  const attempts = 3
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawnSync('git', ['clean', '-fd'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      // The message matched below must not be localized.
+      env: { ...process.env, LC_ALL: 'C' },
+    })
+    if (result.error) throw result.error
+    if (result.status === 0) return
+    const vanished = /^fatal: Cannot lstat '(.+)': No such file or directory$/m.exec(
+      result.stderr,
+    )?.[1]
+    if (attempt >= attempts || vanished === undefined || !isMandatoryWriteDenyMountPath(vanished)) {
+      throw new Error(
+        `git clean -fd failed in ${repoRoot} (exit ${String(result.status)}): ${result.stderr.trim()}`,
+      )
+    }
+  }
+}
+
 /** Reset the committed git-changes fixture to staged + unstaged + untracked state. */
 export function resetGitChangesFixtureState(): void {
   const repoRoot = GIT_CHANGES_FIXTURE_ROOT
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe' })
   git('checkout', '-f', 'HEAD')
-  git('clean', '-fd')
+  cleanUntracked(repoRoot)
   ensureGitChangesFixtureCommit()
   writeFileSync(join(repoRoot, 'staged.ts'), buildLargeStagedFile(2), 'utf8')
   git('add', 'staged.ts')
@@ -3555,7 +3580,7 @@ export function seedComposerDirtyWarningFixture(): {
     initComposerDirtyWarningFixtureRepo()
   } else {
     execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
-    execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+    cleanUntracked(repoRoot)
   }
   // Leave an uncommitted edit so the shared checkout is dirty.
   writeFileSync(join(repoRoot, 'README.md'), '# fixture\n\nuncommitted edit\n', 'utf8')
@@ -3588,7 +3613,7 @@ export function seedComposerDirtyWarningFixture(): {
 export function cleanupComposerDirtyWarningFixture(): void {
   const repoRoot = COMPOSER_DIRTY_WARNING_FIXTURE_ROOT
   execFileSync('git', ['checkout', '-f', 'HEAD'], { cwd: repoRoot, stdio: 'pipe' })
-  execFileSync('git', ['clean', '-fd'], { cwd: repoRoot, stdio: 'pipe' })
+  cleanUntracked(repoRoot)
 }
 
 const GIT_IMAGE_FIXTURES = join(process.cwd(), 'tests/e2e/fixtures')

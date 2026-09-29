@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolDefinition } from '@shared/types'
 import { sanitizeMcpInputSchema, flattenMcpContent } from './mcp-schema.ts'
+import { safeJsonStringify } from '@shared/safe-json.ts'
 
 /**
  * Pure (no Electron / fs) normalization for user-defined "custom tools".
@@ -81,11 +82,10 @@ function coerceResult(out: unknown): string {
       return text
     }
     try {
-      // JSON.stringify is typed to return string here, but at runtime returns
-      // undefined when the value serializes to nothing (e.g. a toJSON yielding
-      // undefined), so the ?? '' fallback guards a genuine case.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      return JSON.stringify(out) ?? ''
+      // JSON.stringify returns undefined at runtime when the value serializes to
+      // nothing (e.g. a toJSON yielding undefined); safeJsonStringify carries
+      // that honest return type, so the ?? '' fallback guards a genuine case.
+      return safeJsonStringify(out) ?? ''
     } catch {
       return '[unserializable custom tool result]'
     }

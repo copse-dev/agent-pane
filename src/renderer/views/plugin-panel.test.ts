@@ -1,5 +1,5 @@
 import '../../../tests/setup-dom.ts'
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   todosToPanelListData,
@@ -130,15 +130,17 @@ describe('createPluginPanelEl (list)', () => {
 
   it('clamps the list to exactly 5 rows of measured height once there are more', () => {
     const ROW_HEIGHT = 20
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- saved only to restore the prototype afterward, never called unbound
-    const patchedRect = HTMLElement.prototype.getBoundingClientRect
-    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement): DOMRect {
-      if (this.classList.contains('plugin-panel-row')) {
-        const index = Array.from(this.parentElement?.children ?? []).indexOf(this)
-        return new DOMRect(0, index * ROW_HEIGHT, 300, ROW_HEIGHT)
-      }
-      return new DOMRect(0, 0, 300, 0)
-    }
+    const patchedRect = mock.method(
+      HTMLElement.prototype,
+      'getBoundingClientRect',
+      function (this: HTMLElement): DOMRect {
+        if (this.classList.contains('plugin-panel-row')) {
+          const index = Array.from(this.parentElement?.children ?? []).indexOf(this)
+          return new DOMRect(0, index * ROW_HEIGHT, 300, ROW_HEIGHT)
+        }
+        return new DOMRect(0, 0, 300, 0)
+      },
+    )
     try {
       const data: PanelListData = {
         kind: 'list',
@@ -155,7 +157,7 @@ describe('createPluginPanelEl (list)', () => {
       assert.equal(list.style.maxHeight, `${String(5 * ROW_HEIGHT)}px`)
       assert.equal(list.style.overflowY, 'auto')
     } finally {
-      HTMLElement.prototype.getBoundingClientRect = patchedRect
+      patchedRect.mock.restore()
     }
   })
 

@@ -80,4 +80,10 @@ describe('release package invariants', () => {
     assert.match(afterPack, /unusedKeyringPackageArch/)
     assert.match(afterPack, /rmSync\([\s\S]*keyring-darwin-/)
   })
+
+  it('repairs xcodebuildmcp framework bundles before signing', () => {
+    const afterPack = readFileSync(resolve('scripts/after-pack.cjs'), 'utf8')
+    assert.match(afterPack, /repairVersionedMacosFrameworks/)
+    assert.match(afterPack, /xcodebuildmcp[\s\S]*Frameworks/)
+  })
 })

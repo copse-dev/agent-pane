@@ -4,6 +4,7 @@ import {
   REMOTE_AGENT_MODEL_PREFIX,
 } from '@copse/llm/reserved-prefixes.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 import { findAcpCatalogEntry } from '@shared/acp-known-agents.ts'
 import {
   containerAcpAgent,
@@ -12,6 +13,8 @@ import {
 } from '@shared/container-acp-agents.ts'
 import type { ContainerModelVerdict } from '@shared/types/container-run.ts'
 import { getAcpAgent } from '../acp/acp-agent-registry.ts'
+import { normalizeHostname } from '@copse/llm/credential-url.ts'
+import { HOST_LOCAL_ALIAS } from '../container-runtime/egress-rules.ts'
 import { acpHarnessForContainer } from '../container-runtime/guest-acp-agent.ts'
 import type { ThreadContainerAcpHarness } from '../container-runtime/thread-container.ts'
 import { resolveApiKey } from '../storage/settings.ts'
@@ -73,9 +76,6 @@ function originOf(url: string): string {
   return `${parsed.hostname}:${String(port)}`
 }
 
-/** The name the guest dials a host-local endpoint by; the broker resolves it to the host. */
-export const HOST_LOCAL_ALIAS = 'model.copse.internal'
-
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0'])
 
 /**
@@ -93,6 +93,14 @@ export function guestFacingEndpoint(url: string): {
   egressResolve?: Record<string, string>
 } {
   const parsed = new URL(url)
+  // The alias is reserved: the guest treats it as loopback (it builds the
+  // client with `hostLocalAlias`), which holds only while the one way to be
+  // given it is this rewrite, with the broker told to dial the host's loopback.
+  if (normalizeHostname(parsed.hostname) === HOST_LOCAL_ALIAS) {
+    throw new Error(
+      `${HOST_LOCAL_ALIAS} is reserved for a model server on this computer; a container run cannot use an endpoint that names it.`,
+    )
+  }
   if (!LOOPBACK_HOSTS.has(parsed.hostname)) return { url, egress: [originOf(url)] }
   const dialHost = parsed.hostname === '::1' || parsed.hostname === '[::1]' ? '::1' : '127.0.0.1'
   parsed.hostname = HOST_LOCAL_ALIAS
@@ -152,6 +160,7 @@ export async function resolveContainerProvider(
   model: string,
   options: ContainerProviderOptions = {},
 ): Promise<ContainerProviderPlan> {
+  assertModelMakerAllowed(model)
   const acp = parseAcpModelSelection(model)
   if (acp) return resolveAcpHarness(model, acp.id, options)
   // Agent-backed selections are the common way to land here, and the reason is

@@ -3,6 +3,21 @@
 Copse is licensed under AGPL-3.0-only. It also bundles or optionally loads
 third-party components whose licenses require attribution. Those are listed here.
 
+## The complete list ships with the app
+
+Every build generates the full notice set from what it actually ships
+(`scripts/write-third-party-licenses.mts`): packages esbuild compiles into the
+bundles (read from the esbuild metafiles), the production `node_modules`
+electron-builder copies into app.asar, and the vendored components (these fonts,
+the gortex binary and the Go modules compiled into it, the Cursor skills snapshot,
+copied source, and the Electron runtime). The build fails if any of them lacks its
+licence text or is GPL-family only, and packaging (`scripts/after-pack.cjs`)
+checks the real archive again. In the app the files are in
+`Copse.app/Contents/Resources/app.asar.unpacked/dist/resources/licenses/`
+(`THIRD_PARTY_LICENSES.txt` and `LICENSE.txt`), while electron-builder retains
+Chromium and Node.js's `LICENSES.chromium.html` beside the packaged runtime.
+**Settings → About** lists every component with its licence.
+
 ## Copse interface fonts
 
 - **Pliant:** Jona Saucedo / Non Foundry — bundled as the interface and body
@@ -101,3 +116,14 @@ this section must become a full entry before release. LGPL-3.0 section 4 would
 then require all of the following: libvips must stay a separately loaded shared
 library that the user can replace, its license text must ship with the app, and
 this file must include a source offer for it.
+
+## Shell-command test set samples (benchmarks only)
+
+- **Datasets:** tomngdev/shell-safety-v2 (Copyright (c) tomngdev) and westenfelder/NL2SH-ALFA
+  (Copyright 2025 MIT-ALFA), both on Hugging Face.
+- **License:** MIT. The full notice and the pinned revisions are in
+  `benchmarks/escalation-review/testset/sources/LICENSE-HF.md`.
+- **Used by:** the escalation-review test set only (`benchmarks/escalation-review/testset/`).
+  Nothing from these datasets ships in the app.
+- **Modifications:** we kept a subset of rows and anonymised one ssh user name and one working
+  directory. The reference labels are our own.

@@ -1,12 +1,18 @@
 import { el, clear } from '../dom/helpers.ts'
 import { createAgentAvatar, createAgentAvatarMotion } from '../dom/agent-avatar.ts'
-import { chatAgentIdentity, customAgentId, namedAgentTitles } from './chat-agent-identity.ts'
+import {
+  agentRouteModel,
+  chatAgentIdentity,
+  customAgentId,
+  namedAgentTitles,
+} from './chat-agent-identity.ts'
 import { reasoningActivityIcon } from '../dom/reasoning-activity-icon.ts'
 import {
   arrowDownIcon,
   checkIcon,
   closeIcon,
   gitBranchIcon,
+  minusIcon,
   moreHorizontalIcon,
   warningIcon,
   zapIcon,
@@ -110,6 +116,7 @@ import { createPluginPanelEl } from './plugin-panel.ts'
 import { todosToPanelListData, type PanelListData } from '@copse/agent/plugins/plugin-panel.ts'
 import { TODOS_PLUGIN_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/plugins/todos-plugin.ts'
 import { createAppleDevelopmentPanel } from './apple-development-panel.ts'
+import { mountAppleProjectSuggestions } from './apple-project-suggestion.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
@@ -130,6 +137,8 @@ import {
   isThreadProposalCall,
   threadProposalCardSignature,
 } from './thread-proposal-tool-card.ts'
+import { createReviewerInputToolCard, mountReviewerInput } from './reviewer-input.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import { renderSignature } from './render-signature.ts'
 import {
   drainMessageQueue,
@@ -147,69 +156,82 @@ import { recoverFailedTurn, turnRecoveryForMessage } from '../controller/turn-re
 import { createTurnRecoveryCard } from './turn-recovery-card.ts'
 import { isImageInputUnsupportedMessage } from '@shared/image-input-support.ts'
 import { showToast } from './toast.ts'
-import type { QueuedUserMessage } from '@shared/types'
 import { showContextMenu } from '../dom/context-menu.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { normalizeSearchText, openConversationSearch } from './conversation-search.ts'
 import { trimSelectionText } from '../dom/markdown-quote.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
+import type { QueuedUserMessage, TurnOutcome } from '@shared/types'
 
 type ToolCardStatus = ToolCall['status'] | 'interrupted'
 type InterruptionCause = 'message' | 'user'
 
 // The host records cancelled ACP calls as errors so the next model does not
 // assume they completed. Their transcript presentation can still distinguish a
-// user interruption from a tool failure using the turn outcome.
+// user interruption from a tool failure using the turn outcome. Every call of a
+// user-cancelled turn is keyed here; {@link userInterruption} checks live
+// whether the call was actually cut off, since tool calls update in place.
 const userInterruptedCalls = new WeakMap<ToolCall, InterruptionCause>()
 
+// Transcripts already walked. Adding, moving or removing a message and landing
+// a turn outcome all replace `thread.messages`, so a list is only walked again
+// after a change that can move an interruption. `renderToolCards` runs once per
+// message; walking the whole thread on every call was quadratic per rebuild.
+const markedTranscripts = new WeakSet<readonly Message[]>()
+
+function interruptionCause(outcome: TurnOutcome, next: Message | undefined): InterruptionCause {
+  if (next?.role !== 'user' || next.origin !== undefined) return 'user'
+  // The renderer that aborted the run recorded how: a prompt queued mid-run and
+  // drained after an explicit Stop is adjacent too, and must not be blamed.
+  if (outcome.userAbort !== undefined) return outcome.userAbort === 'send_now' ? 'message' : 'user'
+  // Turns recorded before `userAbort`: send-now queues the human bubble before
+  // the abort settles, while a prompt sent after a Stop has a later timestamp.
+  return next.createdAt <= outcome.endedAt ? 'message' : 'user'
+}
+
 function markUserInterruptedCalls(thread: Thread | undefined): void {
-  if (!thread) return
+  if (!thread || markedTranscripts.has(thread.messages)) return
+  markedTranscripts.add(thread.messages)
   let turnCalls: ToolCall[] = []
   for (const [index, message] of thread.messages.entries()) {
     if (message.role !== 'assistant') turnCalls = []
     else turnCalls.push(...message.toolCalls)
     if (!message.turnOutcome) continue
     const next = thread.messages[index + 1]
-    // Send-now queues the human bubble before the abort settles. A prompt sent
-    // after an explicit Stop is also adjacent in the saved transcript, but its
-    // timestamp is later and must not be blamed for the earlier interruption.
-    const humanPrompt =
-      next?.role === 'user' &&
-      next.origin === undefined &&
-      next.createdAt <= message.turnOutcome.endedAt
+    const userCancelled =
+      message.turnOutcome.status === 'cancelled' &&
+      message.turnOutcome.source === 'user' &&
+      !(next?.role === 'user' && next.origin !== undefined)
+    const cause = userCancelled ? interruptionCause(message.turnOutcome, next) : null
     for (const call of turnCalls) {
-      if (!isHostInterruptedToolCall(call)) continue
-      if (
-        message.turnOutcome.status === 'cancelled' &&
-        message.turnOutcome.source === 'user' &&
-        !(next?.role === 'user' && next.origin !== undefined)
-      ) {
-        userInterruptedCalls.set(call, humanPrompt ? 'message' : 'user')
-      } else {
-        userInterruptedCalls.delete(call)
-      }
+      if (cause) userInterruptedCalls.set(call, cause)
+      else userInterruptedCalls.delete(call)
     }
     turnCalls = []
   }
 }
 
+function userInterruption(call: ToolCall): InterruptionCause | undefined {
+  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : undefined
+}
+
 function cardStatus(toolCalls: readonly ToolCall[]): ToolCardStatus {
   if (toolCalls.some((call) => call.status === 'running')) return 'running'
-  if (toolCalls.some((call) => call.status === 'error' && !userInterruptedCalls.has(call))) {
+  if (toolCalls.some((call) => call.status === 'error' && userInterruption(call) === undefined)) {
     return 'error'
   }
-  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return 'interrupted'
+  if (toolCalls.some((call) => userInterruption(call) !== undefined)) return 'interrupted'
   return 'done'
 }
 
 function interruptionLabel(call: ToolCall): string {
-  return userInterruptedCalls.get(call) === 'message'
+  return userInterruption(call) === 'message'
     ? 'Interrupted when you sent a new message.'
     : 'Interrupted by you.'
 }
 
 function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[]): void {
-  const interrupted = calls.find((call) => userInterruptedCalls.has(call))
+  const interrupted = calls.find((call) => userInterruption(call) !== undefined)
   const current = body.querySelector<HTMLElement>(':scope > .tool-interruption-note')
   if (!interrupted) {
     current?.remove()
@@ -223,6 +245,9 @@ function syncRollupInterruptionNote(body: HTMLElement, calls: readonly ToolCall[
 function statusIcon(status: ToolCardStatus): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
   if (status === 'error') return closeIcon('ui-icon ui-icon-sm')
+  // Settled but cut short: never the in-progress glyph, or a folded
+  // interrupted run reads as still pending.
+  if (status === 'interrupted') return minusIcon('ui-icon ui-icon-sm')
   return moreHorizontalIcon('ui-icon ui-icon-sm')
 }
 
@@ -416,7 +441,7 @@ function appendStandardToolSections(
     const argsSection = createToolArgsSection(tc.args)
     card.append(
       ...appendIfPresent(argsSection),
-      ...(userInterruptedCalls.has(tc)
+      ...(userInterruption(tc) !== undefined
         ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
         : []),
       createToolResultSection(
@@ -610,6 +635,10 @@ function createIndividualToolCard(
   if (store && isThreadProposalCall(tc)) {
     const proposalCard = createThreadProposalToolCard(tc, store, api, threadId)
     if (proposalCard) return proposalCard
+  }
+  if (store && isReviewerInputCall(tc)) {
+    const inputCard = createReviewerInputToolCard(tc, store)
+    if (inputCard) return inputCard
   }
 
   const card = el('details', {
@@ -883,7 +912,14 @@ function subagentCardStatus(tc: ToolCall, session: SubagentSession): ToolCall['s
 function subagentHeaderMarker(): HTMLElement {
   return el(
     'span',
-    { class: 'tool-subagent-marker', 'aria-label': 'Subagent', 'data-tooltip': 'Subagent' },
+    // A named generic `span` is not announced (ARIA 1.2 prohibits naming it),
+    // and the SVG inside is aria-hidden: `img` makes "Subagent" the glyph's name.
+    {
+      class: 'tool-subagent-marker',
+      role: 'img',
+      'aria-label': 'Subagent',
+      'data-tooltip': 'Subagent',
+    },
     gitBranchIcon('ui-icon ui-icon-sm'),
   )
 }
@@ -958,8 +994,7 @@ function syncSubagentTimeline(
       desired.push(node)
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    const innerToolCalls = msg.toolCalls ?? []
+    const innerToolCalls = msg.toolCalls
     if (innerToolCalls.length > 0) {
       const key = `tools:${msg.id}`
       const sig = renderSignature(innerToolCalls)
@@ -1270,14 +1305,14 @@ function toolCardKey(item: ToolCallDisplayItem): string {
 // digested rather than kept, or the cache would pin a second copy of every tool
 // result for as long as its card is on screen (see {@link renderSignature}).
 function toolCallSignature(call: ToolCall): string {
-  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null })
+  return renderSignature({ call, interruption: userInterruption(call) ?? null })
 }
 
 function toolCardSignature(item: ToolCallDisplayItem, extra?: string): string {
   const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
   const base = renderSignature({
     item,
-    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null),
+    interruptions: calls.map((call) => userInterruption(call) ?? null),
   })
   return extra === undefined ? base : `${base}|${extra}`
 }
@@ -1585,6 +1620,7 @@ function createAcpContentBlocks(
 }
 
 const acpDiffLineSigns = { context: ' ', add: '+', del: '-' } as const
+const acpDiffLineNames = { add: 'Added: ', del: 'Deleted: ' } as const
 
 /**
  * An ACP edit as a unified line diff: the workspace-relative path and +/- counts
@@ -1599,9 +1635,13 @@ function createAcpToolDiff(
   const additions = lines.filter((line) => line.kind === 'add').length
   const deletions = lines.filter((line) => line.kind === 'del').length
   const hasChanges = additions > 0 || deletions > 0
+  // The line diff normalises CRLF, so texts that still differ changed only
+  // their line endings; saying "No changes" there would be false.
+  const unchangedLabel =
+    (item.oldText ?? '') === item.newText ? 'No changes' : 'Only line endings changed'
   const body = hasChanges
     ? el('div', { class: 'acp-tool-diff-lines' })
-    : el('div', { class: 'acp-content-label' }, 'No changes')
+    : el('div', { class: 'acp-content-label' }, unchangedLabel)
   const details = el(
     'details',
     { class: 'acp-tool-diff' },
@@ -1641,16 +1681,16 @@ function createAcpToolDiff(
           ),
         ]
       }
-      const accessibility =
-        line.kind === 'add'
-          ? { 'aria-label': `Added line: ${line.text}` }
-          : line.kind === 'del'
-            ? { 'aria-label': `Deleted line: ${line.text}` }
-            : {}
+      // Visually hidden text rather than an `aria-label`: naming a generic
+      // `div` is prohibited, so screen readers may drop the label and with it
+      // the only cue (the sign is aria-hidden) that a line was added or removed.
       const row = el(
         'div',
-        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        { class: `acp-diff-line acp-diff-${line.kind}` },
         el('span', { class: 'acp-diff-sign', 'aria-hidden': 'true' }, acpDiffLineSigns[line.kind]),
+        ...(line.kind === 'context'
+          ? []
+          : [el('span', { class: 'acp-diff-sr' }, acpDiffLineNames[line.kind])]),
         el('span', { class: 'acp-diff-text' }, line.text),
       )
       return line.noNewlineAtEnd
@@ -2504,7 +2544,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     },
     arrowDownIcon('ui-icon'),
   )
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn)
+  const appleSuggestions = mountAppleProjectSuggestions(store, api, () =>
+    appleDevelopmentHost.dispatchEvent(new Event('apple-development-refresh')),
+  )
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn,
+  )
 
   const activityBar = el('div', { class: 'agent-activity', role: 'status', 'aria-live': 'polite' })
   const activityLabel = el('span', { class: 'agent-activity-label' })
@@ -2527,12 +2576,19 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
   const roadmapOrigin = mountThreadRoadmapOrigin(store, api)
-  root.append(roadmapOrigin.element, scrollArea, queuedHost)
+  const reviewerInput = mountReviewerInput(store, api)
+  const transcriptAndInput = el(
+    'div',
+    { class: 'conversation-reviewer-body' },
+    scrollArea,
+    reviewerInput.panel,
+  )
+  root.append(roadmapOrigin.element, reviewerInput.toggle, transcriptAndInput, queuedHost)
 
   const unbindCodeBlockRuns = bindCodeBlockRunRequests(list, ({ id, command }) => {
     const { activeProjectId: projectId, activeThreadId: threadId } = store.getState()
     if (!projectId || !threadId) {
-      setCodeBlockRunOutcome(list, id, null)
+      setCodeBlockRunOutcome(list, id, { exitCode: null, output: '' })
       return
     }
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
@@ -3011,7 +3067,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       lastScrollTop = scrollTop
       return
     }
-    if (scrollTop < lastScrollTop - 1) {
+    // A drop that lands flush with the bottom is the browser clamping scrollTop
+    // after the content shrank (a finished turn's disclosures compacting), not
+    // the reader: scrolling up always leaves the bottom by at least the scroll.
+    // A clamp says nothing about what the reader wants, so it keeps the pin
+    // state it found: a pinned view keeps following (treating the clamp as a
+    // scroll-up used to unpin it), and one the reader scrolled away from is not
+    // re-pinned just because layout pulled it onto the bottom.
+    const dropped = scrollTop < lastScrollTop - 1
+    const clamped = dropped && list.scrollHeight - scrollTop - list.clientHeight <= 1
+    if (clamped) {
+      // Layout, not the reader; the pin state stands.
+    } else if (dropped) {
       userScrolledUpAt = Date.now()
       pinnedToBottom = false
     } else if (isNearBottom()) {
@@ -3238,9 +3305,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
 
   function labelUserInterruptions(item: ToolCallDisplayItem): void {
     const calls = item.type === 'individual' ? [item.toolCall] : item.toolCalls
-    if (calls.some((call) => userInterruptedCalls.has(call))) {
+    if (calls.some((call) => userInterruption(call) !== undefined)) {
       const failed = calls.filter(
-        (call) => call.status === 'error' && !userInterruptedCalls.has(call),
+        (call) => call.status === 'error' && userInterruption(call) === undefined,
       ).length
       const base = item.label.replace(/ · \d+ failed$/, '')
       item.label = `${base}${failed ? ` · ${String(failed)} failed` : ''} · Interrupted`
@@ -3437,7 +3504,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       } else if (
         card &&
         !card.classList.contains('thread-proposal') &&
-        !(item.type === 'individual' && isThreadProposalCall(item.toolCall))
+        !(item.type === 'individual' && isThreadProposalCall(item.toolCall)) &&
+        !(item.type === 'individual' && isReviewerInputCall(item.toolCall))
       ) {
         // Patch the existing disclosure shell so status/result changes preserve
         // focus, open state, and the browser's scroll anchor.
@@ -3522,8 +3590,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const anchor = thread?.messages.find((m) => m.id === run.anchorId)
     const anchorEl = list.querySelector<HTMLElement>(`[data-message-id="${run.anchorId}"]`)
     if (!anchor || !anchorEl) return
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(anchorEl, anchor.toolCalls ?? [], {
+    renderToolCards(anchorEl, anchor.toolCalls, {
       ...messageToolCardOpts(anchor),
       run,
       liveStepId: liveStepMessageId(thread),
@@ -3542,8 +3609,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       if (!memberEl?.querySelector(':scope > .tool-card-rollup')) continue
       const msg = thread?.messages.find((m) => m.id === id)
       if (!msg) continue
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      renderToolCards(memberEl, msg.toolCalls ?? [], {
+      renderToolCards(memberEl, msg.toolCalls, {
         ...messageToolCardOpts(msg),
         run,
         liveStepId: liveStepMessageId(thread),
@@ -3646,9 +3712,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // inside that run's rollup, so it never paints a body-level trail of its own
     // — not even when it contributed reasoning but no tools.
     const nestReasoning =
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-      shouldNestReasoningInTools(msg.toolCalls ?? []) ||
-      multiStepRunFor(thread, msgId) !== undefined
+      shouldNestReasoningInTools(msg.toolCalls) || multiStepRunFor(thread, msgId) !== undefined
     appendMessageContent(body, msg, api, acpWorkspaceRoot(store), {
       ...(nestReasoning ? { nestReasoningInTools: true } : {}),
     })
@@ -3677,8 +3741,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     hydrateRemoteArtifactImages(list, api)
     const run = multiStepRunFor(thread, msgId)
     // Re-render any tool cards this message already carries (restored threads).
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
     })
@@ -3882,6 +3945,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         })
         .catch((error: unknown) => {
           console.warn('[conversation] Could not load named agent identities', error)
+          // Let the next sync ask again rather than leaving named headers off
+          // until some unrelated settings change resets the flag.
+          if (revision === agentNamesRevision) agentNamesRequested = false
         })
     }
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
@@ -3901,6 +3967,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     let prevLabel: string | undefined
     let prevAgentKey: string | undefined
     for (const msg of thread.messages) {
+      // A user turn ends an agent's stretch: its next reply gets its own marker,
+      // so the one that animates sits beside the latest reply rather than at the
+      // agent's first reply far up the transcript (and offscreen, hence static).
+      if (msg.role === 'user') prevAgentKey = undefined
       if (msg.role !== 'assistant') continue
       const msgEl = rendered.get(msg.id)
       if (!msgEl) continue
@@ -3929,10 +3999,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       }
       // The identity marker already names bare agent selections. Keep model and
       // parameter boundaries for native replies and explicit agent model choices.
-      if (show && model && text && text !== prevLabel && (!identity || model.includes('#'))) {
+      const routeModel = identity && model ? agentRouteModel(model) : undefined
+      if (show && model && text && text !== prevLabel && (!identity || routeModel)) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = identity
-          ? formatPrimaryChatModelLabel(model.slice(model.indexOf('#') + 1), msg.parameters)
+        label.textContent = routeModel
+          ? formatPrimaryChatModelLabel(routeModel, msg.parameters)
           : text
         if (header) {
           if (label.parentElement !== header) header.append(label)
@@ -4312,8 +4383,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const wasPinned = pinnedToBottom
     const readingAnchor = wasPinned ? null : captureReadingAnchor()
     const run = multiStepRunFor(thread, msgId)
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls, {
       ...messageToolCardOpts(msg),
       reasoningLive: isReasoningDisclosureLive(thread, msg),
       ...(run ? { run, liveStepId: liveStepMessageId(thread) } : {}),
@@ -4326,9 +4396,46 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     } else restoreReadingAnchor(readingAnchor, prevScrollTop)
   }
 
+  function jumpToReviewerInput(messageId: string, requestId: string): void {
+    const activeThreadId = store.getState().activeThreadId
+    let attempts = 0
+    const tryJump = (): void => {
+      if (disposed || store.getState().activeThreadId !== activeThreadId) return
+      const message = Array.from(list.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+        (item) => item.dataset['messageId'] === messageId,
+      )
+      if (!message) {
+        // Older messages load in background chunks. Wait for the original
+        // assistant bubble rather than jumping to a newer approximation.
+        if (attempts++ < 300) requestAnimationFrame(tryJump)
+        return
+      }
+      const card = Array.from(message.querySelectorAll<HTMLElement>('[data-tool-id]')).find(
+        (item) => item.dataset['toolId'] === requestId,
+      )
+      if (card instanceof HTMLDetailsElement) card.open = true
+      const target = card ?? message
+      pinnedToBottom = false
+      userScrolledUpAt = Date.now()
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target.classList.add('reviewer-input-highlight')
+      setTimeout(() => {
+        target.classList.remove('reviewer-input-highlight')
+      }, 3000)
+    }
+    tryJump()
+  }
+
   const unsubs = [
+    store.on('reviewer_input_open', (requestId) => {
+      reviewerInput.open(requestId)
+    }),
+    store.on('reviewer_input_jump', jumpToReviewerInput),
     store.on('code_block_run_finished', (result) => {
-      setCodeBlockRunOutcome(list, result.id, result.exitCode)
+      setCodeBlockRunOutcome(list, result.id, {
+        exitCode: result.exitCode,
+        output: result.output,
+      })
     }),
     store.on('settings_changed', () => {
       agentNamesRequested = false
@@ -4470,13 +4577,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }),
     store.on('tool_call_started', (mid) => {
       refreshToolCards(mid)
+      reviewerInput.sync()
     }),
     store.on('tool_call_updated', (mid) => {
       refreshToolCards(mid)
+      reviewerInput.sync()
     }),
     store.on('threads_changed', () => {
       rebuildForThread()
       syncFromStore()
+      reviewerInput.sync()
     }),
     store.on('todos_changed', () => {
       syncTodoPanel()
@@ -4550,6 +4660,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   const unbindBrowserLinks = bindBrowserLinkClicks(root, store, api)
   rebuildForThread()
   syncFromStore()
+  reviewerInput.sync()
   return () => {
     disposed = true
     avatarMotion.dispose()
@@ -4570,6 +4681,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     unbindCodeBlockRuns()
+    appleSuggestions.destroy()
     roadmapOrigin.destroy()
     unsubs.forEach((u) => {
       u()

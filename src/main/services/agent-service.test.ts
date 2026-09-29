@@ -476,6 +476,53 @@ describe('runAgent AgentHost decoupling', () => {
     assert.deepEqual(checkpoints.at(-1), result.messages.slice(0, checkpoints.at(-1)?.length))
   })
 
+  // #2519: a review the user ran reaches the model with the next prompt, and
+  // stays in history with it — while hooks still see only what the user typed.
+  it('leads the prompt with the review summary it carries and keeps it in history', async () => {
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const sent: LLMMessage[][] = []
+    const provider: LLMProvider = {
+      stream: async function* (messages) {
+        sent.push(messages)
+        yield { type: 'text' as const, text: 'Fixing the high-severity finding.' }
+      },
+    }
+    const reviewContext = '<copse_review_report>\n1 finding(s):\n…\n</copse_review_report>'
+
+    const result = await runWithThreadExecutionContext(
+      {
+        projectId: 'project-1',
+        threadId: 'thread-review-context',
+        projectRoot: '/workspace',
+        root: '/workspace',
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        runWithActiveRunIdentity('thread-review-context', () =>
+          agentService.runAgent(
+            'thread-review-context',
+            'Fix what the review found.',
+            [{ role: 'assistant', content: 'Done with the change.' }],
+            host,
+            new ToolRegistry(),
+            { provider, contextWindow: 100_000, reviewContext },
+          ),
+        ),
+    )
+
+    const expected = `${reviewContext}\n\nFix what the review found.`
+    const firstCall = sent[0] ?? []
+    assert.deepEqual(
+      firstCall.filter((message) => message.role === 'user').map((message) => message.content),
+      [expected],
+    )
+    assert.deepEqual(result.messages.slice(0, 2), [
+      { role: 'assistant', content: 'Done with the change.' },
+      { role: 'user', content: expected },
+    ])
+  })
+
   it('activates nested instructions on first file access and defers the first edit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'copse-agent-nested-instructions-'))
     await mkdir(join(root, 'packages', 'api'), { recursive: true })
@@ -714,6 +761,103 @@ describe('runAgent AgentHost decoupling', () => {
       assert.ok(resultIndex('read-api') >= 0)
       assert.ok(notices[0] && notices[0].index > resultIndex('read-api'))
       assert.ok(notices[1] && notices[1].index > resultIndex('read-web-fresh'))
+    } finally {
+      setDefaultPluginRegistry(null)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses an Apple Development tool called by name in a project that is not enrolled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'copse-agent-apple-scope-'))
+    const ran: string[] = []
+    const registry = new ToolRegistry()
+    // The registry is process-wide, so a macOS host with the plugin on has
+    // these registered for every thread; only the offered list is per turn.
+    for (const name of ['open_simulator_desktop', 'mcp__xcodebuildmcp__build_sim']) {
+      registry.register(
+        defineTool({
+          name,
+          description: 'Test Apple tool',
+          parameters: z.object({}),
+          execute: () => {
+            ran.push(name)
+            return Promise.resolve('ran')
+          },
+        }),
+      )
+    }
+
+    let calls = 0
+    const offered: string[][] = []
+    const results = new Map<string, { result: string; isError?: boolean }>()
+    const provider: LLMProvider = {
+      stream: async function* (messages, tools) {
+        calls += 1
+        offered.push(tools.map((tool) => tool.name))
+        if (calls === 1) {
+          // Prompt injection: the model names tools it was never offered.
+          yield {
+            type: 'tool_call' as const,
+            toolCall: { id: 'simulator', name: 'open_simulator_desktop', args: {} },
+          }
+          yield {
+            type: 'tool_call' as const,
+            toolCall: { id: 'xcode', name: 'mcp__xcodebuildmcp__build_sim', args: {} },
+          }
+          return
+        }
+        for (const message of messages) {
+          if (message.role !== 'tool') continue
+          for (const result of message.toolResults) results.set(result.toolCallId, result)
+        }
+        yield { type: 'text' as const, text: 'Done.' }
+      },
+    }
+    setDefaultPluginRegistry(new PluginRegistry())
+    await setSetting('subagentsEnabled', false)
+    await setSetting('skillsEnabled', false)
+
+    try {
+      await runWithWorkspaceTrust(root, true, () =>
+        runWithThreadExecutionContext(
+          {
+            projectId: 'project-not-enrolled',
+            threadId: 'thread-apple-scope',
+            projectRoot: root,
+            root,
+            checkoutMode: 'shared',
+            branch: null,
+          },
+          () =>
+            runWithActiveRunIdentity('thread-apple-scope', () =>
+              agentService.runAgent(
+                'thread-apple-scope',
+                'Build the app.',
+                [],
+                { emit: () => undefined },
+                registry,
+                {
+                  provider,
+                  contextWindow: 100_000,
+                  model: 'claude-sonnet-4-6',
+                  maxSteps: 4,
+                  maxLlmCalls: 4,
+                },
+              ),
+            ),
+        ),
+      )
+      assert.equal(calls, 2)
+      assert.ok(offered[0], 'first model call')
+      assert.ok(!offered[0].includes('open_simulator_desktop'))
+      assert.ok(!offered[0].includes('mcp__xcodebuildmcp__build_sim'))
+      assert.deepEqual(ran, [])
+      for (const id of ['simulator', 'xcode']) {
+        const result = results.get(id)
+        assert.ok(result, id)
+        assert.match(result.result, /not available in this project/, id)
+        assert.match(result.result, /enrolled in Apple Development/, id)
+      }
     } finally {
       setDefaultPluginRegistry(null)
       await rm(root, { recursive: true, force: true })

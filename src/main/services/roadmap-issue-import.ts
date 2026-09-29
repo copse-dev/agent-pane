@@ -1,7 +1,4 @@
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { addKnowledgeNote, type KnowledgeNote } from './storage/knowledge-store.ts'
@@ -42,9 +39,8 @@ export function templateRoadmapPrompt(issue: RoadmapImportIssue): string {
 
 /** Draft a runnable prompt for the issue via the small-tasks model. */
 export async function draftRoadmapPrompt(issue: RoadmapImportIssue): Promise<string> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return templateRoadmapPrompt(issue)
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return templateRoadmapPrompt(issue)
   const ask =
     'Write a concise prompt (2-5 sentences) instructing a coding agent to resolve the ' +
     'GitHub issue below. State the goal and any key constraints from the issue; do not ' +
@@ -52,10 +48,10 @@ export async function draftRoadmapPrompt(issue: RoadmapImportIssue): Promise<str
     `Issue #${String(issue.number)}: ${issue.title}\n\n` +
     issue.body.slice(0, 2000)
   try {
-    const { text, usage } = await completeTextWithUsage(provider, ask, DRAFT_TIMEOUT_MS)
+    const { text, usage } = await completeTextWithUsage(route.provider, ask, DRAFT_TIMEOUT_MS)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model,
+        model: route.model,
         source: 'small-tasks',
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,

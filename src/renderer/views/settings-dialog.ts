@@ -24,6 +24,7 @@ import {
   isAppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { MODEL_MAKERS, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
 import { validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
@@ -55,6 +56,7 @@ import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createModelParametersSection } from './setup/model-parameters-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createAboutSection } from './setup/about-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -79,7 +81,12 @@ import {
   parseTrustedCommands,
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
-import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
+import {
+  TRUSTED_SSH_HOSTS_SETTING,
+  parseTrustedSshHosts,
+  sanitizeTrustedSshHosts,
+} from '@shared/trusted-ssh-hosts.ts'
+import { isRecord, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import {
   SHARE_TERMINAL_HISTORY_ENABLED_DEFAULT,
@@ -119,6 +126,7 @@ export type SettingsSection =
   | 'appearance'
   | 'ssh'
   | 'experimental'
+  | 'about'
 
 const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
   value === 'general' ||
@@ -131,7 +139,8 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
   value === 'storage' ||
   value === 'appearance' ||
   value === 'ssh' ||
-  value === 'experimental'
+  value === 'experimental' ||
+  value === 'about'
 
 /**
  * Friendly display name for a plugin row. First-party plugins ship with a
@@ -549,6 +558,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -593,6 +603,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -858,6 +869,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   project folder (for example <code>xcodebuild</code>). These run with no prompt.
                   A line that also does something destructive or reaches the network still asks.
                   Only applies in a project you trust and while the first option above is on.
+                </span>
+              </label>
+              <label>
+                Trusted SSH hosts
+                <textarea
+                  name="trustedSshHosts"
+                  rows="3"
+                  spellcheck="false"
+                  placeholder="build-box.local"
+                ></textarea>
+                <span class="field-hint">
+                  One host name or <code>~/.ssh/config</code> alias per line. In Guarded YOLO,
+                  <code>ssh</code>, <code>scp</code>, and <code>rsync</code> to these hosts run
+                  without asking; any other host asks first. A destructive remote command still
+                  asks.
                 </span>
               </label>
             </fieldset>
@@ -1400,8 +1426,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <p class="field-hint">
                 When a project is on a remote machine, start the agent there, next to the code,
-                instead of leaving it unavailable. The agent has to be installed and signed in on
-                that machine already.
+                instead of leaving it unavailable. If the agent is not installed there, Copse asks
+                before installing it; you sign in on that machine yourself.
               </p>
             </fieldset>
           </section>
@@ -1414,14 +1440,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </p>
 
             <fieldset>
+              <legend>Mobile Companion</legend>
+              <p class="field-hint">
+                Open your Copse threads from a phone on the same local network. Choose the network
+                interface your phone uses, pair phones, or turn sharing off. Copse must stay open
+                and this computer must stay awake.
+              </p>
+              <div class="settings-action-row">
+                <button type="button" class="ui-btn ui-btn-secondary" id="mobile-companion-manage">
+                  Set up or manage…
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend>Remote desktop viewer</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="vncEnabled" />
-                Show the read-only Desktop pane
+                Show the Desktop pane
               </label>
               <p class="field-hint">
-                View a VNC server on this machine or through the active SSH workspace's encrypted
-                tunnel. The first release cannot send keyboard, pointer, or clipboard input.
+                View a VNC desktop on this machine, on a saved SSH machine, or found nearby on your
+                network, plus booted iOS Simulators and Android emulators. Connections start
+                view-only; turn on control to send keyboard and pointer input. Clipboard is not
+                shared.
               </p>
             </fieldset>
 
@@ -1496,10 +1538,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Enable developer mode
               </label>
               <p class="field-hint">
-                Shows Hooks in Sources and the conversation diagnostics menu. The optional
-                <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
+                Shows Hooks in Sources, the conversation diagnostics menu, and View &gt; Developer
+                Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -1599,6 +1650,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
 
+  const makerBlockList = el('div', { class: 'model-maker-block-list' })
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        el('input', { type: 'checkbox', name: 'blockedModelMakers', value: maker.id }),
+        maker.label,
+      ),
+    )
+  }
+  qsRequired(overlay, '#settings-model-maker-block-host').append(
+    el('h4', { class: 'model-role-heading' }, 'Blocked model makers'),
+    el(
+      'p',
+      { class: 'settings-fieldset-desc' },
+      'Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run.',
+    ),
+    makerBlockList,
+  )
+
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
 
@@ -1608,9 +1680,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
-  // Sits directly under the chat-model picker and follows it: the parameters
-  // belong to the selected model, so switching models re-renders the controls.
-  const modelParametersSection = createModelParametersSection(api.settings)
+  // Sits under the chat-model picker and starts on it, but has its own picker:
+  // the parameters belong to a model, and the chat default is often a rule.
+  const modelParametersSection = createModelParametersSection(api.settings, {
+    mountModelPicker: (select) =>
+      mountModelSelectPicker(select, {
+        loadOptions: (current) => fetchModelOptions(api, current),
+        ariaLabel: 'Model to tune',
+        loadOnMount: false,
+      }),
+  })
   qsRequired(overlay, '#settings-model-parameters-host').append(modelParametersSection.root)
 
   const settingsModelPickers = {
@@ -1641,6 +1720,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
+
+  const aboutSection = createAboutSection(api)
+  qsRequired(overlay, '#settings-about-host').append(aboutSection.root)
+
+  qsRequired<HTMLButtonElement>(overlay, '#mobile-companion-manage').addEventListener(
+    'click',
+    () => {
+      closeSettingsDialog()
+      void api.mobile.manage()
+    },
+  )
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')
   const sections = overlay.querySelectorAll<HTMLElement>('.settings-section')
@@ -1935,6 +2025,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         if (id === 'classifiers') void classifiersSection.refresh()
         if (id === 'usage') void usageSection.refresh()
         if (id === 'permissions') void toolPermissionsPanel.refresh()
+        if (id === 'about') void aboutSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
@@ -3717,7 +3808,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (field.description) {
       const hint = document.createElement('span')
       hint.className = 'plugin-setting-desc'
-      hint.textContent = field.description
+      // Manifest copy is markdown (backticked setting names, links), like the
+      // pack description above it.
+      hint.innerHTML = renderMarkdown(field.description)
       label.append(hint)
     }
     if (modelSelectInput) label.append(mountResolvedModelHint(modelSelectInput))
@@ -3767,12 +3860,17 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // installed; Cursor owns its own cache, so those rows are read-only. A
       // Cursor failure must not blank the registry rows beside it, hence the
       // catch rather than a bare Promise.all.
-      const [result, cursorPlugins] = await Promise.all([
+      const [result, cursorPlugins, bundledPlugins] = await Promise.all([
         api.plugins.list(),
         api.cursorPlugins.list().catch(() => []),
+        api.bundledSkillPlugins.list().catch(() => []),
       ])
       listEl.innerHTML = ''
-      if (result.plugins.length === 0 && cursorPlugins.length === 0) {
+      if (
+        result.plugins.length === 0 &&
+        cursorPlugins.length === 0 &&
+        bundledPlugins.length === 0
+      ) {
         const empty = document.createElement('span')
         empty.className = 'plugins-empty'
         empty.textContent = 'No plugins installed.'
@@ -3798,6 +3896,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             id: plugin.name,
             enabled: true,
             render: () => makeCursorPluginRow(plugin),
+          })),
+          ...bundledPlugins.map((plugin) => ({
+            id: plugin.name,
+            enabled: plugin.enabled && !plugin.suppressed,
+            render: () => makeBundledSkillPluginRow(plugin),
           })),
         ].sort((a, b) => Number(!a.enabled) - Number(!b.enabled) || a.id.localeCompare(b.id))
 
@@ -3917,7 +4020,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (plugin.description) {
       const desc = document.createElement('div')
       desc.className = 'plugin-row-desc'
-      desc.textContent = plugin.description
+      desc.innerHTML = renderMarkdown(plugin.description)
       row.append(desc)
     }
 
@@ -3945,6 +4048,135 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     path.className = 'plugin-source-path'
     path.textContent = plugin.root
     row.append(path)
+
+    return row
+  }
+
+  /**
+   * A Cursor plugin whose skills ship inside Copse, with a switch that is ours.
+   *
+   * Same row shape as a Cursor-installed plugin — the Cursor mark, because
+   * Cursor wrote it — but Copse vendors it, so the switch is live. The choice
+   * is saved per plugin, so a default can change in a later release without
+   * overriding what the user picked. A plugin that ships switched off says why
+   * on the face of the row, next to the switch it explains.
+   */
+  function makeBundledSkillPluginRow(
+    plugin: import('@shared/types/cursor-plugins.ts').BundledSkillPluginSummary,
+  ): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'plugin-row'
+    row.dataset['pluginId'] = plugin.name
+    row.dataset['pluginOrigin'] = 'bundled'
+    row.dataset['enabled'] = String(plugin.enabled && !plugin.suppressed)
+
+    const header = document.createElement('div')
+    header.className = 'plugin-row-header'
+
+    const icon = document.createElement('span')
+    icon.className = 'plugin-icon plugin-icon-cursor'
+    icon.setAttribute('aria-hidden', 'true')
+    const mark = document.createElement('img')
+    mark.src = './cursor-mark.svg'
+    mark.alt = ''
+    icon.append(mark)
+    header.append(icon)
+
+    const title = document.createElement('div')
+    title.className = 'plugin-row-title'
+    const originBadge = document.createElement('span')
+    originBadge.className = 'plugin-badge plugin-badge-cursor'
+    originBadge.textContent = 'Cursor · Bundled'
+    originBadge.title = 'Written for Cursor; ships inside Copse from a pinned, reviewed snapshot.'
+    title.append(originBadge)
+
+    const nameLine = document.createElement('div')
+    nameLine.className = 'plugin-row-name-line'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'plugin-name'
+    nameEl.textContent = plugin.name
+    nameLine.append(nameEl)
+    if (plugin.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'plugin-version'
+      versionEl.textContent = plugin.version
+      nameLine.append(versionEl)
+    }
+    title.append(nameLine)
+
+    const toggleControl = document.createElement('div')
+    toggleControl.className = 'plugin-toggle-control'
+    const makeStateLabel = (side: 'off' | 'on'): HTMLElement => {
+      const stateEl = document.createElement('span')
+      stateEl.className = 'plugin-toggle-state'
+      stateEl.dataset['side'] = side
+      stateEl.textContent = side === 'on' ? 'On' : 'Off'
+      stateEl.setAttribute('aria-hidden', 'true')
+      return stateEl
+    }
+    const toggleLabel = document.createElement('label')
+    toggleLabel.className = 'toggle-switch plugin-toggle'
+    toggleLabel.title = plugin.suppressed
+      ? 'All bundled skills are off — turn them on under Agent → Skills.'
+      : plugin.enabled
+        ? 'Turn off this plugin'
+        : 'Turn on this plugin'
+    const toggle = document.createElement('input')
+    toggle.type = 'checkbox'
+    toggle.checked = plugin.enabled
+    toggle.disabled = plugin.suppressed
+    toggle.className = 'plugin-toggle-input'
+    toggle.setAttribute('aria-label', `${plugin.name} plugin enabled`)
+    const track = document.createElement('span')
+    track.className = 'toggle-switch-track'
+    track.setAttribute('aria-hidden', 'true')
+    toggle.addEventListener('change', () => {
+      toggle.disabled = true
+      void (async (): Promise<void> => {
+        const stored = await api.settings.get('bundledSkillPluginOverrides')
+        await api.settings.set('bundledSkillPluginOverrides', {
+          ...(isRecord(stored) ? stored : {}),
+          [plugin.name]: toggle.checked,
+        })
+        await refreshPlugins()
+        // The skill catalog, /-picker and context meter all read the skills
+        // registry, which main has just reloaded; wake the listeners that show them.
+        store.emit('settings_changed')
+      })()
+        .catch(() => {
+          toggle.checked = !toggle.checked
+        })
+        .finally(() => {
+          toggle.disabled = plugin.suppressed
+        })
+    })
+    toggleLabel.append(toggle, track)
+    toggleControl.append(makeStateLabel('off'), toggleLabel, makeStateLabel('on'))
+
+    header.append(title, toggleControl)
+    row.append(header)
+
+    if (plugin.description) {
+      const desc = document.createElement('div')
+      desc.className = 'plugin-row-desc'
+      desc.textContent = plugin.description
+      row.append(desc)
+    }
+
+    if (plugin.offByDefaultReason) {
+      const note = document.createElement('p')
+      note.className = 'field-hint plugin-default-off-note'
+      note.textContent = `Off by default. ${plugin.offByDefaultReason}`
+      row.append(note)
+    }
+
+    const chips = document.createElement('div')
+    chips.className = 'plugin-chips'
+    const chip = document.createElement('span')
+    chip.className = 'plugin-chip'
+    chip.textContent = `${String(plugin.skillCount)} ${plugin.skillCount === 1 ? 'skill' : 'skills'}`
+    chips.append(chip)
+    row.append(chips)
 
     return row
   }
@@ -4454,6 +4686,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
+    if (openedSection === 'about') void aboutSection.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
       void revealPluginDetail()
@@ -4512,6 +4745,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await refreshStage('form-fields', async () => {
         await loadSimpleFields(form, api)
+        const blockedMakers = parseBlockedModelMakers(await api.settings.get('blockedModelMakers'))
+        for (const input of makerBlockList.querySelectorAll<HTMLInputElement>('input')) {
+          input.checked = blockedMakers.some((maker) => maker === input.value)
+        }
         syncDeveloperOnlySettings()
         wireSafetySliders(form)
         const savedWebOrigins = storedStringArray(
@@ -4529,6 +4766,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
           sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
         )
+        textareaControl(form, 'trustedSshHosts').value = sanitizeTrustedSshHosts(
+          await api.settings.get(TRUSTED_SSH_HOSTS_SETTING),
+        ).join('\n')
         selectControl(form, 'shellAutoApprovalLevel').value = sanitizeAutoApprovalLevel(
           await api.settings.get(AUTO_APPROVAL_LEVEL_SETTING),
         )
@@ -4693,6 +4933,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
 
       saveIfDirty('model', model)
+      saveIfDirty('blockedModelMakers', parseBlockedModelMakers(data.getAll('blockedModelMakers')))
       saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
       // `advisorModel` and the reviewer models are no longer saved here — they
       // are plugin-scoped `model` settings persisted on change via
@@ -4779,6 +5020,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               data.get(AUTO_APPROVAL_LEVEL_SETTING),
             ),
           }),
+        )
+      }
+
+      if (dirtyFieldNames.has(TRUSTED_SSH_HOSTS_SETTING)) {
+        writes.push(
+          api.settings.set(
+            TRUSTED_SSH_HOSTS_SETTING,
+            parseTrustedSshHosts(formDataString(data, TRUSTED_SSH_HOSTS_SETTING)),
+          ),
         )
       }
 

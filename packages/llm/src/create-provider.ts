@@ -7,7 +7,7 @@ import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
-import { validateCredentialBaseUrl } from './credential-url.ts'
+import { validateCredentialBaseUrl, type CredentialUrlOptions } from './credential-url.ts'
 import {
   openRouterReasoningBody,
   resolvedOutputCeiling,
@@ -305,6 +305,7 @@ export function createOpenRouterProvider(
 // `approvedHosts` is the user-approved custom-provider host list (issue #438).
 // Built-in / loopback hosts pass without it; an unapproved custom host throws
 // before the SDK client is constructed so no key or prompt is sent.
+// `urlOptions` is for the container guest alone; see `CredentialUrlOptions`.
 export function createExtraCloudProvider(
   provider: Pick<ExtraProvider, 'baseUrl' | 'local' | 'apiStyle' | 'includeUsage' | 'extraBody'>,
   model: string,
@@ -312,8 +313,9 @@ export function createExtraCloudProvider(
   approvedHosts: readonly string[] = [],
   params: ModelParameters = {},
   promptCacheKey?: string,
+  urlOptions: CredentialUrlOptions = {},
 ): LLMProvider {
-  validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
+  validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL', urlOptions)
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   const cacheKeyOpt = !provider.local && promptCacheKey ? { promptCacheKey } : {}
   if (provider.apiStyle === 'responses') {

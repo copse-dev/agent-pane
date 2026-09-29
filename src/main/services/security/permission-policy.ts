@@ -1,5 +1,6 @@
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import {
   analyzeShellCommand,
   dangerousInSandboxReasons,
@@ -43,12 +44,12 @@ export const GITHUB_NONMUTATING_CI_TOOLS = new Set([
 ])
 
 /**
- * Mutating GitHub PR tools (rerun CI, approve, mark-ready, enable-auto-merge).
+ * Mutating GitHub PR tools (create, rerun CI, approve, mark-ready, enable-auto-merge).
  * Unlike the read-only sets above, these change state on github.com, so the gate
- * MUST prompt for them — they are deliberately kept out of every auto-run set so
- * the default-allow branch never reaches them. Names mirror the tools defined in
- * src/main/tools/gh-pr-action-tools.ts. (issue #690 Q3 — per-repo "remember"
- * granularity is still open, so for now every call prompts.)
+ * route to the explicit GitHub gate — they are deliberately kept out of every
+ * general auto-run set so the default-allow branch never reaches them. That gate
+ * prompts unless an owning automation schedule has an exact, project-scoped
+ * action grant. Names mirror the tools defined in src/main/tools/gh-pr-action-tools.ts.
  */
 export const GITHUB_WRITE_TOOLS = new Set([
   'gh_pr_create',
@@ -371,18 +372,66 @@ export function formatPortBindingPromptParts(
  */
 const NEEDS_OUTSIDE_ACCESS: readonly string[] = ['Needs network or outside-project access']
 
+/**
+ * Prior-denial prose (from `cachedDenialAdvice` / `PRIOR_DENIAL_MARKER`) must
+ * not become a reason bullet that also holds the live command. Split it out so
+ * formatters can put it in its own section above the lead-in.
+ */
+function isPriorDenialReason(reason: string): boolean {
+  return reason.includes(PRIOR_DENIAL_MARKER)
+}
+
+function splitPriorDenialReasons(reasons: readonly string[]): {
+  priorDenial: string | null
+  scopeReasons: string[]
+} {
+  const priorDenialParts: string[] = []
+  const scopeReasons: string[] = []
+  for (const reason of reasons) {
+    if (isPriorDenialReason(reason)) priorDenialParts.push(reason)
+    else scopeReasons.push(reason)
+  }
+  return {
+    priorDenial: priorDenialParts.length ? priorDenialParts.join('\n\n') : null,
+    scopeReasons,
+  }
+}
+
+/**
+ * Build the advice block: optional prior-denial note, lead-in, reason bullets,
+ * optional trailing prose. Sections are blank-line separated so the renderer
+ * keeps them distinct from the monospaced command body.
+ */
+function buildOutsideSandboxAdvice(options: {
+  leadIn: string
+  reasons: readonly string[]
+  trailing?: string
+}): string {
+  const { priorDenial, scopeReasons } = splitPriorDenialReasons(options.reasons)
+  const sections: string[] = []
+  if (priorDenial) sections.push(priorDenial)
+  sections.push(
+    `${options.leadIn}\n${reasonList(scopeReasons.length ? scopeReasons : NEEDS_OUTSIDE_ACCESS)}`,
+  )
+  if (options.trailing) sections.push(options.trailing)
+  return sections.join('\n\n')
+}
+
 export function formatExternalSandboxPromptParts(
   command: string,
   reasons: string[],
 ): ShellPromptParts {
   return {
+    // The dialog's command region scrolls independently. Keep the complete
+    // command visible so approval never authorizes undisclosed shell text.
     command,
     // The platform is deliberately unnamed: this prompt only appears while a
     // project sandbox is active, which is seatbelt on macOS and bubblewrap on
     // Linux, and naming the wrong one is worse than naming none.
-    bodyAdvice: `The project sandbox would block this command:\n${reasonList(
-      reasons.length ? reasons : NEEDS_OUTSIDE_ACCESS,
-    )}`,
+    bodyAdvice: buildOutsideSandboxAdvice({
+      leadIn: 'The project sandbox would block this command:',
+      reasons,
+    }),
     bodyFooter: 'Allow running it once outside the sandbox?',
   }
 }
@@ -399,11 +448,12 @@ export function formatExpectedSandboxBlockPromptParts(
 ): ShellPromptParts {
   return {
     command,
-    bodyAdvice:
-      `The agent expects the project sandbox to block this command:\n${reasonList(
-        reasons.length ? reasons : NEEDS_OUTSIDE_ACCESS,
-      )}\n\n` +
-      'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
+    bodyAdvice: buildOutsideSandboxAdvice({
+      leadIn: 'The agent expects the project sandbox to block this command:',
+      reasons,
+      trailing:
+        'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
+    }),
     bodyFooter:
       "This is the agent's expectation, not a confirmed sandbox block. " +
       'Allow running it once outside the sandbox?',
@@ -422,8 +472,7 @@ function truncateGuardedYoloHarmReason(reason: string): string {
 
 /** Advice shown outside the monospaced command block for Guarded YOLO harm prompts. */
 export function formatGuardedYoloHarmPromptAdvice(reasons: string[]): string {
-  const footer =
-    '\n\nGuarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?'
+  const footer = '\n\nGuarded YOLO cannot skip this confirmation. Approve this command once?'
   // `shell-harm.ts` writes most of its own reasons as readable phrases, but the
   // few it shares with the classifier (`REASON_RECURSIVE_DELETE`, …) are
   // identifiers. Resolving them here is what keeps the wording those constants
