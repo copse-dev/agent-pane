@@ -233,6 +233,55 @@ describe('projects pane remove-from-sidebar (component)', () => {
     assert.deepEqual(writes, [{ key: 'dismissedOrphanStores', value: ['stale-store'] }])
   })
 
+  it('keeps the projects list scroll position when dismissing an orphan row', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t-a', 'Thread A')],
+      activeThreadId: 't-a',
+    })
+    mount(
+      store,
+      makeApi([
+        {
+          id: 'stale-store',
+          threadCount: 1,
+          sampleTitles: ['Old notes'],
+          updatedAt: 50,
+        },
+      ]),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const list = document.querySelector<HTMLElement>('.projects-list')
+    assert.ok(list)
+    let scrollPosition = 160
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => scrollPosition,
+      set: (value: number): void => {
+        scrollPosition = value
+      },
+    })
+    // Removing all children briefly empties the scroll container in Chromium,
+    // which clamps scrollTop to zero. Simulate that browser behavior on the
+    // current children so this test fails if render() stops restoring the offset.
+    for (const child of Array.from(list.children)) {
+      const remove = child.remove.bind(child)
+      child.remove = (): void => {
+        remove()
+        list.scrollTop = 0
+      }
+    }
+
+    document.querySelector<HTMLButtonElement>('.orphan-dismiss-btn')?.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(list.scrollTop, 160)
+  })
+
   it('shows orphan thread titles before opening the folder picker on recover', async () => {
     mountConfirmDialog()
     const store = createStore({
