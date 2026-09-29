@@ -34,13 +34,25 @@ describe('memory recall truncation guidance', () => {
 
     await card.$('summary.tool-card-header').click()
     await expect(card).toHaveAttribute('open')
-    const result = await card.$('.tool-result pre')
+    const resultScrollport = await card.$('.tool-result')
+    const result = await resultScrollport.$('pre')
     await expect(result).toHaveText('Found 55 memories:', { containing: true })
     await expect(result).toHaveText(GUIDANCE, { containing: true })
 
     const copy = await result.getText()
     expect(copy.match(/^## /gm)).toHaveLength(2)
     expect(copy.endsWith(`(${GUIDANCE})`)).toBe(true)
+
+    const scroll = await browser.execute((element) => {
+      if (!(element instanceof HTMLElement)) throw new Error('tool result not found')
+      element.scrollTop = element.scrollHeight
+      return {
+        scrollable: element.scrollHeight > element.clientHeight,
+        distanceFromBottom: element.scrollHeight - element.scrollTop - element.clientHeight,
+      }
+    }, resultScrollport)
+    expect(scroll.scrollable).toBe(true)
+    expect(scroll.distanceFromBottom).toBeLessThanOrEqual(1)
 
     await saveElementScreenshot(
       '.tool-card[data-tool-id="memory-recall-truncated"][open]',
