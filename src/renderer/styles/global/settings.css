@@ -2334,6 +2334,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-plugin-heading {
   justify-content: space-between;
   gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+.automation-plugin-heading .automation-add-btn {
+  margin-left: auto;
+}
+.automation-ci-list {
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-md);
 }
 .automation-scope,
 .automation-notice,
@@ -2357,6 +2365,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-status-error {
   color: var(--error);
 }
+.automation-attention {
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-base));
+  padding: var(--spacing-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
 .automation-list {
   display: flex;
   flex-direction: column;
@@ -2376,9 +2392,16 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-sm);
   background: var(--bg-base);
 }
+.automation-row-blocked {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+.automation-row-blocked-message {
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
 /* A paused schedule dims its copy only. Its Edit / Run now / Delete stay live,
    and fading them too dropped the filled Delete label to ~3:1 on its fill. */
-.automation-row-paused .automation-row-copy {
+.automation-row-paused:not(.automation-row-blocked) .automation-row-copy {
   opacity: 0.7;
 }
 .automation-row-copy {
@@ -2436,6 +2459,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 .automation-label:has(.automation-prompt-input),
+.automation-trigger-label,
 .automation-schedule-fields,
 .automation-worktree-limit-label,
 .automation-permissions,
@@ -2453,9 +2477,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-sm);
   font: inherit;
 }
-.automation-prompt-input {
+.automation-prompt-input,
+.automation-ci-prompt {
   min-height: 88px;
   resize: vertical;
+}
+.automation-ci-form .automation-label:has(.automation-ci-prompt),
+.automation-ci-form .automation-ci-summary {
+  grid-column: 1 / -1;
 }
 .automation-schedule-fields,
 .automation-permissions {

@@ -6,6 +6,7 @@ const EXPERIMENTAL = '.settings-section[data-section="experimental"]'
 const MOBILE_FIELDSET = `${EXPERIMENTAL} fieldset:has(#mobile-companion-manage)`
 const VNC_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="vncEnabled"])`
 const DEVELOPER_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="developerMode"])`
+const CONCISE_FIELDSET = `${EXPERIMENTAL} fieldset:has(input[name="conciseThreadsEnabled"])`
 const SSH_AGENT_FIELDSET =
   '.settings-section[data-section="ssh"] fieldset:has(input[name="acpOverSshEnabled"])'
 
@@ -44,6 +45,18 @@ describe('browser-hosted Experimental settings copy', () => {
 
     await fieldset.scrollIntoView()
     await saveElementScreenshot(VNC_FIELDSET, 'settings-experimental-desktop-copy.png')
+  })
+
+  it('offers concise threads off by default and says which models it affects', async () => {
+    const fieldset = $(CONCISE_FIELDSET)
+    await fieldset.scrollIntoView()
+    await expect(fieldset).toBeDisplayed()
+    await expect(fieldset.$('input[name="conciseThreadsEnabled"]')).not.toBeSelected()
+    const hint = await fieldset.$('.field-hint').getText()
+    assert.match(hint, /above 50 on the Artificial Analysis Intelligence Index/)
+    assert.match(hint, /Other models always show the full thread/)
+
+    await saveElementScreenshot(CONCISE_FIELDSET, 'settings-experimental-concise-threads.png')
   })
 
   it('names the Developer Tools menu item that Developer mode adds', async () => {

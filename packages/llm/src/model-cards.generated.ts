@@ -2,7 +2,7 @@
 // Vendor-published model cards / system cards, keyed by canonical model id.
 // Source of truth: scripts/data/model-cards.json.
 // Absent models mean "no sourced card yet", and the UI shows no link.
-// Last synced: 2026-09-04
+// Last synced: 2026-09-28
 
 /** Whether a link is a card about this model, or a vendor hub listing cards. */
 export type ModelCardKind = 'system-card' | 'model-card' | 'index'
@@ -72,6 +72,13 @@ export const MODEL_CARDS: Record<string, ModelCard> = {
     publisher: 'Anthropic',
     kind: 'system-card',
     asOf: '2026-09-02',
+  },
+  'claude-sonnet-5-5': {
+    url: 'https://www.anthropic.com/claude-sonnet-5-5-system-card',
+    title: 'Claude Sonnet 5.5 system card',
+    publisher: 'Anthropic',
+    kind: 'system-card',
+    asOf: '2026-09-28',
   },
   'gemini-2-0-flash': {
     url: 'https://storage.googleapis.com/deepmind-media/Model-Cards/Gemini-2-0-Flash-Model-Card.pdf',

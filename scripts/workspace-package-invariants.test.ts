@@ -240,7 +240,13 @@ describe('workspace package resolution', () => {
   })
 
   it('has no relative imports that bypass package exports', () => {
+    // Scheduled workflows run without `pnpm install`, so these scripts cannot resolve
+    // `@copse/std` and import its source leaf by path instead.
+    const installFree = new Set(
+      ['scripts/acp-v2-watch.mts', 'scripts/lib/cloud-hosts.mts'].map((file) => resolve(file)),
+    )
     for (const file of sourceFiles('scripts')) {
+      if (installFree.has(resolve(file))) continue
       assert.doesNotMatch(
         readFileSync(file, 'utf8'),
         /from ['"][^'"]*packages\/(?:agent|hooks-dialects|llm|plan-usage|plugin-sdk|procwatch|review|shell-guard|std|store-kit|thread-store)\/src\//,

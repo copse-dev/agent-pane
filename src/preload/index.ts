@@ -72,6 +72,8 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
+      ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {
         handler(url, partition)
@@ -1345,6 +1347,16 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
+    listBranchCi: (projectId: string) =>
+      ipcRenderer.invoke('automations:list-branch-ci', projectId),
+    upsertBranchCi: (projectId: string, input: unknown) =>
+      ipcRenderer.invoke('automations:upsert-branch-ci', projectId, input),
+    removeBranchCi: (projectId: string, id: string) =>
+      ipcRenderer.invoke('automations:remove-branch-ci', projectId, id),
+    testBranchCi: (projectId: string, branch: string) =>
+      ipcRenderer.invoke('automations:test-branch-ci', projectId, branch),
+    canStart: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('automations:can-start', projectId, threadId),
     onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
