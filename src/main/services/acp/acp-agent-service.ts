@@ -853,7 +853,8 @@ async function respondToPermission(
 ): Promise<RequestPermissionResponse> {
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const kind = req.toolCall.kind ?? 'other'
-  if (isAcpPermissionRemembered(agent.id, kind)) {
+  const grantLocation = agent.remote === true ? 'remote' : 'local'
+  if (isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -959,7 +960,7 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember) void rememberAcpPermission(agent.id, kind)
+    if (approved && remember) void rememberAcpPermission(agent.id, kind, grantLocation)
     return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
   } finally {
     tracked?.unregister()

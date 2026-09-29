@@ -23,6 +23,20 @@ describe('acp-permission-grants', () => {
     assert.equal(isAcpPermissionRemembered('gemini-acp', 'execute'), false)
   })
 
+  it('keeps local and remote (SSH) grants apart', async () => {
+    await rememberAcpPermission('a', 'execute')
+    assert.equal(isAcpPermissionRemembered('a', 'execute', 'remote'), false)
+
+    await rememberAcpPermission('b', 'edit', 'remote')
+    assert.equal(isAcpPermissionRemembered('b', 'edit', 'remote'), true)
+    assert.equal(isAcpPermissionRemembered('b', 'edit'), false)
+    // Local keys keep their original form, so grants stored before this change hold.
+    assert.deepEqual([...expectStringArray(storageGet(GRANTS_KEY))].sort(), [
+      'a:execute',
+      'b@remote:edit',
+    ])
+  })
+
   it('concurrent grants do not drop each other', async () => {
     await Promise.all([
       rememberAcpPermission('a', 'read'),

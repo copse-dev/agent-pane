@@ -12,6 +12,7 @@ import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import { rememberAcpPermission } from './acp-permission-grants.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
@@ -801,6 +802,20 @@ describe('remote ACP agents are never treated as sandboxed', () => {
         { prompted: false, approved: true },
         `${command} auto-runs inside the local sandbox`,
       )
+    }
+  })
+
+  it('does not let a local "always allow" cover the same agent over SSH', async () => {
+    storageSet('acp-remembered-grants', [])
+    await rememberAcpPermission('gemini', 'read')
+    try {
+      const req = permissionRequest({ kind: 'read', title: 'read ~/.ssh/config' })
+      assert.deepEqual(await answer(remote(), 'gemini', req, REMOTE_ROOT), {
+        prompted: true,
+        approved: false,
+      })
+    } finally {
+      storageSet('acp-remembered-grants', [])
     }
   })
 
