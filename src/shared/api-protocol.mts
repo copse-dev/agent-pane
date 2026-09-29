@@ -54,5 +54,8 @@
 // payloads. v22–v26 are claimed by open PRs, so this skips them to avoid collisions.
 // v28 versions the orphan-store sample titles and last-updated time on `threads:list-orphans`.
 // v29 versions persisted reviewer-input answers on thread payloads.
-// v30 versions automation worktree-limit status in list/upsert payloads.
-export const API_PROTOCOL_VERSION = 30 as const
+// v30 conservatively versions the optional `userAbort` cause on cancelled turn
+// outcomes and the optional folded-subagent token counts on usage deltas.
+// v31 conservatively versions the optional API format on custom provider records.
+// v32 versions automation worktree-limit status in list/upsert payloads.
+export const API_PROTOCOL_VERSION = 32 as const

@@ -98,7 +98,7 @@ async function openWithMode(
     { current: null },
     transportFor(app),
   )
-  open.dispose()
+  await open.dispose()
   return setModeCalls
 }
 

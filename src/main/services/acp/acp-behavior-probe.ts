@@ -10,9 +10,9 @@ import {
   type WriteTextFileRequest,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { Writable } from 'node:stream'
 import { isRecord } from '@shared/unknown-value.ts'
 import { tapAcpWireStream } from './acp-wire-tap.ts'
+import { nodeWritableStream } from './node-byte-streams.ts'
 
 /**
  * Tier-2 ACP **behavioural probe** (issue #832): spawn an external ACP agent,
@@ -335,7 +335,7 @@ function acpProbeErrorDataDetail(err: unknown): string | null {
   return null
 }
 
-function acpProbeErrorMessage(err: unknown): string {
+export function acpProbeErrorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err)
   const detail = acpProbeErrorDataDetail(err)
   if (!detail || message.includes(detail)) return message
@@ -437,8 +437,8 @@ function probeChildStdoutStream(
 }
 
 /** Default transport: spawn the agent process and frame stdio as ndjson. */
-function spawnProbeTransport(
-  config: AcpBehaviorProbeConfig,
+export function spawnProbeTransport(
+  config: Pick<AcpBehaviorProbeConfig, 'command' | 'args' | 'env' | 'cwd'>,
 ): Promise<{ stream: Stream; dispose: () => void }> {
   const child = spawn(config.command, config.args ?? [], {
     cwd: config.cwd,
@@ -446,7 +446,7 @@ function spawnProbeTransport(
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const stderrTail = captureProbeChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const { readable, dispose } = probeChildStdoutStream(child, config.command, stderrTail)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),
