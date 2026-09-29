@@ -3473,7 +3473,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) &&
       shouldNestReasoningInTools(toolCalls)
     // User-interrupted calls fold into the rollup; genuine failures sit beside it.
-    const isInterrupted = (call: ToolCall): boolean => userInterruptedCalls.has(call)
+    const isInterrupted = (call: ToolCall): boolean => userInterruption(call) !== undefined
     const items = run
       ? isRunMember
         ? buildSubagentDisplayItems(toolCalls)
