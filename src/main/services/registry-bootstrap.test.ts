@@ -16,6 +16,7 @@ import {
   syncParallelSearchTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
+  syncReviewerInputTools,
 } from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
 import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registry.ts'
@@ -25,6 +26,7 @@ import { setGhAvailableForTest } from './tool-availability.ts'
 import { setDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { createFirstPartyPluginRegistry } from '@copse/agent/plugins/first-party-plugins.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
@@ -211,17 +213,30 @@ describe('syncAppleDevelopmentTools', () => {
     const registry = new ToolRegistry()
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
     assert.equal(registry.has('device_hub'), false)
 
     plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
     assert.equal(registry.has('device_hub'), true)
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+  })
+
+  it('never registers the Simulator tool on a host without Xcode', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+
+    syncAppleDevelopmentTools(registry, 'linux')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
     assert.equal(registry.has('device_hub'), false)
   })
@@ -278,6 +293,30 @@ describe('syncRoadmapPlanTools', () => {
     pluginRegistry.disable(ROADMAP_PLANS_PLUGIN_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
+  })
+})
+
+describe('syncReviewerInputTools', () => {
+  afterEach(() => {
+    setDefaultPluginRegistry(null)
+  })
+
+  it('registers the request tool only while the experimental plugin is enabled', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.disable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), false)
+
+    plugins.enable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), true)
+
+    plugins.disable(REVIEWER_INPUT_PLUGIN_ID)
+    syncReviewerInputTools(registry)
+    assert.equal(registry.has('request_review_input'), false)
   })
 })
 

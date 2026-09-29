@@ -77,7 +77,8 @@ revisiting this document, not silently diverging in an implementation PR.
    descending from one human-originated submission). The ledger counts
    **machine-initiated new model turns** only: hook send-now, `stop`/`subagentStop`
    follow-ups, bounded background-task completion wakes, durable CI status-change wakes,
-   ACP unfinished-turn recovery, post-turn remediation cycles,
+   long-horizon task wakes (`long-task-wake.ts`, dispatched through `dispatchMachine` on the
+   originating turn tree), ACP unfinished-turn recovery, post-turn remediation cycles,
    pre-review todo attempts, and todo-closeout turns. **In-loop nudges do not count**
    (truncation-continue, finalize, loop, and
    reasoning-runaway nudges are mid-turn message pushes inside one `runAgentLoop`
@@ -410,6 +411,23 @@ revisiting this document, not silently diverging in an implementation PR.
     enter the always-on instruction stream by declaring one. Fresh profiles use
     `claude-md-or-agents-md`; existing profiles migrate once to
     `claude-md-and-agents-md`, preserving Copse's former additive behavior.
+
+29. **Post-turn review specialists investigate; the primary reviewer decides.**
+    The `copse.post-turn-review` plugin may offer host-registered specialist
+    checks to its primary reviewer. A specialist definition owns its model,
+    prompt, read-only tool allowlist, step/context limits, and output schema;
+    the reviewer supplies only a registered check id, a neutral focused
+    question, and starting paths. The host enforces one shared maximum of three
+    specialist runs across the complete review/remediation cycle, counts failed
+    and inconclusive runs, rejects duplicate tasks, and forbids recursive
+    specialist spawning. Specialists return structured evidence and cannot
+    publish comments, assign severity, mutate todos, edit files, or emit the
+    final `REVIEW_JSON`; those remain exclusively owned by the primary reviewer.
+    A specialist may use bounded, model-routed read-only exploration, but must
+    verify decisive evidence against direct repository reads. The primary
+    reviewer, specialists, and explorers read the same awaited post-turn
+    workspace snapshot; moving review into the background or granting execution
+    tools requires one immutable per-review snapshot shared by every participant.
 
 ## Target architecture
 

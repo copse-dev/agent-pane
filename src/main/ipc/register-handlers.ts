@@ -1,5 +1,11 @@
 import { containerRunRequestSchema } from '@shared/container-run-schema.ts'
 import { TOOL_PERMISSION_POLICIES } from '@shared/types/tool-permissions.ts'
+import { LICENSE_FILE_KINDS, type AboutInfo } from '@shared/third-party-licenses.mts'
+import {
+  chromiumLicensePath,
+  openableLicenseFile,
+  readThirdPartyLicenseReport,
+} from '../services/about/third-party-licenses.ts'
 import { app, BrowserWindow, dialog, ipcMain, shell, webContents, type WebContents } from 'electron'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -24,6 +30,7 @@ import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boun
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { showMobileCompanion } from '../windows/mobile-desktop.ts'
 import { broadcastToAppWindows } from '../windows/app-window-broadcast.ts'
 import { browserPartitionForContents } from '../windows/browser-web-contents.ts'
 import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
@@ -75,7 +82,11 @@ import {
   zPrComposerCreateRequest,
   mainWindowNavigationSchema,
 } from './ipc-guards.ts'
-import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import {
+  inspectThreadCheckoutAttachment,
+  reattachThreadCheckout,
+  resolveThreadExecutionContext,
+} from '../services/thread-execution-context.ts'
 import { expectedThreadWorktreePath, repositoryLocation } from '../services/worktree-manager.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { resolveFileReferences } from '../services/search/file-reference-resolver.ts'
@@ -245,10 +256,12 @@ import {
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
+  syncReviewerInputTools,
 } from '../services/registry-bootstrap.ts'
 import { REVIEW_PLUGIN_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { LONG_HORIZON_TASKS_PLUGIN_ID } from '@copse/agent/plugins/long-horizon-tasks-plugin.ts'
 import { ROADMAP_PLANS_PLUGIN_ID } from '@copse/agent/plugins/roadmap-plans-plugin.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { ADVISOR_STRATEGY_PLUGIN_ID } from '@copse/agent/plugins/advisor-strategy-plugin.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
@@ -264,6 +277,7 @@ import { syncDarkFactorySensor } from '../services/supervisor/dark-factory-senso
 import { getTaskSupervisor } from '../services/supervisor/task-supervisor.ts'
 import { getAppleDevelopmentService } from '../services/apple-development/apple-development-service.ts'
 import {
+  APPLE_SUGGESTION_ANSWERS,
   appleConfigureInputSchema,
   appleExecuteInputSchema,
   appleOperationInputSchema,
@@ -523,6 +537,11 @@ export function registerAllHandlers(
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
 ): void {
+  ipcMain.handle('mobile:manage', async (event) => {
+    assertMainFrameSender(event, win)
+    await showMobileCompanion(win)
+  })
+
   const processManagerSnapshot = createProcessManagerSampler(
     () => app.getAppMetrics(),
     processManagerLabels,
@@ -2189,6 +2208,9 @@ export function registerAllHandlers(
     if (id === ROADMAP_PLANS_PLUGIN_ID) {
       syncRoadmapPlanTools(registry)
     }
+    if (id === REVIEWER_INPUT_PLUGIN_ID) {
+      syncReviewerInputTools(registry)
+    }
     // Same for the `copse.advisor-strategy` plugin's `advisor` tool.
     if (id === ADVISOR_STRATEGY_PLUGIN_ID) {
       syncAdvisorStrategyTools(registry)
@@ -2347,6 +2369,22 @@ export function registerAllHandlers(
     const projectId = parseIpcArgs(zProjectId, [rawProjectId])
     return getAppleDevelopmentService().detectProject(projectId)
   })
+  ipcMain.handle('apple-development:suggestion', async (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAppleDevelopmentService().projectSuggestion(projectId)
+  })
+  ipcMain.handle(
+    'apple-development:answer-suggestion',
+    async (event, rawProjectId: unknown, rawAnswer: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, answer] = parseIpcArgs(
+        z.tuple([zProjectId, z.enum(APPLE_SUGGESTION_ANSWERS)]),
+        [rawProjectId, rawAnswer],
+      )
+      await getAppleDevelopmentService().answerSuggestion(projectId, answer)
+    },
+  )
   ipcMain.handle(
     'apple-development:set-enrolled',
     async (event, rawProjectId: unknown, rawThreadId: unknown, rawEnrolled: unknown) => {
@@ -2608,6 +2646,16 @@ export function registerAllHandlers(
     const root = await resolveWatchedGitRoot(projectId, threadId)
     return getGitBranchStatus(projectId, branch, root)
   })
+  ipcMain.handle('git:worktree-attachment', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return inspectThreadCheckoutAttachment(projectId, threadId)
+  })
+  ipcMain.handle('git:reattach-worktree', async (event, ...rawArgs) => {
+    assertMainFrameSender(event, win)
+    const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
+    return reattachThreadCheckout(projectId, threadId)
+  })
   ipcMain.handle('git:prompt-state', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [projectId, threadId] = parseIpcArgs(threadOwnerArgs, rawArgs)
@@ -2821,6 +2869,26 @@ export function registerAllHandlers(
   ipcMain.handle('acp:auto-setup', (event) => {
     assertMainFrameSender(event, win)
     return runAcpAutoSetup(new AbortController().signal)
+  })
+  ipcMain.handle('about:get-info', async (event): Promise<AboutInfo> => {
+    assertMainFrameSender(event, win)
+    return { version: app.getVersion(), report: await readThirdPartyLicenseReport() }
+  })
+  ipcMain.handle('about:open-license-file', async (event, kind: unknown) => {
+    assertMainFrameSender(event, win)
+    const file = openableLicenseFile(
+      parseIpcArgs(z.enum(LICENSE_FILE_KINDS), [kind]),
+      undefined,
+      chromiumLicensePath({
+        platform: process.platform,
+        resourcesPath: process.resourcesPath,
+        execPath: process.execPath,
+        isPackaged: app.isPackaged,
+      }),
+    )
+    // openPath resolves to an error message rather than rejecting.
+    const error = await shell.openPath(file)
+    if (error) throw new Error(`Could not open ${file}: ${error}`)
   })
   ipcMain.handle('shell:open-external', (event, url: unknown) => {
     assertMainFrameSender(event, win)

@@ -5,6 +5,15 @@ import type { GithubPrRef } from './github-pr-url.ts'
 import type { HookCard } from './hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree-types.ts'
 import type { ThreadProposalDecision } from './thread-proposal.ts'
+
+/** A human answer to an agent-authored, non-blocking review question. */
+export interface ReviewerInputAnswer {
+  id: string
+  text: string
+  answeredAt: number
+  /** The user message that delivers the answer to the agent. */
+  messageId: string
+}
 import type { ArchiveAttachmentRef, VideoAttachmentRef } from './attachment-refs.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 export type { HookCard } from './hook-card.ts'
@@ -407,6 +416,8 @@ export interface Thread {
    * from at all.
    */
   threadProposals?: ThreadProposalDecision[]
+  /** Answers keyed by the saved request tool call in this thread's transcript. */
+  reviewerInputAnswers?: ReviewerInputAnswer[]
   /** Provenance for a thread the user started from a model-authored proposal. */
   proposedBy?: {
     /** Thread whose transcript carries the offering `propose_thread` call. */
@@ -641,6 +652,8 @@ export interface Message {
 
 export interface UsageDelta extends ModelUsage {
   model: string
+  /** Folds in subagent sessions' usage; see `ThreadUsage.subagentInputTokens`. */
+  subagentUsage?: boolean
   requestedServiceTier?: ServiceTier
   responseServiceTier?: ServiceTier
 }

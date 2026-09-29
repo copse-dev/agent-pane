@@ -1,4 +1,4 @@
-import { dialog, Menu, type BrowserWindow } from 'electron'
+import { dialog, type BrowserWindow } from 'electron'
 import { MobileDevices } from '../services/mobile/mobile-devices.ts'
 import { MobilePreference } from '../services/mobile/mobile-preference.ts'
 import {
@@ -19,16 +19,6 @@ const RETRY_MS = 15_000
 function savedPreference(): MobilePreference {
   preference ??= new MobilePreference()
   return preference
-}
-
-function showSharingIndicator(): void {
-  const item = Menu.getApplicationMenu()?.getMenuItemById('mobile-companion')
-  if (!item) return
-  item.label = active?.isRunning()
-    ? '● Mobile Companion On…'
-    : preference?.current().enabled
-      ? '● Mobile Companion Waiting…'
-      : 'Mobile Companion…'
 }
 
 function clearRetry(): void {
@@ -135,7 +125,6 @@ function launch(address: string, devices: MobileDevices): Promise<MobileServer> 
     },
     onStop: () => {
       active = null
-      showSharingIndicator()
       scheduleRetry()
     },
   })
@@ -146,7 +135,6 @@ function launch(address: string, devices: MobileDevices): Promise<MobileServer> 
       }
       active = server
       clearRetry()
-      showSharingIndicator()
       return server
     })
     .finally(() => {
@@ -163,9 +151,10 @@ export async function resumeMobileCompanion(): Promise<void> {
     if (!choice.enabled || active?.isRunning()) return
     const addresses = mobileLanAddresses()
     const address =
-      choice.address && addresses.includes(choice.address) ? choice.address : addresses[0]
+      choice.address && addresses.some((candidate) => candidate.address === choice.address)
+        ? choice.address
+        : addresses[0]?.address
     if (!address) {
-      showSharingIndicator()
       scheduleRetry()
       return
     }
@@ -173,7 +162,6 @@ export async function resumeMobileCompanion(): Promise<void> {
     if (address !== choice.address) savedPreference().enable(address)
   } catch (error) {
     console.error('[mobile] could not resume Mobile Companion:', error)
-    showSharingIndicator()
     scheduleRetry()
   }
 }
@@ -214,7 +202,6 @@ export async function showMobileCompanion(win: BrowserWindow): Promise<void> {
       clearRetry()
       await active?.close()
       active = null
-      showSharingIndicator()
     }
     return
   }
@@ -230,24 +217,27 @@ export async function showMobileCompanion(win: BrowserWindow): Promise<void> {
   const choice = await dialog.showMessageBox(win, {
     type: 'question',
     title: 'Enable Mobile Companion',
-    message: 'Choose the local address to share with paired phones.',
+    message: 'Choose the network your phone is using.',
     detail:
-      'This opens an encrypted companion for your threads. Pairing and phone control require your approval on this Mac. Once enabled, Copse keeps the server running while the app is open and starts it again on launch. If this address changes, Copse may use another private address. Use this menu to turn it off.',
-    buttons: [...addresses, 'Cancel'],
+      'Each address belongs to a different network interface. Usually choose Wi-Fi (often en0) when your phone is on Wi-Fi, or the wired interface when both devices use that network. VPN and virtual-machine interfaces may not be reachable unless your phone also joins that network. Copse being “on” only means the listener started; macOS or Wi-Fi client isolation can still block the phone.\n\nThis opens an encrypted companion for your threads. Pairing and phone control require your approval on this Mac.',
+    buttons: [
+      ...addresses.map(({ interfaceName, address }) => `${interfaceName} — ${address}`),
+      'Cancel',
+    ],
     defaultId: addresses.length,
     cancelId: addresses.length,
   })
-  const address = addresses[choice.response]
-  if (!address) return
+  const selected = addresses[choice.response]
+  if (!selected) return
+  const { address } = selected
   try {
     const server = await launch(address, devices)
     savedPreference().enable(address)
-    showSharingIndicator()
     await dialog.showMessageBox(win, {
       type: 'info',
       title: 'Mobile Companion is on',
       message: `Open ${server.url} on your phone.`,
-      detail: `Transfer ${server.rootPath} directly to your phone and install it as a trusted certificate for a verified connection. This certificate can only vouch for private-network addresses, never a website. The phone may otherwise show a certificate warning. Use View → Mobile Companion to turn off sharing or revoke a phone.`,
+      detail: `Keep both devices on the same local network. If the page does not open, check System Settings → Privacy & Security → Local Network and allow Copse, then check that the Wi-Fi does not isolate devices.\n\nTransfer ${server.rootPath} directly to your phone and install it as a trusted certificate for a verified connection. This certificate can only vouch for private-network addresses, never a website. The phone may otherwise show a certificate warning. Manage or turn off sharing in Settings → Experimental.`,
     })
   } catch (error) {
     await active?.close()
