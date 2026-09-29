@@ -2043,7 +2043,7 @@ function appendMessageContent(
   // summary heading. History renders as settled ("Reasoned").
   if (
     msg.role === 'assistant' &&
-    (msg.reasoning || msg.reasoningBlocks?.length) &&
+    hasReasoningContent(msg.reasoning, msg.reasoningBlocks) &&
     opts?.nestReasoningInTools !== true
   ) {
     body.append(
@@ -2090,6 +2090,18 @@ function syncAcpMessageContent(
   }
   if (current) replaceAcpResourceBlock(current, replacement)
   else body.append(replacement)
+}
+
+/**
+ * Whether a message has any reasoning worth a disclosure. Whitespace-only text
+ * (blank thought chunks streamed by some ACP agents) counts as none, matching
+ * run derivation, so a blank trail can't paint an empty "Reasoned" block.
+ */
+function hasReasoningContent(
+  reasoning: string | undefined,
+  blocks: readonly AcpContentBlock[] | undefined,
+): boolean {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length)
 }
 
 /** True when reasoning should fold into the tool rollup for this message. */
@@ -2365,7 +2377,7 @@ function syncReasoningEl(
   )
   const host = rollupBody ?? body
   let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove()
     return
   }
