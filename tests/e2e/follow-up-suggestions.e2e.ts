@@ -1,7 +1,8 @@
 import { $, $$, browser, expect } from '@wdio/globals'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import {
   cleanupGitChangesFixture,
   resetUserData,
@@ -12,6 +13,51 @@ import { waitForAgentIdle } from './helpers.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { installMockScenario } from './helpers/mock-scenario.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
+import { writeE2eEnv } from './helpers/e2e-env.ts'
+
+function seedCleanFeatureBranch(root: string): void {
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' })
+  writeFileSync(join(root, 'README.md'), 'CI follow-up fixture\n', 'utf8')
+  execFileSync('git', ['add', 'README.md'], { cwd: root, stdio: 'ignore' })
+  execFileSync(
+    'git',
+    ['-c', 'user.name=Copse E2E', '-c', 'user.email=e2e@copse.test', 'commit', '-m', 'seed'],
+    { cwd: root, stdio: 'ignore' },
+  )
+  execFileSync('git', ['switch', '-c', 'feature/failing-ci'], { cwd: root, stdio: 'ignore' })
+}
+
+function writeFailingPrGhFixture(binDir: string): void {
+  const gh = join(binDir, 'gh')
+  const failingPr = JSON.stringify({
+    state: 'OPEN',
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'UNSTABLE',
+    statusCheckRollup: [
+      {
+        __typename: 'CheckRun',
+        name: 'CI / check',
+        status: 'COMPLETED',
+        conclusion: 'FAILURE',
+      },
+    ],
+  })
+  writeFileSync(
+    gh,
+    [
+      '#!/bin/sh',
+      'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then exit 0; fi',
+      'if [ "$1" = "pr" ] && [ "$2" = "view" ]; then',
+      `  printf '%s\\n' '${failingPr}'`,
+      '  exit 0',
+      'fi',
+      'exit 1',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+  chmodSync(gh, 0o755)
+}
 
 async function completeMockTurn(includeDebugCiFollowUp = false) {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -146,6 +192,52 @@ describe('follow-up suggestion bubbles', () => {
         'Start with the first failing CI job, compare its logs with the changed files, and isolate the earliest failing command.',
         { containing: true },
       )
+      await scenario.assertComplete()
+    })
+  })
+
+  describe('CI investigator available for the turn', () => {
+    const originalPath = process.env['PATH']
+    let workspace = ''
+    let fixtureBin = ''
+
+    before(async function () {
+      this.timeout(120_000)
+      resetUserData()
+      workspace = mkdtempSync(join(tmpdir(), 'copse-follow-up-investigate-ci-'))
+      fixtureBin = mkdtempSync(join(tmpdir(), 'copse-follow-up-gh-'))
+      seedCleanFeatureBranch(workspace)
+      writeFailingPrGhFixture(fixtureBin)
+      writeE2eEnv({
+        COPSE_AGENT_EVAL: '1',
+        COPSE_PRESERVE_PATH: '1',
+        PATH: [fixtureBin, '/usr/bin', '/bin'].join(delimiter),
+      })
+      seedEmptyProject(workspace, 'e2e-follow-up-investigate-ci-project', {
+        subagentsEnabled: true,
+        ciInvestigatorEnabled: true,
+      })
+      await browser.reloadSession()
+    })
+
+    after(() => {
+      writeE2eEnv({
+        COPSE_AGENT_EVAL: undefined,
+        COPSE_PRESERVE_PATH: undefined,
+        PATH: originalPath,
+      })
+      resetUserData()
+      if (workspace) rmSync(workspace, { recursive: true, force: true })
+      if (fixtureBin) rmSync(fixtureBin, { recursive: true, force: true })
+    })
+
+    it('names the available investigate_ci tool in the failing-CI bubble', async () => {
+      const scenario = await completeMockTurn()
+      const ciBubble = await $('.follow-up-bubble[data-id="debug-ci"]')
+      await ciBubble.waitForDisplayed({ timeout: 30_000 })
+      await expect(ciBubble).toHaveText('Investigate CI failure')
+
+      await saveAppScreenshot('follow-up-suggestions-investigate-ci.png')
       await scenario.assertComplete()
     })
   })
