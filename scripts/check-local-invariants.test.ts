@@ -12,6 +12,7 @@ describe('local validation gate', () => {
   it('runs every non-unit check from the full gate in order', () => {
     assert.deepEqual(localCheck.split(' && '), [
       'pnpm run typecheck',
+      'pnpm run type-coverage',
       'pnpm run lint',
       'pnpm run format:check',
       'pnpm run demo:site:check',
