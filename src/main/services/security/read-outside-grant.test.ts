@@ -67,6 +67,7 @@ describe('read-outside grant coverage', () => {
       `${granted}/$".."/x`,
       `${granted}/$HOME/x`,
       `${granted}/\`echo ..\`/x`,
+      `${granted}/%OUTSIDE%/x`,
       `${granted}/a=~/x`,
       `${granted}/\\.\\./x`,
       `${granted}/".."/x`,

@@ -54,9 +54,11 @@ function stillNamesApprovedPath(path: string, identity: PathIdentity | null): bo
 
 /**
  * A path segment the shell reads literally: letters, digits and marks in any
- * script, plus punctuation no shell expands. It is an allow-list so it fails
- * closed; anything else — braces, globs (`* ? [`), `$`, backticks, quotes,
- * backslashes, `~`, extglob parentheses, zsh `^`/`#` — counts as expansion.
+ * script, plus punctuation no supported shell expands on its own. It is an
+ * allow-list so it fails closed; anything else — braces, globs (`* ? [`), `$`,
+ * backticks, quotes, backslashes, `~`, extglob parentheses, zsh `^`/`#` —
+ * counts as expansion. Paired percent signs are rejected separately because
+ * cmd.exe expands `%NAME%` even though a lone `%` is an ordinary filename mark.
  */
 const LITERAL_SEGMENT = /^[\p{L}\p{M}\p{N} ._\-+@,:%=]*$/u
 
@@ -68,7 +70,9 @@ const LITERAL_SEGMENT = /^[\p{L}\p{M}\p{N} ._\-+@,:%=]*$/u
  * POSIX a backslash escape (`\.\.`) stays inside its segment and is refused.
  */
 function isLiteralPath(target: string): boolean {
-  return target.split(sep).every((segment) => LITERAL_SEGMENT.test(segment))
+  return target
+    .split(sep)
+    .every((segment) => LITERAL_SEGMENT.test(segment) && !/%[^%]*%/.test(segment))
 }
 
 function coversPath(granted: string, directory: boolean, target: string): boolean {
