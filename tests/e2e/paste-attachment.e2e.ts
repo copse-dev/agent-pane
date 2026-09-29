@@ -152,7 +152,7 @@ describe('Pasting text into the composer', () => {
     // mock title model does not match it, so this is the word-slice fallback
     // title: it must name the prompt's words without the placeholder glyph.
     await waitForActiveThreadTitle()
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Summarize this feedback:')
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Summarize this feedback')
     await saveAppScreenshot(TRANSCRIPT_SCREENSHOT)
   })
 
