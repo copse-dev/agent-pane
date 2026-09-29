@@ -12,6 +12,10 @@ describe('browser-hosted plugin rows', () => {
     await $('.prompt-input').waitForExist()
     await $('[aria-label="Settings"]').click()
     await $('#settings-dialog').$('button[data-section="customise"]').click()
+    await browser.waitUntil(async () => (await $('#plugins-reload-status').getText()) === '', {
+      timeout: 15_000,
+      timeoutMsg: 'plugin rows did not finish refreshing',
+    })
     await $('#plugins-list .plugin-row').waitForDisplayed()
   })
 
