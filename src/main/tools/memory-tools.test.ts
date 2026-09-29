@@ -192,9 +192,11 @@ describe('memory-tools', () => {
       ),
     )
     assert.match(all, /Call recall with a query/)
-    // A query still reaches a memory past the cap.
-    const last = `Memory ${String(total - 1)}`
-    assert.match(await run(recallTool, { query: last }), new RegExp(`## ${last}`))
+    // Recent memories stay visible by default; a query still reaches an older
+    // memory left out by the cap.
+    assert.doesNotMatch(all, /^## Memory 0(?: |$)/m)
+    assert.match(all, new RegExp(`^## Memory ${String(total - 1)}(?: |$)`, 'm'))
+    assert.match(await run(recallTool, { query: 'Memory 0' }), /^## Memory 0(?: |$)/m)
   })
 
   it('caps an unfiltered recall by size as well as by count', async () => {
@@ -207,6 +209,8 @@ describe('memory-tools', () => {
 
     assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
     assert.match(all, /Output truncated: showing 1 of 3 memories; 2 not shown/)
+    assert.doesNotMatch(all, /^## One(?: |$)/m)
+    assert.match(all, /^## Three(?: |$)/m)
   })
 
   it('clips a single memory larger than the size cap instead of returning it whole', async () => {
@@ -257,12 +261,13 @@ describe('memory-tools', () => {
 
   it('does not taint the turn for a tainted memory the cap left out', async () => {
     const big = 'x'.repeat(RECALL_ALL_MAX_CHARS)
-    addKnowledgeNote({ type: MEMORY_TYPE, title: 'Shown', body: big })
     await inTaintedTurn(() => run(rememberTool, { title: 'Hidden', content: 'From the web' }))
+    addKnowledgeNote({ type: MEMORY_TYPE, title: 'Shown', body: big })
 
     await runWithThreadExecutionContext({ ...TEST_CONTEXT }, async () => {
       const all = await run(recallTool, {})
       assert.doesNotMatch(all, /## Hidden/)
+      assert.match(all, /## Shown/)
       assert.equal(turnIngestedExternalContent(), false)
     })
   })

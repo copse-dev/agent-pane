@@ -140,26 +140,33 @@ function clipMemory(note: KnowledgeNote, maxChars: number): string {
   return `${formatMemory({ ...note, title, tags, updatedAt, body })}\n\n(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`
 }
 
+interface ShownMemory {
+  note: KnowledgeNote
+  text: string
+}
+
 /**
- * Take memories in order until either cap would be exceeded. A first memory
- * that alone is over the character cap is clipped to it rather than returned
- * whole, so one oversized note cannot defeat the cap; the rest of it is one
- * query away.
+ * Keep the newest memories until either cap would be exceeded, then restore
+ * their store order for display. A newest memory that alone is over the
+ * character cap is clipped to it rather than returned whole, so one oversized
+ * note cannot defeat the cap; the rest of it is one query away.
  */
-function capUnfiltered(memories: readonly KnowledgeNote[]): string[] {
-  const shown: string[] = []
+function capUnfiltered(memories: readonly KnowledgeNote[]): ShownMemory[] {
+  const shown: ShownMemory[] = []
   let chars = 0
-  for (const note of memories) {
+  for (const note of [...memories].reverse()) {
     if (shown.length >= RECALL_ALL_MAX_MEMORIES) break
     const text = formatMemory(note)
     if (chars + text.length > RECALL_ALL_MAX_CHARS) {
-      if (shown.length === 0) shown.push(clipMemory(note, RECALL_ALL_MAX_CHARS))
+      if (shown.length === 0) {
+        shown.push({ note, text: clipMemory(note, RECALL_ALL_MAX_CHARS) })
+      }
       break
     }
-    shown.push(text)
+    shown.push({ note, text })
     chars += text.length
   }
-  return shown
+  return shown.reverse()
 }
 
 export const recallTool = defineTool({
@@ -182,11 +189,13 @@ export const recallTool = defineTool({
         ? `No memories match "${trimmed}".`
         : 'No memories stored yet for this project. Use the remember tool to add one.'
     }
-    const shown = trimmed ? memories.map(formatMemory) : capUnfiltered(memories)
+    const shown = trimmed
+      ? memories.map((note) => ({ note, text: formatMemory(note) }))
+      : capUnfiltered(memories)
     // Replaying a memory saved with external content in context puts that
     // content back in this turn's context, so the turn is tainted exactly as
     // if it had fetched it: anything it remembers next carries the marker.
-    if (memories.slice(0, shown.length).some(savedFromExternalTurn)) markTurnExternalIngestion()
+    if (shown.some(({ note }) => savedFromExternalTurn(note))) markTurnExternalIngestion()
     const header = `Found ${String(memories.length)} ${memories.length === 1 ? 'memory' : 'memories'}:`
     const omitted = memories.length - shown.length
     const truncation =
@@ -195,6 +204,6 @@ export const recallTool = defineTool({
             `(Output truncated: showing ${String(shown.length)} of ${String(memories.length)} memories; ${String(omitted)} not shown. Call recall with a query to find a specific memory.)`,
           ]
         : []
-    return [header, ...shown, ...truncation].join('\n\n')
+    return [header, ...shown.map(({ text }) => text), ...truncation].join('\n\n')
   },
 })
