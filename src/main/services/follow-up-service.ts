@@ -159,7 +159,7 @@ export function followUpExecutorForModels(
   resolvedModel: string | undefined,
 ): FollowUpExecutor {
   const model = resolvedModel ?? selectedModel
-  return { nativeTools: model === undefined || hostRoutedNamespace(model) === null }
+  return { nativeTools: model !== undefined && hostRoutedNamespace(model) === null }
 }
 
 /** Deterministic bubbles: open-plan first, then git/PR facts. Exported for tests. */

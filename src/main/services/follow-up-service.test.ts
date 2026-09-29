@@ -497,7 +497,7 @@ describe('debug-ci deterministic bubble', () => {
     return { label: ci.label, prompt: ci.prompt ?? '' }
   }
 
-  it('classifies host-routed models as external executors', () => {
+  it('classifies host-routed or unknown models as external executors', () => {
     for (const model of [
       'acp:claude-agent',
       'remote-agent:cursor',
@@ -511,6 +511,7 @@ describe('debug-ci deterministic bubble', () => {
     assert.deepEqual(followUpExecutorForModels('auto:best-intellect', 'gpt-5.6-terra'), {
       nativeTools: true,
     })
+    assert.deepEqual(followUpExecutorForModels(undefined, undefined), { nativeTools: false })
   })
 
   it('omits investigate_ci for an external executor even when native tools are enabled', () => {
