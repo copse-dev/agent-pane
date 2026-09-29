@@ -11,11 +11,12 @@ import {
   threadProjectStoreScope,
 } from './project-namespace.ts'
 import {
+  resolveThreadExecutionContext,
   runWithThreadExecutionContext,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { storageSet } from './storage.ts'
-import { setWorkspaceRootForTest } from '../workspace.ts'
+import { getProjectRoot, setWorkspaceRootForTest } from '../workspace.ts'
 
 const cleanups: Array<() => void> = []
 
@@ -201,6 +202,27 @@ describe('projectStoreNamespaceDir', () => {
 
     assert.equal(before, join(base, 'project-a'))
     assert.equal(after, before, 'the rest of the turn writes where it started')
+  })
+
+  it('keeps the id when the project is removed before the turn first uses a store', async () => {
+    const base = tempBase()
+    storageSet('projects', [
+      { id: 'project-early', path: '/repos/early', name: 'early' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    // The turn starts: main resolves its context against the persisted list.
+    const turn = await resolveThreadExecutionContext('project-early', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    // The user removes the project before the turn has touched any store.
+    storageSet('projects', [{ id: 'project-b', path: '/repos/beta', name: 'beta' }])
+
+    const dir = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(dir, join(base, 'project-early'))
   })
 
   it("migrates a background turn's own legacy directory under its own id", () => {

@@ -231,6 +231,22 @@ export async function reattachThreadCheckout(
   return reattachThreadWorktree(input)
 }
 
+/**
+ * Project ids a thread context has been resolved against in this process.
+ * Resolution requires the project to be in the persisted list, so this outlives
+ * the user removing the project while one of its turns is still running.
+ */
+const resolvedProjectIds = new Set<string>()
+
+/**
+ * Whether a thread context for `projectId` was resolved from the persisted
+ * project list in this process — true for a real project even after its
+ * removal, never for a headless run's synthesised id.
+ */
+export function wasThreadContextProjectPersisted(projectId: string): boolean {
+  return resolvedProjectIds.has(projectId)
+}
+
 async function resolveThreadExecutionContextUncached(
   projectId: string,
   threadId: string,
@@ -238,6 +254,7 @@ async function resolveThreadExecutionContextUncached(
 ): Promise<ThreadExecutionContext> {
   const projectRoot = dependencies.getProjectRoot(projectId)
   if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
+  resolvedProjectIds.add(projectId)
 
   const threadMeta = await dependencies.getThreadMeta(projectId, threadId)
   if (threadMeta == null) {

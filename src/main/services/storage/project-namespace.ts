@@ -3,6 +3,7 @@ import { existsSync, renameSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
   getThreadExecutionContext,
+  wasThreadContextProjectPersisted,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { getActiveProjectId, getActiveProjectRoot, getProjectRoot } from '../workspace.ts'
@@ -54,7 +55,9 @@ export interface ProjectStoreScope {
  * Project ids this process has seen in the persisted project list. Once a
  * project is known to be real it stays keyed by its id, so a turn still running
  * when the user removes its project keeps writing where it started rather than
- * switching mid-turn to the root-hashed directory.
+ * switching mid-turn to the root-hashed directory. A turn's context was itself
+ * resolved against that list, which covers a removal before the turn's first
+ * store access.
  */
 const persistedProjectIds = new Set<string>()
 
@@ -69,7 +72,12 @@ const persistedProjectIds = new Set<string>()
 export function threadProjectStoreScope(
   context: Pick<ThreadExecutionContext, 'projectId' | 'projectRoot'>,
 ): ProjectStoreScope {
-  if (getProjectRoot(context.projectId) !== null) persistedProjectIds.add(context.projectId)
+  if (
+    getProjectRoot(context.projectId) !== null ||
+    wasThreadContextProjectPersisted(context.projectId)
+  ) {
+    persistedProjectIds.add(context.projectId)
+  }
   const persisted = persistedProjectIds.has(context.projectId)
   return { projectId: persisted ? context.projectId : null, root: context.projectRoot }
 }
