@@ -7,7 +7,6 @@ import {
   matchFindInChatShortcut,
   matchUiScaleShortcut,
   matchCommandPaletteShortcut,
-  matchModelPickerShortcut,
   matchActivityPanelShortcut,
 } from './keyboard-shortcuts.ts'
 
@@ -150,30 +149,6 @@ describe('keyboard-shortcuts', () => {
     )
     assert.equal(
       matchCommandPaletteShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'j' })),
-      false,
-    )
-  })
-
-  it('matchModelPickerShortcut matches Cmd/Ctrl+Shift+M', () => {
-    assert.equal(
-      matchModelPickerShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: 'm' })),
-      true,
-    )
-    assert.equal(
-      matchModelPickerShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'M' })),
-      true,
-    )
-  })
-
-  it('matchModelPickerShortcut ignores unshifted or unrelated chords', () => {
-    assert.equal(matchModelPickerShortcut(keyEvent({ metaKey: true, key: 'm' })), false)
-    assert.equal(matchModelPickerShortcut(keyEvent({ shiftKey: true, key: 'm' })), false)
-    assert.equal(
-      matchModelPickerShortcut(keyEvent({ ctrlKey: true, shiftKey: true, altKey: true, key: 'm' })),
-      false,
-    )
-    assert.equal(
-      matchModelPickerShortcut(keyEvent({ metaKey: true, shiftKey: true, key: 'k' })),
       false,
     )
   })
