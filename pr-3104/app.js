@@ -419,8 +419,8 @@ function humanizeModelName(labelOrId) {
   }, "");
 }
 function modelDisplayName(labelOrId) {
-  const canonical = canonicalModelLabel(labelOrId);
-  return canonical === labelOrId ? humanizeModelName(labelOrId) : canonical;
+  const canonical2 = canonicalModelLabel(labelOrId);
+  return canonical2 === labelOrId ? humanizeModelName(labelOrId) : canonical2;
 }
 function claudeName(family, version2, rest) {
   if (rest !== "" && !/^\s/.test(rest)) return null;
@@ -23760,8 +23760,8 @@ var init_review_reports = __esm({
 
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
-  const canonical = CANONICAL_WORDS.get(word);
-  if (canonical !== void 0) return canonical;
+  const canonical2 = CANONICAL_WORDS.get(word);
+  if (canonical2 !== void 0) return canonical2;
   const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
   if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
   for (const separator of ["-", ":"]) {
@@ -30276,14 +30276,14 @@ function canonicalize(value, base) {
 function canonicalizePrefixes(prefixes) {
   const out = [];
   for (const prefix of prefixes) {
-    const canonical = canonicalize(prefix);
-    if (canonical !== null)
-      out.push(canonical);
+    const canonical2 = canonicalize(prefix);
+    if (canonical2 !== null)
+      out.push(canonical2);
   }
   return out;
 }
-function isUnderAllowedPrefix(canonical, prefixes) {
-  return prefixes.some((prefix) => canonical.startsWith(prefix));
+function isUnderAllowedPrefix(canonical2, prefixes) {
+  return prefixes.some((prefix) => canonical2.startsWith(prefix));
 }
 function resolveHref(raw, defaultOrigin) {
   const absolute = canonicalize(raw);
@@ -30330,8 +30330,8 @@ function enforceImage(node2, policy) {
   node2.removeAttribute("src");
   addBlockedClass(node2, policy.blockedImageClass);
 }
-function isDataUrl(canonical) {
-  return canonical.slice(0, 5).toLowerCase() === "data:";
+function isDataUrl(canonical2) {
+  return canonical2.slice(0, 5).toLowerCase() === "data:";
 }
 function applyLinkImagePolicy(node2, tagName) {
   const policy = resolvedPolicy();
@@ -34694,8 +34694,8 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
   if (enabled !== true) {
     throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
   }
-  const canonical = await api2.sshWorkspace.registerRoot(hostId, path);
-  const existing = findProjectByKey(store2.getState().projects, hostId, canonical);
+  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
+  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
   let id;
   if (existing) {
     id = existing.id;
@@ -34707,11 +34707,11 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
     store2.setState({
       projects: [
         ...store2.getState().projects,
-        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId }
+        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
       ]
     });
   }
-  return activateAndWait(store2, api2, id, canonical, hostId);
+  return activateAndWait(store2, api2, id, canonical2, hostId);
 }
 function activateAndWait(store2, api2, id, path, sshHost) {
   activate(store2, api2, id, path, sshHost, null);
@@ -36071,7 +36071,116 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+function conciseThreadMessages(model, live) {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: "user",
+      content: "Fix the settings form so Save stays aligned on narrow windows.",
+      toolCalls: [],
+      createdAt: FIXED_TIME
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: "assistant",
+      model,
+      reasoning: "The Save button is absolutely positioned; check the form layout first.",
+      content: "Let me look at how the settings form lays out its footer.",
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: "read_file",
+          args: { path: "src/renderer/views/settings-dialog.ts" },
+          status: "done",
+          result: "export function mountSettings() { \u2026 }"
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: "str_replace",
+          args: { path: "src/renderer/styles/settings.css" },
+          status: "done",
+          result: "Replaced 1 occurrence.",
+          editStats: { additions: 4, deletions: 2 }
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: "error",
+          result: "Error: settings-forms.test.ts expected footer to use grid"
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: live ? "running" : "done",
+          result: live ? null : "\u2139 pass 12"
+        }
+      ],
+      createdAt: FIXED_TIME + 1e3
+    },
+    ...live ? [] : [
+      {
+        id: `concise-step-2-${model}`,
+        role: "assistant",
+        model,
+        content: "Capturing the narrow layout to confirm.",
+        toolCalls: [
+          {
+            id: `concise-shot-${model}`,
+            name: "browser_screenshot",
+            args: { width: 480 },
+            status: "done",
+            result: "Captured the settings dialog at 480px.",
+            images: [
+              {
+                dataUrl: CONCISE_SCREENSHOT,
+                name: "settings-480px.png",
+                kind: "screenshot"
+              }
+            ]
+          }
+        ],
+        createdAt: FIXED_TIME + 2e3
+      },
+      {
+        id: `concise-summary-${model}`,
+        role: "assistant",
+        model,
+        content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
+        toolCalls: [],
+        createdAt: FIXED_TIME + 3e3
+      }
+    ]
+  ];
+}
+function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model,
+      conciseThreadsEnabled: enabled
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Concise thread view",
+        status: live ? "running" : "idle",
+        model,
+        messages: conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ]
+  };
+}
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -36287,6 +36396,20 @@ var init_demo_scenarios = __esm({
         { chunk: { type: "done", stopReason: "end_turn" }, delayMs: 300 }
       ]
     };
+    CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+        '<rect width="480" height="270" fill="#f4f1ea"/>',
+        '<rect width="480" height="36" fill="#2f3a2f"/>',
+        '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+        '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+        '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+        '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+        "</svg>"
+      ].join("")
+    )}`;
     DEMO_SCENARIOS = [
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -37389,6 +37512,28 @@ var init_demo_scenarios = __esm({
           }
         ]
       },
+      conciseThreadScenario(
+        "concise-thread",
+        "Concise thread view for a capable model",
+        "claude-opus-5-5"
+      ),
+      conciseThreadScenario(
+        "concise-thread-full",
+        "Full thread view for a model below the concise gate",
+        "gpt-4o"
+      ),
+      conciseThreadScenario(
+        "concise-thread-working",
+        "Concise thread view while a capable model works",
+        "claude-opus-5-5",
+        { live: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-disabled",
+        "Full thread view for a capable model while the experiment is off",
+        "claude-opus-5-5",
+        { enabled: false }
+      ),
       {
         id: "roadmap-chat-min-width",
         label: "Roadmap side panel minimum chat width",
@@ -39287,6 +39432,7 @@ function createStore(initial) {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
+    conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -41500,8 +41646,8 @@ function canonicalAcpAgentId(id) {
   return LEGACY_ACP_AGENT_IDS[id] ?? id;
 }
 function findAcpCatalogEntry(id) {
-  const canonical = canonicalAcpAgentId(id);
-  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+  const canonical2 = canonicalAcpAgentId(id);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical2);
 }
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
@@ -58125,8 +58271,8 @@ var init_model_card_cache = __esm({
 function canonicalAnchors() {
   const out = /* @__PURE__ */ new Map();
   for (const [modelId, entries2] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
+    const canonical2 = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical2) out.set(modelId, canonical2.value);
   }
   return out;
 }
@@ -58144,12 +58290,12 @@ function verifyLiveCohort(liveModels, reportedVersion) {
   for (const live of liveModels) {
     const modelId = resolveIntellectModelId(live.id);
     if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
+    const canonical2 = anchors.get(modelId);
+    if (canonical2 === void 0) continue;
     anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
+    const drift = Math.abs(live.intellect - canonical2);
     maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical: canonical2, live: live.intellect });
   }
   const version2 = normalizeIndexVersion(reportedVersion);
   const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
@@ -64647,6 +64793,20 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
 
             <fieldset>
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden; while it works, you see what it
+                is doing now. Other models always show the full thread.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
@@ -67307,6 +67467,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
         animateAgentAvatars: data.get("animateAgentAvatars") === "on",
+        conciseThreadsEnabled: data.get("conciseThreadsEnabled") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -67460,6 +67621,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -77847,6 +78009,43 @@ var init_github_link_steering = __esm({
 });
 
 // packages/llm/src/intellect-lookup.ts
+function localCapabilityFor(idOrLabel) {
+  const direct = getLocalModelCapability(idOrLabel);
+  if (direct) return direct;
+  if (idOrLabel.startsWith(LMSTUDIO_MODEL_PREFIX)) {
+    return getLocalModelCapability(idOrLabel.slice(LMSTUDIO_MODEL_PREFIX.length));
+  }
+  return null;
+}
+function canonical(score) {
+  return {
+    value: score.value,
+    scale: "canonical",
+    estimated: score.estimated === true,
+    basis: score.basis ?? score.source
+  };
+}
+function resolveModelIntellect(idOrLabel) {
+  const local = localCapabilityFor(idOrLabel);
+  if (local) {
+    const quantAdjusted = localBenchmarkScore(local, "aa-intelligence");
+    if (quantAdjusted) return canonical(quantAdjusted);
+  }
+  const measured = getIntellectScore(idOrLabel);
+  if (measured) return canonical(measured);
+  if (local) {
+    const composite = compositeIntellect(local);
+    if (composite) {
+      return {
+        value: composite.value,
+        scale: "composite",
+        estimated: true,
+        basis: composite.basis
+      };
+    }
+  }
+  return null;
+}
 var init_intellect_lookup = __esm({
   "packages/llm/src/intellect-lookup.ts"() {
     init_composite_intellect();
@@ -78574,6 +78773,72 @@ var init_visual_evidence_card = __esm({
     init_image_expand();
     init_helpers();
     init_icons();
+  }
+});
+
+// src/renderer/views/concise-thread.ts
+function isConciseThreadModel(model) {
+  if (!model) return false;
+  const cached2 = conciseByModel.get(model);
+  if (cached2 !== void 0) return cached2;
+  const intellect = resolveModelIntellect(model);
+  const concise = intellect?.scale === "canonical" && intellect.value > CONCISE_THREAD_MIN_INTELLECT;
+  conciseByModel.set(model, concise);
+  return concise;
+}
+function messageModel(msg) {
+  return msg.model ?? msg.requestedModel;
+}
+function isConciseMessage(msg) {
+  return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function syncConciseMessageClasses(msgEl, msg, enabled) {
+  msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
+  msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+}
+function isConciseThread(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const msg = thread.messages[i2];
+    if (msg?.role === "assistant") return isConciseMessage(msg);
+  }
+  return isConciseThreadModel(thread.model);
+}
+function runningToolCall(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const toolCalls = thread.messages[i2]?.toolCalls ?? [];
+    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
+      const tc2 = toolCalls[j3];
+      if (tc2?.status === "running" || tc2?.subagent?.status === "running") return tc2;
+    }
+  }
+  return null;
+}
+function shellCommand(tc2) {
+  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
+  return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
+}
+function conciseActivityLabel(thread) {
+  if (thread.status !== "running") return null;
+  const tc2 = runningToolCall(thread);
+  if (!tc2) return null;
+  const command = shellCommand(tc2);
+  const base = `${command ? `Running ${command}` : getToolCallLabel({ ...tc2, status: "running" })}\u2026`;
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
+  return todoLabel ? `${base} (${todoLabel})` : base;
+}
+var CONCISE_THREAD_MIN_INTELLECT, conciseByModel;
+var init_concise_thread = __esm({
+  "src/renderer/views/concise-thread.ts"() {
+    init_intellect_lookup();
+    init_todo_logic();
+    init_tool_display();
+    init_unknown_value3();
+    CONCISE_THREAD_MIN_INTELLECT = 50;
+    conciseByModel = /* @__PURE__ */ new Map();
   }
 });
 
@@ -81960,7 +82225,7 @@ function mountConversation(root, store2, api2) {
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
   activityBar.addEventListener("click", () => {
-    const trails = list.querySelectorAll(".msg-assistant .message-reasoning");
+    const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
     details.dataset["userToggled"] = "1";
@@ -82440,21 +82705,24 @@ function mountConversation(root, store2, api2) {
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
-  function setActivity(label) {
-    if (!label) {
+  function setActivity(requested) {
+    if (!requested) {
       activityBar.hidden = true;
       return;
     }
+    const thread = getActiveThread(store2);
+    const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
+    const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && list.querySelector(".msg:not(.msg-concise) .message-reasoning.message-reasoning-live")) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
     }
     activityBar.classList.toggle(
       "agent-activity-clickable",
-      !!list.querySelector(".msg-assistant .message-reasoning")
+      !!list.querySelector(REOPENABLE_REASONING)
     );
     activityBar.hidden = false;
     if (changed) scrollToBottom();
@@ -82619,6 +82887,8 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
+    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
@@ -82769,6 +83039,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
+    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -82973,6 +83244,17 @@ function mountConversation(root, store2, api2) {
     }
     syncAvatarMotion();
   }
+  function syncConciseThreadClasses() {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    const enabled = store2.getState().conciseThreadsEnabled;
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
+    list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
+      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
+      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+    });
+    syncFromStore();
+  }
   function syncAvatarMotion() {
     const thread = getActiveThread(store2);
     if (!thread || thread.status !== "running" || !store2.getState().animateAgentAvatars) {
@@ -83058,6 +83340,8 @@ function mountConversation(root, store2, api2) {
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -83282,6 +83566,7 @@ function mountConversation(root, store2, api2) {
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
+      syncConciseThreadClasses();
     }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
@@ -83530,7 +83815,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -83585,6 +83870,7 @@ var init_conversation = __esm({
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
+    init_concise_thread();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
@@ -83632,6 +83918,7 @@ var init_conversation = __esm({
     TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
     TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
+    REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
   }
 });
@@ -138899,6 +139186,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -138914,6 +139202,7 @@ async function loadStartupSettings(settings) {
     settings.get("theme"),
     settings.get("fontSize"),
     settings.get("animateAgentAvatars"),
+    settings.get("conciseThreadsEnabled"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -138930,6 +139219,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -148204,6 +148494,7 @@ async function boot() {
     fontSize,
     uiScale,
     animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
+    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
