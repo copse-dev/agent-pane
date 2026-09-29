@@ -493,6 +493,57 @@ export function mountBrowserPane(
   const pendingProjectWaits = new Set<() => void>()
   /** One canvas-store read per artefact while a restore request is in flight. */
   const pendingArtefactReopens = new Map<string, Promise<boolean>>()
+  /** Canvas artefacts from background threads wait until that thread is selected. */
+  let pendingBackgroundArtefacts: CanvasArtefact[] = []
+  let lastThreadScope = activeThreadScope()
+
+  function activeThreadScope(): string {
+    const { activeProjectId, activeThreadId } = store.getState()
+    return `${activeProjectId ?? ''}\u0000${activeThreadId ?? ''}`
+  }
+
+  function artefactThreadId(artefact: CanvasArtefact): string | undefined {
+    return artefact.owner?.threadId ?? artefact.threadId
+  }
+
+  function artefactBelongsToActiveThread(artefact: CanvasArtefact): boolean {
+    const threadId = artefactThreadId(artefact)
+    if (!threadId) return true
+    const { activeProjectId, activeThreadId } = store.getState()
+    return (
+      threadId === activeThreadId &&
+      (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId)
+    )
+  }
+
+  function pendingArtefactIdentity(artefact: CanvasArtefact): string {
+    return `${artefact.owner?.projectId ?? ''}\u0000${artefactThreadId(artefact) ?? ''}\u0000${artefact.title}`
+  }
+
+  function queueBackgroundArtefact(artefact: CanvasArtefact): void {
+    const identity = pendingArtefactIdentity(artefact)
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity,
+    )
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact
+    else pendingBackgroundArtefacts.push(artefact)
+  }
+
+  function flushBackgroundArtefacts(): void {
+    const ready = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread)
+    if (ready.length === 0) return
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact),
+    )
+    for (const artefact of ready) openArtefact(artefact)
+  }
+
+  function onThreadMaybeChanged(): void {
+    const nextScope = activeThreadScope()
+    if (nextScope === lastThreadScope) return
+    lastThreadScope = nextScope
+    flushBackgroundArtefacts()
+  }
 
   function closeAllMenus(): void {
     for (const tab of tabs.values()) tab.closeMenu()
@@ -1003,6 +1054,10 @@ export function mountBrowserPane(
   }
 
   function openArtefact(artefact: CanvasArtefact): void {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact)
+      return
+    }
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
     // Shared with the agent browser session so both load the identical document.
@@ -1717,6 +1772,8 @@ export function mountBrowserPane(
   })
 
   const unsubs = [
+    store.on('threads_changed', onThreadMaybeChanged),
+    store.on('workspace_changed', onThreadMaybeChanged),
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
     store.on('right_panel_maximized_changed', onRightPanelMaximizedChanged),
