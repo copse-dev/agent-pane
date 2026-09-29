@@ -171,6 +171,7 @@ export function setRampartLoaderForTest(next: RampartLoader | null): void {
   loader = next ?? loadRampart
   modulePromise = null
   guards.clear()
+  pendingGuards.clear()
 }
 
 function isEnabled(): boolean {
@@ -214,6 +215,10 @@ function sessionAliases(tag: string): Partial<Record<PiiLabel, string>> {
 // identity stable across every turn it sees, which maps onto a thread for as
 // long as the process lives.
 const guards = new Map<string, PiiGuard>()
+// A thread's guard while it is being created. Overlapping first redactions for
+// one thread share it; each minting its own guard would leave the placeholders
+// of every guard but the one stored last impossible to reveal.
+const pendingGuards = new Map<string, Promise<PiiGuard | null>>()
 
 const PII_KEEP_LABEL_SET: ReadonlySet<PiiLabel> = new Set(PII_KEEP_LABELS)
 
@@ -338,10 +343,26 @@ function wrapGuard(guard: PiiGuard, mod: RampartModule): PiiGuard {
   }
 }
 
-async function getGuard(threadId: string): Promise<PiiGuard | null> {
+function getGuard(threadId: string): Promise<PiiGuard | null> {
   const existing = guards.get(threadId)
-  if (existing) return existing
+  if (existing) return Promise.resolve(existing)
+  const pending = pendingGuards.get(threadId)
+  if (pending) return pending
 
+  const creating: Promise<PiiGuard | null> = createGuardForThread().then((guard) => {
+    // Cleared (thread deleted) while this was in flight: hand the guard to the
+    // callers already waiting, but do not store it for the thread.
+    if (pendingGuards.get(threadId) === creating) {
+      pendingGuards.delete(threadId)
+      if (guard) guards.set(threadId, guard)
+    }
+    return guard
+  })
+  pendingGuards.set(threadId, creating)
+  return creating
+}
+
+async function createGuardForThread(): Promise<PiiGuard | null> {
   const mod = await loadModule()
   if (!mod) return null
 
@@ -357,16 +378,12 @@ async function getGuard(threadId: string): Promise<PiiGuard | null> {
   // card numbers — is still redacted with no network. Only when both fail do we
   // give up and pass text through unchanged.
   try {
-    const guard = wrapGuard(await mod.createGuard(shared), mod)
-    guards.set(threadId, guard)
-    return guard
+    return wrapGuard(await mod.createGuard(shared), mod)
   } catch (err) {
     console.warn('[pii] Rampart NER unavailable; falling back to heuristics only.', err)
   }
   try {
-    const guard = wrapGuard(await mod.createGuard({ ...shared, heuristicsOnly: true }), mod)
-    guards.set(threadId, guard)
-    return guard
+    return wrapGuard(await mod.createGuard({ ...shared, heuristicsOnly: true }), mod)
   } catch (err) {
     console.warn('[pii] Rampart guard could not be created; PII redaction skipped.', err)
     return null
@@ -431,4 +448,5 @@ export function revealPlaceholder(threadId: string, token: string): string | nul
 /** Drop a thread's reverse map (e.g. when the thread is deleted). */
 export function clearThreadRedaction(threadId: string): void {
   guards.delete(threadId)
+  pendingGuards.delete(threadId)
 }

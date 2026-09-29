@@ -107,6 +107,35 @@ describe('pii-redactor', () => {
     assert.equal(second.content, 'tell [PII_1] again')
   })
 
+  it('shares one guard between overlapping first redactions for a thread', async () => {
+    // Hold guard creation open so both first calls are in flight together.
+    let created = 0
+    let release: () => void = () => {}
+    const gate = new Promise<void>((done) => {
+      release = done
+    })
+    setRampartLoaderForTest(() =>
+      Promise.resolve({
+        createGuard: async () => {
+          created++
+          await gate
+          return makeFakeGuard()
+        },
+        detectHeuristics: () => [],
+      }),
+    )
+    const first = redactUserContent('overlap', 'Jane')
+    const second = redactUserContent('overlap', 'john@example.com')
+    release()
+    const [a, b] = await Promise.all([first, second])
+
+    assert.equal(created, 1)
+    assert.equal(a.content, '[PII_1]')
+    assert.equal(b.content, '[PII_2]')
+    assert.equal(revealPlaceholder('overlap', '[PII_1]'), 'Jane')
+    assert.equal(revealPlaceholder('overlap', '[PII_2]'), 'john@example.com')
+  })
+
   it('isolates redaction maps per thread', async () => {
     await redactUserContent('a', 'Jane')
     await redactUserContent('b', 'john@example.com')
