@@ -445,6 +445,15 @@ describe('git and the run path', () => {
     assert.deepEqual(shape.areas, ['src'])
   })
 
+  it('keeps the dependency surface of a lockfile-only change', async () => {
+    await repo.write({ 'pnpm-lock.yaml': 'lockfileVersion: 9.0\n' })
+    const lock = repo.commit('Bump a transitive dependency')
+    const shape = changeShape(repo.root, landed, lock)
+    assert.equal(shape.size.sourceLines, 0)
+    assert.deepEqual(shape.areas, [])
+    assert.deepEqual(shape.surfaces, ['dependency-build'])
+  })
+
   it('rates a case through the real summary step and scores the ratings', async () => {
     const corpus: RiskCorpus = {
       version: 1,

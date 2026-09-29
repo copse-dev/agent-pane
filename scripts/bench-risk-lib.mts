@@ -193,13 +193,15 @@ export function landedCommits(repoDir: string, mainRef: string): Map<number, str
   return landed
 }
 
+const LOCKFILE = /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/
+
 /** Tests, docs, fixtures, screenshots and lockfiles: not counted as source lines. */
 export function isLowSignalPath(path: string): boolean {
   return (
     /(^|\/)(tests?|__tests__|e2e|fixtures?|screenshots?|benchmarks?|docs)\//.test(path) ||
     /\.(test|spec)\.[cm]?[jt]sx?$/.test(path) ||
     /\.(md|mdx|png|jpe?g|gif|svg|snap|txt)$/.test(path) ||
-    /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/.test(path)
+    LOCKFILE.test(path)
   )
 }
 
@@ -246,7 +248,11 @@ export function changeShape(repoDir: string, base: string, head: string): Change
     files,
     size: { files: files.length, additions, deletions, sourceLines, sourceDeletions },
     areas,
-    surfaces: pathSurfaces(source, areas),
+    // A lockfile adds no source lines, but it is still a dependency change.
+    surfaces: pathSurfaces(
+      files.filter((path) => !isLowSignalPath(path) || LOCKFILE.test(path)),
+      areas,
+    ),
   }
 }
 
