@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from './helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedStableWorkspace, writeSeedConfig } from './helpers/seed-config.ts'
 
 const PROJECT_A_ID = 'e2e-automation-workspace-a'
@@ -235,6 +235,23 @@ describe('workspace-level automations section', function () {
     // review", owned by project B.
     const opsRow = (await rows)[1]
     assert.ok(opsRow)
+
+    // The row belongs to the background project, so its menu carries only the
+    // schedule actions. Capture the transient surface itself: a screenshot of
+    // the closed sidebar would not prove that Run now is actually exposed.
+    await opsRow.click({ button: 'right' })
+    const contextMenu = $('.context-menu')
+    await contextMenu.waitForDisplayed({ timeout: 5_000 })
+    const contextMenuLabels = await browser.execute(() =>
+      Array.from(document.querySelectorAll('.context-menu-item')).map(
+        (item) => item.textContent ?? '',
+      ),
+    )
+    assert.deepEqual(contextMenuLabels, ['Run now', 'Automation setup…'])
+    await saveAppScreenshot('automation-sidebar-run-now-context-menu.png')
+    await browser.keys('Escape')
+    await expect(contextMenu).not.toBeExisting()
+
     await opsRow.$('.automation-setup-btn').click()
     const dialog = $('#automation-dialog')
     await expect(dialog).toBeDisplayed()
