@@ -776,7 +776,9 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.equal(approvalBody, 'printf hello')
-      assert.match(approvalFooter, /network access is temporarily widened/i)
+      assert.match(approvalFooter, /network allowlist is temporarily widened/i)
+      assert.match(approvalFooter, /this command could inherit that access/i)
+      assert.match(approvalFooter, /before running them at the same time/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
       // The cause is what makes this prompt countable in the D0/U0 report: an
       // artifact of ASRT's process-global allowlist, which a per-runtime
@@ -803,6 +805,7 @@ describe('ensureToolPermitted', () => {
     try {
       await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
       assert.match(approvalFooter, /widened for ACP agent: codex/)
+      assert.match(approvalFooter, /on macOS, this command could inherit that access/)
     } finally {
       setApprovalHandler(null)
       release()
