@@ -33,13 +33,57 @@ function bodiesOf(css: string, selector: string): string[] {
     .flatMap((match) => (match[2] === undefined ? [] : [match[2]]))
 }
 
+const STATUS_TOKEN =
+  /var\(--(?:success|warning|danger|error|info|important|(?:change|diff)-[a-z0-9-]+)\b/i
+
+function customProperties(bodies: readonly string[]): ReadonlyMap<string, readonly string[]> {
+  const properties = new Map<string, string[]>()
+  for (const body of bodies) {
+    for (const match of body.matchAll(/(?:^|;)\s*(--[-_a-z0-9]+)\s*:\s*([^;{}]*)/gi)) {
+      const [, name, value] = match
+      if (name === undefined || value === undefined) continue
+      const values = properties.get(name) ?? []
+      values.push(value)
+      properties.set(name, values)
+    }
+  }
+  return properties
+}
+
+function valueUsesStatusToken(
+  value: string,
+  properties: ReadonlyMap<string, readonly string[]>,
+  seen: ReadonlySet<string> = new Set(),
+): boolean {
+  if (STATUS_TOKEN.test(value)) return true
+  for (const match of value.matchAll(/var\((--[-_a-z0-9]+)/gi)) {
+    const name = match[1]
+    if (name === undefined || seen.has(name)) continue
+    const nextSeen = new Set(seen)
+    nextSeen.add(name)
+    if (
+      (properties.get(name) ?? []).some((next) => valueUsesStatusToken(next, properties, nextSeen))
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 function assertNoStatusFill(css: string, selector: string): void {
-  for (const body of bodiesOf(css, selector)) {
-    assert.doesNotMatch(
-      body,
-      /background(?:-(?:color|image))?\s*:[^;{}]*var\(--(?:success|warning|danger|error|info|important|(?:change|diff)-[a-z0-9-]+)\b/i,
-      `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
-    )
+  const bodies = bodiesOf(css, selector)
+  const properties = customProperties(bodies)
+  for (const body of bodies) {
+    for (const match of body.matchAll(
+      /(?:^|;)\s*background(?:-(?:color|image))?\s*:\s*([^;{}]*)/gi,
+    )) {
+      const value = match[1]
+      assert.equal(
+        value === undefined ? false : valueUsesStatusToken(value, properties),
+        false,
+        `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
+      )
+    }
   }
 }
 
@@ -150,6 +194,19 @@ describe('status colours come from tokens (#3065)', () => {
     const css = `
       .diff-accept-btn {
         background-image: linear-gradient(var(--success), transparent);
+      }
+    `
+    assert.throws(() => {
+      assertNoStatusFill(css, '.diff-accept-btn')
+    }, /must not be/)
+  })
+
+  it('follows local custom properties used by button backgrounds', () => {
+    const css = `
+      .diff-accept-btn {
+        --accept-fill: var(--success);
+        --button-fill: var(--accept-fill);
+        background: var(--button-fill);
       }
     `
     assert.throws(() => {
