@@ -54335,6 +54335,18 @@ var init_disclosure_summary = __esm({
 });
 
 // src/renderer/views/setup/custom-providers-section.ts
+function apiStyleSelect(current = "chat-completions") {
+  const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
+  select.append(
+    el("option", { value: "chat-completions" }, "Chat Completions"),
+    el("option", { value: "responses" }, "Responses")
+  );
+  select.value = current;
+  return select;
+}
+function selectedApiStyle(select) {
+  return select.value === "responses" ? "responses" : "chat-completions";
+}
 function privacyBadgeEl(badge) {
   return el("span", { class: `ui-badge provider-privacy-badge ${badge.kind}` }, badge.label);
 }
@@ -54537,6 +54549,7 @@ function createCustomProvidersSection(api2, opts = {}) {
         },
         chipLabel(key)
       );
+      chip2.dataset["provider"] = key;
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
@@ -54773,10 +54786,24 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: '{ "provider": { "require_parameters": true } }'
     });
     extraBodyArea.value = provider.extraBody ? JSON.stringify(provider.extraBody, null, 2) : "";
+    const apiStyle = apiStyleSelect(provider.apiStyle);
     const advanced = el(
       "details",
       { class: "provider-advanced" },
       disclosureSummary("Advanced"),
+      ...provider.builtin ? [] : [
+        el(
+          "label",
+          {},
+          "API format",
+          apiStyle,
+          el(
+            "span",
+            { class: "field-hint" },
+            "Choose Responses only when this endpoint implements the OpenAI Responses API."
+          )
+        )
+      ],
       el(
         "label",
         { class: "checkbox-label" },
@@ -54827,6 +54854,7 @@ function createCustomProvidersSection(api2, opts = {}) {
           await api2.settings.saveExtraProvider({
             slug: provider.id,
             ...provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() },
+            ...provider.builtin ? {} : { apiStyle: selectedApiStyle(apiStyle) },
             models: editor.read(),
             includeUsage: usageBox.checked,
             ...Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {},
@@ -54893,6 +54921,7 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: "API key (optional)",
       autocomplete: "off"
     });
+    const apiStyle = apiStyleSelect();
     const addBtn = el("button", { type: "button", class: "provider-save" }, "Add provider");
     const status = el("span", { class: "key-status" });
     let slugEdited = false;
@@ -54933,7 +54962,8 @@ function createCustomProvidersSection(api2, opts = {}) {
           const next = await api2.settings.saveExtraProvider({
             ...slug2 ? { slug: slug2 } : {},
             ...label ? { label } : {},
-            baseUrl
+            baseUrl,
+            apiStyle: selectedApiStyle(apiStyle)
           });
           const savedRecord = next.find((p2) => p2.id === slug2);
           let keyFailure = null;
@@ -54990,6 +55020,17 @@ function createCustomProvidersSection(api2, opts = {}) {
         )
       ),
       el("label", {}, "API key", keyInput),
+      el(
+        "label",
+        {},
+        "API format",
+        apiStyle,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Most compatible endpoints use Chat Completions. Choose Responses only when documented."
+        )
+      ),
       el("div", { class: "provider-actions provider-form-footer" }, addBtn, status)
     );
   }
