@@ -97,6 +97,13 @@ capture), which is why every item needs a ruling.
   re-collect with the fix samples none of the 16, and none is blamed: blamed candidates are
   always sampled first, so a blamed one would have been picked. The snapshot is kept as
   drawn rather than reshuffled.
+- **The mature sample was also stratified on part of the evidence.** When the snapshot was
+  drawn, candidates were tiered on title and description mentions only. Timeline
+  cross-references and main CI breaks were fetched only for the cases already picked.
+  `collect` now tiers on all of it. Neither source can mark a change as blamed, so a candidate
+  could move only from "none" to "evidence", never into the blamed tier. Every sampled case's
+  truth still includes its timeline and CI evidence; only the balance between the two halves
+  could differ.
 
 ## Running it
 

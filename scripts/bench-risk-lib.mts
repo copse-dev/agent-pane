@@ -589,6 +589,32 @@ export async function timelineEvidence(
 }
 
 /**
+ * Every outcome signal `collect` records for a merged change: title and description mentions,
+ * timeline cross-references, and a main CI break at its landed commit. Sampling tiers a
+ * candidate on this same set, so a change blamed only in a comment is not sampled as clean.
+ */
+export async function outcomeEvidence(
+  client: GitHubClient,
+  input: EvidenceInput,
+  repoDir: string,
+  landed: string,
+): Promise<RiskEvidence[]> {
+  const evidence = localEvidence(input)
+  const refs = new Set(evidence.map((item) => item.ref))
+  evidence.push(
+    ...(await timelineEvidence(client, input.number, input.mergedAt, input.windowDays, refs)),
+  )
+  evidence.push(...(await mainCiEvidence(client, repoDir, landed, input.mergedAt)))
+  return evidence
+}
+
+/** Where a candidate falls in the mature sample's strata. */
+export function sampleTier(evidence: readonly RiskEvidence[]): SampleTier {
+  if (evidence.some(isBlamingEvidence)) return 'blamed'
+  return evidence.length > 0 ? 'evidence' : 'none'
+}
+
+/**
  * Every pull request updated since `earliest`, newest update first. Merging updates a pull
  * request, so this includes a long-lived one opened before the cutoff that merged after it.
  */
@@ -662,19 +688,30 @@ export async function collect(options: CollectOptions): Promise<RiskCorpus> {
       files: [],
     })),
   ]
-  const evidenceFor = (pull: Pull): RiskEvidence[] =>
-    pull.merged_at === null
-      ? []
-      : localEvidence({
-          repo: options.repo,
-          number: pull.number,
-          title: pull.title,
-          mergedAt: pull.merged_at,
-          files: filesOf.get(pull.number) ?? [],
-          windowDays: options.windowDays,
-          mentioners,
-          hotFiles,
-        })
+  // Fetched once per change: sampling tiers on it, and a chosen case records it.
+  const evidenceCache = new Map<number, RiskEvidence[]>()
+  const evidenceFor = async (pull: Pull, landed: string): Promise<RiskEvidence[]> => {
+    if (pull.merged_at === null) return []
+    const cached = evidenceCache.get(pull.number)
+    if (cached !== undefined) return [...cached]
+    const found = await outcomeEvidence(
+      client,
+      {
+        repo: options.repo,
+        number: pull.number,
+        title: pull.title,
+        mergedAt: pull.merged_at,
+        files: filesOf.get(pull.number) ?? [],
+        windowDays: options.windowDays,
+        mentioners,
+        hotFiles,
+      },
+      options.repoDir,
+      landed,
+    )
+    evidenceCache.set(pull.number, found)
+    return [...found]
+  }
 
   // Only changes that landed on main have a merge commit there to measure from.
   const landedOnMain = (pull: Pull): boolean =>
@@ -682,34 +719,32 @@ export async function collect(options: CollectOptions): Promise<RiskCorpus> {
   const rated = pulls.filter((pull) => landedOnMain(pull) && parsePostedRating(pull.body) !== null)
   const ratedNumbers = new Set(rated.map((pull) => pull.number))
   const matureTo = Date.parse(options.matureTo)
-  const matureCandidates = pulls
-    .filter(
-      (pull) =>
-        landedOnMain(pull) &&
-        !ratedNumbers.has(pull.number) &&
-        (pull.merged_at ?? '') >= options.matureFrom &&
-        Date.parse(pull.merged_at ?? '') < matureTo,
+  const matureCandidates: {
+    number: number
+    pull: Pull
+    sourceLines: number
+    tier: SampleTier
+  }[] = []
+  for (const pull of pulls) {
+    const landed = landedAt.get(pull.number)
+    if (
+      landed === undefined ||
+      !landedOnMain(pull) ||
+      ratedNumbers.has(pull.number) ||
+      (pull.merged_at ?? '') < options.matureFrom ||
+      Date.parse(pull.merged_at ?? '') >= matureTo ||
+      // A release promotion or version bump is a merge of changes already in the corpus's population.
+      /^(promote|release)\b/i.test(pull.title)
     )
-    .map((pull) => {
-      const files = filesOf.get(pull.number) ?? []
-      const sourceLines =
-        files.filter((path) => !isLowSignalPath(path)).length > 0
-          ? changeShape(
-              options.repoDir,
-              `${landedAt.get(pull.number) ?? ''}^1`,
-              landedAt.get(pull.number) ?? '',
-            ).size.sourceLines
-          : 0
-      const found = evidenceFor(pull)
-      const tier: SampleTier = found.some(isBlamingEvidence)
-        ? 'blamed'
-        : found.length > 0
-          ? 'evidence'
-          : 'none'
-      return { number: pull.number, pull, sourceLines, tier }
-    })
-    // A release promotion or version bump is a merge of changes already in the corpus's population.
-    .filter((candidate) => !/^(promote|release)\b/i.test(candidate.pull.title))
+      continue
+    const files = filesOf.get(pull.number) ?? []
+    const sourceLines =
+      files.filter((path) => !isLowSignalPath(path)).length > 0
+        ? changeShape(options.repoDir, `${landed}^1`, landed).size.sourceLines
+        : 0
+    const tier = sampleTier(await evidenceFor(pull, landed))
+    matureCandidates.push({ number: pull.number, pull, sourceLines, tier })
+  }
   const tiers = (tier: SampleTier): string =>
     String(matureCandidates.filter((candidate) => candidate.tier === tier).length)
   io.stderr(
@@ -744,12 +779,7 @@ export async function collect(options: CollectOptions): Promise<RiskCorpus> {
     let evidence: RiskEvidence[] = []
     let observedDays = 0
     if (merged && pull.merged_at !== null) {
-      evidence = evidenceFor(pull)
-      const refs = new Set(evidence.map((item) => item.ref))
-      evidence.push(
-        ...(await timelineEvidence(client, pull.number, pull.merged_at, options.windowDays, refs)),
-      )
-      evidence.push(...(await mainCiEvidence(client, options.repoDir, landed, pull.merged_at)))
+      evidence = await evidenceFor(pull, landed)
       observedDays = Math.min(
         options.windowDays,
         Math.round(((options.now.getTime() - Date.parse(pull.merged_at)) / DAY_MS) * 10) / 10,

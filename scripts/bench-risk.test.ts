@@ -30,9 +30,11 @@ import {
   main,
   mentionPattern,
   mergeVerdicts,
+  outcomeEvidence,
   pickMature,
   ratingSource,
   runRatings,
+  sampleTier,
   timelineEvidence,
   type BenchIo,
   type EvidenceInput,
@@ -279,6 +281,34 @@ describe('fetchPulls', () => {
     assert.ok(pulls.some((found) => found.number === 300))
     assert.match(requested[0] ?? '', /sort=updated&direction=desc/)
     assert.equal(requested.length, 2)
+  })
+})
+
+describe('outcomeEvidence', () => {
+  it('tiers a change blamed only in a comment by its timeline, not as clean', async () => {
+    const client: GitHubClient = {
+      get: (path) => {
+        if (path.includes('/timeline'))
+          return Promise.resolve([
+            {
+              event: 'cross-referenced',
+              created_at: '2026-09-11T00:00:00Z',
+              source: {
+                issue: { number: 205, title: 'Widget flicker', created_at: '2026-09-11T00:00:00Z' },
+              },
+            },
+          ])
+        return Promise.resolve({ workflow_runs: [] })
+      },
+    }
+    // No title or description anywhere names #100, so local evidence alone is empty.
+    assert.equal(sampleTier(localEvidence(input([]))), NONE)
+    const found = await outcomeEvidence(client, input([]), '.', 'c'.repeat(40))
+    assert.deepEqual(
+      found.map((item) => [item.source, item.ref]),
+      [['reference', '#205']],
+    )
+    assert.equal(sampleTier(found), EVIDENCE)
   })
 })
 
