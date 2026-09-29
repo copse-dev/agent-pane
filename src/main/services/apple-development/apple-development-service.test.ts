@@ -140,11 +140,21 @@ describe('AppleDevelopmentService enrollment', () => {
     })
 
     it('stays silent for an enrolled project and after the user removes it', async () => {
+      const driver = new InstalledXcodeDriver()
+      driver.discover = (): Promise<AppleDriverDiscovery> =>
+        Promise.resolve({
+          toolchain: null,
+          candidates: [],
+          destinations: [],
+          metadataRequiresExecution: false,
+          setupMessage: null,
+        })
       const service = new AppleDevelopmentService({
+        driver,
         supervisor: new TaskSupervisor({ store: new EmptyTaskStore() }),
         pluginEnabled: (): boolean => true,
         suggestionsEnabled: (): boolean => true,
-        platform: 'linux',
+        platform: 'darwin',
         resolveProjectRoot: (): string => '/project',
         detectProject: (): Promise<boolean> => Promise.resolve(true),
         resolveContext: (projectId, threadId): Promise<ThreadExecutionContext> =>
