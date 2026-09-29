@@ -51,13 +51,30 @@ describe('custom provider API format', () => {
     ])
     assert.match(await advanced.getText(), /OpenAI Responses API/)
 
-    const geometry = await browser.getElementRect(apiStyle.elementId)
-    const dialog = $('#settings-dialog')
-    const dialogGeometry = await browser.getElementRect(dialog.elementId)
-    assert.ok(geometry.width >= 180)
-    assert.ok(geometry.height > 0)
-    assert.ok(geometry.x >= dialogGeometry.x)
-    assert.ok(geometry.x + geometry.width <= dialogGeometry.x + dialogGeometry.width)
+    const geometry = await browser.execute(() => {
+      const control = document.querySelector<HTMLSelectElement>(
+        '#settings-providers-host select[name="providerApiStyle"]',
+      )
+      const dialog = document.querySelector<HTMLDialogElement>('#settings-dialog')
+      if (!control || !dialog) throw new Error('Expected API format control and settings dialog')
+
+      const controlRect = control.getBoundingClientRect()
+      const dialogRect = dialog.getBoundingClientRect()
+      return {
+        control: {
+          x: controlRect.x,
+          width: controlRect.width,
+          height: controlRect.height,
+        },
+        dialog: { x: dialogRect.x, width: dialogRect.width },
+      }
+    })
+    assert.ok(geometry.control.width >= 180)
+    assert.ok(geometry.control.height > 0)
+    assert.ok(geometry.control.x >= geometry.dialog.x)
+    assert.ok(
+      geometry.control.x + geometry.control.width <= geometry.dialog.x + geometry.dialog.width,
+    )
 
     await saveElementScreenshot('#settings-dialog', 'settings-custom-provider-api-format.png')
   })
