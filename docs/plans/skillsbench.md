@@ -246,10 +246,17 @@ Every trial capsule records:
   image, sandbox/permission settings, and BenchFlow version;
 - input/output tokens, model requests, tool calls, commands, elapsed time, stop reason, failure
   category, final outputs, verifier artifacts, raw event trace, and thread-store transcript.
+- the predeclared minimum-work policy, scored-or-void status, void reason, and raw verifier reward;
+  a void trial has no official reward and cannot enter an aggregate as a zero.
 
 Reports group by profile, task, category, difficulty, and attempt. The report generator must make it
 impossible to combine different dataset revisions, profile hashes, model configurations, or
 permission policies into one unlabeled aggregate.
+
+`minimum-work-v1` voids a trial below 1,000 input tokens or with no tool calls. The 982-token
+`dialogue-parser` trial that motivated the floor ended after two tool calls with no runner or
+verifier error; its root cause remains unexplained. Keep that fact visible rather than treating the
+floor as a diagnosis or changing it after a cohort has run.
 
 ## Decision rules
 
