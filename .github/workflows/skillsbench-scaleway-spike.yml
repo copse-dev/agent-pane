@@ -147,6 +147,9 @@ jobs:
                 profile: .profile.id,
                 profileHash: .profile.contentHash,
                 attempt: .attempt,
+                status: .status,
+                voidReason: .voidReason,
+                verifierReward: .verifierReward,
                 reward: .officialReward,
                 rewards: .result.rewards,
                 tools: .result.n_tool_calls,
@@ -161,6 +164,9 @@ jobs:
                 elapsed: .elapsedSeconds,
               }' > trial-summary.jsonl
           echo "summarised $(wc -l < trial-summary.jsonl) trials"
+          voids="$(jq --slurp '[.[] | select(.status == "void")] | length' trial-summary.jsonl)"
+          echo "void trials: ${voids}"
+          echo "- void trials: ${voids}" >> "$GITHUB_STEP_SUMMARY"
           cat trial-summary.jsonl
 
       - uses: actions/upload-artifact@v7
