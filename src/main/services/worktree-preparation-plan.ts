@@ -128,7 +128,9 @@ function validateHashLockedRequirements(root: string, path: string, problems: st
     requirements += 1
     const tokens = line.split(/\s+/)
     const requirement = tokens.shift() ?? ''
-    const exact = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?==[^\s;@/]+$/.test(
+    // `==` followed by one concrete version: no wildcard (`1.*`), specifier set
+    // (`1.0,<2`) or arbitrary-equality (`===`) suffix, which would not pin a version.
+    const exact = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?==\d[A-Za-z0-9._+!-]*$/.test(
       requirement,
     )
     const hashes = tokens.filter((token) => /^--hash=sha256:[a-f0-9]{64}$/i.test(token))
