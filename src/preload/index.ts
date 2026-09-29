@@ -1054,6 +1054,10 @@ const api: ApiClient = {
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
+  about: {
+    getInfo: () => ipcRenderer.invoke('about:get-info'),
+    openLicenseFile: (kind) => ipcRenderer.invoke('about:open-license-file', kind),
+  },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
