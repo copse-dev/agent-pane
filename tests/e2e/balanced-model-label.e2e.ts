@@ -36,7 +36,6 @@ describe('Balanced composer model label', () => {
     assert.doesNotMatch(await label.getText(), /no key/i)
 
     await trigger.click()
-    await $('.model-picker-browse').click()
     const menu = $('.model-picker-menu')
     await expect(menu).toBeDisplayed()
     const selected = menu.$('.model-picker-option[data-value="auto:balanced"]')
