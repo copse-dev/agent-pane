@@ -129868,6 +129868,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function discoverSelectedMachine() {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
@@ -129891,6 +129892,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
   }
   async function discoverNearby() {
+    if (await stoppedByViewerOff()) return;
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
@@ -129943,6 +129945,11 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function desktopViewerEnabled() {
     return await api2.settings.get("vncEnabled").catch(() => false) === true;
+  }
+  async function stoppedByViewerOff() {
+    if (await desktopViewerEnabled()) return false;
+    if (!simulatorSessionId && !channel) showDesktopViewerOff();
+    return true;
   }
   function showDesktopViewerOff() {
     setStatus(DESKTOP_VIEWER_OFF_TITLE, "error", DESKTOP_VIEWER_OFF_DETAIL);
