@@ -141,10 +141,22 @@ export function buildPluginFollowUps(
   return out
 }
 
+/**
+ * Who runs the thread the bubbles are for. An ACP agent is never offered the
+ * native `investigate_ci` subagent tool (the bridge does not expose it), so a
+ * bubble must not tell it to call one.
+ */
+export interface FollowUpExecutor {
+  readonly acp: boolean
+}
+
+const NATIVE_EXECUTOR: FollowUpExecutor = { acp: false }
+
 /** Deterministic bubbles: open-plan first, then git/PR facts. Exported for tests. */
 export function buildDeterministicFollowUps(
   ctx: Awaited<ReturnType<typeof getPrWorkspaceContext>>,
   context: FollowUpContext,
+  executor: FollowUpExecutor = NATIVE_EXECUTOR,
 ): FollowUpSuggestion[] {
   const out: FollowUpSuggestion[] = []
 
@@ -180,9 +192,10 @@ export function buildDeterministicFollowUps(
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
     // Point the follow-up at the investigate_ci subagent tool only when the
     // turn is actually offered it — the same predicate the system prompt's tool
-    // line reads (plugin on, gh usable, subagents on, not read-only); otherwise
-    // fall back to the generic "Debug CI Failure" prompt.
-    const ci = buildDebugCiSuggestion(isInvestigateCiOffered())
+    // line reads (plugin on, gh usable, subagents on, not read-only), and never
+    // for an ACP thread, whose bridge does not expose it; otherwise fall back to
+    // the generic "Debug CI Failure" prompt.
+    const ci = buildDebugCiSuggestion(!executor.acp && isInvestigateCiOffered())
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }
 
@@ -228,6 +241,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 export async function suggestFollowUps(
   context: FollowUpContext,
   root: string | null = getWorkspaceRoot(),
+  executor: FollowUpExecutor = NATIVE_EXECUTOR,
 ): Promise<FollowUpSuggestion[]> {
   if (
     process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] === '1' ||
@@ -237,7 +251,7 @@ export async function suggestFollowUps(
   }
   const workspaceCtx = await getPrWorkspaceContext(root)
   const prioritized = [
-    ...buildDeterministicFollowUps(workspaceCtx, context),
+    ...buildDeterministicFollowUps(workspaceCtx, context, executor),
     ...buildPluginFollowUps(workspaceCtx),
   ]
   return fillFollowUpSuggestions(prioritized, () => pickModelFollowUps(context))

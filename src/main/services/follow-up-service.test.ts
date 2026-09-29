@@ -496,6 +496,20 @@ describe('debug-ci deterministic bubble', () => {
     return { label: ci.label, prompt: ci.prompt ?? '' }
   }
 
+  it('omits investigate_ci for an ACP thread even when the native turn would be offered it', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    setDefaultPluginRegistry(plugins)
+    setGhAvailableForTest(true)
+    setSetting(SUBAGENTS_ENABLED_SETTING, true)
+    const ci = buildDeterministicFollowUps(failingPr, turn, { acp: true }).find(
+      (s) => s.id === 'debug-ci',
+    )
+    assert.ok(ci)
+    assert.equal(ci.label, 'Debug CI Failure')
+    assert.doesNotMatch(ci.prompt ?? '', /investigate_ci/)
+  })
+
   // The bubble names investigate_ci only when the turn is offered the tool:
   // plugin on AND gh usable AND subagents on AND not read-only (parentTools
   // hides the entry tool otherwise). Every other combination falls back to the

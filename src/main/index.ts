@@ -130,6 +130,7 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
+import { isAcpModel } from '@shared/acp.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -990,7 +991,9 @@ app
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        return suggestFollowUps(parsed.data, root)
+        const thread = await getProjectThread(projectId, threadId)
+        const acp = thread?.model !== undefined && isAcpModel(thread.model)
+        return suggestFollowUps(parsed.data, root, { acp })
       },
     )
 
