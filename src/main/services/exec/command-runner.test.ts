@@ -249,7 +249,20 @@ describe('runCommand sandbox lease', () => {
         runCommand(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { timeout_ms: 150 }),
         (error: unknown) => isCommandTimeoutError(error),
       )
-      await Promise.race([processExited, new Promise((resolve) => setTimeout(resolve, 10_000))])
+      let releaseTimeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          processExited,
+          new Promise<void>((_resolve, reject) => {
+            releaseTimeout = setTimeout(() => {
+              reject(new Error('sandbox lease was not released after child close'))
+            }, 10_000)
+            releaseTimeout.unref()
+          }),
+        ])
+      } finally {
+        if (releaseTimeout) clearTimeout(releaseTimeout)
+      }
       assert.equal(released, 1)
     } finally {
       setProjectSandboxEnabled(false)
@@ -305,6 +318,80 @@ describe('runCommand sandbox lease', () => {
       )
       await killErrorReported
       assert.equal(released, 0, "an error from kill must not release a live child's lease")
+
+      let releaseTimeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          sandboxReleased,
+          new Promise<void>((_resolve, reject) => {
+            releaseTimeout = setTimeout(() => {
+              reject(new Error('sandbox lease was not released after child close'))
+            }, 5_000)
+            releaseTimeout.unref()
+          }),
+        ])
+      } finally {
+        if (releaseTimeout) clearTimeout(releaseTimeout)
+      }
+      assert.equal(released, 1)
+    } finally {
+      setProjectSandboxEnabled(false)
+      mock.restoreAll()
+    }
+  })
+
+  it('keeps the sandbox lease until close when an abort kill emits an error', async () => {
+    let released = 0
+    let reportedKillError!: () => void
+    const killErrorReported = new Promise<void>((resolve) => {
+      reportedKillError = resolve
+    })
+    let childClosed!: () => void
+    const sandboxReleased = new Promise<void>((resolve) => {
+      childClosed = resolve
+    })
+    const originalProcessKill = process.kill.bind(process)
+
+    mock.method(SandboxManager, 'isSandboxingEnabled', () => true)
+    mock.method(SandboxManager, 'cleanupAfterCommand', () => {
+      released += 1
+      childClosed()
+    })
+    mock.method(SandboxManager, 'wrapWithSandboxArgv', () =>
+      Promise.resolve({
+        argv: [process.execPath, '-e', 'setTimeout(() => {}, 500)'],
+        env: { ...process.env },
+      }),
+    )
+    mock.method(process, 'kill', (pid: number, signal?: string | number) => {
+      if (pid < 0 && (signal === 'SIGTERM' || signal === 'SIGKILL')) {
+        throw new Error('simulated process-group signal failure')
+      }
+      return originalProcessKill(pid, signal)
+    })
+    mock.method(
+      ChildProcess.prototype,
+      'kill',
+      function (this: ChildProcess, signal?: NodeJS.Signals | number) {
+        setImmediate(() => {
+          this.emit('error', new Error(`simulated ${String(signal)} failure`))
+          reportedKillError()
+        })
+        return false
+      },
+    )
+    setProjectSandboxEnabled(true)
+    const abortController = new AbortController()
+    try {
+      const result = runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 500)'], {
+        signal: abortController.signal,
+      })
+      setTimeout(() => {
+        abortController.abort()
+      }, 50).unref()
+      await assert.rejects(result)
+      await killErrorReported
+      assert.equal(released, 0, "an abort error must not release a live child's lease")
 
       let releaseTimeout: ReturnType<typeof setTimeout> | undefined
       try {

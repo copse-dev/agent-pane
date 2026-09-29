@@ -175,21 +175,24 @@ export function runCommand(
       const stderrDecoder = new StringDecoder('utf8')
       let settled = false
       let cancelKill: (() => void) | undefined
+      let terminationRequested = false
 
       const onAbort = (): void => {
         if (timer) clearTimeout(timer)
+        terminationRequested = true
         cancelKill = terminateProcessTree(proc)
       }
 
       const timer =
         timeout_ms > 0
           ? setTimeout(() => {
-              cancelKill = terminateProcessTree(proc)
+              terminationRequested = true
               if (!settled) {
                 settled = true
                 opts.signal?.removeEventListener('abort', onAbort)
                 reject(new CommandTimeoutError(cmd, timeout_ms))
               }
+              cancelKill = terminateProcessTree(proc)
             }, timeout_ms)
           : undefined
 
@@ -267,12 +270,17 @@ export function runCommand(
 
       proc.on('error', (err) => {
         if (settled) {
-          // A failed signal can emit `error` while the timed-out child is still
-          // running. `close`, not `error`, is the boundary where its sandbox
-          // and SSH resources are safe to release.
+          // A failed signal can emit `error` while the terminating child is
+          // still running. `close`, not `error`, is the boundary where its
+          // sandbox and SSH resources are safe to release.
           return
         }
         settled = true
+        if (terminationRequested) {
+          opts.signal?.removeEventListener('abort', onAbort)
+          reject(err instanceof Error ? err : new Error(String(err)))
+          return
+        }
         finish(() => {
           reject(err instanceof Error ? err : new Error(String(err)))
         })
