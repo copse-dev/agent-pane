@@ -60,8 +60,7 @@ import {
   setActiveRunTurnTreeId,
 } from './thread-models.ts'
 import { getThreadExecutionContext } from './thread-execution-context.ts'
-import { isXcodeBuildMcpToolName } from './apple-development/xcodebuildmcp.ts'
-import { isAppleDevelopmentProjectEnrolled } from './apple-development/apple-development-service.ts'
+import { isAppleDevelopmentToolOffered } from './apple-development/apple-development-tool-scope.ts'
 import { dispatchInlineVisualization } from './inline-visualization.ts'
 import { updateMeta } from './thread-store.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
@@ -88,6 +87,7 @@ import {
   resolveTurnParameters,
   buildSubagentRoute,
   buildReviewRoute,
+  buildSpecialistCheckRoute,
   isBillableModel,
   isLocalChatModel,
 } from './providers/provider-selection.ts'
@@ -107,6 +107,12 @@ import {
 } from './post-turn-orchestration.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import { isEditTool } from '@copse/agent/review-subagent.ts'
+import {
+  createSpecialistCheckBudget,
+  specialistCheckDefinition,
+} from '@copse/agent/specialist-checks.ts'
+import { runApprovedEvidenceExploration, runSpecialistCheck } from './specialist-check-runner.ts'
+import { runExploreSubagent } from './subagent-service.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
 import { estimateConversationTokens } from '@copse/agent/trim-history.ts'
 import {
@@ -231,6 +237,7 @@ import { parsePluginModelSelection } from '@shared/plugin-model.ts'
 import { getPluginToolRuntimeController } from './plugins/plugin-tool-controller.ts'
 import { buildPluginModelTurn } from './plugins/plugin-model-turn.ts'
 import { perfMark, perfSpan } from './diagnostics/perf-trace.ts'
+import { startCoordinationDemoRun, type CoordinationDemoRun } from './coordination-demo.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -299,7 +306,7 @@ async function changedLinesBelow(min: number): Promise<boolean> {
 // with this model in this chat"). Per-thread, not process-global, so approving a
 // billable review in one project never silently authorizes it in another — the
 // same cross-project prompt-leakage guard the review-spend approval uses.
-const approvedReviewThreads = new Set<string>()
+const approvedReviewRoutes = new Set<string>()
 
 /**
  * Gate a billable post-turn review behind a spend approval, remembered per thread
@@ -312,7 +319,8 @@ async function ensureReviewApproved(
   threadId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (approvedReviewThreads.has(threadId)) return true
+  const approvalKey = `${threadId}\u0000${reviewModel}`
+  if (approvedReviewRoutes.has(approvalKey)) return true
   // Read afresh across the await below: AbortSignal.aborted is mutable, but
   // TypeScript keeps the narrowing from the first check through the await.
   const aborted = (): boolean => signal.aborted
@@ -329,7 +337,7 @@ async function ensureReviewApproved(
     signal,
   )
   if (aborted()) return false
-  if (approved && remember) approvedReviewThreads.add(threadId)
+  if (approved && remember) approvedReviewRoutes.add(approvalKey)
   return approved
 }
 
@@ -355,9 +363,9 @@ function parentTools(
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   const executionContext = getThreadExecutionContext()
-  if (!executionContext || !isAppleDevelopmentProjectEnrolled(executionContext.projectId)) {
-    tools = tools.filter((tool) => !isXcodeBuildMcpToolName(tool.name))
-  }
+  tools = tools.filter((tool) =>
+    isAppleDevelopmentToolOffered(tool.name, executionContext?.projectId),
+  )
   // Hide the advisor tool when the configured advisor is not more capable than
   // the executor (same model, or a confidently weaker annotated pairing) — it
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
@@ -1580,7 +1588,18 @@ export async function runAgent(
     remaining: () => budgetLedger.remaining(turnTreeId),
   }
 
+  let coordinationDemo: CoordinationDemoRun | undefined
   try {
+    if (typeof __COPSE_TEST_SCENARIOS__ !== 'undefined' && __COPSE_TEST_SCENARIOS__) {
+      coordinationDemo = startCoordinationDemoRun(
+        threadId,
+        userPrompt,
+        getAgentProjectRoot(),
+        getAgentExecutionRoot(),
+        controller.signal,
+        registry,
+      )
+    }
     const invokedSkills = options?.invokedSkills ?? []
     const resolvePluginSetting =
       options?.resolvePluginSetting ??
@@ -1594,7 +1613,10 @@ export async function runAgent(
     const providerOptions = {
       ...(options?.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
     }
-    const provider = options?.provider ?? (await buildProvider(model, threadId, providerOptions))
+    const provider =
+      coordinationDemo?.provider ??
+      options?.provider ??
+      (await buildProvider(model, threadId, providerOptions))
     // Stamp what this turn actually sends, not what the settings hold: the two
     // diverge once a value is sanitized away, a dial overrides it, or a role
     // caps it, and the settings can change afterwards. Silent for the common
@@ -1974,6 +1996,15 @@ export async function runAgent(
           signal: AbortSignal,
           toolCallId: string,
         ): Promise<ToolExecuteResult> => {
+          // `parentTools` only narrows what the model is offered; a model can still
+          // name any registered tool (e.g. through prompt injection). The registry
+          // is process-wide, so refuse Apple tools here as the ACP bridge does.
+          if (!isAppleDevelopmentToolOffered(name, getThreadExecutionContext()?.projectId)) {
+            throw new Error(
+              `Tool "${name}" is not available in this project. Apple Development tools run ` +
+                'only in a project enrolled in Apple Development on a local Mac.',
+            )
+          }
           const instructionContextPaths = instructionContextPathsForTool(name, args)
           if (instructionContextPaths.length > 0) {
             const activation = await activateNestedInstructionSources(
@@ -2117,7 +2148,9 @@ export async function runAgent(
         ): Promise<ToolExecuteResult> => {
           const startedAt = Date.now()
           try {
-            const raw = await runParentTool(name, args, signal, toolCallId)
+            const raw = await (coordinationDemo
+              ? coordinationDemo.execute(() => runParentTool(name, args, signal, toolCallId))
+              : runParentTool(name, args, signal, toolCallId))
             // The agent just wrote, moved, or removed an AGENTS.md: the turn's
             // discovery memo no longer describes the tree, so the next file tool
             // call re-walks. `run_shell` writes are not seen here (documented).
@@ -2230,6 +2263,7 @@ export async function runAgent(
                 sendChunk({
                   type: 'usage',
                   model: subagentUsageModel,
+                  subagentUsage: true,
                   inputTokens: subUsage.inputTokens,
                   outputTokens: subUsage.outputTokens,
                   ...(subUsage.cacheReadTokens !== undefined
@@ -2340,16 +2374,26 @@ export async function runAgent(
             !isBillableModel(reviewUsageModel) ||
             (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
 
-          const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+          const recordReviewUsage = (
+            usageModel: string,
+            u: { inputTokens: number; outputTokens: number },
+          ): void => {
             inputTokens += u.inputTokens
             outputTokens += u.outputTokens
             sendChunk({
               type: 'usage',
-              model: reviewUsageModel,
+              model: usageModel,
               inputTokens: u.inputTokens,
               outputTokens: u.outputTokens,
             })
           }
+          const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+            recordReviewUsage(reviewUsageModel, u)
+          }
+          // One hard ceiling spans every review pass and remediation re-review
+          // in this turn. A model cannot multiply the allowance by requesting
+          // another review cycle.
+          const specialistBudget = createSpecialistCheckBudget()
 
           await runPostTurnReviewCycle({
             reviewUsageModel,
@@ -2374,6 +2418,94 @@ export async function runAgent(
                 signal: controller.signal,
                 usageModel: reviewUsageModel,
                 onUsage: onReviewUsage,
+                runSpecialistCheck: async (request) => {
+                  const definition = specialistCheckDefinition(request.checkId)
+                  if (!definition) {
+                    return {
+                      status: 'inconclusive',
+                      claim: '',
+                      evidence: [],
+                      causalChain: [],
+                      counterEvidence: [],
+                      missingEvidence: [`Unknown specialist check: ${request.checkId}`],
+                      confidence: 0,
+                    }
+                  }
+                  const reservation = specialistBudget.tryReserve(request, definition)
+                  if (!reservation.allowed) {
+                    return {
+                      status: 'inconclusive',
+                      claim: '',
+                      evidence: [],
+                      causalChain: [],
+                      counterEvidence: [],
+                      missingEvidence: [reservation.reason],
+                      confidence: 0,
+                    }
+                  }
+                  const route = await buildSpecialistCheckRoute(definition.model)
+                  if (
+                    isBillableModel(route.usageModel) &&
+                    !(await ensureReviewApproved(route.usageModel, threadId, controller.signal))
+                  ) {
+                    return {
+                      status: 'inconclusive',
+                      claim: '',
+                      evidence: [],
+                      causalChain: [],
+                      counterEvidence: [],
+                      missingEvidence: ['Spending on the specialist model was not approved.'],
+                      confidence: 0,
+                    }
+                  }
+                  const explorerRoute = (await buildSubagentRoute(route.usageModel)) ?? {
+                    provider: reviewProvider,
+                    usageModel: reviewUsageModel,
+                    contextWindow: reviewContextWindow,
+                    toolSchemaReserve: reviewToolSchemaReserve,
+                  }
+                  return runSpecialistCheck({
+                    definition,
+                    request,
+                    provider: route.provider,
+                    registry,
+                    contextWindow: route.contextWindow,
+                    toolSchemaReserve: route.toolSchemaReserve,
+                    signal: controller.signal,
+                    usageModel: route.usageModel,
+                    onUsage: recordReviewUsage,
+                    gatherEvidence: (query, paths, signal) =>
+                      runApprovedEvidenceExploration({
+                        usageModel: explorerRoute.usageModel,
+                        billable: isBillableModel(explorerRoute.usageModel),
+                        ensureApproved: () =>
+                          ensureReviewApproved(explorerRoute.usageModel, threadId, signal),
+                        run: async () => {
+                          const explored = await runExploreSubagent({
+                            parentToolCallId: 'review-specialist-explorer',
+                            query,
+                            ...(paths.length > 0 ? { paths } : {}),
+                            parentGoal: request.question,
+                            provider: explorerRoute.provider,
+                            registry,
+                            contextWindow: explorerRoute.contextWindow,
+                            toolSchemaReserve: explorerRoute.toolSchemaReserve,
+                            signal,
+                            onChunk: (chunk) => {
+                              if (chunk.type === 'usage') {
+                                recordReviewUsage(explorerRoute.usageModel, {
+                                  inputTokens: chunk.inputTokens,
+                                  outputTokens: chunk.outputTokens,
+                                })
+                              }
+                            },
+                            usageModel: explorerRoute.usageModel,
+                          })
+                          return explored.summary
+                        },
+                      }),
+                  })
+                },
               }),
             runRemediationTurn: async (nudge) => {
               const remediation = { madeEdits: false }
@@ -2451,6 +2583,7 @@ export async function runAgent(
     })
     sendChunk(withHookHaltStopReason({ type: 'done' }, hookHaltStopReason))
   } finally {
+    coordinationDemo?.stop()
     // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
     // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
     // begins while this run's recording session is still open; being detached it

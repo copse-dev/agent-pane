@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { signalProcessTree } from '@copse/std/process-tree.ts'
-import { getRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
+import { takeRemoteProcessMeta } from '../ssh-workspace/remote-process-meta.ts'
 import { killRemoteProcessGroup } from './remote-process-kill.ts'
 
 /** Grace period between SIGTERM and the SIGKILL fallback when terminating a subprocess. */
@@ -51,9 +51,13 @@ export function terminateProcessTree(
   proc: ChildProcess,
   graceMs = SUBPROCESS_KILL_GRACE_MS,
 ): () => void {
-  const remote = getRemoteProcessMeta(proc)
+  const remote = takeRemoteProcessMeta(proc)
   if (remote) {
-    void killRemoteProcessGroup(remote.hostId, remote.pgid)
+    void killRemoteProcessGroup(remote.hostId, remote.pgid).catch((err: unknown) => {
+      console.warn(
+        `[process-kill] remote process cleanup failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
   }
   signalProcessTree(proc, 'SIGTERM')
 
