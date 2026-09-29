@@ -1008,6 +1008,19 @@ describe('codeql.yml workflow invariants', () => {
   })
 })
 
+describe('sync-model-catalog.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/sync-model-catalog.yml'), 'utf8')
+
+  it('provisions the hosted Linux sandbox before full validation', () => {
+    const provision = workflow.indexOf('Install sandbox dependencies for validation')
+    const validate = workflow.indexOf('- name: Validate')
+    assert.ok(provision >= 0 && validate > provision)
+    assert.match(workflow, /apt-get install -y --no-install-recommends bubblewrap socat/)
+    assert.match(workflow, /apparmor_restrict_unprivileged_userns=0/)
+    assert.ok(workflow.includes('bwrap --unshare-all --dev-bind / / --die-with-parent true'))
+  })
+})
+
 describe('acp-v2-watch.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/acp-v2-watch.yml'), 'utf8')
 
