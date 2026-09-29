@@ -91,6 +91,8 @@ interface BrowserTab {
   artefactProjectId: string | null
   /** Whether this tab has canvas content, rather than only restored identity metadata. */
   artefactContentReady: boolean
+  /** The live canvas body, retained so it can be downloaded as HTML. */
+  artefact: CanvasArtefact | null
   /** Collapse this tab's overflow ("…") menu, if open. */
   closeMenu: () => void
   /** Drawing overlay, mounted on first use; null until the user annotates. */
@@ -171,6 +173,10 @@ function shareableWebContentsId(tab: BrowserTab): number | null {
   } catch {
     return null
   }
+}
+
+function downloadableArtefact(tab: BrowserTab): CanvasArtefact | null {
+  return tab.artefact?.mimeType === 'text/html' ? tab.artefact : null
 }
 
 const WEBVIEW_PREFS = 'contextIsolation=true'
@@ -1055,6 +1061,7 @@ export function mountBrowserPane(
     // the window is next opened.
     tab.artefactProjectId = artefact.owner?.projectId ?? store.getState().activeProjectId
     tab.artefactContentReady = true
+    tab.artefact = artefact
     tab.urlInput.value = ''
     tab.urlInput.placeholder = artefact.title
     syncTabLabel(tab)
@@ -1167,6 +1174,12 @@ export function mountBrowserPane(
       downloadIcon('ui-icon ui-icon-sm'),
       el('span', {}, 'Export PDF'),
     )
+    const downloadCanvasItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      downloadIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Download canvas'),
+    )
     const openExternalItem = el(
       'button',
       { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
@@ -1185,6 +1198,7 @@ export function mountBrowserPane(
       shareTextItem,
       shareScreenshotItem,
       el('div', { class: 'browser-menu-separator', role: 'separator' }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem,
@@ -1249,6 +1263,7 @@ export function mountBrowserPane(
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       closeMenu: () => {
         setMenuOpen(false)
@@ -1293,6 +1308,8 @@ export function mountBrowserPane(
         const shareableId = shareableWebContentsId(tab)
         shareTextItem.disabled = shareableId === null || !api
         shareScreenshotItem.disabled = shareableId === null || !api
+        downloadCanvasItem.disabled =
+          downloadableArtefact(tab) === null || !api?.browser.exportArtefact
         // Printing needs a main-process guest; the demo/site iframe host has no
         // `exportPdf`, so leave the item visible but inert there.
         exportPdfItem.disabled = shareableId === null || !api?.browser.exportPdf
@@ -1342,6 +1359,24 @@ export function mountBrowserPane(
         })
         .catch((error: unknown) => {
           showErrorToast('Could not export PDF', error)
+        })
+    })
+    downloadCanvasItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const artefact = downloadableArtefact(tab)
+      const exportArtefact = api?.browser.exportArtefact
+      if (!artefact || !exportArtefact) return
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body,
+      })
+        .then((filePath) => {
+          // Null means the user cancelled the save dialog — stay quiet.
+          if (filePath) showToast(`Downloaded canvas to ${filePath}`)
+        })
+        .catch((error: unknown) => {
+          showErrorToast('Could not download canvas', error)
         })
     })
     openExternalItem.addEventListener('click', () => {

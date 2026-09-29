@@ -1054,6 +1054,7 @@ describe('browser pane requested URLs', () => {
     const sharedPageIds: number[] = []
     const sharedScreenshotIds: number[] = []
     const exportedPdfIds: number[] = []
+    const exportedArtefacts: { title: string; mimeType: string; body: string }[] = []
     const attachedText: BrowserTextShare[] = []
     const attachedImages: BrowserImageShare[] = []
     let shareTextHandler: ((share: BrowserTextShare) => void) | undefined
@@ -1070,6 +1071,14 @@ describe('browser pane requested URLs', () => {
       'browser.exportPdf': async (id: number): Promise<string | null> => {
         exportedPdfIds.push(id)
         // Cancelled export: the pane must not toast a path it never wrote.
+        return null
+      },
+      'browser.exportArtefact': async (artefact: {
+        title: string
+        mimeType: string
+        body: string
+      }): Promise<string | null> => {
+        exportedArtefacts.push(artefact)
         return null
       },
       'browser.onShareText': (handler: (share: BrowserTextShare) => void): (() => void) => {
@@ -1127,17 +1136,25 @@ describe('browser pane requested URLs', () => {
       const items = menu.querySelectorAll<HTMLButtonElement>('.browser-menu-item')
       const shareTextItem = items[0]
       const shareScreenshotItem = items[1]
-      const exportPdfItem = items[2]
-      const openExternalItem = items[3]
-      const inspectorItem = items[4]
+      const downloadCanvasItem = items[2]
+      const exportPdfItem = items[3]
+      const openExternalItem = items[4]
+      const inspectorItem = items[5]
       assert.ok(
-        shareTextItem && shareScreenshotItem && exportPdfItem && openExternalItem && inspectorItem,
+        shareTextItem &&
+          shareScreenshotItem &&
+          downloadCanvasItem &&
+          exportPdfItem &&
+          openExternalItem &&
+          inspectorItem,
       )
       assert.equal(shareTextItem.textContent, 'Share page text')
       assert.equal(shareScreenshotItem.textContent, 'Share screenshot')
+      assert.equal(downloadCanvasItem.textContent, 'Download canvas')
       assert.equal(exportPdfItem.textContent, 'Export PDF')
       assert.equal(shareTextItem.disabled, false)
       assert.equal(shareScreenshotItem.disabled, false)
+      assert.equal(downloadCanvasItem.disabled, true, 'a regular page cannot download a canvas')
       assert.equal(exportPdfItem.disabled, false, 'a live guest enables PDF export')
       assert.equal(openExternalItem.disabled, false, 'a real page enables open-in-default-browser')
 
@@ -1175,6 +1192,31 @@ describe('browser pane requested URLs', () => {
       openExternalItem.click()
       assert.deepEqual(opened, ['https://example.com/page'])
       assert.ok(menu.hasAttribute('hidden'), 'selecting an item closes the menu')
+
+      openCanvasArtefact(store, {
+        title: 'Sales dashboard',
+        mimeType: 'text/html',
+        body: '<!doctype html><style>body{color:red}</style><h1>Sales</h1>',
+      })
+      const canvasPanel = viewer.querySelector('.browser-tab-panel.is-active')
+      assert.ok(canvasPanel, 'canvas artefact should open its Browser tab')
+      const canvasMenuBtn = canvasPanel.querySelector<HTMLButtonElement>('.browser-menu-btn')
+      const canvasMenu = canvasPanel.querySelector<HTMLElement>('.browser-menu')
+      assert.ok(canvasMenuBtn && canvasMenu)
+      canvasMenuBtn.click()
+      const canvasDownloadItem = [
+        ...canvasMenu.querySelectorAll<HTMLButtonElement>('.browser-menu-item'),
+      ].find((item) => item.textContent === 'Download canvas')
+      assert.ok(canvasDownloadItem)
+      assert.equal(canvasDownloadItem.disabled, false, 'an HTML canvas enables download')
+      canvasDownloadItem.click()
+      assert.deepEqual(exportedArtefacts, [
+        {
+          title: 'Sales dashboard',
+          mimeType: 'text/html',
+          body: '<!doctype html><style>body{color:red}</style><h1>Sales</h1>',
+        },
+      ])
 
       menuBtn.click()
       webview.dispatchEvent(new Event('focus'))

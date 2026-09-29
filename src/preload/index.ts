@@ -72,6 +72,8 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
+      ipcRenderer.invoke('browser:export-canvas', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {
         handler(url, partition)
