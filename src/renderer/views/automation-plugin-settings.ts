@@ -18,6 +18,7 @@ import {
 } from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { mountBranchCiEditor } from './branch-ci-editor.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 function cleanIpcError(error: unknown): string {
@@ -161,7 +162,7 @@ export function createAutomationPluginSettings(
 
   const heading = el('div', { class: 'automation-plugin-heading' })
   heading.append(
-    el('div', { class: 'plugin-settings-heading' }, 'Schedules'),
+    el('div', { class: 'plugin-settings-heading' }, 'Automations'),
     el(
       'button',
       {
@@ -179,13 +180,13 @@ export function createAutomationPluginSettings(
     'p',
     { class: 'automation-scope' },
     project
-      ? `Project: ${project.name} · local time · Copse must be running`
-      : 'Open a project to configure its schedules.',
+      ? `Project: ${project.name} · Copse must be running`
+      : 'Open a project to configure automations.',
   )
   const pluginNotice = (): string =>
     pluginEnabled
-      ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses.'
-      : 'Enable this plugin to arm schedules. Existing schedules remain editable while disabled.'
+      ? 'Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path.'
+      : 'Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.'
   const notice = el('p', { class: 'automation-notice' }, pluginNotice())
   const status = el('div', { class: 'automation-status', role: 'status', hidden: true })
   const list = el('div', { class: 'automation-list' })
@@ -331,6 +332,17 @@ export function createAutomationPluginSettings(
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
   root.append(heading, scope, notice, status, list, form)
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+  })
   // A schedule fires unattended, potentially months after it was written, so it
   // stores a rule rather than a model id — the same treatment every plugin-owned
   // model setting gets. The rule resolves when the task is created, against the
@@ -366,6 +378,7 @@ export function createAutomationPluginSettings(
 
   function closeForm(): void {
     editingId = null
+    ciEditor.showList()
     form.hidden = true
     list.hidden = false
     heading.hidden = false
@@ -596,6 +609,7 @@ export function createAutomationPluginSettings(
     // chat model, since the chat model is a choice about right now.
     const configuredModel = schedule?.model.trim() ?? ''
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL
+    ciEditor.hideForSchedule()
     form.hidden = false
     nameInput.focus()
     const options = await fetchDynamicModelOptions(defaultModel)
@@ -720,7 +734,10 @@ export function createAutomationPluginSettings(
     pendingReveal = undefined
     const schedule = schedules.find((candidate) => candidate.id === scheduleId)
     if (!schedule) {
-      showStatus('That automation is no longer scheduled. Its finished runs stay in the sidebar.')
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          'That automation is no longer scheduled or configured. Its finished runs stay in the sidebar.',
+        )
       return
     }
     void openForm(schedule).then(() => {
@@ -734,6 +751,7 @@ export function createAutomationPluginSettings(
       const [loadedSchedules, loadedPermissions] = await Promise.all([
         api.automations.list(projectId),
         api.automations.permissionOptions(projectId),
+        ciEditor.refresh(),
       ])
       schedules = loadedSchedules
       availablePermissions = loadedPermissions
@@ -804,6 +822,7 @@ export function createAutomationPluginSettings(
       pluginEnabled = enabled
       notice.textContent = pluginNotice()
       renderList()
+      ciEditor.setPluginEnabled(enabled)
     },
   })
 }

@@ -14,7 +14,7 @@ import { ensureThreadMessages } from './thread-hydration.ts'
 
 export interface AutomationControllerApi {
   agent: Pick<ApiClient['agent'], 'prepareCheckout' | 'run'>
-  automations: Pick<ApiClient['automations'], 'onTriggered'>
+  automations: Pick<ApiClient['automations'], 'onTriggered' | 'canStart'>
   threads: Pick<ApiClient['threads'], 'loadProject'>
 }
 
@@ -62,6 +62,17 @@ export function attachAutomationController(
       await ensureThreadMessages(projectId, threadId)
       hydrated = true
       if (store.getState().activeProjectId !== projectId) return
+      const admission = await api.automations.canStart(projectId, threadId)
+      if (!admission.allowed) {
+        addMessage(
+          store,
+          threadId,
+          'error',
+          admission.reason ?? 'This automation run is no longer eligible.',
+        )
+        if (!admission.retryable) setThreadDraftPrompt(store, threadId, '')
+        return
+      }
       if (!initial.worktreeChoice) {
         const prepared = await api.agent.prepareCheckout(
           projectId,
@@ -76,6 +87,17 @@ export function attachAutomationController(
 
       const current = getThreadById(store, threadId)
       if (!current || !isPendingAutomation(current)) return
+      const beforeDispatch = await api.automations.canStart(projectId, threadId)
+      if (!beforeDispatch.allowed) {
+        addMessage(
+          store,
+          threadId,
+          'error',
+          beforeDispatch.reason ?? 'This automation run is no longer eligible.',
+        )
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store, threadId, '')
+        return
+      }
       addMessage(store, threadId, 'user', prompt)
       setThreadDraftPrompt(store, threadId, '')
       startAutomationTurnTree(store, threadId)

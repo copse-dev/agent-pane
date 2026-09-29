@@ -2334,6 +2334,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
 .automation-plugin-heading {
   justify-content: space-between;
   gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+.automation-plugin-heading .automation-add-btn {
+  margin-left: auto;
+}
+.automation-ci-list {
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-md);
 }
 .automation-scope,
 .automation-notice,
@@ -2453,9 +2461,14 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   padding: var(--spacing-sm);
   font: inherit;
 }
-.automation-prompt-input {
+.automation-prompt-input,
+.automation-ci-prompt {
   min-height: 88px;
   resize: vertical;
+}
+.automation-ci-form .automation-label:has(.automation-ci-prompt),
+.automation-ci-form .automation-ci-summary {
+  grid-column: 1 / -1;
 }
 .automation-schedule-fields,
 .automation-permissions {

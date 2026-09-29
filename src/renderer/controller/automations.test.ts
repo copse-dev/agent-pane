@@ -67,6 +67,7 @@ function controllerApi(loaded: Thread[]): {
       },
     },
     automations: {
+      canStart: () => Promise.resolve({ allowed: true }),
       onTriggered(handler) {
         triggerHandler = handler
         return () => {
@@ -180,6 +181,7 @@ test('a checkout failure preserves the scheduled prompt as a draft', async (cont
     },
     automations: {
       onTriggered: () => () => {},
+      canStart: () => Promise.resolve({ allowed: true }),
     },
     threads: {
       loadProject: () => Promise.resolve([]),
@@ -230,7 +232,10 @@ test('the IPC wrapper is stripped from the failure note', async (context) => {
         ),
       run: () => Promise.resolve(),
     },
-    automations: { onTriggered: () => () => {} },
+    automations: {
+      onTriggered: () => () => {},
+      canStart: () => Promise.resolve({ allowed: true }),
+    },
     threads: { loadProject: () => Promise.resolve([]) },
   }
   const detach = attachAutomationController(store, api)

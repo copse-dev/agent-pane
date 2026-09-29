@@ -6,6 +6,8 @@ import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  BranchCiAutomation,
+  BranchCiAutomationInput,
 } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -82,6 +84,16 @@ function stubApi(
           disposition: 'started',
         })
       },
+      listBranchCi: () => Promise.resolve([]),
+      upsertBranchCi: () => Promise.reject(new Error('Not configured in this test')),
+      removeBranchCi: () => Promise.resolve(),
+      testBranchCi: () =>
+        Promise.resolve({
+          repository: 'github.com/owner/repo',
+          branch: 'main',
+          latestFailure: null,
+        }),
+      canStart: () => Promise.resolve({ allowed: true }),
       onTriggered(): () => void {
         return (): void => {}
       },
@@ -426,5 +438,67 @@ describe('automation plugin settings detail', () => {
     filter.dispatchEvent(new Event('input', { bubbles: true }))
     assert.equal(root.querySelectorAll('.automation-permission-row').length, 1)
     assert.match(root.textContent, /1 of 3 permissions/)
+  })
+
+  it('shows branch CI events and saves a new trigger from the shared manager', async () => {
+    const { api } = stubApi([])
+    const saved: BranchCiAutomation = {
+      v: 1,
+      id: '11111111-1111-4111-8111-111111111111',
+      projectId: 'project-a',
+      name: 'Investigate CI',
+      trigger: { kind: 'github-ci-failed', repository: 'github.com/owner/repo', branch: 'main' },
+      prompt: 'Investigate the failure.',
+      model: 'gpt-5.4',
+      enabled: false,
+      maxLiveWorktrees: 1,
+      revision: '22222222-2222-4222-8222-222222222222',
+      createdAt: 1,
+      updatedAt: 1,
+      seenDeliveries: [],
+    }
+    const ciUpserts: BranchCiAutomationInput[] = []
+    api.automations.listBranchCi = (): Promise<BranchCiAutomation[]> => Promise.resolve([saved])
+    api.automations.upsertBranchCi = (_projectId, input): Promise<BranchCiAutomation> => {
+      ciUpserts.push(input)
+      return Promise.resolve(saved)
+    }
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    assert.match(root.querySelector('.automation-ci-list')?.textContent ?? '', /owner\/repo · main/)
+    root.querySelector<HTMLButtonElement>('.automation-add-ci-btn')?.click()
+    await tick()
+    const ciForm = root.querySelector<HTMLFormElement>('.automation-ci-form')
+    assert.ok(ciForm)
+    assert.equal(ciForm.hidden, false)
+    assert.equal(
+      root.querySelector<HTMLFormElement>('.automation-form:not(.automation-ci-form)')?.hidden,
+      true,
+    )
+    const name = ciForm.querySelector<HTMLInputElement>('.automation-ci-name')
+    const branch = ciForm.querySelector<HTMLInputElement>('.automation-ci-branch')
+    const prompt = ciForm.querySelector<HTMLTextAreaElement>('.automation-ci-prompt')
+    assert.ok(name && branch && prompt)
+    name.value = 'Investigate release CI'
+    branch.value = 'release/next'
+    branch.dispatchEvent(new Event('input', { bubbles: true }))
+    prompt.value = 'Find the failing check.'
+    assert.match(ciForm.querySelector('.automation-ci-summary')?.textContent ?? '', /release\/next/)
+    ciForm.querySelector<HTMLButtonElement>('.automation-ci-preview')?.click()
+    await tick()
+    assert.match(
+      root.querySelector('.automation-status')?.textContent ?? '',
+      /did not start a task/,
+    )
+    ciForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.equal(ciUpserts.length, 1)
+    assert.equal(ciUpserts[0]?.branch, 'release/next')
+    assert.equal(ciUpserts[0].prompt, 'Find the failing check.')
   })
 })
