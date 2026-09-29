@@ -1,8 +1,5 @@
 import { parseComplexityWord, type RoadmapComplexity } from '@shared/roadmap/complexity.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { getKnowledgeNote, updateKnowledgeNote } from './storage/knowledge-store.ts'
@@ -40,15 +37,14 @@ const CLASSIFY_ASK =
   'Reply with ONLY the word.\n\nTask:\n'
 
 export async function classifyRoadmapComplexity(prompt: string): Promise<RoadmapComplexity | null> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
   const ask = CLASSIFY_ASK + prompt.slice(0, 2000)
   try {
-    const { text, usage } = await completeTextWithUsage(provider, ask, CLASSIFY_TIMEOUT_MS)
+    const { text, usage } = await completeTextWithUsage(route.provider, ask, CLASSIFY_TIMEOUT_MS)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model,
+        model: route.model,
         source: 'small-tasks',
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,

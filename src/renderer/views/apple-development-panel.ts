@@ -218,7 +218,13 @@ export function createAppleDevelopmentPanel(
     const headingActions = el('div', { class: 'apple-development-heading-actions' })
     panel.append(el('div', { class: 'apple-development-heading' }, title, status, headingActions))
 
-    if (options.allowEnrollment && options.pluginEnabled !== false) {
+    // Enrolling cannot help on a host that cannot run Xcode, so only offer it on
+    // a supported host. An existing enrollment can still be removed anywhere.
+    if (
+      options.allowEnrollment &&
+      options.pluginEnabled !== false &&
+      (state.supportedHost || state.enrolled)
+    ) {
       const enrollment = el(
         'button',
         { type: 'button', class: 'btn btn-secondary' },

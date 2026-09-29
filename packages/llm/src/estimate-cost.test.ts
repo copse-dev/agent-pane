@@ -5,6 +5,7 @@ import {
   formatThreadUsageCost,
   costForModelUsage,
   costForModelUsageWithDetails,
+  hasZeroModelPricing,
 } from './estimate-cost.ts'
 
 describe('estimateUsageCost', () => {
@@ -250,5 +251,27 @@ describe('estimateUsageCost', () => {
       },
     )
     assert.deepEqual(result, { costUsd: 0, tierPricingFallback: false })
+  })
+})
+
+describe('local-free and zero-rate wording', () => {
+  it('leaves off "(+ local free)" when the caller explains local usage itself', () => {
+    const byModel = {
+      'claude-sonnet-4-6': { inputTokens: 1_000_000, outputTokens: 0 },
+      'lmstudio:qwen': { inputTokens: 1_000, outputTokens: 0 },
+    }
+    assert.equal(estimateUsageCost(byModel), '~$3.00 (+ local free)')
+    assert.equal(estimateUsageCost(byModel, undefined, { localFreeExplained: true }), '~$3.00')
+  })
+
+  it('tells an explicit zero-rate route from an unpriced or paid one', () => {
+    const pricing = {
+      'openrouter:vendor/free': { inputPricePerMTok: 0, outputPricePerMTok: 0 },
+      'openrouter:vendor/paid': { inputPricePerMTok: 1, outputPricePerMTok: 2 },
+    }
+    assert.equal(hasZeroModelPricing('openrouter:vendor/free', pricing), true)
+    assert.equal(hasZeroModelPricing('openrouter:vendor/paid', pricing), false)
+    assert.equal(hasZeroModelPricing('openrouter:vendor/unknown', pricing), false)
+    assert.equal(hasZeroModelPricing('lmstudio:qwen', pricing), false)
   })
 })

@@ -88,6 +88,12 @@ REVIEW_JSON: {"issuesFound":true,"requestFollowUp":true,"todoUpdates":[{"id":"t1
     assert.match(REVIEW_SYSTEM_PROMPT, /read-only/i)
     assert.match(REVIEW_SYSTEM_PROMPT, /Do NOT write files/i)
   })
+
+  it('keeps specialist evidence subordinate to the primary reviewer verdict', () => {
+    assert.match(REVIEW_SYSTEM_PROMPT, /run_specialist_check/)
+    assert.match(REVIEW_SYSTEM_PROMPT, /you alone produce REVIEW_JSON/)
+    assert.match(REVIEW_SYSTEM_PROMPT, /at most three/)
+  })
 })
 
 // #2506. The system prompt asks for follow-up on two grounds — "code fixes are
