@@ -250,6 +250,50 @@ describe('projectStoreNamespaceDir', () => {
     assert.equal(existsSync(legacy), false)
   })
 
+  it('migrates legacy data when the project is relocated before first store access', async () => {
+    const base = tempBase()
+    const oldRoot = '/repos/relocated-before-store'
+    const legacy = join(base, legacyName(oldRoot))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'notes.txt'), 'legacy notes')
+    storageSet('projects', [
+      { id: 'project-relocated-before-store', path: oldRoot, name: 'relocated' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    const turn = await resolveThreadExecutionContext('project-relocated-before-store', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    // The project moves while the turn runs, before it first uses a store.
+    storageSet('projects', [
+      { id: 'project-relocated-before-store', path: '/moved/relocated', name: 'relocated' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+
+    const dir = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(dir, join(base, 'project-relocated-before-store'))
+    assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'legacy notes')
+    assert.equal(existsSync(legacy), false)
+  })
+
+  it('never adopts a root no context was resolved at, even for a known project id', () => {
+    const base = tempBase()
+    const legacyOther = join(base, legacyName('/repos/someone-else'))
+    mkdirSync(legacyOther, { recursive: true })
+    writeFileSync(join(legacyOther, 'notes.txt'), 'not yours')
+    openTwoProjects('project-b')
+
+    // A context claiming project-a but carrying a root it was never resolved at.
+    runWithThreadExecutionContext(turnIn('project-a', '/repos/someone-else'), () =>
+      projectStoreNamespaceDir(base),
+    )
+
+    assert.equal(readFileSync(join(legacyOther, 'notes.txt'), 'utf8'), 'not yours')
+  })
+
   it("migrates a background turn's own legacy directory under its own id", () => {
     const base = tempBase()
     const legacyA = join(base, legacyName('/repos/alpha'))
