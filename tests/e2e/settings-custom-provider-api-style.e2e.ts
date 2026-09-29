@@ -51,8 +51,9 @@ describe('custom provider API format', () => {
     ])
     assert.match(await advanced.getText(), /OpenAI Responses API/)
 
-    const geometry = await apiStyle.getRect()
-    const dialogGeometry = await $('#settings-dialog').getRect()
+    const geometry = await browser.getElementRect(apiStyle.elementId)
+    const dialog = $('#settings-dialog')
+    const dialogGeometry = await browser.getElementRect(dialog.elementId)
     assert.ok(geometry.width >= 180)
     assert.ok(geometry.height > 0)
     assert.ok(geometry.x >= dialogGeometry.x)
