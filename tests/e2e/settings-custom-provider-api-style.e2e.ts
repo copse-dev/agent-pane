@@ -36,7 +36,7 @@ describe('custom provider API format', () => {
 
     const providers = $('#settings-providers-host fieldset')
     await expect(providers).toBeDisplayed()
-    await providers.$('button=Acme Responses').click()
+    await providers.$('.provider-chip[data-provider="acme"]').click()
     const advanced = providers.$('.provider-advanced')
     await advanced.$('summary').click()
 

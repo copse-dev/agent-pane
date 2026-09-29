@@ -423,6 +423,7 @@ export function createCustomProvidersSection(
         },
         chipLabel(key),
       )
+      chip.dataset['provider'] = key
       chip.classList.toggle('active', key === selected)
       if (key !== 'other' && configured.has(key)) {
         chip.append(el('span', { class: 'provider-chip-dot', title: 'Key configured' }))
