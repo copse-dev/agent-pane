@@ -543,6 +543,19 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
+  it('lists Sonnet 5.5 before the retained Sonnet 5 and 4.6 cloud options', async () => {
+    const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
+    const cloud = options.filter((o) => o.group === 'Cloud models')
+    const values = cloud.map((o) => o.value)
+    assert.ok(values.includes('claude-sonnet-5-5'))
+    assert.ok(values.indexOf('claude-sonnet-5-5') < values.indexOf('claude-sonnet-5'))
+    assert.ok(values.indexOf('claude-sonnet-5') < values.indexOf('claude-sonnet-4-6'))
+    assert.match(
+      cloud.find((o) => o.value === 'claude-sonnet-5-5')?.label ?? '',
+      /^Claude Sonnet 5\.5\b/,
+    )
+  })
+
   it('keeps a selected-but-unconfigured ACP agent selectable', async () => {
     const options = await fetchModelOptions(mockApi(), 'acp:gemini-cli')
     const current = options.find((o) => o.value === 'acp:gemini-cli')
