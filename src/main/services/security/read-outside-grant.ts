@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { isGuardedYoloActive } from './guarded-yolo.ts'
 
@@ -11,13 +11,43 @@ import { isGuardedYoloActive } from './guarded-yolo.ts'
  * Guarded YOLO retains its separate, broader outside-read authority while active.
  * The decision log records both the approval and each use of a grant.
  */
-const grantedPaths = new Map<string, Map<string, boolean>>()
+interface GrantedPath {
+  readonly directory: boolean
+  readonly identity: PathIdentity | null
+}
 
-function isDirectory(path: string): boolean {
+interface PathIdentity {
+  readonly device: bigint
+  readonly inode: bigint
+  readonly realpath: string
+}
+
+const grantedPaths = new Map<string, Map<string, GrantedPath>>()
+
+function inspectPath(path: string): GrantedPath {
   try {
-    return statSync(path).isDirectory()
+    const stat = statSync(path, { bigint: true })
+    return {
+      directory: stat.isDirectory(),
+      identity: { device: stat.dev, inode: stat.ino, realpath: realpathSync.native(path) },
+    }
   } catch {
-    // A missing or inaccessible path cannot safely grant its descendants.
+    // A missing or inaccessible path cannot safely grant its descendants. Its
+    // exact token remains re-readable, matching the existing glob contract.
+    return { directory: false, identity: null }
+  }
+}
+
+function stillNamesApprovedPath(path: string, identity: PathIdentity | null): boolean {
+  if (identity === null) return true
+  try {
+    const stat = statSync(path, { bigint: true })
+    return (
+      stat.dev === identity.device &&
+      stat.ino === identity.inode &&
+      realpathSync.native(path) === identity.realpath
+    )
+  } catch {
     return false
   }
 }
@@ -52,10 +82,10 @@ function coversPath(granted: string, directory: boolean, target: string): boolea
 }
 
 export function grantReadOutsideProject(threadId: string, targets: readonly string[]): void {
-  const paths = grantedPaths.get(threadId) ?? new Map<string, boolean>()
+  const paths = grantedPaths.get(threadId) ?? new Map<string, GrantedPath>()
   for (const target of targets) {
     const path = resolve(target)
-    paths.set(path, isDirectory(path))
+    paths.set(path, inspectPath(path))
   }
   grantedPaths.set(threadId, paths)
 }
@@ -70,7 +100,11 @@ export function hasReadOutsideProjectGrant(
   if (!paths) return false
   return targets.every((target) => {
     const resolved = resolve(target)
-    return [...paths].some(([granted, directory]) => coversPath(granted, directory, resolved))
+    return [...paths].some(
+      ([granted, grant]) =>
+        stillNamesApprovedPath(granted, grant.identity) &&
+        coversPath(granted, grant.directory, resolved),
+    )
   })
 }
 
