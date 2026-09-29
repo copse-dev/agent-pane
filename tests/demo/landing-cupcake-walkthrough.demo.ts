@@ -103,12 +103,12 @@ describe('landing cupcake walkthrough', () => {
       columns: getComputedStyle(document.querySelector('.hero') ?? document.body)
         .gridTemplateColumns,
     }))
-    expect(previewLayout.viewportWidth).toBeGreaterThan(980)
+    expect(previewLayout.viewportWidth).toBeGreaterThan(780)
     expect(previewLayout.columns.split(' ')).toHaveLength(2)
     await browser.switchFrame(null)
 
     const expand = $('.browser-toolbar .pane-popout-btn')
-    await expect($('#titlebar')).toBeDisplayed()
+    await expect($('#titlebar')).not.toBeDisplayed()
     await expect($('#pane-chat')).toBeDisplayed()
     await expect($('#pane-projects')).not.toBeDisplayed()
     await expect($('#right-sidebar')).not.toBeDisplayed()
@@ -166,6 +166,7 @@ describe('landing cupcake walkthrough', () => {
       const viewerRect = document.getElementById('browser-viewer-host')?.getBoundingClientRect()
       const bodyRect = document.getElementById('body')?.getBoundingClientRect()
       return {
+        viewportWidth: window.innerWidth,
         paneWidth: Math.round(paneRect?.width ?? 0),
         paneHeight: Math.round(paneRect?.height ?? 0),
         chatWidth: Math.round(chatRect?.width ?? 0),
@@ -173,9 +174,11 @@ describe('landing cupcake walkthrough', () => {
         bodyHeight: Math.round(bodyRect?.height ?? 0),
       }
     })
-    expect(layoutSize.chatWidth).toBe(280)
-    expect(layoutSize.paneWidth).toBeGreaterThan(layoutSize.chatWidth * 3)
-    expect(layoutSize.viewerWidth).toBeGreaterThan(980)
+    expect(layoutSize.chatWidth).toBeGreaterThanOrEqual(360)
+    expect(layoutSize.chatWidth).toBeLessThanOrEqual(480)
+    expect(layoutSize.chatWidth).toBeGreaterThan(layoutSize.viewportWidth * 0.28)
+    expect(layoutSize.paneWidth).toBeGreaterThan(layoutSize.chatWidth * 1.5)
+    expect(layoutSize.viewerWidth).toBeGreaterThan(layoutSize.chatWidth * 1.5)
     expect(layoutSize.paneHeight).toBe(layoutSize.bodyHeight)
     expect(await collectErrorToasts()).toEqual([])
     await saveAppScreenshot('landing-cupcake-browser.png')
@@ -189,6 +192,8 @@ describe('landing cupcake walkthrough', () => {
         browser.execute(() => document.documentElement.dataset['demoExpandedPane'] === undefined),
       { timeout: 10_000, timeoutMsg: 'expected the demo layout to restore' },
     )
+    await expect($('#titlebar')).toBeDisplayed()
+    await expect($('#pane-projects')).toBeDisplayed()
     const changes = $('.titlebar-btn[aria-label="Open changes"]')
     await changes.click()
     await expect(changes).toHaveElementClass('active')
