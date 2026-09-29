@@ -116,6 +116,7 @@ function mountWithSettings(threads: Thread[], activeThreadId: string): HTMLEleme
     'bundledSkillPlugins.list': () => Promise.resolve([]),
     'automations.list': () => Promise.resolve([schedule]),
     'automations.permissionOptions': () => Promise.resolve([]),
+    'automations.listBranchCi': () => Promise.resolve([]),
   })
   const host = document.createElement('div')
   document.body.append(host)
