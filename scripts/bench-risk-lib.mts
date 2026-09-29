@@ -275,7 +275,8 @@ export function isFixTitle(title: string): boolean {
 export function mentionPattern(number: number, repo: string): RegExp {
   const url = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(
-    `(?:(?<![\\w/&])#|github\\.com/${url}/(?:pull|issues)/)${String(number)}(?![0-9])`,
+    `(?:(?<![\\w/&])#|(?<![\\w/:])https?://(?:www\\.)?github\\.com/${url}/(?:pull|issues)/)${String(number)}(?![0-9])`,
+    'i',
   )
 }
 

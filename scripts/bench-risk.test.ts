@@ -97,6 +97,10 @@ describe('evidence', () => {
     assert.match('see https://github.com/copse-dev/agent-pane/pull/100', pattern)
     assert.doesNotMatch('see #1000', pattern)
     assert.doesNotMatch('https://redirect.github.com/other/repo/issues/100', pattern)
+    assert.doesNotMatch(
+      'https://evil.example/path/github.com/copse-dev/agent-pane/pull/100',
+      pattern,
+    )
     assert.doesNotMatch('&#100;', pattern)
     assert.equal(
       excerptAround('x '.repeat(200) + '#100 broke it', pattern, 10),
