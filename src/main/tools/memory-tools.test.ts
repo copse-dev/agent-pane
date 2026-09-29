@@ -224,6 +224,21 @@ describe('memory-tools', () => {
     assert.match(all, /recall with a query/)
   })
 
+  it('keeps the external-content caution when clipping a memory with a huge title', async () => {
+    addKnowledgeNote({
+      type: MEMORY_TYPE,
+      title: 'T'.repeat(RECALL_ALL_MAX_CHARS * 2),
+      body: 'from the web',
+      fields: { [EXTERNAL_CONTEXT_FIELD]: 'true' },
+    })
+
+    const all = await run(recallTool, {})
+
+    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.match(all, /ingested external content/)
+    assert.match(all, /Memory truncated/)
+  })
+
   it('does not taint the turn for a tainted memory the cap left out', async () => {
     const big = 'x'.repeat(RECALL_ALL_MAX_CHARS)
     addKnowledgeNote({ type: MEMORY_TYPE, title: 'Shown', body: big })
