@@ -116839,10 +116839,8 @@ function downloadableArtefact(tab) {
   return tab.artefact?.mimeType === "text/html" ? tab.artefact : null;
 }
 function seededArtefact(value) {
-  if (!value || typeof value !== "object") return null;
-  const title = Reflect.get(value, "title");
-  const mimeType = Reflect.get(value, "mimeType");
-  const body = Reflect.get(value, "body");
+  if (!isRecord(value)) return null;
+  const { title, mimeType, body } = value;
   if (typeof title !== "string" || typeof mimeType !== "string" || typeof body !== "string") {
     return null;
   }
@@ -118061,6 +118059,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
 var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
+    init_unknown_value3();
     init_helpers();
     init_icons();
     init_pane_maximize_button();
