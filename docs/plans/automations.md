@@ -82,7 +82,7 @@ Prototype boundaries:
 - Copse must be running;
 - standard five-field cron, evaluated once per minute;
 - no missed-run catch-up, retry/backoff, cross-schedule concurrency cap, or process recovery;
-- no webhook/event triggers;
+- no webhook ingress; an app-open GitHub Actions branch-failure poller is the first event adapter;
 - no headless execution for an inactive project or closed renderer.
 
 The minute clock is now a durable recurring task owned by #1081's shared supervisor;

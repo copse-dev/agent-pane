@@ -907,11 +907,17 @@ export async function runAgent(
   // for stable placeholders before the prompt leaves the device — for every
   // provider path (local, remote, ACP). The redacted form is also what we persist
   // to thread history, so placeholders stay consistent across turns. No-op when
-  // the feature is off or Rampart is unavailable.
-  const outboundPrompt = await redactUserContent(
+  // the feature is off. When it is on but Rampart cannot run, the prompt goes out
+  // unchanged and the user is told so through the same turn notice as a model
+  // fallback.
+  const redaction = await redactUserContent(
     threadId,
     withReviewContext(userPrompt, options?.reviewContext),
   )
+  const outboundPrompt = redaction.content
+  if (redaction.notice) {
+    sendChunk({ type: 'text', text: redaction.notice })
+  }
   const resolvePluginSetting =
     options?.resolvePluginSetting ??
     ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
