@@ -8,7 +8,7 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { Writable } from 'node:stream'
+import { nodeWritableStream } from './node-byte-streams.ts'
 
 export interface AcpLongRunProbeConfig {
   agentId: string
@@ -254,7 +254,7 @@ function spawnLongRunTransport(
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const stderrTail = captureChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const { readable, dispose } = childStdoutStream(child, config.command, stderrTail)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),
