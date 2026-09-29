@@ -56,4 +56,6 @@
 // v29 versions persisted reviewer-input answers on thread payloads.
 // v30 conservatively versions the optional `userAbort` cause on cancelled turn
 // outcomes and the optional folded-subagent token counts on usage deltas.
-export const API_PROTOCOL_VERSION = 30 as const
+// v31 conservatively versions the optional API format on custom provider records.
+// v32 versions automation worktree-limit status in list/upsert payloads.
+export const API_PROTOCOL_VERSION = 32 as const

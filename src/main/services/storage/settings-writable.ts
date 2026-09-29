@@ -362,6 +362,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // offer one obvious next step as composer placeholder text the user accepts
   // with Tab. See next-step-service.ts.
   nextStepSuggestionEnabled: z.boolean(),
+  // Experimental concise threads: turns from a model scoring above 50 on the
+  // canonical intellect index show only their output (screenshots, summary).
+  // Off by default. See src/renderer/views/concise-thread.ts.
+  conciseThreadsEnabled: z.boolean(),
   // Experimental unattended container runs: a thread's turn in a hardened
   // Docker container, started from the composer. Off by default; needs Docker.
   // See docs/plans/thread-in-container.md and container-run-service.ts.

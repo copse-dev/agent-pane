@@ -63,6 +63,7 @@ export const storedExtraProviderSchema = z.object({
   label: z.string().max(256).optional(),
   baseUrl: providerBaseUrlSchema.optional(),
   keyPrefix: z.string().max(64).optional(),
+  apiStyle: z.enum(['chat-completions', 'responses']).optional(),
   models: z.array(extraProviderModelSchema).max(256).optional(),
   fallbackContextWindow: z.number().int().positive().optional(),
   includeUsage: z.boolean().optional(),
