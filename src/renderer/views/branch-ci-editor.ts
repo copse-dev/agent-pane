@@ -13,9 +13,18 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 
 type EditorApi = ModelOptionsApi & Pick<ApiClient, 'automations'>
 
+export interface AutomationCreationDraft {
+  name: string
+  prompt: string
+  model: string
+  enabled: boolean
+  maxLiveWorktrees: 1 | 2 | 3
+}
+
 export interface BranchCiEditor {
   refresh(): Promise<void>
   reveal(id: string): boolean
+  openNew(draft?: AutomationCreationDraft): Promise<void>
   hideForSchedule(): void
   showList(): void
   setPluginEnabled(value: boolean): void
@@ -31,28 +40,25 @@ export function mountBranchCiEditor(options: {
   pluginEnabled: boolean
   showStatus: (message: string, error?: boolean) => void
   hideStatus: () => void
+  onScheduleSelected: (draft: AutomationCreationDraft) => void
 }): BranchCiEditor {
   const { root, heading, scheduleList, scheduleForm, projectId, api, showStatus, hideStatus } =
     options
   let pluginEnabled = options.pluginEnabled
   let definitions: BranchCiAutomation[] = []
   let editingId: string | null = null
-  const add = el(
-    'button',
-    {
-      type: 'button',
-      class: 'ui-btn ui-btn-secondary ui-btn-compact automation-add-ci-btn',
-      disabled: projectId ? undefined : true,
-    },
-    'Add CI event',
-  )
-  heading.append(add)
   const section = el('section', { class: 'automation-list automation-ci-list' })
   const sectionHeading = el('div', { class: 'plugin-settings-heading' }, 'CI events')
   const rows = el('div', { class: 'automation-list' })
   section.append(sectionHeading, rows)
   const form = el('form', { class: 'automation-form automation-ci-form', hidden: true })
-  const title = el('h4', { class: 'automation-form-title' }, 'New CI event')
+  const title = el('h4', { class: 'automation-form-title' }, 'New automation')
+  const when = el(
+    'select',
+    { class: 'automation-input automation-when-select' },
+    el('option', { value: 'schedule' }, 'On a schedule'),
+    el('option', { value: 'github-ci-failed' }, 'When CI fails on a branch'),
+  )
   const name = el('input', {
     type: 'text',
     class: 'automation-input automation-ci-name',
@@ -99,7 +105,7 @@ export function mountBranchCiEditor(options: {
       type: 'submit',
       class: 'ui-btn ui-btn-primary automation-ci-save',
     },
-    'Save CI event',
+    'Save automation',
   )
   const cancel = el(
     'button',
@@ -111,6 +117,7 @@ export function mountBranchCiEditor(options: {
   )
   form.append(
     title,
+    el('label', { class: 'automation-label automation-trigger-label' }, 'When', when),
     el('label', { class: 'automation-label' }, 'Name', name),
     el('label', { class: 'automation-label' }, 'Branch', branch),
     el('label', { class: 'automation-label' }, 'Model', model),
@@ -140,15 +147,20 @@ export function mountBranchCiEditor(options: {
     scheduleList.hidden = false
     section.hidden = false
   }
-  async function open(definition?: BranchCiAutomation): Promise<void> {
+  async function open(
+    definition?: BranchCiAutomation,
+    draft?: AutomationCreationDraft,
+  ): Promise<void> {
     hideStatus()
     editingId = definition?.id ?? null
-    title.textContent = definition ? 'Edit CI event' : 'New CI event'
-    name.value = definition?.name ?? ''
+    title.textContent = definition ? 'Edit automation' : 'New automation'
+    when.value = 'github-ci-failed'
+    when.disabled = Boolean(definition)
+    name.value = definition?.name ?? draft?.name ?? ''
     branch.value = definition?.trigger.branch ?? ''
-    prompt.value = definition?.prompt ?? ''
-    worktrees.value = String(definition?.maxLiveWorktrees ?? 1)
-    enabled.checked = definition?.enabled ?? true
+    prompt.value = definition?.prompt ?? draft?.prompt ?? ''
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true
     updateSummary()
     heading.hidden = true
     scheduleList.hidden = true
@@ -156,7 +168,7 @@ export function mountBranchCiEditor(options: {
     section.hidden = true
     form.hidden = false
     name.focus()
-    const defaultModel = definition?.model ?? BEST_VALUE_CHAT_MODEL
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL
     const available = await fetchDynamicModelOptions(defaultModel)
     const selected =
       available.find((item) => item.value === defaultModel && !item.disabled)?.value ??
@@ -242,7 +254,16 @@ export function mountBranchCiEditor(options: {
     definitions = await api.automations.listBranchCi(projectId)
     render()
   }
-  add.addEventListener('click', () => void open())
+  when.addEventListener('change', () => {
+    if (when.value !== 'schedule' || editingId) return
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === '3' ? 3 : worktrees.value === '2' ? 2 : 1,
+    })
+  })
   cancel.addEventListener('click', close)
   preview.addEventListener('click', () => {
     if (!projectId || !branch.value.trim()) return
@@ -296,6 +317,9 @@ export function mountBranchCiEditor(options: {
   })
   return {
     refresh,
+    openNew(draft?: AutomationCreationDraft): Promise<void> {
+      return open(undefined, draft)
+    },
     reveal(id: string): boolean {
       const definition = definitions.find((candidate) => candidate.id === id)
       if (!definition) return false

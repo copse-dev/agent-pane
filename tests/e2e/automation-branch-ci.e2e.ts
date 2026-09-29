@@ -65,6 +65,10 @@ describe('branch CI automation editor', function () {
 
     await row.$('.automation-row-btn=Edit').click()
     await expect(dialog.$('.automation-ci-form')).toBeDisplayed()
+    await expect(dialog.$('.automation-ci-form .automation-when-select')).toHaveValue(
+      'github-ci-failed',
+    )
+    await expect(dialog.$('.automation-ci-form .automation-when-select')).toBeDisabled()
     await expect(dialog.$('.automation-ci-branch')).toHaveValue('main')
     await expect(dialog.$('.automation-ci-summary')).toHaveText(
       expect.stringContaining('One task per run attempt'),
@@ -72,7 +76,15 @@ describe('branch CI automation editor', function () {
     await saveAppScreenshot('automation-branch-ci-edit.png')
 
     await dialog.$('.automation-ci-cancel').click()
-    await dialog.$('.automation-add-ci-btn').click()
+    await dialog.$('.automation-add-btn').click()
+    await expect(dialog.$('.automation-form:not(.automation-ci-form)')).toBeDisplayed()
+    await expect(
+      dialog.$('.automation-form:not(.automation-ci-form) .automation-when-select'),
+    ).toHaveValue('schedule')
+    await saveAppScreenshot('automation-trigger-selector.png')
+    await dialog
+      .$('.automation-form:not(.automation-ci-form) .automation-when-select')
+      .selectByAttribute('value', 'github-ci-failed')
     await expect(dialog.$('.automation-ci-form')).toBeDisplayed()
     await expect(dialog.$('.automation-ci-branch')).toHaveValue('')
     await saveAppScreenshot('automation-branch-ci-new.png')

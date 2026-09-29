@@ -471,7 +471,25 @@ describe('automation plugin settings detail', () => {
     document.body.append(root)
     await tick()
     assert.match(root.querySelector('.automation-ci-list')?.textContent ?? '', /owner\/repo · main/)
-    root.querySelector<HTMLButtonElement>('.automation-add-ci-btn')?.click()
+    assert.equal(root.querySelectorAll('.automation-add-btn').length, 1)
+    assert.equal(root.querySelector('.automation-add-ci-btn'), null)
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    const scheduleForm = root.querySelector<HTMLFormElement>(
+      '.automation-form:not(.automation-ci-form)',
+    )
+    const scheduleWhen = scheduleForm?.querySelector<HTMLSelectElement>('.automation-when-select')
+    const scheduleName = scheduleForm?.querySelector<HTMLInputElement>('.automation-name-input')
+    const schedulePrompt = scheduleForm?.querySelector<HTMLTextAreaElement>(
+      '.automation-prompt-input',
+    )
+    assert.ok(scheduleForm && scheduleWhen && scheduleName && schedulePrompt)
+    assert.equal(scheduleWhen.value, 'schedule')
+    assert.equal(scheduleWhen.disabled, false)
+    scheduleName.value = 'Investigate release CI'
+    schedulePrompt.value = 'Find the failing check.'
+    scheduleWhen.value = 'github-ci-failed'
+    scheduleWhen.dispatchEvent(new Event('change'))
     await tick()
     const ciForm = root.querySelector<HTMLFormElement>('.automation-ci-form')
     assert.ok(ciForm)
@@ -483,8 +501,21 @@ describe('automation plugin settings detail', () => {
     const name = ciForm.querySelector<HTMLInputElement>('.automation-ci-name')
     const branch = ciForm.querySelector<HTMLInputElement>('.automation-ci-branch')
     const prompt = ciForm.querySelector<HTMLTextAreaElement>('.automation-ci-prompt')
-    assert.ok(name && branch && prompt)
-    name.value = 'Investigate release CI'
+    const ciWhen = ciForm.querySelector<HTMLSelectElement>('.automation-when-select')
+    assert.ok(name && branch && prompt && ciWhen)
+    assert.equal(ciWhen.value, 'github-ci-failed')
+    assert.equal(name.value, 'Investigate release CI')
+    assert.equal(prompt.value, 'Find the failing check.')
+    ciWhen.value = 'schedule'
+    ciWhen.dispatchEvent(new Event('change'))
+    await tick()
+    assert.equal(scheduleForm.hidden, false)
+    assert.equal(scheduleName.value, 'Investigate release CI')
+    assert.equal(schedulePrompt.value, 'Find the failing check.')
+    scheduleWhen.value = 'github-ci-failed'
+    scheduleWhen.dispatchEvent(new Event('change'))
+    await tick()
+    assert.equal(ciForm.hidden, false)
     branch.value = 'release/next'
     branch.dispatchEvent(new Event('input', { bubbles: true }))
     prompt.value = 'Find the failing check.'
@@ -500,5 +531,11 @@ describe('automation plugin settings detail', () => {
     assert.equal(ciUpserts.length, 1)
     assert.equal(ciUpserts[0]?.branch, 'release/next')
     assert.equal(ciUpserts[0].prompt, 'Find the failing check.')
+    root
+      .querySelector<HTMLElement>(`[data-ci-automation-id="${saved.id}"] .automation-row-btn`)
+      ?.click()
+    await tick()
+    assert.equal(ciWhen.disabled, true)
+    assert.equal(ciWhen.value, 'github-ci-failed')
   })
 })

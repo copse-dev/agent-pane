@@ -266,6 +266,8 @@ describe('settings automations plugin', function () {
     await detail.$('.automation-row .automation-row-btn').click()
     await expect(detail.$('.automation-form')).toBeDisplayed()
     await expect(detail.$('.automation-form .model-picker-field')).toBeDisplayed()
+    await expect(detail.$('.automation-form .automation-when-select')).toHaveValue('schedule')
+    await expect(detail.$('.automation-form .automation-when-select')).toBeDisabled()
     await expect(detail.$('.automation-cron-input')).not.toExist()
     await expect(detail.$('.automation-repeat-select')).toHaveValue('weekdays')
     await expect(detail.$('.automation-time-input')).toHaveValue('09:00')

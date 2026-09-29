@@ -2444,6 +2444,7 @@ details[open] > .settings-disclosure-summary > .settings-disclosure-chevron {
   font-size: var(--font-size-sm);
 }
 .automation-label:has(.automation-prompt-input),
+.automation-trigger-label,
 .automation-schedule-fields,
 .automation-worktree-limit-label,
 .automation-permissions,
