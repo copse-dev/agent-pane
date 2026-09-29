@@ -1188,8 +1188,8 @@ export async function ensureShellCommandPermitted(
       command,
       [
         holders.length > 0
-          ? `sandbox network access is temporarily widened for ${holders.join(', ')}`
-          : 'sandbox network access is temporarily widened for another process',
+          ? `The sandbox network allowlist is temporarily widened for ${holders.join(', ')}; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.`
+          : 'The sandbox network allowlist is temporarily widened for another process; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.',
       ],
       false,
       'shell-network-scope-overlap',
