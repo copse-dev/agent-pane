@@ -7,7 +7,7 @@ import {
   setMockScenario,
 } from '@copse/llm/mock-script.ts'
 import { buildProvider } from './provider-selection.ts'
-import { resolveSmallTasksProvider } from './small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './small-tasks-provider.ts'
 import { suggestThreadTitle } from '../title-generator.ts'
 
 let previousMock: string | undefined
@@ -44,7 +44,7 @@ describe('mock conversation routing', () => {
     )
 
     assert.equal(await suggestThreadTitle('Review the project sources.'), 'Review Project Sources')
-    assert.equal(await resolveSmallTasksProvider(), null)
+    assert.equal(await resolveSmallTasksRoute(), null)
     assert.equal(mockScenarioStatus('source-review').turn, 0)
 
     const first = await buildProvider('lmstudio:unused', 'thread-a')
