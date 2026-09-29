@@ -2263,6 +2263,7 @@ export async function runAgent(
                 sendChunk({
                   type: 'usage',
                   model: subagentUsageModel,
+                  subagentUsage: true,
                   inputTokens: subUsage.inputTokens,
                   outputTokens: subUsage.outputTokens,
                   ...(subUsage.cacheReadTokens !== undefined
