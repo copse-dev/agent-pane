@@ -221,7 +221,9 @@ describe('canvas artefact refresh', () => {
 
     await selectThread(HISTORY_THREAD_ID)
     await scenario.release('before-canvas')
-    await waitForAgentIdle(25_000)
+    // The run lives in the background thread, so the selected thread is already
+    // idle: wait on the scenario itself rather than the footer's stop button.
+    await scenario.waitForComplete()
     await scenario.assertComplete()
 
     expect(await tabLabels()).toEqual(before)
