@@ -83,7 +83,7 @@ var init_automations_plugin = __esm({
     automationsPlugin = definePlugin(
       {
         name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+        description: "Project-scoped schedules and branch CI failures that start fresh, grouped tasks while Copse is running.",
         trust: "first-party",
         stability: "experimental",
         ui: [
@@ -166,6 +166,14 @@ var init_model_catalog_generated = __esm({
         maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 2.5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
+      "claude-sonnet-5-5": {
         inputPricePerMTok: 2,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.2,
@@ -411,8 +419,8 @@ function humanizeModelName(labelOrId) {
   }, "");
 }
 function modelDisplayName(labelOrId) {
-  const canonical = canonicalModelLabel(labelOrId);
-  return canonical === labelOrId ? humanizeModelName(labelOrId) : canonical;
+  const canonical2 = canonicalModelLabel(labelOrId);
+  return canonical2 === labelOrId ? humanizeModelName(labelOrId) : canonical2;
 }
 function claudeName(family, version2, rest) {
   if (rest !== "" && !/^\s/.test(rest)) return null;
@@ -610,12 +618,13 @@ var init_model_catalog = __esm({
     init_model_catalog_generated();
     init_model_label();
     init_model_selection();
-    DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6";
+    DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-sonnet-5",
+      "claude-sonnet-4-6",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-haiku-4-5",
@@ -635,6 +644,7 @@ var init_model_catalog = __esm({
       "claude-fable-5-1": "Claude Fable 5.1",
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
+      "claude-sonnet-5-5": "Claude Sonnet 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
@@ -23497,8 +23507,8 @@ var init_review_reports = __esm({
 
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
-  const canonical = CANONICAL_WORDS.get(word);
-  if (canonical !== void 0) return canonical;
+  const canonical2 = CANONICAL_WORDS.get(word);
+  if (canonical2 !== void 0) return canonical2;
   const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
   if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
   for (const separator of ["-", ":"]) {
@@ -30013,14 +30023,14 @@ function canonicalize(value, base) {
 function canonicalizePrefixes(prefixes) {
   const out = [];
   for (const prefix of prefixes) {
-    const canonical = canonicalize(prefix);
-    if (canonical !== null)
-      out.push(canonical);
+    const canonical2 = canonicalize(prefix);
+    if (canonical2 !== null)
+      out.push(canonical2);
   }
   return out;
 }
-function isUnderAllowedPrefix(canonical, prefixes) {
-  return prefixes.some((prefix) => canonical.startsWith(prefix));
+function isUnderAllowedPrefix(canonical2, prefixes) {
+  return prefixes.some((prefix) => canonical2.startsWith(prefix));
 }
 function resolveHref(raw, defaultOrigin) {
   const absolute = canonicalize(raw);
@@ -30067,8 +30077,8 @@ function enforceImage(node2, policy) {
   node2.removeAttribute("src");
   addBlockedClass(node2, policy.blockedImageClass);
 }
-function isDataUrl(canonical) {
-  return canonical.slice(0, 5).toLowerCase() === "data:";
+function isDataUrl(canonical2) {
+  return canonical2.slice(0, 5).toLowerCase() === "data:";
 }
 function applyLinkImagePolicy(node2, tagName) {
   const policy = resolvedPolicy();
@@ -34431,8 +34441,8 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
   if (enabled !== true) {
     throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
   }
-  const canonical = await api2.sshWorkspace.registerRoot(hostId, path);
-  const existing = findProjectByKey(store2.getState().projects, hostId, canonical);
+  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
+  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
   let id;
   if (existing) {
     id = existing.id;
@@ -34444,11 +34454,11 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
     store2.setState({
       projects: [
         ...store2.getState().projects,
-        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId }
+        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
       ]
     });
   }
-  return activateAndWait(store2, api2, id, canonical, hostId);
+  return activateAndWait(store2, api2, id, canonical2, hostId);
 }
 function activateAndWait(store2, api2, id, path, sshHost) {
   activate(store2, api2, id, path, sshHost, null);
@@ -35172,10 +35182,12 @@ function openImageGalleryViewer(items, initialIndex, returnFocus2) {
       event.preventDefault();
       event.stopPropagation();
       move(currentIndex - 1);
+      viewer.focus({ preventScroll: true });
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
       event.stopPropagation();
       move(currentIndex + 1);
+      viewer.focus({ preventScroll: true });
     }
   });
   render();
@@ -35978,7 +35990,116 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+function conciseThreadMessages(model, live) {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: "user",
+      content: "Fix the settings form so Save stays aligned on narrow windows.",
+      toolCalls: [],
+      createdAt: FIXED_TIME
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: "assistant",
+      model,
+      reasoning: "The Save button is absolutely positioned; check the form layout first.",
+      content: "Let me look at how the settings form lays out its footer.",
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: "read_file",
+          args: { path: "src/renderer/views/settings-dialog.ts" },
+          status: "done",
+          result: "export function mountSettings() { \u2026 }"
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: "str_replace",
+          args: { path: "src/renderer/styles/settings.css" },
+          status: "done",
+          result: "Replaced 1 occurrence.",
+          editStats: { additions: 4, deletions: 2 }
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: "error",
+          result: "Error: settings-forms.test.ts expected footer to use grid"
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: live ? "running" : "done",
+          result: live ? null : "\u2139 pass 12"
+        }
+      ],
+      createdAt: FIXED_TIME + 1e3
+    },
+    ...live ? [] : [
+      {
+        id: `concise-step-2-${model}`,
+        role: "assistant",
+        model,
+        content: "Capturing the narrow layout to confirm.",
+        toolCalls: [
+          {
+            id: `concise-shot-${model}`,
+            name: "browser_screenshot",
+            args: { width: 480 },
+            status: "done",
+            result: "Captured the settings dialog at 480px.",
+            images: [
+              {
+                dataUrl: CONCISE_SCREENSHOT,
+                name: "settings-480px.png",
+                kind: "screenshot"
+              }
+            ]
+          }
+        ],
+        createdAt: FIXED_TIME + 2e3
+      },
+      {
+        id: `concise-summary-${model}`,
+        role: "assistant",
+        model,
+        content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
+        toolCalls: [],
+        createdAt: FIXED_TIME + 3e3
+      }
+    ]
+  ];
+}
+function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model,
+      conciseThreadsEnabled: enabled
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Concise thread view",
+        status: live ? "running" : "idle",
+        model,
+        messages: conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ]
+  };
+}
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -36194,6 +36315,20 @@ var init_demo_scenarios = __esm({
         { chunk: { type: "done", stopReason: "end_turn" }, delayMs: 300 }
       ]
     };
+    CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+        '<rect width="480" height="270" fill="#f4f1ea"/>',
+        '<rect width="480" height="36" fill="#2f3a2f"/>',
+        '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+        '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+        '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+        '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+        "</svg>"
+      ].join("")
+    )}`;
     DEMO_SCENARIOS = [
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -37295,6 +37430,50 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
+      },
+      conciseThreadScenario(
+        "concise-thread",
+        "Concise thread view for a capable model",
+        "claude-opus-5-5"
+      ),
+      conciseThreadScenario(
+        "concise-thread-full",
+        "Full thread view for a model below the concise gate",
+        "gpt-4o"
+      ),
+      conciseThreadScenario(
+        "concise-thread-working",
+        "Concise thread view while a capable model works",
+        "claude-opus-5-5",
+        { live: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-disabled",
+        "Full thread view for a capable model while the experiment is off",
+        "claude-opus-5-5",
+        { enabled: false }
+      ),
+      {
+        id: "roadmap-chat-min-width",
+        label: "Roadmap side panel minimum chat width",
+        project: project("demo-roadmap-chat-min-width-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: { filesPaneWidth: 4e3 }
+        },
+        threads: [
+          {
+            id: "demo-roadmap-chat-min-width-thread",
+            title: "Roadmap layout bounds",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       }
     ];
   }
@@ -37484,6 +37663,7 @@ function createDemoApi(scenario, options = {}) {
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -38113,6 +38293,11 @@ function createDemoApi(scenario, options = {}) {
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe
     },
     appRun: {
@@ -39165,6 +39350,7 @@ function createStore(initial) {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
+    conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -41597,8 +41783,8 @@ function canonicalAcpAgentId(id) {
   return LEGACY_ACP_AGENT_IDS[id] ?? id;
 }
 function findAcpCatalogEntry(id) {
-  const canonical = canonicalAcpAgentId(id);
-  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+  const canonical2 = canonicalAcpAgentId(id);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical2);
 }
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
@@ -58256,8 +58442,8 @@ var init_model_card_cache = __esm({
 function canonicalAnchors() {
   const out = /* @__PURE__ */ new Map();
   for (const [modelId, entries2] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
+    const canonical2 = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical2) out.set(modelId, canonical2.value);
   }
   return out;
 }
@@ -58275,12 +58461,12 @@ function verifyLiveCohort(liveModels, reportedVersion) {
   for (const live of liveModels) {
     const modelId = resolveIntellectModelId(live.id);
     if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
+    const canonical2 = anchors.get(modelId);
+    if (canonical2 === void 0) continue;
     anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
+    const drift = Math.abs(live.intellect - canonical2);
     maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical: canonical2, live: live.intellect });
   }
   const version2 = normalizeIndexVersion(reportedVersion);
   const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
@@ -61416,6 +61602,295 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// src/renderer/views/branch-ci-editor.ts
+function mountBranchCiEditor(options) {
+  const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
+  let pluginEnabled = options.pluginEnabled;
+  let definitions = [];
+  let editingId = null;
+  const section = el("section", { class: "automation-list automation-ci-list" });
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const rows = el("div", { class: "automation-list" });
+  section.append(sectionHeading, rows);
+  const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
+  const title = el("h4", { class: "automation-form-title" }, "New automation");
+  const when = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
+  const name = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-name",
+    required: true,
+    maxlength: "160",
+    placeholder: "Investigate failing CI"
+  });
+  const branch = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-branch",
+    required: true,
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const model = el("select", { class: "automation-input automation-ci-model", required: true });
+  const prompt = el("textarea", {
+    class: "automation-input automation-ci-prompt",
+    required: true,
+    maxlength: "100000",
+    placeholder: "Investigate the failed CI run and report the cause\u2026"
+  });
+  const worktrees = el(
+    "select",
+    { class: "automation-input automation-ci-worktrees" },
+    el("option", { value: "1" }, "1 \u2014 wait for prior work"),
+    el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+  );
+  const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const summary = el("p", { class: "automation-hint automation-ci-summary" });
+  const preview = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-preview"
+    },
+    "Test match"
+  );
+  const save = el(
+    "button",
+    {
+      type: "submit",
+      class: "ui-btn ui-btn-primary automation-ci-save"
+    },
+    "Save automation"
+  );
+  const cancel = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-cancel"
+    },
+    "Cancel"
+  );
+  form.append(
+    title,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", when),
+    el("label", { class: "automation-label" }, "Name", name),
+    el("label", { class: "automation-label" }, "Branch", branch),
+    el("label", { class: "automation-label" }, "Model", model),
+    el("label", { class: "automation-label" }, "Task", prompt),
+    el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
+    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    summary,
+    el("div", { class: "automation-form-actions" }, preview, cancel, save)
+  );
+  root.append(section, form);
+  const modelPicker = mountModelSelectPicker(model, {
+    loadOptions: (current) => fetchDynamicModelOptions(current),
+    ariaLabel: "CI automation model",
+    loadOnMount: false
+  });
+  function updateSummary() {
+    const selected = branch.value.trim() || "this branch";
+    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  }
+  branch.addEventListener("input", updateSummary);
+  function close() {
+    editingId = null;
+    form.hidden = true;
+    heading.hidden = false;
+    scheduleList.hidden = false;
+    section.hidden = false;
+  }
+  async function open2(definition, draft) {
+    hideStatus();
+    editingId = definition?.id ?? null;
+    title.textContent = definition ? "Edit automation" : "New automation";
+    when.value = "github-ci-failed";
+    when.disabled = Boolean(definition);
+    name.value = definition?.name ?? draft?.name ?? "";
+    branch.value = definition?.trigger.branch ?? "";
+    prompt.value = definition?.prompt ?? draft?.prompt ?? "";
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    updateSummary();
+    heading.hidden = true;
+    scheduleList.hidden = true;
+    scheduleForm.hidden = true;
+    section.hidden = true;
+    form.hidden = false;
+    name.focus();
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
+    const available = await fetchDynamicModelOptions(defaultModel);
+    const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
+    await modelPicker.refresh(selected);
+  }
+  function render() {
+    clear(rows);
+    if (definitions.length === 0) {
+      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      return;
+    }
+    for (const definition of definitions) {
+      const row2 = el("article", {
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
+        "data-ci-automation-id": definition.id
+      });
+      const copy = el(
+        "div",
+        { class: "automation-row-copy" },
+        el("div", { class: "automation-row-title" }, definition.name),
+        el(
+          "div",
+          { class: "automation-row-meta" },
+          el(
+            "span",
+            {},
+            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
+          ),
+          el("span", {}, modelDisplayLabel(definition.model)),
+          el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
+        ),
+        el(
+          "div",
+          { class: "automation-row-last-run" },
+          definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
+        )
+      );
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn"
+        },
+        "Edit"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      const remove = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-danger ui-btn-compact automation-row-btn"
+        },
+        "Delete"
+      );
+      remove.addEventListener("click", () => {
+        if (!projectId) return;
+        void showConfirmDialog({
+          message: `Delete \u201C${definition.name}\u201D?`,
+          detail: "Already-created tasks are kept.",
+          confirmLabel: "Delete CI event",
+          danger: true
+        }).then(async (confirmed) => {
+          if (!confirmed) return;
+          await api2.automations.removeBranchCi(projectId, definition.id);
+          await refresh();
+        }).catch((error62) => {
+          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+        });
+      });
+      row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
+      rows.append(row2);
+    }
+  }
+  async function refresh() {
+    if (!projectId) return;
+    definitions = await api2.automations.listBranchCi(projectId);
+    render();
+  }
+  when.addEventListener("change", () => {
+    if (when.value !== "schedule" || editingId) return;
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    });
+  });
+  cancel.addEventListener("click", close);
+  preview.addEventListener("click", () => {
+    if (!projectId || !branch.value.trim()) return;
+    preview.disabled = true;
+    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+      (result) => {
+        showStatus(
+          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+        );
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+      }
+    ).finally(() => {
+      preview.disabled = false;
+    });
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!projectId) return;
+    hideStatus();
+    save.disabled = true;
+    const input2 = {
+      ...editingId ? { id: editingId } : {},
+      name: name.value,
+      branch: branch.value,
+      prompt: prompt.value,
+      model: model.value,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    };
+    void api2.automations.upsertBranchCi(projectId, input2).then(
+      async () => {
+        close();
+        await refresh();
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+      }
+    ).finally(() => {
+      save.disabled = false;
+    });
+  });
+  return {
+    refresh,
+    openNew(draft) {
+      return open2(void 0, draft);
+    },
+    reveal(id) {
+      const definition = definitions.find((candidate) => candidate.id === id);
+      if (!definition) return false;
+      void open2(definition);
+      return true;
+    },
+    hideForSchedule() {
+      form.hidden = true;
+      section.hidden = true;
+    },
+    showList() {
+      form.hidden = true;
+      section.hidden = false;
+    },
+    setPluginEnabled(value) {
+      pluginEnabled = value;
+      render();
+    }
+  };
+}
+var init_branch_ci_editor = __esm({
+  "src/renderer/views/branch-ci-editor.ts"() {
+    init_lm_studio_defaults();
+    init_helpers();
+    init_ipc_error_message();
+    init_model_options();
+    init_model_picker();
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -61500,7 +61975,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
-    el("div", { class: "plugin-settings-heading" }, "Schedules"),
+    el("div", { class: "plugin-settings-heading" }, "Automations"),
     el(
       "button",
       {
@@ -61508,7 +61983,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
-      "Add schedule"
+      "New automation"
     )
   );
   const addButton = heading.querySelector(".automation-add-btn");
@@ -61516,14 +61991,25 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const scope = el(
     "p",
     { class: "automation-scope" },
-    project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
+    project2 ? `Project: ${project2.name} \xB7 Copse must be running` : "Open a project to configure automations."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path." : "Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const attention = el("div", {
+    class: "automation-attention",
+    role: "status",
+    hidden: true
+  });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
-  const form = el("form", { class: "automation-form", hidden: true });
+  const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
+  const whenSelect = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -61634,7 +62120,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
-    "Save schedule"
+    "Save automation"
   );
   const cancelButton = el(
     "button",
@@ -61643,6 +62129,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   form.append(
     formTitle,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", whenSelect),
     el("label", { class: "automation-label" }, "Name", nameInput),
     el("label", { class: "automation-label" }, "Model", modelSelect),
     scheduleFields,
@@ -61662,7 +62149,19 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, status, list, form);
+  root.append(heading, scope, notice, attention, status, list, form);
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api: api2,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(void 0, draft)
+  });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "Automation model",
@@ -61688,6 +62187,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function closeForm() {
     editingId = null;
+    ciEditor.showList();
     form.hidden = true;
     list.hidden = false;
     heading.hidden = false;
@@ -61867,21 +62367,24 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
-  async function openForm(schedule) {
+  async function openForm(schedule, draft) {
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    whenSelect.value = "schedule";
+    whenSelect.disabled = Boolean(schedule);
     list.hidden = true;
     heading.hidden = true;
-    nameInput.value = schedule?.name ?? "";
+    nameInput.value = schedule?.name ?? draft?.name ?? "";
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
-    promptInput.value = schedule?.prompt ?? "";
-    enabledInput.checked = schedule?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
-    const configuredModel = schedule?.model.trim() ?? "";
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    ciEditor.hideForSchedule();
     form.hidden = false;
     nameInput.focus();
     const options = await fetchDynamicModelOptions(defaultModel);
@@ -61890,6 +62393,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function renderList() {
     clear(list);
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
+    attention.hidden = blocked.length === 0;
+    attention.textContent = blocked.length === 0 ? "" : `${String(blocked.length)} automation${blocked.length === 1 ? "" : "s"} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`;
     if (!projectId) return;
     if (schedules.length === 0) {
       list.append(el("div", { class: "automation-empty" }, "No schedules for this project yet."));
@@ -61897,7 +62403,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -61922,6 +62428,15 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
       );
+      if (schedule.lastWorktreeLimitAt !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message" },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
       const actions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
@@ -61988,7 +62503,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pendingReveal = void 0;
     const schedule = schedules.find((candidate) => candidate.id === scheduleId);
     if (!schedule) {
-      showStatus("That automation is no longer scheduled. Its finished runs stay in the sidebar.");
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          "That automation is no longer scheduled or configured. Its finished runs stay in the sidebar."
+        );
       return;
     }
     void openForm(schedule).then(() => {
@@ -62000,7 +62518,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
         api2.automations.list(projectId),
-        api2.automations.permissionOptions(projectId)
+        api2.automations.permissionOptions(projectId),
+        ciEditor.refresh()
       ]);
       schedules = loadedSchedules;
       availablePermissions = loadedPermissions;
@@ -62015,6 +62534,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   }
   addButton.addEventListener("click", () => void openForm());
+  whenSelect.addEventListener("change", () => {
+    if (whenSelect.value !== "github-ci-failed" || editingId) return;
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+    });
+  });
   cancelButton.addEventListener("click", closeForm);
   repeatSelect.addEventListener("change", () => {
     if (repeatSelect.value !== "custom") {
@@ -62030,6 +62559,21 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    if (!nameInput.value.trim()) {
+      showStatus("Enter a name before saving.", true);
+      nameInput.focus();
+      return;
+    }
+    if (!promptInput.value.trim()) {
+      showStatus("Enter a prompt before saving.", true);
+      promptInput.focus();
+      return;
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus("Choose a model before saving.", true);
+      modelPicker.openMenu();
+      return;
+    }
     const cron = cronFromScheduleControls();
     if (cron === null) {
       showStatus("Choose a valid schedule before saving.", true);
@@ -62060,12 +62604,27 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       saveButton.removeAttribute("disabled");
     });
   });
+  const unsubscribeTriggered = api2.automations.onTriggered(
+    (event) => {
+      if (event.projectId !== projectId) return;
+      const changesLimitStatus = event.disposition === "started" || event.coalescedReason === "worktree-limit";
+      if (!changesLimitStatus) return;
+      void refresh();
+    }
+  );
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return;
+    removalObserver.disconnect();
+    unsubscribeTriggered();
+  });
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
   void refresh();
   return Object.assign(root, {
     setPluginEnabled(enabled) {
       pluginEnabled = enabled;
       notice.textContent = pluginNotice();
       renderList();
+      ciEditor.setPluginEnabled(enabled);
     }
   });
 }
@@ -62079,6 +62638,7 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    init_branch_ci_editor();
     init_ipc_error_message();
     WEEKDAYS = [
       "Sunday",
@@ -64400,6 +64960,20 @@ function mountSettingsDialog(store2, api2) {
                 When a turn ends with one clearly valuable next move, it appears as placeholder
                 text in the message box \u2014 press Tab to accept it, or just type to ignore it.
                 Uses the small-tasks model; most turns show nothing.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden; while it works, you see what it
+                is doing now. Other models always show the full thread.
               </p>
             </fieldset>
 
@@ -67064,6 +67638,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
         animateAgentAvatars: data.get("animateAgentAvatars") === "on",
+        conciseThreadsEnabled: data.get("conciseThreadsEnabled") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -67217,6 +67792,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -77604,6 +78180,43 @@ var init_github_link_steering = __esm({
 });
 
 // packages/llm/src/intellect-lookup.ts
+function localCapabilityFor(idOrLabel) {
+  const direct = getLocalModelCapability(idOrLabel);
+  if (direct) return direct;
+  if (idOrLabel.startsWith(LMSTUDIO_MODEL_PREFIX)) {
+    return getLocalModelCapability(idOrLabel.slice(LMSTUDIO_MODEL_PREFIX.length));
+  }
+  return null;
+}
+function canonical(score) {
+  return {
+    value: score.value,
+    scale: "canonical",
+    estimated: score.estimated === true,
+    basis: score.basis ?? score.source
+  };
+}
+function resolveModelIntellect(idOrLabel) {
+  const local = localCapabilityFor(idOrLabel);
+  if (local) {
+    const quantAdjusted = localBenchmarkScore(local, "aa-intelligence");
+    if (quantAdjusted) return canonical(quantAdjusted);
+  }
+  const measured = getIntellectScore(idOrLabel);
+  if (measured) return canonical(measured);
+  if (local) {
+    const composite = compositeIntellect(local);
+    if (composite) {
+      return {
+        value: composite.value,
+        scale: "composite",
+        estimated: true,
+        basis: composite.basis
+      };
+    }
+  }
+  return null;
+}
 var init_intellect_lookup = __esm({
   "packages/llm/src/intellect-lookup.ts"() {
     init_composite_intellect();
@@ -78331,6 +78944,72 @@ var init_visual_evidence_card = __esm({
     init_image_expand();
     init_helpers();
     init_icons();
+  }
+});
+
+// src/renderer/views/concise-thread.ts
+function isConciseThreadModel(model) {
+  if (!model) return false;
+  const cached2 = conciseByModel.get(model);
+  if (cached2 !== void 0) return cached2;
+  const intellect = resolveModelIntellect(model);
+  const concise = intellect?.scale === "canonical" && intellect.value > CONCISE_THREAD_MIN_INTELLECT;
+  conciseByModel.set(model, concise);
+  return concise;
+}
+function messageModel(msg) {
+  return msg.model ?? msg.requestedModel;
+}
+function isConciseMessage(msg) {
+  return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function syncConciseMessageClasses(msgEl, msg, enabled) {
+  msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
+  msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+}
+function isConciseThread(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const msg = thread.messages[i2];
+    if (msg?.role === "assistant") return isConciseMessage(msg);
+  }
+  return isConciseThreadModel(thread.model);
+}
+function runningToolCall(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const toolCalls = thread.messages[i2]?.toolCalls ?? [];
+    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
+      const tc2 = toolCalls[j3];
+      if (tc2?.status === "running" || tc2?.subagent?.status === "running") return tc2;
+    }
+  }
+  return null;
+}
+function shellCommand(tc2) {
+  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
+  return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
+}
+function conciseActivityLabel(thread) {
+  if (thread.status !== "running") return null;
+  const tc2 = runningToolCall(thread);
+  if (!tc2) return null;
+  const command = shellCommand(tc2);
+  const base = `${command ? `Running ${command}` : getToolCallLabel({ ...tc2, status: "running" })}\u2026`;
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
+  return todoLabel ? `${base} (${todoLabel})` : base;
+}
+var CONCISE_THREAD_MIN_INTELLECT, conciseByModel;
+var init_concise_thread = __esm({
+  "src/renderer/views/concise-thread.ts"() {
+    init_intellect_lookup();
+    init_todo_logic();
+    init_tool_display();
+    init_unknown_value3();
+    CONCISE_THREAD_MIN_INTELLECT = 50;
+    conciseByModel = /* @__PURE__ */ new Map();
   }
 });
 
@@ -81723,7 +82402,7 @@ function mountConversation(root, store2, api2) {
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
   activityBar.addEventListener("click", () => {
-    const trails = list.querySelectorAll(".msg-assistant .message-reasoning");
+    const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
     details.dataset["userToggled"] = "1";
@@ -82203,21 +82882,24 @@ function mountConversation(root, store2, api2) {
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
-  function setActivity(label) {
-    if (!label) {
+  function setActivity(requested) {
+    if (!requested) {
       activityBar.hidden = true;
       return;
     }
+    const thread = getActiveThread(store2);
+    const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
+    const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && list.querySelector(".msg:not(.msg-concise) .message-reasoning.message-reasoning-live")) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
     }
     activityBar.classList.toggle(
       "agent-activity-clickable",
-      !!list.querySelector(".msg-assistant .message-reasoning")
+      !!list.querySelector(REOPENABLE_REASONING)
     );
     activityBar.hidden = false;
     if (changed) scrollToBottom();
@@ -82382,6 +83064,8 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
+    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
@@ -82532,6 +83216,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
+    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -82736,6 +83421,17 @@ function mountConversation(root, store2, api2) {
     }
     syncAvatarMotion();
   }
+  function syncConciseThreadClasses() {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    const enabled = store2.getState().conciseThreadsEnabled;
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
+    list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
+      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
+      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+    });
+    syncFromStore();
+  }
   function syncAvatarMotion() {
     const thread = getActiveThread(store2);
     if (!thread || thread.status !== "running" || !store2.getState().animateAgentAvatars) {
@@ -82821,6 +83517,8 @@ function mountConversation(root, store2, api2) {
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -83045,6 +83743,7 @@ function mountConversation(root, store2, api2) {
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
+      syncConciseThreadClasses();
     }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
@@ -83293,7 +83992,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -83348,6 +84047,7 @@ var init_conversation = __esm({
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
+    init_concise_thread();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
@@ -83395,6 +84095,7 @@ var init_conversation = __esm({
     TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
     TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
+    REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
   }
 });
@@ -117010,6 +117711,17 @@ function shareableWebContentsId(tab) {
     return null;
   }
 }
+function downloadableArtefact(tab) {
+  return tab.artefact?.mimeType === "text/html" ? tab.artefact : null;
+}
+function seededArtefact(value) {
+  if (!isRecord(value)) return null;
+  const { title, mimeType, body } = value;
+  if (typeof title !== "string" || typeof mimeType !== "string" || typeof body !== "string") {
+    return null;
+  }
+  return { title, mimeType, body };
+}
 function isBrowserPopoutSeed(seed) {
   if (!seed || typeof seed !== "object") return false;
   return "tabs" in seed && Array.isArray(seed.tabs);
@@ -117226,6 +117938,46 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   const pendingProjectWaits = /* @__PURE__ */ new Set();
   const pendingArtefactReopens = /* @__PURE__ */ new Map();
+  let pendingBackgroundArtefacts = [];
+  let lastThreadScope = activeThreadScope();
+  function activeThreadScope() {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return `${activeProjectId ?? ""}\0${activeThreadId ?? ""}`;
+  }
+  function artefactThreadId(artefact) {
+    return artefact.owner?.threadId ?? artefact.threadId;
+  }
+  function artefactBelongsToActiveThread(artefact) {
+    const threadId = artefactThreadId(artefact);
+    if (!threadId) return true;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return threadId === activeThreadId && (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId);
+  }
+  function pendingArtefactIdentity(artefact) {
+    return `${artefact.owner?.projectId ?? ""}\0${artefactThreadId(artefact) ?? ""}\0${artefact.title}`;
+  }
+  function queueBackgroundArtefact(artefact) {
+    const identity = pendingArtefactIdentity(artefact);
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity
+    );
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact;
+    else pendingBackgroundArtefacts.push(artefact);
+  }
+  function flushBackgroundArtefacts() {
+    const ready3 = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread);
+    if (ready3.length === 0) return;
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact)
+    );
+    for (const artefact of ready3) openArtefact(artefact);
+  }
+  function onThreadMaybeChanged() {
+    const nextScope = activeThreadScope();
+    if (nextScope === lastThreadScope) return;
+    lastThreadScope = nextScope;
+    flushBackgroundArtefacts();
+  }
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -117558,6 +118310,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function openArtefact(artefact) {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact);
+      return;
+    }
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(
       artefact.title,
@@ -117585,6 +118341,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
     tab.artefactProjectId = artefact.owner?.projectId ?? store2.getState().activeProjectId;
     tab.artefactContentReady = true;
+    tab.artefact = artefact;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -117689,6 +118446,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       downloadIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Export PDF")
     );
+    const downloadCanvasItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Download canvas")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -117707,6 +118470,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem
@@ -117767,6 +118531,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       closeMenu: () => {
         setMenuOpen(false);
@@ -117806,6 +118571,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        downloadCanvasItem.disabled = downloadableArtefact(tab) === null || !api2?.browser.exportArtefact;
         exportPdfItem.disabled = shareableId === null || !api2?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api2?.shell;
         inspectorItem.disabled = !tab.webview;
@@ -117848,6 +118614,21 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         if (filePath) showToast(`Exported PDF to ${filePath}`);
       }).catch((error62) => {
         showErrorToast("Could not export PDF", error62);
+      });
+    });
+    downloadCanvasItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const artefact = downloadableArtefact(tab);
+      const exportArtefact = api2?.browser.exportArtefact;
+      if (!artefact || !exportArtefact) return;
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body
+      }).then((filePath) => {
+        if (filePath) showToast(`Downloaded canvas to ${filePath}`);
+      }).catch((error62) => {
+        showErrorToast("Could not download canvas", error62);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -117985,7 +118766,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
-          artefactProjectId: tab.artefactProjectId
+          artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact ? {
+            title: tab.artefact.title,
+            mimeType: tab.artefact.mimeType,
+            body: tab.artefact.body
+          } : null
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -118017,6 +118803,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.artefactContentReady = Boolean(entry.url && entry.url !== "about:blank");
         tab.urlInput.placeholder = entry.artefactTitle;
+        tab.artefact = seededArtefact(entry.artefact);
       }
       if (entry.url && entry.url !== "about:blank") {
         tab.pendingUrl = entry.url;
@@ -118137,6 +118924,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
+    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
     store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
@@ -118192,6 +118981,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
 var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
+    init_unknown_value3();
     init_helpers();
     init_icons();
     init_pane_maximize_button();
@@ -137769,10 +138559,45 @@ function isPendingAutomation(thread) {
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
   async function startThread(threadId) {
     const initial = getThreadById(store2, threadId);
     const projectId = store2.getState().activeProjectId;
-    if (!projectId || !initial || !isPendingAutomation(initial) || starting.has(threadId)) return;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
     const prompt = initial.draftPrompt?.trim();
     if (!prompt) return;
     starting.add(threadId);
@@ -137781,6 +138606,22 @@ function attachAutomationController(store2, api2) {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
       if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
       if (!initial.worktreeChoice) {
         const prepared = await api2.agent.prepareCheckout(
           projectId,
@@ -137793,7 +138634,27 @@ function attachAutomationController(store2, api2) {
         applyPreparedThreadCheckout(store2, threadId, prepared);
       }
       const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) return;
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
       addMessage(store2, threadId, "user", prompt);
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
@@ -137839,16 +138700,21 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
   startPendingForActiveProject();
   return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
     unsubscribeTrigger();
     unsubscribeWorkspace();
   };
 }
+var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -138497,6 +139363,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -138512,6 +139379,7 @@ async function loadStartupSettings(settings) {
     settings.get("theme"),
     settings.get("fontSize"),
     settings.get("animateAgentAvatars"),
+    settings.get("conciseThreadsEnabled"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -138528,6 +139396,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -147802,6 +148671,7 @@ async function boot() {
     fontSize,
     uiScale,
     animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
+    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
