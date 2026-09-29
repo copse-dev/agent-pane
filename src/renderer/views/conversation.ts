@@ -120,6 +120,11 @@ import { mountAppleProjectSuggestions } from './apple-project-suggestion.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import { createVisualEvidenceSection } from './visual-evidence-card.ts'
+import {
+  conciseActivityLabel,
+  isConciseThread,
+  syncConciseMessageClasses,
+} from './concise-thread.ts'
 import { createReviewFindingsCardEl } from './review-findings-card.ts'
 import {
   dismissComparison,
@@ -2526,6 +2531,8 @@ const TOOL_AUTO_COMPACT_DELAY_MS = 750
 // typical viewport — then fill the rest of the history backwards in the
 // background, one chunk of this size per animation frame.
 const INITIAL_RENDER_WINDOW = 40
+/** Reasoning trails the activity row can reopen; a concise bubble's are hidden. */
+const REOPENABLE_REASONING = '.msg-assistant:not(.msg-concise) .message-reasoning'
 const BACKFILL_CHUNK_SIZE = 30
 
 export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -2569,7 +2576,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // the answer is being written). During reasoning, the live disclosure itself
   // replaces this standalone row.
   activityBar.addEventListener('click', () => {
-    const trails = list.querySelectorAll<HTMLDetailsElement>('.msg-assistant .message-reasoning')
+    const trails = list.querySelectorAll<HTMLDetailsElement>(REOPENABLE_REASONING)
     const details = trails[trails.length - 1]
     if (!details) return
     details.dataset['userToggled'] = '1'
@@ -3141,11 +3148,18 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     scrollToBottom()
   })
 
-  function setActivity(label: string | null): void {
-    if (!label) {
+  function setActivity(requested: string | null): void {
+    if (!requested) {
       activityBar.hidden = true
       return
     }
+    // A concise turn hides its tool cards, so the row names the current item.
+    const thread = getActiveThread(store)
+    const conciseLabel =
+      thread && store.getState().conciseThreadsEnabled && isConciseThread(thread)
+        ? conciseActivityLabel(thread)
+        : null
+    const label = conciseLabel ?? requested
     // Assigning textContent replaces the text node even when the string is
     // identical, and the row is aria-live, so an unconditional write re-announces
     // the same label. Emitters outside the agent controller (message queue,
@@ -3156,12 +3170,15 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     if (activityLabel.textContent !== label) activityLabel.textContent = label
     // Once reasoning tokens exist, the disclosure title is the activity row.
     // Keep the standalone row for the initial wait before the first token, but
-    // never show two live "Reasoning…" labels in the transcript.
+    // never show two live "Reasoning…" labels in the transcript. A concise
+    // bubble hides its reasoning, so there the row stays the live signal.
     if (
       label.startsWith('Reasoning…') &&
-      [...list.querySelectorAll('.message-reasoning-live')].some(
-        (details) => !details.parentElement?.closest('details:not([open]), [hidden]'),
-      )
+      [
+        ...list.querySelectorAll(
+          '.msg:not(.msg-concise) .message-reasoning.message-reasoning-live',
+        ),
+      ].some((details) => !details.parentElement?.closest('details:not([open]), [hidden]'))
     ) {
       activityBar.hidden = true
       scrollToBottom()
@@ -3170,7 +3187,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // Only advertise the row as clickable once there's a reasoning trail to open.
     activityBar.classList.toggle(
       'agent-activity-clickable',
-      !!list.querySelector('.msg-assistant .message-reasoning'),
+      !!list.querySelector(REOPENABLE_REASONING),
     )
     activityBar.hidden = false
     // Snapping on an unchanged row would cut short the streamed text's glide.
@@ -3467,6 +3484,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // selector deliberately checks the live DOM, so a retained subagent card or
     // a canvas preview added later makes the bubble visible again automatically.
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
+    // Tool calls arriving mid-stream turn a concise bubble's text into narration.
+    const message = activeThread?.messages.find((m) => m.id === msgId)
+    if (message) syncConciseMessageClasses(msgEl, message, store.getState().conciseThreadsEnabled)
 
     const nestReasoning =
       run === undefined &&
@@ -3723,6 +3743,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
+    syncConciseMessageClasses(msgEl, msg, store.getState().conciseThreadsEnabled)
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
@@ -4037,6 +4058,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncAvatarMotion()
   }
 
+  /**
+   * Re-apply the concise view to every rendered message, for when the
+   * experimental setting flips; the activity row picks it up on its next label.
+   */
+  function syncConciseThreadClasses(): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const enabled = store.getState().conciseThreadsEnabled
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
+    list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((msgEl) => {
+      const msg = byId.get(msgEl.dataset['messageId'] ?? '')
+      if (msg) syncConciseMessageClasses(msgEl, msg, enabled)
+    })
+    syncFromStore()
+  }
+
   function syncAvatarMotion(): void {
     const thread = getActiveThread(store)
     if (!thread || thread.status !== 'running' || !store.getState().animateAgentAvatars) {
@@ -4151,7 +4188,11 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const state = store.getState()
     const projectId = state.activeProjectId
     const thread = state.threads.find((candidate) => candidate.id === threadId)
-    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
+    // A failed turn keeps its text even in the concise view; the outcome lands
+    // after the bubble was built, and this runs whenever it may have changed.
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId)
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled)
     const recovery = turnRecoveryForMessage(thread, messageId)
     if (!projectId || !msgEl || !recovery) return
 
@@ -4460,6 +4501,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       agentNamesRequested = false
       agentNamesRevision++
       syncModelLabels()
+      syncConciseThreadClasses()
     }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
