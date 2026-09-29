@@ -73,6 +73,20 @@ export function isAcpOverSshEnabled(): boolean {
  * itself already fails closed unless `sshWorkspaceEnabled` is on and the host is
  * configured, so this never routes to a half-configured remote.
  */
+/**
+ * The SSH target a spawn config runs on: the decision its turn resolved once
+ * (`sshTarget`, where `null` means locally), or — for callers that made none —
+ * the live setting. Reading it through here keeps the spawn, the session pool
+ * and the turn's permission handling on one answer even if ACP-over-SSH is
+ * switched while the turn starts.
+ */
+export function spawnConfigSshTarget(config: {
+  cwd: string
+  sshTarget?: AcpSshTarget | null
+}): AcpSshTarget | null {
+  return config.sshTarget !== undefined ? config.sshTarget : acpSshTarget(config.cwd)
+}
+
 export function acpSshTarget(cwd: string): AcpSshTarget | null {
   if (!isAcpOverSshEnabled()) return null
   const target = resolveSshExecutionTargetForCwd(cwd)

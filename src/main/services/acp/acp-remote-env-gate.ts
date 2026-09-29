@@ -1,5 +1,5 @@
 import { requestApproval } from '../approval.ts'
-import { acpSshTarget } from './acp-ssh-transport.ts'
+import { acpSshTarget, spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import type { AcpAgentSpawnConfig } from './acp-client.ts'
 
 /**
@@ -45,7 +45,7 @@ export async function gateRemoteAcpEnvForward(
 ): Promise<AcpAgentSpawnConfig> {
   const envNames = Object.keys(config.env ?? {})
   if (envNames.length === 0) return config
-  const target = acpSshTarget(config.cwd)
+  const target = spawnConfigSshTarget(config)
   if (!target) return config
 
   const key = decisionKey(agentId, target.hostId, envNames)

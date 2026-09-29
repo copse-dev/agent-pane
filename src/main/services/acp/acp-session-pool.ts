@@ -1,7 +1,7 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
 import { openAcpSession, settleAcpChildShutdowns, willSandboxAcpAgent } from './acp-client.ts'
 import type { AcpSessionCarryOver, AcpSessionHandover } from './acp-session-reattach.ts'
-import { acpSshTarget } from './acp-ssh-transport.ts'
+import { spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import { createAcpWireTrace } from './acp-wire-trace.ts'
 import {
@@ -129,13 +129,15 @@ let reaper: NodeJS.Timeout | null = null
  * so do the other `configOptions` (reasoning level, …), which are re-applied at
  * the start of each turn. `permissionMode` IS included (issue #607): unlike
  * those, it's applied once at `session/new`, so a change needs a fresh session
- * to take effect. */
+ * to take effect. `host` is included so a session never serves a turn that
+ * resolved a different placement — local vs remote, or another SSH host. */
 export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
   return JSON.stringify({
     command: config.command,
     args: config.args ?? [],
     env: config.env ?? {},
     cwd: config.cwd,
+    host: spawnConfigSshTarget(config)?.hostId ?? null,
     sandbox: config.sandbox ?? null,
     mcpServers: config.mcpServers ?? [],
     permissionMode: config.permissionMode ?? null,
@@ -155,7 +157,7 @@ export function acpSessionLineage(config: AcpAgentSpawnConfig): string {
     command: config.command,
     args: config.args ?? [],
     env: config.env ?? {},
-    host: acpSshTarget(config.cwd)?.hostId ?? null,
+    host: spawnConfigSshTarget(config)?.hostId ?? null,
   })
 }
 
@@ -312,7 +314,7 @@ async function acquireAcpSessionUnlocked(
   // exists (#771): the bridge listens on THIS machine's loopback, which the
   // remote host cannot reach, and handing its URL + bearer token to the remote
   // process would expose the token to whatever listens on that port there.
-  const remote = acpSshTarget(opts.config.cwd) !== null
+  const remote = spawnConfigSshTarget(opts.config) !== null
   const shareNetworkScope = !remote && willSandboxAcpAgent(opts.config.sandbox)
   // A bridge that fails to start used to resolve to null silently, which is
   // indistinguishable from an agent that simply was not offered one — the

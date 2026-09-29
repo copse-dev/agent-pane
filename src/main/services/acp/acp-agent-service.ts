@@ -22,7 +22,12 @@ import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { acpSshTarget, isAcpOverSshEnabled } from './acp-ssh-transport.ts'
+import {
+  acpSshTarget,
+  isAcpOverSshEnabled,
+  spawnConfigSshTarget,
+  type AcpSshTarget,
+} from './acp-ssh-transport.ts'
 import { gateRemoteAcpEnvForward, remoteAcpAuthRequiredHint } from './acp-remote-env-gate.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
@@ -401,16 +406,22 @@ export async function runAcpAgentFromSettings(
   const executionContext = getThreadExecutionContext()
 
   const sandbox = resolveAcpSandbox(agent)
+  // Where the agent runs, read from the ACP-over-SSH setting exactly once. The
+  // spawn config carries this answer to the session pool and transport, so
+  // toggling the setting mid-turn cannot spawn remotely while the permission
+  // checks below still treat the agent as locally sandboxed.
+  const sshTarget = acpSshTarget(cwd)
   // One containment answer for the whole turn: the session mode preset, the
   // read/search and Codex code-mode auto-approvals, and execute gating all read
   // it, so a remote (ACP-over-SSH) agent can never be treated as seatbelted.
   const { sandboxed, contained, remote } = resolveAcpRunContainment({
     cwd,
+    sshTarget,
     localSandbox: willSandboxAcpAgent(sandbox),
     unattendedContainer: currentRunIsUnattendedContainer(getActiveRunThread()),
   })
   // Remembered grants are per SSH host: each is its own trust boundary.
-  const remoteHostId = remote ? acpSshTarget(cwd)?.hostId : undefined
+  const remoteHostId = sshTarget?.hostId
   const outboundPayload = promptPayloadFromUserContent(options.userPrompt)
   const hasText = Boolean(outboundPayload.text.trim())
   const hasImages = (outboundPayload.images?.length ?? 0) > 0
@@ -445,6 +456,7 @@ export async function runAcpAgentFromSettings(
   const spawnConfig: AcpAgentSpawnConfig = {
     command: agent.command,
     cwd,
+    sshTarget,
     ...(agent.args ? { args: agent.args } : {}),
     ...(agent.env ? { env: agent.env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
@@ -746,13 +758,16 @@ export interface AcpRunContainment {
  * whether a LOCAL spawn would be seatbelted (`willSandboxAcpAgent`), which says
  * nothing about a remote spawn: `spawnTransport` routes an ACP SSH target to the
  * SSH transport before its sandbox branch, so the same condition decides here.
+ * Pass the turn's already-resolved `sshTarget` so containment and the spawn
+ * share one answer; when omitted it is read from the live setting.
  */
 export function resolveAcpRunContainment(input: {
   cwd: string
+  sshTarget?: AcpSshTarget | null
   localSandbox: boolean
   unattendedContainer: boolean
 }): AcpRunContainment {
-  if (acpSshTarget(input.cwd)) return { sandboxed: false, contained: false, remote: true }
+  if (spawnConfigSshTarget(input)) return { sandboxed: false, contained: false, remote: true }
   // Inside an unattended container the container is the sandbox
   // (`docs/plans/thread-in-container.md`, decision A5): the agent spawns
   // without a seatbelt of its own, but for every decision that asks "is this

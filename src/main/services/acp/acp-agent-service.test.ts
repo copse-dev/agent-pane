@@ -13,6 +13,8 @@ import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { rememberAcpPermission } from './acp-permission-grants.ts'
+import { acpSessionFingerprint } from './acp-session-pool.ts'
+import { acpSshTarget, spawnConfigSshTarget } from './acp-ssh-transport.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
 import {
   AcpTurnFailure,
@@ -726,6 +728,43 @@ describe('remote ACP agents are never treated as sandboxed', () => {
       }),
       { sandboxed: false, contained: false, remote: true },
     )
+  })
+
+  it('keeps the turn on one placement when ACP-over-SSH is toggled mid-turn', async () => {
+    // The turn resolves its SSH target once, while the setting is on…
+    const target = acpSshTarget(REMOTE_ROOT)
+    assert.equal(target?.hostId, 'dev')
+    // …and the setting is switched off before the session is spawned.
+    await setSetting('acpOverSshEnabled', false)
+    assert.equal(acpSshTarget(REMOTE_ROOT), null)
+    const config = { command: 'agent', cwd: REMOTE_ROOT, sshTarget: target }
+    // Spawn, pool and containment all keep the turn's answer: remote.
+    assert.deepEqual(spawnConfigSshTarget(config), target)
+    assert.deepEqual(
+      resolveAcpRunContainment({
+        cwd: REMOTE_ROOT,
+        sshTarget: target,
+        localSandbox: true,
+        unattendedContainer: false,
+      }),
+      { sandboxed: false, contained: false, remote: true },
+    )
+
+    // The reverse: resolved local while off, switched on before the spawn.
+    await setSetting('acpOverSshEnabled', true)
+    const localConfig = { command: 'agent', cwd: REMOTE_ROOT, sshTarget: null }
+    assert.equal(spawnConfigSshTarget(localConfig), null)
+    assert.deepEqual(
+      resolveAcpRunContainment({
+        cwd: REMOTE_ROOT,
+        sshTarget: null,
+        localSandbox: true,
+        unattendedContainer: false,
+      }),
+      { sandboxed: true, contained: false, remote: false },
+    )
+    // A pooled session never serves a turn placed elsewhere.
+    assert.notEqual(acpSessionFingerprint(config), acpSessionFingerprint(localConfig))
   })
 
   it('keeps a Claude preset in its own prompting mode instead of acceptEdits', () => {
