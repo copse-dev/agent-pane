@@ -1,7 +1,12 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { attachImageCopyMenu, attachImageExpand, openImageExpand } from './image-expand.ts'
+import {
+  attachImageCopyMenu,
+  attachImageExpand,
+  openImageExpand,
+  openImageGallery,
+} from './image-expand.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
 import { patchPreviewDialog } from './preview-dialog.test-support.ts'
@@ -96,6 +101,51 @@ describe('image expand lightbox', () => {
     )
     assert.ok(qs(document, '.attachment-preview-dialog'))
     img.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+  })
+
+  it('navigates a multi-image gallery with arrows, thumbnails, and keyboard input', () => {
+    const second = 'data:image/svg+xml;base64,PHN2Zy8+'
+    const third =
+      'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4='
+    openImageGallery(
+      [
+        { src: PNG, alt: 'first' },
+        { src: second, alt: 'second' },
+        { src: third, alt: 'third' },
+      ],
+      0,
+    )
+
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    const viewer = qsRequired(dialog, '.image-expand-viewer')
+    const image = qsRequired<HTMLImageElement>(viewer, '.image-expand-image')
+    const next = qsRequired<HTMLButtonElement>(viewer, '.image-expand-nav-next')
+    const previous = qsRequired<HTMLButtonElement>(viewer, '.image-expand-nav-prev')
+    const thumbnails = viewer.querySelectorAll<HTMLButtonElement>('.image-expand-thumbnail')
+
+    assert.equal(thumbnails.length, 3)
+    assert.equal(image.dataset['imageIndex'], '0')
+    assert.equal(thumbnails[0]?.getAttribute('aria-selected'), 'true')
+    assert.equal(previous.disabled, true)
+    assert.equal(next.disabled, false)
+
+    next.click()
+    assert.equal(image.dataset['imageIndex'], '1')
+    assert.equal(thumbnails[1]?.getAttribute('aria-selected'), 'true')
+
+    viewer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    assert.equal(image.dataset['imageIndex'], '2')
+
+    viewer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+    )
+    assert.equal(image.dataset['imageIndex'], '1')
+
+    thumbnails[0].click()
+    assert.equal(image.dataset['imageIndex'], '0')
+    dialog.close()
   })
 
   it('openImageExpand is a no-op for an empty src', () => {
