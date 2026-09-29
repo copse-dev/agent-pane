@@ -70,7 +70,7 @@ the user configured. LM Studio and other local endpoints are local only when the
 configured address is local.
 
 “Local” currently means loopback on this device, not another machine on the LAN. Ordinary custom
-provider approval cannot authorize private, link-local, single-label, or mDNS destinations. If
+provider approval cannot authorize a provider address that names a private, link-local, single-label, or mDNS destination directly (hostnames are checked, not what they resolve to). If
 Copse later adds paired LAN inference, the peer will receive the same full turn context described
 above and must be presented as a separate authenticated destination with explicit revocation and
 data-flow disclosure, rather than as an exception to the public provider-host allow-list.
