@@ -41,6 +41,8 @@ selection. This doc tracks what can move.
   preload IPC.
 - `roadmap-chat-min-width` → browser-hosted geometry; the deterministic fixture carries the
   oversized persisted pane width and the spec measures the renderer-only clamp.
+- `titlebar-compact` → browser-hosted geometry; its overflow, control bounds, and draggable-gap
+  assertions depend on Chromium layout but not Electron or main-process state.
 
 ## The discriminator
 
