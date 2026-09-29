@@ -35257,6 +35257,7 @@ function attachImageExpand(img, alt, gallery, galleryIndex) {
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
     const src = img.currentSrc || img.src;
+    if (!src) return;
     const focusTarget = () => {
       if (img.isConnected) return img;
       for (const candidate of document.querySelectorAll("img.image-expandable")) {
