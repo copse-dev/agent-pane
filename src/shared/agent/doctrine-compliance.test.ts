@@ -112,4 +112,66 @@ describe('scoreDoctrineCompliance', () => {
     })
     assert.ok(report.violations.includes('scopeDiscipline'))
   })
+
+  it('marks an untested renderer view change unverified when the app never launched', () => {
+    const report = scoreDoctrineCompliance({
+      userMessage: 'Make Cmd+L focus the browser address bar',
+      userIntent: 'request',
+      toolCalls: [
+        {
+          name: 'str_replace',
+          args: {
+            path: 'src/renderer/views/browser-pane.ts',
+            old_string: 'old handler',
+            new_string: 'new handler',
+          },
+        },
+        {
+          name: 'run_shell',
+          args: { command: 'pnpm test -- browser-pane' },
+          result: 'exit=0\nall tests passed',
+        },
+      ],
+      finalMessage: 'Cmd+L now focuses the browser address bar, and the existing tests pass.',
+    })
+
+    assert.ok(report.violations.includes('uiBehaviorVerification'))
+  })
+
+  it('accepts a renderer view change with a focused test change or app launch', () => {
+    for (const verification of [
+      {
+        name: 'str_replace',
+        args: {
+          path: 'src/renderer/views/browser-pane.test.ts',
+          old_string: 'old assertion',
+          new_string: 'new assertion',
+        },
+      },
+      {
+        name: 'run_shell',
+        args: { command: 'pnpm run test:e2e -- --spec tests/e2e/browser-display.e2e.ts' },
+        result: 'exit=0\n1 passing',
+      },
+    ]) {
+      const report = scoreDoctrineCompliance({
+        userMessage: 'Make Cmd+L focus the browser address bar',
+        userIntent: 'request',
+        toolCalls: [
+          {
+            name: 'str_replace',
+            args: {
+              path: 'src/renderer/views/browser-pane.ts',
+              old_string: 'old handler',
+              new_string: 'new handler',
+            },
+          },
+          verification,
+        ],
+        finalMessage: 'Cmd+L now focuses the browser address bar, with focused verification.',
+      })
+
+      assert.ok(!report.violations.includes('uiBehaviorVerification'))
+    }
+  })
 })
