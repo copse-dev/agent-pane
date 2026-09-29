@@ -51,17 +51,26 @@ export interface ProjectStoreScope {
 }
 
 /**
+ * Project ids this process has seen in the persisted project list. Once a
+ * project is known to be real it stays keyed by its id, so a turn still running
+ * when the user removes its project keeps writing where it started rather than
+ * switching mid-turn to the root-hashed directory.
+ */
+const persistedProjectIds = new Set<string>()
+
+/**
  * The scope for code running on behalf of a thread: that thread's project.
  *
  * A headless run synthesises a project id that is never persisted (and differs
- * on every run), so only an id the project list knows is used as the key.
- * Otherwise the scope is root-only, and resolves to the same legacy directory
- * those profiles have always used.
+ * on every run), so only an id the project list knows — now, or earlier in this
+ * process — is used as the key. Otherwise the scope is root-only, and resolves
+ * to the same legacy directory those profiles have always used.
  */
 export function threadProjectStoreScope(
   context: Pick<ThreadExecutionContext, 'projectId' | 'projectRoot'>,
 ): ProjectStoreScope {
-  const persisted = getProjectRoot(context.projectId) !== null
+  if (getProjectRoot(context.projectId) !== null) persistedProjectIds.add(context.projectId)
+  const persisted = persistedProjectIds.has(context.projectId)
   return { projectId: persisted ? context.projectId : null, root: context.projectRoot }
 }
 
