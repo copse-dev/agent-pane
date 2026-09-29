@@ -2323,8 +2323,19 @@ describe('input bar attachments across a thread switch', () => {
     assert.equal(host.querySelectorAll('.attachment-chips .video-chip').length, 1)
   })
 
-  it('returns a completed background command attachment to its originating thread', async () => {
-    const first = thread()
+  it("sends a completed background command to its originating thread's agent", async () => {
+    const first: Thread = {
+      ...thread(),
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '```sh\npnpm test\n```',
+          toolCalls: [],
+          createdAt: 1,
+        },
+      ],
+    }
     const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
     const store = createStore({
       workspaceRoot: '/repo',
@@ -2333,9 +2344,19 @@ describe('input bar attachments across a thread switch', () => {
       activeThreadId: first.id,
       threads: [first, second],
     })
+    const runs: Array<{ threadId: string; payload: string }> = []
     const host = document.createElement('div')
     document.body.append(host)
-    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async (_projectId, threadId, payload) => {
+          runs.push({ threadId, payload })
+        },
+      }),
+    )
     await settle()
 
     store.setState({ activeThreadId: second.id })
@@ -2343,16 +2364,91 @@ describe('input bar attachments across a thread switch', () => {
     await settle()
     store.emit('code_block_run_finished', {
       id: 'run-1',
+      projectId: 'project-1',
       threadId: first.id,
       exitCode: 0,
+      output: 'PASS',
       shell: {
         tabId: 'terminal-1',
         label: 'Run · pnpm test · exit 0',
         content: 'Command:\npnpm test\n\nExit code: 0\n\nTerminal output:\nPASS',
       },
     })
+    await flush()
+
+    assert.equal(runs.length, 1, 'the result starts a turn without a Send')
+    const run = runs[0]
+    assert.ok(run)
+    assert.equal(run.threadId, first.id, 'the originating thread, not the active one')
+    assert.match(run.payload, /Shell: Run · pnpm test · exit 0/)
+    assert.match(run.payload, /Terminal output:\\nPASS/)
+    const sent = getThreadById(store, first.id)?.messages.at(-1)
+    assert.equal(sent?.role, 'user')
+    assert.equal(sent.content, '')
+    assert.deepEqual(sent.attachments, [
+      {
+        kind: 'shell',
+        label: 'Run · pnpm test · exit 0',
+        content: 'Command:\npnpm test\n\nExit code: 0\n\nTerminal output:\nPASS',
+      },
+    ])
+    assert.equal(getThreadById(store, second.id)?.messages.length, 0)
+
+    store.setState({ activeThreadId: first.id })
+    store.emit('threads_changed')
+    await settle()
+    assert.equal(
+      host.querySelectorAll('.attachment-chips .shell-chip').length,
+      0,
+      'a sent result is not also left on the draft',
+    )
+  })
+
+  it("keeps a command's result on its thread's draft when the thread cannot take it", async () => {
+    // The thread belongs to `feature` but the shared checkout is on `main`: the
+    // composer refuses to send there, and so does an automatic send.
+    const first = thread('feature')
+    const second: Thread = { ...thread(), id: 'thread-2', title: 'Second' }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: first.id,
+      threads: [first, second],
+    })
+    let runs = 0
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
     await settle()
 
+    store.setState({ activeThreadId: second.id })
+    store.emit('threads_changed')
+    await settle()
+    store.emit('code_block_run_finished', {
+      id: 'run-1',
+      projectId: 'project-1',
+      threadId: first.id,
+      exitCode: 0,
+      output: 'PASS',
+      shell: {
+        tabId: 'terminal-1',
+        label: 'Run · pnpm test · exit 0',
+        content: 'Command:\npnpm test\n\nExit code: 0\n\nTerminal output:\nPASS',
+      },
+    })
+    await flush()
+
+    assert.equal(runs, 0)
     assert.equal(
       host.querySelectorAll('.attachment-chips .shell-chip').length,
       0,
