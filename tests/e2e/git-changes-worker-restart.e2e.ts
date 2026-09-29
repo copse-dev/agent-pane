@@ -60,7 +60,9 @@ describe('git changes diff colouring after a worker restart', function () {
     await changesBtn.waitForExist({ timeout: 30_000 })
     await changesBtn.click()
     await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
-    await (await $('.git-changes-refresh-btn')).click()
+    await (
+      await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+    ).click()
     await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
       timeout: 30_000,
       timeoutMsg: 'expected changed-file rows',
