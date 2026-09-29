@@ -32,6 +32,8 @@ import type {
   AutomationSchedule,
   AutomationScheduleInput,
   AutomationTriggerEvent,
+  BranchCiAutomation,
+  BranchCiAutomationInput,
 } from '@shared/types/automations.ts'
 import type {
   AppleConfigureInput,
@@ -1118,6 +1120,20 @@ export interface ApiClient {
     upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
     remove: (projectId: string, scheduleId: string) => Promise<void>
     runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    listBranchCi: (projectId: string) => Promise<BranchCiAutomation[]>
+    upsertBranchCi: (
+      projectId: string,
+      input: BranchCiAutomationInput,
+    ) => Promise<BranchCiAutomation>
+    removeBranchCi: (projectId: string, id: string) => Promise<void>
+    testBranchCi: (
+      projectId: string,
+      branch: string,
+    ) => Promise<{ repository: string; branch: string; latestFailure: string | null }>
+    canStart: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ allowed: boolean; reason?: string; retryable?: boolean }>
     onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
   }
   appRun: {

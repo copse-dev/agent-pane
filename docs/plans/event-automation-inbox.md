@@ -1,11 +1,13 @@
 # Event automation inbox: first implementation
 
 Implements slice A of the [event-driven automation proposal](https://github.com/copse-dev/agent-pane/pull/2594).
-This is an internal admission and recovery boundary, exercised with an injected
-adapter and durable filesystem fixtures. App startup does not install it yet. It
-adds no UI, connection, polling timer, webhook endpoint or model execution.
-Existing cron schedules and the supervisor's one-shot `emitEvent(string)` remain
-unchanged.
+Slice A introduced an internal admission and recovery boundary, exercised with
+an injected adapter and durable filesystem fixtures. The branch CI adapter now
+installs it at app startup and adds an app-open polling timer and editor controls.
+The inbox itself still only admits evidence and prepares drafts; the renderer
+starts model turns through the existing automation controller. It has no webhook
+endpoint. Existing cron schedules and the supervisor's one-shot
+`emitEvent(string)` remain unchanged.
 
 ## Implemented contract
 
@@ -78,11 +80,12 @@ The host must:
   follows the existing supervisor/store model; multiple independent processes
   must not write the same profile.
 
-No production setting or manifest capability is introduced only for tests. Slice B
-will supply the saved-definition writer, real authenticated CI polling, app-open
-turn dispatch, coalescing and cost/worktree budget enforcement. Those are required
-before exposing event automations in the shared modal/Settings editor. This slice
-makes no claim that a stored permission snapshot authorizes later tool use.
+No production setting or manifest capability is introduced only for tests. The
+branch CI adapter now supplies a saved-definition writer, authenticated app-open
+polling, a shared-editor form, worktree and daily run limits, and renderer turn
+dispatch through the existing automation controller. Full pending-delivery
+coalescing, delivery history, selected-check filters, and cost allowances remain
+open. A stored permission snapshot does not authorize later tool use.
 
 ## Acceptance criteria and evidence
 
