@@ -330,6 +330,148 @@ const PROPOSED_DIFF_TRACE: DemoTrace = {
   ],
 }
 
+// A stand-in browser capture for the concise-thread scenarios: the screenshot a
+// tool returned is the "work output" that view keeps on screen.
+const CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+  [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+    '<rect width="480" height="270" fill="#f4f1ea"/>',
+    '<rect width="480" height="36" fill="#2f3a2f"/>',
+    '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+    '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+    '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+    '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+    '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+    '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+    '</svg>',
+  ].join(''),
+)}`
+
+/**
+ * One finished turn — narration, reads, a failed then retried command, a
+ * screenshot and a closing summary — attributed to `model`, so the same
+ * transcript renders concisely for a capable model and in full otherwise.
+ */
+function conciseThreadMessages(model: string, live: boolean): Thread['messages'] {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: 'user',
+      content: 'Fix the settings form so Save stays aligned on narrow windows.',
+      toolCalls: [],
+      createdAt: FIXED_TIME,
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: 'assistant',
+      model,
+      reasoning: 'The Save button is absolutely positioned; check the form layout first.',
+      content: 'Let me look at how the settings form lays out its footer.',
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: 'read_file',
+          args: { path: 'src/renderer/views/settings-dialog.ts' },
+          status: 'done',
+          result: 'export function mountSettings() { … }',
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: 'str_replace',
+          args: { path: 'src/renderer/styles/settings.css' },
+          status: 'done',
+          result: 'Replaced 1 occurrence.',
+          editStats: { additions: 4, deletions: 2 },
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: 'run_shell',
+          args: { command: 'pnpm test -- settings-forms' },
+          status: 'error',
+          result: 'Error: settings-forms.test.ts expected footer to use grid',
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: 'run_shell',
+          args: { command: 'pnpm test -- settings-forms' },
+          status: live ? 'running' : 'done',
+          result: live ? null : 'ℹ pass 12',
+        },
+      ],
+      createdAt: FIXED_TIME + 1_000,
+    },
+    ...(live
+      ? []
+      : [
+          {
+            id: `concise-step-2-${model}`,
+            role: 'assistant' as const,
+            model,
+            content: 'Capturing the narrow layout to confirm.',
+            toolCalls: [
+              {
+                id: `concise-shot-${model}`,
+                name: 'browser_screenshot',
+                args: { width: 480 },
+                status: 'done' as const,
+                result: 'Captured the settings dialog at 480px.',
+                images: [
+                  {
+                    dataUrl: CONCISE_SCREENSHOT,
+                    name: 'settings-480px.png',
+                    kind: 'screenshot' as const,
+                  },
+                ],
+              },
+            ],
+            createdAt: FIXED_TIME + 2_000,
+          },
+          {
+            id: `concise-summary-${model}`,
+            role: 'assistant' as const,
+            model,
+            content:
+              'Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.',
+            toolCalls: [],
+            createdAt: FIXED_TIME + 3_000,
+          },
+        ]),
+  ]
+}
+
+/** `enabled` is the experimental Concise threads setting; on unless a scenario opts out. */
+function conciseThreadScenario(
+  id: string,
+  label: string,
+  model: string,
+  { live = false, enabled = true }: { live?: boolean; enabled?: boolean } = {},
+): DemoScenario {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model,
+      conciseThreadsEnabled: enabled,
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: 'Concise thread view',
+        status: live ? 'running' : 'idle',
+        model,
+        messages: conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  }
+}
+
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -1440,6 +1582,28 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       },
     ],
   },
+  conciseThreadScenario(
+    'concise-thread',
+    'Concise thread view for a capable model',
+    'claude-opus-5-5',
+  ),
+  conciseThreadScenario(
+    'concise-thread-full',
+    'Full thread view for a model below the concise gate',
+    'gpt-4o',
+  ),
+  conciseThreadScenario(
+    'concise-thread-working',
+    'Concise thread view while a capable model works',
+    'claude-opus-5-5',
+    { live: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-disabled',
+    'Full thread view for a capable model while the experiment is off',
+    'claude-opus-5-5',
+    { enabled: false },
+  ),
   {
     id: 'roadmap-chat-min-width',
     label: 'Roadmap side panel minimum chat width',
