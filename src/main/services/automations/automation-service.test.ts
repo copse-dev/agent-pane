@@ -1,7 +1,12 @@
 import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
-import type { AutomationPermission, Thread } from '@shared/types'
+import type {
+  AutomationPermission,
+  AutomationScheduleInput,
+  AutomationTriggerEvent,
+  Thread,
+} from '@shared/types'
 import type { SupervisedTaskMeta } from '@shared/supervisor/task-schema.ts'
 import type { EnqueueSupervisedTaskInput } from '../supervisor/task-supervisor.ts'
 import { storageSet } from '../storage/storage.ts'
@@ -17,6 +22,7 @@ const SCHEDULER_HANDLER = 'automation_scheduler_tick'
 class FakeTaskSupervisor implements AutomationTaskSupervisor {
   readonly enqueued: EnqueueSupervisedTaskInput[] = []
   readonly cancelled: string[] = []
+  syncCalls = 0
   private readonly durable: SupervisedTaskMeta[]
   private tasks: SupervisedTaskMeta[] = []
   private started: Promise<void> | null = null
@@ -35,7 +41,9 @@ class FakeTaskSupervisor implements AutomationTaskSupervisor {
     return this.started
   }
 
-  syncCronTasks(): void {}
+  syncCronTasks(): void {
+    this.syncCalls += 1
+  }
 
   list(projectId?: string): SupervisedTaskMeta[] {
     return this.tasks.filter((task) => projectId === undefined || task.projectId === projectId)
@@ -532,6 +540,8 @@ describe('AutomationService', () => {
   it('does not allocate another worktree while the previous run retains changes', async () => {
     let now = new Date(2026, 6, 27, 9, 0, 0).getTime()
     const threads = new Map<string, Thread>()
+    const events: AutomationTriggerEvent[] = []
+    const supervisor = new FakeTaskSupervisor()
     const service = createAutomationService({
       now: () => now,
       isPluginEnabled: () => true,
@@ -541,6 +551,10 @@ describe('AutomationService', () => {
       },
       loadProjectThreads: () => Promise.resolve([...threads.values()]),
       releasePreviousRun: () => Promise.resolve(false),
+      supervisor: () => supervisor,
+    })
+    service.start((event) => {
+      events.push(event)
     })
     const schedule = await service.upsert('project-a', {
       name: 'Project health',
@@ -572,6 +586,29 @@ describe('AutomationService', () => {
     assert.equal(blocked.coalescedReason, 'worktree-limit')
     assert.equal(blocked.threadId, first.threadId)
     assert.equal(threads.size, 1)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
+    assert.equal(events.at(-1)?.coalescedReason, 'worktree-limit')
+    now += 60_000
+    await service.tick()
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, now)
+    assert.equal(events.at(-1)?.triggeredAt, now)
+    assert.equal(events.at(-1)?.coalescedReason, 'worktree-limit')
+
+    const updated = await service.upsert('project-a', {
+      id: schedule.id,
+      name: schedule.name,
+      cron: schedule.cron,
+      prompt: schedule.prompt,
+      model: schedule.model,
+      enabled: schedule.enabled,
+      maxLiveWorktrees: 2,
+    })
+    assert.equal(updated.maxLiveWorktrees, 2)
+    assert.equal(service.list('project-a')[0]?.lastWorktreeLimitAt, undefined)
+    const resumed = await service.runNow('project-a', schedule.id)
+    assert.equal(resumed.disposition, 'started')
+    assert.equal(threads.size, 2)
+    service.stop()
   })
 
   it('allows a bounded number of retained worktrees when the schedule opts in', async () => {
@@ -660,6 +697,55 @@ describe('AutomationService', () => {
     assert.deepEqual(supervisor.enqueued, [])
     assert.deepEqual(supervisor.cancelled, [])
     assert.equal(supervisor.list('project-a').length, 1)
+  })
+
+  it('saves a worktree-limit edit without waiting for a scheduler resync', async () => {
+    const scheduleId = 'schedule-1'
+    storageSet(STORAGE_KEY, [
+      {
+        id: scheduleId,
+        projectId: 'project-a',
+        name: 'Morning review',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review the current project.',
+        model: 'gpt-5.4',
+        enabled: true,
+        maxLiveWorktrees: 1,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    ])
+    const supervisor = new FakeTaskSupervisor([
+      schedulerTask({ taskId: 'durable-1', projectId: 'project-a', threadId: scheduleId }),
+    ])
+    const service = createAutomationService({
+      now: () => 1,
+      isPluginEnabled: () => true,
+      createProjectThread: () => Promise.resolve(),
+      loadProjectThreads: () => Promise.resolve([]),
+      releasePreviousRun: () => Promise.resolve(true),
+      supervisor: () => supervisor,
+    })
+    service.start(() => {})
+    await service.sync()
+    const syncCalls = supervisor.syncCalls
+
+    const input: AutomationScheduleInput = {
+      id: scheduleId,
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the current project.',
+      model: 'gpt-5.4',
+      enabled: true,
+      maxLiveWorktrees: 2,
+    }
+    const updated = await service.upsert('project-a', input)
+    assert.equal(updated.maxLiveWorktrees, 2)
+    assert.equal(service.list('project-a')[0]?.maxLiveWorktrees, 2)
+    assert.equal(supervisor.syncCalls, syncCalls)
+
+    await service.upsert('project-a', { ...input, enabled: false })
+    assert.equal(supervisor.syncCalls, syncCalls + 1)
   })
 
   it('cancels surplus scheduler tasks left by earlier launches', async () => {
