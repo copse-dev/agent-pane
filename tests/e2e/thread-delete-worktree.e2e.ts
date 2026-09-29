@@ -166,9 +166,15 @@ describe('thread deletion → worktree retirement', function () {
       timeoutMsg: 'expected the dirty thread itself to be deleted',
     })
 
+    // Retirement removes the checkout first and only then offers its branch to
+    // `git branch -d` (retireDeletedThreadWorktree), so the directory can be gone
+    // a moment before the branch is.
+    await browser.waitUntil(() => git(projectRoot, ['branch', '--list', CLEAN_BRANCH]) === '', {
+      timeout: 10_000,
+      timeoutMsg: 'expected the merged clean branch to be deleted after its checkout',
+    })
     const registered = registeredWorktrees(projectRoot)
     assert.ok(!registered.includes(cleanRoot), 'git no longer lists the clean worktree')
-    assert.equal(git(projectRoot, ['branch', '--list', CLEAN_BRANCH]), '')
     assert.ok(registered.includes(dirtyRoot), 'git still lists the dirty worktree')
     assert.equal(readFileSync(join(dirtyRoot, 'draft.txt'), 'utf8'), 'uncommitted work\n')
     assert.notEqual(git(projectRoot, ['branch', '--list', DIRTY_BRANCH]), '')
