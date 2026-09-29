@@ -106,5 +106,9 @@
   {
     "id": "concise-thread-disabled",
     "label": "Full thread view for a capable model while the experiment is off"
+  },
+  {
+    "id": "roadmap-chat-min-width",
+    "label": "Roadmap side panel minimum chat width"
   }
 ]
