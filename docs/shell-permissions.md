@@ -370,10 +370,12 @@ a token the shell would expand (braces, `*`/`?`/`[` globs, `$`, backticks, quote
 text but reads `dir/../x`. Repeating the exact approved token is still covered.
 
 Coverage and the credential checks are decided on the path text and do not resolve symlinks, so a
-symlink inside an approved directory reaches whatever it points to. The sandbox does not close this:
+symlink inside an approved directory reaches whatever it points to. The approved root itself is
+identity-pinned while it exists: replacing a granted file or directory, or retargeting a granted
+symlink, revokes that grant and asks again. The sandbox does not close the nested-symlink case:
 `readAllowedSandboxOverlay` canonicalizes each target with `realpath` before widening `allowRead`,
-so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An expanded “Approve this command” action approves one invocation without
-a grant.
+so it widens to the link's destination. Without an OS sandbox the command reads it on the host. An
+expanded “Approve this command” action approves one invocation without a grant.
 
 Reads under macOS's per-user temp directory (`getconf DARWIN_USER_TEMP_DIR`, `/var/folders/…/T`)
 skip the question: the seatbelt already lets every command read there, so the gate records a
