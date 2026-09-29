@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedMessageImageFixture } from './helpers/seed-config.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../packages/agent/src/plugins/first-party-plugins.ts'
+import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -38,6 +39,54 @@ const THIRD_IMAGE_DATA_URL =
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#0f766e"/></svg>',
   )
+
+/** Seed both entry paths through the native thread store. */
+function seedGalleryThread(workspaceRoot: string): void {
+  const projectId = 'e2e-image-expand-project'
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-image-expand-thread',
+        title: 'Screenshot attachment expand',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-image',
+            role: 'user',
+            content: 'Here is the screenshot from the failing UI.',
+            images: [IMAGE_DATA_URL, SECOND_IMAGE_DATA_URL, THIRD_IMAGE_DATA_URL],
+            attachments: [{ kind: 'file', label: 'running-tests.diff', content: DIFF_TEXT }],
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-ack',
+            role: 'assistant',
+            content: 'Got the screenshot — I will inspect it.',
+            contentBlocks: [IMAGE_DATA_URL, SECOND_IMAGE_DATA_URL, THIRD_IMAGE_DATA_URL].map(
+              (dataUrl) => ({
+                type: 'image',
+                dataUrl,
+                mimeType: dataUrl.startsWith('data:image/svg+xml,') ? 'image/svg+xml' : 'image/png',
+              }),
+            ),
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    pluginDisabled: EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS.filter(
+      (id) => id !== 'copse.roadmap-plans',
+    ),
+  })
+}
 
 /** Deliver files to the roadmap form the way Chromium delivers a paste of OS files. */
 async function pasteFilesIntoForm(
@@ -119,14 +168,7 @@ describe('Screenshot click-to-expand', () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), PROJECT_WORKSPACE_PREFIX))
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedMessageImageFixture(
-      workspaceRoot,
-      [IMAGE_DATA_URL, SECOND_IMAGE_DATA_URL, THIRD_IMAGE_DATA_URL],
-      {
-        roadmapPlansEnabled: true,
-        assistantImages: [IMAGE_DATA_URL, SECOND_IMAGE_DATA_URL, THIRD_IMAGE_DATA_URL],
-      },
-    )
+    seedGalleryThread(workspaceRoot)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
