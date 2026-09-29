@@ -61257,22 +61257,18 @@ function mountBranchCiEditor(options) {
   let pluginEnabled = options.pluginEnabled;
   let definitions = [];
   let editingId = null;
-  const add2 = el(
-    "button",
-    {
-      type: "button",
-      class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-ci-btn",
-      disabled: projectId ? void 0 : true
-    },
-    "Add CI event"
-  );
-  heading.append(add2);
   const section = el("section", { class: "automation-list automation-ci-list" });
   const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
   const rows = el("div", { class: "automation-list" });
   section.append(sectionHeading, rows);
   const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
-  const title = el("h4", { class: "automation-form-title" }, "New CI event");
+  const title = el("h4", { class: "automation-form-title" }, "New automation");
+  const when = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const name = el("input", {
     type: "text",
     class: "automation-input automation-ci-name",
@@ -61319,7 +61315,7 @@ function mountBranchCiEditor(options) {
       type: "submit",
       class: "ui-btn ui-btn-primary automation-ci-save"
     },
-    "Save CI event"
+    "Save automation"
   );
   const cancel = el(
     "button",
@@ -61331,6 +61327,7 @@ function mountBranchCiEditor(options) {
   );
   form.append(
     title,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", when),
     el("label", { class: "automation-label" }, "Name", name),
     el("label", { class: "automation-label" }, "Branch", branch),
     el("label", { class: "automation-label" }, "Model", model),
@@ -61358,15 +61355,17 @@ function mountBranchCiEditor(options) {
     scheduleList.hidden = false;
     section.hidden = false;
   }
-  async function open2(definition) {
+  async function open2(definition, draft) {
     hideStatus();
     editingId = definition?.id ?? null;
-    title.textContent = definition ? "Edit CI event" : "New CI event";
-    name.value = definition?.name ?? "";
+    title.textContent = definition ? "Edit automation" : "New automation";
+    when.value = "github-ci-failed";
+    when.disabled = Boolean(definition);
+    name.value = definition?.name ?? draft?.name ?? "";
     branch.value = definition?.trigger.branch ?? "";
-    prompt.value = definition?.prompt ?? "";
-    worktrees.value = String(definition?.maxLiveWorktrees ?? 1);
-    enabled.checked = definition?.enabled ?? true;
+    prompt.value = definition?.prompt ?? draft?.prompt ?? "";
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
     updateSummary();
     heading.hidden = true;
     scheduleList.hidden = true;
@@ -61374,7 +61373,7 @@ function mountBranchCiEditor(options) {
     section.hidden = true;
     form.hidden = false;
     name.focus();
-    const defaultModel = definition?.model ?? BEST_VALUE_CHAT_MODEL;
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
     const available = await fetchDynamicModelOptions(defaultModel);
     const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
     await modelPicker.refresh(selected);
@@ -61452,7 +61451,16 @@ function mountBranchCiEditor(options) {
     definitions = await api2.automations.listBranchCi(projectId);
     render();
   }
-  add2.addEventListener("click", () => void open2());
+  when.addEventListener("change", () => {
+    if (when.value !== "schedule" || editingId) return;
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    });
+  });
   cancel.addEventListener("click", close);
   preview.addEventListener("click", () => {
     if (!projectId || !branch.value.trim()) return;
@@ -61498,6 +61506,9 @@ function mountBranchCiEditor(options) {
   });
   return {
     refresh,
+    openNew(draft) {
+      return open2(void 0, draft);
+    },
     reveal(id) {
       const definition = definitions.find((candidate) => candidate.id === id);
       if (!definition) return false;
@@ -61621,7 +61632,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
-      "Add schedule"
+      "New automation"
     )
   );
   const addButton = heading.querySelector(".automation-add-btn");
@@ -61637,6 +61648,12 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
+  const whenSelect = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -61747,7 +61764,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
-    "Save schedule"
+    "Save automation"
   );
   const cancelButton = el(
     "button",
@@ -61756,6 +61773,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   form.append(
     formTitle,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", whenSelect),
     el("label", { class: "automation-label" }, "Name", nameInput),
     el("label", { class: "automation-label" }, "Model", modelSelect),
     scheduleFields,
@@ -61785,7 +61803,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     api: api2,
     pluginEnabled,
     showStatus,
-    hideStatus
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(void 0, draft)
   });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
@@ -61992,20 +62011,22 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
-  async function openForm(schedule) {
+  async function openForm(schedule, draft) {
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    whenSelect.value = "schedule";
+    whenSelect.disabled = Boolean(schedule);
     list.hidden = true;
     heading.hidden = true;
-    nameInput.value = schedule?.name ?? "";
+    nameInput.value = schedule?.name ?? draft?.name ?? "";
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
-    promptInput.value = schedule?.prompt ?? "";
-    enabledInput.checked = schedule?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
-    const configuredModel = schedule?.model.trim() ?? "";
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
     ciEditor.hideForSchedule();
     form.hidden = false;
@@ -62145,6 +62166,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   }
   addButton.addEventListener("click", () => void openForm());
+  whenSelect.addEventListener("change", () => {
+    if (whenSelect.value !== "github-ci-failed" || editingId) return;
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+    });
+  });
   cancelButton.addEventListener("click", closeForm);
   repeatSelect.addEventListener("change", () => {
     if (repeatSelect.value !== "custom") {
