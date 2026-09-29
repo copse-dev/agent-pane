@@ -1,4 +1,8 @@
-import { profileVaultSourceHash } from './lib/profile-vault-source.mts'
+import {
+  PROFILE_VAULT_ARCHITECTURES,
+  PROFILE_VAULT_BUILD_VERSION,
+  profileVaultSourceHash,
+} from './lib/profile-vault-source.mts'
 import { createHash } from 'node:crypto'
 import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
@@ -454,7 +458,8 @@ const vaultHelper = 'native/profile-vault/dist/CopseVault'
 if (existsSync(vaultHelper)) {
   const expectedVaultBuild =
     JSON.stringify({
-      version: 1,
+      version: PROFILE_VAULT_BUILD_VERSION,
+      architectures: PROFILE_VAULT_ARCHITECTURES,
       sourceHash: profileVaultSourceHash(process.cwd()),
     }) + '\n'
   if (readFileSync('native/profile-vault/dist/build.json', 'utf8') !== expectedVaultBuild) {

@@ -1164,6 +1164,19 @@ describe('release-mac.yml workflow invariants', () => {
     assert.doesNotMatch(workflow, /prepare:gortex:mac/)
   })
 
+  it('imports the release identity before preparing the signed vault helper', () => {
+    const importIdentity = workflow.indexOf('security import "$signing_certificate"')
+    const prepareVault = workflow.indexOf('pnpm run prepare:vault --identity "$signing_identity"')
+    const releaseBuild = workflow.indexOf('pnpm run build:release', prepareVault)
+    assert.ok(importIdentity >= 0, 'the release certificate must be imported')
+    assert.ok(prepareVault > importIdentity, 'the vault helper must be signed after import')
+    assert.ok(releaseBuild > prepareVault, 'the signed helper must exist before build:release')
+    assert.match(workflow, /export CSC_KEYCHAIN="\$signing_keychain"/)
+    assert.match(workflow, /export CSC_NAME="\$signing_identity"/)
+    assert.match(workflow, /unset CSC_LINK/)
+    assert.match(workflow, /codesign --verify --strict[\s\S]*identifier "dev\.copse\.vault"/)
+  })
+
   it('assembles portable checksums without recompressing the packages', () => {
     assert.match(workflow, /assemble-macos-release\.mts/)
     assert.match(workflow, /shasum -a 256 --check SHA256SUMS/)

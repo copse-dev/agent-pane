@@ -87,6 +87,10 @@ there with Contents write permission. `GITHUB_TOKEN` remains scoped to the
 private source run and its Actions artifacts. The release workflow fails before
 packaging if a required signing or notarization credential is missing.
 
+The macOS build imports `MAC_CSC_LINK` into an ephemeral keychain, uses that same
+identity to prepare the universal native vault helper and sign the app, then
+deletes the keychain and restores the runner's original search list.
+
 ## Publishing through CI
 
 Only [the `Release (macOS)` workflow](../.github/workflows/release-mac.yml)
