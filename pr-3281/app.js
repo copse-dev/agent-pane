@@ -54246,6 +54246,7 @@ function createCustomProvidersSection(api2, opts = {}) {
         },
         chipLabel(key)
       );
+      chip2.dataset["provider"] = key;
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
