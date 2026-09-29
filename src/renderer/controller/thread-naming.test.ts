@@ -139,7 +139,7 @@ test('maybeRenameThreadBranch applies an idle settled title to its worktree bran
   assert.equal(requireThread(store, 't-branch').worktree?.branch, 'copse/repair-sessions-branch')
 })
 
-test('maybeNameThread falls back to first words when suggestTitle fails', async () => {
+test('maybeNameThread falls back to a deterministic title when suggestTitle fails', async () => {
   const store = createStore({
     threads: [newThread('t-fallback', [userMessage('Fix the flicker please now')])],
     activeThreadId: 't-fallback',
@@ -152,6 +152,32 @@ test('maybeNameThread falls back to first words when suggestTitle fails', async 
   await new Promise((r) => setTimeout(r, 0))
 
   assert.equal(requireThread(store, 't-fallback').title, 'Fix the flicker please now')
+})
+
+test('maybeNameThread does not persist a vague fallback when suggestTitle fails', async () => {
+  const store = createStore({
+    threads: [newThread('t-vague-fallback', [userMessage('Can we fix this?')])],
+    activeThreadId: 't-vague-fallback',
+  })
+  const { api } = apiWithTitle(async () => null)
+
+  maybeNameThread(store, api, 't-vague-fallback')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(requireThread(store, 't-vague-fallback').title, 'New Thread')
+})
+
+test('maybeNameThread preserves the requested action when suggestTitle fails', async () => {
+  const store = createStore({
+    threads: [newThread('t-action-fallback', [userMessage('Make targets fail on Linux')])],
+    activeThreadId: 't-action-fallback',
+  })
+  const { api } = apiWithTitle(async () => null)
+
+  maybeNameThread(store, api, 't-action-fallback')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(requireThread(store, 't-action-fallback').title, 'Make targets fail on Linux')
 })
 
 // Inline paste and thread-reference chips are stored as U+FFFC placeholders in
@@ -176,7 +202,7 @@ test('maybeNameThread keeps chip placeholders out of the title and the naming in
   maybeNameThread(store, api, 't-chips')
   await new Promise((r) => setTimeout(r, 0))
 
-  assert.equal(requireThread(store, 't-chips').title, 'Summarize this feedback:')
+  assert.equal(requireThread(store, 't-chips').title, 'Summarize this feedback')
   assert.deepEqual(titleCalls, ['Summarize this feedback:\n\nCompare with please'])
 })
 
