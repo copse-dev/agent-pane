@@ -133,10 +133,12 @@ describe('image expand lightbox', () => {
     assert.equal(image.dataset['imageIndex'], '1')
     assert.equal(thumbnails[1]?.getAttribute('aria-selected'), 'true')
 
-    viewer.dispatchEvent(
+    next.focus()
+    next.dispatchEvent(
       new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
     )
     assert.equal(image.dataset['imageIndex'], '2')
+    assert.equal(document.activeElement, viewer)
 
     viewer.dispatchEvent(
       new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),

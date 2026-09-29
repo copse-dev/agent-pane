@@ -196,10 +196,12 @@ function openImageGalleryViewer(
       event.preventDefault()
       event.stopPropagation()
       move(currentIndex - 1)
+      viewer.focus({ preventScroll: true })
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
       event.stopPropagation()
       move(currentIndex + 1)
+      viewer.focus({ preventScroll: true })
     }
   })
 

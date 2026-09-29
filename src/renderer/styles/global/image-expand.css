@@ -16,6 +16,7 @@
   max-height: calc(100vh - 32px);
   padding: 0;
   overflow: hidden;
+  box-shadow: none;
 }
 .attachment-preview-dialog[data-preview-kind='image-gallery'] .attachment-preview-header {
   position: absolute;
