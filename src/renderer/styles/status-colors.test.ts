@@ -52,30 +52,47 @@ function assertNoStatusFill(css: string, selector: string): void {
  *  - settings.css: two `#000` stops in a `mask-image` gradient, where only the
  *    alpha channel is read, so no hue is being chosen.
  */
-const ALLOWED_RAW_HEX: Record<string, number> = {
-  'markdown.css': 8,
-  'video-expand.css': 1,
-  'settings.css': 2,
+const ALLOWED_RAW_HEX: Readonly<Record<string, readonly string[]>> = {
+  'markdown.css': [
+    '#007000',
+    '#0000ff',
+    '#a31515',
+    '#07734b',
+    '#795e26',
+    '#1f6b80',
+    '#0451a5',
+    '#1f1f1f',
+  ],
+  'video-expand.css': ['#000'],
+  'settings.css': ['#000', '#000'],
+}
+
+function assertApprovedRawHex(file: string, css: string): void {
+  // `var(--warning, #d29922)` is a token fallback, not a competing component hue.
+  const declarations = css.replace(/var\([^()]*(?:\([^()]*\)[^()]*)*\)/g, 'var()')
+  const found = (declarations.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [])
+    .map((colour) => colour.toLowerCase())
+    .sort()
+  const allowed = [...(ALLOWED_RAW_HEX[file] ?? [])].sort()
+  assert.deepEqual(
+    found,
+    allowed,
+    `${file} must keep its reviewed raw hex palette; use semantic or text tokens for new hues`,
+  )
 }
 
 describe('status colours come from tokens (#3065)', () => {
   it('keeps raw hex colours out of component stylesheets', () => {
     for (const { file, css } of stylesheets()) {
-      // `var(--warning, #d29922)` is a fallback for a token, not a competing hue.
-      const declarations = css.replace(/var\([^()]*(?:\([^()]*\)[^()]*)*\)/g, 'var()')
-      const found = declarations.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []
-      const allowed = ALLOWED_RAW_HEX[file] ?? 0
-      assert.ok(
-        found.length <= allowed,
-        `${file} paints ${String(found.length)} raw hex colour(s) (${found.join(', ')}); ` +
-          `use --success / --warning / --danger / --info / --error or the text tokens instead`,
-      )
-      if (found.length < allowed) {
-        assert.fail(
-          `${file} now has ${String(found.length)} raw hex colour(s); lower ALLOWED_RAW_HEX to match`,
-        )
-      }
+      assertApprovedRawHex(file, css)
     }
+  })
+
+  it('pins reviewed exception colours rather than only their count', () => {
+    const markdown = stylesheets().find((sheet) => sheet.file === 'markdown.css')?.css ?? ''
+    assert.throws(() => {
+      assertApprovedRawHex('markdown.css', markdown.replace('#007000', '#ff0000'))
+    }, /reviewed raw hex palette/)
   })
 
   it('keeps status fills off yes/no buttons', () => {
