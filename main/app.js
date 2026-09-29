@@ -37135,6 +37135,28 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
+      },
+      {
+        id: "roadmap-chat-min-width",
+        label: "Roadmap side panel minimum chat width",
+        project: project("demo-roadmap-chat-min-width-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: { filesPaneWidth: 4e3 }
+        },
+        threads: [
+          {
+            id: "demo-roadmap-chat-min-width-thread",
+            title: "Roadmap layout bounds",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       }
     ];
   }
@@ -61654,9 +61676,14 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   const pluginNotice = () => pluginEnabled ? "Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path." : "Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const attention = el("div", {
+    class: "automation-attention",
+    role: "status",
+    hidden: true
+  });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
-  const form = el("form", { class: "automation-form", hidden: true });
+  const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
   const whenSelect = el(
     "select",
@@ -61803,7 +61830,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, status, list, form);
+  root.append(heading, scope, notice, attention, status, list, form);
   const ciEditor = mountBranchCiEditor({
     root,
     heading,
@@ -62047,6 +62074,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function renderList() {
     clear(list);
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
+    attention.hidden = blocked.length === 0;
+    attention.textContent = blocked.length === 0 ? "" : `${String(blocked.length)} automation${blocked.length === 1 ? "" : "s"} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`;
     if (!projectId) return;
     if (schedules.length === 0) {
       list.append(el("div", { class: "automation-empty" }, "No schedules for this project yet."));
@@ -62054,7 +62084,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -62079,6 +62109,15 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
       );
+      if (schedule.lastWorktreeLimitAt !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message" },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
       const actions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
@@ -62201,6 +62240,21 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    if (!nameInput.value.trim()) {
+      showStatus("Enter a name before saving.", true);
+      nameInput.focus();
+      return;
+    }
+    if (!promptInput.value.trim()) {
+      showStatus("Enter a prompt before saving.", true);
+      promptInput.focus();
+      return;
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus("Choose a model before saving.", true);
+      modelPicker.openMenu();
+      return;
+    }
     const cron = cronFromScheduleControls();
     if (cron === null) {
       showStatus("Choose a valid schedule before saving.", true);
@@ -62231,6 +62285,20 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       saveButton.removeAttribute("disabled");
     });
   });
+  const unsubscribeTriggered = api2.automations.onTriggered(
+    (event) => {
+      if (event.projectId !== projectId) return;
+      const changesLimitStatus = event.disposition === "started" || event.coalescedReason === "worktree-limit";
+      if (!changesLimitStatus) return;
+      void refresh();
+    }
+  );
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return;
+    removalObserver.disconnect();
+    unsubscribeTriggered();
+  });
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
   void refresh();
   return Object.assign(root, {
     setPluginEnabled(enabled) {
