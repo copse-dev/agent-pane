@@ -757,7 +757,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
@@ -795,7 +795,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let approvalFooter = ''
     setApprovalHandler(async (request) => {
@@ -804,7 +804,7 @@ describe('ensureToolPermitted', () => {
     })
     try {
       await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
-      assert.match(approvalFooter, /widened for ACP agent: codex/)
+      assert.match(approvalFooter, /widened for agent: codex/)
       assert.match(approvalFooter, /on macOS, this command could inherit that access/)
     } finally {
       setApprovalHandler(null)
@@ -822,7 +822,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -851,7 +851,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
@@ -880,7 +880,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -910,7 +910,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -1351,7 +1351,7 @@ describe('ensureTerminalPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {

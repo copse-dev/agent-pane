@@ -7,7 +7,7 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 
 const PROJECT_ID = 'e2e-acp-network-scope-approval'
 const REASON =
-  'The sandbox network allowlist is temporarily widened for ACP agent: codex; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.'
+  'The sandbox network allowlist is temporarily widened for agent: codex; on macOS, this command could inherit that access if it starts now, so Copse is asking before running them at the same time.'
 const EXPLANATION = `Why this needs approval:\n• ${REASON}`
 
 interface ApprovalTestBridge {
