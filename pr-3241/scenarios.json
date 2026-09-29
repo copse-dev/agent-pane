@@ -90,5 +90,9 @@
   {
     "id": "chat-layout-styling",
     "label": "Chat layout styling"
+  },
+  {
+    "id": "roadmap-chat-min-width",
+    "label": "Roadmap side panel minimum chat width"
   }
 ]
