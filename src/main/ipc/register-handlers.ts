@@ -806,7 +806,7 @@ export function registerAllHandlers(
     )
   })
 
-  ipcMain.handle('browser:export-canvas', async (event, rawArtefact: unknown) => {
+  ipcMain.handle('browser:export-artefact', async (event, rawArtefact: unknown) => {
     assertMainFrameSender(event, win)
     const artefact = parseIpcArgs(
       z.strictObject({
