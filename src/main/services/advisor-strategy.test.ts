@@ -375,6 +375,17 @@ describe('advisor transcript cap', () => {
     assert.match(transcript, /the start of the most recent section omitted/)
   })
 
+  it('honours a cap too small for the detailed truncation notice', () => {
+    const section = `## Tool results\n${'a'.repeat(1_000)}END`
+    const transcript = capAdvisorTranscript([section], 100)
+    assert.equal(transcript.length, 100)
+    assert.ok(transcript.startsWith('[Transcript truncated]'))
+    assert.ok(transcript.endsWith('END'))
+
+    assert.equal(capAdvisorTranscript([section], 1).length, 1)
+    assert.equal(capAdvisorTranscript([section], 0), '')
+  })
+
   it('does not repeat a pinned task that is also the newest section', () => {
     const sections = [`## System\n${'S'.repeat(5_000)}`, '## User\nDo the thing.']
     const transcript = capAdvisorTranscript(sections, 1_000, 1)

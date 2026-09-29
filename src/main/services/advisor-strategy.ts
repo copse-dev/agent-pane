@@ -516,9 +516,15 @@ export function capAdvisorTranscript(
   taskIndex = -1,
 ): string {
   const full = sections.join(SECTION_SEPARATOR)
-  if (full.length <= maxChars) return full
+  const limit = Number.isFinite(maxChars)
+    ? Math.max(0, Math.floor(maxChars))
+    : maxChars === Number.POSITIVE_INFINITY
+      ? maxChars
+      : 0
+  if (full.length <= limit) return full
+  if (limit === 0) return ''
 
-  const budget = Math.max(0, maxChars - TRUNCATION_NOTICE_RESERVE)
+  const budget = Math.max(0, limit - TRUNCATION_NOTICE_RESERVE)
   const task = taskIndex >= 0 ? sections[taskIndex] : undefined
   const pinTask = task !== undefined && task.length <= budget / TASK_BUDGET_SHARE
   let remaining = pinTask ? budget - task.length - SECTION_SEPARATOR.length : budget
@@ -550,16 +556,27 @@ export function capAdvisorTranscript(
       ? `${String(omittedSections)} earlier section${omittedSections === 1 ? '' : 's'}`
       : 'the start of the most recent section'
   const notice =
-    `[Transcript truncated to fit the advisor’s ${String(maxChars)}-character budget: ` +
+    `[Transcript truncated to fit the advisor’s ${String(limit)}-character budget: ` +
     `${omittedDetail} omitted (${String(full.length - keptChars)} of ${String(full.length)} characters). ` +
     `${pinTask ? 'The original task is kept first; the ' : 'The '}most recent context follows.]`
-  return [
+  const rendered = [
     notice,
     ...(pinTask ? [task] : []),
     ...(pinTask && omittedSections > 0 ? ['[…]'] : []),
     ...recent,
     ...(keptTail ? [keptTail] : []),
   ].join(SECTION_SEPARATOR)
+  if (rendered.length <= limit) return rendered
+
+  // A caller may deliberately use a budget smaller than the detailed notice.
+  // Keep the hard cap truthful in that case: retain a compact marker and spend
+  // the remaining room on the newest transcript tail.
+  const compactNotice = '[Transcript truncated]'
+  if (compactNotice.length >= limit) return compactNotice.slice(0, limit)
+  const tailBudget = limit - compactNotice.length - SECTION_SEPARATOR.length
+  if (tailBudget <= 0) return compactNotice
+  const tail = `…${full.slice(full.length - Math.max(0, tailBudget - 1))}`
+  return `${compactNotice}${SECTION_SEPARATOR}${tail}`
 }
 
 function safeJson(value: unknown): string {
