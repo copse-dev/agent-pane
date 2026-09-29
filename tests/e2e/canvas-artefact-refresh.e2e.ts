@@ -149,6 +149,20 @@ describe('canvas artefact refresh', () => {
     expect(labelsAfterFirstRender.filter((label) => label === 'Sales Dashboard')).toHaveLength(1)
   })
 
+  it('offers a download action for the live canvas document', async () => {
+    await $('.browser-tab-panel.is-active .browser-menu-btn').click()
+    await $('.browser-tab-panel.is-active .browser-menu').waitForDisplayed({ timeout: 5_000 })
+    const downloadState = await browser.execute(() => {
+      const item = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.browser-menu-item'),
+      ).find((candidate) => candidate.textContent === 'Download canvas')
+      return { exists: Boolean(item), disabled: item?.disabled ?? true }
+    })
+    expect(downloadState).toEqual({ exists: true, disabled: false })
+    await saveAppScreenshot('canvas-artefact-download-menu.png')
+    await $('.browser-tab-panel.is-active .browser-menu-btn').click()
+  })
+
   it('refreshes that tab in place instead of stacking a duplicate', async () => {
     await renderVersion('v2')
     await browser.waitUntil(async () => (await activeArtefactHeading()) === 'v2', {
