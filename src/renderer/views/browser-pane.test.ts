@@ -2,7 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { createThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact, showCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 import { applyPopoutSeed, capturePopoutSeed } from '../popout/pane-popout-seed.ts'
@@ -739,7 +739,12 @@ describe('browser pane requested URLs', () => {
     globalThis.ResizeObserver = NoopResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const store = createStore({
+      activeProjectId: 'background-project',
+      activeThreadId: 'background-thread',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
     const unmount = mountBrowserPane(list, viewer, store)
 
     try {
@@ -790,6 +795,57 @@ describe('browser pane requested URLs', () => {
     }
   })
 
+  it('defers a background thread canvas until that thread is selected', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'current-thread',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      openCanvasArtefact(store, {
+        title: 'Background Dashboard',
+        owner: { projectId: 'project-1', threadId: 'background-thread' },
+        mimeType: 'text/html',
+        body: '<!doctype html><h1>Background</h1>',
+      })
+
+      assert.equal(store.getState().rightPanelMode, 'explorer')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 0)
+
+      switchThread(store, 'background-thread')
+
+      assert.equal(store.getState().rightPanelMode, 'browser')
+      assert.equal(
+        list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')?.textContent,
+        'Background Dashboard',
+      )
+      assert.ok(viewer.querySelector('.browser-tab-panel.is-active .browser-webview'))
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
   it('refreshes the open artefact tab in place instead of stacking duplicates', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
@@ -806,7 +862,11 @@ describe('browser pane requested URLs', () => {
     globalThis.ResizeObserver = NoopResizeObserver
 
     const { list, viewer } = mountBrowserHosts()
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const store = createStore({
+      activeThreadId: 'thread-a',
+      filesPaneOpen: false,
+      rightPanelMode: 'explorer',
+    })
     const unmount = mountBrowserPane(list, viewer, store)
 
     try {
@@ -853,6 +913,8 @@ describe('browser pane requested URLs', () => {
         body: '<!doctype html><h1>other thread</h1>',
         threadId: 'thread-b',
       })
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforeOtherThread)
+      switchThread(store, 'thread-b')
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, beforeOtherThread + 1)
 
       // A differently titled artefact is a different thing and gets its own tab.
@@ -973,6 +1035,7 @@ describe('browser pane requested URLs', () => {
     // but the tab that used to render the artefact died with the last session.
     const store = createStore({
       activeProjectId: 'project-1',
+      activeThreadId: 'thread-a',
       filesPaneOpen: false,
       rightPanelMode: 'explorer',
     })
