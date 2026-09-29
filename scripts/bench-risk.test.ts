@@ -19,6 +19,7 @@ import {
   areaOf,
   changeShape,
   excerptAround,
+  fetchPulls,
   isBlamingEvidence,
   isFixTitle,
   isLowSignalPath,
@@ -238,6 +239,46 @@ describe('evidence', () => {
 const BLAMED: SampleTier = 'blamed'
 const EVIDENCE: SampleTier = 'evidence'
 const NONE: SampleTier = 'none'
+
+describe('fetchPulls', () => {
+  it('keeps a long-lived pull request opened before the cutoff that merged after it', async () => {
+    const pull = (number: number, createdAt: string, updatedAt: string): unknown => ({
+      number,
+      title: `Change ${String(number)}`,
+      body: null,
+      state: 'closed',
+      created_at: createdAt,
+      updated_at: updatedAt,
+      merged_at: updatedAt,
+      head: { sha: 'b'.repeat(40) },
+      base: { sha: 'a'.repeat(40), ref: 'main' },
+      user: { login: 'someone' },
+    })
+    const recent = Array.from({ length: 99 }, (_, index) =>
+      pull(400 + index, '2026-09-10T00:00:00Z', '2026-09-12T00:00:00Z'),
+    )
+    const requested: string[] = []
+    const client: GitHubClient = {
+      get: (path) => {
+        requested.push(path)
+        const page = /[?&]page=(\d+)/.exec(path)?.[1]
+        // Newest update first: the long-lived #300 merged in the window, #301 went quiet before it.
+        if (page === '1')
+          return Promise.resolve([
+            ...recent,
+            pull(300, '2026-07-01T00:00:00Z', '2026-09-11T00:00:00Z'),
+          ])
+        if (page === '2')
+          return Promise.resolve([pull(301, '2026-07-01T00:00:00Z', '2026-08-01T00:00:00Z')])
+        return Promise.resolve([])
+      },
+    }
+    const pulls = await fetchPulls(client, '2026-09-01T00:00:00Z')
+    assert.ok(pulls.some((found) => found.number === 300))
+    assert.match(requested[0] ?? '', /sort=updated&direction=desc/)
+    assert.equal(requested.length, 2)
+  })
+})
 
 describe('timelineEvidence', () => {
   it('reads cross-references from every page of a long timeline', async () => {

@@ -62,6 +62,7 @@ const pullSchema = z.object({
   body: z.string().nullable(),
   state: z.string(),
   created_at: z.string(),
+  updated_at: z.string(),
   merged_at: z.string().nullable(),
   head: z.object({ sha: z.string() }),
   base: z.object({ sha: z.string(), ref: z.string() }),
@@ -581,17 +582,25 @@ export async function timelineEvidence(
   return out
 }
 
+/**
+ * Every pull request updated since `earliest`, newest update first. Merging updates a pull
+ * request, so this includes a long-lived one opened before the cutoff that merged after it.
+ */
+export async function fetchPulls(client: GitHubClient, earliest: string): Promise<Pull[]> {
+  return pages(
+    client,
+    'pulls?state=all&sort=updated&direction=desc',
+    decodeWithSchema(pullSchema),
+    (pull) => pull.updated_at < earliest,
+  )
+}
+
 export async function collect(options: CollectOptions): Promise<RiskCorpus> {
   const { client, io } = options
   const previous = readCorpus(options.corpusPath)
   const earliest = new Date(Date.parse(options.matureFrom) - DAY_MS).toISOString()
-  io.stderr(`bench:risk: reading pull requests and issues created since ${earliest}\n`)
-  const pulls = await pages(
-    client,
-    'pulls?state=all&sort=created&direction=desc',
-    decodeWithSchema(pullSchema),
-    (pull) => pull.created_at < earliest,
-  )
+  io.stderr(`bench:risk: reading pull requests and issues updated since ${earliest}\n`)
+  const pulls = await fetchPulls(client, earliest)
   const issues = (
     await pages(
       client,
