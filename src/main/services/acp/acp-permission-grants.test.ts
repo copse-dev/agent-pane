@@ -1,6 +1,10 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
+import {
+  isAcpPermissionRemembered,
+  rememberAcpPermission,
+  type AcpGrantLocation,
+} from './acp-permission-grants.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
 import { expectStringArray } from '@shared/unknown-value.ts'
 
@@ -23,17 +27,20 @@ describe('acp-permission-grants', () => {
     assert.equal(isAcpPermissionRemembered('gemini-acp', 'execute'), false)
   })
 
-  it('keeps local and remote (SSH) grants apart', async () => {
+  it('keeps local grants and the grants of each SSH host apart', async () => {
+    const dev: AcpGrantLocation = { kind: 'remote', hostId: 'dev' }
+    const prod: AcpGrantLocation = { kind: 'remote', hostId: 'prod' }
     await rememberAcpPermission('a', 'execute')
-    assert.equal(isAcpPermissionRemembered('a', 'execute', 'remote'), false)
+    assert.equal(isAcpPermissionRemembered('a', 'execute', dev), false)
 
-    await rememberAcpPermission('b', 'edit', 'remote')
-    assert.equal(isAcpPermissionRemembered('b', 'edit', 'remote'), true)
+    await rememberAcpPermission('b', 'edit', dev)
+    assert.equal(isAcpPermissionRemembered('b', 'edit', dev), true)
+    assert.equal(isAcpPermissionRemembered('b', 'edit', prod), false, 'another host asks again')
     assert.equal(isAcpPermissionRemembered('b', 'edit'), false)
     // Local keys keep their original form, so grants stored before this change hold.
     assert.deepEqual([...expectStringArray(storageGet(GRANTS_KEY))].sort(), [
       'a:execute',
-      'b@remote:edit',
+      'b@remote/dev:edit',
     ])
   })
 

@@ -12,16 +12,22 @@ import { parseStringList } from '../storage/storage-schema.ts'
  *
  * A grant is also scoped to where the agent ran. One answered for a local agent
  * (often seatbelted) must not cover the same agent on an SSH host, where it runs
- * unsandboxed as the remote account; remote grants carry an `@remote` suffix on
- * the agent id, and local keys keep their original form so existing grants hold.
+ * unsandboxed as the remote account — nor may one answered on one SSH host cover
+ * another, since each host is its own trust boundary with its own credentials.
+ * Remote grants carry an `@remote/<host id>` suffix on the agent id; local keys
+ * keep their original form so existing grants hold.
  */
 const GRANTS_STORAGE_KEY = 'acp-remembered-grants'
 
 /** Where the agent that asked for the permission runs. */
-export type AcpGrantLocation = 'local' | 'remote'
+export type AcpGrantLocation = { kind: 'local' } | { kind: 'remote'; hostId: string }
+
+const LOCAL: AcpGrantLocation = { kind: 'local' }
 
 function scopedId(agentId: string, location: AcpGrantLocation): string {
-  return location === 'remote' ? `${agentId}@remote` : agentId
+  return location.kind === 'remote'
+    ? `${agentId}@remote/${encodeURIComponent(location.hostId)}`
+    : agentId
 }
 
 function grantKey(agentId: string, kind: string, location: AcpGrantLocation): string {
@@ -45,7 +51,7 @@ function grantKeys(agentId: string, kind: string, location: AcpGrantLocation): s
 export function isAcpPermissionRemembered(
   agentId: string,
   kind: string,
-  location: AcpGrantLocation = 'local',
+  location: AcpGrantLocation = LOCAL,
 ): boolean {
   const stored = parseStringList(storageGet(GRANTS_STORAGE_KEY))
   return grantKeys(agentId, kind, location).some((key) => stored.includes(key))
@@ -58,7 +64,7 @@ export function isAcpPermissionRemembered(
 export function rememberAcpPermission(
   agentId: string,
   kind: string,
-  location: AcpGrantLocation = 'local',
+  location: AcpGrantLocation = LOCAL,
 ): Promise<void> {
   return storageUpdate(GRANTS_STORAGE_KEY, (raw) => {
     const list = parseStringList(raw)

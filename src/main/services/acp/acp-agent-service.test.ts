@@ -819,6 +819,34 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     }
   })
 
+  it('scopes a remembered SSH grant to the host it was given on', async () => {
+    storageSet('acp-remembered-grants', [])
+    await rememberAcpPermission('gemini', 'read', { kind: 'remote', hostId: 'dev' })
+    const req = permissionRequest({ kind: 'read', title: 'read ~/.ssh/config' })
+    const onHost = async (hostId?: string): Promise<boolean> => {
+      const before = prompts.length
+      await respondToPermissionForTest(
+        {
+          id: 'gemini',
+          title: 'Agent',
+          ...remote(),
+          ...(hostId !== undefined ? { remoteHostId: hostId } : {}),
+        },
+        req,
+        REMOTE_ROOT,
+        REMOTE_ROOT,
+      )
+      return prompts.length > before
+    }
+    try {
+      assert.equal(await onHost('dev'), false, 'the host that was granted reuses it')
+      assert.equal(await onHost('prod'), true, 'another host asks again')
+      assert.equal(await onHost(), true, 'an unknown host fails closed')
+    } finally {
+      storageSet('acp-remembered-grants', [])
+    }
+  })
+
   it('does not waive a prompt for a title that claims a bridged native tool', async () => {
     // Remote agents are never offered the bridge, so nothing would re-gate it.
     const req = permissionRequest({ kind: 'other', title: 'copse-semantic_search' })

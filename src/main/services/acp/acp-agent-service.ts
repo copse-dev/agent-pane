@@ -45,7 +45,11 @@ import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
-import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
+import {
+  isAcpPermissionRemembered,
+  rememberAcpPermission,
+  type AcpGrantLocation,
+} from './acp-permission-grants.ts'
 import {
   acpExecuteCommandText,
   permissionKindLabel,
@@ -405,6 +409,8 @@ export async function runAcpAgentFromSettings(
     localSandbox: willSandboxAcpAgent(sandbox),
     unattendedContainer: currentRunIsUnattendedContainer(getActiveRunThread()),
   })
+  // Remembered grants are per SSH host: each is its own trust boundary.
+  const remoteHostId = remote ? acpSshTarget(cwd)?.hostId : undefined
   const outboundPayload = promptPayloadFromUserContent(options.userPrompt)
   const hasText = Boolean(outboundPayload.text.trim())
   const hasImages = (outboundPayload.images?.length ?? 0) > 0
@@ -502,7 +508,14 @@ export async function runAcpAgentFromSettings(
     onChunk,
     requestPermission: (req, rpcSignal) =>
       respondToPermission(
-        { id: agent.id, title: agent.title, sandboxed, contained, remote },
+        {
+          id: agent.id,
+          title: agent.title,
+          sandboxed,
+          contained,
+          remote,
+          ...(remoteHostId !== undefined ? { remoteHostId } : {}),
+        },
         req,
         cwd,
         projectRoot,
@@ -843,6 +856,18 @@ interface AcpPermissionAgent {
   sandboxed: boolean
   contained?: boolean
   remote?: boolean
+  /** The SSH host a remote agent runs on; remembered grants are scoped to it. */
+  remoteHostId?: string
+}
+
+/**
+ * Where a remembered grant for this agent lives: locally, or on its own SSH
+ * host. `null` for a remote agent whose host is unknown — it neither reuses a
+ * grant nor stores one, so it always asks.
+ */
+function acpGrantLocationFor(agent: AcpPermissionAgent): AcpGrantLocation | null {
+  if (agent.remote !== true) return { kind: 'local' }
+  return agent.remoteHostId ? { kind: 'remote', hostId: agent.remoteHostId } : null
 }
 
 /**
@@ -864,8 +889,8 @@ async function respondToPermission(
 ): Promise<RequestPermissionResponse> {
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const kind = req.toolCall.kind ?? 'other'
-  const grantLocation = agent.remote === true ? 'remote' : 'local'
-  if (isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
+  const grantLocation = acpGrantLocationFor(agent)
+  if (grantLocation && isAcpPermissionRemembered(agent.id, kind, grantLocation)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
   }
   // Low-risk ACP reads/searches from a sandboxed agent should not require users
@@ -971,7 +996,9 @@ async function respondToPermission(
       approvalSignal,
     )
     if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
-    if (approved && remember) void rememberAcpPermission(agent.id, kind, grantLocation)
+    if (approved && remember && grantLocation) {
+      void rememberAcpPermission(agent.id, kind, grantLocation)
+    }
     return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
   } finally {
     tracked?.unregister()
