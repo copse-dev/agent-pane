@@ -63,13 +63,24 @@ export class ScriptedProvider implements LLMProvider {
     this.steps = steps
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- an async generator is the provider contract
-  async *stream(
+  stream(
     messages: LLMMessage[],
     _tools: LLMTool[],
     _signal?: AbortSignal,
     options?: LLMStreamOptions,
   ): AsyncIterable<ProviderStreamChunk> {
+    // The script is synchronous; adapt it to the provider's async contract. The
+    // generator body (and its bookkeeping) still runs lazily on the first read.
+    const script = this.script(messages, options)
+    return {
+      [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve(script.next()) }),
+    }
+  }
+
+  private *script(
+    messages: LLMMessage[],
+    options: LLMStreamOptions | undefined,
+  ): Generator<ProviderStreamChunk, void> {
     this.calls.push([...messages])
     this.streamOptions.push(options)
     const step = this.steps[this.cursor++]

@@ -40,6 +40,7 @@ import {
 import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { probeAcpAgentIsolated } from './acp-probe-host.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
+import { acpSessionHandoverNotice } from './acp-session-reattach.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
@@ -459,6 +460,9 @@ export async function runAcpAgentFromSettings(
   // duplicate streamed text and re-execute tool calls.
   let assistantText = ''
   let sawChunk = false
+  // Read afresh: sawChunk is set inside the onChunk callback, which TypeScript's
+  // narrowing cannot see, so a direct read after the await looks always-false.
+  const hasProgress = (): boolean => sawChunk
   // Text streamed while an approval modal is open for this thread — hold it so
   // the agent cannot appear to "reason underneath" the prompt. Flush when the
   // last pending approval settles (or the turn ends).
@@ -537,7 +541,7 @@ export async function runAcpAgentFromSettings(
   // for the retry/next turn; all other failures reopen with a full replay.
   let lastPrompt = ''
   const attempt = async (): Promise<{ stopReason: StopReason; usage?: Usage | null }> => {
-    const { entry, fresh } = await perfSpan(
+    const { entry, fresh, handover } = await perfSpan(
       'ttft:acp-session-acquire',
       () =>
         acquireAcpSession({
@@ -549,6 +553,14 @@ export async function runAcpAgentFromSettings(
         }),
       (acquired) => ({ fresh: acquired?.fresh ?? false }),
     )
+    if (handover) {
+      // The agent's previous session (its tool results, file reads, reasoning)
+      // did not survive the restart; the transcript preamble below restores only
+      // the conversation text. Say so in the thread — straight to the caller's
+      // sink, not `onChunk`, so the note neither joins the assistant history
+      // replayed into later turns nor counts as progress that blocks a retry.
+      options.onChunk({ type: 'text', text: acpSessionHandoverNotice(handover, agent.title) })
+    }
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.bridge?.setExecutionContext(executionContext)
     entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
@@ -600,15 +612,14 @@ export async function runAcpAgentFromSettings(
   try {
     ;({ stopReason, usage } = await runWithAcpRetry(attempt, {
       signal: options.signal,
-      hasProgress: () => sawChunk,
+      hasProgress,
     }))
   } catch (err) {
     flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the onChunk callback above; TS narrows to the `false` initializer
-    const turn = sawChunk ? acpTurnUsage(null, lastPrompt, assistantText) : null
+    const turn = hasProgress() ? acpTurnUsage(null, lastPrompt, assistantText) : null
     if (turn) {
       options.onChunk({
         type: 'usage',

@@ -4,17 +4,25 @@
  * CI supplies one target-specific gortex to each matrix job.
  */
 module.exports = async function afterPack(context) {
+  await checkLicenses(context)
   if (context.electronPlatformName !== 'darwin') return
 
   // `Arch` originates in builder-util, but that is only a transitive dependency:
   // pnpm's isolated linker gives top-level symlinks to direct dependencies alone,
   // so a bare import of it from this script fails to resolve on a clean install.
   // electron-builder is a direct dependency and re-exports the very same enum.
-  const [{ execFileSync }, { renameSync, rmSync }, { join }, { Arch }] = await Promise.all([
+  const [
+    { execFileSync },
+    { renameSync, rmSync },
+    { join },
+    { Arch },
+    { repairVersionedMacosFrameworks },
+  ] = await Promise.all([
     import('node:child_process'),
     import('node:fs'),
     import('node:path'),
     import('electron-builder'),
+    import('./lib/repair-macos-frameworks.mts'),
   ])
 
   const targetArch =
@@ -27,6 +35,9 @@ module.exports = async function afterPack(context) {
     'Contents',
     'Resources',
     'app.asar.unpacked',
+  )
+  repairVersionedMacosFrameworks(
+    join(resources, 'node_modules', 'xcodebuildmcp', 'bundled', 'Frameworks'),
   )
   const binary = join(resources, 'dist', 'resources', 'gortex', 'gortex')
   const archs = execFileSync('lipo', [binary, '-archs'], { encoding: 'utf8' }).trim().split(/\s+/)
@@ -76,4 +87,28 @@ module.exports = async function afterPack(context) {
   } finally {
     rmSync(thinned, { force: true })
   }
+}
+
+/**
+ * Read the packaged app.asar and fail when a package in it has no entry in the
+ * shipped licence report, is GPL-family only, or is sharp/libvips — or when the
+ * report/runtime notice files are missing. See scripts/check-packaged-licenses.mts.
+ * Runs before the macOS steps below so it covers every platform; the keyring
+ * binary they delete is in the report either way.
+ */
+async function checkLicenses(context) {
+  const [{ join }, { pathToFileURL }] = await Promise.all([import('node:path'), import('node:url')])
+  const { assertPackagedLicenses } = await import(
+    pathToFileURL(join(__dirname, 'check-packaged-licenses.mts')).href
+  )
+  const resources =
+    context.electronPlatformName === 'darwin'
+      ? join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          'Contents',
+          'Resources',
+        )
+      : join(context.appOutDir, 'resources')
+  assertPackagedLicenses(resources)
 }

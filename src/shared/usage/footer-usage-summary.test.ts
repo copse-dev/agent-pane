@@ -241,6 +241,155 @@ describe('resolveFooterUsage', () => {
   })
 })
 
+describe('resolveFooterUsage subtracts only the folded subagent share', () => {
+  const withExplore = (usage: { inputTokens: number; outputTokens: number }): Message[] => [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      createdAt: 1,
+      toolCalls: [
+        {
+          id: 't1',
+          name: 'explore',
+          args: {},
+          status: 'done',
+          result: 'done',
+          subagent: {
+            id: 'sub-1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'q',
+            summary: null,
+            messages: [],
+            usage,
+          },
+        },
+      ],
+    },
+  ]
+  const explore = withExplore({ inputTokens: 800_000, outputTokens: 15_000 })
+
+  it('keeps the whole total when a provider error skipped the fold', () => {
+    // The subagent finished and recorded 800k, then the parent's next call
+    // failed: runAgentLoop threw before main folded the subagent usage in.
+    const resolved = resolveFooterUsage({
+      measured: {
+        inputTokens: 50_000,
+        outputTokens: 2_000,
+        subagentInputTokens: 0,
+        subagentOutputTokens: 0,
+      },
+      running: false,
+      messages: explore,
+    })
+
+    assert.deepEqual(resolved, {
+      inputTokens: 50_000,
+      outputTokens: 2_000,
+      estimated: false,
+      subagentInputTokens: 800_000,
+      subagentOutputTokens: 15_000,
+    })
+  })
+
+  it('does not infer a fold from a known failed legacy parent turn', () => {
+    const failedTurnMessages: Message[] = [
+      { id: 'u1', role: 'user', content: 'Delegate this', toolCalls: [], createdAt: 1 },
+      ...withExplore({ inputTokens: 200, outputTokens: 20 }),
+      {
+        id: 'a2',
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        createdAt: 3,
+        turnOutcome: {
+          status: 'failed',
+          stopReason: 'error',
+          source: 'provider',
+          executor: 'local',
+          provider: 'anthropic',
+          model: 'claude-opus-4-8',
+          endedAt: 3,
+        },
+      },
+    ]
+
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 500, outputTokens: 50 },
+      running: false,
+      messages: failedTurnMessages,
+    })
+
+    assert.deepEqual(resolved, {
+      inputTokens: 500,
+      outputTokens: 50,
+      estimated: false,
+      subagentInputTokens: 200,
+      subagentOutputTokens: 20,
+    })
+  })
+
+  it('does not infer a fold from the trailing outcome-less turn while it is live', () => {
+    const resolved = resolveFooterUsage({
+      measured: { inputTokens: 50_000, outputTokens: 2_000 },
+      running: true,
+      messages: explore,
+    })
+
+    assert.equal(resolved?.inputTokens, 50_000)
+    assert.equal(resolved.outputTokens, 2_000)
+  })
+
+  it('does not drop mid-turn, between subagent_done and the fold', () => {
+    const midTurn = resolveFooterUsage({
+      measured: {
+        inputTokens: 50_000,
+        outputTokens: 2_000,
+        subagentInputTokens: 0,
+        subagentOutputTokens: 0,
+      },
+      running: true,
+      messages: explore,
+    })
+    assert.equal(midTurn?.inputTokens, 50_000)
+    assert.equal(midTurn.outputTokens, 2_000)
+
+    const folded = resolveFooterUsage({
+      measured: {
+        inputTokens: 850_000,
+        outputTokens: 17_000,
+        subagentInputTokens: 800_000,
+        subagentOutputTokens: 15_000,
+      },
+      running: false,
+      messages: explore,
+    })
+    assert.equal(folded?.inputTokens, 50_000)
+    assert.equal(folded.outputTokens, 2_000)
+  })
+
+  it('subtracts only the runs that were folded when an earlier turn failed', () => {
+    const messages = [
+      ...withExplore({ inputTokens: 800_000, outputTokens: 15_000 }),
+      ...withExplore({ inputTokens: 100_000, outputTokens: 5_000 }),
+    ]
+    const resolved = resolveFooterUsage({
+      measured: {
+        inputTokens: 160_000,
+        outputTokens: 9_000,
+        subagentInputTokens: 100_000,
+        subagentOutputTokens: 5_000,
+      },
+      running: false,
+      messages,
+    })
+    assert.equal(resolved?.inputTokens, 60_000)
+    assert.equal(resolved.outputTokens, 4_000)
+    assert.equal(resolved.subagentInputTokens, 900_000)
+  })
+})
+
 describe('formatFooterUsageSummary', () => {
   it('prefixes estimated totals with ~', () => {
     assert.equal(

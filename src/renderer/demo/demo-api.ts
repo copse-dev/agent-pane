@@ -1,8 +1,10 @@
 import type { ActiveDiff, StreamChunk, Thread } from '@shared/types'
+import type { AutomationPermissionOption, AutomationSchedule } from '@shared/types/automations.ts'
 import type { PluginContributionsSummary, PluginSummary } from '@shared/types/plugins.ts'
 import type { AppleProjectState } from '@shared/types/apple-development.ts'
 import type { McpServerStatus } from '@shared/types/mcp.ts'
 import type { ToolPermissionCatalog, ToolPermissionPolicy } from '@shared/types/tool-permissions.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
 import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -236,6 +238,82 @@ const DEMO_PLUGINS: readonly PluginSummary[] = [
   },
 ]
 
+const DEMO_AUTOMATIONS_PLUGIN: PluginSummary = {
+  id: AUTOMATIONS_PLUGIN_ID,
+  trust: 'first-party',
+  stability: 'experimental',
+  name: AUTOMATIONS_PLUGIN_ID,
+  description:
+    'Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.',
+  enabled: true,
+  contributions: {
+    ...DEMO_PLUGIN_CONTRIBUTIONS,
+    ui: [
+      {
+        id: 'schedule-editor',
+        level: 3,
+        slot: 'settings-plugin-detail',
+        title: 'Automation schedules',
+      },
+    ],
+    storageNamespace: AUTOMATIONS_PLUGIN_ID,
+  },
+  settings: [],
+}
+
+const DEMO_AUTOMATION_PERMISSIONS: AutomationPermissionOption[] = [
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_create' },
+    label: 'Create pull requests',
+    detail: 'Pushes the current thread branch and opens a pull request in this project repository.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_rerun_failed_ci' },
+    label: 'Re-run failed CI',
+    detail: 'Re-runs failed checks for pull requests in this project repository.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_approve' },
+    label: 'Approve pull requests',
+    detail: 'Submits a GitHub approval for pull requests in this project repository.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_mark_ready' },
+    label: 'Mark pull requests ready',
+    detail: 'Moves draft pull requests in this project repository into review.',
+  },
+  {
+    permission: { kind: 'copse-action', toolName: 'gh_pr_enable_auto_merge' },
+    label: 'Enable pull request auto-merge',
+    detail: 'Enables the repository-preferred auto-merge strategy for a pull request.',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__linear__create_issue' },
+    label: 'Create issue',
+    detail: 'Linear MCP · changes external data',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__linear__update_issue' },
+    label: 'Update issue',
+    detail: 'Linear MCP · changes external data',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__notion__create_page' },
+    label: 'Create page',
+    detail: 'Notion MCP · changes external data',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__slack__send_message' },
+    label: 'Send message',
+    detail: 'Slack MCP · may access external systems',
+  },
+  {
+    permission: { kind: 'mcp-tool', toolName: 'mcp__figma__add_comment' },
+    label: 'Add comment',
+    detail: 'Figma MCP · changes external data',
+  },
+]
+
 /**
  * Provider slug for a model id, matching the conventions used elsewhere:
  * `<slug>:<model>` carries its slug, and built-in cloud ids are inferred from
@@ -341,6 +419,29 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   ])
   let workspaceRoot = scenario.project.path
   let threads: Thread[] = structuredClone(scenario.threads)
+  const showAutomationPermissions = scenario.id === 'automation-permissions'
+  const demoPlugins = showAutomationPermissions
+    ? [...DEMO_PLUGINS, DEMO_AUTOMATIONS_PLUGIN]
+    : DEMO_PLUGINS
+  const automationSchedules: AutomationSchedule[] = showAutomationPermissions
+    ? [
+        {
+          id: 'demo-weekday-review',
+          projectId: scenario.project.id,
+          name: 'Weekday project review',
+          cron: '0 9 * * 1-5',
+          prompt: 'Review open work and prepare a concise project status update.',
+          model: 'claude-sonnet-4-6',
+          enabled: false,
+          permissions: [
+            { kind: 'copse-action', toolName: 'gh_pr_approve' },
+            { kind: 'mcp-tool', toolName: 'mcp__reports__publish_weekly' },
+          ],
+          createdAt: Date.parse(DEMO_TIME),
+          updatedAt: Date.parse(DEMO_TIME),
+        },
+      ]
+    : []
   let navigation: import('@shared/types/main-window.ts').MainWindowNavigation = {
     activeProjectId: scenario.project.id,
     activeThreadId: threads[0]?.id ?? null,
@@ -432,6 +533,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
   )
 
   const api: ApiClient = {
+    mobile: { manage: async () => {}, onChat: () => () => {}, reply: async () => {} },
     windowState: {
       getNavigation: () => resolved(structuredClone(navigation)),
       setNavigation: (next) => {
@@ -951,6 +1053,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: 'demo', report: null }),
+      openLicenseFile: resolvedVoid,
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -1118,6 +1224,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     agents: { list: () => resolved({ agents: [], skipped: [], shadowed: [] }) },
     skills: { list: emptyArray },
     cursorPlugins: { list: emptyArray },
+    bundledSkillPlugins: { list: emptyArray },
     hooks: {
       list: () => resolved({ hooks: [], warnings: [] }),
       test: unsupported,
@@ -1126,7 +1233,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
     plugins: {
       list: () =>
         resolved({
-          plugins: DEMO_PLUGINS.map((plugin) =>
+          plugins: demoPlugins.map((plugin) =>
             plugin.id === 'copse.apple-development'
               ? { ...plugin, enabled: initialAppleDevelopmentState.pluginEnabled }
               : plugin,
@@ -1141,7 +1248,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       export: () => resolved({ path: '', count: 0 }),
     },
     automations: {
-      list: emptyArray,
+      list: () => resolved(structuredClone(automationSchedules)),
+      permissionOptions: () =>
+        resolved(showAutomationPermissions ? structuredClone(DEMO_AUTOMATION_PERMISSIONS) : []),
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
@@ -1169,6 +1278,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           supportedHost: state.supportedHost,
         })
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) =>
+        resolved({
+          offer: 'none',
+          pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled,
+        }),
+      answerSuggestion: () => resolved(undefined),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId)
         const state: AppleProjectState = {
@@ -1227,6 +1343,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           currentBranch: forBranch ?? currentBranch,
           pr: null,
         }),
+      // The demo has no linked worktrees, so there is never a detached one.
+      worktreeAttachment: () => resolved({ state: 'attached' }),
+      reattachWorktree: () => Promise.reject(new Error('The demo has no thread worktrees')),
       promptState: () => resolved({ startingCommit: null, dirty: false }),
       checkoutBranch: (_projectId: string, _threadId: string, branch: string) => {
         currentBranch = branch

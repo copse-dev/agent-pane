@@ -74,6 +74,41 @@ export interface GitBranchStatus {
   pr: GitOpenPr | null
 }
 
+/**
+ * Whether an isolated thread checkout is still on its branch. `recovery` names
+ * a rebase, cherry-pick, or bisect Git left in progress: reattaching then would
+ * strand that state, so the user finishes or resets it in the terminal.
+ */
+export type ThreadWorktreeAttachment =
+  | { state: 'attached' }
+  | {
+      state: 'detached'
+      branch: string
+      recovery: 'rebase' | 'cherry-pick' | 'bisect' | null
+      /**
+       * A rebase pick that applied but could not be committed (usually a
+       * signing failure). Git reschedules the pick and leaves its changes
+       * staged, and `git rebase --continue` refuses until they are committed.
+       */
+      uncommittedPick: UncommittedRebasePick | null
+    }
+
+export interface UncommittedRebasePick {
+  /** Full SHA of the commit being picked; its message and author are reused. */
+  commit: string
+  /** The rebase's own signing option (`-S` or `-S<keyid>`), so the commit is signed the same way. */
+  signOption: string | null
+}
+
+/** What `reattachWorktree` did to put the checkout back on its branch. */
+export interface ThreadWorktreeReattachResult {
+  branch: string
+  /** The branch moved forward to keep commits made while HEAD was detached. */
+  keptDetachedCommits: boolean
+  /** The branch's previous tip, saved under this name because HEAD had diverged from it. */
+  backupBranch: string | null
+}
+
 /** Repository snapshot captured at a prompt boundary (issue: spine prompt hash / dirty state). */
 export interface GitPromptState {
   /** Full HEAD commit SHA the prompt was sent against, or null outside a repo / no commits yet. */

@@ -26,6 +26,21 @@ read from the returned probabilities, never from the provider's `choice`:
 - A command's scope is the likelier side, with a tie reading as `external`. Its probability is the
   confidence strict mode compares with `safetyExternalDenyThreshold`.
 
+The chosen connection is also asked the escalation-review **tier question**, word for word
+(`read` … `ask`, see `benchmarks/escalation-review/rubric.md`), as a second opinion. It never
+authorizes anything:
+
+- **Guarded YOLO:** when the harm gate would auto-run a command without a sandbox around it, a
+  P(`ask`) of at least 0.5 turns that into the harm gate's one-time confirmation. A missing, slow
+  or failing connection leaves the harm gate's decision as it was. Contained commands are not
+  asked. On the command test set, Winnow-12B at this threshold would have caught 54 of the 56
+  `ask` commands the harm gate let through before its rules were fixed. It prompts on about 1.7%
+  of the real commands the harm gate allows.
+- **Standard mode (shadow):** when a shell command is about to prompt, the question is asked in the
+  background and a `tier-shadow` decision records whether P(`read` or `local-write`) ≥ 0.95 and a
+  harm-gate allow would have auto-approved it at local-write. The prompt never waits and nothing
+  changes. The record holds a SHA-256 of the command, never its text.
+
 Each call has the safety model's 8-second budget, and a connection that keeps missing it is skipped
 for a while, like a slow safety model. A timeout, connection failure, missing key, removed
 connection, or malformed answer yields no verdict, which asks the user; lasting faults are recorded
@@ -62,6 +77,20 @@ with its example profile. Model names and ports below are the projects' document
 | reflex 4B     | `uv sync --no-sources`, then `uv run --no-sync reflex-serve --stable --device mps --dtype float16 --port 8008` on a Mac                                                        | [`reflex.json`](../benchmarks/classifiers/reflex.json)   | Up to 26 options. Use `main`: the `stable` tag's code has no MPS path, and `--stable` on `main` reads the same configuration. Verified 2026-09-25.                                                                            |
 | decider-4b    | `DECIDER_MODEL=Mapika/decider-4b DECIDER_DEVICE=mps uvicorn decider.serve:app --host 127.0.0.1 --port 8000` after `pip install "decider-ai[serve,metal]" "transformers>=5.17"` | [`decider.json`](../benchmarks/classifiers/decider.json) | Verified 2026-09-25 (tag `v2`, M1 Max, MPS float16): warm calls 0.7–1.2 s, every field the hosted API sends. `scripts/serve.sh` binds `0.0.0.0` with no authentication; bind `127.0.0.1` as shown.                            |
 | metask-jev-4b | `python serve.py --port 8000 --model wayfind/metask-jev-4b-policy-mix` with `inference/` on `PYTHONPATH`                                                                       | [`metask.json`](../benchmarks/classifiers/metask.json)   | Omits `model` and `choice` (derived). `serve.py` hardcodes `0.0.0.0` with no authentication; change `app.run` to `127.0.0.1`. Send one request at a time on MPS: concurrent requests crashed the server. Verified 2026-09-25. |
+
+Kev and Winnow can also be set up and started from a persistent cache at pinned revisions:
+
+```bash
+COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- kev
+COPSE_CLASSIFIER_CACHE=/Volumes/Big/copse-classifier-cache pnpm run classifier:serve -- winnow
+```
+
+The first run clones the server, installs it and downloads its weights (Kev about 8 GB, Winnow
+about 12.5 GB text-only). Every later run reuses the cache and downloads nothing. The checkout,
+virtual environment or native build, uv package cache (`UV_CACHE_DIR`), Hugging Face cache
+(`HF_HOME`) and model files all live under `COPSE_CLASSIFIER_CACHE`, which defaults to
+`~/.copse/cache/classifiers` (or `$COPSE_DIR/cache/classifiers`). Point it at a large volume when
+the internal disk is short. `--setup-only` prepares the cache without starting the server.
 
 JevK5 and Jobe also serve `/v1/systemone`, but their servers are CUDA-only. Hopper answers one
 question per request and its weights are for non-commercial use. djev serves `/v1/request` rather

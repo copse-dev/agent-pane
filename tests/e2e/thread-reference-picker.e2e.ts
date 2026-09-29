@@ -161,10 +161,10 @@ describe('@-reference past threads (#644)', () => {
     await scenario.assertComplete()
     // The inline chip is a U+FFFC placeholder in the stored prompt, and the mock
     // title model does not match it, so this is the word-slice fallback title:
-    // the prompt's own words, without the placeholder glyph.
+    // the prompt's own words, without the placeholder glyph or trailing punctuation.
     await waitForActiveThreadTitle()
     await expect($('.chat-row.selected .chat-title')).toHaveText(
-      'From can you compare the proposal?',
+      'From can you compare the proposal',
     )
     await saveAppScreenshot('thread-reference-sent-inline.png')
   })
