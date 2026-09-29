@@ -83,7 +83,7 @@ var init_automations_plugin = __esm({
     automationsPlugin = definePlugin(
       {
         name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+        description: "Project-scoped schedules and branch CI failures that start fresh, grouped tasks while Copse is running.",
         trust: "first-party",
         stability: "experimental",
         ui: [
@@ -37943,6 +37943,11 @@ function createDemoApi(scenario, options = {}) {
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe
     },
     appRun: {
@@ -61246,6 +61251,295 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// src/renderer/views/branch-ci-editor.ts
+function mountBranchCiEditor(options) {
+  const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
+  let pluginEnabled = options.pluginEnabled;
+  let definitions = [];
+  let editingId = null;
+  const section = el("section", { class: "automation-list automation-ci-list" });
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const rows = el("div", { class: "automation-list" });
+  section.append(sectionHeading, rows);
+  const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
+  const title = el("h4", { class: "automation-form-title" }, "New automation");
+  const when = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
+  const name = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-name",
+    required: true,
+    maxlength: "160",
+    placeholder: "Investigate failing CI"
+  });
+  const branch = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-branch",
+    required: true,
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const model = el("select", { class: "automation-input automation-ci-model", required: true });
+  const prompt = el("textarea", {
+    class: "automation-input automation-ci-prompt",
+    required: true,
+    maxlength: "100000",
+    placeholder: "Investigate the failed CI run and report the cause\u2026"
+  });
+  const worktrees = el(
+    "select",
+    { class: "automation-input automation-ci-worktrees" },
+    el("option", { value: "1" }, "1 \u2014 wait for prior work"),
+    el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+  );
+  const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const summary = el("p", { class: "automation-hint automation-ci-summary" });
+  const preview = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-preview"
+    },
+    "Test match"
+  );
+  const save = el(
+    "button",
+    {
+      type: "submit",
+      class: "ui-btn ui-btn-primary automation-ci-save"
+    },
+    "Save automation"
+  );
+  const cancel = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-cancel"
+    },
+    "Cancel"
+  );
+  form.append(
+    title,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", when),
+    el("label", { class: "automation-label" }, "Name", name),
+    el("label", { class: "automation-label" }, "Branch", branch),
+    el("label", { class: "automation-label" }, "Model", model),
+    el("label", { class: "automation-label" }, "Task", prompt),
+    el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
+    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    summary,
+    el("div", { class: "automation-form-actions" }, preview, cancel, save)
+  );
+  root.append(section, form);
+  const modelPicker = mountModelSelectPicker(model, {
+    loadOptions: (current) => fetchDynamicModelOptions(current),
+    ariaLabel: "CI automation model",
+    loadOnMount: false
+  });
+  function updateSummary() {
+    const selected = branch.value.trim() || "this branch";
+    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  }
+  branch.addEventListener("input", updateSummary);
+  function close() {
+    editingId = null;
+    form.hidden = true;
+    heading.hidden = false;
+    scheduleList.hidden = false;
+    section.hidden = false;
+  }
+  async function open2(definition, draft) {
+    hideStatus();
+    editingId = definition?.id ?? null;
+    title.textContent = definition ? "Edit automation" : "New automation";
+    when.value = "github-ci-failed";
+    when.disabled = Boolean(definition);
+    name.value = definition?.name ?? draft?.name ?? "";
+    branch.value = definition?.trigger.branch ?? "";
+    prompt.value = definition?.prompt ?? draft?.prompt ?? "";
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    updateSummary();
+    heading.hidden = true;
+    scheduleList.hidden = true;
+    scheduleForm.hidden = true;
+    section.hidden = true;
+    form.hidden = false;
+    name.focus();
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
+    const available = await fetchDynamicModelOptions(defaultModel);
+    const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
+    await modelPicker.refresh(selected);
+  }
+  function render() {
+    clear(rows);
+    if (definitions.length === 0) {
+      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      return;
+    }
+    for (const definition of definitions) {
+      const row2 = el("article", {
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
+        "data-ci-automation-id": definition.id
+      });
+      const copy = el(
+        "div",
+        { class: "automation-row-copy" },
+        el("div", { class: "automation-row-title" }, definition.name),
+        el(
+          "div",
+          { class: "automation-row-meta" },
+          el(
+            "span",
+            {},
+            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
+          ),
+          el("span", {}, modelDisplayLabel(definition.model)),
+          el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
+        ),
+        el(
+          "div",
+          { class: "automation-row-last-run" },
+          definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
+        )
+      );
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn"
+        },
+        "Edit"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      const remove = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-danger ui-btn-compact automation-row-btn"
+        },
+        "Delete"
+      );
+      remove.addEventListener("click", () => {
+        if (!projectId) return;
+        void showConfirmDialog({
+          message: `Delete \u201C${definition.name}\u201D?`,
+          detail: "Already-created tasks are kept.",
+          confirmLabel: "Delete CI event",
+          danger: true
+        }).then(async (confirmed) => {
+          if (!confirmed) return;
+          await api2.automations.removeBranchCi(projectId, definition.id);
+          await refresh();
+        }).catch((error62) => {
+          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+        });
+      });
+      row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
+      rows.append(row2);
+    }
+  }
+  async function refresh() {
+    if (!projectId) return;
+    definitions = await api2.automations.listBranchCi(projectId);
+    render();
+  }
+  when.addEventListener("change", () => {
+    if (when.value !== "schedule" || editingId) return;
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    });
+  });
+  cancel.addEventListener("click", close);
+  preview.addEventListener("click", () => {
+    if (!projectId || !branch.value.trim()) return;
+    preview.disabled = true;
+    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+      (result) => {
+        showStatus(
+          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+        );
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+      }
+    ).finally(() => {
+      preview.disabled = false;
+    });
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!projectId) return;
+    hideStatus();
+    save.disabled = true;
+    const input2 = {
+      ...editingId ? { id: editingId } : {},
+      name: name.value,
+      branch: branch.value,
+      prompt: prompt.value,
+      model: model.value,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    };
+    void api2.automations.upsertBranchCi(projectId, input2).then(
+      async () => {
+        close();
+        await refresh();
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+      }
+    ).finally(() => {
+      save.disabled = false;
+    });
+  });
+  return {
+    refresh,
+    openNew(draft) {
+      return open2(void 0, draft);
+    },
+    reveal(id) {
+      const definition = definitions.find((candidate) => candidate.id === id);
+      if (!definition) return false;
+      void open2(definition);
+      return true;
+    },
+    hideForSchedule() {
+      form.hidden = true;
+      section.hidden = true;
+    },
+    showList() {
+      form.hidden = true;
+      section.hidden = false;
+    },
+    setPluginEnabled(value) {
+      pluginEnabled = value;
+      render();
+    }
+  };
+}
+var init_branch_ci_editor = __esm({
+  "src/renderer/views/branch-ci-editor.ts"() {
+    init_lm_studio_defaults();
+    init_helpers();
+    init_ipc_error_message();
+    init_model_options();
+    init_model_picker();
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -61330,7 +61624,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
-    el("div", { class: "plugin-settings-heading" }, "Schedules"),
+    el("div", { class: "plugin-settings-heading" }, "Automations"),
     el(
       "button",
       {
@@ -61338,7 +61632,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
-      "Add schedule"
+      "New automation"
     )
   );
   const addButton = heading.querySelector(".automation-add-btn");
@@ -61346,14 +61640,20 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const scope = el(
     "p",
     { class: "automation-scope" },
-    project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
+    project2 ? `Project: ${project2.name} \xB7 Copse must be running` : "Open a project to configure automations."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path." : "Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
   const form = el("form", { class: "automation-form", hidden: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
+  const whenSelect = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -61464,7 +61764,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
-    "Save schedule"
+    "Save automation"
   );
   const cancelButton = el(
     "button",
@@ -61473,6 +61773,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   form.append(
     formTitle,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", whenSelect),
     el("label", { class: "automation-label" }, "Name", nameInput),
     el("label", { class: "automation-label" }, "Model", modelSelect),
     scheduleFields,
@@ -61493,6 +61794,18 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
   root.append(heading, scope, notice, status, list, form);
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api: api2,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(void 0, draft)
+  });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "Automation model",
@@ -61518,6 +61831,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function closeForm() {
     editingId = null;
+    ciEditor.showList();
     form.hidden = true;
     list.hidden = false;
     heading.hidden = false;
@@ -61697,21 +62011,24 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
-  async function openForm(schedule) {
+  async function openForm(schedule, draft) {
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    whenSelect.value = "schedule";
+    whenSelect.disabled = Boolean(schedule);
     list.hidden = true;
     heading.hidden = true;
-    nameInput.value = schedule?.name ?? "";
+    nameInput.value = schedule?.name ?? draft?.name ?? "";
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
-    promptInput.value = schedule?.prompt ?? "";
-    enabledInput.checked = schedule?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
-    const configuredModel = schedule?.model.trim() ?? "";
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    ciEditor.hideForSchedule();
     form.hidden = false;
     nameInput.focus();
     const options = await fetchDynamicModelOptions(defaultModel);
@@ -61818,7 +62135,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pendingReveal = void 0;
     const schedule = schedules.find((candidate) => candidate.id === scheduleId);
     if (!schedule) {
-      showStatus("That automation is no longer scheduled. Its finished runs stay in the sidebar.");
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          "That automation is no longer scheduled or configured. Its finished runs stay in the sidebar."
+        );
       return;
     }
     void openForm(schedule).then(() => {
@@ -61830,7 +62150,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
         api2.automations.list(projectId),
-        api2.automations.permissionOptions(projectId)
+        api2.automations.permissionOptions(projectId),
+        ciEditor.refresh()
       ]);
       schedules = loadedSchedules;
       availablePermissions = loadedPermissions;
@@ -61845,6 +62166,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   }
   addButton.addEventListener("click", () => void openForm());
+  whenSelect.addEventListener("change", () => {
+    if (whenSelect.value !== "github-ci-failed" || editingId) return;
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+    });
+  });
   cancelButton.addEventListener("click", closeForm);
   repeatSelect.addEventListener("change", () => {
     if (repeatSelect.value !== "custom") {
@@ -61896,6 +62227,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       pluginEnabled = enabled;
       notice.textContent = pluginNotice();
       renderList();
+      ciEditor.setPluginEnabled(enabled);
     }
   });
 }
@@ -61909,6 +62241,7 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    init_branch_ci_editor();
     init_ipc_error_message();
     WEEKDAYS = [
       "Sunday",
@@ -137595,10 +137928,45 @@ function isPendingAutomation(thread) {
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
   async function startThread(threadId) {
     const initial = getThreadById(store2, threadId);
     const projectId = store2.getState().activeProjectId;
-    if (!projectId || !initial || !isPendingAutomation(initial) || starting.has(threadId)) return;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
     const prompt = initial.draftPrompt?.trim();
     if (!prompt) return;
     starting.add(threadId);
@@ -137607,6 +137975,22 @@ function attachAutomationController(store2, api2) {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
       if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
       if (!initial.worktreeChoice) {
         const prepared = await api2.agent.prepareCheckout(
           projectId,
@@ -137619,7 +138003,27 @@ function attachAutomationController(store2, api2) {
         applyPreparedThreadCheckout(store2, threadId, prepared);
       }
       const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) return;
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
       addMessage(store2, threadId, "user", prompt);
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
@@ -137665,16 +138069,21 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
   startPendingForActiveProject();
   return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
     unsubscribeTrigger();
     unsubscribeWorkspace();
   };
 }
+var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
