@@ -142,7 +142,7 @@ export function mountFooterBranchStatus(
   /** Set when branch status failed because the thread's own checkout lost its branch. */
   let detached: (DetachedAttachment & { threadId: string }) | null = null
   let reattaching = false
-  let recoveryRunId: string | null = null
+  const recoveryRuns = new Map<string, string>()
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let branchToCopy: string | null = null
   let branches: GitBranchInfo[] = []
@@ -306,13 +306,14 @@ export function mountFooterBranchStatus(
     const title = detachedTitle(current)
     trigger.title = title
     reattachButton.title = title
-    reattachButton.disabled = reattaching || recoveryRunId !== null
+    const recoveryRunning = activeRecoveryRunId() !== null
+    reattachButton.disabled = reattaching || recoveryRunning
     if (current.uncommittedPick) {
       reattachButton.setAttribute(
         'aria-label',
         `Commit the staged pick and continue the rebase on ${current.branch} in a terminal`,
       )
-      reattachButton.textContent = recoveryRunId ? 'Running…' : 'Commit and continue'
+      reattachButton.textContent = recoveryRunning ? 'Running…' : 'Commit and continue'
       return
     }
     if (current.recovery === 'bisect') {
@@ -320,7 +321,7 @@ export function mountFooterBranchStatus(
         'aria-label',
         `Reset the bisect and return to ${current.branch} in a terminal`,
       )
-      reattachButton.textContent = recoveryRunId ? 'Running…' : 'Reset bisect'
+      reattachButton.textContent = recoveryRunning ? 'Running…' : 'Reset bisect'
       return
     }
     if (current.recovery) {
@@ -328,7 +329,7 @@ export function mountFooterBranchStatus(
         'aria-label',
         `Continue the ${current.recovery} on ${current.branch} in a terminal`,
       )
-      reattachButton.textContent = recoveryRunId ? 'Running…' : `Continue ${current.recovery}`
+      reattachButton.textContent = recoveryRunning ? 'Running…' : `Continue ${current.recovery}`
       return
     }
     reattachButton.setAttribute('aria-label', `Reattach checkout to ${current.branch}`)
@@ -338,6 +339,15 @@ export function mountFooterBranchStatus(
   /** The detached state, only while it still describes the active thread. */
   function activeDetached(): DetachedAttachment | null {
     return detached?.threadId === store.getState().activeThreadId ? detached : null
+  }
+
+  function recoveryKey(projectId: string, threadId: string): string {
+    return `${projectId}\0${threadId}`
+  }
+
+  function activeRecoveryRunId(): string | null {
+    const owner = getActiveThreadOwner(store)
+    return owner ? (recoveryRuns.get(recoveryKey(owner.projectId, owner.threadId)) ?? null) : null
   }
 
   async function readDetachedAttachment(
@@ -355,13 +365,13 @@ export function mountFooterBranchStatus(
   async function reattach(): Promise<void> {
     const owner = getActiveThreadOwner(store)
     const current = activeDetached()
-    if (!owner || !current || reattaching || recoveryRunId !== null) return
+    if (!owner || !current || reattaching || activeRecoveryRunId() !== null) return
     if (current.recovery) {
       // A reattach would strand the half-applied state, so finish the
       // operation in the thread's scoped background shell. A successful
       // completion emits a machine-originated "continue" turn below.
       const runId = globalThis.crypto.randomUUID()
-      recoveryRunId = runId
+      recoveryRuns.set(recoveryKey(owner.projectId, owner.threadId), runId)
       renderReattach()
       store.emit('code_block_run_requested', {
         id: runId,
@@ -372,6 +382,7 @@ export function mountFooterBranchStatus(
           type: 'continue',
           prompt: 'Continue after the Git recovery command completed.',
           operationId: `git-recovery:${runId}`,
+          turnTreeId: getThreadById(store, owner.threadId)?.currentEpoch ?? owner.threadId,
         },
       })
       return
@@ -720,8 +731,9 @@ export function mountFooterBranchStatus(
 
   const unsubs = [
     store.on('code_block_run_finished', (result) => {
-      if (result.id !== recoveryRunId) return
-      recoveryRunId = null
+      const key = recoveryKey(result.projectId, result.threadId)
+      if (result.id !== recoveryRuns.get(key)) return
+      recoveryRuns.delete(key)
       if (result.exitCode !== 0) {
         showErrorToast(
           'Could not continue the Git operation',

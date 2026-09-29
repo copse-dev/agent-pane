@@ -9,6 +9,8 @@ export interface CodeBlockRunCompletion {
   prompt: string
   /** Stable attribution for the machine-originated follow-up. */
   operationId: string
+  /** Turn tree that authorized this continuation. */
+  turnTreeId: string
 }
 
 export interface CodeBlockRunRequest {

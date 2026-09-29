@@ -221,9 +221,27 @@ describe('footer branch status', () => {
       await settle()
       assert.equal(requests.at(0)?.command, 'git rebase --continue')
       assert.equal(requests.at(0)?.completion?.type, 'continue')
+      assert.equal(requests.at(0)?.completion?.turnTreeId, 'thread-1')
       assert.equal(reattach.disabled, true)
       const request = requests.at(0)
       assert.ok(request)
+
+      const otherThread = { ...thread('copse/other-thread', true), id: 'thread-2' }
+      store.setState({
+        activeThreadId: otherThread.id,
+        threads: [...store.getState().threads, otherThread],
+      })
+      store.emit('threads_changed')
+      await settle()
+      assert.equal(reattach.disabled, false)
+      assert.equal(reattach.textContent, 'Continue rebase')
+
+      store.setState({ activeThreadId: 'thread-1' })
+      store.emit('threads_changed')
+      await settle()
+      assert.equal(reattach.disabled, true)
+      assert.equal(reattach.textContent, 'Running…')
+
       store.emit('code_block_run_finished', {
         id: request.id,
         projectId: request.projectId,

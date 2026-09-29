@@ -1,6 +1,12 @@
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import { canContinue } from '@copse/agent/hooks/continuation-budget.ts'
-import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
+import type {
+  LLMMessage,
+  MachineDispatchResult,
+  MachineTurnDisplay,
+  StreamChunk,
+  UserContent,
+} from '@shared/types'
 import {
   SPINE_SCHEMA_VERSION,
   type MachineContinuationResult,
@@ -57,9 +63,8 @@ export interface AgentDispatchRequest {
 export interface MachineAgentDispatchRequest extends AgentDispatchRequest {
   operationId: string
   turnTreeId: string
+  display?: MachineTurnDisplay
 }
-
-export type MachineDispatchResult = 'completed' | 'duplicate' | 'stale' | 'budget-exhausted'
 
 export interface AgentDispatcherDependencies {
   loadHistory: (projectId: string, threadId: string) => Promise<LLMMessage[]>
@@ -351,6 +356,14 @@ export class AgentDispatcher {
         this.epochs.set(key, persisted)
       }
     }
+    // Threads created before renderer epochs were persisted used the thread id
+    // as their turn-tree key. Preserve that one legacy fallback without
+    // allowing an arbitrary stale completion to establish a new epoch.
+    if (!epoch && request.turnTreeId === request.threadId) {
+      epoch = { turnTreeId: request.threadId, continuationUsed: 0 }
+      await this.dependencies.saveEpoch(request.projectId, request.threadId, epoch)
+      this.epochs.set(key, epoch)
+    }
     if (epoch?.turnTreeId !== request.turnTreeId) {
       await this.recordMachineFinish(request, 'stale', epoch?.continuationUsed)
       return 'stale'
@@ -366,10 +379,16 @@ export class AgentDispatcher {
     try {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
+      const display = request.display
       this.host.emit(request.threadId, {
         type: 'machine_turn_start',
-        content: request.payload.userContent,
+        content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
+        ...(display?.attachments ? { attachments: display.attachments } : {}),
+        ...(display?.startingCommit !== undefined
+          ? { startingCommit: display.startingCommit }
+          : {}),
+        ...(display?.dirty !== undefined ? { dirty: display.dirty } : {}),
       })
       turnOutcome = await this.dispatchInternal({
         ...request,

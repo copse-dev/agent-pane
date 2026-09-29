@@ -807,6 +807,114 @@ describe('AgentDispatcher', () => {
     assert.deepEqual(prompts, ['continue', 'task completed'])
   })
 
+  it('emits transcript presentation separately from the model-facing continuation', async () => {
+    const emitted: StreamChunk[] = []
+    const prompts: UserContent[] = []
+    const dispatcher = new AgentDispatcher(
+      { emit: (_threadId, chunk): void => void emitted.push(chunk) },
+      registry,
+      dependencies({
+        loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 0 }),
+        run: async (_threadId, userContent, priorMessages) => {
+          prompts.push(userContent)
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...request(),
+        operationId: 'git-recovery:1',
+        turnTreeId: 'tree-1',
+        payload: {
+          userContent: 'Continue with the attached shell result:\n```\nprivate output\n```',
+          invokedSkills: [],
+          priorTodos: [],
+        },
+        display: {
+          content: 'Continue after the Git recovery command completed.',
+          attachments: [
+            { kind: 'shell', label: 'Run · git rebase --continue', content: 'private output' },
+          ],
+          startingCommit: 'a'.repeat(40),
+          dirty: true,
+        },
+      }),
+      'completed',
+    )
+
+    assert.deepEqual(prompts, [
+      'Continue with the attached shell result:\n```\nprivate output\n```',
+    ])
+    assert.deepEqual(emitted[0], {
+      type: 'machine_turn_start',
+      content: 'Continue after the Git recovery command completed.',
+      origin: { kind: 'machine', operationId: 'git-recovery:1' },
+      attachments: [
+        { kind: 'shell', label: 'Run · git rebase --continue', content: 'private output' },
+      ],
+      startingCommit: 'a'.repeat(40),
+      dirty: true,
+    })
+  })
+
+  it('accepts only the thread-id epoch fallback for a pre-epoch thread', async () => {
+    let runCount = 0
+    const savedEpochs: Array<{ turnTreeId: string; continuationUsed: number }> = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        saveEpoch: async (_projectId, _threadId, epoch) => {
+          savedEpochs.push(epoch)
+        },
+        run: async (_threadId, userContent, priorMessages) => {
+          runCount += 1
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    assert.equal(
+      await dispatcher.dispatchMachine({
+        ...request(),
+        operationId: 'legacy-recovery',
+        turnTreeId: 'thread-1',
+      }),
+      'completed',
+    )
+    assert.equal(runCount, 1)
+    assert.deepEqual(savedEpochs, [
+      { turnTreeId: 'thread-1', continuationUsed: 0 },
+      { turnTreeId: 'thread-1', continuationUsed: 1 },
+    ])
+
+    const forged = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        run: async () => {
+          throw new Error('A non-legacy epoch must not establish authority')
+        },
+      }),
+    )
+    assert.equal(
+      await forged.dispatchMachine({
+        ...request(),
+        operationId: 'forged-recovery',
+        turnTreeId: 'tree-not-on-disk',
+      }),
+      'stale',
+    )
+  })
+
   it('deduplicates operation ids and rejects stale epochs', async () => {
     let runCount = 0
     const dispatcher = new AgentDispatcher(

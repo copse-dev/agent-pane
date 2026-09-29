@@ -115,6 +115,13 @@
           3
         ]
       },
+      "agent:run-machine": {
+        "api": "agent.runMachine",
+        "args": [
+          1,
+          1
+        ]
+      },
       "agent:running-thread-ids": {
         "api": "agent.runningThreadIds",
         "args": [

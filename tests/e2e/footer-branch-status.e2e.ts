@@ -162,6 +162,13 @@ describe('footer branch status for a detached thread worktree', () => {
               role: 'user',
               content: 'Inspect this detached worktree.',
               toolCalls: [],
+              createdAt: now - 2,
+            },
+            {
+              id: 'msg-assistant-detached',
+              role: 'assistant',
+              content: 'I inspected the detached worktree and found an interrupted Git operation.',
+              toolCalls: [],
               createdAt: now - 1,
             },
           ],
@@ -323,7 +330,6 @@ describe('footer branch status for a detached thread worktree', () => {
     await approveUnsandboxedTerminalIfPrompted()
     await expect($('.branch-reattach-button')).not.toBeDisplayed({ wait: 30_000 })
     await expect($('.msg-machine-origin')).toBeDisplayed({ wait: 30_000 })
-    await saveElementScreenshot('#conversation', 'footer-branch-commit-and-continue.png')
   })
 
   it('offers to reset an active bisect without stranding it', async function () {

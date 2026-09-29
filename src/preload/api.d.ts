@@ -11,7 +11,12 @@ import type {
 } from '@shared/types/app-run.ts'
 import type { SimulatorDesktopPresentation } from '@shared/types/simulator-desktop.ts'
 import type { ClassifierClient } from '@copse/llm/classifiers/types.ts'
-import type { StreamChunk, ContextBreakdown } from '@shared/types'
+import type {
+  ContextBreakdown,
+  MachineAgentRunRequest,
+  MachineDispatchResult,
+  StreamChunk,
+} from '@shared/types'
 import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
@@ -265,6 +270,7 @@ export interface ApiClient {
   }
   agent: {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    runMachine: (request: MachineAgentRunRequest) => Promise<MachineDispatchResult>
     describeImages: (
       projectId: string,
       threadId: string,
