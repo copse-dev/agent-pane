@@ -106,8 +106,9 @@ export function parseNotices(markdown: string): ParsedNotices {
 
 function licenseIds(expression: string): string[] {
   return expression
+    .replace(/\s+WITH\s+[\w.+-]+/gi, '')
     .replace(/[()]/g, ' ')
-    .split(/\s+(?:OR|AND|WITH)\s+|\s+/i)
+    .split(/\s+(?:OR|AND)\s+|\s+/i)
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
 }

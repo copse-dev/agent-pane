@@ -148,6 +148,23 @@ describe('findNoticeProblems', () => {
     ])
   })
 
+  it('does not treat an SPDX exception as an electable licence option', () => {
+    const components = [
+      {
+        name: 'example',
+        version: '1.0.0',
+        license: '(MIT OR Apache-2.0 WITH LLVM-exception)',
+      },
+    ]
+    const markdown = `## Example (example)
+
+Copse elects the LLVM-exception option. Version 1.0.0 is shipped.
+`
+    assert.deepEqual(problemsFor(components, markdown), [
+      'example@1.0.0: entry elects LLVM-exception, which is not an option in (MIT OR Apache-2.0 WITH LLVM-exception)',
+    ])
+  })
+
   it('rejects duplicate entries without letting a later one mask an invalid election', () => {
     const markdown = `${NOTICES.replace('BSD-3-Clause option', 'GPL-3.0 option')}
 ## Duplicate Forge entry (node-forge)
