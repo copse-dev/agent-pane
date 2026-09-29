@@ -61924,9 +61924,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   });
   const unsubscribeTriggered = api2.automations.onTriggered(
     (event) => {
-      if (event.projectId !== projectId || event.disposition !== "coalesced" || event.coalescedReason !== "worktree-limit") {
-        return;
-      }
+      if (event.projectId !== projectId) return;
+      const changesLimitStatus = event.disposition === "started" || event.coalescedReason === "worktree-limit";
+      if (!changesLimitStatus) return;
       void refresh();
     }
   );
