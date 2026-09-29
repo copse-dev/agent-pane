@@ -52,7 +52,7 @@ describe('browser-hosted plugin rows', () => {
     assert.equal(await model.getValue(), 'auto:best-intellect')
     const hint = advisor.$('.plugin-setting-desc')
     await hint.waitForDisplayed()
-    assert.match(await hint.getText(), /advisor role still takes precedence/i)
+    assert.match(await hint.getText(), /advisor[”"] role still takes precedence/i)
 
     await advisor.scrollIntoView({ block: 'center' })
     await saveElementScreenshot(
