@@ -1,3 +1,4 @@
+import { isRecord } from '@shared/unknown-value.ts'
 import { el } from '../dom/helpers.ts'
 import {
   arrowLeftIcon,
@@ -196,10 +197,8 @@ interface BrowserPopoutSeed {
 }
 
 function seededArtefact(value: unknown): CanvasArtefact | null {
-  if (!value || typeof value !== 'object') return null
-  const title = Reflect.get(value, 'title')
-  const mimeType = Reflect.get(value, 'mimeType')
-  const body = Reflect.get(value, 'body')
+  if (!isRecord(value)) return null
+  const { title, mimeType, body } = value
   if (typeof title !== 'string' || typeof mimeType !== 'string' || typeof body !== 'string') {
     return null
   }
