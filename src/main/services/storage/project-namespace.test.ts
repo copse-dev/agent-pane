@@ -225,6 +225,31 @@ describe('projectStoreNamespaceDir', () => {
     assert.equal(dir, join(base, 'project-early'))
   })
 
+  it('migrates legacy data when the project is removed before first store access', async () => {
+    const base = tempBase()
+    const projectRoot = '/repos/removed-before-store'
+    const legacy = join(base, legacyName(projectRoot))
+    mkdirSync(legacy, { recursive: true })
+    writeFileSync(join(legacy, 'notes.txt'), 'legacy notes')
+    storageSet('projects', [
+      { id: 'project-removed-before-store', path: projectRoot, name: 'removed' },
+      { id: 'project-b', path: '/repos/beta', name: 'beta' },
+    ])
+    storageSet('activeProjectId', 'project-b')
+    cleanups.push(setWorkspaceRootForTest('/repos/beta'))
+    const turn = await resolveThreadExecutionContext('project-removed-before-store', 'thread-1', {
+      getProjectRoot,
+      getThreadMeta: () => Promise.resolve({ id: 'thread-1' }),
+    })
+    storageSet('projects', [{ id: 'project-b', path: '/repos/beta', name: 'beta' }])
+
+    const dir = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(dir, join(base, 'project-removed-before-store'))
+    assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'legacy notes')
+    assert.equal(existsSync(legacy), false)
+  })
+
   it("migrates a background turn's own legacy directory under its own id", () => {
     const base = tempBase()
     const legacyA = join(base, legacyName('/repos/alpha'))
