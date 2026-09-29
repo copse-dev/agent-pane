@@ -69307,8 +69307,6 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render() {
-    for (const timer of prBackfillRetryTimers) clearTimeout(timer);
-    prBackfillRetryTimers.clear();
     prBackfillObserver?.disconnect();
     prBackfillObserver = null;
     clear(list);
@@ -69909,7 +69907,6 @@ function mountProjectsPane(root, store2, api2) {
             }).catch((err2) => {
               let attempt = 1;
               for (const threadId of threadIds) {
-                requested?.delete(threadId);
                 const key = `${projectId}\0${threadId}`;
                 const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1;
                 prBackfillRetryAttempts.set(key, nextAttempt);
@@ -69918,6 +69915,7 @@ function mountProjectsPane(root, store2, api2) {
               const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
               const timer = setTimeout(() => {
                 prBackfillRetryTimers.delete(timer);
+                for (const { threadId } of batch) requested?.delete(threadId);
                 const currentObserver = prBackfillObserver;
                 if (!currentObserver) return;
                 for (const { threadId } of batch) {
