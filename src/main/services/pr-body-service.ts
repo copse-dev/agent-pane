@@ -1,8 +1,5 @@
 import type { FollowUpContext } from '@shared/follow-ups/types.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { getSetting } from './storage/settings.ts'
@@ -44,16 +41,15 @@ export async function suggestPrBody(
     return mockPrBody()
   }
 
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
+  const route = await resolveSmallTasksRoute()
+  if (!route) return null
 
   const prompt = buildPrBodyPrompt(context, await describeChanges(root))
   try {
-    const model = resolveSmallTasksModelId()
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
+    const { text, usage } = await completeTextWithUsage(route.provider, prompt, 20_000)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model,
+        model: route.model,
         source: 'small-tasks',
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,

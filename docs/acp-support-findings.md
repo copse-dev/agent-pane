@@ -89,9 +89,11 @@ big decision:
   ([#830](https://github.com/copse-dev/agent-pane/issues/830)) —
   **landed:** idle reap now retains the opaque session ID when the agent
   advertises `session/resume`, and the next acquire restores it (same path as
-  a transport-drop reconnect). Agents without resume still get a fresh session
-  - preamble. Durable cross-app-restart persistence and Cursor's legacy
-    `loadSession` path remain follow-ups.
+  a transport-drop reconnect). A respawn for a new cwd, sandbox, or permission
+  mode now carries the session over too, and load-only agents (Cursor) reattach
+  with `session/load`; see
+  [`plans/acp-session-continuity.md`](plans/acp-session-continuity.md). Durable
+  cross-app-restart persistence remains a follow-up.
 - ~~**Forward image content blocks** to agents advertising `prompt.image`~~ —
   done: when the agent advertises `promptCapabilities.image`, attached images
   ride as ACP image content blocks on `session/prompt` (`buildAcpPromptContent`);
@@ -104,6 +106,45 @@ The behavioural follow-up (Tier 2) is tracked in
 [`docs/acp-capability-probe.md`](acp-capability-probe.md#tier-2--behavioural-probe-npm-run-probeacpbehavior).
 Run it against real signed-in agents to fill `docs/acp-behavior-matrix.md`
 (git-ignored); CI covers the extraction with in-memory fake agents.
+
+## Session continuity across a restart and a new cwd (2026-09-26)
+
+Measured with `npm run probe:acp -- --continuity`, on darwin 25.6.0, against
+`claude-agent-acp` **0.70.0** (model pinned to Haiku) and `codex-acp` **1.6.2**
+(pinned to GPT-5.5). Cursor could not be probed: `cursor-agent acp` answered
+`Authentication required` on this host.
+
+| Restart, then…                   | Claude 0.70.0    | Codex 1.6.2      |
+| -------------------------------- | ---------------- | ---------------- |
+| `session/load`, same cwd         | ✓                | ✓                |
+| `session/load`, new cwd          | ✓                | ✓                |
+| `session/resume`, same cwd       | ✓                | ✓                |
+| `session/resume`, new cwd        | ✓                | ✓                |
+| Resume in new cwd (observed)     | ✓ load + resume  | ✓ load + resume  |
+| …and again after a 2nd restart   | ✓                | ✓                |
+| Reported cwd after reattach      | the new one      | the new one      |
+| `session/load` replayed messages | 2 (user + reply) | 2 (user + reply) |
+
+Details that matter for the design:
+
+- **Claude does store transcripts per cwd,** under
+  `~/.claude/projects/<encoded-cwd>/<id>.jsonl`, as suspected. But the adapter
+  looks a session up by id across projects (`getSessionMessages(sessionId)` with
+  no directory). A session continued in the new directory **keeps appending to
+  the origin project's file**, and the new directory's project gets no
+  transcript. So continuing works. What is affected is anything scoped by
+  directory: `session/list { cwd: <worktree> }` will not show the session, and
+  Claude's per-project `memory/` switches to the new directory's.
+- **Codex** needed a model pin. Its configured default (`gpt-6-astra` in
+  `~/.codex/config.toml`) returned HTTP 400 for every turn, and the first
+  version of the probe scored those as "forgot". The probe now treats a turn
+  that does not answer as inconclusive.
+- Both agents report the **new** directory as their working directory after
+  reattaching, so tools run in the new cwd.
+
+This is what two adapter versions do, not a protocol guarantee. Copse's runtime
+policy therefore does not rely on it; see
+[`plans/acp-session-continuity.md`](plans/acp-session-continuity.md#changed-working-directory).
 
 ## Caveat: slash-command counts are a race
 
