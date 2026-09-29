@@ -24,6 +24,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -788,28 +789,40 @@ export async function buildWorkerImage(options: BuildImageOptions = {}): Promise
     )
   }
   const fingerprint = workerBuildFingerprint({ ...options, workerBundle })
-  const contextDir = resolve(options.contextDir ?? join(tmpdir(), 'copse-worker-context'))
-  rmSync(contextDir, { recursive: true, force: true })
-  mkdirSync(contextDir, { recursive: true })
-  cpSync(workerBundle, join(contextDir, 'worker.cjs'))
-  writeFileSync(join(contextDir, 'entrypoint.sh'), WORKER_ENTRYPOINT_SH, { mode: 0o755 })
-  writeFileSync(join(contextDir, 'Dockerfile'), WORKER_DOCKERFILE)
-  writeFileSync(
-    join(contextDir, 'package.json'),
-    `${JSON.stringify({ name: 'copse-worker-runtime', private: true }, null, 2)}\n`,
-  )
-  stageSandboxRuntime(contextDir)
-  const args = ['build', '--tag', image, '--label', `${FINGERPRINT_LABEL}=${fingerprint}`]
-  if (options.buildNetwork) args.push('--network', options.buildNetwork)
-  args.push('--build-arg', `BASE_IMAGE=${options.baseImage ?? WORKER_BASE_IMAGE}`)
-  args.push(
-    '--build-arg',
-    `ACP_AGENTS=${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}`,
-  )
-  args.push('--build-arg', `PNPM_VERSION=${options.pnpmVersion ?? WORKER_PNPM_VERSION}`)
-  args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
-  await runDocker(args)
-  return image
+  // Default builds own a unique context. A fixed shared /tmp directory lets
+  // two app/test processes delete or copy into one another's build input.
+  const ownedContext = options.contextDir === undefined
+  const contextDir =
+    options.contextDir === undefined
+      ? mkdtempSync(join(tmpdir(), 'copse-worker-context-'))
+      : resolve(options.contextDir)
+  if (!ownedContext) {
+    rmSync(contextDir, { recursive: true, force: true })
+    mkdirSync(contextDir, { recursive: true })
+  }
+  try {
+    cpSync(workerBundle, join(contextDir, 'worker.cjs'))
+    writeFileSync(join(contextDir, 'entrypoint.sh'), WORKER_ENTRYPOINT_SH, { mode: 0o755 })
+    writeFileSync(join(contextDir, 'Dockerfile'), WORKER_DOCKERFILE)
+    writeFileSync(
+      join(contextDir, 'package.json'),
+      `${JSON.stringify({ name: 'copse-worker-runtime', private: true }, null, 2)}\n`,
+    )
+    stageSandboxRuntime(contextDir)
+    const args = ['build', '--tag', image, '--label', `${FINGERPRINT_LABEL}=${fingerprint}`]
+    if (options.buildNetwork) args.push('--network', options.buildNetwork)
+    args.push('--build-arg', `BASE_IMAGE=${options.baseImage ?? WORKER_BASE_IMAGE}`)
+    args.push(
+      '--build-arg',
+      `ACP_AGENTS=${(options.acpAgents ?? containerAcpAgentSpecs()).join(' ')}`,
+    )
+    args.push('--build-arg', `PNPM_VERSION=${options.pnpmVersion ?? WORKER_PNPM_VERSION}`)
+    args.push('--build-arg', `WORKER_UID=${String(WORKER_UID)}`, contextDir)
+    await runDocker(args)
+    return image
+  } finally {
+    if (ownedContext) rmSync(contextDir, { recursive: true, force: true })
+  }
 }
 
 // ---------------------------------------------------------------------------

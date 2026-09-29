@@ -640,6 +640,12 @@ describe('WORKER_DOCKERFILE', () => {
     const user = lines.findIndex((line) => line.startsWith('USER '))
     assert.ok(arg !== -1 && install !== -1 && user !== -1)
     assert.ok(arg < install && install < user)
+    const copyRuntime = lines.findIndex((line) => line.includes('node_modules ./node_modules'))
+    const readableRuntime = lines.findIndex((line) =>
+      line.includes('chmod -R a+rX /app/node_modules'),
+    )
+    assert.ok(copyRuntime !== -1 && readableRuntime !== -1)
+    assert.ok(copyRuntime < readableRuntime && readableRuntime < user)
     // An empty argument skips the layer rather than running `npm install -g`
     // with nothing, so a build without agents stays a build.
     assert.match(lines[install] ?? '', /if \[ -n "\$\{ACP_AGENTS\}" \]/)

@@ -108,7 +108,13 @@ WORKDIR /app
 COPY --chown=root:root package.json ./
 COPY --chown=root:root node_modules ./node_modules
 COPY --chown=root:root worker.cjs entrypoint.sh ./
-RUN chmod 0755 /app/entrypoint.sh && mkdir -p /workspace/.pnpm-store && chown -R "\${WORKER_UID}" /workspace
+# pnpm can materialise package files as 0600 (notably from an APFS clone).
+# The image copies them as root, so normalise read/traverse bits before the
+# unprivileged worker loads the runtime. Preserve executable files with X.
+RUN chmod -R a+rX /app/node_modules \\
+    && chmod 0755 /app/entrypoint.sh \\
+    && mkdir -p /workspace/.pnpm-store \\
+    && chown -R "\${WORKER_UID}" /workspace
 
 USER \${WORKER_UID}:\${WORKER_UID}
 ENV NODE_PATH=/app/node_modules
