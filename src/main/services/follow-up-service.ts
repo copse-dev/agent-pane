@@ -16,10 +16,7 @@ import {
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { isInvestigateCiOffered } from './github/ci-investigator-availability.ts'
@@ -47,8 +44,8 @@ export function parseModelFollowUpIds(raw: string): string[] {
 }
 
 async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return []
+  const route = await resolveSmallTasksRoute()
+  if (!route) return []
 
   const presetLines = MODEL_FOLLOW_UP_PRESETS.map((p) => `- ${p.id}: ${p.label}`).join('\n')
   const toolSummary =
@@ -68,11 +65,10 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
     toolSummary
 
   try {
-    const model = resolveSmallTasksModelId()
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 15_000)
+    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 15_000)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model,
+        model: route.model,
         source: 'small-tasks',
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
