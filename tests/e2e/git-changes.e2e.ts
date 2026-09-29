@@ -86,7 +86,9 @@ describe('git changes viewer', function () {
     const changesHost = await $('#git-changes-host')
     await changesHost.waitForDisplayed({ timeout: 30_000 })
 
-    await (await $('.git-changes-refresh-btn')).click()
+    await (
+      await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+    ).click()
 
     // Wait for the async git status refresh to render rows.
     await browser.waitUntil(async () => (await $$('.git-change-row').length) >= 3, {
@@ -299,7 +301,9 @@ describe('git changes viewer', function () {
     // Deleting the committed file leaves its Committed row (branch vs main) and
     // adds an unstaged deletion beside it.
     rmSync(join(repoRoot, 'committed.ts'))
-    await (await $('.git-changes-refresh-btn')).click()
+    await (
+      await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+    ).click()
     await browser.waitUntil(
       async () =>
         browser.execute(

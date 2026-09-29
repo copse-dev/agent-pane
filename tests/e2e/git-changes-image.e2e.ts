@@ -47,7 +47,9 @@ async function openChangesPanel(): Promise<void> {
   await $('#git-changes-host').waitForDisplayed({ timeout: 30_000 })
   // The event-driven refresh on panel activation can race the seeded git
   // fixture; force a refresh explicitly so the change rows are populated.
-  await (await $('.git-changes-refresh-btn')).click()
+  await (
+    await $('#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]')
+  ).click()
   await browser.waitUntil(async () => (await $$('.git-change-row')).length >= 3, {
     timeout: 30_000,
     timeoutMsg: 'expected at least 3 changed image rows',

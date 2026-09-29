@@ -4,6 +4,7 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { ApiClient } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -15,6 +16,23 @@ exposePerfBridge()
 // missing, extra, or mistyped member fails typecheck here, and the API protocol
 // schema (`pnpm run gen:api-protocol`) is generated from this binding.
 const api: ApiClient = {
+  mobile: {
+    manage: () => ipcRenderer.invoke('mobile:manage'),
+    onChat: (handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        command: import('@shared/mobile-chat.ts').MobileChatCommand,
+      ): void => {
+        handler(command)
+      }
+      ipcRenderer.on('mobile:chat', listener)
+      return (): void => {
+        ipcRenderer.off('mobile:chat', listener)
+      }
+    },
+    reply: (id: string, result: import('@shared/mobile-chat.ts').MobileChatResult) =>
+      ipcRenderer.invoke('mobile:reply', id, result),
+  },
   windowState: {
     getNavigation: () => ipcRenderer.invoke('main-window:get-navigation'),
     setNavigation: (navigation: import('@shared/types/main-window.ts').MainWindowNavigation) =>
@@ -1037,6 +1055,10 @@ const api: ApiClient = {
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
+  about: {
+    getInfo: () => ipcRenderer.invoke('about:get-info'),
+    openLicenseFile: (kind) => ipcRenderer.invoke('about:open-license-file', kind),
+  },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
@@ -1294,6 +1316,11 @@ const api: ApiClient = {
   cursorPlugins: {
     list: () => ipcRenderer.invoke('cursor-plugins:list'),
   },
+  // Cursor plugins whose skills ship inside Copse, each with its own switch
+  // (saved through settings.set('bundledSkillPluginOverrides', …)).
+  bundledSkillPlugins: {
+    list: () => ipcRenderer.invoke('bundled-skill-plugins:list'),
+  },
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
@@ -1310,6 +1337,8 @@ const api: ApiClient = {
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
+    permissionOptions: (projectId: string) =>
+      ipcRenderer.invoke('automations:permission-options', projectId),
     upsert: (projectId: string, input: unknown) =>
       ipcRenderer.invoke('automations:upsert', projectId, input),
     remove: (projectId: string, scheduleId: string) =>
@@ -1348,6 +1377,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('apple-development:state', projectId, threadId),
     detectProject: (projectId: string) =>
       ipcRenderer.invoke('apple-development:detect-project', projectId),
+    suggestion: (projectId: string) =>
+      ipcRenderer.invoke('apple-development:suggestion', projectId),
+    answerSuggestion: (projectId: string, answer: AppleSuggestionAnswer) =>
+      ipcRenderer.invoke('apple-development:answer-suggestion', projectId, answer),
     setEnrolled: (projectId: string, threadId: string, enrolled: boolean) =>
       ipcRenderer.invoke('apple-development:set-enrolled', projectId, threadId, enrolled),
     discover: (projectId: string, threadId: string, includeMetadata: boolean) =>
@@ -1437,6 +1470,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('git:current-branch', projectId, threadId),
     branchStatus: (projectId: string, threadId: string, forBranch?: string) =>
       ipcRenderer.invoke('git:branch-status', projectId, threadId, forBranch),
+    worktreeAttachment: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:worktree-attachment', projectId, threadId),
+    reattachWorktree: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:reattach-worktree', projectId, threadId),
     promptState: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('git:prompt-state', projectId, threadId),
     checkoutBranch: (projectId: string, threadId: string, branch: string) =>

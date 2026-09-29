@@ -5,6 +5,15 @@ import type { GithubPrRef } from './github-pr-url.ts'
 import type { HookCard } from './hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree-types.ts'
 import type { ThreadProposalDecision } from './thread-proposal.ts'
+
+/** A human answer to an agent-authored, non-blocking review question. */
+export interface ReviewerInputAnswer {
+  id: string
+  text: string
+  answeredAt: number
+  /** The user message that delivers the answer to the agent. */
+  messageId: string
+}
 import type { ArchiveAttachmentRef, VideoAttachmentRef } from './attachment-refs.ts'
 import type { TurnOutcome } from './turn-outcome.ts'
 export type { HookCard } from './hook-card.ts'
@@ -235,6 +244,14 @@ export interface ThreadReviewReport {
   status: 'running' | 'done' | 'error'
   /** When the run started (ms since epoch). */
   startedAt: number
+  /**
+   * Who asked for the run: `user` for the Review button or the "Review changes"
+   * bubble, `agent` for the model's own `review_changes` call (which already
+   * reads the result as its tool result). A completed `user` run is handed to
+   * the model with the next prompt (#2519). Absent on reports from before it
+   * was recorded, which are never handed on.
+   */
+  initiator?: 'user' | 'agent'
   /** The reviewer model, and the challenger/reproducer model when verification ran. */
   models: { reviewer: string; challenger: string | null }
   lenses: string[]
@@ -399,6 +416,8 @@ export interface Thread {
    * from at all.
    */
   threadProposals?: ThreadProposalDecision[]
+  /** Answers keyed by the saved request tool call in this thread's transcript. */
+  reviewerInputAnswers?: ReviewerInputAnswer[]
   /** Provenance for a thread the user started from a model-authored proposal. */
   proposedBy?: {
     /** Thread whose transcript carries the offering `propose_thread` call. */
@@ -633,6 +652,8 @@ export interface Message {
 
 export interface UsageDelta extends ModelUsage {
   model: string
+  /** Folds in subagent sessions' usage; see `ThreadUsage.subagentInputTokens`. */
+  subagentUsage?: boolean
   requestedServiceTier?: ServiceTier
   responseServiceTier?: ServiceTier
 }
@@ -647,4 +668,11 @@ export interface OrphanProjectStore {
   id: string
   /** How many thread directories the store holds. */
   threadCount: number
+  /**
+   * Up to a few recent thread titles from the store catalog, newest first.
+   * Empty when the catalog has no usable titles yet.
+   */
+  sampleTitles: string[]
+  /** Newest catalog `updatedAt` in the store, or null when unknown. */
+  updatedAt: number | null
 }

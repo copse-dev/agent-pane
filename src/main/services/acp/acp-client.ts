@@ -5,6 +5,7 @@ import {
   PROTOCOL_VERSION,
   type ClientConnection,
   type ContentBlock,
+  type LoadSessionResponse,
   type AvailableCommand,
   type McpCapabilities,
   type McpServer,
@@ -49,6 +50,14 @@ import {
   type AcpAgentResourceFault,
 } from './acp-resource-fault.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-bridge-name.ts'
+import {
+  acpReattachMethods,
+  noReattachMethodFailure,
+  splitLoadReplay,
+  type AcpCarryOverFailure,
+  type AcpReattachMethod,
+  type AcpSessionCarryOver,
+} from './acp-session-reattach.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
@@ -535,6 +544,92 @@ export function terminateAcpChild(child: ChildProcess): void {
 }
 
 /**
+ * How long a disposed agent gets to wind down on its own after its stdin
+ * closes before {@link shutdownAcpChild} falls back to {@link terminateAcpChild}.
+ */
+const ACP_GRACEFUL_EXIT_MS = 3_000
+
+const GROUP_DRAIN_POLL_MS = 50
+
+const acpChildShutdowns = new WeakMap<ChildProcess, Promise<void>>()
+const pendingAcpChildShutdowns = new Set<Promise<void>>()
+
+/** True while `child` leads a process group that still has live members. */
+function processGroupAlive(child: ChildProcess): boolean {
+  if (child.pid === undefined || process.platform === 'win32') return false
+  try {
+    process.kill(-child.pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Dispose an ACP agent the way the protocol expects: close its stdin and let it
+ * tear its own sessions down, signalling only what is still alive at the
+ * deadline.
+ *
+ * A group SIGTERM reaches the agent and everything it spawned at the same
+ * instant. `claude-agent-acp` answers SIGTERM by cancelling each session through
+ * the Claude Code subprocess the same signal just killed, so every teardown
+ * logged "cancellation failed during teardown … exited with code 143". On
+ * stdin EOF it cancels against a live subprocess and closes it itself.
+ *
+ * The agent's own children usually outlive it briefly while they finish closing
+ * (~700ms for Claude Code), so the promise waits for the whole group to drain,
+ * not just the leader. Idempotent per child.
+ */
+export function shutdownAcpChild(
+  child: ChildProcess,
+  graceMs = ACP_GRACEFUL_EXIT_MS,
+): Promise<void> {
+  const existing = acpChildShutdowns.get(child)
+  if (existing) return existing
+  const done = new Promise<void>((resolve) => {
+    let finished = false
+    let drainPoll: ReturnType<typeof setInterval> | undefined
+    const finish = (terminate: boolean): void => {
+      if (finished) return
+      finished = true
+      clearTimeout(deadline)
+      clearInterval(drainPoll)
+      child.off('exit', onExit)
+      // Reaches the agent if it ignored EOF, or its lingering children if not.
+      if (terminate) terminateAcpChild(child)
+      resolve()
+    }
+    const drain = (): void => {
+      if (!processGroupAlive(child)) finish(false)
+    }
+    const onExit = (): void => {
+      drain()
+      if (!finished) drainPoll = setInterval(drain, GROUP_DRAIN_POLL_MS)
+    }
+    const deadline = setTimeout(() => {
+      finish(true)
+    }, graceMs)
+    if (child.exitCode !== null || child.signalCode !== null) onExit()
+    else child.once('exit', onExit)
+    // An already-destroyed pipe (the connection aborted it) has signalled EOF.
+    child.stdin?.end()
+  })
+  acpChildShutdowns.set(child, done)
+  pendingAcpChildShutdowns.add(done)
+  void done.then(() => pendingAcpChildShutdowns.delete(done))
+  return done
+}
+
+/**
+ * Wait for every in-flight {@link shutdownAcpChild}. Quit awaits this so an
+ * agent still winding down is not orphaned by the app exiting first; each
+ * shutdown is bounded by its own deadline.
+ */
+export async function settleAcpChildShutdowns(): Promise<void> {
+  await Promise.all([...pendingAcpChildShutdowns])
+}
+
+/**
  * Configured servers must not be handed straight to an external agent. Direct
  * forwarding makes each call invisible to Copse, so hooks, read-only mode and
  * per-tool allow/ask/block policies cannot be enforced. Their registered tools
@@ -569,10 +664,10 @@ export interface AcpTurnStop {
   usage?: Usage | null
 }
 
-/** The session state returned by either `session/new` or `session/resume`. */
+/** The session state returned by `session/new`, `session/resume`, or `session/load`. */
 export interface ManagedAcpSession {
   sessionId: string
-  response: NewSessionResponse | ResumeSessionResponse
+  response: NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 }
 
 /**
@@ -638,6 +733,8 @@ export interface OpenAcpSession {
   mcpCapabilities: McpCapabilities | undefined
   /** Whether this agent advertised the optional `session/resume` capability. */
   canResume: boolean
+  /** Whether this agent advertised `loadSession`. */
+  canLoad: boolean
   /**
    * Whether this agent advertised `promptCapabilities.image` — when true,
    * Copse forwards attached images as ACP image content blocks (issue #831).
@@ -649,6 +746,18 @@ export interface OpenAcpSession {
   sessionInfo: { title?: string; updatedAt?: string }
   /** True when this connection restored a prior ACP session rather than creating one. */
   resumed: boolean
+  /** How a prior session was restored, when one was. */
+  restoredBy: AcpReattachMethod | null
+  /**
+   * Why a carry-over this connection was asked for did not happen; null when
+   * none was asked for or it succeeded.
+   */
+  carryOverFailure: AcpCarryOverFailure | null
+  /**
+   * Whether this session holds conversation the agent would lose by being
+   * replaced: it was restored from one that did, or has been prompted.
+   */
+  hasHistory: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
   appliedModel: string | undefined
   /**
@@ -685,7 +794,7 @@ export interface OpenAcpSession {
    * transport that captures no stderr (the in-process test transports).
    */
   resourceFault: () => AcpAgentResourceFault | null
-  dispose: () => void
+  dispose: () => Promise<void>
 }
 
 /**
@@ -732,7 +841,7 @@ export function refreshAcpSessionState(
 /** A live connection to an agent, however it was reached (local, sandboxed, SSH). */
 export interface AcpTransport {
   stream: Stream
-  dispose: () => void
+  dispose: () => void | Promise<void>
   /** Descriptor exhaustion seen on the agent's stderr; absent when none is captured. */
   resourceFault?: () => AcpAgentResourceFault | null
 }
@@ -751,7 +860,7 @@ function acpChildStdoutStream(
   const stdout = child.stdout
   if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
   let cancelRead = (): void => {
-    terminateAcpChild(child)
+    void shutdownAcpChild(child)
   }
   return new ReadableStream<Uint8Array>({
     start(controller): void {
@@ -792,12 +901,14 @@ function acpChildStdoutStream(
           })
         }
       }
+      // Closing the connection cancels this read; that is a dispose, not a
+      // fault, so the agent gets to exit on its own first.
       cancelRead = (): void => {
         if (!settled) {
           settled = true
           cleanup()
         }
-        terminateAcpChild(child)
+        void shutdownAcpChild(child)
       }
       stdout.on('data', onData)
       stdout.on('error', onStdoutError)
@@ -862,9 +973,7 @@ async function spawnTransport(
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   return {
     stream: ndJsonStream(writable, readable),
-    dispose: (): void => {
-      terminateAcpChild(child)
-    },
+    dispose: () => shutdownAcpChild(child),
     resourceFault: stderr.resourceFault,
   }
 }
@@ -929,7 +1038,7 @@ export async function openAcpSession(
   config: AcpAgentSpawnConfig,
   handlers: MutableAcpHandlers,
   createTransport: AcpTransportFactory = spawnTransport,
-  resumeSessionId?: string,
+  carryOver?: AcpSessionCarryOver,
   trace: AcpWireSink | null = null,
   signal?: AbortSignal,
 ): Promise<OpenAcpSession> {
@@ -1012,11 +1121,13 @@ export async function openAcpSession(
 
   const connection = app.connect(stream)
   let disposed = false
-  const dispose = (): void => {
-    if (disposed) return
+  let disposal: Promise<void> | null = null
+  const dispose = (): Promise<void> => {
+    if (disposal) return disposal
     disposed = true
     connection.close()
-    transport.dispose()
+    disposal = Promise.resolve(transport.dispose())
+    return disposal
   }
 
   try {
@@ -1048,23 +1159,68 @@ export async function openAcpSession(
         '[acp-bridge] agent does not advertise MCP-over-http capability; native tools were not offered this session',
       )
     }
+    const canLoad = initResponse.agentCapabilities?.loadSession === true
     let session: ManagedAcpSession | null = null
-    let resumed = false
-    if (resumeSessionId && canResume) {
-      try {
-        const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
-          connection.agent.request(methods.agent.session.resume, {
-            sessionId: resumeSessionId,
-            cwd: config.cwd,
-            mcpServers,
-          }),
-        )
-        session = { sessionId: resumeSessionId, response }
-        resumed = true
-      } catch {
-        // A session can expire while its client is disconnected. Fall back to a
-        // fresh session below; the pool will replay Copse's transcript once.
+    let restoredBy: AcpReattachMethod | null = null
+    let carryOverFailure: AcpCarryOverFailure | null = null
+    if (carryOver) {
+      const caps = { resume: canResume, load: canLoad }
+      const moved = carryOver.cwd !== config.cwd
+      const attempts = acpReattachMethods(caps, moved)
+      if (attempts.length === 0) carryOverFailure = noReattachMethodFailure(caps, moved)
+      for (const method of attempts) {
+        const sessionId = carryOver.sessionId
+        try {
+          if (method === 'resume') {
+            const response: ResumeSessionResponse = await perfSpan('ttft:acp-session-resume', () =>
+              connection.agent.request(methods.agent.session.resume, {
+                sessionId,
+                cwd: config.cwd,
+                mcpServers,
+              }),
+            )
+            session = { sessionId, response }
+          } else {
+            const response: LoadSessionResponse = await perfSpan('ttft:acp-session-load', () =>
+              connection.agent.request(methods.agent.session.load, {
+                sessionId,
+                cwd: config.cwd,
+                mcpServers,
+              }),
+            )
+            // The agent replays the conversation before answering. Copse's own
+            // transcript already shows it, so drop the replay rather than let
+            // the update pump render the thread a second time — but only after
+            // it proved the agent found the conversation it was asked for.
+            const replay = splitLoadReplay(pendingUpdates.get(sessionId) ?? [])
+            pendingUpdates.set(sessionId, replay.keep)
+            if (carryOver.hasHistory && !replay.foundConversation) {
+              carryOverFailure = 'history-missing'
+              continue
+            }
+            session = { sessionId, response }
+          }
+          restoredBy = method
+          carryOverFailure = null
+          break
+        } catch (err) {
+          // A session can expire while its client is disconnected. Try the next
+          // method, then fall back to a fresh session below; the caller replays
+          // Copse's transcript into it once.
+          // The agent's message usually names the session; session IDs stay
+          // out of logs (docs/plans/acp-session-continuity.md).
+          carryOverFailure = 'rejected'
+          const reason = (err instanceof Error ? err.message : String(err)).replaceAll(
+            sessionId,
+            '<session>',
+          )
+          console.warn(
+            `[acp] session/${method} was refused; ${attempts.at(-1) === method ? 'starting a new session' : 'trying the next method'}: ${reason}`,
+          )
+        }
       }
+      // A failed load may have queued a replay nobody will read.
+      if (!session) pendingUpdates.delete(carryOver.sessionId)
     }
     if (!session) {
       const response = await perfSpan('ttft:acp-session-new', () =>
@@ -1101,10 +1257,14 @@ export async function openAcpSession(
       handlers,
       mcpCapabilities,
       canResume,
+      canLoad,
       promptImage,
       availableCommands: [],
       sessionInfo: {},
-      resumed,
+      resumed: restoredBy !== null,
+      restoredBy,
+      carryOverFailure,
+      hasHistory: restoredBy !== null && carryOver?.hasHistory === true,
       appliedModel: undefined,
       desiredConfigOptions: config.configOptions,
       appliedConfigOptions,
@@ -1126,7 +1286,7 @@ export async function openAcpSession(
     startAcpUpdatePump(open)
     return open
   } catch (err) {
-    dispose()
+    await dispose()
     throw err
   }
 }
@@ -1251,6 +1411,7 @@ export async function runAcpSessionPrompt(
       )
     }
 
+    open.hasHistory = true
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,
@@ -1261,7 +1422,7 @@ export async function runAcpSessionPrompt(
     if (outcome === 'grace-expired') {
       // The agent never acknowledged the cancel. Tear the session down so the
       // stuck process can't keep the turn alive; the pool respawns next turn.
-      open.dispose()
+      await open.dispose()
       return { stopReason: 'cancelled' }
     }
     return outcome
@@ -1327,6 +1488,6 @@ export async function probeAcpAgent(
     throw acpProcessExitError(config.command, code, signal, stderr.tail())
   } finally {
     clearTimeout(timer)
-    terminateAcpChild(child)
+    void shutdownAcpChild(child)
   }
 }

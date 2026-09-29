@@ -7,7 +7,7 @@ import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { switchProjectThread } from '../controller/projects.ts'
 import { getThreadById, getThreadProjectId } from '@shared/store/thread-helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
-import { showErrorToast } from './toast.ts'
+import { showErrorToast, showToast } from './toast.ts'
 import { createOverlayDialog } from './dialog-shell.ts'
 
 type SortColumn = 'cpu' | 'memory'
@@ -173,6 +173,20 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
   let refreshing = false
   /** Thread groups the user collapsed (`''` is Shared); every group starts expanded. */
   const collapsedGroups = new Set<string>()
+  // Each time a thread joins the active-run list it starts a new run
+  // generation, so a chip menu opened on one run can never stop the next one
+  // in the same thread.
+  const runGenerations = new Map<string, number>()
+  let sampledRuns = new Set<string>()
+
+  function trackRuns(snapshot: ProcessManagerSnapshot): void {
+    for (const threadId of snapshot.activeRunThreadIds) {
+      if (!sampledRuns.has(threadId)) {
+        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1)
+      }
+    }
+    sampledRuns = new Set(snapshot.activeRunThreadIds)
+  }
 
   function projectForThread(threadId: string, projectId?: string | null): string | null {
     return projectId ?? getThreadProjectId(store, threadId)
@@ -224,10 +238,16 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     }
   }
 
+  /**
+   * `stillSameRun`, when given, is checked again when "Stop agent run" is
+   * chosen: the menu can stay open across refreshes while the run it was
+   * opened for finishes.
+   */
   function threadMenuEntries(
     threadId: string,
     projectId: string | null,
     running: boolean,
+    stillSameRun?: () => boolean,
   ): ContextMenuEntry[] {
     const entries: ContextMenuEntry[] = []
     if (projectId && store.getState().projects.some((project) => project.id === projectId)) {
@@ -242,6 +262,10 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
       entries.push({
         label: 'Stop agent run',
         onSelect: () => {
+          if (stillSameRun && !stillSameRun()) {
+            showToast('That agent run has already finished.')
+            return
+          }
           stopAgentRun(threadId)
         },
       })
@@ -283,6 +307,19 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     })
     cell.append(button)
     return cell
+  }
+
+  /** Menu for a "Working" chip, bound to the run it was opened on. */
+  function activityMenuEntries(threadId: string, projectId: string | null): ContextMenuEntry[] {
+    const run = runGenerations.get(threadId)
+    return threadMenuEntries(
+      threadId,
+      projectId,
+      true,
+      () =>
+        current?.activeRunThreadIds.includes(threadId) === true &&
+        runGenerations.get(threadId) === run,
+    )
   }
 
   function menuEntries(row: ProcessManagerRow): ContextMenuEntry[] {
@@ -358,7 +395,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
         showContextMenu(
           event.clientX,
           event.clientY,
-          threadMenuEntries(threadId, projectId, true),
+          activityMenuEntries(threadId, projectId),
           dialog,
         )
       })
@@ -366,12 +403,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
         if (event.key !== 'F10' || !event.shiftKey) return
         event.preventDefault()
         const rect = item.getBoundingClientRect()
-        showContextMenu(
-          rect.left,
-          rect.bottom,
-          threadMenuEntries(threadId, projectId, true),
-          dialog,
-        )
+        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog)
       })
       activityList.append(item)
       if (threadId === focusedActivityThread) item.focus({ preventScroll: true })
@@ -474,6 +506,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
       const snapshot = await api.processManager.snapshot()
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot
+        trackRuns(snapshot)
         render(snapshot)
       }
     } catch {
@@ -505,6 +538,8 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     if (timer !== null) clearInterval(timer)
     timer = null
     refreshing = false
+    runGenerations.clear()
+    sampledRuns = new Set()
   })
 
   return () => {

@@ -56,15 +56,25 @@ describe('open_simulator_desktop', () => {
     assert.match(result, new RegExp(SECOND.udid))
   })
 
-  it('does not bypass the Desktop viewer setting', async () => {
+  it('does not bypass the Desktop viewer setting and says how to turn it on', async () => {
     setSeededSimulatorDesktopForTests([FIRST], null)
+    const shown: string[] = []
+    setSimulatorDesktopPanelPresenter((udid) => shown.push(udid))
     await assert.rejects(
       async () =>
         await openSimulatorDesktopTool.execute(
           openSimulatorDesktopTool.parameters.parse({ udid: FIRST.udid }),
           new AbortController().signal,
         ),
-      /Enable the Desktop viewer/,
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /Desktop viewer is off/)
+        assert.match(error.message, /Settings → Experimental → Remote desktop viewer/)
+        assert.match(error.message, /call open_simulator_desktop again/)
+        assert.doesNotMatch(error.message, /not booted|No booted Simulator/)
+        return true
+      },
     )
+    assert.deepEqual(shown, [])
   })
 })

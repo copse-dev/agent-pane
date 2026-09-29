@@ -66,6 +66,50 @@ import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
+import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
+import type { AutomationPermission } from '@shared/types'
+import { getAutomationService } from '../automations/automation-service.ts'
+import { isMcpToolRemembered } from '../mcp/mcp-registry.ts'
+
+const AUTOMATIONS_STORAGE_KEY = `plugin.${AUTOMATIONS_PLUGIN_ID}.storage`
+
+function seedAutomationSchedule(permissions: AutomationPermission[] = []): void {
+  storageSet(AUTOMATIONS_STORAGE_KEY, [
+    {
+      id: 'schedule-1',
+      projectId: 'project-1',
+      name: 'Morning caretaker',
+      cron: '0 9 * * 1-5',
+      prompt: 'Keep the project healthy.',
+      model: 'gpt-5.4',
+      enabled: true,
+      permissions,
+      lastRunAt: 1,
+      lastCreatedThreadId: 'automation-thread-1',
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ])
+}
+
+function underAutomation<T>(fn: () => T): T {
+  return runWithThreadExecutionContext(
+    {
+      projectId: 'project-1',
+      threadId: 'automation-thread-1',
+      projectRoot: '/tmp/automation-project',
+      root: '/tmp/automation-project',
+      checkoutMode: 'worktree',
+      branch: 'copse/automation-thread-1',
+      automation: {
+        scheduleId: 'schedule-1',
+        scheduleName: 'Morning caretaker',
+        triggeredAt: 1,
+      },
+    },
+    fn,
+  )
+}
 
 describe('prepare_worktree permission', () => {
   it('asks once for the bounded preparation capability', async () => {
@@ -445,6 +489,213 @@ describe('ensureToolPermitted', () => {
       )
     } finally {
       setApprovalHandler(null)
+    }
+  })
+
+  it('auto-runs an opted-in Copse action only for its owning automation project', async () => {
+    setPermissionGateForTests(null)
+    seedAutomationSchedule([{ kind: 'copse-action', toolName: 'gh_pr_approve' }])
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await underAutomation(() =>
+          ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } }),
+        ),
+        true,
+      )
+      assert.equal(prompts, 0)
+
+      assert.equal(
+        await underAutomation(() =>
+          ensureToolPermitted({
+            toolName: 'gh_pr_approve',
+            args: { number: 1, owner: 'another', repo: 'repository' },
+          }),
+        ),
+        false,
+      )
+      assert.equal(prompts, 1, 'an explicit cross-repository target must still prompt')
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
+  it('rejects a renderer-spoofed automation claim that is not the recorded run', async () => {
+    setPermissionGateForTests(null)
+    seedAutomationSchedule([{ kind: 'copse-action', toolName: 'gh_pr_approve' }])
+    let prompts = 0
+    setApprovalHandler(async () => {
+      prompts += 1
+      return { approved: false, remember: false }
+    })
+    try {
+      const permitted = await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId: 'ordinary-renderer-thread',
+          projectRoot: '/tmp/automation-project',
+          root: '/tmp/automation-project',
+          checkoutMode: 'shared',
+          branch: null,
+          automation: {
+            scheduleId: 'schedule-1',
+            scheduleName: 'Morning caretaker',
+            triggeredAt: 1,
+          },
+        },
+        () => ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } }),
+      )
+
+      assert.equal(permitted, false)
+      assert.equal(prompts, 1)
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
+  it('lets an automation approval add the exact Copse action to its schedule', async () => {
+    setPermissionGateForTests(null)
+    seedAutomationSchedule()
+    let rememberLabel = ''
+    setApprovalHandler(async (request) => {
+      rememberLabel = request.rememberLabel ?? ''
+      return { approved: true, remember: true }
+    })
+    try {
+      assert.equal(
+        await underAutomation(() =>
+          ensureToolPermitted({ toolName: 'gh_pr_enable_auto_merge', args: { number: 7 } }),
+        ),
+        true,
+      )
+      assert.match(rememberLabel, /future “Morning caretaker” runs/)
+      assert.equal(
+        getAutomationService().permissionPreferenceForThread(
+          'project-1',
+          'automation-thread-1',
+          {
+            scheduleId: 'schedule-1',
+            scheduleName: 'Morning caretaker',
+            triggeredAt: 1,
+          },
+          {
+            kind: 'copse-action',
+            toolName: 'gh_pr_enable_auto_merge',
+          },
+        )?.allowed,
+        true,
+      )
+      let promptedAgain = false
+      setApprovalHandler(async () => {
+        promptedAgain = true
+        return { approved: false, remember: false }
+      })
+      assert.equal(
+        await underAutomation(() =>
+          ensureToolPermitted({ toolName: 'gh_pr_enable_auto_merge', args: { number: 8 } }),
+        ),
+        true,
+      )
+      assert.equal(promptedAgain, false)
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+    }
+  })
+
+  it('adds an exact MCP tool approval to the automation instead of the global grants', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'mcp__automation_fixture__publish_report'
+    storageSet('mcp-remembered-grants', [])
+    seedAutomationSchedule()
+    let rememberLabel = ''
+    setApprovalHandler(async (request) => {
+      rememberLabel = request.rememberLabel ?? ''
+      return { approved: true, remember: true }
+    })
+    try {
+      assert.equal(
+        await underAutomation(() => ensureToolPermitted({ toolName, args: { report: 1 } })),
+        true,
+      )
+      assert.match(rememberLabel, /Allow this tool for future “Morning caretaker” runs/)
+      assert.equal(
+        getAutomationService().permissionPreferenceForThread(
+          'project-1',
+          'automation-thread-1',
+          {
+            scheduleId: 'schedule-1',
+            scheduleName: 'Morning caretaker',
+            triggeredAt: 1,
+          },
+          { kind: 'mcp-tool', toolName },
+        )?.allowed,
+        true,
+      )
+      assert.equal(isMcpToolRemembered(toolName), false)
+
+      let promptedAgain = false
+      setApprovalHandler(async () => {
+        promptedAgain = true
+        return { approved: false, remember: false }
+      })
+      assert.equal(
+        await underAutomation(() => ensureToolPermitted({ toolName, args: { report: 2 } })),
+        true,
+      )
+      assert.equal(promptedAgain, false)
+    } finally {
+      setApprovalHandler(null)
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
+      storageSet('mcp-remembered-grants', [])
+    }
+  })
+
+  it('lets Always ask override exact MCP and Copse automation grants', async () => {
+    setPermissionGateForTests(null)
+    const toolName = 'mcp__automation_fixture__publish_report'
+    const mcpId = registerMcpToolPermissionTarget({
+      serverName: 'automation_fixture',
+      toolName: 'publish_report',
+      origin: 'user',
+    })
+    seedAutomationSchedule([
+      { kind: 'mcp-tool', toolName },
+      { kind: 'copse-action', toolName: 'gh_pr_approve' },
+    ])
+    setSetting('toolPermissionOverrides', {
+      [mcpId]: 'ask',
+      [copseToolPermissionId('gh_pr_approve')]: 'ask',
+    })
+    let prompts = 0
+    setApprovalHandler(async (request) => {
+      prompts += 1
+      assert.equal(request.allowRemember, false)
+      return { approved: true, remember: true }
+    })
+    try {
+      assert.equal(
+        await underAutomation(() => ensureToolPermitted({ toolName, args: { report: 1 } })),
+        true,
+      )
+      assert.equal(
+        await underAutomation(() =>
+          ensureToolPermitted({ toolName: 'gh_pr_approve', args: { number: 1 } }),
+        ),
+        true,
+      )
+      assert.equal(prompts, 2)
+    } finally {
+      setApprovalHandler(null)
+      setSetting('toolPermissionOverrides', {})
+      clearMcpToolPermissionTargets()
+      storageSet(AUTOMATIONS_STORAGE_KEY, [])
     }
   })
 
@@ -1993,7 +2244,7 @@ describe('formatGuardedYoloHarmPromptAdvice', () => {
     const many = formatGuardedYoloHarmPromptAdvice(Array.from({ length: 12 }, (_, i) => huge(i)))
     assert.equal(many.length, 1200)
     assert.ok(many.includes('…'))
-    assert.ok(many.endsWith('Approve this bounded destructive action once?'))
+    assert.ok(many.endsWith('Approve this command once?'))
   })
 })
 
@@ -2278,14 +2529,14 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('asks the read-access question, with the command behind the details toggle', async () => {
     await withRoot(async (root) => {
       const { permitted, prompt } = await runGate(
-        'ls -la ~/.copse',
+        'ls -la ~/.copse/workspace',
         { approved: false, remember: false },
         root,
       )
       assert.equal(permitted, false)
       assert.ok(prompt)
       assert.equal(prompt.title, 'Allow read access outside of the project?')
-      assert.equal(prompt.body, 'ls -la ~/.copse')
+      assert.equal(prompt.body, 'ls -la ~/.copse/workspace')
       assert.match(prompt.bodyAdvice, /read from sensitive locations on your computer/)
       assert.equal(prompt.collapseDetails, true)
       assert.equal(prompt.approveOnceLabel, 'Approve this command')
@@ -2295,7 +2546,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('grants the thread read access when the primary button is used', async () => {
     await withRoot(async (root) => {
       const granted = await runWithActiveRunIdentity('thread-read-grant', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
       assert.equal(granted.permitted, true)
 
@@ -2310,10 +2561,10 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('keeps the grant to one thread', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-a', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
       const other = await runWithActiveRunIdentity('thread-b', () =>
-        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       assert.equal(other.permitted, false)
       assert.ok(other.prompt)
@@ -2324,7 +2575,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('approves only the one command when the secondary button is used', async () => {
     await withRoot(async (root) => {
       const once = await runWithActiveRunIdentity('thread-once', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       assert.equal(once.permitted, true)
 
@@ -2340,7 +2591,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('never covers credential files with the grant', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-secrets', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
       const secret = await runWithActiveRunIdentity('thread-secrets', () =>
         runGate('cat ~/.ssh/id_ed25519', { approved: false, remember: false }, root),
@@ -2354,9 +2605,9 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records the grant, and everything it later covers, in the decision log', async () => {
     await withRoot(async (root) => {
       const granted = await runWithActiveRunIdentity('thread-audit', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
-      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse'])
+      assert.deepEqual(granted.prompt?.reasons, ['reads outside the project: ~/.copse/workspace'])
 
       await runWithActiveRunIdentity('thread-audit', () =>
         runGate('cat ~/.gitconfig', { approved: false, remember: false }, root),
@@ -2379,7 +2630,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
             actor: 'user',
             verdict: 'approved',
             remembered: true,
-            reasons: ['reads outside the project: ~/.copse'],
+            reasons: ['reads outside the project: ~/.copse/workspace'],
             threadId: 'thread-audit',
             source: undefined,
           },
@@ -2400,7 +2651,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records a one-command approval as a decision that granted nothing', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-audit-once', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: false }, root),
       )
       const [event] = await recordedDecisions()
       assert.ok(event)
@@ -2412,12 +2663,12 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('records a refusal to widen read access', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-audit-denied', () =>
-        runGate('ls -la ~/.copse', { approved: false, remember: false }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: false, remember: false }, root),
       )
       const [event] = await recordedDecisions()
       assert.ok(event)
       assert.equal(event.verdict, 'denied')
-      assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse'])
+      assert.deepEqual(event.reasons, ['reads outside the project: ~/.copse/workspace'])
     })
   })
 
@@ -2450,7 +2701,7 @@ describe('ensureShellCommandPermitted — reads outside the project', () => {
   it('spends the read grant on containment, not also on a full sandbox escape', async () => {
     await withRoot(async (root) => {
       await runWithActiveRunIdentity('thread-spent', () =>
-        runGate('ls -la ~/.copse', { approved: true, remember: true }, root),
+        runGate('ls -la ~/.copse/workspace', { approved: true, remember: true }, root),
       )
 
       // A command the grant covers that has NOT yet been given the relaxation is

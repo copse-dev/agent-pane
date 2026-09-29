@@ -12,11 +12,16 @@ import {
   setQueuePaused,
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
+import {
+  reviewReportModelContext,
+  reviewReportsAwaitingModel,
+} from '@shared/store/review-reports.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { ensureThreadMessages } from './thread-hydration.ts'
 import { mark as perfMark } from '../perf.ts'
 import { isAgentTurnBusyError } from '@shared/agent-turn-busy.ts'
+import { markSendNowAbort } from './send-now-aborts.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -154,11 +159,18 @@ function setMessageHookOrigin(
 function refreshPayload(
   store: AppStore,
   threadId: string,
-  payload: AgentRunPayload,
+  { reviewContext: _stale, ...payload }: AgentRunPayload,
 ): AgentRunPayload {
   const thread = getThreadById(store, threadId)
+  // Reviews the user ran since the model's last reply (#2519), read at dispatch
+  // time: a review that finished while this message sat queued still goes with
+  // it, and one the model has already replied after never goes again.
+  const reviewContext = thread
+    ? reviewReportModelContext(reviewReportsAwaitingModel(thread))
+    : undefined
   return {
     ...payload,
+    ...(reviewContext !== undefined ? { reviewContext } : {}),
     priorTodos: thread?.todos ?? payload.priorTodos ?? [],
     ...(thread?.workingBrief !== undefined ? { workingBrief: thread.workingBrief } : {}),
     // Send the per-thread model so the run uses the picker's selection rather
@@ -442,16 +454,11 @@ export function queuedPayloadText(payload: AgentRunPayload): string {
 
 function withPayloadText(content: UserContent, text: string): UserContent {
   if (typeof content === 'string') return text
-  let replaced = false
-  const next = content.map((block) => {
-    if (block.type !== 'text' || replaced) return block
-    replaced = true
-    return { ...block, text }
-  })
-  // `replaced` is mutated inside the .map callback above, which ESLint's
-  // control-flow analysis cannot track, so it wrongly flags this as falsy.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  return replaced ? next : [...next, { type: 'text' as const, text }]
+  const firstText = content.findIndex((block) => block.type === 'text')
+  if (firstText === -1) return [...content, { type: 'text' as const, text }]
+  return content.map((block, index) =>
+    index === firstText && block.type === 'text' ? { ...block, text } : block,
+  )
 }
 
 /**
@@ -551,6 +558,7 @@ export function sendQueuedMessageNow(
     // Abort the live run (local or remote); its `done` chunk drains the reordered
     // queue head. Remote follow-up create retries on `409 agent_busy` until the
     // cancelled run settles — see `createRemoteRun` in remote-agent-client.ts.
+    markSendNowAbort(threadId)
     void api.agent.abort(threadId)
   } else {
     drainMessageQueue(store, api, threadId)

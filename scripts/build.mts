@@ -27,7 +27,9 @@ import {
   BUNDLED_CURSOR_SKILLS_VENDOR_DIR,
   assertBundledCursorSkillsSnapshot,
 } from './bundled-cursor-skills-sync.mts'
+import { buildMobileAssets } from './mobile-build.mts'
 import { writeMermaidFrameHtml } from './write-mermaid-frame.mts'
+import { writeThirdPartyLicenses } from './write-third-party-licenses.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
 const isDemo = process.argv.includes('--demo')
@@ -198,13 +200,27 @@ const nodeOpts = {
   minifySyntax: isRelease,
 }
 
+/**
+ * The inputs of every bundle the app ships. esbuild folds a devDependency into
+ * the output and keeps only its `/*!` comments, so the package — and its licence
+ * file — never reaches the packaged node_modules. The metafile is the only
+ * complete record of what was folded in; the licence report is built from it.
+ */
+const metafiles: esbuild.Metafile[] = []
+
+async function bundle(options: esbuild.BuildOptions): Promise<void> {
+  const { metafile } = await esbuild.build({ ...options, metafile: true })
+  metafiles.push(metafile)
+}
+
 if (!isDemo) {
+  await buildMobileAssets()
   const bundledCursorSkills = await assertBundledCursorSkillsSnapshot()
   console.log(
     `[build] bundled Cursor skills verified @ ${bundledCursorSkills.commit.slice(0, 12)} ` +
       `(${bundledCursorSkills.contentSha256.slice(0, 12)})`,
   )
-  await esbuild.build({
+  await bundle({
     ...nodeOpts,
     entryPoints: ['src/main/index.ts'],
     outfile: 'dist/main/index.js',
@@ -212,7 +228,7 @@ if (!isDemo) {
   // Every standalone main-process bundle, from the list `dev.mts` also builds
   // (see main-bundles.mts for why they are enumerated in one place).
   for (const { entry, outfile, manifest } of STANDALONE_MAIN_BUNDLES) {
-    await esbuild.build({
+    await bundle({
       ...nodeOpts,
       entryPoints: [entry],
       outfile,
@@ -226,12 +242,12 @@ if (!isDemo) {
       )
     }
   }
-  await esbuild.build({
+  await bundle({
     ...nodeOpts,
     entryPoints: ['src/preload/index.ts'],
     outfile: 'dist/preload/index.js',
   })
-  await esbuild.build({
+  await bundle({
     ...nodeOpts,
     entryPoints: ['src/preload/video-decoder.ts'],
     outfile: 'dist/preload/video-decoder.js',
@@ -254,7 +270,7 @@ const browserOpts = {
 const rendererOutDir = isDemo ? 'dist/demo' : 'dist/renderer'
 const rendererEntry = isDemo ? 'src/renderer/demo/main.ts' : 'src/renderer/main.ts'
 
-await esbuild.build({
+await bundle({
   ...browserOpts,
   entryPoints: [rendererEntry],
   // noVNC 1.7 performs an asynchronous WebCodecs capability probe at module
@@ -266,7 +282,7 @@ await esbuild.build({
 assertModuleParses(`${rendererOutDir}/app.js`)
 // Monaco is bundled on its own and injected lazily by monaco/setup.ts, keeping
 // the multi-megabyte editor (and its CSS) out of the initial app.js.
-await esbuild.build({
+await bundle({
   ...browserOpts,
   entryPoints: ['src/renderer/monaco/monaco-global.ts'],
   outfile: `${rendererOutDir}/monaco-bundle.js`,
@@ -275,7 +291,7 @@ await esbuild.build({
 // bundle rather than riding along in app.js (see main/services/video/). The
 // demo build has no main process to open that window, so it skips this.
 if (!isDemo) {
-  await esbuild.build({
+  await bundle({
     ...browserOpts,
     entryPoints: ['src/renderer/video/decoder.ts'],
     outfile: `${rendererOutDir}/video/decoder.js`,
@@ -284,7 +300,7 @@ if (!isDemo) {
 }
 
 // Separate execution context: never include Mermaid in the app renderer bundle.
-await esbuild.build({
+await bundle({
   ...browserOpts,
   entryPoints: ['src/renderer/markdown/mermaid-frame-entry.ts'],
   outfile: `${rendererOutDir}/mermaid-frame.js`,
@@ -390,9 +406,23 @@ cpSync(BUNDLED_CURSOR_SKILLS_VENDOR_DIR, 'dist/resources/bundled-cursor-skills',
   recursive: true,
 })
 
+// Last of the shipped inputs: the licence report reads every bundle's metafile
+// and fails the build if any shipped component lacks its licence text.
+const licenses = writeThirdPartyLicenses(process.cwd(), metafiles)
+console.log(
+  `[build] wrote licences for ${String(licenses.components.length)} third-party components`,
+)
+
 // Verify both sides of the test bridge are removed, along with the scenario runner.
 if (isRelease) {
-  const markers = ['test:setMockScenario', 'test:releaseMockScenario', 'Mock scenario']
+  const markers = [
+    'test:setMockScenario',
+    'test:releaseMockScenario',
+    'Mock scenario',
+    'No host-authorized coordination demo run',
+    'Run the scripted coordination demo as the license collector.',
+    'Scripted coordination demo — completed',
+  ]
   for (const file of ['dist/main/index.js', 'dist/preload/index.js']) {
     const bundle = readFileSync(file, 'utf8')
     const leaked = markers.filter((marker) => bundle.includes(marker))
