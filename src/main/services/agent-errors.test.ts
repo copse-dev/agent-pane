@@ -227,7 +227,7 @@ describe('classifyAgentError', () => {
 
     assert.equal(
       result,
-      "This thread's checkout is detached from its branch. Your files are preserved. Reattach it to `copse/thread-branch`, then retry.",
+      "This thread's checkout is detached from its branch. Your files are preserved. Use the recovery button next to the branch name below the composer (**Reattach**, **Continue rebase**, or **Reset bisect**) to put it back on `copse/thread-branch`, then retry.",
     )
     assert.doesNotMatch(result, /^An error occurred:/)
   })
