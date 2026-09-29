@@ -875,6 +875,68 @@ export function seedMemoryNotes(
   return knowledgeDir
 }
 
+/**
+ * A completed unfiltered memory recall whose result carries the truncation
+ * guidance shown for a long-lived project. Unit coverage exercises the real
+ * cap; this persisted transcript keeps the visual proof small and focused on
+ * the copy a user sees in the ordinary tool card.
+ */
+export function seedMemoryRecallTruncationFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-memory-recall-truncation-project'
+  const threadId = 'e2e-memory-recall-truncation-thread'
+  const createdAt = Date.UTC(2026, 8, 29, 12)
+  const result = [
+    'Found 55 memories:',
+    '## Build commands [setup] — 2026-09-01T09:00:00.000Z\n\nUse pnpm run check before committing.',
+    '## Release channel [release] — 2026-09-02T10:30:00.000Z\n\nBeta releases use the beta update channel.',
+    '(Output truncated: showing 50 of 55 memories; 5 not shown. Call recall with a query to find a specific memory.)',
+  ].join('\n\n')
+
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    pluginDisabled: pluginDisabledSeed(['copse.okf-memories']),
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Recall project memories',
+        status: 'idle',
+        messages: [
+          {
+            id: 'memory-recall-user',
+            role: 'user',
+            content: 'What project memories do we have?',
+            toolCalls: [],
+            createdAt,
+          },
+          {
+            id: 'memory-recall-assistant',
+            role: 'assistant',
+            content:
+              'There are more memories than fit in an unfiltered result. Use a query to find a specific one.',
+            toolCalls: [
+              {
+                id: 'memory-recall-truncated',
+                name: 'recall',
+                args: {},
+                status: 'done',
+                result,
+              },
+            ],
+            createdAt: createdAt + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt,
+        updatedAt: createdAt + 1,
+      },
+    ],
+  })
+  seedE2eViewport({ width: 1280, height: 800 }, { theme: 'dark' })
+}
+
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,
