@@ -180,6 +180,28 @@ describe('image expand lightbox', () => {
     dialog.close()
   })
 
+  it('does not substitute a gallery neighbor for an empty clicked image', () => {
+    const existing = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    existing?.close()
+    const img = document.createElement('img')
+    document.body.append(img)
+    attachImageExpand(
+      img,
+      'unusable',
+      [
+        { src: PNG, alt: 'first' },
+        { src: '', alt: 'unusable' },
+        { src: 'data:image/svg+xml;base64,PHN2Zy8+', alt: 'third' },
+      ],
+      1,
+    )
+
+    mouseClick(img)
+    const dialog = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    assert.equal(dialog?.open ?? false, false)
+    img.remove()
+  })
+
   it('openImageExpand is a no-op for an empty src', () => {
     const existing = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
     existing?.close()

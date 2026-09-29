@@ -297,6 +297,7 @@ export function attachImageExpand(
   const open = (): void => {
     const label = alt ?? (img.alt || 'Expanded attachment')
     const src = img.currentSrc || img.src
+    if (!src) return
     const focusTarget = (): HTMLElement | null => {
       if (img.isConnected) return img
       for (const candidate of document.querySelectorAll<HTMLImageElement>('img.image-expandable')) {
