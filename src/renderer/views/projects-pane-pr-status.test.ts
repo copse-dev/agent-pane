@@ -361,12 +361,35 @@ describe('projects pane thread PR status (component)', () => {
       await Promise.resolve()
       await Promise.resolve()
 
-      t.mock.timers.tick(999)
-      assert.equal(observed.has(currentRow), false)
-      t.mock.timers.tick(1)
-      assert.equal(observed.has(currentRow), true)
+      // A render during the backoff must not make the still-visible row
+      // immediately eligible again. The replacement observer may report it,
+      // but the failed request keeps its lease until the retry timer expires.
+      store.emit('threads_changed')
+      const retryRow = rowByTitle('Legacy thread')
+      assert.ok(retryRow)
+      assert.notEqual(retryRow, currentRow)
+      assert.ok(deliver)
+      assert.ok(observer)
+      const retryRect = retryRow.getBoundingClientRect()
+      const retryEntry = {
+        target: retryRow,
+        isIntersecting: true,
+        intersectionRatio: 1,
+        boundingClientRect: retryRect,
+        intersectionRect: retryRect,
+        rootBounds: null,
+        time: 0,
+      } satisfies IntersectionObserverEntry
+      deliver([retryEntry], observer)
+      await Promise.resolve()
+      assert.equal(attempts, 1)
 
-      deliver([currentEntry], observer)
+      t.mock.timers.tick(999)
+      assert.equal(observed.has(retryRow), false)
+      t.mock.timers.tick(1)
+      assert.equal(observed.has(retryRow), true)
+
+      deliver([retryEntry], observer)
       await Promise.resolve()
       await Promise.resolve()
       assert.equal(attempts, 2)

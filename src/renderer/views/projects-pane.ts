@@ -952,8 +952,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function render(): void {
-    for (const timer of prBackfillRetryTimers) clearTimeout(timer)
-    prBackfillRetryTimers.clear()
     prBackfillObserver?.disconnect()
     prBackfillObserver = null
     clear(list)
@@ -1673,7 +1671,6 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               .catch((err: unknown) => {
                 let attempt = 1
                 for (const threadId of threadIds) {
-                  requested?.delete(threadId)
                   const key = `${projectId}\0${threadId}`
                   const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1
                   prBackfillRetryAttempts.set(key, nextAttempt)
@@ -1682,6 +1679,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
                 const delay = Math.min(1_000 * 2 ** (attempt - 1), 30_000)
                 const timer = setTimeout(() => {
                   prBackfillRetryTimers.delete(timer)
+                  for (const { threadId } of batch) requested?.delete(threadId)
                   const currentObserver = prBackfillObserver
                   if (!currentObserver) return
                   for (const { threadId } of batch) {
