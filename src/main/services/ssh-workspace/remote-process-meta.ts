@@ -11,6 +11,9 @@ export function registerRemoteProcessMeta(proc: ChildProcess, meta: RemoteProces
   remoteMeta.set(proc, meta)
 }
 
-export function getRemoteProcessMeta(proc: ChildProcess): RemoteProcessMeta | undefined {
-  return remoteMeta.get(proc)
+/** Read and clear the remote process identity before beginning its one teardown. */
+export function takeRemoteProcessMeta(proc: ChildProcess): RemoteProcessMeta | undefined {
+  const meta = remoteMeta.get(proc)
+  remoteMeta.delete(proc)
+  return meta
 }

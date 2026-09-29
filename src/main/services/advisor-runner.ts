@@ -4,6 +4,7 @@ import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { getRoleModels } from './providers/role-models.ts'
 import { resolveDynamicModelId } from './providers/dynamic-model.ts'
+import { assertModelMakerAllowed } from './providers/model-maker-policy.ts'
 import { readPluginSettingValue } from './plugins/plugin-service.ts'
 import {
   ADVISOR_STRATEGY_PLUGIN_ID,
@@ -102,6 +103,7 @@ export function getAdvisorRunner(): AdvisorRunner | null {
     // that it re-derives against whatever is reachable when the advice is
     // actually needed. A pinned id passes through unchanged.
     const advisorModel = await resolveDynamicModelId(ctx.advisorModel)
+    assertModelMakerAllowed(advisorModel)
 
     let text: string
     let usage: ModelUsage

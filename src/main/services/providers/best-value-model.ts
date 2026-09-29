@@ -27,6 +27,7 @@ import { fetchLmStudioModelsCached } from './lm-studio-models.ts'
 import { fetchOpenRouterModelsCached } from './openrouter-models.ts'
 import { loadPlanUsageSnapshot } from '../plan-usage-bridge.ts'
 import { getSetting, isProviderAvailable } from '../storage/settings.ts'
+import { isModelMakerAllowed } from './model-maker-policy.ts'
 
 function localServerUrl(): string {
   return resolveLocalServerUrl(getSetting<string>('localServerUrl', ''), process.env)
@@ -134,6 +135,7 @@ export async function routableFrontierPoints(): Promise<FrontierPoint[]> {
 
   const keepRoute = (candidate: FrontierCandidate): boolean => {
     if (!isRoutableCandidate(candidate, availableCloud)) return false
+    if (!isModelMakerAllowed(candidate.id)) return false
     // OpenRouter serves some routes async-only via `/v1/batches`. A `:batch`
     // suffix marks one of those, which the sync streaming transport cannot
     // call — exclude it so a value pick never lands on a route the request
@@ -202,6 +204,7 @@ export function resolveBestValueFromFrontier(
     (candidate) => applyPlanCoverage(candidate, planUsage),
     (candidate) =>
       (keepRoute ? keepRoute(candidate) : true) &&
+      isModelMakerAllowed(candidate.id) &&
       !(candidate.id.startsWith('openrouter:') && candidate.id.endsWith(':batch')),
   )
   const best = pickBestValueFrontierModel(points)

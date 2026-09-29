@@ -32,26 +32,59 @@ const ACCENT = '#20FD85'
 /** WCAG 2.2 AA for body text; both controls carry small/bold label text. */
 const AA_BODY_TEXT = 4.5
 
-/** Runs in the browser: WCAG contrast between an element's label and its fill. */
+/**
+ * Runs in the browser: WCAG contrast between an element's label and its fill.
+ * Computed colours arrive as `rgb()`/`rgba()` (0–255 channels) or
+ * `color(srgb …)` (0–1 channels); a translucent fill is composited over the
+ * nearest ancestor backdrop, and a translucent label over the fill.
+ */
 function controlContrast(selector: string): number | null {
-  const channels = (value: string): number[] =>
-    (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
-  const luminance = (rgb: number[]): number => {
-    const linear = rgb.map((channel) => {
-      const scaled = channel > 1 ? channel / 255 : channel
-      return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
-    })
-    return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+  type Rgba = [number, number, number, number]
+  const parse = (value: string): Rgba | null => {
+    const srgb = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)$/.exec(
+      value.trim(),
+    )
+    const rgb =
+      /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(
+        value.trim(),
+      )
+    const match = srgb ?? rgb
+    if (!match) return null
+    const scale = srgb ? 1 : 255
+    const alpha =
+      match[4] === undefined
+        ? 1
+        : match[4].endsWith('%')
+          ? Number.parseFloat(match[4]) / 100
+          : Number(match[4])
+    return [Number(match[1]) / scale, Number(match[2]) / scale, Number(match[3]) / scale, alpha]
   }
-  const contrast = (a: string, b: string): number => {
-    const [x, y] = [luminance(channels(a)), luminance(channels(b))]
-    const [high, low] = x! > y! ? [x!, y!] : [y!, x!]
-    return (high + 0.05) / (low + 0.05)
+  const over = (top: Rgba, bottom: Rgba): Rgba => [
+    top[0] * top[3] + bottom[0] * (1 - top[3]),
+    top[1] * top[3] + bottom[1] * (1 - top[3]),
+    top[2] * top[3] + bottom[2] * (1 - top[3]),
+    1,
+  ]
+  const luminance = (rgb: Rgba): number => {
+    const linear = (channel: number): number =>
+      channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+    return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
   }
   const el = document.querySelector<HTMLElement>(selector)
   if (!el) return null
   const style = getComputedStyle(el)
-  return contrast(style.color, style.backgroundColor)
+  const label = parse(style.color)
+  let fill = parse(style.backgroundColor)
+  if (!label || !fill) return null
+  // Fill the rest of the way from the ancestors, innermost first.
+  for (let node = el.parentElement; node && fill[3] < 1; node = node.parentElement) {
+    const backdrop = parse(getComputedStyle(node).backgroundColor)
+    if (backdrop && backdrop[3] > 0) fill = over(fill, backdrop)
+  }
+  if (fill[3] < 1) fill = over(fill, [1, 1, 1, 1])
+  const [x, y] = [luminance(over(label, fill)), luminance(fill)]
+  const [high, low] = x > y ? [x, y] : [y, x]
+  return (high + 0.05) / (low + 0.05)
 }
 
 /** Change theme through the same persisted settings surface a user uses. */
