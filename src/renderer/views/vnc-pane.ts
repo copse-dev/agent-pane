@@ -1104,6 +1104,7 @@ function mountVncSession(
 
   async function discoverSelectedMachine(): Promise<void> {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return
+    if (await stoppedByViewerOff()) return
     const generation = ++discoveryGeneration
     discoverButton.hidden = true
     discoverButton.disabled = true
@@ -1136,6 +1137,7 @@ function mountVncSession(
   }
 
   async function discoverNearby(): Promise<void> {
+    if (await stoppedByViewerOff()) return
     const generation = ++nearbyGeneration
     const previous = machineSelect.value
     const previousNearby = selectedNearbyServer()
@@ -1195,6 +1197,17 @@ function mountVncSession(
 
   async function desktopViewerEnabled(): Promise<boolean> {
     return (await api.settings.get('vncEnabled').catch(() => false)) === true
+  }
+
+  /**
+   * True (after showing the viewer-off notice) when the viewer has been turned
+   * off, possibly while this pane was open; the discovery IPCs would only be
+   * refused, and their raw rejection is not what the user should read.
+   */
+  async function stoppedByViewerOff(): Promise<boolean> {
+    if (await desktopViewerEnabled()) return false
+    if (!simulatorSessionId && !channel) showDesktopViewerOff()
+    return true
   }
 
   function showDesktopViewerOff(): void {
