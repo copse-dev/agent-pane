@@ -1,7 +1,6 @@
 import { showContextMenu, type ContextMenuEntry } from '../dom/context-menu.ts'
 import { el, clear, on } from '../dom/helpers.ts'
 import { arrowLeftIcon, checkIcon, chevronDownIcon, chevronRightIcon } from '../dom/icons.ts'
-import { matchModelPickerShortcut } from '../keyboard-shortcuts.ts'
 import { modelDisplayLabel, type ModelOption } from './model-options.ts'
 import { isNonEmptyString } from '@shared/nullish.ts'
 
@@ -706,19 +705,15 @@ export function mountModelPicker(
       document,
       'keydown',
       (e) => {
-        if (
+        const isOpenShortcut =
           pickerOpts.enableShortcut === true &&
-          matchModelPickerShortcut(e) &&
-          !document.querySelector('dialog[open]')
-        ) {
+          (e.ctrlKey || e.metaKey) &&
+          e.shiftKey &&
+          !e.altKey &&
+          (e.key === 'm' || e.key === 'M')
+        if (isOpenShortcut && !document.querySelector('dialog[open]')) {
           e.preventDefault()
-          e.stopPropagation()
-          if (open) {
-            // Chord again while open dismisses, matching a second trigger click.
-            setOpen(false)
-          } else {
-            setOpen(true)
-          }
+          setOpen(true)
           return
         }
         if (!open) return
