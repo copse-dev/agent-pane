@@ -46,6 +46,8 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
   'src/main/services/acp/acp-protocol-negotiate.ts': 'ACP v2 readiness prototype',
   'src/main/services/acp/acp-support-matrix.ts': 'manual ACP capability report formatter',
   'src/main/services/acp/acp-v2-session-adapter.ts': 'ACP v2 readiness prototype',
+  'src/main/services/container-runtime/cli-provider-key.ts':
+    'helper of the thread:container CLI entry (cli.ts), split out so it can be unit tested',
   'src/main/services/container-runtime/scripted-acp-agent.ts': 'container integration-test fixture',
   'src/main/services/container-runtime/scripted-model-server.ts':
     'container integration-test fixture',
