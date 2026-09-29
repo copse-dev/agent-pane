@@ -13,6 +13,7 @@ import {
   buildPluginFollowUps,
   buildDeterministicFollowUps,
   fillFollowUpSuggestions,
+  followUpExecutorForModels,
   pluginFollowUpConditionMet,
   parseModelFollowUpIds,
 } from './follow-up-service.ts'
@@ -496,13 +497,29 @@ describe('debug-ci deterministic bubble', () => {
     return { label: ci.label, prompt: ci.prompt ?? '' }
   }
 
-  it('omits investigate_ci for an ACP thread even when the native turn would be offered it', () => {
+  it('classifies host-routed models as external executors', () => {
+    for (const model of [
+      'acp:claude-agent',
+      'remote-agent:cursor',
+      'plugin-model:personal.reference-model:judge%3Adefault',
+    ]) {
+      assert.deepEqual(followUpExecutorForModels(model, undefined), { nativeTools: false })
+    }
+    assert.deepEqual(followUpExecutorForModels('auto:best-intellect', undefined), {
+      nativeTools: false,
+    })
+    assert.deepEqual(followUpExecutorForModels('auto:best-intellect', 'gpt-5.6-terra'), {
+      nativeTools: true,
+    })
+  })
+
+  it('omits investigate_ci for an external executor even when native tools are enabled', () => {
     const plugins = createFirstPartyPluginRegistry()
     plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
     setDefaultPluginRegistry(plugins)
     setGhAvailableForTest(true)
     setSetting(SUBAGENTS_ENABLED_SETTING, true)
-    const ci = buildDeterministicFollowUps(failingPr, turn, { acp: true }).find(
+    const ci = buildDeterministicFollowUps(failingPr, turn, { nativeTools: false }).find(
       (s) => s.id === 'debug-ci',
     )
     assert.ok(ci)

@@ -129,8 +129,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { suggestFollowUps } from './services/follow-up-service.ts'
-import { isAcpModel } from '@shared/acp.ts'
+import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -992,8 +991,8 @@ app
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
         const thread = await getProjectThread(projectId, threadId)
-        const acp = thread?.model !== undefined && isAcpModel(thread.model)
-        return suggestFollowUps(parsed.data, root, { acp })
+        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
+        return suggestFollowUps(parsed.data, root, executor)
       },
     )
 

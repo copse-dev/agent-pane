@@ -29,6 +29,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
+import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 
 const MAX_SUGGESTIONS = 3
 
@@ -142,15 +143,24 @@ export function buildPluginFollowUps(
 }
 
 /**
- * Who runs the thread the bubbles are for. An ACP agent is never offered the
- * native `investigate_ci` subagent tool (the bridge does not expose it), so a
- * bubble must not tell it to call one.
+ * Whether the executor behind this thread receives Copse's native tool surface.
+ * Host-routed agents and plugin models run through their own tool surfaces, so a
+ * bubble must not tell them to call the native `investigate_ci` tool.
  */
 export interface FollowUpExecutor {
-  readonly acp: boolean
+  readonly nativeTools: boolean
 }
 
-const NATIVE_EXECUTOR: FollowUpExecutor = { acp: false }
+const NATIVE_EXECUTOR: FollowUpExecutor = { nativeTools: true }
+
+/** Classify the persisted model that actually ran, falling back to its selector. */
+export function followUpExecutorForModels(
+  selectedModel: string | undefined,
+  resolvedModel: string | undefined,
+): FollowUpExecutor {
+  const model = resolvedModel ?? selectedModel
+  return { nativeTools: model === undefined || hostRoutedNamespace(model) === null }
+}
 
 /** Deterministic bubbles: open-plan first, then git/PR facts. Exported for tests. */
 export function buildDeterministicFollowUps(
@@ -192,10 +202,10 @@ export function buildDeterministicFollowUps(
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
     // Point the follow-up at the investigate_ci subagent tool only when the
     // turn is actually offered it — the same predicate the system prompt's tool
-    // line reads (plugin on, gh usable, subagents on, not read-only), and never
-    // for an ACP thread, whose bridge does not expose it; otherwise fall back to
+    // line reads (plugin on, gh usable, subagents on, not read-only), and only
+    // for the native executor that receives that tool; otherwise fall back to
     // the generic "Debug CI Failure" prompt.
-    const ci = buildDebugCiSuggestion(!executor.acp && isInvestigateCiOffered())
+    const ci = buildDebugCiSuggestion(executor.nativeTools && isInvestigateCiOffered())
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }
 
