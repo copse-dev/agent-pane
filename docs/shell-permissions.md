@@ -49,6 +49,13 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
+(`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
+gate therefore judges it by the **Windows / sandbox init failure** row whatever this machine's
+sandbox state, and whatever containment a caller reports. It asks the same execution-target
+resolution the spawn uses (`spawnRunsOnSshTarget` in `project-sandbox/spawn.ts`), and a remote
+project that cannot route over SSH counts as unsandboxed rather than local.
+
 On macOS, ASRT's network allowlist is process-wide. While a sandboxed ACP agent or background task
 temporarily widens it, a newly started network-capable command could inherit that access. Copse
 therefore pauses auto-run and names the holder in an approval prompt before overlapping the two.

@@ -1,9 +1,13 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk, Thread } from '@shared/types'
 import { agentErrorNotice, classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
+import {
+  threadExecutionContextStorage,
+  type ThreadCheckoutMode,
+  type ThreadExecutionContext,
+} from './thread-execution-context-store.ts'
 import {
   inspectThreadWorktreeAttachment,
   reattachThreadWorktree,
@@ -27,22 +31,7 @@ async function syncAdoptedWorktreeBranch(
   await updateMeta(projectId, threadId, { worktree, gitBranch: worktree.branch })
 }
 
-export type ThreadCheckoutMode = 'shared' | 'worktree'
-
-/** Trusted main-process identity and filesystem root for one agent turn. */
-export interface ThreadExecutionContext {
-  readonly projectId: string
-  readonly threadId: string
-  readonly projectRoot: string
-  readonly root: string
-  readonly checkoutMode: ThreadCheckoutMode
-  readonly branch: string | null
-  /**
-   * Renderer-visible schedule claim from thread metadata. Permission consumers
-   * must corroborate it against main-owned automation state before trusting it.
-   */
-  readonly automation?: NonNullable<Thread['automation']>
-}
+export type { ThreadCheckoutMode, ThreadExecutionContext }
 
 export type ThreadExecutionOwner = Pick<ThreadExecutionContext, 'projectId' | 'threadId'>
 
@@ -91,7 +80,7 @@ export interface ThreadExecutionContextDependencies {
   startWorktreeIndexing?: (root: string) => void
 }
 
-const storage = new AsyncLocalStorage<ThreadExecutionContext>()
+const storage = threadExecutionContextStorage
 
 const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
