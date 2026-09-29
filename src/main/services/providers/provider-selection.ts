@@ -165,6 +165,11 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
   return buildTaskRoleRoute(routedRoleModelSelection('reviewModel'))
 }
 
+/** Build a host-selected route for a registered reviewer specialist check. */
+export async function buildSpecialistCheckRoute(model: string): Promise<SubagentRoute> {
+  return buildTaskRoleRoute(model)
+}
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
