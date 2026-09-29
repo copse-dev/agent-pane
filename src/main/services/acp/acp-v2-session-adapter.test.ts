@@ -8,7 +8,7 @@ import { ndJsonStream } from '@agentclientprotocol/sdk'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import type { StreamChunk } from '@shared/types'
 import { createV2SessionAdapter } from './acp-v2-session-adapter.ts'
-import { nodeReadableStream } from './node-readable-stream.ts'
+import { nodeReadableStream } from './node-byte-streams.ts'
 
 /**
  * The v2 adapter prototype, driven two ways: synthetic updates for the shapes a

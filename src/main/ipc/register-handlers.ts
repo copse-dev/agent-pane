@@ -1538,6 +1538,7 @@ export function registerAllHandlers(
     if (parsed.label !== undefined) provider.label = parsed.label
     if (parsed.baseUrl !== undefined) provider.baseUrl = parsed.baseUrl
     if (parsed.keyPrefix !== undefined) provider.keyPrefix = parsed.keyPrefix
+    if (parsed.apiStyle !== undefined) provider.apiStyle = parsed.apiStyle
     if (parsed.models !== undefined) {
       provider.models = parsed.models.map((model) => {
         const result: NonNullable<Parameters<typeof saveExtraProvider>[0]['models']>[number] = {
