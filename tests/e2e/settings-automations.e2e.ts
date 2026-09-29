@@ -180,15 +180,18 @@ describe('settings automations plugin', function () {
     await row.$('.plugin-settings-summary').click()
     const detail = row.$('.automation-plugin-settings')
     await expect(detail).toBeDisplayed()
-    assert.match(await detail.getText(), /Project: workspace · local time/)
+    assert.match(await detail.getText(), /Project: workspace · Copse must be running/)
     assert.match(await detail.getText(), /Weekday project review/)
     assert.match(await detail.getText(), /Every weekday at 09:00/)
     assert.doesNotMatch(await detail.getText(), /0 9 \* \* 1-5/)
     assert.match(await detail.getText(), /Claude Sonnet 4\.6/)
-    assert.match(await detail.getText(), /Each run starts a fresh isolated task/i)
+    assert.match(
+      await detail.getText(),
+      /Schedules and failing CI events start fresh isolated tasks/i,
+    )
     assert.match(await detail.getText(), /One live worktree is the safe default/i)
     assert.match(await detail.getText(), /1 live worktree max/i)
-    assert.match(await detail.getText(), /Exact actions selected below can run without/i)
+    assert.match(await detail.getText(), /Tool approvals follow the normal permission path/i)
     assert.match(await detail.getText(), /2 unattended approvals/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
     // Row actions are compact kit buttons (#3065): Edit / Run now secondary,
@@ -266,6 +269,8 @@ describe('settings automations plugin', function () {
     await detail.$('.automation-row .automation-row-btn').click()
     await expect(detail.$('.automation-form')).toBeDisplayed()
     await expect(detail.$('.automation-form .model-picker-field')).toBeDisplayed()
+    await expect(detail.$('.automation-form .automation-when-select')).toHaveValue('schedule')
+    await expect(detail.$('.automation-form .automation-when-select')).toBeDisabled()
     await expect(detail.$('.automation-cron-input')).not.toExist()
     await expect(detail.$('.automation-repeat-select')).toHaveValue('weekdays')
     await expect(detail.$('.automation-time-input')).toHaveValue('09:00')

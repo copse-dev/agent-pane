@@ -27,7 +27,10 @@ describe('browser-hosted automation permission preferences', () => {
 
   it('shows exact unattended grants and preserves an unavailable saved MCP tool', async () => {
     const detail = $('.automation-plugin-settings')
-    assert.match(await detail.getText(), /Exact actions selected below can run without/i)
+    assert.match(
+      await detail.getText(),
+      /Schedules and failing CI events start fresh isolated tasks/i,
+    )
     assert.match(await detail.getText(), /2 unattended approvals/i)
     await saveElementScreenshot(
       '.automation-plugin-settings',
