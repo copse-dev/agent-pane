@@ -1,10 +1,8 @@
 import type { FollowUpContext } from '@shared/follow-ups/types.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute, type SmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
+import type { UsageRecordInput } from '@shared/usage/usage-event.ts'
 import { getSetting } from './storage/settings.ts'
 
 /**
@@ -45,6 +43,23 @@ export function mockNextStepHint(): string {
   return 'Run the test suite to verify the fix'
 }
 
+/** Budget for the one-shot next-step completion. */
+export const NEXT_STEP_TIMEOUT_MS = 15_000
+
+/**
+ * The I/O a suggestion performs, injected so unit tests can drive the real
+ * gate, prompt, timeout and usage attribution without a model server.
+ */
+export interface NextStepDeps {
+  resolveRoute: () => Promise<SmallTasksRoute | null>
+  recordUsage: (input: UsageRecordInput) => void
+}
+
+const DEFAULT_NEXT_STEP_DEPS: NextStepDeps = {
+  resolveRoute: resolveSmallTasksRoute,
+  recordUsage: recordUsageEvent,
+}
+
 /**
  * The composer's Tab-completable next step: one short instruction the user
  * would almost certainly send next, or null — which is the expected answer for
@@ -52,15 +67,17 @@ export function mockNextStepHint(): string {
  * the renderer) so a stale renderer can never bill a model call for a feature
  * the user has switched off.
  */
-export async function suggestNextStep(context: FollowUpContext): Promise<string | null> {
+export async function suggestNextStep(
+  context: FollowUpContext,
+  deps: NextStepDeps = DEFAULT_NEXT_STEP_DEPS,
+): Promise<string | null> {
   if (!getSetting<boolean>('nextStepSuggestionEnabled', false)) return null
   if (process.env['COPSE_PANEL_MOCK_NEXT_STEP'] === '1') {
     return mockNextStepHint()
   }
 
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return null
-  const model = resolveSmallTasksModelId()
+  const route = await deps.resolveRoute()
+  if (!route) return null
 
   const toolSummary =
     context.toolNames.length > 0 ? `\nTools used: ${context.toolNames.join(', ')}` : ''
@@ -79,15 +96,23 @@ export async function suggestNextStep(context: FollowUpContext): Promise<string 
     toolSummary
 
   try {
-    const { text, usage } = await completeTextWithUsage(provider, prompt, 15_000)
-    if (usage.inputTokens || usage.outputTokens) {
-      recordUsageEvent({
-        model,
-        source: 'small-tasks',
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-      })
-    }
+    // Usage is recorded under the model that actually answered (the chat model
+    // when the small-tasks route fell back to it), and also for a call that
+    // failed or timed out after the provider had already reported tokens.
+    const { text } = await completeTextWithUsage(
+      route.provider,
+      prompt,
+      NEXT_STEP_TIMEOUT_MS,
+      (usage) => {
+        if (!usage.inputTokens && !usage.outputTokens) return
+        deps.recordUsage({
+          model: route.model,
+          source: 'small-tasks',
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        })
+      },
+    )
     return cleanNextStep(text)
   } catch {
     return null
