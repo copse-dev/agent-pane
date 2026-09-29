@@ -110523,44 +110523,45 @@ var init_staged_diff_ui = __esm({
 function isImageDiff(diff) {
   return diff.beforeImage != null || diff.afterImage != null;
 }
+function imagePane(label, src, alt) {
+  const img = el("img", { class: "git-image-diff-img", src, alt, loading: "lazy" });
+  attachImageExpand(img, alt);
+  const pane = el("div", { class: "git-image-diff-pane" });
+  pane.append(el("div", { class: "git-image-diff-label" }, label), img);
+  return pane;
+}
 function renderImageDiff(container, diff) {
+  const beforeImage = diff.beforeImage ?? null;
+  const afterImage = diff.afterImage ?? null;
+  const current = renderedImageDiffs.get(container);
+  if (current?.grid.parentNode === container && current.path === diff.path && current.beforeImage === beforeImage && current.afterImage === afterImage) {
+    return;
+  }
+  const active2 = document.activeElement;
+  const focusedAlt = active2 && container.contains(active2) ? active2.getAttribute("alt") : null;
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
-  if (diff.beforeImage) {
-    const alt = `${diff.path} (before)`;
-    const img = el("img", {
-      class: "git-image-diff-img",
-      src: diff.beforeImage,
-      alt,
-      loading: "lazy"
-    });
-    attachImageExpand(img, alt);
-    const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
-    grid.append(pane);
-  }
-  if (diff.afterImage) {
-    const alt = `${diff.path} (after)`;
-    const img = el("img", {
-      class: "git-image-diff-img",
-      src: diff.afterImage,
-      alt,
-      loading: "lazy"
-    });
-    attachImageExpand(img, alt);
-    const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
-    grid.append(pane);
-  }
-  if (!diff.beforeImage && !diff.afterImage) {
+  if (beforeImage) grid.append(imagePane("Before", beforeImage, `${diff.path} (before)`));
+  if (afterImage) grid.append(imagePane("After", afterImage, `${diff.path} (after)`));
+  if (!beforeImage && !afterImage) {
     grid.append(el("div", { class: "panel-empty" }, "Could not load image"));
   }
   container.append(grid);
+  renderedImageDiffs.set(container, { grid, path: diff.path, beforeImage, afterImage });
+  if (focusedAlt === null) return;
+  for (const img of grid.querySelectorAll(".git-image-diff-img")) {
+    if (img.alt === focusedAlt) {
+      img.focus({ preventScroll: true });
+      return;
+    }
+  }
 }
+var renderedImageDiffs;
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
     init_image_expand();
     init_helpers();
+    renderedImageDiffs = /* @__PURE__ */ new WeakMap();
   }
 });
 
