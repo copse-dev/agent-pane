@@ -839,13 +839,11 @@ export function createAutomationPluginSettings(
 
   const unsubscribeTriggered = api.automations.onTriggered(
     (event: AutomationTriggerEvent): void => {
-      if (
-        event.projectId !== projectId ||
-        event.disposition !== 'coalesced' ||
-        event.coalescedReason !== 'worktree-limit'
-      ) {
-        return
-      }
+      if (event.projectId !== projectId) return
+      // A started run clears a previous worktree-limit block; a limit skip sets one.
+      const changesLimitStatus =
+        event.disposition === 'started' || event.coalescedReason === 'worktree-limit'
+      if (!changesLimitStatus) return
       void refresh()
     },
   )

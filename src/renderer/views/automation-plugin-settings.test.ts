@@ -246,6 +246,45 @@ describe('automation plugin settings detail', () => {
     )
   })
 
+  it('clears the worktree-limit block when a scheduled run starts while open', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: BEST_VALUE_CHAT_MODEL,
+      enabled: true,
+      maxLiveWorktrees: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      lastRunAt: 2,
+      lastWorktreeLimitAt: 3,
+    }
+    const { api, emitTriggered } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), false)
+    delete schedule.lastWorktreeLimitAt
+    emitTriggered({
+      projectId: 'project-a',
+      scheduleId: schedule.id,
+      threadId: 'thread-a',
+      triggeredAt: 4,
+      disposition: 'started',
+    })
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), true)
+    assert.equal(root.querySelector('.automation-row-blocked'), null)
+  })
+
   it('explains an invalid save instead of silently leaving the editor open', async () => {
     const { api, upserts } = stubApi([])
     const store = createStore({
