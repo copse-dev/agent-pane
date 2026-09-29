@@ -49,6 +49,7 @@
     "coverage:update": "node scripts/coverage-gate.mts --update",
     "coverage:ci": "pnpm run coverage && pnpm run coverage:check",
     "bench:thread-store": "node scripts/bench-thread-store.mts",
+    "prototype:coordination": "node scripts/prototypes/agent-coordination/demo.mts",
     "validate:local-agent": "node scripts/run-validate-local-agent.mts",
     "bench:agent": "node scripts/run-bench-agent.mts",
     "review": "copse-review",
@@ -84,6 +85,7 @@
     "scaleway:prune-ips": "node scripts/prune-scaleway-ips.mts",
     "e2e:remote": "node scripts/remote-e2e.mts",
     "test:e2e": "node scripts/run-e2e.mts wdio.conf.ts",
+    "test:e2e:coordination": "node scripts/run-e2e.mts wdio.conf.ts --spec tests/e2e/agent-coordination.e2e.ts",
     "test:demo": "wdio run wdio.demo.conf.ts",
     "test:e2e:ci": "node scripts/run-e2e.mts wdio.ci.conf.ts",
     "test:e2e:agent-eval": "node scripts/run-e2e.mts wdio.eval.conf.ts",
@@ -105,6 +107,7 @@
     "sync:intellect": "node scripts/sync-intellect.mts",
     "sync:model-cards": "node scripts/sync-model-cards.mts",
     "sync:cursor-skills": "node scripts/sync-bundled-cursor-skills.mts",
+    "sync:gortex-licenses": "node scripts/sync-gortex-licenses.mts",
     "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
     "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
@@ -130,7 +133,8 @@
       "**/node_modules/@napi-rs/**/*",
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
       "**/node_modules/xcodebuildmcp/**/*",
-      "dist/resources/gortex/**"
+      "dist/resources/gortex/**",
+      "dist/resources/licenses/**"
     ],
     "afterPack": "scripts/after-pack.cjs",
     "generateUpdatesFilesForAllChannels": true,

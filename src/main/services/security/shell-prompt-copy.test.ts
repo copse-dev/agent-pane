@@ -8,11 +8,14 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { PRIOR_DENIAL_MARKER } from './denied-operations.ts'
 import { analyzeShellCommand } from './shell-scope.ts'
+import { formatUnsandboxedPromptParts } from './sandbox-failure.ts'
 import {
   formatExpectedSandboxBlockPromptParts,
   formatExternalSandboxPromptParts,
   formatShellPromptParts,
+  shellPromptToApprovalFields,
 } from './permission-policy.ts'
 
 const root = '/Users/me/project'
@@ -74,6 +77,60 @@ describe('outside-sandbox approval copy', () => {
         'It is asking to run outside the sandbox up front, rather than letting it fail inside first.',
     )
     assert.match(bodyFooter ?? '', /not a confirmed sandbox block/)
+  })
+
+  it('puts cached denial advice in its own block, not a reason bullet with the live command', () => {
+    const prior =
+      'gh could not read its own config at ~/.config/gh (operation not permitted) — this needs ' +
+      'read access outside the workspace, not the network, and is specific to gh.\n\n' +
+      `${PRIOR_DENIAL_MARKER} (matched command: "set -o pipefail; gh pr list").`
+    const live = [
+      'set -o pipefail',
+      ...Array.from({ length: 30 }, (_, i) => `gh search prs --limit 100 "q${String(i)}"`),
+    ].join('\n')
+    const mega = live + '\n' + 'x'.repeat(900)
+
+    const parts = formatExpectedSandboxBlockPromptParts(mega, [
+      prior,
+      'GitHub CLI (may reach GitHub)',
+      'inline script (interpreter -c/-e/--eval)',
+    ])
+    const fields = shellPromptToApprovalFields(parts)
+
+    // Advice: prior note, then lead-in + bullets, then trailing expectation — never
+    // the live multi-line script, and no unclosed backticks from a prior command.
+    assert.match(fields.bodyAdvice ?? '', new RegExp(PRIOR_DENIAL_MARKER))
+    assert.match(fields.bodyAdvice ?? '', /The agent expects the project sandbox to block/)
+    assert.match(fields.bodyAdvice ?? '', /• Runs the GitHub CLI/)
+    assert.doesNotMatch(fields.bodyAdvice ?? '', /`/)
+    assert.doesNotMatch(fields.bodyAdvice ?? '', /gh search prs --limit 100 "q29"/)
+    // Prior denial is not rendered as a bullet that also holds the command.
+    assert.doesNotMatch(fields.bodyAdvice ?? '', new RegExp(`•[^\n]*${PRIOR_DENIAL_MARKER}`))
+
+    // Live command is only in the independently scrollable monospaced body. It
+    // stays complete: approval must never authorize undisclosed shell text.
+    assert.equal(fields.body, mega)
+    assert.ok(!fields.body.includes(prior))
+
+    assert.match(fields.bodyFooter ?? '', /Allow running it once outside the sandbox/)
+  })
+
+  it('keeps long commands complete on the post-failure escalation path', () => {
+    const mega = Array.from({ length: 17 }, (_, i) => `echo ${String(i)}`).join('\n')
+    const prior =
+      'git fetch needs network access that was denied\n\n' +
+      `${PRIOR_DENIAL_MARKER} (matched command: "git fetch origin main").`
+    const parts = formatUnsandboxedPromptParts(mega, [prior, 'sandbox violation'])
+    const fields = shellPromptToApprovalFields(parts)
+
+    assert.match(fields.bodyAdvice ?? '', new RegExp(PRIOR_DENIAL_MARKER))
+    assert.match(fields.bodyAdvice ?? '', /failed inside the project sandbox \(sandbox violation\)/)
+    assert.doesNotMatch(
+      fields.bodyAdvice ?? '',
+      /failed inside the project sandbox \(.*Earlier in this thread/,
+    )
+    assert.equal(fields.body, mega)
+    assert.equal(fields.bodyFooter, 'Allow running it once without sandbox restrictions?')
   })
 })
 
