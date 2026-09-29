@@ -69,6 +69,12 @@ provider endpoint. Custom OpenAI-compatible providers use the base URL and key
 the user configured. LM Studio and other local endpoints are local only when the
 configured address is local.
 
+“Local” currently means loopback on this device, not another machine on the LAN. Ordinary custom
+provider approval cannot authorize private, link-local, single-label, or mDNS destinations. If
+Copse later adds paired LAN inference, the peer will receive the same full turn context described
+above and must be presented as a separate authenticated destination with explicit revocation and
+data-flow disclosure, rather than as an exception to the public provider-host allow-list.
+
 By default Copse requests the most protective handling each provider offers at
 the request level: OpenRouter traffic is restricted to zero-data-retention,
 non-training upstream endpoints (two independent toggles in Settings →
