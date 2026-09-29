@@ -13,7 +13,7 @@
  * electron-builder retains Electron's `LICENSES.chromium.html` beside the
  * packaged runtime. It is deliberately not duplicated in this directory.
  */
-import { copyFileSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   findNoticeProblems,
