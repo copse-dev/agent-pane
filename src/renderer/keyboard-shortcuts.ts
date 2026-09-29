@@ -57,6 +57,17 @@ export function matchCommandPaletteShortcut(e: KeyboardShortcutEvent): boolean {
 }
 
 /**
+ * Cmd/Ctrl+Shift+M opens the composer model picker. Fires from the composer
+ * too: choosing a model is a place to look, not an edit. Dialog-hosted pickers
+ * leave `enableShortcut` off so they do not steal this chord.
+ */
+export function matchModelPickerShortcut(e: KeyboardShortcutEvent): boolean {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || !e.shiftKey) return false
+  return e.key === 'm' || e.key === 'M'
+}
+
+/**
  * Cmd/Ctrl+Shift+A opens the Activity panel — which threads need you, which are
  * working. Fires from the composer too: it is a place to look, not an edit.
  */

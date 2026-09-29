@@ -136,6 +136,107 @@ describe('shared model picker', () => {
     picker.destroy()
   })
 
+  it('opens on Cmd/Ctrl+Shift+M when the composer shortcut is enabled', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const picker = mountModelPicker(
+      host,
+      () => 'claude-sonnet-4-6',
+      () => {},
+      async () => OPTIONS,
+      {
+        enableShortcut: true,
+        loadOnMount: false,
+        getRecentValues: () => ['claude-sonnet-4-6'],
+      },
+    )
+    await picker.refresh()
+
+    const openEvent = new window.KeyboardEvent('keydown', {
+      key: 'm',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    document.dispatchEvent(openEvent)
+    assert.equal(openEvent.defaultPrevented, true)
+    assert.equal(host.querySelector('.model-picker-menu')?.hasAttribute('hidden'), false)
+    assert.equal(host.querySelector('.model-picker-view-title')?.textContent, 'Recent')
+
+    const closeEvent = new window.KeyboardEvent('keydown', {
+      key: 'M',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    document.dispatchEvent(closeEvent)
+    assert.equal(host.querySelector('.model-picker-menu')?.hasAttribute('hidden'), true)
+
+    picker.destroy()
+  })
+
+  it('captures arrows from outside the menu and type-to-filter opens All models', async () => {
+    const host = document.createElement('div')
+    const composer = document.createElement('textarea')
+    document.body.append(host, composer)
+    let current = 'claude-sonnet-4-6'
+    const picker = mountModelPicker(
+      host,
+      () => current,
+      (value) => {
+        current = value
+      },
+      async () => OPTIONS,
+      {
+        loadOnMount: false,
+        getRecentValues: () => ['claude-sonnet-4-6', 'claude-opus-4-8'],
+      },
+    )
+    await picker.refresh()
+
+    host.querySelector<HTMLButtonElement>('.model-picker-trigger')?.click()
+    const options = (): HTMLElement[] => [
+      ...host.querySelectorAll<HTMLElement>('.model-picker-option'),
+    ]
+    assert.equal(options()[0]?.classList.contains('is-active'), true)
+
+    // Focus left the menu (composer still has the caret) — arrows still move.
+    // Dispatch from the composer so the capture listener sees a non-menu target.
+    composer.focus()
+    const arrowEvent = new window.KeyboardEvent('keydown', {
+      key: 'ArrowDown',
+      bubbles: true,
+      cancelable: true,
+    })
+    composer.dispatchEvent(arrowEvent)
+    assert.equal(arrowEvent.defaultPrevented, true)
+    assert.equal(options()[1]?.classList.contains('is-active'), true)
+    assert.equal(options()[0]?.classList.contains('is-active'), false)
+
+    // A printable key from recent jumps to All models and seeds the filter.
+    // 'q' uniquely matches the local Qwen row in OPTIONS.
+    const typeEvent = new window.KeyboardEvent('keydown', {
+      key: 'q',
+      bubbles: true,
+      cancelable: true,
+    })
+    composer.dispatchEvent(typeEvent)
+    assert.equal(typeEvent.defaultPrevented, true)
+    const filter = host.querySelector<HTMLInputElement>('.model-picker-filter')
+    assert.ok(filter)
+    assert.equal(filter.hidden, false)
+    assert.equal(filter.value, 'q')
+    assert.equal(document.activeElement, filter)
+    assert.deepEqual(
+      options().map((option) => option.textContent),
+      ['Qwen'],
+    )
+
+    picker.destroy()
+  })
+
   it('keeps a hidden select as form state and supports an automatic blank route', async () => {
     const form = document.createElement('form')
     const label = document.createElement('label')
