@@ -117393,6 +117393,46 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   const pendingProjectWaits = /* @__PURE__ */ new Set();
   const pendingArtefactReopens = /* @__PURE__ */ new Map();
+  let pendingBackgroundArtefacts = [];
+  let lastThreadScope = activeThreadScope();
+  function activeThreadScope() {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return `${activeProjectId ?? ""}\0${activeThreadId ?? ""}`;
+  }
+  function artefactThreadId(artefact) {
+    return artefact.owner?.threadId ?? artefact.threadId;
+  }
+  function artefactBelongsToActiveThread(artefact) {
+    const threadId = artefactThreadId(artefact);
+    if (!threadId) return true;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return threadId === activeThreadId && (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId);
+  }
+  function pendingArtefactIdentity(artefact) {
+    return `${artefact.owner?.projectId ?? ""}\0${artefactThreadId(artefact) ?? ""}\0${artefact.title}`;
+  }
+  function queueBackgroundArtefact(artefact) {
+    const identity = pendingArtefactIdentity(artefact);
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity
+    );
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact;
+    else pendingBackgroundArtefacts.push(artefact);
+  }
+  function flushBackgroundArtefacts() {
+    const ready3 = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread);
+    if (ready3.length === 0) return;
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact)
+    );
+    for (const artefact of ready3) openArtefact(artefact);
+  }
+  function onThreadMaybeChanged() {
+    const nextScope = activeThreadScope();
+    if (nextScope === lastThreadScope) return;
+    lastThreadScope = nextScope;
+    flushBackgroundArtefacts();
+  }
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -117725,6 +117765,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function openArtefact(artefact) {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact);
+      return;
+    }
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(
       artefact.title,
@@ -118304,6 +118348,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
+    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
     store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
