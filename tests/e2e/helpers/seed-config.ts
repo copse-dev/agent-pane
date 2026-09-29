@@ -416,11 +416,10 @@ export function seedThemeBootFixture(workspaceRoot: string, theme: 'light' | 'da
  */
 export function seedMessageImageFixture(
   workspaceRoot: string,
-  imageDataUrl: string | readonly string[],
-  options?: { roadmapPlansEnabled?: boolean; assistantImages?: readonly string[] },
+  imageDataUrl: string,
+  options?: { roadmapPlansEnabled?: boolean },
 ): void {
   const projectId = 'e2e-image-expand-project'
-  const imageDataUrls = typeof imageDataUrl === 'string' ? [imageDataUrl] : imageDataUrl
   const threadId = 'e2e-image-expand-thread'
   mkdirSync(USER_DATA, { recursive: true })
   const seedConfig: Record<string, unknown> = {
@@ -436,7 +435,7 @@ export function seedMessageImageFixture(
             id: 'msg-user-image',
             role: 'user',
             content: 'Here is the screenshot from the failing UI.',
-            images: [...imageDataUrls],
+            images: [imageDataUrl],
             attachments: [
               {
                 kind: 'file',
@@ -452,17 +451,6 @@ export function seedMessageImageFixture(
             id: 'msg-assistant-ack',
             role: 'assistant',
             content: 'Got the screenshot — I will inspect it.',
-            ...(options?.assistantImages?.length
-              ? {
-                  contentBlocks: options.assistantImages.map((dataUrl) => ({
-                    type: 'image',
-                    dataUrl,
-                    mimeType: dataUrl.startsWith('data:image/svg+xml,')
-                      ? 'image/svg+xml'
-                      : 'image/png',
-                  })),
-                }
-              : {}),
             toolCalls: [],
             createdAt: Date.now() + 1,
           },
