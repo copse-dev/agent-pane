@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -86,5 +86,27 @@ describe('read-outside grant coverage', () => {
     grantReadOutsideProject(thread, [glob])
     assert.equal(covered(glob), true, 'the same token re-reads what the user approved')
     assert.equal(covered(join(base, '*.md')), false)
+  })
+
+  it('revokes a directory grant when the approved path is replaced by a symlink', () => {
+    const destination = join(base, 'destination')
+    mkdirSync(destination)
+    writeFileSync(join(destination, 'secret.txt'), 'not approved')
+
+    rmSync(granted, { recursive: true })
+    symlinkSync(destination, granted, 'dir')
+
+    assert.equal(covered(join(granted, 'secret.txt')), false)
+  })
+
+  it('revokes a file grant when the approved path is replaced by a symlink', () => {
+    const approved = join(base, 'approved.txt')
+    const destination = join(base, 'secret.txt')
+    writeFileSync(approved, 'approved')
+    writeFileSync(destination, 'not approved')
+    grantReadOutsideProject(thread, [approved])
+    rmSync(approved)
+    symlinkSync(destination, approved, 'file')
+    assert.equal(covered(approved), false)
   })
 })
