@@ -41,8 +41,6 @@ function stripConversationalLead(value: string): string {
   }
   return result
     .replace(/^make\s+(?:this|that|it)\s+have\s+/i, 'add ')
-    .replace(/^make\s+(?:this|that|it)\s+/i, '')
-    .replace(/^make\s+/i, '')
     .replace(/^investigate\s+(?:why|how)\s+/i, '')
     .replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, '')
     .replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, 'thread mention ')
@@ -51,7 +49,6 @@ function stripConversationalLead(value: string): string {
     .replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, 'prevent $1 $2')
     .replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, '')
     .replace(/^(?:the|a|an)\s+/i, '')
-    .replace(/\s+to\s+be\s+/i, ' ')
     .trim()
 }
 

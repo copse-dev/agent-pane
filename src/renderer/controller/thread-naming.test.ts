@@ -167,6 +167,19 @@ test('maybeNameThread does not persist a vague fallback when suggestTitle fails'
   assert.equal(requireThread(store, 't-vague-fallback').title, 'New Thread')
 })
 
+test('maybeNameThread preserves the requested action when suggestTitle fails', async () => {
+  const store = createStore({
+    threads: [newThread('t-action-fallback', [userMessage('Make targets fail on Linux')])],
+    activeThreadId: 't-action-fallback',
+  })
+  const { api } = apiWithTitle(async () => null)
+
+  maybeNameThread(store, api, 't-action-fallback')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(requireThread(store, 't-action-fallback').title, 'Make targets fail on Linux')
+})
+
 // Inline paste and thread-reference chips are stored as U+FFFC placeholders in
 // the message content. They are transcript markup, not words: neither the
 // naming model nor the word-slice fallback may carry one into the title, where

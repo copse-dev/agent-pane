@@ -124,7 +124,7 @@ describe('fallbackThreadTitle', () => {
   it('uses the first concrete clause instead of a six-word request slice', () => {
     assert.equal(
       fallbackThreadTitle("Can we fix this? I'd like the selected thread highlight to be clearer."),
-      'Selected thread highlight clearer',
+      'Selected thread highlight to be clearer',
     )
     assert.equal(
       fallbackThreadTitle('Can you investigate this. How might we stop terminal output clipping?'),
@@ -148,6 +148,12 @@ describe('fallbackThreadTitle', () => {
   it('keeps the default title when the whole request is vague', () => {
     assert.equal(fallbackThreadTitle('Can we fix this?'), 'New Thread')
     assert.equal(fallbackThreadTitle('Please investigate the problem.'), 'New Thread')
+  })
+
+  it('preserves action grammar in a concrete request', () => {
+    assert.equal(fallbackThreadTitle('Make targets fail on Linux'), 'Make targets fail on Linux')
+    assert.equal(fallbackThreadTitle('Allow threads to be pinned'), 'Allow threads to be pinned')
+    assert.equal(fallbackThreadTitle('Make it easier to use'), 'Make it easier to use')
   })
 })
 
