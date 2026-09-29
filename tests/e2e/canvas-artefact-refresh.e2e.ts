@@ -1,4 +1,8 @@
-import { expectAssistantReply, prepareMockToolTurn } from './helpers/mock-scenario.ts'
+import {
+  expectAssistantReply,
+  installMockScenario,
+  prepareMockToolTurn,
+} from './helpers/mock-scenario.ts'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +10,7 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedCanvasArtefactThreadFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 import { waitForAgentIdle } from './helpers.ts'
+import { setComposerValue } from './helpers/composer.ts'
 
 const PROJECT_ID = 'e2e-canvas-artefact-project'
 const ACTIVE_THREAD_ID = 'e2e-canvas-active-thread'
@@ -92,6 +97,17 @@ async function activeTabLabel(): Promise<string | null> {
 const tabLabels = async (): Promise<string[]> =>
   await $$('.browser-tabs-tab-label').map(async (el) => await el.getText())
 
+async function selectThread(threadId: string): Promise<void> {
+  await $(`.chat-row[data-thread-id="${threadId}"]`).click()
+  await browser.waitUntil(
+    async () =>
+      (await browser.execute(
+        () => document.querySelector('.chat-row.selected')?.dataset.threadId,
+      )) === threadId,
+    { timeout: 10_000, timeoutMsg: `expected thread ${threadId} to be selected` },
+  )
+}
+
 describe('canvas artefact refresh', () => {
   let labelsAfterFirstRender: string[] = []
 
@@ -170,6 +186,57 @@ describe('canvas artefact refresh', () => {
     })
     expect(await activeArtefactHeading()).toEqual('v3')
     await saveAppScreenshot('canvas-artefact-promoted.png')
+  })
+
+  it('does not focus a canvas created by a background thread until it is selected', async () => {
+    await selectThread(ACTIVE_THREAD_ID)
+    const before = await tabLabels()
+    const reply = 'The background dashboard is ready.'
+    const scenario = await installMockScenario({
+      title: 'Render a background dashboard',
+      turns: [
+        {
+          user: 'Render a background dashboard.',
+          responses: [
+            {
+              waitFor: 'before-canvas',
+              toolCalls: [
+                {
+                  name: CANVAS_TOOL,
+                  args: {
+                    title: 'Background Dashboard',
+                    html: '<!doctype html><h1 id="version">background</h1>',
+                  },
+                },
+              ],
+            },
+            { text: reply, expectToolResults: [{ name: CANVAS_TOOL }] },
+          ],
+        },
+      ],
+    })
+    await setComposerValue('Render a background dashboard.')
+    await $('.submit-btn').click()
+    await scenario.waitForHold('before-canvas')
+
+    await selectThread(HISTORY_THREAD_ID)
+    await scenario.release('before-canvas')
+    await waitForAgentIdle(25_000)
+    await scenario.assertComplete()
+
+    expect(await tabLabels()).toEqual(before)
+    expect(await activeTabLabel()).not.toEqual('Background Dashboard')
+
+    await selectThread(ACTIVE_THREAD_ID)
+    await browser.waitUntil(async () => (await activeTabLabel()) === 'Background Dashboard', {
+      timeout: 20_000,
+      timeoutMsg: 'expected the queued background canvas to open when its thread was selected',
+    })
+    await browser.waitUntil(async () => (await activeArtefactHeading()) === 'background', {
+      timeout: 20_000,
+      timeoutMsg: 'expected the selected thread canvas to render its queued artefact',
+    })
+    await saveAppScreenshot('canvas-background-thread-focus.png')
   })
 
   it('shows a preview thumbnail of the render in the transcript', async () => {
