@@ -7,10 +7,7 @@ import { resolveIssueRef } from '@shared/git/issue-ref.ts'
 import { parseReviewVerdict, type RoadmapReviewVerdict } from '@shared/roadmap/review.ts'
 import type { GhIssueSummary } from '@shared/types/git.ts'
 import type { LLMProvider, ModelUsage } from '@shared/types'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
@@ -464,12 +461,12 @@ export async function reviewRoadmapItem(
   // A closed GitHub issue is evidence, not proof of implementation: issues can
   // be closed as duplicates, not planned, or invalid. Keep the state in the
   // model prompt instead of enabling bulk mark/archive from that signal alone.
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) {
+  const route = await resolveSmallTasksRoute()
+  if (!route) {
     throw new Error('No model available for the roadmap review — configure a small-tasks model.')
   }
 
-  const model = resolveSmallTasksModelId()
+  const { model } = route
   // The configured small-tasks model, which is what the provider above resolves
   // to unless it could not be built and fell back to the chat model. A window
   // read from the wrong model of the two is what the retry inside
@@ -477,7 +474,7 @@ export async function reviewRoadmapItem(
   const contextWindow = await resolveContextWindow(model)
   const timeout = depth === 'deep' ? DEEP_REVIEW_TIMEOUT_MS : BULK_REVIEW_TIMEOUT_MS
   const { text, usage } = await completeReviewPrompt(
-    provider,
+    route.provider,
     { note, pinned, linked, commits, depth },
     model,
     contextWindow,

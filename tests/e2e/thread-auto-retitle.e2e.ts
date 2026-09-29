@@ -67,7 +67,7 @@ describe('automatic thread re-titling', () => {
     await $('.chat-row*=Initial UI Investigation').click()
     await waitForPromptReady()
     await installMockScenario({
-      title: 'Authentication Session Repair',
+      title: 'Authentication session repair',
       turns: [
         {
           user: 'Explain the session repair.',
@@ -77,7 +77,24 @@ describe('automatic thread re-titling', () => {
     })
     await setComposerValue('Explain the session repair.')
     await $('.submit-btn').click()
-    await $('.chat-row*=Authentication Session Repair').waitForExist({ timeout: 30_000 })
+    let observedTitles: string[] = []
+    try {
+      await browser.waitUntil(
+        async () => {
+          observedTitles = await browser.execute(() =>
+            [...document.querySelectorAll('.chat-row .chat-title')].map(
+              (element) => element.textContent?.trim() ?? '',
+            ),
+          )
+          return observedTitles.includes('Authentication session repair')
+        },
+        { timeout: 30_000, interval: 250 },
+      )
+    } catch {
+      throw new Error(
+        `Expected the generated title; observed sidebar titles: ${JSON.stringify(observedTitles)}`,
+      )
+    }
     await waitForAgentIdle()
     await saveElementScreenshot('#pane-projects', 'thread-auto-retitled.png')
 

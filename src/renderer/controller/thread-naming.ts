@@ -11,6 +11,7 @@ import { stripPastePlaceholders } from '@shared/threads/prompt-placeholders.ts'
 import { isInitialThreadWorktreeBranchName } from '@shared/git/worktree-policy.ts'
 import { queuedMessageIds } from './message-queue.ts'
 import { backgroundProjectOf } from './background-threads.ts'
+import { fallbackThreadTitle } from '@shared/thread-title.ts'
 
 // Threads with a suggestion in flight, so the two call sites (first text chunk,
 // first tool call) of a turn don't both fire the same pass.
@@ -39,10 +40,6 @@ function namingMessages(thread: Thread): Message[] {
   return thread.messages.filter(
     (m) => m.role === 'user' && !m.origin && !queued.has(m.id) && promptWords(m),
   )
-}
-
-function firstWords(text: string, n = 6): string {
-  return text.split(/\s+/).slice(0, n).join(' ').slice(0, 60) || 'New Thread'
 }
 
 /**
@@ -105,8 +102,8 @@ export function maybeRenameThreadBranch(store: AppStore, api: ApiClient, threadI
 /**
  * Thread naming: kicks off when the agent first responds (visible text or a tool
  * call), so the title overlaps the rest of the turn instead of waiting for
- * `done`. Uses the configured small-tasks model, with a plain word-slice
- * fallback for the first pass.
+ * `done`. Uses the configured small-tasks model, with a deterministic
+ * concrete-clause fallback for the first pass.
  *
  * Runs again at the later {@link PASS_THRESHOLDS}, replacing a title we wrote
  * ourselves with one that accounts for where the thread has gone since. A title
@@ -147,7 +144,7 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
     // A failed later pass keeps the title it already has rather than falling back
     // to a word slice, but still spends the pass so a dead model can't be
     // re-asked on every turn.
-    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title
+    const fallback = passes === 0 ? fallbackThreadTitle(promptWords(first)) : current.title
     setThreadTitle(store, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1,
     })
