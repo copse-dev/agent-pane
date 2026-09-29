@@ -1254,6 +1254,11 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe,
     },
     appRun: {

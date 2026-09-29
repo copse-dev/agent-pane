@@ -1,0 +1,3295 @@
+{
+  "version": 1,
+  "repo": "copse-dev/agent-pane",
+  "collectedAt": "2026-09-27T21:10:17.561Z",
+  "windowDays": 7,
+  "cases": [
+    {
+      "number": 1642,
+      "title": "Run model comparison from a bubble instead of a prompt",
+      "state": "merged",
+      "mergedAt": "2026-08-15T23:02:28Z",
+      "cohort": "mature",
+      "base": "40b5c2eea0315f1a696415e3301e2014f664553f",
+      "head": "b3d4c50aacdd18566f04ef3c01b95bb89bab4bd4",
+      "size": {
+        "files": 154,
+        "additions": 1263,
+        "deletions": 44,
+        "sourceLines": 700,
+        "sourceDeletions": 30
+      },
+      "areas": [
+        "packages/agent",
+        "schemas",
+        "src/main",
+        "src/preload",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "process-ipc",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1768",
+          "title": "Give the New project dialog its accent back, and a test that keeps it",
+          "daysAfterMerge": 0.4,
+          "excerpt": "Give the New project dialog its accent back, and a test that keeps it A follow-up from #1642, found while chasing that PR's CI rather than by looking for it. ## The Create button was never accented `new-project-dialog.ts` asked for `class: 'ui-btn pr…",
+          "verdict": "unrelated",
+          "note": "#1768 fixes a pre-existing missing accent found while chasing #1642's CI (\"was never accented\")."
+        },
+        {
+          "source": "reference",
+          "ref": "#1535",
+          "title": "perf: collapse the duplicate open-PR lookup a thread switch fires",
+          "daysAfterMerge": 0,
+          "excerpt": "Second occurrence of the same thing, fixed in `2b1f1332`. `main` moved to `c27fd069` (#1642, \"Run model comparison from a bubble instead of a prompt\"), which re-rendered the screenshot corpus again. The merge at `53836e60` brought it in and once more settled the binary conflicts in favour of this branch — this time two files: - `portrait-…",
+          "verdict": "unrelated",
+          "note": "A base-branch merge note; #1642 re-rendered screenshots it had to reconcile."
+        },
+        {
+          "source": "reference",
+          "ref": "#1533",
+          "title": "perf: batch the transcript rebuild's per-message passes on a thread switch",
+          "daysAfterMerge": 0.9,
+          "excerpt": "…failures across all three is not a plausible mechanism. Both shards were green on this branch earlier today. What did change is the base. `main` moved from `ba745a5a` to `9503a3d0` in a few hours, landing the VNC feature (#1759), model comparison (#1642), a batch of auto-approval work, and a dependency bump (#1771) — and this branch's merge caught that mid-flight. So `14025596` brings the branch to current `main` and nothing else; the diff against `main` is still exactly: ``` src/renderer/views/c…",
+          "verdict": "unrelated",
+          "note": "Lists #1642 among changes that moved main; does not blame it."
+        }
+      ]
+    },
+    {
+      "number": 1683,
+      "title": "Fix baseline CI test expectations",
+      "state": "merged",
+      "mergedAt": "2026-08-10T08:27:18Z",
+      "cohort": "mature",
+      "base": "19163f26c8d6b567d4d9c114fc75ebc367a12950",
+      "head": "dafe7d4b674ec0c01e40df6e7490eca1096c3e6d",
+      "size": {
+        "files": 2,
+        "additions": 15,
+        "deletions": 11,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1768",
+          "title": "Give the New project dialog its accent back, and a test that keeps it",
+          "daysAfterMerge": 6,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only; #1768 does not blame #1683."
+        },
+        {
+          "source": "reference",
+          "ref": "#1676",
+          "title": "Add a plan for a user-facing documentation site",
+          "daysAfterMerge": 0,
+          "excerpt": "Base branch is fixed by #1683, so I've merged `main` in (`c33a63d`) and CI is re-running against it. Closing the loop on the two comments above — no further action needed from anyone here. Worth noting #1683 took the harder path rather than swapping the expected values: it re-p…",
+          "verdict": "unrelated",
+          "note": "Notes #1683 fixed the base branch."
+        },
+        {
+          "source": "reference",
+          "ref": "#1642",
+          "title": "Run model comparison from a bubble instead of a prompt",
+          "daysAfterMerge": 0.1,
+          "excerpt": "## Merge commit `a96e3c9`: `check` green, e2e worse (6/8 red), nothing from this diff Merged `main` in and resolved the one non-screenshot conflict. **#1683 landed the same wire-trace fix this branch carried in `fd3d726`** — both re-point the three stale assertions at the concrete MCP tool name. I took main's side wholesale, so this branch is byte-identical to main on that file and `fd3d726` nets to not…",
+          "verdict": "unrelated",
+          "note": "Notes #1683 landed the same fix #1642 carried."
+        }
+      ]
+    },
+    {
+      "number": 1715,
+      "title": "Show proposed changes in a popped-out Changes pane",
+      "state": "merged",
+      "mergedAt": "2026-08-10T18:23:14Z",
+      "cohort": "mature",
+      "base": "538d4142c6b5b126864a9be2a0f0ea0bfab66a48",
+      "head": "5df85668190b8d0818f84a1cfd997bf561150ace",
+      "size": {
+        "files": 19,
+        "additions": 1003,
+        "deletions": 89,
+        "sourceLines": 392,
+        "sourceDeletions": 88
+      },
+      "areas": [
+        "src/main",
+        "src/preload",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "process-ipc",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1769",
+          "title": "Send a popped-out terminal's output to the window that opened it",
+          "daysAfterMerge": 5.6,
+          "excerpt": "Send a popped-out terminal's output to the window that opened it <!-- CURSOR_AGENT_PR_BODY_BEGIN --> Fixes #1705. Follow-up to the #1704 / #1715 Changes pop-out investigation: that PR called out Terminal as the most serious remaining main-window-only routing bug. ## The problem A pane pop-out could op…",
+          "verdict": "unrelated",
+          "note": "Extends the same pop-out routing fix to the terminal; new work, not a defect of #1715."
+        },
+        {
+          "source": "reference",
+          "ref": "#1766",
+          "title": "Send a terminal's output to the window that opened it",
+          "daysAfterMerge": 5.6,
+          "excerpt": "Send a terminal's output to the window that opened it Follow-up to #1715, from the same investigation into #1704. That PR fixed the Changes pop-out; this is the Terminal one, which was worse. ## The problem A pane pop-out could op…",
+          "verdict": "unrelated",
+          "note": "Same as #1769: the terminal half of the investigation."
+        },
+        {
+          "source": "reference",
+          "ref": "#1723",
+          "title": "Bind the captured createModel so lint passes on main",
+          "daysAfterMerge": 0,
+          "excerpt": "Closing — **`main` already has this fix.** #1715 (`6df6cbf4`) landed the identical change while this was queued: ```ts // Bound eagerly: the spy below replaces `monaco.editor.createModel`, so the // original has to be captured now rather than looked up at call time. const createModel = monaco.edi…",
+          "verdict": "unrelated",
+          "note": "Closed as already fixed on main by #1715."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#1698",
+          "title": "Stop re-listing a thread's checkout on every thread switch, and reindex the right one after an edit",
+          "daysAfterMerge": 1.1,
+          "excerpt": "shares src/main/services/diff-queue.ts",
+          "verdict": "unrelated",
+          "note": "Shared diff-queue file only; #1698 fixes file-index re-listing (#1694), not the Changes pane."
+        }
+      ]
+    },
+    {
+      "number": 1756,
+      "title": "Route operator steering by model capability",
+      "state": "merged",
+      "mergedAt": "2026-08-15T18:41:26Z",
+      "cohort": "mature",
+      "base": "2f2e71b6f9e343f500b1a0e5922c96250b1e95ba",
+      "head": "a6d8c6e2a96f3d0eb06632a02938141cbab1fd50",
+      "size": {
+        "files": 22,
+        "additions": 261,
+        "deletions": 135,
+        "sourceLines": 188,
+        "sourceDeletions": 76
+      },
+      "areas": [
+        "packages/agent",
+        "packages/llm",
+        "src/main"
+      ],
+      "surfaces": [
+        "security",
+        "auth-secrets"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1770,
+      "title": "Watch isolated worktrees and debounce Changes-pane refresh",
+      "state": "merged",
+      "mergedAt": "2026-08-16T19:51:42Z",
+      "cohort": "mature",
+      "base": "193fd76975800dc0a8fc4d034c537c51b505d1b5",
+      "head": "0c9e19c42aec2b468d249bf0567e55d0d0ed5e36",
+      "size": {
+        "files": 20,
+        "additions": 510,
+        "deletions": 46,
+        "sourceLines": 261,
+        "sourceDeletions": 43
+      },
+      "areas": [
+        ".github",
+        "src/main",
+        "src/preload",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "process-ipc",
+        "dependency-build",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1785,
+      "title": "fix: preserve and recover terminal agent turns",
+      "state": "merged",
+      "mergedAt": "2026-08-21T04:54:15Z",
+      "cohort": "mature",
+      "base": "8dc96a069e8e36893979ddc07d28259a81bff5b8",
+      "head": "a5695f699928e650e059f5d85f53fa41e3333c8a",
+      "size": {
+        "files": 23,
+        "additions": 743,
+        "deletions": 29,
+        "sourceLines": 439,
+        "sourceDeletions": 27
+      },
+      "areas": [
+        "packages/agent",
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#1926",
+          "title": "Fix duplicate usage ledger recording",
+          "daysAfterMerge": 2.9,
+          "excerpt": "shares src/shared/types/thread.ts",
+          "verdict": "unrelated",
+          "note": "Fixes a duplicate usage-ledger writer; does not name #1785."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#1888",
+          "title": "fix(agents): read Cursor's rejected-session wording as an expired sign-in",
+          "daysAfterMerge": 1.7,
+          "excerpt": "shares src/main/services/agent-errors.ts",
+          "verdict": "unrelated",
+          "note": "Cursor sign-in wording; unrelated code path in a shared file."
+        },
+        {
+          "source": "reference",
+          "ref": "#1895",
+          "title": "ACP unfinished-turn fallback false-positives: trailing tool_call_update after final text, and silent budget-denied recovery",
+          "daysAfterMerge": 2.2,
+          "excerpt": "ACP unfinished-turn fallback false-positives: trailing tool_call_update after final text, and silent budget-denied recovery Follow-up to PR #1785 (refs #746, #1873). ## Symptom A turn that visibly ended with a complete final answer still renders the unfinished-turn fallback: > The external agent stopp…",
+          "verdict": "regression",
+          "note": "#1785's unfinished-turn fallback renders on turns that visibly completed: a user-visible false positive on previously fine turns."
+        }
+      ]
+    },
+    {
+      "number": 1790,
+      "title": "Give sidebar, PR, and roadmap list rows one vertical rhythm",
+      "state": "merged",
+      "mergedAt": "2026-08-18T09:05:46Z",
+      "cohort": "mature",
+      "base": "9fa9a88fbb613974f819fa5506b7ab1e495f5f13",
+      "head": "13ed0b0104c139cf9ddaf9181f043e5511118920",
+      "size": {
+        "files": 6,
+        "additions": 187,
+        "deletions": 7,
+        "sourceLines": 22,
+        "sourceDeletions": 7
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1806",
+          "title": "test(e2e): track the shared list-row rhythm in the sidebar assertion",
+          "daysAfterMerge": 1.1,
+          "excerpt": "…ssertion ## What `thread-sidebar-selection.e2e.ts` asserts the selected sidebar row has at least 12px of vertical padding. It has been failing on `main` since #1790. ## Why it broke #1790 gave sidebar rows, PR rows and roadmap rows one shared rhythm by introducing `--list-row-padding-block`. The token resolves to `var(--…",
+          "verdict": "incomplete",
+          "note": "thread-sidebar-selection e2e failed on main since #1790 changed the row padding; product behaviour intended, test expectation stale."
+        },
+        {
+          "source": "reference",
+          "ref": "#1793",
+          "title": "test(e2e): give safeStorage a password store on headless Linux",
+          "daysAfterMerge": 0.1,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only (commit or comment); does not blame #1790."
+        },
+        {
+          "source": "reference",
+          "ref": "#1807",
+          "title": "test(e2e): make the roadmap row-rhythm timeout report why the list is empty",
+          "daysAfterMerge": 1.1,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only; improves a timeout message."
+        },
+        {
+          "source": "reference",
+          "ref": "#1808",
+          "title": "fix(e2e): give the per-chat effort check its own spec file",
+          "daysAfterMerge": 1.1,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1838",
+          "title": "fix(e2e): default thread `usage` so a seeded thread cannot vanish",
+          "daysAfterMerge": 2.6,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1792",
+          "title": "fix(settings): give the Settings title the interface face, not the serif",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…sidebar padding failure I suggested `--ui-scale` was the likely lever and said I had not confirmed it. It was not that. Both of the remaining failures come from one change — `e9b693fb`, \"Give sidebar, PR, and roadmap list rows one vertical rhythm\" (#1790): ```diff - padding: var(--spacing-md) var(--projects-action-inset) var(--spacing-md) 28px; + padding: var(--list-row-padding-block) var(--projects-action-inset) … ``` ```css --list-row-padding-block: var(--spacing-sm); /* 8px */ ``` So `.cha…",
+          "verdict": "incomplete",
+          "note": "\"Both of the remaining failures come from one change — #1790\": e2e expectations its padding change broke; test-suite only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1533",
+          "title": "perf: batch the transcript rebuild's per-message passes on a thread switch",
+          "daysAfterMerge": 1.1,
+          "excerpt": "…settings-styling` now passes (#1792 landed), and the VNC failure is gone (#1793). Three blockers remain, none in this diff — which is still `conversation.ts` plus its test. | shard | spec | cause | |---|---|---| | 3 | `list-row-rhythm.e2e.ts:145` | #1790's own new spec — \"expected two seeded roadmap rows\" has never passed | | 6 | `settings-model-parameters.e2e.ts:135` | **new** — `Expected: 7, Received: 8` | | 7 | `thread-sidebar-selection.e2e.ts:108` | stale since #1790 moved `.chat-row` to 8px; st…",
+          "verdict": "incomplete",
+          "note": "\"#1790's own new spec — expected two seeded roadmap rows — has never passed\"; test-suite only."
+        }
+      ]
+    },
+    {
+      "number": 1811,
+      "title": "ci: watch the published ACP SDK's protocol-v2 surface nightly",
+      "state": "merged",
+      "mergedAt": "2026-08-20T09:12:54Z",
+      "cohort": "mature",
+      "base": "1426e51e399e9f95471f1e8801e4f5cc3c1e287e",
+      "head": "652b0a4d39f90a6ef50cc4176f13f338c74949ab",
+      "size": {
+        "files": 7,
+        "additions": 1115,
+        "deletions": 34,
+        "sourceLines": 447,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        "(root)",
+        ".github",
+        "scripts"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1817",
+          "title": "spike(acp): prototype the v2 negotiation seam and session adapter",
+          "daysAfterMerge": 0,
+          "excerpt": "spike(acp): prototype the v2 negotiation seam and session adapter Follow-up to #1811, which added the watch. This is a **spike**: two modules that nothing imports, so no shipping path changes. The point was to find out what adopting `@agentclie…",
+          "verdict": "unrelated",
+          "note": "A spike building on the watch #1811 added."
+        }
+      ]
+    },
+    {
+      "number": 1822,
+      "title": "Steer prototype requests onto the canvas, and let one land in a single step",
+      "state": "merged",
+      "mergedAt": "2026-08-21T04:38:35Z",
+      "cohort": "mature",
+      "base": "2f89c3f1bdf870b6991b45848352afcd7773dca9",
+      "head": "a198e0d1575d5645a650b92728a876cb0100a209",
+      "size": {
+        "files": 19,
+        "additions": 610,
+        "deletions": 46,
+        "sourceLines": 249,
+        "sourceDeletions": 30
+      },
+      "areas": [
+        "(root)",
+        "packages/agent",
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1866",
+          "title": "Let the agent see the canvas, and stop re-renders stealing the pane",
+          "daysAfterMerge": 0.3,
+          "excerpt": "Let the agent see the canvas, and stop re-renders stealing the pane Follow-up to #1822. The canvas was **write-only to the model and loud to the user**: `render_html_artefact` pushed a document to the Browser pane, every re-render seized the pane…",
+          "verdict": "unrelated",
+          "note": "Follow-up feature work on the canvas; the re-render behaviour predates #1822."
+        },
+        {
+          "source": "reference",
+          "ref": "#1851",
+          "title": "fix(e2e): match the memories taint badge case-insensitively",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…map specs — bisected to #1834's `COPSE_DIR: e2eUserDataDir`; fixed on #1838 (`db9e533` + `3c17117`). - `git-changes-popout-proposed` — a regression from my own #1822; fixed in #1850. - `settings-sources-cursor-rules` — bisected to #1829, **still open**. It asserts `legend=Instructions` while the DOM renders `Instruction fil…",
+          "verdict": "unrelated",
+          "note": "Restates the #1850 regression; counted there."
+        },
+        {
+          "source": "reference",
+          "ref": "#1850",
+          "title": "fix(diff-queue): require a git worktree before skipping approval for a new file",
+          "daysAfterMerge": 0.2,
+          "excerpt": "fix(diff-queue): require a git worktree before skipping approval for a new file A regression from my own #1822, found while driving #1838 to green. `tests/e2e/git-changes-popout-proposed.e2e.ts` (#1753) fails on `main`: both of its cases time out after 30s waiting for `…",
+          "verdict": "regression",
+          "note": "\"A regression from my own #1822\": approval was skipped for a new file outside a git worktree; git-changes-popout-proposed failed on main."
+        }
+      ]
+    },
+    {
+      "number": 1829,
+      "title": "Trust-gate and envelope workspace instruction files (context-provenance phase 2)",
+      "state": "merged",
+      "mergedAt": "2026-08-21T04:47:07Z",
+      "cohort": "mature",
+      "base": "a198e0d1575d5645a650b92728a876cb0100a209",
+      "head": "8dc96a069e8e36893979ddc07d28259a81bff5b8",
+      "size": {
+        "files": 11,
+        "additions": 350,
+        "deletions": 83,
+        "sourceLines": 174,
+        "sourceDeletions": 18
+      },
+      "areas": [
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "process-ipc"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1884",
+          "title": "fix(e2e): only assert the default VNC port when discovery found none",
+          "daysAfterMerge": 1.5,
+          "excerpt": "…the `legend=Instruction files` selector and #1864 moved the trust badge to match; both halves now pass. This closes the spec-vs-product question left open from #1829. - **`thread-worktree-terminal` — could not reproduce.** All 3 cases pass locally in 14s against current `main`, so it is not a regression from today's commits…",
+          "verdict": "unrelated",
+          "note": "Closes the spec question #1851 recorded; counted there."
+        },
+        {
+          "source": "reference",
+          "ref": "#1851",
+          "title": "fix(e2e): match the memories taint badge case-insensitively",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…1838 (`db9e533` + `3c17117`). - `git-changes-popout-proposed` — a regression from my own #1822; fixed in #1850. - `settings-sources-cursor-rules` — bisected to #1829, **still open**. It asserts `legend=Instructions` while the DOM renders `Instruction files` (wdio `legend=` is exact-match), and once that is corrected the row…",
+          "verdict": "incomplete",
+          "note": "settings-sources-cursor-rules e2e bisected to #1829 (legend renamed); test-suite only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1850",
+          "title": "fix(diff-queue): require a git worktree before skipping approval for a new file",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…UserDataDir`; both stale seeders now use `copseDataRoot()` (on #1838 as `db9e533` + `3c17117`). - **Still open** — `settings-sources-cursor-rules`, bisected to #1829. Two distinct problems: it asserts `legend=Instructions` but the rendered legend is `Instruction files` (wdio `legend=` is exact-match, so it can never match);…",
+          "verdict": "unrelated",
+          "note": "Restates the #1851 bisect; counted there."
+        },
+        {
+          "source": "reference",
+          "ref": "#1866",
+          "title": "Let the agent see the canvas, and stop re-renders stealing the pane",
+          "daysAfterMerge": 0.3,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only."
+        }
+      ]
+    },
+    {
+      "number": 1834,
+      "title": "Record external-content provenance on remembered memories (context-provenance phase 4)",
+      "state": "merged",
+      "mergedAt": "2026-08-21T04:28:53Z",
+      "cohort": "mature",
+      "base": "3f822ee89b91cee98cba6933fdab6fff1bc140b2",
+      "head": "f3575e8e52b9963323bc20dd503724ff620eb8db",
+      "size": {
+        "files": 13,
+        "additions": 296,
+        "deletions": 33,
+        "sourceLines": 128,
+        "sourceDeletions": 8
+      },
+      "areas": [
+        "(root)",
+        "packages/agent",
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "security",
+        "process-ipc",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1851",
+          "title": "fix(e2e): match the memories taint badge case-insensitively",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…pect $(`.memories-row*=Where the API key lives`).$(`.memories-row-taint`) to have text Expected: \"external context\" Received: \"EXTERNAL CONTEXT\" ``` ## Cause #1834 added the badge together with this rule in `src/renderer/styles/global/memories.css`: ```css .memories-row-taint { text-transform: uppercase; } ``` WebDriv…",
+          "verdict": "incomplete",
+          "note": "#1834 added an uppercase badge style; the memories e2e expected lower case. Test-suite only."
+        },
+        {
+          "source": "reference",
+          "ref": "#1850",
+          "title": "fix(diff-queue): require a git worktree before skipping approval for a new file",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…ilures reproduce on pristine `main`, all found on the same `ci-full` run and none caused by this change: - **Fixed already** — five roadmap specs, bisected to #1834's `COPSE_DIR: e2eUserDataDir`; both stale seeders now use `copseDataRoot()` (on #1838 as `db9e533` + `3c17117`). - **Still open** — `settings-sources-cursor-ru…",
+          "verdict": "unrelated",
+          "note": "Restates the #1844 roadmap-spec bisect; counted there."
+        },
+        {
+          "source": "reference",
+          "ref": "#1844",
+          "title": "fix(e2e): seed roadmap notes under COPSE_DIR, not the real home",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…`roadmap-review-badges` — `element (\".roadmap-row\") still not displayed after 10000ms` - `roadmap-search-palette` — `no roadmap result for \"quokka\"` ## Cause #1834 added one line to `wdio.conf.ts`: ```ts COPSE_DIR: e2eUserDataDir, ``` That isolates the *whole* Copse profile — knowledge store included — under the throwaw…",
+          "verdict": "incomplete",
+          "note": "#1834 set COPSE_DIR for the whole e2e profile and five roadmap specs seeded the wrong home; test harness only."
+        }
+      ]
+    },
+    {
+      "number": 1836,
+      "title": "Retire the deprecated Zed Claude adapter and adopt the ACP registry's agent ids",
+      "state": "merged",
+      "mergedAt": "2026-08-21T03:27:03Z",
+      "cohort": "mature",
+      "base": "e4090882b175e340fc1529b529b5e702d5a0b7e5",
+      "head": "0f39c6b9aac3abf0cf60d91b24cf53e284973f08",
+      "size": {
+        "files": 23,
+        "additions": 365,
+        "deletions": 106,
+        "sourceLines": 298,
+        "sourceDeletions": 79
+      },
+      "areas": [
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "permissions-sandboxing",
+        "process-ipc"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#1888",
+          "title": "fix(agents): read Cursor's rejected-session wording as an expired sign-in",
+          "daysAfterMerge": 1.7,
+          "excerpt": "shares src/main/services/agent-errors.ts",
+          "verdict": "unrelated",
+          "note": "Cursor sign-in wording; unrelated."
+        },
+        {
+          "source": "reference",
+          "ref": "#1843",
+          "title": "test(renderer): format the legacy ACP picker case",
+          "daysAfterMerge": 0,
+          "excerpt": "test(renderer): format the legacy ACP picker case Follow-up to #1836. Prettier collapsed the single ACP-agent fixture onto one line; without this mechanical change, current `main` fails `npm run format:check`. Validated locally…",
+          "verdict": "incomplete",
+          "note": "main failed format:check after #1836; a mechanical format fix."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#1785",
+          "title": "fix: preserve and recover terminal agent turns",
+          "daysAfterMerge": 0.1,
+          "excerpt": "shares src/main/services/agent-errors.ts",
+          "verdict": "unrelated",
+          "note": "Shared agent-errors file only; #1785 adds terminal-outcome persistence, not an adapter fix."
+        }
+      ]
+    },
+    {
+      "number": 1885,
+      "title": "Catch git IPC failures in the changes pane and degrade gracefully",
+      "state": "merged",
+      "mergedAt": "2026-08-23T07:54:22Z",
+      "cohort": "mature",
+      "base": "ee16b5fd1c528d4c286138e076e3600ca56639b3",
+      "head": "c66c9c3f7c3c4866ec6314aaae998ded2e0d43e2",
+      "size": {
+        "files": 2,
+        "additions": 242,
+        "deletions": 9,
+        "sourceLines": 67,
+        "sourceDeletions": 9
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#1975",
+          "title": "fix(prs): render image diffs",
+          "daysAfterMerge": 4.7,
+          "excerpt": "shares src/renderer/views/git-changes-pane.ts",
+          "verdict": "unrelated",
+          "note": "Image diffs in PRs; shares a file only."
+        }
+      ]
+    },
+    {
+      "number": 1887,
+      "title": "Tighten Guarded YOLO: outside reads auto-run, gh writes still ask",
+      "state": "merged",
+      "mergedAt": "2026-08-25T09:12:38Z",
+      "cohort": "mature",
+      "base": "b84e1c82f732ef6ecdab793e6f35f0aa6b83b5d2",
+      "head": "38ea0f0c9aa9d1dee0ad339bf8800cb731910e0c",
+      "size": {
+        "files": 13,
+        "additions": 207,
+        "deletions": 11,
+        "sourceLines": 97,
+        "sourceDeletions": 7
+      },
+      "areas": [
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "security",
+        "permissions-sandboxing",
+        "process-ipc"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#2096",
+          "title": "Stop a read-only command being used to launch a program",
+          "daysAfterMerge": 6.1,
+          "excerpt": "shares src/main/services/security/shell-argv.ts",
+          "verdict": "unrelated",
+          "note": "The read-only basename allowlist bypass predates #1887 and the PR does not name it."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#1952",
+          "title": "Stop Guarded YOLO lexing binary assets as shell scripts",
+          "daysAfterMerge": 1.5,
+          "excerpt": "shares src/main/services/security/shell-harm.ts",
+          "verdict": "unrelated",
+          "note": "Binary-asset lexing, \"same failure class as #1602\"; predates #1887."
+        }
+      ]
+    },
+    {
+      "number": 1897,
+      "title": "Soft-fail enterprise plan usage and surface credit meters",
+      "state": "merged",
+      "mergedAt": "2026-08-29T15:16:04Z",
+      "cohort": "mature",
+      "base": "f07ba43488ff127de281abfb907f77bdec84cdff",
+      "head": "954f2e867c2a9601afa0b050132f0c045b766c8b",
+      "size": {
+        "files": 11,
+        "additions": 529,
+        "deletions": 42,
+        "sourceLines": 346,
+        "sourceDeletions": 39
+      },
+      "areas": [
+        "packages/plan-usage",
+        "scripts",
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1922,
+      "title": "feat(onboarding): one-screen environment scan + real onboarding test coverage",
+      "state": "merged",
+      "mergedAt": "2026-08-24T18:09:30Z",
+      "cohort": "mature",
+      "base": "2042ef6d2a7e306cbbb09c482816f6069fcbbd81",
+      "head": "851eac4fd06910fa501d9be52ac3d84330bb2665",
+      "size": {
+        "files": 42,
+        "additions": 2611,
+        "deletions": 418,
+        "sourceLines": 1343,
+        "sourceDeletions": 369
+      },
+      "areas": [
+        "(root)",
+        "scripts",
+        "src/main",
+        "src/preload",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "persisted-data",
+        "process-ipc",
+        "dependency-build",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#1910",
+          "title": "fix(canvas): key previews strictly on the artefact's own thread",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…n the result. That trade-off is recorded at the site. Say the word if you'd rather have the round trip. ## Verification Re-run on the current head, which merges `main` (`fc3d9d7`) into the branch — taken to pick up the `markQuit` teardown fix from #1922, without which the `multiple-main-windows` shard was red here: | check | result | | --- | --- | | unit tier | **7631 pass / 0 fail / 1 skipped** | | `typecheck`, `lint`, `format:check` | clean | | merge of `main` | clean — no conflicts, diff still…",
+          "verdict": "unrelated",
+          "note": "Picks up a teardown fix from #1922."
+        },
+        {
+          "source": "reference",
+          "ref": "#1767",
+          "title": "Public-readiness docs, templates, and proposed acceptances",
+          "daysAfterMerge": 0.3,
+          "excerpt": "…d `site/privacy.html` described the old scheme — including \"Windows DPAPI\", now Credential Manager. Both now match the wording #1898 landed in `docs/privacy-data-flow.md` / `docs/profiles.md`, including the read-and-rewrite path for older blobs. - **#1922** added the environment scan to first-run setup, not just Settings. - **#1763 has merged and #1248 is closed**, so the N1 row in the ledger reads as landed rather than planned. Re-checked against `main` and unchanged: macOS 26+ `arm64`/`x64`, the f…",
+          "verdict": "unrelated",
+          "note": "Docs note describing what #1922 added."
+        }
+      ]
+    },
+    {
+      "number": 1924,
+      "title": "docs(ci-runners): drop stale RUNNERS_PAT setup, document CHECKS_RUNNER routing",
+      "state": "merged",
+      "mergedAt": "2026-08-24T04:39:23Z",
+      "cohort": "mature",
+      "base": "9723bf6693d02461122346c36665cbf8b5cb4d96",
+      "head": "f9c8a9fadfc9383f384cbe88e96bae3a823653a4",
+      "size": {
+        "files": 1,
+        "additions": 30,
+        "deletions": 18,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1929,
+      "title": "fix(settings): let Test key check the key already saved",
+      "state": "merged",
+      "mergedAt": "2026-08-24T16:53:37Z",
+      "cohort": "mature",
+      "base": "6a76ff48efe790ad56ef23291daa29e820fc08fe",
+      "head": "4767d59719ee674ccee374984904806fa8b5d82d",
+      "size": {
+        "files": 7,
+        "additions": 228,
+        "deletions": 7,
+        "sourceLines": 27,
+        "sourceDeletions": 7
+      },
+      "areas": [
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "process-ipc"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1943,
+      "title": "chore(models): sync intellect scores from Artificial Analysis",
+      "state": "merged",
+      "mergedAt": "2026-08-25T14:42:03Z",
+      "cohort": "mature",
+      "base": "50e84b246f7c0968eb4de34e1dff032beefa0568",
+      "head": "f4bd400547aaab9c556aab9972cd0acaeaf36238",
+      "size": {
+        "files": 2,
+        "additions": 138,
+        "deletions": 17,
+        "sourceLines": 155,
+        "sourceDeletions": 17
+      },
+      "areas": [
+        "packages/llm",
+        "scripts"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1945,
+      "title": "Center plugin toggle labels with their switch track",
+      "state": "merged",
+      "mergedAt": "2026-08-25T16:36:02Z",
+      "cohort": "mature",
+      "base": "149ba6bc61b6a320509171dde9e2853ad36d45a5",
+      "head": "602db1b9e081ae0498e5ccc1cd58e8018dd7865a",
+      "size": {
+        "files": 3,
+        "additions": 26,
+        "deletions": 0,
+        "sourceLines": 7,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 1997,
+      "title": "ci: publish screenshot candidates through review PRs",
+      "state": "merged",
+      "mergedAt": "2026-08-29T13:21:09Z",
+      "cohort": "mature",
+      "base": "49a0d53d8a5257c401fae4e83232093b0335f1f4",
+      "head": "af9590164edb9160b5c5d5d74f395ed8cc65ec20",
+      "size": {
+        "files": 10,
+        "additions": 551,
+        "deletions": 1180,
+        "sourceLines": 1516,
+        "sourceDeletions": 1078
+      },
+      "areas": [
+        ".github",
+        "scripts"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2001,
+      "title": "build: vendor pinned Cursor skills for hermetic builds",
+      "state": "merged",
+      "mergedAt": "2026-09-03T02:41:49Z",
+      "cohort": "mature",
+      "base": "b2fe10cf108263d1a3dbba716c66b3fc487a0641",
+      "head": "3be81f300b61f785b8b1ac35c1b959b8962800c2",
+      "size": {
+        "files": 111,
+        "additions": 5150,
+        "deletions": 156,
+        "sourceLines": 1124,
+        "sourceDeletions": 150
+      },
+      "areas": [
+        "(root)",
+        "scripts",
+        "src/main",
+        "vendor"
+      ],
+      "surfaces": [
+        "dependency-build",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2029,
+      "title": "Fix ACP-over-SSH agent PATH resolution to use the real remote login shell",
+      "state": "merged",
+      "mergedAt": "2026-08-29T23:44:50Z",
+      "cohort": "mature",
+      "base": "4d7069a856a7d9b6e86c41c3f489aef23783ae28",
+      "head": "5365adc0e57d3fa2662255c5098ee7d28fb89372",
+      "size": {
+        "files": 2,
+        "additions": 61,
+        "deletions": 17,
+        "sourceLines": 48,
+        "sourceDeletions": 10
+      },
+      "areas": [
+        "src/main"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#2187",
+          "title": "fix(acp): cancel remote install prompts with runs",
+          "daysAfterMerge": 2.2,
+          "excerpt": "shares src/main/services/acp/acp-ssh-transport.ts",
+          "verdict": "unrelated",
+          "note": "Cancelling install prompts; shares a file only."
+        },
+        {
+          "source": "reference",
+          "ref": "#2051",
+          "title": "Fix ACP-over-SSH: agent resolution, spawn lifetime, remote install and auth flows",
+          "daysAfterMerge": 0.8,
+          "excerpt": "…d Node, shared dev server), and each fix carries regression tests. ### Agent resolution (preflight) - **Non-interactive login shells miss version managers.** `#2029` probed with `$SHELL -lc`, but nvm/asdf/fnm initialize in files only *interactive* shells read (Ubuntu's `.bashrc` interactivity guard; zsh's `.zshrc`). Resolu…",
+          "verdict": "incomplete",
+          "note": "#2029 probed with a non-interactive login shell, which misses nvm/asdf/fnm; its own fix was incomplete."
+        }
+      ]
+    },
+    {
+      "number": 2037,
+      "title": "Render untracked directories as directories in the Changes pane",
+      "state": "merged",
+      "mergedAt": "2026-08-30T17:14:26Z",
+      "cohort": "mature",
+      "base": "2ea54c257f7a66d0c9e644dd6ae75bf48decf97d",
+      "head": "ca0c4cbc3b3e36e0b87446e109c4280028153975",
+      "size": {
+        "files": 5,
+        "additions": 207,
+        "deletions": 9,
+        "sourceLines": 207,
+        "sourceDeletions": 9
+      },
+      "areas": [
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#2391",
+          "title": "Fix Create PR branch publishing",
+          "daysAfterMerge": 6.3,
+          "excerpt": "shares src/shared/types/git.ts",
+          "verdict": "unrelated",
+          "note": "Shares a type file only."
+        }
+      ]
+    },
+    {
+      "number": 2052,
+      "title": "Tell the truth about remote file watching in the SSH banner",
+      "state": "merged",
+      "mergedAt": "2026-08-30T21:20:24Z",
+      "cohort": "mature",
+      "base": "a3dd204d7c9d6e5eb00e057557aff0e6071c0c0b",
+      "head": "c33f2b2a35e85e838e3d6e188552414d2b547085",
+      "size": {
+        "files": 7,
+        "additions": 15,
+        "deletions": 15,
+        "sourceLines": 15,
+        "sourceDeletions": 5
+      },
+      "areas": [
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#2053",
+          "title": "Detect external edits on an SSH workspace by polling subscribed files",
+          "daysAfterMerge": 0,
+          "excerpt": "Detect external edits on an SSH workspace by polling subscribed files ## What Follow-up to #2052. External edits on an SSH workspace are now detected: the `fs:watch` IPC handler previously returned early for remote workspaces, so a `git pull` in a terminal…",
+          "verdict": "unrelated",
+          "note": "Implements the polling #2052 said was missing; new work."
+        }
+      ]
+    },
+    {
+      "number": 2106,
+      "title": "fix(e2e): unblock clicks on settings controls parked under the sticky action bar",
+      "state": "merged",
+      "mergedAt": "2026-08-31T20:51:21Z",
+      "cohort": "mature",
+      "base": "c0c15017bab6cbd222af0c32dadc6297f1ec8248",
+      "head": "ecb4e373d1ae354409029e7d947d764aec5288fe",
+      "size": {
+        "files": 7,
+        "additions": 587,
+        "deletions": 2,
+        "sourceLines": 21,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        "(root)",
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#2151",
+          "title": "fix(e2e): re-frame element captures the viewport pin pushed out of view",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…; this brings `saveElementScreenshot` in line with it. ## Two dead ends, recorded so nobody re-walks them - **`scroll-padding-bottom` on `.settings-content` (#2106) is not the cause.** It was the obvious suspect — these specs `scrollIntoView` and then capture, and it is exactly the property governing where a scroll lands.…",
+          "verdict": "unrelated",
+          "note": "Rules #2106 out as the cause."
+        },
+        {
+          "source": "reference",
+          "ref": "#2136",
+          "title": "test(settings): commit the scroll-reserve reference screenshot",
+          "daysAfterMerge": 0,
+          "excerpt": "test(settings): commit the scroll-reserve reference screenshot Follow-up to #2106. One PNG, nothing else. ## What was missed #2106 added the scroll-reserve case to `tests/demo/settings-footer.demo.ts`, which ends with `saveElementScreensho…",
+          "verdict": "incomplete",
+          "note": "#2106 added a screenshot case without committing its reference."
+        },
+        {
+          "source": "reference",
+          "ref": "#2068",
+          "title": "Accept valid flip-up placement in the Settings model-picker eval",
+          "daysAfterMerge": 0,
+          "excerpt": "…is on `main`, credited to this PR. It could not go in on its own: the sticky action bar intercepted the click before the spec ever reached the assertion, so this PR stayed red for a reason that had nothing to do with its diff. The interception fix (#2106) had the mirror problem — removing the interception let the spec run and it then failed here, at `Expected: >= 3, Received: -324`. Neither half was green alone, so #2106 carried this change **verbatim** rather than waiting on merge order. The blob…",
+          "verdict": "unrelated",
+          "note": "#2106 let #2068's own spec run; the failing assertion was #2068's."
+        },
+        {
+          "source": "reference",
+          "ref": "#2067",
+          "title": "Keep settings controls clickable beneath the sticky footer",
+          "daysAfterMerge": 0,
+          "excerpt": "Closing as superseded by #2106, which has landed (`ecb4e373`). The diagnosis here was correct, and this PR independently corroborated it: removing the interception via `pointer-events: none` surfaced the identical `-324` in `settings-model-picker-bounds.e2e.ts` that #2106 hit by…",
+          "verdict": "unrelated",
+          "note": "Closed as superseded by #2106."
+        },
+        {
+          "source": "reference",
+          "ref": "#2134",
+          "title": "chore: add oxfmt alongside Prettier as a formatter trial",
+          "daysAfterMerge": 0,
+          "excerpt": "…ot this PR: all four failures (`settings-automations`, `settings-model-picker-bounds`, `settings-plugins`, `settings-saved-provider-key`) were `element click intercepted ... <div class=\"settings-buttons\">` — the exact bug, coordinates included, that #2106 fixed. That fix landed at 20:51:21 UTC; this PR's shard started at 20:51:14 UTC, seven seconds earlier. The rebase picks it up. Not verified: anything needing `node_modules` (`typecheck`, `lint`, the unit suite). This branch adds a dev dependency,…",
+          "verdict": "unrelated",
+          "note": "Failures were the bug #2106 fixed; rebase picks it up."
+        },
+        {
+          "source": "reference",
+          "ref": "#2138",
+          "title": "chore(e2e): review screenshots for #1965",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…the content, and the shots are shorter — the elements are being captured with more of their lower portion clipped or veiled than before. ### Cause not yet isolated The obvious suspect was the `scroll-padding-bottom` added to `.settings-content` in #2106, since these specs `scrollIntoView` and then immediately screenshot: ```js await $('#advisorModel').scrollIntoView({ block: 'center' }) await saveElementScreenshot(ADVISOR_PLUGIN_ROW, 'advisor-pair-hint-warn.png') ``` **Tested, and it is not that.…",
+          "verdict": "unrelated",
+          "note": "Names #2106 as a suspect later ruled out (#2151)."
+        }
+      ]
+    },
+    {
+      "number": 2151,
+      "title": "fix(e2e): re-frame element captures the viewport pin pushed out of view",
+      "state": "merged",
+      "mergedAt": "2026-09-01T00:12:55Z",
+      "cohort": "mature",
+      "base": "b7aa94f24d8dde7ad9b8dc624453bad8d3e7e8a0",
+      "head": "dcf7d56befd88d5b6a1441bc8966f484f6712c04",
+      "size": {
+        "files": 3,
+        "additions": 289,
+        "deletions": 1,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#2160",
+          "title": "test(e2e): replace three reference shots main had wrong",
+          "daysAfterMerge": 0,
+          "excerpt": "test(e2e): replace three reference shots main had wrong Follow-up to #2151. Three PNGs, no code. All three are CI-rendered candidates from [run 33452131195](https://github.com/copse-dev/agent-pane/actions/runs/33452131195), taken fro…",
+          "verdict": "incomplete",
+          "note": "References captured by the bug #2151 fixed had to be replaced after it."
+        }
+      ]
+    },
+    {
+      "number": 2169,
+      "title": "Restore worktree terminal transition coverage",
+      "state": "merged",
+      "mergedAt": "2026-09-01T08:27:43Z",
+      "cohort": "mature",
+      "base": "944ca30db515c2c8b174fa8c870326300b320ccd",
+      "head": "e831598102d2cc67004e66a28e3446e275fae209",
+      "size": {
+        "files": 2,
+        "additions": 10,
+        "deletions": 16,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2193,
+      "title": "test(e2e): focus composer before clipboard write",
+      "state": "merged",
+      "mergedAt": "2026-09-01T08:18:00Z",
+      "cohort": "mature",
+      "base": "2b655d39803ec8dc75779128bb98e602d3a31432",
+      "head": "b27b9b55780bdad0a5cc17cdc2fcdd393ee511e3",
+      "size": {
+        "files": 1,
+        "additions": 2,
+        "deletions": 2,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2260,
+      "title": "chore: switch the formatter from Prettier to oxfmt",
+      "state": "merged",
+      "mergedAt": "2026-09-01T14:34:19Z",
+      "cohort": "mature",
+      "base": "27c38aab016cf3c56671c628dd46b874434ce1fd",
+      "head": "ce290bb346c6dbe7747d8886ee4ce4a07eaf62a4",
+      "size": {
+        "files": 56,
+        "additions": 326,
+        "deletions": 126,
+        "sourceLines": 385,
+        "sourceDeletions": 93
+      },
+      "areas": [
+        "(root)",
+        ".github",
+        "packages/agent",
+        "packages/llm",
+        "scripts",
+        "src/main",
+        "src/preload",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "security",
+        "permissions-sandboxing",
+        "auth-secrets",
+        "persisted-data",
+        "process-ipc",
+        "dependency-build",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#2569",
+          "title": "fix(shell): explain sandbox denials and execution location",
+          "daysAfterMerge": 6.2,
+          "excerpt": "shares src/main/tools/shell-tool.ts",
+          "verdict": "unrelated",
+          "note": "The formatter switch touched every file; shares a file only."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#2546",
+          "title": "fix(security): ask the window that started the work, not the main one (#2507)",
+          "daysAfterMerge": 5.9,
+          "excerpt": "shares src/main/services/security/permission-policy.ts",
+          "verdict": "unrelated",
+          "note": "Shares a file only."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#2391",
+          "title": "Fix Create PR branch publishing",
+          "daysAfterMerge": 4.4,
+          "excerpt": "shares src/main/services/security/permission-policy.ts",
+          "verdict": "unrelated",
+          "note": "Shares a file only."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#2331",
+          "title": "fix(permissions): say why the sandbox blocks a command in plain English",
+          "daysAfterMerge": 2.3,
+          "excerpt": "shares src/main/services/security/permission-policy.ts",
+          "verdict": "unrelated",
+          "note": "Shares a file only."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#2273",
+          "title": "fix(acp): stop re-prompting turns that already answered",
+          "daysAfterMerge": 0.1,
+          "excerpt": "shares packages/agent/src/run-agent-loop.ts, src/shared/hooks/hook-card.ts",
+          "verdict": "unrelated",
+          "note": "Shares a file only."
+        },
+        {
+          "source": "reference",
+          "ref": "#2266",
+          "title": "fix(ci): pin oxfmt, not prettier, for the site-markdown deploy",
+          "daysAfterMerge": 0,
+          "excerpt": "fix(ci): pin oxfmt, not prettier, for the site-markdown deploy ## Bug I broke this in #2260. The Pages job builds the site's Markdown twins in a scratch npm prefix, pinning each dependency's range from this repo's manifest and treating a missing entry…",
+          "verdict": "regression",
+          "note": "\"I broke this in #2260\": the Pages deploy pinned prettier, not oxfmt."
+        },
+        {
+          "source": "reference",
+          "ref": "#2256",
+          "title": "Classify browser hosts by parsing the address, not by string prefix",
+          "daysAfterMerge": 0,
+          "excerpt": "…which is why it removes more than it adds. Every test both PRs added is kept. ## Verification on the rebased head - `pnpm run check` — **8,169/8,169 passed**, all static gates green - `oxfmt --check .` — clean (rebased past the formatter switch in #2260) - `browser-origin-policy` 23/23, `credential-url` 17/17 - 14/14 on the probe above Happy to narrow this to just the four cases and leave both parsers in place if the consolidation is what made it read as a duplicate — say the word.",
+          "verdict": "unrelated",
+          "note": "Rebased past the formatter switch."
+        }
+      ]
+    },
+    {
+      "number": 2319,
+      "title": "build: extract @copse/hooks-dialects, the hook dialect adapters and runner",
+      "state": "merged",
+      "mergedAt": "2026-09-03T22:05:54Z",
+      "cohort": "mature",
+      "base": "abbada3fff37d5eda66261eb43e56650962bf9f7",
+      "head": "f3930bc93b613c0548e8352269bfa1ab809ab5cf",
+      "size": {
+        "files": 65,
+        "additions": 7361,
+        "deletions": 6988,
+        "sourceLines": 12316,
+        "sourceDeletions": 6040
+      },
+      "areas": [
+        "(root)",
+        "packages/agent",
+        "packages/hooks-dialects",
+        "packages/thread-store",
+        "scripts",
+        "src/main",
+        "src/shared"
+      ],
+      "surfaces": [
+        "security",
+        "permissions-sandboxing",
+        "persisted-data",
+        "dependency-build",
+        "cross-cutting"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "main-ci",
+          "ref": "f3930bc93b613c0548e8352269bfa1ab809ab5cf",
+          "title": "CI failed on main at the merge commit; it passed on the parent",
+          "daysAfterMerge": 0,
+          "excerpt": "merged 2026-09-03T22:05:54Z",
+          "verdict": "unrelated",
+          "note": "The failing step was `pnpm audit --audit-level=high` (an advisory), not the extraction."
+        },
+        {
+          "source": "reference",
+          "ref": "#2314",
+          "title": "docs(plans): library splits map and Qwen Code as an ACP backend",
+          "daysAfterMerge": 0,
+          "excerpt": "(cross-referenced from a comment or commit, not the description)",
+          "verdict": "unrelated",
+          "note": "Cross-reference only; no text blames #2319."
+        },
+        {
+          "source": "reference",
+          "ref": "#2331",
+          "title": "fix(permissions): say why the sandbox blocks a command in plain English",
+          "daysAfterMerge": 0,
+          "excerpt": "Thanks — all of it addressed, in `7b204d4` (merge) and `af961db` (fixes). ### Blocking: rebase and re-target Merged `origin/main` and resolved both conflicts in favour of main, then re-applied the platform fix where #2319 moved the code: - `packages/hooks-dialects/src/command-hook-runner.ts:213` — the `runtimeError` string. - `packages/hooks-dialects/src/sandbox-failure-detection.ts:2` — the header comment. You were right that resolving in favour of `main` alone dr…",
+          "verdict": "unrelated",
+          "note": "Re-applied a fix where #2319 moved the code."
+        },
+        {
+          "source": "reference",
+          "ref": "#2303",
+          "title": "Library splits: extract reusable packages from agent-pane (tracking)",
+          "daysAfterMerge": 2.2,
+          "excerpt": "…utilities | `packages/std` | 832a6e7 (#2315) | | `@copse/shell-guard` | `packages/shell-guard` | 6ff7639 (#2316) | | `@copse/thread-store` | `packages/thread-store` | abbada3 (#2317) | | `@copse/hooks-dialects` | `packages/hooks-dialects` | f3930bc (#2319) | | `@copse/plugin-sdk` | `packages/plugin-sdk` | 3b5bedc (#2335) | | Process diagnostics → `@copse/procwatch` | `packages/procwatch` | e4b19c1 (#2349) | That is every Easy/Medium item at the top of the register plus one of the High-value Mediums.…",
+          "verdict": "unrelated",
+          "note": "Tracking-issue table listing the extraction."
+        }
+      ]
+    },
+    {
+      "number": 2394,
+      "title": "refactor: retire the hand-written ipc.ts channel maps",
+      "state": "merged",
+      "mergedAt": "2026-09-06T10:32:47Z",
+      "cohort": "mature",
+      "base": "e9baee640842587569d71edda4109a44d9c69837",
+      "head": "370cb70528ca7f561942e8bc5b14fb21d3921e3f",
+      "size": {
+        "files": 11,
+        "additions": 20,
+        "deletions": 653,
+        "sourceLines": 607,
+        "sourceDeletions": 602
+      },
+      "areas": [
+        "scripts",
+        "site",
+        "src/shared"
+      ],
+      "surfaces": [
+        "process-ipc"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2404,
+      "title": "Ship the side-highlight prototype: a rail means nesting now",
+      "state": "merged",
+      "mergedAt": "2026-09-09T01:59:55Z",
+      "cohort": "mature",
+      "base": "deeff1f46ba5ce5c59b065a9270340dd74b4d7eb",
+      "head": "4e85b00d9ac2252939314061cde3a958ab986b13",
+      "size": {
+        "files": 358,
+        "additions": 851,
+        "deletions": 131,
+        "sourceLines": 367,
+        "sourceDeletions": 60
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#2605",
+          "title": "Fix callout glyphs in forced colors and correct prototype guidance",
+          "daysAfterMerge": 0,
+          "excerpt": "Fix callout glyphs in forced colors and correct prototype guidance In forced-colors mode, the five callout mask backgrounds introduced by #2404 were repainted to the same color as their plate, hiding the glyphs. Use system `CanvasText` and disable automatic color adjustment only on the glyph pseudo-ele…",
+          "verdict": "regression",
+          "note": "Callout glyphs \"introduced by #2404\" were invisible in forced-colors mode: lost information for those users."
+        }
+      ]
+    },
+    {
+      "number": 2421,
+      "title": "Finish the isRecord sweep #1332 matched by name (7 sites, 2 traps) — now also carries #2422",
+      "state": "merged",
+      "mergedAt": "2026-09-06T17:29:27Z",
+      "cohort": "mature",
+      "base": "0fea2a9cafe48aeb5b511593aa34b8e6519c2efc",
+      "head": "2aea0194a6733b35f289b2dbdd5242c0ae0401f7",
+      "size": {
+        "files": 17,
+        "additions": 171,
+        "deletions": 71,
+        "sourceLines": 135,
+        "sourceDeletions": 54
+      },
+      "areas": [
+        "packages/std",
+        "scripts",
+        "src/main"
+      ],
+      "surfaces": [
+        "persisted-data",
+        "process-ipc"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#2524",
+          "title": "Ban the dynamic-key `in`, and fix the plugin settings gate it broke",
+          "daysAfterMerge": 0,
+          "excerpt": "…on this base: **8,611 passing / 0 failing**. - The plugin-service regression test confirmed failing on the old body before the fix. - Rebased onto `main` after #2421 landed; re-ran the full gate on the rebased base. No renderer-visible change (`persistence.ts` is a patch-shape helper with the same output), so no visual eva…",
+          "verdict": "unrelated",
+          "note": "#2524 rebased onto #2421; the gate it fixes was broken by the dynamic-key `in`, not by #2421."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#2383",
+          "title": "fix: allow native SSH-signed commits in sandbox",
+          "daysAfterMerge": 0.8,
+          "excerpt": "shares src/main/services/storage/settings-writable.ts",
+          "verdict": "unrelated",
+          "note": "Shared settings file only; #2383 adds an SSH-signing permission, unrelated to the isRecord sweep."
+        }
+      ]
+    },
+    {
+      "number": 2552,
+      "title": "fix(terminal): stop pairing a thread with a project it is not in (#2484)",
+      "state": "merged",
+      "mergedAt": "2026-09-07T19:21:58Z",
+      "cohort": "mature",
+      "base": "d8f30c5f84228e16150547c3717b48e376054dd9",
+      "head": "e38db244a1792cdf2700c8dd9fd3ef6796dcca38",
+      "size": {
+        "files": 7,
+        "additions": 343,
+        "deletions": 4,
+        "sourceLines": 128,
+        "sourceDeletions": 4
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2578,
+      "title": "chore(models): sync intellect scores from Artificial Analysis",
+      "state": "merged",
+      "mergedAt": "2026-09-09T02:40:26Z",
+      "cohort": "mature",
+      "base": "9b81115f2feabcf4b202553e2030369d080a2352",
+      "head": "58735f6c1bf8f73e7c6e6f89ed754ffbb9f5a152",
+      "size": {
+        "files": 12,
+        "additions": 8668,
+        "deletions": 29,
+        "sourceLines": 8601,
+        "sourceDeletions": 16
+      },
+      "areas": [
+        "packages/llm",
+        "scripts"
+      ],
+      "surfaces": [],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2607,
+      "title": "Add bulk worktree cleanup without rescanning other checkouts",
+      "state": "merged",
+      "mergedAt": "2026-09-09T02:51:14Z",
+      "cohort": "mature",
+      "base": "e7915945d0870731c29cd463c2c406c6d3b96e1e",
+      "head": "f0f023b46b4e96e85c1526e3f5685ee42425c084",
+      "size": {
+        "files": 11,
+        "additions": 630,
+        "deletions": 82,
+        "sourceLines": 360,
+        "sourceDeletions": 74
+      },
+      "areas": [
+        "packages/thread-store",
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "persisted-data"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 2641,
+      "title": "chore(deps): bump the electron group with 2 updates",
+      "state": "merged",
+      "mergedAt": "2026-09-10T09:49:23Z",
+      "cohort": "mature",
+      "base": "eba0abfeeb56f8114cbfc310f5750ed43daa409a",
+      "head": "efda2f4bcd1997a1031e27fbfd3ca80ba510e75a",
+      "size": {
+        "files": 2,
+        "additions": 21,
+        "deletions": 13,
+        "sourceLines": 4,
+        "sourceDeletions": 2
+      },
+      "areas": [
+        "(root)"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": null,
+      "observedDays": 7,
+      "evidence": []
+    },
+    {
+      "number": 3079,
+      "title": "Finish three nearly-resolved backlog issues (#2450, #2493, #2519)",
+      "state": "merged",
+      "mergedAt": "2026-09-27T20:42:48Z",
+      "cohort": "rated",
+      "base": "49e05d444ac46298865ea6a6b6df120517a6b1e7",
+      "head": "993f66d402ec645915486729369350bbcd857522",
+      "size": {
+        "files": 32,
+        "additions": 958,
+        "deletions": 29,
+        "sourceLines": 289,
+        "sourceDeletions": 10
+      },
+      "areas": [
+        "packages/agent",
+        "packages/thread-store",
+        "schemas",
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "persisted-data",
+        "process-ipc",
+        "cross-cutting"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "The change crosses renderer-to-main agent dispatch and persisted thread review metadata, including an API protocol version bump, alongside prompt behavior in bounded runtime surfaces.",
+        "raisedBecause": null,
+        "commit": "041c8f15d42c",
+        "reviewIssues": null
+      },
+      "observedDays": 0,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3251",
+          "title": "Measure Copse Reviewer's PR risk rating against what happened after merge",
+          "daysAfterMerge": 0,
+          "excerpt": "…*Size and change shape:** no change under 100 source lines regressed (0 of 37). But every regression came from a mostly *additive* change that altered an existing decision or behaviour, so an added-vs-deleted ratio is not a safe proxy for \"low\". - **#3079** was rated High for crossing \"renderer-to-main dispatch and persisted thread review metadata … an API protocol version bump\". The reason names surfaces touched, not what the change does to them (optional fields, no migration). It merged today, so i…",
+          "verdict": "unrelated",
+          "note": "This eval's own description."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 1,
+          "excerpt": "shares src/main/services/review/review-service.ts, src/renderer/controller/message-queue.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ],
+      "note": "Case study from the task: rated High for an optional field on a persisted report type, an optional field on the renderer-to-main run payload (API protocol 20 -> 21), and a gated prompt paragraph; no migration, nothing existing changed shape. Merged 2026-09-27, so its outcome window has barely started."
+    },
+    {
+      "number": 3097,
+      "title": "Paint destructive confirms in danger, give danger labels readable contrast, and move diff Accept/Reject to the UI kit",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:44:32Z",
+      "cohort": "rated",
+      "base": "77be47414cf252753ae61f2532c4f14d240a2226",
+      "head": "7a08b35d11abaf4db1b195f0f39a8cdb14f9181d",
+      "size": {
+        "files": 22,
+        "additions": 309,
+        "deletions": 33,
+        "sourceLines": 56,
+        "sourceDeletions": 23
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes bounded renderer styling and the staged-diff action bar, affecting destructive confirmation buttons and Git Changes UI across themes.",
+        "raisedBecause": null,
+        "commit": "d3da05f28783",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": []
+    },
+    {
+      "number": 3106,
+      "title": "Combine classifiers with the deterministic scope check, and record Winnow, reflex, Kev-4B and metask",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:06:35Z",
+      "cohort": "rated",
+      "base": "458d40809a6834556c52f04f41eb4890957b1368",
+      "head": "b6f4efb230c4b1bfa5e5601ff171fc14dfd50978",
+      "size": {
+        "files": 31,
+        "additions": 2206,
+        "deletions": 12,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "The change is confined to shell-scope benchmark documentation, archived evaluation outputs, an offline analysis script, and its tests; it does not alter application runtime or shell-permission behavior.",
+        "raisedBecause": null,
+        "commit": "b1a284b06aff",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": []
+    },
+    {
+      "number": 3121,
+      "title": "Group Process Manager rows by thread and list gortex and helper processes",
+      "state": "merged",
+      "mergedAt": "2026-09-26T23:50:07Z",
+      "cohort": "rated",
+      "base": "a124813276c8dfdac09058725206d73589339b77",
+      "head": "e77149671ac37d4b3c9b2f851291b29312179c16",
+      "size": {
+        "files": 14,
+        "additions": 532,
+        "deletions": 79,
+        "sourceLines": 416,
+        "sourceDeletions": 70
+      },
+      "areas": [
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "process-ipc"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes process discovery and labeling in the main process, plus the process-manager renderer’s grouping, sorting, and actions UI.",
+        "raisedBecause": null,
+        "commit": "96781c9810e9",
+        "reviewIssues": null
+      },
+      "observedDays": 0.9,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3244",
+          "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+          "daysAfterMerge": 0,
+          "excerpt": "…'s stale-pane render. I took CI's Linux render instead of restoring the older blob `2d672cd`. - Its unstaged list still shows the sandbox `.bashrc`, which #3181 and #3191 cover. - `process-manager` and `process-manager-agent-working` are left out: #3121 changed them on `main`, and `main`'s copies win. **24 references re-rendered by the fixes above**, stable across runs D, E and F. ## Risk and review Low. The diff touches only e2e specs, the wdio harness, two capture helpers and reference PNGs. I…",
+          "verdict": "unrelated",
+          "note": "Screenshot re-baseline for the intended change."
+        }
+      ]
+    },
+    {
+      "number": 3123,
+      "title": "Give right-panel panes one header band, one group-header recipe and one row rhythm",
+      "state": "merged",
+      "mergedAt": "2026-09-26T20:05:10Z",
+      "cohort": "rated",
+      "base": "bbbca7e30fa9c40b877bacc1f2cbd0e0a68721f5",
+      "head": "07eb8119dd322085dc94ace123619906cce3a49f",
+      "size": {
+        "files": 185,
+        "additions": 709,
+        "deletions": 113,
+        "sourceLines": 204,
+        "sourceDeletions": 95
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes renderer styling and header markup across several right-panel panes, affecting a bounded set of UI layouts and interactions.",
+        "raisedBecause": null,
+        "commit": "f7e64e68e3bf",
+        "reviewIssues": null
+      },
+      "observedDays": 1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3244",
+          "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+          "daysAfterMerge": 0,
+          "excerpt": "…38) **114 stale references**, taken from run 36271978692 (`289ebf9`) and stable across runs A, B and C below. - Most of the drift is UI already on `main`: - #3123's header bands, group headers and row rhythm (Explorer, Changes, Shells, Tabs, Roadmap) - the badge recipe - the Classifiers nav item - copy casing and i…",
+          "verdict": "unrelated",
+          "note": "Screenshot references re-baselined for the intended UI change."
+        },
+        {
+          "source": "reference",
+          "ref": "#3240",
+          "title": "Four e2e screenshot problems on main: tiny canvas render, truncated automation names, clipped Hooks chip, mid-load reference",
+          "daysAfterMerge": 0,
+          "excerpt": "5. **`git-changes-committed-diff.png` on main shows the wrong diff.** #3123 merged with the render from its commit 5856148 (blob `32ef764`), which captured the stale `staged.ts` diff rather than the committed file's diff (see https://github.com/copse-dev/agent-pane/pull/3123#issuecomment-5847901551). The previous reference…",
+          "verdict": "incomplete",
+          "note": "#3123 merged a reference screenshot captured from the stale diff; test references only."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 2,
+          "excerpt": "shares src/renderer/views/terminals-pane.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
+    },
+    {
+      "number": 3124,
+      "title": "Stop model picker labels clipping sideways and align its selection, highlight, font and focus with the rest of the app",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:31:22Z",
+      "cohort": "rated",
+      "base": "8f17ddbbab79d961bb43e3b4e0486a9ed48214d5",
+      "head": "e7d9bcb5027fb3ae4a7053285334544193af40a3",
+      "size": {
+        "files": 16,
+        "additions": 253,
+        "deletions": 29,
+        "sourceLines": 57,
+        "sourceDeletions": 27
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes shared model-picker styling and label presentation in the renderer, with impact bounded to model-picker menus and their keyboard/focus states.",
+        "raisedBecause": null,
+        "commit": "18b1f98841e2",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": []
+    },
+    {
+      "number": 3128,
+      "title": "Clean up user-facing copy: render inline code, sentence-case tool and plugin names, and drop machine text",
+      "state": "merged",
+      "mergedAt": "2026-09-26T17:29:45Z",
+      "cohort": "rated",
+      "base": "8faa4f9fa9bf247f2ac9cde9dd792aa9c68f32f6",
+      "head": "5b2e49c089d67ed1c29a9dfd5f8c29eda1a15721",
+      "size": {
+        "files": 135,
+        "additions": 792,
+        "deletions": 257,
+        "sourceLines": 583,
+        "sourceDeletions": 198
+      },
+      "areas": [
+        "packages/agent",
+        "packages/plan-usage",
+        "packages/plugin-sdk",
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "security",
+        "permissions-sandboxing",
+        "auth-secrets",
+        "cross-cutting"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes user-visible rendering and shared label formatting across setup, Settings, approvals, tool permissions, and plugin/MCP views, while leaving execution and permission decisions unchanged.",
+        "raisedBecause": null,
+        "commit": "6c8a37920fd0",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3227",
+          "title": "Keep an acronym canonical next to punctuation in humanized tool names",
+          "daysAfterMerge": 0,
+          "excerpt": "Keep an acronym canonical next to punctuation in humanized tool names ## Outcome Fixes a regression from #3128: a tool named `MCP: tool` rendered as \"Mcp: tool\". The regression shows in the `empty-mcp-tool-details` screenshot on current CI runs. The cause is that `huma…",
+          "verdict": "cosmetic",
+          "note": "\"Fixes a regression from #3128\": a tool named `MCP: tool` rendered as \"Mcp: tool\"."
+        },
+        {
+          "source": "reference",
+          "ref": "#3126",
+          "title": "Keep ACP activity compact and normalize Copse tool labels",
+          "daysAfterMerge": 0.2,
+          "excerpt": "## Outcome ACP activity stays compact by default, and Copse tool labels from Codex and Claude ACP are normalized. This is reconciled with current `main` in merge 35dc1cb32. Where the two conflicted, it keeps main's sentence-case tool names (#3128) and main's grouping of an expanded run into steps by assistant message. It does not use the flat list or Title Case this PR originally had. What this PR adds on top of main: - **Reasoning is closed by default, even while live.** Blank reasoning is…",
+          "verdict": "unrelated",
+          "note": "Keeps #3128's sentence-case names in a merge."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3215",
+          "title": "Stop Copse refreshing the Claude OAuth login behind Claude Code's back",
+          "daysAfterMerge": 0.9,
+          "excerpt": "shares packages/plan-usage/src/claude.ts",
+          "verdict": "unrelated",
+          "note": "Shared plan-usage file only; #3215 changes OAuth refresh, not the copy edits."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3099",
+          "title": "Fix plugin rollout seeds and live canvas toggle (default-on audit, slice 2)",
+          "daysAfterMerge": 1.4,
+          "excerpt": "shares packages/agent/src/plugins/devtools-shortcut-plugin.ts, packages/agent/src/plugins/mcp-ui-canvas-plugin.ts, src/main/services/plugins/plugin-service.ts",
+          "verdict": "unrelated",
+          "note": "Shared plugin files only; #3099 fixes default-on audit findings, not the copy edits."
+        }
+      ]
+    },
+    {
+      "number": 3129,
+      "title": "Make badges labels, not colour codes: one shared badge style and status colours only for status",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:40:58Z",
+      "cohort": "rated",
+      "base": "5026687abf34cc2bf4681d95ca4b64599f67c3ed",
+      "head": "f2a59bfe48532e45a4bea7cd847373e937c6b738",
+      "size": {
+        "files": 44,
+        "additions": 674,
+        "deletions": 150,
+        "sourceLines": 239,
+        "sourceDeletions": 132
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes renderer-wide badge styling and several settings and roadmap surfaces, including responsive roadmap-row layout, but is confined to UI presentation.",
+        "raisedBecause": null,
+        "commit": "b4e9d30d35c1",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3250",
+          "title": "Keep the transcript pinned when content shrinks, deflake reasoning-responsiveness, re-baseline stale screenshots",
+          "daysAfterMerge": 0.9,
+          "excerpt": "…pired copy, with inline code. - `browser-preview-tool-visible` and `selected-plugin-browser-tab`: #3193's borderless prompt bubble. - `settings-plugins`: #3129's neutral Stable badge. `agent-tasks-terminal` and `canvas-artefact-refresh` were suspected too. They rendered identical to main here, so the nested tool r…",
+          "verdict": "unrelated",
+          "note": "Screenshot re-baseline for the intended badge change."
+        }
+      ]
+    },
+    {
+      "number": 3130,
+      "title": "Add a compact .ui-btn size and move six bespoke button stacks onto the kit",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:00:28Z",
+      "cohort": "rated",
+      "base": "842986ec2d524edf50942065358a65caa1b93952",
+      "head": "dc620f807246303e60051c28b6a33f16643d0e6c",
+      "size": {
+        "files": 76,
+        "additions": 688,
+        "deletions": 252,
+        "sourceLines": 346,
+        "sourceDeletions": 227
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes shared renderer button styling and markup across several bounded UI surfaces, affecting their appearance, spacing, and interaction-state presentation.",
+        "raisedBecause": null,
+        "commit": "366b81b174e6",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3132,
+      "title": "Fix composer contrast on the accent fill, share one banner recipe, and align chip radii and the attachment preview chrome",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:31:40Z",
+      "cohort": "rated",
+      "base": "e7d9bcb5027fb3ae4a7053285334544193af40a3",
+      "head": "77be47414cf252753ae61f2532c4f14d240a2226",
+      "size": {
+        "files": 47,
+        "additions": 728,
+        "deletions": 316,
+        "sourceLines": 465,
+        "sourceDeletions": 308
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes user-visible renderer styles and markup across the composer, queued-message controls, conversation navigation, and attachment previews, with behavior limited to those UI surfaces.",
+        "raisedBecause": null,
+        "commit": "3fdf982d4374",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3214",
+          "title": "Add four missing e2e reference screenshots",
+          "daysAfterMerge": 0,
+          "excerpt": "…release bump) declined its screenshot review so the release does not carry unrelated references. The other four candidates on that PR are already on `main` and are not included. A fifth, `thread-reference-sent-inline.png`, was committed to `main` by #3132 while this was open; the merge keeps that copy. ## Validation - Each file is absent from `origin/main` and added unchanged from the compare commit. - Resolution matches the committed siblings (2x: e.g. `acp-prompt-interruption-*` 2400×1276, `visua…",
+          "verdict": "unrelated",
+          "note": "Notes a screenshot #3132 committed."
+        }
+      ]
+    },
+    {
+      "number": 3133,
+      "title": "Retire unproduced reference screenshots and guard the directory",
+      "state": "merged",
+      "mergedAt": "2026-09-26T15:46:56Z",
+      "cohort": "rated",
+      "base": "eae9b43a4760dc8be288525d5b204573ad92928b",
+      "head": "458d40809a6834556c52f04f41eb4890957b1368",
+      "size": {
+        "files": 25,
+        "additions": 175,
+        "deletions": 1,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This change is confined to screenshot test fixtures and test-only producer checks, with no effect on the Electron app at runtime.",
+        "raisedBecause": null,
+        "commit": "ce721dee5e47",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3135",
+          "title": "Theme the terminal and Monaco editors from the interface tokens",
+          "daysAfterMerge": 0,
+          "excerpt": "…e`. This isn't this PR's. It's main's regression in the tool-result cache watcher. Arming it blocks the first cacheable tool call on Linux. The fix is #3195, which isn't merged yet, so I ported it here as c9dec4720. I also merged the latest `main` (#3133) into the same push, c39dde24e. CI re-runs on that. --- _Generated by [Claude Code](https://claude.ai/code)_",
+          "verdict": "unrelated",
+          "note": "Merge note."
+        }
+      ]
+    },
+    {
+      "number": 3135,
+      "title": "Theme the terminal and Monaco editors from the interface tokens",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:00:25Z",
+      "cohort": "rated",
+      "base": "39ce54b70995ee21181e4c8e8fb5ee34a4be099c",
+      "head": "842986ec2d524edf50942065358a65caa1b93952",
+      "size": {
+        "files": 26,
+        "additions": 804,
+        "deletions": 83,
+        "sourceLines": 385,
+        "sourceDeletions": 58
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes renderer runtime theming for Monaco editors and xterm terminals, including live appearance updates across file, diff, PR, and terminal panes.",
+        "raisedBecause": null,
+        "commit": "4f19f1ed6b35",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 2.1,
+          "excerpt": "shares src/renderer/views/terminals-pane.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
+    },
+    {
+      "number": 3137,
+      "title": "Tidy transcript surfaces: code density, error callouts, recovery plate, canvas text",
+      "state": "merged",
+      "mergedAt": "2026-09-26T19:17:49Z",
+      "cohort": "rated",
+      "base": "b995c26c816b1028ed8e8268aaa19836c307aef6",
+      "head": "40c487b5fa0d4b34a53dcc7d27c77d2f6b3e1f23",
+      "size": {
+        "files": 40,
+        "additions": 552,
+        "deletions": 52,
+        "sourceLines": 222,
+        "sourceDeletions": 29
+      },
+      "areas": [
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes agent error presentation and canvas guest rendering across main-process and renderer boundaries, with effects limited to error transcripts and transparent artefacts.",
+        "raisedBecause": null,
+        "commit": "1de2ccb18a5e",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3144,
+      "title": "Remove a deleted thread's worktree when nothing in it would be lost",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:04:34Z",
+      "cohort": "rated",
+      "base": "dc620f807246303e60051c28b6a33f16643d0e6c",
+      "head": "736d8428d8f2f03e6ffdc81310e6521f35f11abb",
+      "size": {
+        "files": 7,
+        "additions": 656,
+        "deletions": 16,
+        "sourceLines": 109,
+        "sourceDeletions": 1
+      },
+      "areas": [
+        "src/main"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "Thread deletion now removes Git worktree directories and may delete their branches, changing persisted user worktree data through the main-process deletion flow.",
+        "raisedBecause": null,
+        "commit": "e6f59b1b4b26",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3145,
+      "title": "Open the thread from its notification and badge threads waiting on you",
+      "state": "merged",
+      "mergedAt": "2026-09-26T22:54:58Z",
+      "cohort": "rated",
+      "base": "92b00732699c6bd20ac32ffd6c6850ef08cc2b28",
+      "head": "a124813276c8dfdac09058725206d73589339b77",
+      "size": {
+        "files": 26,
+        "additions": 1098,
+        "deletions": 28,
+        "sourceLines": 382,
+        "sourceDeletions": 28
+      },
+      "areas": [
+        "schemas",
+        "src/main",
+        "src/preload",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "permissions-sandboxing",
+        "process-ipc",
+        "cross-cutting"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "The change adds main-to-renderer notification-click IPC and routes alerts across main and pop-out windows, touching native alert lifecycle and renderer navigation.",
+        "raisedBecause": null,
+        "commit": "611d7d8e81f4",
+        "reviewIssues": null
+      },
+      "observedDays": 0.9,
+      "evidence": []
+    },
+    {
+      "number": 3181,
+      "title": "Stop Linux sandbox placeholders leaking into the checkout: run Copse's own reads on the read-only overlay",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:00:21Z",
+      "cohort": "rated",
+      "base": "39575876b08ec9ef8cb0a354ea96ac4ec27e88ca",
+      "head": "39ce54b70995ee21181e4c8e8fb5ee34a4be099c",
+      "size": {
+        "files": 10,
+        "additions": 318,
+        "deletions": 27,
+        "sourceLines": 85,
+        "sourceDeletions": 21
+      },
+      "areas": [
+        "src/main"
+      ],
+      "surfaces": [
+        "permissions-sandboxing"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes sandbox configurations for Git, PR-context, file-index, and one-shot filesystem reads, so runtime behavior is altered across several bounded main-process services.",
+        "raisedBecause": null,
+        "commit": "f8137c914341",
+        "reviewIssues": 0
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3247",
+          "title": "Keep Linux sandbox placeholders out of the primary checkout during worktree Git reads",
+          "daysAfterMerge": 0.2,
+          "excerpt": "Keep Linux sandbox placeholders out of the primary checkout during worktree Git reads ## Outcome This is a follow-up to #3181 for the Linux leak where `.bashrc`, `.gitconfig`, `.vscode` and the other mandatory write-deny paths show up as untracked files. It fixes two remaining ways Co…",
+          "verdict": "incomplete",
+          "note": "\"Fixes two remaining ways\" the placeholders leaked that #3181 set out to stop."
+        },
+        {
+          "source": "reference",
+          "ref": "#3244",
+          "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…123's stale-pane render. I took CI's Linux render instead of restoring the older blob `2d672cd`. - Its unstaged list still shows the sandbox `.bashrc`, which #3181 and #3191 cover. - `process-manager` and `process-manager-agent-working` are left out: #3121 changed them on `main`, and `main`'s copies win. **24 references…",
+          "verdict": "unrelated",
+          "note": "Mentions #3181 as covering a render artefact."
+        }
+      ]
+    },
+    {
+      "number": 3184,
+      "title": "Stop fetching every branch in CI checkouts and scan CodeQL daily",
+      "state": "merged",
+      "mergedAt": "2026-09-27T01:13:20Z",
+      "cohort": "rated",
+      "base": "2da67105a7f322738e9d5bdbf9645f6d19b0a3d6",
+      "head": "3e76388cbfc0a844d6c9886170bb19c6e929ddbc",
+      "size": {
+        "files": 7,
+        "additions": 272,
+        "deletions": 39,
+        "sourceLines": 133,
+        "sourceDeletions": 38
+      },
+      "areas": [
+        ".github",
+        "scripts"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "This changes CI history-fetch behavior across several workflows and reduces CodeQL scanning from every main push to a daily schedule, affecting both test selection and security-analysis coverage.",
+        "raisedBecause": null,
+        "commit": "9de6fc25ed56",
+        "reviewIssues": 1
+      },
+      "observedDays": 0.8,
+      "evidence": []
+    },
+    {
+      "number": 3189,
+      "title": "Re-baseline e2e reference screenshots from CI's Linux renders",
+      "state": "merged",
+      "mergedAt": "2026-09-26T15:34:30Z",
+      "cohort": "rated",
+      "base": "4de9ca9613b2fb2f2d5e5a4a2736c677a99b5af0",
+      "head": "eae9b43a4760dc8be288525d5b204573ad92928b",
+      "size": {
+        "files": 529,
+        "additions": 4,
+        "deletions": 1,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This updates visual-test reference images and contributor documentation only, without changing application runtime behavior.",
+        "raisedBecause": null,
+        "commit": "529fd31d2a2c",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3244",
+          "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…about it: - It makes the specs behind the drift deterministic. - It re-baselines the references that were stale on `main`, from CI's Linux renders, following #3189. **138 reference PNGs change.** Each one was viewed, and each matched at least two independent CI renders of the same code within the filter's noise threshold…",
+          "verdict": "unrelated",
+          "note": "\"#3189's regression list\" is the list of real bugs #3189 recorded, not bugs it caused."
+        },
+        {
+          "source": "reference",
+          "ref": "#3123",
+          "title": "Give right-panel panes one header band, one group-header recipe and one row rhythm",
+          "daysAfterMerge": 0,
+          "excerpt": "…-committed-diff.png`. In the new render the Committed row (`committed.ts`) is selected, but the viewer shows the `staged.ts` diff (the helper file with `value = 1 → 2`), not the one-line `committed.ts` insert. That is the early-capture bug from the #3189 triage. It is the same candidate `ab4e9a07` deliberately left out. The fix is the spec wait in #3209, not this PR's pane-chrome change. Please restore this file to main's version: ```sh git checkout origin/main -- tests/e2e/screenshots/git-changes…",
+          "verdict": "unrelated",
+          "note": "Refers to a bug #3189's triage recorded, not one it caused."
+        }
+      ]
+    },
+    {
+      "number": 3190,
+      "title": "Let Copse Reviewer read a pull request's conversation and look at its images",
+      "state": "merged",
+      "mergedAt": "2026-09-27T14:27:04Z",
+      "cohort": "rated",
+      "base": "47432f2e57fce29cae1ffb9da8ea2ea2caa129ff",
+      "head": "47a16150e3d05ddef9101cf944cc41e66fed79bc",
+      "size": {
+        "files": 34,
+        "additions": 2615,
+        "deletions": 401,
+        "sourceLines": 1502,
+        "sourceDeletions": 172
+      },
+      "areas": [
+        ".github",
+        "packages/review",
+        "src/main"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "The review pipeline now consumes attacker-controlled PR text and remote images, adding forge-token handling and host/redirect restrictions across CLI, image-fetching, and GitHub workflow boundaries.",
+        "raisedBecause": null,
+        "commit": "f0656d3b0162",
+        "reviewIssues": null
+      },
+      "observedDays": 0.3,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 1.3,
+          "excerpt": "shares src/main/services/review/review-service.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
+    },
+    {
+      "number": 3191,
+      "title": "Ignore sandbox mount points when deciding to seed a new worktree",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:54:43Z",
+      "cohort": "rated",
+      "base": "27b834a6b597d155af4aa55925d2b124aba97445",
+      "head": "7f5d84a1a4048fa49cf6fd14d66e280161c4f477",
+      "size": {
+        "files": 5,
+        "additions": 175,
+        "deletions": 3,
+        "sourceLines": 82,
+        "sourceDeletions": 2
+      },
+      "areas": [
+        "src/main"
+      ],
+      "surfaces": [
+        "permissions-sandboxing"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "The change adjusts worktree dirty-state detection for Linux sandbox mount artifacts and the related e2e cleanup path, affecting bounded project checkout behavior.",
+        "raisedBecause": null,
+        "commit": "fc4b81ce36eb",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3244",
+          "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…e-pane render. I took CI's Linux render instead of restoring the older blob `2d672cd`. - Its unstaged list still shows the sandbox `.bashrc`, which #3181 and #3191 cover. - `process-manager` and `process-manager-agent-working` are left out: #3121 changed them on `main`, and `main`'s copies win. **24 references re-rendere…",
+          "verdict": "unrelated",
+          "note": "Mentions #3191 as covering a render artefact."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3181",
+          "title": "Stop Linux sandbox placeholders leaking into the checkout: run Copse's own reads on the read-only overlay",
+          "daysAfterMerge": 0,
+          "excerpt": "shares src/main/project-sandbox/config.ts",
+          "verdict": "unrelated",
+          "note": "Parallel fix for the pre-existing bwrap placeholder problem; opened before this change and does not fix it."
+        }
+      ]
+    },
+    {
+      "number": 3192,
+      "title": "Prototype a local GLiNER2.5-Decide classifier and record its results",
+      "state": "merged",
+      "mergedAt": "2026-09-26T21:54:11Z",
+      "cohort": "rated",
+      "base": "7cf8a4e438091b8315bfbd9ee84e4ba7550420ab",
+      "head": "92b00732699c6bd20ac32ffd6c6850ef08cc2b28",
+      "size": {
+        "files": 5,
+        "additions": 323,
+        "deletions": 0,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "Adds a standalone local HTTP classifier benchmark and provider documentation; runtime behavior is bounded to the opt-in benchmark server rather than the Copse application.",
+        "raisedBecause": null,
+        "commit": "f0c8caa23a25",
+        "reviewIssues": null
+      },
+      "observedDays": 1,
+      "evidence": []
+    },
+    {
+      "number": 3193,
+      "title": "Drop the hairline border from user prompt bubbles",
+      "state": "merged",
+      "mergedAt": "2026-09-27T07:57:54Z",
+      "cohort": "rated",
+      "base": "b6411d1dee482fbd2145cffff4f3d7f60184e88d",
+      "head": "f1254a3839296aafdad31d8552509623be6fe1fa",
+      "size": {
+        "files": 4,
+        "additions": 32,
+        "deletions": 3,
+        "sourceLines": 5,
+        "sourceDeletions": 3
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This is a small, contained renderer styling change limited to the appearance of user prompts, with focused demo coverage and updated screenshots.",
+        "raisedBecause": null,
+        "commit": "ce6b1421bbad",
+        "reviewIssues": null
+      },
+      "observedDays": 0.6,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3250",
+          "title": "Keep the transcript pinned when content shrinks, deflake reasoning-responsiveness, re-baseline stale screenshots",
+          "daysAfterMerge": 0.3,
+          "excerpt": "…- `settings-usage-plan-token-expired`: #3215's token-expired copy, with inline code. - `browser-preview-tool-visible` and `selected-plugin-browser-tab`: #3193's borderless prompt bubble. - `settings-plugins`: #3129's neutral Stable badge. `agent-tasks-terminal` and `canvas-artefact-refresh` were suspected too.…",
+          "verdict": "unrelated",
+          "note": "Screenshot re-baseline for the intended style change."
+        }
+      ]
+    },
+    {
+      "number": 3195,
+      "title": "Arm the tool-result cache watcher after the tool call, not inside it",
+      "state": "merged",
+      "mergedAt": "2026-09-26T17:20:24Z",
+      "cohort": "rated",
+      "base": "7f5d84a1a4048fa49cf6fd14d66e280161c4f477",
+      "head": "8faa4f9fa9bf247f2ac9cde9dd792aa9c68f32f6",
+      "size": {
+        "files": 4,
+        "additions": 104,
+        "deletions": 13,
+        "sourceLines": 77,
+        "sourceDeletions": 13
+      },
+      "areas": [
+        "src/main"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "Changes main-process search-result caching and execution-root watcher scheduling, delaying cacheability until a filesystem watcher is armed.",
+        "raisedBecause": null,
+        "commit": "144cb7766af1",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": []
+    },
+    {
+      "number": 3202,
+      "title": "Edit the push-time PR summary with the workflow token so CI does not re-run",
+      "state": "merged",
+      "mergedAt": "2026-09-26T12:53:07Z",
+      "cohort": "rated",
+      "base": "aa55b4bdd11994c0bc0c0022c122429eb5662660",
+      "head": "7cec22e24bbd4650096409e22a7136226e4ddb69",
+      "size": {
+        "files": 4,
+        "additions": 34,
+        "deletions": 25,
+        "sourceLines": 30,
+        "sourceDeletions": 15
+      },
+      "areas": [
+        ".github"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "Changes GitHub Actions authentication and pull-request write permissions, and alters which token-generated events trigger CI runs.",
+        "raisedBecause": null,
+        "commit": "4e2902cfe483",
+        "reviewIssues": 0
+      },
+      "observedDays": 1.3,
+      "evidence": []
+    },
+    {
+      "number": 3207,
+      "title": "Keep chip placeholders out of thread titles; mark a stopped ask_user as cancelled",
+      "state": "merged",
+      "mergedAt": "2026-09-26T19:26:36Z",
+      "cohort": "rated",
+      "base": "40c487b5fa0d4b34a53dcc7d27c77d2f6b3e1f23",
+      "head": "5e742ab335a3eb0a50ec74967f2aa3b7434a6710",
+      "size": {
+        "files": 12,
+        "additions": 316,
+        "deletions": 47,
+        "sourceLines": 154,
+        "sourceDeletions": 42
+      },
+      "areas": [
+        "packages/thread-store",
+        "src/main",
+        "src/renderer"
+      ],
+      "surfaces": [
+        "persisted-data"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes main-process ask_user cancellation results and tool reporting, plus renderer thread-title input and fallback behavior.",
+        "raisedBecause": null,
+        "commit": "940cf67b8350",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3237",
+          "title": "Pin the CLA workflow's comment permission and agent-author attribution",
+          "daysAfterMerge": 0,
+          "excerpt": "Pin the CLA workflow's comment permission and agent-author attribution ## Outcome #3234 fixed the two CLA-check bugs seen on #3207 (job 108467455706): - Commits authored as `Claude <noreply@anthropic.com>` were flagged as the unsigned `@claude` account. - `createComment` returned 403 beca…",
+          "verdict": "unrelated",
+          "note": "CLA-check bugs seen on #3207's CI run, caused by #3231."
+        }
+      ]
+    },
+    {
+      "number": 3208,
+      "title": "Show appended system-reminder notes in tool cards without raw tags",
+      "state": "merged",
+      "mergedAt": "2026-09-26T19:07:06Z",
+      "cohort": "rated",
+      "base": "1bb3c488441df17aa3f352e64fd0288467dcfb23",
+      "head": "07ef82aa900277903cf3891ee9ebaa07f51149aa",
+      "size": {
+        "files": 26,
+        "additions": 452,
+        "deletions": 55,
+        "sourceLines": 190,
+        "sourceDeletions": 27
+      },
+      "areas": [
+        "packages/agent",
+        "packages/llm",
+        "packages/thread-store",
+        "schemas",
+        "src/main",
+        "src/renderer",
+        "src/shared"
+      ],
+      "surfaces": [
+        "persisted-data",
+        "process-ipc",
+        "cross-cutting"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "The change carries new tool-result metadata across tool execution, agent and guest streams, the API protocol, persisted thread records, and renderer presentation, so compatibility spans multiple runtime and storage boundaries.",
+        "raisedBecause": null,
+        "commit": "c604f7f5f53a",
+        "reviewIssues": 0
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3079",
+          "title": "Finish three nearly-resolved backlog issues (#2450, #2493, #2519)",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…very #3181 file matches `main` exactly. The diff against `main` is back to the three backlog fixes (32 files, +924/−29), so the high-risk sandbox note in the generated summary no longer applies. - **API protocol version conflict:** `main` is at v20 (#3208), and its comment leaves v18 and v19 for open PRs. This PR's optional `initiator` on the review report still counts as a shape change against `main`, so I moved it to **v21**, regenerated `schemas/api-protocol.manifest.json`, and `gen-api-protocol -…",
+          "verdict": "unrelated",
+          "note": "API protocol version bookkeeping note."
+        }
+      ]
+    },
+    {
+      "number": 3209,
+      "title": "Wait for the committed file's own diff before capturing git-changes-committed-diff",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:17:55Z",
+      "cohort": "rated",
+      "base": "736d8428d8f2f03e6ffdc81310e6521f35f11abb",
+      "head": "64bd4b11c6546710053e4d4292d86ee95a3e9bc1",
+      "size": {
+        "files": 1,
+        "additions": 37,
+        "deletions": 0,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This is a test-only synchronization change in the git-changes Electron e2e spec and does not alter runtime behavior.",
+        "raisedBecause": null,
+        "commit": "bc06d68f6164",
+        "reviewIssues": 0
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3210,
+      "title": "Settle the PR viewer when gh is unavailable but chat links a PR",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:31:22Z",
+      "cohort": "rated",
+      "base": "2abc4b19807ba425f71af2319312583edac6334c",
+      "head": "5026687abf34cc2bf4681d95ca4b64599f67c3ed",
+      "size": {
+        "files": 4,
+        "additions": 72,
+        "deletions": 18,
+        "sourceLines": 8,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "This changes PR-pane renderer behavior for unavailable GitHub CLI status, affecting both list and viewer presentation in a bounded UI surface.",
+        "raisedBecause": null,
+        "commit": "dd64354cdad6",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3211,
+      "title": "Keep a container run's tokens in the thread footer total",
+      "state": "merged",
+      "mergedAt": "2026-09-26T17:51:02Z",
+      "cohort": "rated",
+      "base": "5b2e49c089d67ed1c29a9dfd5f8c29eda1a15721",
+      "head": "39575876b08ec9ef8cb0a354ea96ac4ec27e88ca",
+      "size": {
+        "files": 3,
+        "additions": 48,
+        "deletions": 0,
+        "sourceLines": 5,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        "src/shared"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This is a bounded usage-summary behavior change, with a unit regression case and a demo assertion; it does not alter usage collection or persistence.",
+        "raisedBecause": null,
+        "commit": "20bdc0ac063d",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 2.1,
+          "excerpt": "shares src/shared/usage/footer-usage-summary.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
+    },
+    {
+      "number": 3212,
+      "title": "Fix truncation and squeeze in automation headings, composer footer, browser toolbar, hook chips and pop-out modes",
+      "state": "merged",
+      "mergedAt": "2026-09-27T12:21:54Z",
+      "cohort": "rated",
+      "base": "f1254a3839296aafdad31d8552509623be6fe1fa",
+      "head": "c67bcaef75f575ad68beff206ae82454db292cc7",
+      "size": {
+        "files": 208,
+        "additions": 502,
+        "deletions": 61,
+        "sourceLines": 108,
+        "sourceDeletions": 10
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "Renderer styling and footer measurement behavior change layout across several bounded surfaces, with end-to-end tests and screenshot fixtures updated; no persistence, permission, or process-boundary behavior changes.",
+        "raisedBecause": null,
+        "commit": "e73670094319",
+        "reviewIssues": 1
+      },
+      "observedDays": 0.4,
+      "evidence": []
+    },
+    {
+      "number": 3213,
+      "title": "Write the SemIf test's process marker atomically",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:10:37Z",
+      "cohort": "rated",
+      "base": "b6f4efb230c4b1bfa5e5601ff171fc14dfd50978",
+      "head": "4306aec7f66c08aa6b617e9e8bef30abe1ebb2c4",
+      "size": {
+        "files": 1,
+        "additions": 4,
+        "deletions": 1,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This changes only a test fixture in packages/llm and does not affect runtime behavior.",
+        "raisedBecause": null,
+        "commit": "18d1fbdaded9",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": []
+    },
+    {
+      "number": 3214,
+      "title": "Add four missing e2e reference screenshots",
+      "state": "merged",
+      "mergedAt": "2026-09-26T16:53:51Z",
+      "cohort": "rated",
+      "base": "7a08b35d11abaf4db1b195f0f39a8cdb14f9181d",
+      "head": "27b834a6b597d155af4aa55925d2b124aba97445",
+      "size": {
+        "files": 4,
+        "additions": 0,
+        "deletions": 0,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "The change is limited to four end-to-end screenshot fixtures and does not alter application code or runtime behavior.",
+        "raisedBecause": null,
+        "commit": "2ace0a2b5c74",
+        "reviewIssues": null
+      },
+      "observedDays": 1.2,
+      "evidence": []
+    },
+    {
+      "number": 3215,
+      "title": "Stop Copse refreshing the Claude OAuth login behind Claude Code's back",
+      "state": "merged",
+      "mergedAt": "2026-09-27T14:26:44Z",
+      "cohort": "rated",
+      "base": "c67bcaef75f575ad68beff206ae82454db292cc7",
+      "head": "47432f2e57fce29cae1ffb9da8ea2ea2caa129ff",
+      "size": {
+        "files": 13,
+        "additions": 236,
+        "deletions": 634,
+        "sourceLines": 367,
+        "sourceDeletions": 315
+      },
+      "areas": [
+        "(root)",
+        "packages/plan-usage",
+        "src/main"
+      ],
+      "surfaces": [
+        "auth-secrets"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "This changes Claude OAuth token handling and credential-store writes in the plan-usage package and main-process bridge, with user-visible effects in Settings usage status.",
+        "raisedBecause": null,
+        "commit": "afe0e843e65a",
+        "reviewIssues": null
+      },
+      "observedDays": 0.3,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3250",
+          "title": "Keep the transcript pinned when content shrinks, deflake reasoning-responsiveness, re-baseline stale screenshots",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…ting (`c72b618`).** Each file was taken from this branch's full render and checked against the change that caused it: - `settings-usage-plan-token-expired`: #3215's token-expired copy, with inline code. - `browser-preview-tool-visible` and `selected-plugin-browser-tab`: #3193's borderless prompt bubble. - `settings…",
+          "verdict": "unrelated",
+          "note": "Screenshot re-baseline for the intended copy change."
+        }
+      ]
+    },
+    {
+      "number": 3228,
+      "title": "Promote a pinned main commit so trunk merges stop cancelling promotion CI",
+      "state": "merged",
+      "mergedAt": "2026-09-27T00:10:56Z",
+      "cohort": "rated",
+      "base": "e77149671ac37d4b3c9b2f851291b29312179c16",
+      "head": "2da67105a7f322738e9d5bdbf9645f6d19b0a3d6",
+      "size": {
+        "files": 6,
+        "additions": 98,
+        "deletions": 15,
+        "sourceLines": 81,
+        "sourceDeletions": 12
+      },
+      "areas": [
+        ".github"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "The change alters bounded GitHub Actions behavior for release promotion, CI formatting, previews, and screenshot review, without changing application runtime or credentials.",
+        "raisedBecause": null,
+        "commit": "4c8d5de0e1b0",
+        "reviewIssues": 0
+      },
+      "observedDays": 0.9,
+      "evidence": []
+    },
+    {
+      "number": 3229,
+      "title": "Record node-forge's BSD election and why sharp/libvips is not shipped",
+      "state": "merged",
+      "mergedAt": "2026-09-26T19:12:06Z",
+      "cohort": "rated",
+      "base": "07ef82aa900277903cf3891ee9ebaa07f51149aa",
+      "head": "b995c26c816b1028ed8e8268aaa19836c307aef6",
+      "size": {
+        "files": 1,
+        "additions": 59,
+        "deletions": 5,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This documentation-only change updates third-party license and packaging disclosures without changing runtime behavior.",
+        "raisedBecause": null,
+        "commit": "4154f87b738c",
+        "reviewIssues": null
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3230,
+      "title": "Bump electron-builder to 26.16.1 so macOS signing works, and cut beta.10",
+      "state": "merged",
+      "mergedAt": "2026-09-26T18:55:57Z",
+      "cohort": "rated",
+      "base": "f2a59bfe48532e45a4bea7cd847373e937c6b738",
+      "head": "121c52c2ec0eeb6269c5cef855dbbb0ee8818244",
+      "size": {
+        "files": 3,
+        "additions": 46,
+        "deletions": 39,
+        "sourceLines": 4,
+        "sourceDeletions": 2
+      },
+      "areas": [
+        "(root)"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "This updates the Electron packaging toolchain dependency alongside the application release version, affecting dependency resolution and release builds.",
+        "raisedBecause": null,
+        "commit": "0bbbed44838f",
+        "reviewIssues": 0
+      },
+      "observedDays": 1.1,
+      "evidence": []
+    },
+    {
+      "number": 3231,
+      "title": "Offer Copse under a commercial licence alongside AGPL, and require a CLA from outside contributors",
+      "state": "merged",
+      "mergedAt": "2026-09-26T19:03:40Z",
+      "cohort": "rated",
+      "base": "121c52c2ec0eeb6269c5cef855dbbb0ee8818244",
+      "head": "1bb3c488441df17aa3f352e64fd0288467dcfb23",
+      "size": {
+        "files": 6,
+        "additions": 399,
+        "deletions": 4,
+        "sourceLines": 209,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        ".github"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "This changes contribution and licensing terms and adds a pull_request_target workflow with permissions to post comments and commit statuses, affecting the repository’s merge-gating and contributor-rights surfaces.",
+        "raisedBecause": null,
+        "commit": "14f2b6a81f88",
+        "reviewIssues": 3
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3246",
+          "title": "Make the required CLA status reach every open pull request head, including automation's",
+          "daysAfterMerge": 0.2,
+          "excerpt": "…ke the required CLA status reach every open pull request head, including automation's ## Outcome `CLA` is a required status on `main` (ruleset 17887668, since #3231), but it was only ever set by a pull request's own `pull_request_target` / signing-comment events. That left three ways for a PR to be blocked by CLA with no o…",
+          "verdict": "regression",
+          "note": "The required CLA status left PR heads blocked with no way to set it."
+        },
+        {
+          "source": "reference",
+          "ref": "#3235",
+          "title": "Fix the CLA check failing maintainer PRs with Claude-authored commits",
+          "daysAfterMerge": 0,
+          "excerpt": "Fix the CLA check failing maintainer PRs with Claude-authored commits ## Outcome Fixes the `CLA` check from #3231, which failed on its first real run (#3205, [run 36264748729](https://github.com/copse-dev/agent-pane/actions/runs/36264748729)). This needs to land before `CL…",
+          "verdict": "regression",
+          "note": "\"The CLA check from #3231 failed on its first real run.\""
+        },
+        {
+          "source": "reference",
+          "ref": "#3234",
+          "title": "Let the PR opener answer for agent-authored commits in the CLA check, and let it comment",
+          "daysAfterMerge": 0,
+          "excerpt": "Let the PR opener answer for agent-authored commits in the CLA check, and let it comment ## Outcome The CLA check from #3231 failed every pull request that contains agent-written commits. On #3123 it reported `@claude` as an unsigned author. **Cause of the false failure.** Agent and…",
+          "verdict": "regression",
+          "note": "\"The CLA check from #3231 failed every pull request that contains agent-written commits.\""
+        },
+        {
+          "source": "reference",
+          "ref": "#3148",
+          "title": "Add the Activity panel: answer background approvals without switching threads",
+          "daysAfterMerge": 0,
+          "excerpt": "On fad7cc3 (the merge of main), the `CLA` status and the CLA workflow's `check` job are red. Both come from the CLA workflow added on main in #3231, not from this PR's code. **1. Agent-authored commits count as an unsigned human author.** - Every commit here has the author `Claude <noreply@anthropic.com>`, and GitHub resolves that email to the `claude` user account. - `.github/workflows/cla.ym…",
+          "verdict": "regression",
+          "note": "CLA status red on this PR from the CLA workflow #3231 added; same breakage as #3234/#3235."
+        },
+        {
+          "source": "reference",
+          "ref": "#3236",
+          "title": "Fix five flaky tests: image-diff focus, fixture git clean, retired-branch timing, FIFO limit race, Changes refresh selector",
+          "daysAfterMerge": 0,
+          "excerpt": "**`CLA` status and CLA `check` job failing. The cause isn't in this PR.** The CLA workflow from #3231 runs on `pull_request_target`, so it always uses `main`'s copy of `.github/workflows/cla.yml`. Nothing in this branch can change the result. It trips on two things: 1. **Agent-authored commits count as outside authors.** This PR's commit is authore…",
+          "verdict": "regression",
+          "note": "Same CLA-check breakage from #3231 on another PR."
+        },
+        {
+          "source": "reference",
+          "ref": "#3251",
+          "title": "Measure Copse Reviewer's PR risk rating against what happened after merge",
+          "daysAfterMerge": 1.1,
+          "excerpt": "…; the rated cohort has only 0–1.3 days of outcome history) | predicted ↓ / truth → | low | medium | high | | --- | --: | --: | --: | | low | 10 | 0 | 0 | | medium | 19 | 2 | 0 | | high | 11 | 0 | 1 | - **Under-rated: 0 of 43.** The one regression (#3231, the CLA check) was rated High. - **Over-rated: 30 of 43 (70%).** This is an upper bound until outcomes mature. - **High is issued far more often than regressions happen:** on 30% of merged PRs and 71% of open ones. Only about 3% of the 517 changes…",
+          "verdict": "unrelated",
+          "note": "This eval's own description."
+        }
+      ]
+    },
+    {
+      "number": 3234,
+      "title": "Let the PR opener answer for agent-authored commits in the CLA check, and let it comment",
+      "state": "merged",
+      "mergedAt": "2026-09-26T19:35:27Z",
+      "cohort": "rated",
+      "base": "5e742ab335a3eb0a50ec74967f2aa3b7434a6710",
+      "head": "bbbca7e30fa9c40b877bacc1f2cbd0e0a68721f5",
+      "size": {
+        "files": 1,
+        "additions": 14,
+        "deletions": 3,
+        "sourceLines": 17,
+        "sourceDeletions": 3
+      },
+      "areas": [
+        ".github"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "The workflow changes CLA attribution and PR comment permissions, affecting whether contributions pass the licensing gate and who the workflow can comment for.",
+        "raisedBecause": null,
+        "commit": "a456fefc7828",
+        "reviewIssues": 1
+      },
+      "observedDays": 1.1,
+      "evidence": [
+        {
+          "source": "reference",
+          "ref": "#3246",
+          "title": "Make the required CLA status reach every open pull request head, including automation's",
+          "daysAfterMerge": 0.1,
+          "excerpt": "…d `4c8d5de`, an autoformat commit), and any head moved with the default `GITHUB_TOKEN` (which starts no workflow). 2. **Stale failures** computed under the pre-#3234 rule are never recomputed (e.g. #3121, #3108: \"1 author(s) need to sign or be identified\"). 3. **Automation that fails the rule**: bot-opened PRs were never \"o…",
+          "verdict": "unrelated",
+          "note": "Stale statuses computed before #3234 are #3231's gap, not a defect in #3234."
+        },
+        {
+          "source": "reference",
+          "ref": "#3237",
+          "title": "Pin the CLA workflow's comment permission and agent-author attribution",
+          "daysAfterMerge": 0,
+          "excerpt": "Pin the CLA workflow's comment permission and agent-author attribution ## Outcome #3234 fixed the two CLA-check bugs seen on #3207 (job 108467455706): - Commits authored as `Claude <noreply@anthropic.com>` were flagged as the unsigned `@claude` a…",
+          "verdict": "unrelated",
+          "note": "Test-only pin of #3234's fixes."
+        },
+        {
+          "source": "reference",
+          "ref": "#3235",
+          "title": "Fix the CLA check failing maintainer PRs with Claude-authored commits",
+          "daysAfterMerge": 0.1,
+          "excerpt": "Closing as superseded by #3234, which fixed both CLA-check bugs on main: agent-authored commits (`noreply@anthropic.com`) are now attributed to the PR opener, and the job can comment. This branch now conflicts with main and drops `issues: write`, which #3234 found commenting need…",
+          "verdict": "unrelated",
+          "note": "Closed as superseded by #3234."
+        }
+      ]
+    },
+    {
+      "number": 3237,
+      "title": "Pin the CLA workflow's comment permission and agent-author attribution",
+      "state": "merged",
+      "mergedAt": "2026-09-26T21:54:05Z",
+      "cohort": "rated",
+      "base": "07eb8119dd322085dc94ace123619906cce3a49f",
+      "head": "7cf8a4e438091b8315bfbd9ee84e4ba7550420ab",
+      "size": {
+        "files": 1,
+        "additions": 30,
+        "deletions": 0,
+        "sourceLines": 0,
+        "sourceDeletions": 0
+      },
+      "areas": [],
+      "surfaces": [],
+      "posted": {
+        "risk": "low",
+        "modelRisk": "low",
+        "reason": "This adds only static CI-workflow invariant tests in scripts/ci-workflow-invariants.test.ts and does not change runtime behavior or the workflow itself.",
+        "raisedBecause": null,
+        "commit": "d4a075d237d4",
+        "reviewIssues": 0
+      },
+      "observedDays": 1,
+      "evidence": []
+    },
+    {
+      "number": 3244,
+      "title": "Re-baseline main's e2e screenshots and pin the specs that drift run to run",
+      "state": "merged",
+      "mergedAt": "2026-09-27T05:56:04Z",
+      "cohort": "rated",
+      "base": "0a160c0574b4b52a40c136e3343f4e0aedfadf28",
+      "head": "b6411d1dee482fbd2145cffff4f3d7f60184e88d",
+      "size": {
+        "files": 157,
+        "additions": 165,
+        "deletions": 10,
+        "sourceLines": 22,
+        "sourceDeletions": 0
+      },
+      "areas": [
+        "(root)"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "low",
+        "reason": "This is confined to WebdriverIO setup, screenshot helpers, test timing and reference PNGs; it changes capture determinism without affecting product runtime behavior.",
+        "raisedBecause": "the review surfaced 1 issue",
+        "commit": "47dc6a5a64b8",
+        "reviewIssues": 1
+      },
+      "observedDays": 0.6,
+      "evidence": []
+    },
+    {
+      "number": 3246,
+      "title": "Make the required CLA status reach every open pull request head, including automation's",
+      "state": "merged",
+      "mergedAt": "2026-09-27T01:39:30Z",
+      "cohort": "rated",
+      "base": "3e76388cbfc0a844d6c9886170bb19c6e929ddbc",
+      "head": "0a160c0574b4b52a40c136e3343f4e0aedfadf28",
+      "size": {
+        "files": 5,
+        "additions": 1598,
+        "deletions": 195,
+        "sourceLines": 1015,
+        "sourceDeletions": 182
+      },
+      "areas": [
+        ".github",
+        "scripts"
+      ],
+      "surfaces": [
+        "dependency-build"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "This changes the privileged CLA status gate and GitHub Actions permissions, including which automation and contributor identities can satisfy the licensing check and when existing PR statuses are rewritten.",
+        "raisedBecause": null,
+        "commit": "7bc3383a0e57",
+        "reviewIssues": 0
+      },
+      "observedDays": 0.8,
+      "evidence": []
+    },
+    {
+      "number": 3248,
+      "title": "Add Xcode 27 Device Hub tools and restore simulator control",
+      "state": "merged",
+      "mergedAt": "2026-09-27T14:48:03Z",
+      "cohort": "rated",
+      "base": "47a16150e3d05ddef9101cf944cc41e66fed79bc",
+      "head": "5f1099b82a50ee72d06f226fdc4482040f58deaa",
+      "size": {
+        "files": 16,
+        "additions": 984,
+        "deletions": 30,
+        "sourceLines": 568,
+        "sourceDeletions": 28
+      },
+      "areas": [
+        "packages/agent",
+        "src/main"
+      ],
+      "surfaces": [
+        "security",
+        "permissions-sandboxing"
+      ],
+      "posted": {
+        "risk": "high",
+        "modelRisk": "high",
+        "reason": "This adds host-device access behind permission and project-enrollment checks, and changes the native simulator HID/XPC process boundary for simulator input.",
+        "raisedBecause": null,
+        "commit": "3a689c611371",
+        "reviewIssues": null
+      },
+      "observedDays": 0.3,
+      "evidence": []
+    },
+    {
+      "number": 3250,
+      "title": "Keep the transcript pinned when content shrinks, deflake reasoning-responsiveness, re-baseline stale screenshots",
+      "state": "merged",
+      "mergedAt": "2026-09-27T20:21:27Z",
+      "cohort": "rated",
+      "base": "5f1099b82a50ee72d06f226fdc4482040f58deaa",
+      "head": "49e05d444ac46298865ea6a6b6df120517a6b1e7",
+      "size": {
+        "files": 7,
+        "additions": 189,
+        "deletions": 3,
+        "sourceLines": 13,
+        "sourceDeletions": 1
+      },
+      "areas": [
+        "src/renderer"
+      ],
+      "surfaces": [],
+      "posted": {
+        "risk": "medium",
+        "modelRisk": "medium",
+        "reason": "The change adjusts shared conversation scroll-pin behavior in the renderer, alongside focused tests and end-to-end screenshot stabilization; it does not touch persistence, IPC, or permissions.",
+        "raisedBecause": null,
+        "commit": "9352900a4eb9",
+        "reviewIssues": 0
+      },
+      "observedDays": 0,
+      "evidence": []
+    }
+  ]
+}

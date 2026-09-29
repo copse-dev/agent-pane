@@ -7,7 +7,7 @@ import { Writable } from 'node:stream'
 import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import type { StreamChunk } from '@shared/types'
-import { nodeReadableStream } from './node-readable-stream.ts'
+import { nodeReadableStream } from './node-byte-streams.ts'
 import { sessionUpdateToStreamChunks } from './session-update-adapter.ts'
 
 /**

@@ -49,6 +49,18 @@ Where a sandbox is active, the sandbox—not a fuzzy match—decides whether the
 sandbox there is no containment boundary, so ambiguity must prompt, and auto-approval cannot skip
 that prompt.
 
+A native `run_shell`, `run_background` or todo-verification command in an SSH workspace
+(`docs/plans/ssh-remote-repo.md`) is spawned on the remote host, where Copse applies no sandbox. The
+gate therefore judges it by the **Windows / sandbox init failure** row whatever this machine's
+sandbox state, and whatever containment a caller reports. It asks the same execution-target
+resolution the spawn uses (`spawnRunsOnSshTarget` in `project-sandbox/spawn.ts`), and a remote
+project that cannot route over SSH counts as unsandboxed rather than local.
+
+On macOS, ASRT's network allowlist is process-wide. While a sandboxed ACP agent or background task
+temporarily widens it, a newly started network-capable command could inherit that access. Copse
+therefore pauses auto-run and names the holder in an approval prompt before overlapping the two.
+Structurally read-only commands do not prompt because they cannot open a network connection.
+
 ### Linked worktree recovery
 
 A contained command in a validated linked thread worktree may update that worktree's own Git
@@ -290,9 +302,10 @@ wording stays an expectation, per the section above.
 
 Every project can use `preflight_worktree` and `prepare_worktree`. Preflight detects npm, pnpm,
 Yarn Classic/modern, and Bun from an exact package-manager declaration or an unambiguous lockfile.
-Python projects with `pyproject.toml` and `uv.lock` use locked uv workspace synchronization with an
-installed compatible Python. uv package builds may execute repository code, which approval states;
-automatic Python/tool installation is disabled.
+Python projects use locked uv workspace synchronization (`pyproject.toml` + `uv.lock`) or
+wheel-only pip installation when every root requirement is exact and SHA-256-hashed. uv package
+builds may execute repository code, which approval states; automatic pip source builds and global
+Python/tool installation are disabled.
 It reports runtime requirements, dependency state, declared checks, configuration problems, exact
 setup commands, and a plan fingerprint. The optional `directory` selects a nested project inside
 the execution root. There is no repository-name check or implicit Electron/native requirement.
