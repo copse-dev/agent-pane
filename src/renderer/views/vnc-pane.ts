@@ -1343,6 +1343,7 @@ function mountVncSession(
   }
 
   async function connect(): Promise<void> {
+    if (await stoppedByViewerOff()) return
     const simulator = selectedSimulator()
     if (simulator) {
       await connectSimulator(simulator)
