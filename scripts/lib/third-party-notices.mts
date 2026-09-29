@@ -17,10 +17,11 @@
  *   are not linted.
  * - A `## Not shipped: …` heading lists, in parentheses, the packages it claims
  *   are absent: `(sharp, @img/sharp-libvips-*)`. A trailing `*` is a prefix.
- * - `Version X is bundled` / `Version X is shipped` in an entry is checked
- *   against the shipped version.
- * - An entry for a dual-licensed (`OR`) component must say which licence Copse
- *   elects, with the word "elects".
+ * - Every `Version X is bundled` / `Version X is shipped` in an entry is
+ *   checked against the shipped versions. If an entry quotes versions, it must
+ *   cover every version of that package that ships.
+ * - An entry for a dual-licensed (`OR`) component must say `Copse elects the
+ *   <SPDX-ID> option`, and that ID must be one of the expression's options.
  */
 
 /**
@@ -77,6 +78,7 @@ const TRAILING_PARENS_RE = /\(([^()]+)\)$/
 const NOT_SHIPPED_RE = /^Not shipped:/i
 const VERSION_RE = /\bVersion (\d+\.\d+\.\d+[\w.+-]*) is (?:bundled|shipped)\b/
 const PACKAGE_NAME_RE = /^(?:@[\w.-]+\/)?[\w.-]+\*?$/
+const ELECTION_RE = /\belects\s+(?:the\s+)?[*_`]*([\w.+-]+)[*_`]*(?:\s+option)?\b/i
 
 export function parseNotices(markdown: string): ParsedNotices {
   const headings = [...markdown.matchAll(HEADING_RE)]
@@ -108,6 +110,16 @@ function licenseIds(expression: string): string[] {
     .split(/\s+(?:OR|AND|WITH)\s+|\s+/i)
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
+}
+
+function electedLicenseId(body: string): string | null {
+  return ELECTION_RE.exec(body)?.[1] ?? null
+}
+
+function quotedVersions(body: string): string[] {
+  return [...body.matchAll(new RegExp(VERSION_RE.source, 'g'))].flatMap((match) =>
+    match[1] === undefined ? [] : [match[1]],
+  )
 }
 
 /** True when the licence asks for more than attribution, or offers a choice. */
@@ -157,11 +169,25 @@ export function findNoticeProblems(
       })
       continue
     }
-    if (/\bOR\b/i.test(first.license) && !/\belects\b/i.test(entry.body)) {
-      problems.push({
-        subject: `${name}@${first.version}`,
-        problem: `is dual-licensed (${first.license}); its entry must say which licence Copse elects`,
-      })
+    const election = electedLicenseId(entry.body)
+    const dualLicenses = new Map<string, ShippedComponent>()
+    for (const component of needing) {
+      if (/\bOR\b/i.test(component.license) && !dualLicenses.has(component.license)) {
+        dualLicenses.set(component.license, component)
+      }
+    }
+    for (const [license, component] of dualLicenses) {
+      if (election === null) {
+        problems.push({
+          subject: `${name}@${component.version}`,
+          problem: `is dual-licensed (${license}); its entry must say which licence Copse elects`,
+        })
+      } else if (!licenseIds(license).includes(election)) {
+        problems.push({
+          subject: `${name}@${component.version}`,
+          problem: `entry elects ${election}, which is not an option in ${license}`,
+        })
+      }
     }
   }
 
@@ -176,10 +202,15 @@ export function findNoticeProblems(
       }
       continue
     }
-    if (entry.version !== null && !shipped.some((c) => c.version === entry.version)) {
+    const quoted = [...new Set(quotedVersions(entry.body))]
+    const shippedVersions = [...new Set(shipped.map((component) => component.version))]
+    const quotedVersionsDiffer =
+      shippedVersions.some((version) => !quoted.includes(version)) ||
+      quoted.some((version) => !shippedVersions.includes(version))
+    if (quoted.length > 0 && quotedVersionsDiffer) {
       problems.push({
         subject: entry.packageName,
-        problem: `entry says version ${entry.version}, but ${shipped.map((c) => c.version).join(', ')} ships`,
+        problem: `entry says ${quoted.length === 1 ? 'version' : 'versions'} ${quoted.join(', ')}, but ${shippedVersions.join(', ')} ${shippedVersions.length === 1 ? 'ships' : 'ship'}`,
       })
     }
   }

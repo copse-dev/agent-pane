@@ -140,4 +140,27 @@ describe('findNoticeProblems', () => {
       'node-forge@1.4.0: is dual-licensed ((BSD-3-Clause OR GPL-2.0)); its entry must say which licence Copse elects',
     ])
   })
+
+  it('requires the elected licence to be one of the declared options', () => {
+    const markdown = NOTICES.replace('BSD-3-Clause option', 'GPL-3.0 option')
+    assert.deepEqual(problemsFor(SHIPPED, markdown), [
+      'node-forge@1.4.0: entry elects GPL-3.0, which is not an option in (BSD-3-Clause OR GPL-2.0)',
+    ])
+  })
+
+  it('requires a quoted version list to cover every shipped version of a package', () => {
+    const splitVersions = [
+      ...SHIPPED,
+      { name: 'node-forge', version: '1.5.0', license: '(BSD-3-Clause OR GPL-2.0)' },
+    ]
+    assert.deepEqual(problemsFor(splitVersions), [
+      'node-forge: entry says version 1.4.0, but 1.4.0, 1.5.0 ship',
+    ])
+
+    const completeNotice = NOTICES.replace(
+      'Version 1.4.0 is shipped as published.',
+      'Version 1.4.0 is shipped as published. Version 1.5.0 is shipped as published.',
+    )
+    assert.deepEqual(problemsFor(splitVersions, completeNotice), [])
+  })
 })
