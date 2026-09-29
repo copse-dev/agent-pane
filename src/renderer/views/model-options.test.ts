@@ -24,6 +24,7 @@ interface MockOpts {
   openRouterModelSetting?: string
   openRouterZdrOnlySetting?: boolean
   openRouterAllowTrainingSetting?: boolean
+  blockedModelMakers?: string[]
   acpAgents?: AcpAgentConfig[]
   pluginModels?: Array<{ id: string; label: string; group?: string }>
   pluginEnabled?: boolean
@@ -69,6 +70,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
           if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
           if (key === 'openRouterZdrOnly') return opts.openRouterZdrOnlySetting ?? null
           if (key === 'openRouterAllowTraining') return opts.openRouterAllowTrainingSetting ?? null
+          if (key === 'blockedModelMakers') return opts.blockedModelMakers ?? []
           if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
           return null
         },
@@ -411,6 +413,58 @@ describe('fetchModelOptions visibility', () => {
     const grok43Routes = options.filter((option) => option.value.endsWith('grok-4.3'))
     assert.equal(grok43Routes.length, 3)
     assert.ok(grok43Routes.every((route) => route.label === 'Grok 4.3'))
+  })
+
+  it('blocks xAI across OpenRouter and named agent models while preserving z-ai', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true, cursor: true },
+        blockedModelMakers: ['xai'],
+        openRouterModels: [
+          { id: 'x-ai/grok-4.5', name: 'Grok 4.5' },
+          { id: 'z-ai/glm-5.3', name: 'GLM 5.3' },
+        ],
+        cursorCloudModels: [
+          { id: 'grok-4.5', label: 'Grok 4.5' },
+          { id: 'composer-2', label: 'Composer 2' },
+        ],
+        acpAgents: [
+          {
+            id: 'cursor',
+            title: 'Cursor',
+            command: 'cursor-agent',
+            enabled: true,
+            availableModels: [
+              { value: 'grok-4.5', label: 'Grok 4.5' },
+              { value: 'composer-2', label: 'Composer 2' },
+            ],
+          },
+        ],
+      }),
+      '',
+    )
+    assert.ok(!options.some((option) => option.value.includes('grok')))
+    assert.ok(options.some((option) => option.value === 'openrouter:z-ai/glm-5.3'))
+    assert.ok(options.some((option) => option.value === 'remote-agent:cursor#composer-2'))
+    assert.ok(options.some((option) => option.value === 'acp:cursor#composer-2'))
+  })
+
+  it('keeps a selected blocked model visible only as a disabled explanation', async () => {
+    const selected = 'openrouter:x-ai/grok-4.5'
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        blockedModelMakers: ['xai'],
+        openRouterModels: [{ id: 'x-ai/grok-4.5', name: 'Grok 4.5' }],
+      }),
+      selected,
+    )
+    assert.equal(options.filter((option) => option.value === selected).length, 1)
+    assert.equal(options.find((option) => option.value === selected)?.disabled, true)
+    assert.match(
+      options.find((option) => option.value === selected)?.label ?? '',
+      /blocked in Settings/,
+    )
   })
 
   it('normalises raw GPT model ids advertised by an ACP agent', async () => {

@@ -132,6 +132,41 @@ How it's built:
 CI covers the extraction against in-memory fake agents that script each write
 routing and `_meta` shape — no real agent or tokens required for `npm test`.
 
+## Session continuity trials (`npm run probe:acp -- --continuity`)
+
+Advertising `loadSession` or `sessionCapabilities.resume` says the method
+exists. It does not say that a session created in one working directory can be
+reopened from another, which is what a thread moving into its worktree needs
+([`plans/acp-session-continuity.md`](plans/acp-session-continuity.md)). An agent
+that files sessions per directory might refuse the request. Worse, it might
+accept it and carry on with no memory. `--continuity` measures this. For each
+advertised method (`load`, `resume`) and each target directory (the original
+one, or a second directory), it:
+
+1. starts the agent in the origin directory and plants a random codeword;
+2. kills the process and starts a fresh one in the target directory;
+3. reattaches, then asks for the codeword and the working directory;
+4. after a new-directory success, restarts once more there and asks again.
+
+Every trial seeds its own session, and deletes it afterwards when the agent
+supports `session/delete`. A failed turn, such as an auth or model error
+rendered as text, is recorded as inconclusive rather than as `forgot`. The
+results add _Resume in new cwd (observed)_ and four _Restart →_ rows to the
+matrix.
+
+```sh
+npm run probe:acp -- --continuity                           # spends tokens: ~10 short prompts per agent
+npm run probe:acp -- --continuity --agent codex-acp --model codex-acp=gpt-5.5
+```
+
+`--model <id>=<substring>` pins an agent's trials to one of its model choices.
+It exists because an agent's own configured default may be a model it cannot
+reach: Codex's was, and every turn came back as a 400.
+
+The trials live in `src/main/services/acp/acp-continuity-probe.ts`. They are
+unit-tested against fake agents that store sessions globally, per directory,
+and per directory while silently starting empty.
+
 ## See also
 
 - [`docs/acp-agents.md`](acp-agents.md) — using external ACP agents (client role).

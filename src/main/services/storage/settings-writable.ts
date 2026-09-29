@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
 import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
+import { MODEL_MAKER_IDS } from '@copse/llm/model-maker-block.ts'
 import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 import {
   validateRemoteAgentBaseUrl,
@@ -221,6 +222,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // sent to another that rejects it.
   modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
+  // Model makers blocked across routes (direct, aggregator, and pinned agent models).
+  blockedModelMakers: z.array(z.enum(MODEL_MAKER_IDS)).max(MODEL_MAKER_IDS.length),
   // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
   // cheaper, 'fast' / 'priority' for quicker at a higher price. Empty (the
   // legacy default) omits the field, which OpenAI treats as 'auto' and resolves
