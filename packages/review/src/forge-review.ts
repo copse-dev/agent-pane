@@ -393,6 +393,56 @@ function reviewsUrl(target: ForgeTarget): string {
   return `${pullRequestUrl(target)}/reviews`
 }
 
+function repositoryUrl(target: ForgeTarget): string {
+  const base = target.apiBase.replace(/\/+$/, '')
+  const path = `repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`
+  return target.forge === 'github' ? `${base}/${path}` : `${base}/api/v1/${path}`
+}
+
+function issueUrl(target: ForgeTarget): string {
+  return `${repositoryUrl(target)}/issues/${String(target.number)}`
+}
+
+const forgejoLabelSchema = z.array(z.object({ id: z.number(), name: z.string() }))
+const FORGEJO_LABEL_PAGE_SIZE = 50
+
+async function addFeedbackLabel(
+  target: ForgeTarget,
+  label: string,
+  request: GithubRequest,
+): Promise<void> {
+  const url = issueUrl(target)
+  if (target.forge === 'github') {
+    await request('POST', `${url}/labels`, { labels: [label] })
+    return
+  }
+
+  const labelsUrl = `${repositoryUrl(target)}/labels`
+  const seenPages = new Set<string>()
+  for (let page = 1; ; page++) {
+    const labels = safeJsonParse(
+      await request(
+        'GET',
+        `${labelsUrl}?limit=${String(FORGEJO_LABEL_PAGE_SIZE)}&page=${String(page)}`,
+      ),
+      decodeWithSchema(forgejoLabelSchema),
+    )
+    if (labels === null) throw new Error('forgejo returned an unreadable label list')
+    const match = labels.find((candidate) => candidate.name === label)
+    if (match !== undefined) {
+      await request('POST', `${url}/labels`, { labels: [match.id] })
+      return
+    }
+    if (labels.length < FORGEJO_LABEL_PAGE_SIZE) break
+    const signature = labels.map((candidate) => candidate.id).join(',')
+    if (seenPages.has(signature)) {
+      throw new Error('forgejo repeated a full label page while resolving feedback label')
+    }
+    seenPages.add(signature)
+  }
+  throw new Error(`forgejo label ${JSON.stringify(label)} does not exist`)
+}
+
 function reviewPayload(target: ForgeTarget, review: ForgeReview): Record<string, unknown> {
   const common = {
     event: 'COMMENT',
@@ -449,6 +499,10 @@ export interface PostedReview {
   readonly repeatedElsewhere?: number
   /** Why the lookup of other open pull requests failed; every finding was kept. */
   readonly repeatLookupError?: string
+  /** The configured label added after a posted review with findings. */
+  readonly feedbackLabel?: string
+  /** Why the configured feedback label could not be added. */
+  readonly feedbackLabelError?: string
 }
 
 /** Every posted review carries it; a superseded one no longer does. */
@@ -676,6 +730,8 @@ export async function postForgeReview(
     readonly skipWhenEmpty?: boolean
     /** GitHub: leave out findings another open pull request already carries. */
     readonly skipRaisedElsewhere?: boolean
+    /** Add this label after a posted review contains one or more findings. */
+    readonly feedbackLabel?: string
     readonly now?: () => number
   },
 ): Promise<PostedReview> {
@@ -788,13 +844,26 @@ export async function postForgeReview(
       return { supersedeError: errorMessage(err) }
     }
   }
+  const applyFeedbackLabel = async (): Promise<Partial<PostedReview>> => {
+    const label = options.feedbackLabel?.trim()
+    if (label === undefined || label.length === 0 || report.findings.length === 0) return {}
+    try {
+      await addFeedbackLabel(target, label, request)
+      return { feedbackLabel: label }
+    } catch (err) {
+      return { feedbackLabelError: errorMessage(err) }
+    }
+  }
   try {
     const response = await attempt(inline)
+    const superseded = await supersede(response)
+    const feedbackLabel = await applyFeedbackLabel()
     return {
       inline: inline.comments.length,
       folded: anchored - inline.comments.length,
       ...repeatLookup,
-      ...(await supersede(response)),
+      ...superseded,
+      ...feedbackLabel,
     }
   } catch (err) {
     if (!(err instanceof ForgeReviewError) || err.status !== 422 || inline.comments.length === 0) {
@@ -803,7 +872,9 @@ export async function postForgeReview(
   }
   const everything = new Set(report.findings.map((_finding, index) => index))
   const response = await attempt(buildForgeReview(report, reviewOptions, everything))
-  return { inline: 0, folded: anchored, ...repeatLookup, ...(await supersede(response)) }
+  const superseded = await supersede(response)
+  const feedbackLabel = await applyFeedbackLabel()
+  return { inline: 0, folded: anchored, ...repeatLookup, ...superseded, ...feedbackLabel }
 }
 
 export class ForgeReviewError extends Error {
