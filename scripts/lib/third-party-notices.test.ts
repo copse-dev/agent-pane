@@ -141,6 +141,23 @@ describe('findNoticeProblems', () => {
     ])
   })
 
+  it('does not treat SPDX -or-later suffixes as licence choices', () => {
+    const components = [
+      { name: 'example', version: '1.0.0', license: 'GFDL-1.3-or-later' },
+      { name: 'library', version: '2.0.0', license: 'LGPL-3.0-or-later' },
+    ]
+    const markdown = `## Example (example)
+
+Version 1.0.0 is shipped.
+
+## Library (library)
+
+Version 2.0.0 is shipped.
+`
+
+    assert.deepEqual(problemsFor(components, markdown), [])
+  })
+
   it('requires the elected licence to be one of the declared options', () => {
     const markdown = NOTICES.replace('BSD-3-Clause option', 'GPL-3.0 option')
     assert.deepEqual(problemsFor(SHIPPED, markdown), [

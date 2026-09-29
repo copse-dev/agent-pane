@@ -166,6 +166,10 @@ function electedLicenseId(body: string): string | null {
   return ELECTION_RE.exec(body)?.[1] ?? null
 }
 
+function hasLicenseChoice(expression: string): boolean {
+  return /(?:^|[\s(])OR(?=$|[\s)])/i.test(expression)
+}
+
 function quotedVersions(body: string): string[] {
   return [...body.matchAll(new RegExp(VERSION_RE.source, 'g'))].flatMap((match) =>
     match[1] === undefined ? [] : [match[1]],
@@ -174,7 +178,7 @@ function quotedVersions(body: string): string[] {
 
 /** True when the licence asks for more than attribution, or offers a choice. */
 export function needsNoticeEntry(license: string): boolean {
-  if (/\bOR\b/i.test(license)) return true
+  if (hasLicenseChoice(license)) return true
   return licenseIds(license).some((id) => !ATTRIBUTION_ONLY_LICENSES.has(id))
 }
 
@@ -233,7 +237,7 @@ export function findNoticeProblems(
     const election = electedLicenseId(entry.body)
     const dualLicenses = new Map<string, ShippedComponent>()
     for (const component of needing) {
-      if (/\bOR\b/i.test(component.license) && !dualLicenses.has(component.license)) {
+      if (hasLicenseChoice(component.license) && !dualLicenses.has(component.license)) {
         dualLicenses.set(component.license, component)
       }
     }
