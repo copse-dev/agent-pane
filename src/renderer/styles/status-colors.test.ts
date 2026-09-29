@@ -37,7 +37,7 @@ function assertNoStatusFill(css: string, selector: string): void {
   for (const body of bodiesOf(css, selector)) {
     assert.doesNotMatch(
       body,
-      /background:\s*var\(--(success|error|danger)\)/,
+      /background(?:-color)?\s*:\s*var\(--(success|error|danger)\)/i,
       `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
     )
   }
@@ -97,6 +97,13 @@ describe('status colours come from tokens (#3065)', () => {
     }, /must not be/)
     assert.throws(() => {
       assertNoStatusFill(css, '.diff-reject-btn')
+    }, /must not be/)
+  })
+
+  it('rejects status fills declared with background-color', () => {
+    const css = '.diff-accept-btn { background-color: var(--success); }'
+    assert.throws(() => {
+      assertNoStatusFill(css, '.diff-accept-btn')
     }, /must not be/)
   })
 })
