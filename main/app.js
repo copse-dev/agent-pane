@@ -23634,7 +23634,10 @@ var init_tool_display = __esm({
         done: "Ran unattended in a container"
       },
       preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
-      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" }
+      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
+      coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
+      coordination_note: { running: "Sending peer note", done: "Sent peer note" },
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" }
     };
     TOOL_GROUPS = {
       reading: {
@@ -25317,6 +25320,15 @@ function imageIcon(className = DEFAULT) {
       "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
       "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
       "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
     ],
     className
   );
@@ -37459,6 +37471,10 @@ function createDemoApi(scenario, options = {}) {
       refreshHuggingFaceModels: () => resolved({ ok: false, count: 0, error: "Unavailable in demo" })
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: "demo", report: null }),
+      openLicenseFile: resolvedVoid
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -37669,6 +37685,12 @@ function createDemoApi(scenario, options = {}) {
           supportedHost: state.supportedHost
         });
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) => resolved({
+        offer: "none",
+        pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled
+      }),
+      answerSuggestion: () => resolved(void 0),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId);
         const state = {
@@ -40946,6 +40968,90 @@ var init_lm_studio_defaults = __esm({
     SAFETY_MODEL_MIN_INTELLECT = 20;
     DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT);
     DEFAULT_APP_CHAT_MODEL = BEST_VALUE_CHAT_MODEL;
+  }
+});
+
+// packages/llm/src/model-maker-block.ts
+function parseBlockedModelMakers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => isModelMaker(entry));
+}
+function makerFromName(name) {
+  const normalized = name.toLowerCase();
+  if (normalized === "anthropic" || normalized.startsWith("claude-")) return "anthropic";
+  if (normalized === "openai" || normalized.startsWith("gpt-") || /^o[1-9](?:-|$)/.test(normalized))
+    return "openai";
+  if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
+    return "google";
+  if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
+  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
+    (family) => normalized === family || normalized.startsWith(`${family}-`)
+  ))
+    return "mistral";
+  if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
+    return "xai";
+  return null;
+}
+function makerFromAgent(agent) {
+  const normalized = agent.toLowerCase();
+  if (normalized.startsWith("claude")) return "anthropic";
+  if (normalized.startsWith("codex")) return "openai";
+  if (normalized.startsWith("gemini")) return "google";
+  if (normalized.startsWith("mistral")) return "mistral";
+  if (normalized.startsWith("grok")) return "xai";
+  return null;
+}
+function modelMakerForSelection(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
+  if (selection2.namespace === "remote-agent" && !selection2.id) {
+    return selection2.agent === "anthropic" ? "anthropic" : null;
+  }
+  if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
+  const id = selection2.id.toLowerCase();
+  const parts = id.split("/");
+  const first = parts[0] ?? "";
+  const last = parts.at(-1) ?? "";
+  const fromModel = makerFromName(first) ?? makerFromName(last);
+  if (fromModel) return fromModel;
+  if (selection2.namespace === "acp") return makerFromAgent(selection2.agent);
+  return makerFromName(selection2.slug);
+}
+function blockedModelMaker(selection2, blocked) {
+  const maker = modelMakerForSelection(selection2);
+  return maker && blocked.includes(maker) ? maker : null;
+}
+var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
+var init_model_maker_block = __esm({
+  "packages/llm/src/model-maker-block.ts"() {
+    init_model_selection();
+    init_member_of();
+    MODEL_MAKER_IDS = [
+      "anthropic",
+      "openai",
+      "google",
+      "deepseek",
+      "mistral",
+      "xai"
+    ];
+    MODEL_MAKERS = [
+      { id: "anthropic", label: "Anthropic" },
+      { id: "openai", label: "OpenAI" },
+      { id: "google", label: "Google" },
+      { id: "deepseek", label: "DeepSeek" },
+      { id: "mistral", label: "Mistral" },
+      { id: "xai", label: "xAI" }
+    ];
+    isModelMaker = memberOf(MODEL_MAKER_IDS);
+    MISTRAL_MODEL_FAMILIES = [
+      "mistral",
+      "mixtral",
+      "codestral",
+      "devstral",
+      "magistral",
+      "ministral",
+      "pixtral"
+    ];
   }
 });
 
@@ -53074,17 +53180,28 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
-  const concreteCount = options.filter(
+  let blockedMakers = parseBlockedModelMakers(null);
+  try {
+    blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+  } catch {
+  }
+  const visibleOptions = options.flatMap((option) => {
+    const maker = blockedModelMaker(option.value, blockedMakers);
+    if (!maker) return [option];
+    if (option.value !== current) return [];
+    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
   ).length;
   if (concreteCount === 0) {
-    options.push({
+    visibleOptions.push({
       value: "",
       label: "No models available \u2014 add a provider or API key in Settings",
       disabled: true
     });
   }
-  return options;
+  return visibleOptions;
 }
 function autoModelOption(label) {
   return { value: "", label };
@@ -53163,6 +53280,7 @@ var init_model_options = __esm({
     init_agent_model_identity();
     init_model_display();
     init_nullish2();
+    init_model_maker_block();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
     CHAT_DEFAULT_GROUP = "Chat default";
@@ -60483,6 +60601,170 @@ var init_usage_section = __esm({
   }
 });
 
+// src/renderer/views/setup/about-section.ts
+function describeInclusion(component) {
+  if (component.partOf) return `Compiled into ${component.partOf}`;
+  const labels = component.shippedAs.map((as2) => SHIPPED_AS_LABEL[as2]);
+  const text2 = labels.join(", ");
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+function licenseBody(component, texts) {
+  const meta3 = el("p", { class: "about-license-meta" }, describeInclusion(component));
+  if (component.source) {
+    meta3.append(
+      " \xB7 ",
+      el("a", { href: component.source, target: "_blank", rel: "noopener noreferrer" }, "Source")
+    );
+  }
+  const body = el("div", { class: "about-license-body" }, meta3);
+  if (component.note) body.append(el("p", { class: "about-license-note" }, component.note));
+  for (const file2 of component.files) {
+    body.append(
+      el("div", { class: "about-license-file-name" }, file2.name),
+      el("pre", { class: "about-license-text" }, (texts[file2.text] ?? "").trim())
+    );
+  }
+  return body;
+}
+function componentRow(component, texts) {
+  const summary = el(
+    "summary",
+    { class: "about-license-summary" },
+    el("span", { class: "about-license-name" }, component.name),
+    el("span", { class: "about-license-version" }, component.version),
+    el("span", { class: "about-license-id" }, component.license)
+  );
+  const details = el("details", { class: "about-license" }, summary);
+  details.addEventListener(
+    "toggle",
+    () => {
+      if (details.open && !details.querySelector(".about-license-body")) {
+        details.append(licenseBody(component, texts));
+      }
+    },
+    { passive: true }
+  );
+  return el(
+    "li",
+    { "data-search": `${component.name} ${component.license}`.toLowerCase() },
+    details
+  );
+}
+function createAboutSection(api2) {
+  const versionEl = el("span", { class: "about-version" }, "\u2026");
+  const openButton = (label, kind) => {
+    const button = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
+    button.dataset["licenseFile"] = kind;
+    button.addEventListener("click", () => {
+      void api2.about.openLicenseFile(kind).catch((err2) => {
+        statusEl.textContent = errorMessage(err2);
+      });
+    });
+    return button;
+  };
+  const copse = el(
+    "fieldset",
+    { class: "about-copse" },
+    el("legend", {}, "Copse"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Version ",
+      versionEl,
+      ". Copse is free software, licensed under the GNU Affero General Public License, version 3."
+    ),
+    uiActions(openButton("View licence", "copse"), { align: "start" })
+  );
+  const countEl = el("span", {}, "the open-source components");
+  const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
+  const thirdParty = el(
+    "fieldset",
+    { class: "about-third-party" },
+    el("legend", {}, "Open-source licences"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Copse is built with ",
+      countEl,
+      " listed below, each used under its own licence. Select one to read its licence. The Chromium and Node.js components inside the Electron runtime are listed separately."
+    ),
+    uiActions(
+      openButton("Open all licences", "third-party"),
+      openButton("Chromium and Node.js notices", "chromium"),
+      { align: "start" }
+    )
+  );
+  const filter = el("input", {
+    type: "search",
+    class: "about-licenses-filter",
+    placeholder: "Filter by name or licence",
+    "aria-label": "Filter open-source components",
+    autocomplete: "off",
+    spellcheck: "false"
+  });
+  const list = el("ul", { class: "about-licenses-list", "aria-label": "Open-source components" });
+  const listHost = el("div", { class: "about-licenses", hidden: true }, filter, statusEl, list);
+  let total2 = 0;
+  const applyFilter = () => {
+    const query = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row2 of Array.from(list.children)) {
+      if (!(row2 instanceof HTMLElement)) continue;
+      const match = query === "" || (row2.dataset["search"] ?? "").includes(query);
+      row2.hidden = !match;
+      if (match) shown++;
+    }
+    statusEl.textContent = query === "" ? `${String(total2)} components` : `${String(shown)} of ${String(total2)} components`;
+  };
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+  const render = (report) => {
+    total2 = report.components.length;
+    countEl.textContent = `the ${String(total2)} open-source components`;
+    list.replaceChildren(...report.components.map((c3) => componentRow(c3, report.texts)));
+    listHost.hidden = false;
+    applyFilter();
+  };
+  let loaded = null;
+  const refresh = () => {
+    loaded ??= api2.about.getInfo().then(
+      (info) => {
+        versionEl.textContent = info.version;
+        if (info.report) {
+          render(info.report);
+        } else {
+          statusEl.textContent = "This build has no licence report. Only a full build (pnpm build) generates one.";
+          listHost.hidden = false;
+        }
+      },
+      (err2) => {
+        loaded = null;
+        statusEl.textContent = errorMessage(err2);
+        listHost.hidden = false;
+      }
+    );
+    return loaded;
+  };
+  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  return { root, refresh };
+}
+var SHIPPED_AS_LABEL;
+var init_about_section = __esm({
+  "src/renderer/views/setup/about-section.ts"() {
+    init_errors4();
+    init_helpers();
+    init_ui();
+    SHIPPED_AS_LABEL = {
+      bundled: "compiled into Copse",
+      copied: "files copied into Copse",
+      node_modules: "packaged as a module",
+      vendored: "included with Copse"
+    };
+  }
+});
+
 // src/renderer/views/setup/ssh-workspace-section.ts
 function createSshWorkspaceSection(api2, opts = {}) {
   const hostList = el("div", { class: "ssh-host-list" });
@@ -61943,13 +62225,14 @@ var init_tool_permissions_panel = __esm({
 });
 
 // packages/agent/src/plugins/apple-development-plugin.ts
-var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, appleDevelopmentPlugin;
+var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
   "packages/agent/src/plugins/apple-development-plugin.ts"() {
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
     APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
+    APPLE_DEVELOPMENT_SUGGEST_SETTING_ID = "suggest-projects";
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -61974,6 +62257,14 @@ var init_apple_development_plugin = __esm({
             title: "Apple Development setup"
           }
         ],
+        settings: {
+          [APPLE_DEVELOPMENT_SUGGEST_SETTING_ID]: {
+            kind: "boolean",
+            title: "Suggest for Apple projects",
+            description: "When you open a project with an Xcode project or workspace, offer to turn on Apple development for it. This works while the plugin is off.",
+            default: true
+          }
+        },
         storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID }
       },
       {
@@ -62820,6 +63111,7 @@ function mountSettingsDialog(store2, api2) {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -62864,6 +63156,7 @@ function mountSettingsDialog(store2, api2) {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -63803,6 +64096,15 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
+          </section>
+
           <div class="settings-search-results" id="settings-search-results"></div>
 
           <p class="settings-search-empty" id="settings-search-empty" hidden></p>
@@ -63878,6 +64180,26 @@ function mountSettingsDialog(store2, api2) {
     cloudAgentOptions: qsRequired(overlay, "#settings-cloud-agent-options")
   });
   qsRequired(overlay, "#settings-providers-host").append(providersPanel.root);
+  const makerBlockList = el("div", { class: "model-maker-block-list" });
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        "label",
+        { class: "checkbox-label" },
+        el("input", { type: "checkbox", name: "blockedModelMakers", value: maker.id }),
+        maker.label
+      )
+    );
+  }
+  qsRequired(overlay, "#settings-model-maker-block-host").append(
+    el("h4", { class: "model-role-heading" }, "Blocked model makers"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run."
+    ),
+    makerBlockList
+  );
   const ghCliSection = createGhCliSection(api2);
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
   const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
@@ -63919,6 +64241,8 @@ function mountSettingsDialog(store2, api2) {
   };
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
+  const aboutSection = createAboutSection(api2);
+  qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
   qsRequired(overlay, "#mobile-companion-manage").addEventListener(
     "click",
     () => {
@@ -64143,6 +64467,7 @@ function mountSettingsDialog(store2, api2) {
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
         if (id === "permissions") void toolPermissionsPanel.refresh();
+        if (id === "about") void aboutSection.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
@@ -66088,6 +66413,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
+    if (openedSection === "about") void aboutSection.refresh();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -66126,6 +66452,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       });
       await refreshStage("form-fields", async () => {
         await loadSimpleFields(form, api2);
+        const blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+        for (const input2 of makerBlockList.querySelectorAll("input")) {
+          input2.checked = blockedMakers.some((maker) => maker === input2.value);
+        }
         syncDeveloperOnlySettings();
         wireSafetySliders(form);
         const savedWebOrigins = storedStringArray(
@@ -66266,6 +66596,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         if (dirtyFieldNames.has(name)) writes.push(api2.settings.set(name, value));
       };
       saveIfDirty("model", model);
+      saveIfDirty("blockedModelMakers", parseBlockedModelMakers(data.getAll("blockedModelMakers")));
       saveIfDirty("smallTasksModel", formDataString(data, "smallTasksModel").trim());
       saveIfDirty(
         "orchestrationWorkerModel",
@@ -66397,6 +66728,7 @@ var init_settings_dialog = __esm({
     init_ui_scale();
     init_app_icon_variants();
     init_lm_studio_defaults();
+    init_model_maker_block();
     init_remote_agent();
     init_advisor_strategy();
     init_orchestration_strategy();
@@ -66418,6 +66750,7 @@ var init_settings_dialog = __esm({
     init_model_routing_section();
     init_model_parameters_section();
     init_usage_section();
+    init_about_section();
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
@@ -66439,7 +66772,7 @@ var init_settings_dialog = __esm({
     init_commit_attribution();
     init_appearance();
     init_nullish2();
-    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
       off: "0%",
@@ -68749,6 +69082,33 @@ function automationSetupBtn(label, open2, icon = settingsIcon) {
   });
   return btn;
 }
+function startRunNow(api2, target) {
+  void api2.automations.runNow(target.project.id, target.scheduleId).then((event) => {
+    showToast(
+      event.disposition === "started" ? `Started \u201C${target.scheduleName}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${target.scheduleName}\u201D has reached its live worktree limit.` : `\u201C${target.scheduleName}\u201D is already pending or running.`
+    );
+  }).catch((error62) => {
+    showErrorToast(
+      `Could not run \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The run could not start")
+    );
+  });
+}
+function automationMenuEntries(api2, target, openSetup) {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: "Run now",
+      onSelect: () => {
+        startRunNow(api2, target);
+      }
+    },
+    {
+      label: "Automation setup\u2026",
+      onSelect: openSetup
+    }
+  ];
+}
 function mountProjectsPane(root, store2, api2) {
   const title = el("span", {}, "Projects");
   const searchToggle = el(
@@ -69460,6 +69820,16 @@ function mountProjectsPane(root, store2, api2) {
           // just to reach the editor.
           ...scheduleId ? [
             {
+              label: "Run now",
+              onSelect: () => {
+                startRunNow(api2, {
+                  project: project2,
+                  scheduleName: thread.automation?.scheduleName ?? thread.title,
+                  scheduleId
+                });
+              }
+            },
+            {
               label: "Automation setup\u2026",
               onSelect: () => {
                 openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
@@ -69551,6 +69921,18 @@ function mountProjectsPane(root, store2, api2) {
       toggle.addEventListener("click", () => {
         automationsSectionExpanded = !automationsSectionExpanded;
         render();
+      });
+      toggle.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          {
+            label: "New automation\u2026",
+            onSelect: () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            }
+          }
+        ]);
       });
       section.append(
         el(
@@ -69645,6 +70027,25 @@ function mountProjectsPane(root, store2, api2) {
               })
             )
           );
+          scheduleToggle.addEventListener("contextmenu", (e3) => {
+            e3.preventDefault();
+            e3.stopPropagation();
+            showContextMenu(
+              e3.clientX,
+              e3.clientY,
+              automationMenuEntries(
+                api2,
+                {
+                  project: project2,
+                  scheduleName,
+                  scheduleId
+                },
+                () => {
+                  openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+                }
+              )
+            );
+          });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
             const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
@@ -69969,6 +70370,7 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_ipc_error_message();
     init_confirm_dialog();
     init_toast();
     init_fork_thread3();
@@ -76903,6 +77305,261 @@ var init_todos_plugin = __esm({
   }
 });
 
+// src/renderer/views/apple-project-suggestion.ts
+function pluginCard() {
+  const mark2 = el("img", { src: "./brand-mark.svg", alt: "", width: "40", height: "40" });
+  const icon = el("span", { class: "plugin-icon plugin-icon-copse", "aria-hidden": "true" }, mark2);
+  const stability = el("span", { class: "plugin-badge plugin-badge-experimental" }, "experimental");
+  const nameLine = el(
+    "div",
+    { class: "plugin-row-name-line" },
+    el("span", { class: "plugin-name" }, PLUGIN_NAME),
+    stability
+  );
+  const title = el(
+    "div",
+    { class: "plugin-row-title" },
+    el("span", { class: "plugin-badge plugin-badge-first-party" }, "Copse"),
+    nameLine
+  );
+  return el(
+    "div",
+    { class: "plugin-row apple-suggestion-card" },
+    el("div", { class: "plugin-row-header" }, icon, title),
+    el("div", { class: "plugin-row-desc" }, PLUGIN_DESCRIPTION)
+  );
+}
+function showAppleSuggestionDialog(options) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({ id: "apple-suggestion-dialog" });
+  dialog2.setAttribute("aria-labelledby", "apple-suggestion-title");
+  const { projectName, pluginEnabled } = options;
+  const heading = el(
+    "h2",
+    { id: "apple-suggestion-title" },
+    pluginEnabled ? `Use ${PLUGIN_NAME} in ${projectName}?` : `Turn on ${PLUGIN_NAME}?`
+  );
+  const lede = el(
+    "p",
+    { class: "apple-suggestion-lede" },
+    pluginEnabled ? `${projectName} looks like an Apple project. ${PLUGIN_NAME} is already on \u2014 allow the agent to build, run, and debug this project too.` : `${projectName} looks like an Apple project. Copse has a plugin that lets the agent build, run, and debug it. Turning it on allows it for ${projectName}.`
+  );
+  const dontAsk = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost apple-suggestion-dont-ask" },
+    "Don't ask for this project"
+  );
+  const notNow = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary apple-suggestion-not-now" },
+    "Not now"
+  );
+  const accept = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary apple-suggestion-accept" },
+    pluginEnabled ? "Allow" : "Turn on"
+  );
+  const actions = el(
+    "div",
+    { class: "ui-actions apple-suggestion-actions" },
+    dontAsk,
+    el("span", { class: "apple-suggestion-spacer" }),
+    notNow,
+    accept
+  );
+  dialog2.append(heading, lede, pluginCard(), actions);
+  if (options.signal?.aborted) {
+    dialog2.remove();
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    let choice = "not-now";
+    let deferred = false;
+    let chosen = false;
+    const choose = (next) => {
+      choice = next;
+      chosen = true;
+      close();
+    };
+    const defer = () => {
+      if (chosen) return;
+      deferred = true;
+      close();
+    };
+    dontAsk.addEventListener("click", () => {
+      choose("dont-ask");
+    });
+    notNow.addEventListener("click", () => {
+      choose("not-now");
+    });
+    accept.addEventListener("click", () => {
+      choose("turn-on");
+    });
+    dialog2.addEventListener(
+      "close",
+      () => {
+        options.signal?.removeEventListener("abort", defer);
+        dialog2.remove();
+        resolve(deferred ? null : choice);
+      },
+      { once: true }
+    );
+    options.signal?.addEventListener("abort", defer, { once: true });
+    open2();
+    accept.focus();
+  });
+}
+function mountAppleProjectSuggestions(store2, api2, onAllowed) {
+  const text2 = el("span", { class: "apple-suggestion-notice-text" });
+  const acceptLink = el("button", { type: "button", class: "apple-suggestion-notice-accept" });
+  const dismissLink = el(
+    "button",
+    { type: "button", class: "apple-suggestion-notice-dismiss" },
+    "Dismiss"
+  );
+  const host = el(
+    "div",
+    { class: "apple-suggestion-notice", role: "status", hidden: true },
+    sparkleIcon("ui-icon"),
+    text2,
+    acceptLink,
+    dismissLink
+  );
+  const asked = /* @__PURE__ */ new Set();
+  const reminders = /* @__PURE__ */ new Map();
+  let pendingDialog = null;
+  const lifetime = new AbortController();
+  const projectName = (projectId) => {
+    const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
+    return project2 ? projectDisplayName(project2) : "This project";
+  };
+  const renderReminder = () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) {
+      host.hidden = true;
+      return;
+    }
+    const name = projectName(reminder.projectId);
+    text2.textContent = reminder.pluginEnabled ? `${PLUGIN_NAME} isn't allowed in ${name}.` : `${PLUGIN_NAME} is off for ${name}.`;
+    acceptLink.textContent = reminder.pluginEnabled ? "Allow" : "Turn on";
+    host.hidden = false;
+  };
+  const accept = async (projectId, pluginEnabled) => {
+    reminders.delete(projectId);
+    renderReminder();
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId || store2.getState().activeProjectId !== projectId) return;
+    try {
+      if (!pluginEnabled) {
+        await api2.plugins.setEnabled(APPLE_DEVELOPMENT_PLUGIN_ID, true);
+        store2.emit("settings_changed");
+      }
+      await api2.appleDevelopment.setEnrolled(projectId, threadId, true);
+      onAllowed();
+      const name = projectName(projectId);
+      showToast(
+        pluginEnabled ? `${PLUGIN_NAME} is allowed in ${name}.` : `${PLUGIN_NAME} is on and allowed in ${name}. Change this in Settings \u2192 Plugins.`
+      );
+    } catch (error62) {
+      showErrorToast(`Could not turn on ${PLUGIN_NAME}`, error62);
+    }
+  };
+  const answer = (projectId, choice) => {
+    void api2.appleDevelopment.answerSuggestion(projectId, choice).catch((error62) => {
+      showErrorToast("Could not save your answer", error62);
+    });
+  };
+  const offer = async (projectId, suggestion) => {
+    if (suggestion.offer === "reminder") {
+      reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled });
+      renderReminder();
+      return;
+    }
+    if (suggestion.offer !== "dialog") return;
+    const controller = new AbortController();
+    pendingDialog = { projectId, controller };
+    const choice = await showAppleSuggestionDialog({
+      projectName: projectName(projectId),
+      pluginEnabled: suggestion.pluginEnabled,
+      signal: controller.signal
+    });
+    if (lifetime.signal.aborted) return;
+    if (pendingDialog.controller === controller) pendingDialog = null;
+    if (choice === null) {
+      asked.delete(projectId);
+      void evaluate();
+      return;
+    }
+    if (choice === "turn-on") await accept(projectId, suggestion.pluginEnabled);
+    else answer(projectId, choice === "dont-ask" ? "dismissed" : "snoozed");
+  };
+  const evaluate = async () => {
+    renderReminder();
+    if (pendingDialog) return;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    if (!activeProjectId || !activeThreadId || asked.has(activeProjectId)) return;
+    asked.add(activeProjectId);
+    let suggestion;
+    try {
+      suggestion = await api2.appleDevelopment.suggestion(activeProjectId);
+    } catch {
+      asked.delete(activeProjectId);
+      return;
+    }
+    if (lifetime.signal.aborted) return;
+    if (store2.getState().activeProjectId !== activeProjectId) {
+      asked.delete(activeProjectId);
+      return;
+    }
+    await offer(activeProjectId, suggestion);
+  };
+  acceptLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
+  });
+  dismissLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) return;
+    answer(reminder.projectId, "dismissed");
+    reminders.delete(reminder.projectId);
+    renderReminder();
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    const activeProjectId = store2.getState().activeProjectId;
+    if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
+      pendingDialog.controller.abort();
+    }
+    void evaluate();
+  });
+  void evaluate();
+  return {
+    element: host,
+    destroy: () => {
+      lifetime.abort();
+      unsubscribeWorkspace();
+      pendingDialog?.controller.abort();
+      pendingDialog = null;
+      reminders.clear();
+      host.remove();
+    }
+  };
+}
+var PLUGIN_NAME, PLUGIN_DESCRIPTION;
+var init_apple_project_suggestion = __esm({
+  "src/renderer/views/apple-project-suggestion.ts"() {
+    init_apple_development_plugin();
+    init_projects();
+    init_helpers();
+    init_icons();
+    init_dialog_shell();
+    init_toast();
+    PLUGIN_NAME = "Apple development";
+    PLUGIN_DESCRIPTION = "Build, test, and run local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.";
+  }
+});
+
 // src/renderer/views/retry-button.ts
 function createRetryButton(onRetry) {
   const button = el(
@@ -80572,7 +81229,18 @@ function mountConversation(root, store2, api2) {
     },
     arrowDownIcon("ui-icon")
   );
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn);
+  const appleSuggestions = mountAppleProjectSuggestions(
+    store2,
+    api2,
+    () => appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"))
+  );
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn
+  );
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
@@ -82107,6 +82775,7 @@ function mountConversation(root, store2, api2) {
     unbindWorkspaceLinks();
     unbindBrowserLinks();
     unbindCodeBlockRuns();
+    appleSuggestions.destroy();
     roadmapOrigin.destroy();
     unsubs.forEach((u2) => {
       u2();
@@ -82194,6 +82863,7 @@ var init_conversation = __esm({
     init_plugin_panel2();
     init_todos_plugin();
     init_apple_development_panel();
+    init_apple_project_suggestion();
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
