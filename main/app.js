@@ -62145,7 +62145,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     );
     const headingActions = el("div", { class: "apple-development-heading-actions" });
     panel.append(el("div", { class: "apple-development-heading" }, title, status, headingActions));
-    if (options.allowEnrollment && options.pluginEnabled !== false) {
+    if (options.allowEnrollment && options.pluginEnabled !== false && (state.supportedHost || state.enrolled)) {
       const enrollment = el(
         "button",
         { type: "button", class: "btn btn-secondary" },
@@ -131778,6 +131778,16 @@ var init_simulator_desktop_view = __esm({
   }
 });
 
+// src/shared/desktop-viewer.ts
+var DESKTOP_VIEWER_SETTING_LOCATION, DESKTOP_VIEWER_OFF_TITLE, DESKTOP_VIEWER_OFF_DETAIL;
+var init_desktop_viewer = __esm({
+  "src/shared/desktop-viewer.ts"() {
+    DESKTOP_VIEWER_SETTING_LOCATION = "Settings \u2192 Experimental \u2192 Remote desktop viewer";
+    DESKTOP_VIEWER_OFF_TITLE = "Desktop viewer is off";
+    DESKTOP_VIEWER_OFF_DETAIL = `Turn on ${DESKTOP_VIEWER_SETTING_LOCATION} to watch the Simulator here.`;
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -132136,11 +132146,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
-  const empty = el(
-    "div",
-    { class: "panel-empty vnc-empty" },
-    "Choose this machine, a nearby device, another address, or a saved SSH machine."
-  );
+  const empty = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty);
   let rfb = null;
   let channel = null;
@@ -132380,7 +132386,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hideAuthentication();
     resetControlState();
     screen.replaceChildren();
-    empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+    empty.textContent = CHOOSE_MACHINE_TEXT;
     setSessionUi(false);
     setStatus(title, kind, detail);
     void refreshSavedLogin();
@@ -132607,7 +132613,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
       note.hidden = true;
     } else if (!channel) {
-      empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+      empty.textContent = CHOOSE_MACHINE_TEXT;
       note.hidden = false;
     }
     const nearby = selectedNearbyServer();
@@ -132715,6 +132721,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function discoverSelectedMachine() {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
@@ -132738,6 +132745,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
   }
   async function discoverNearby() {
+    if (await stoppedByViewerOff()) return;
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
@@ -132769,6 +132777,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    if (!await desktopViewerEnabled()) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff();
+      return;
+    }
     let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
@@ -132783,6 +132795,29 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
     if (discoveryError && !simulatorSessionId && !channel)
       setStatus("Couldn\u2019t discover local emulators", "error", discoveryError);
+  }
+  async function desktopViewerEnabled() {
+    return await api2.settings.get("vncEnabled").catch(() => false) === true;
+  }
+  async function stoppedByViewerOff() {
+    if (await desktopViewerEnabled()) return false;
+    if (!simulatorSessionId && !channel) showDesktopViewerOff();
+    return true;
+  }
+  function showDesktopViewerOff() {
+    setStatus(DESKTOP_VIEWER_OFF_TITLE, "error", DESKTOP_VIEWER_OFF_DETAIL);
+    empty.textContent = `${DESKTOP_VIEWER_OFF_TITLE}. ${DESKTOP_VIEWER_OFF_DETAIL}`;
+    nearbyFeedback.hidden = true;
+  }
+  function desktopViewerOffShown() {
+    return !status.hidden && statusTitle.textContent === DESKTOP_VIEWER_OFF_TITLE;
+  }
+  async function recoverDesktopViewer() {
+    if (!desktopViewerOffShown() || !await desktopViewerEnabled()) return;
+    if (!desktopViewerOffShown()) return;
+    status.hidden = true;
+    empty.textContent = CHOOSE_MACHINE_TEXT;
+    await loadMachines();
   }
   async function connectSimulator(device, immediateControl = false) {
     if (device.unavailableReason) {
@@ -132852,6 +132887,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function showSimulatorFromAgent(udid, presentation) {
     openRightPanel(store2, "vnc");
+    if (!await desktopViewerEnabled()) {
+      showDesktopViewerOff();
+      return;
+    }
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`;
     if (simulatorSessionId && machineSelect.value === machine) {
       if (presentation?.control) setControlEnabled(true);
@@ -132878,6 +132917,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await connectSimulator(device, presentation?.control === true);
   }
   async function connect() {
+    if (await stoppedByViewerOff()) return;
     const simulator = selectedSimulator();
     if (simulator) {
       await connectSimulator(simulator);
@@ -133237,6 +133277,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   });
   const stopSettings = store2.on("settings_changed", () => {
     void refreshSshHosts();
+    void recoverDesktopViewer();
   });
   setSessionUi(false);
   portInput.value = "5901";
@@ -133469,7 +133510,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
+var CHOOSE_MACHINE_TEXT, LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -133485,6 +133526,8 @@ var init_vnc_pane = __esm({
     init_toast();
     init_simulator_desktop_view();
     init_panels();
+    init_desktop_viewer();
+    CHOOSE_MACHINE_TEXT = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
     LOCAL_MACHINE = "local";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
