@@ -37,7 +37,7 @@ function assertNoStatusFill(css: string, selector: string): void {
   for (const body of bodiesOf(css, selector)) {
     assert.doesNotMatch(
       body,
-      /background(?:-color)?\s*:[^;{}]*var\(--(?:success|warning|danger|error|info|important)\b/i,
+      /background(?:-(?:color|image))?\s*:[^;{}]*var\(--(?:success|warning|danger|error|info|important)\b/i,
       `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
     )
   }
@@ -114,5 +114,16 @@ describe('status colours come from tokens (#3065)', () => {
         `expected --${token} to be rejected`,
       )
     }
+  })
+
+  it('rejects semantic status gradients in background-image declarations', () => {
+    const css = `
+      .diff-accept-btn {
+        background-image: linear-gradient(var(--success), transparent);
+      }
+    `
+    assert.throws(() => {
+      assertNoStatusFill(css, '.diff-accept-btn')
+    }, /must not be/)
   })
 })
