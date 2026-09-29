@@ -43,8 +43,8 @@ overrides:
   hono: 4.13.5
   ip-address: 10.3.1
   extract-zip: file:packages/extract-zip
-  undici@6: 6.28.0
-  undici@7: 7.29.0
+  undici@6: 6.28.1
+  undici@7: 7.29.1
 
 # Dependabot's `cooldown.default-days: 7` (.github/dependabot.yml) runs pnpm
 # with --config.minimumReleaseAge=10080, which makes pnpm refuse to resolve
