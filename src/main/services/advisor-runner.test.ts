@@ -298,4 +298,20 @@ describe('resolveAdvisorModelForGating', () => {
     assert.equal(resolved, 'auto:best-intellect')
     assert.equal(advisorAddsLift('claude-opus-4-8', resolved), true)
   })
+
+  it('does not hold the turn when discovery misses the deadline (keeps the tool)', async () => {
+    // A cold discovery cache: expansion would eventually name the executor itself.
+    let finishDiscovery: (id: string) => void = () => {}
+    const slowDiscovery = new Promise<string>((done) => {
+      finishDiscovery = done
+    })
+    const resolved = await resolveAdvisorModelForGating(
+      'auto:best-intellect',
+      () => slowDiscovery,
+      5,
+    )
+    assert.equal(resolved, 'auto:best-intellect')
+    assert.equal(advisorAddsLift('claude-opus-4-8', resolved), true)
+    finishDiscovery('claude-opus-4-8')
+  })
 })

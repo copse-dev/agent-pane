@@ -47,20 +47,36 @@ export function resolveAdvisorModelId(): string {
 }
 
 /**
+ * How long a turn waits for the advisor selection to expand before building its
+ * toolset. Expansion reads cached model discovery; this bounds the cold-cache
+ * case (LM Studio, OpenRouter and plan-usage fetches) so gating a tool the turn
+ * may never call cannot hold up its first token.
+ */
+export const ADVISOR_GATING_DEADLINE_MS = 250
+
+/**
  * The concrete model the advisor would consult right now, for grading the
  * pairing before a turn (`advisorAddsLift`). Expands a dynamic selection the
  * same way the consult does; a pinned id passes through. When expansion fails
- * the selection comes back unexpanded, which grades as "keep offering the
- * tool" — the conservative outcome.
+ * or misses `deadlineMs`, the selection comes back unexpanded, which grades as
+ * "keep offering the tool" — the conservative outcome. A late expansion keeps
+ * running, so it still warms the discovery caches for the next turn.
  */
 export async function resolveAdvisorModelForGating(
   selection: string = resolveAdvisorModelId(),
   resolve: (value: string) => Promise<string> = resolveDynamicModelId,
+  deadlineMs: number = ADVISOR_GATING_DEADLINE_MS,
 ): Promise<string> {
+  let timer: NodeJS.Timeout | undefined
+  const deadline = new Promise<string>((done) => {
+    timer = setTimeout(() => {
+      done(selection)
+    }, deadlineMs)
+  })
   try {
-    return await resolve(selection)
-  } catch {
-    return selection
+    return await Promise.race([resolve(selection).catch(() => selection), deadline])
+  } finally {
+    clearTimeout(timer)
   }
 }
 
