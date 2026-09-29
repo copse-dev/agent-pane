@@ -92,6 +92,22 @@
     "label": "Chat layout styling"
   },
   {
+    "id": "concise-thread",
+    "label": "Concise thread view for a capable model"
+  },
+  {
+    "id": "concise-thread-full",
+    "label": "Full thread view for a model below the concise gate"
+  },
+  {
+    "id": "concise-thread-working",
+    "label": "Concise thread view while a capable model works"
+  },
+  {
+    "id": "concise-thread-disabled",
+    "label": "Full thread view for a capable model while the experiment is off"
+  },
+  {
     "id": "roadmap-chat-min-width",
     "label": "Roadmap side panel minimum chat width"
   }
