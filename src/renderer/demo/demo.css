@@ -48,9 +48,9 @@ html.is-demo-pane-expanded #pane-chat {
    current prompt sticky here covers the answer once the rail grows beyond the
    compact-chat container threshold. */
 html.is-demo-pane-expanded .messages-list > .msg-user {
-  position: relative;
-  top: auto;
-  z-index: auto;
+  position: relative !important;
+  top: auto !important;
+  z-index: auto !important;
 }
 
 html.is-demo-pane-expanded #resizer-files {
