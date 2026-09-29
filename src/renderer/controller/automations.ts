@@ -18,6 +18,8 @@ export interface AutomationControllerApi {
   threads: Pick<ApiClient['threads'], 'loadProject'>
 }
 
+export const AUTOMATION_START_RETRY_MS = 15_000
+
 function startFailureDetail(error: unknown): string {
   return ipcErrorMessage(error, 'the checkout could not be prepared')
 }
@@ -40,11 +42,49 @@ export function attachAutomationController(
   api: AutomationControllerApi,
 ): () => void {
   const starting = new Set<string>()
+  const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const retrying = new Set<string>()
+  const retryPending = (threadId: string): void => {
+    startThread(threadId).catch((error: unknown) => {
+      console.error('[automations] Failed to retry scheduled task:', error)
+    })
+  }
+
+  function retryKey(projectId: string, threadId: string): string {
+    return JSON.stringify([projectId, threadId])
+  }
+
+  function clearRetry(projectId: string, threadId: string): void {
+    const key = retryKey(projectId, threadId)
+    const timer = retryTimers.get(key)
+    if (timer !== undefined) clearTimeout(timer)
+    retryTimers.delete(key)
+    retrying.delete(key)
+  }
+
+  function scheduleRetry(projectId: string, threadId: string): boolean {
+    const key = retryKey(projectId, threadId)
+    const firstDenial = !retrying.has(key)
+    retrying.add(key)
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key)
+        if (store.getState().activeProjectId === projectId) retryPending(threadId)
+      }, AUTOMATION_START_RETRY_MS)
+      retryTimers.set(key, timer)
+    }
+    return firstDenial
+  }
 
   async function startThread(threadId: string): Promise<void> {
     const initial = getThreadById(store, threadId)
     const projectId = store.getState().activeProjectId
-    if (!projectId || !initial || !isPendingAutomation(initial) || starting.has(threadId)) return
+    if (!projectId) return
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId)
+      return
+    }
+    if (starting.has(threadId)) return
 
     const prompt = initial.draftPrompt?.trim()
     if (!prompt) return
@@ -64,12 +104,17 @@ export function attachAutomationController(
       if (store.getState().activeProjectId !== projectId) return
       const admission = await api.automations.canStart(projectId, threadId)
       if (!admission.allowed) {
-        addMessage(
-          store,
-          threadId,
-          'error',
-          admission.reason ?? 'This automation run is no longer eligible.',
-        )
+        let shouldRecord = true
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId)
+        else clearRetry(projectId, threadId)
+        if (shouldRecord) {
+          addMessage(
+            store,
+            threadId,
+            'error',
+            admission.reason ?? 'This automation run is no longer eligible.',
+          )
+        }
         if (!admission.retryable) setThreadDraftPrompt(store, threadId, '')
         return
       }
@@ -86,18 +131,27 @@ export function attachAutomationController(
       }
 
       const current = getThreadById(store, threadId)
-      if (!current || !isPendingAutomation(current)) return
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId)
+        return
+      }
       const beforeDispatch = await api.automations.canStart(projectId, threadId)
       if (!beforeDispatch.allowed) {
-        addMessage(
-          store,
-          threadId,
-          'error',
-          beforeDispatch.reason ?? 'This automation run is no longer eligible.',
-        )
+        let shouldRecord = true
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId)
+        else clearRetry(projectId, threadId)
+        if (shouldRecord) {
+          addMessage(
+            store,
+            threadId,
+            'error',
+            beforeDispatch.reason ?? 'This automation run is no longer eligible.',
+          )
+        }
         if (!beforeDispatch.retryable) setThreadDraftPrompt(store, threadId, '')
         return
       }
+      clearRetry(projectId, threadId)
       addMessage(store, threadId, 'user', prompt)
       setThreadDraftPrompt(store, threadId, '')
       startAutomationTurnTree(store, threadId)
@@ -156,6 +210,9 @@ export function attachAutomationController(
   startPendingForActiveProject()
 
   return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer)
+    retryTimers.clear()
+    retrying.clear()
     unsubscribeTrigger()
     unsubscribeWorkspace()
   }
