@@ -595,6 +595,49 @@ describe('createExtraCloudProvider Responses transport', () => {
       { type: 'web_search' },
     ])
   })
+
+  it('sends the configured output ceiling to a custom Responses endpoint', async () => {
+    const responsesProvider: ExtraProvider = {
+      id: 'acme',
+      label: 'Acme',
+      prefix: 'acme:',
+      baseUrl: 'https://api.acme.example/v1',
+      apiStyle: 'responses',
+      builtin: false,
+      local: false,
+      keyLabel: 'Key',
+      keyPlaceholder: '…',
+      keyHint: '',
+      fallbackContextWindow: 128_000,
+      models: [],
+    }
+    const provider = createExtraCloudProvider(
+      responsesProvider,
+      'some-model',
+      'key',
+      ['api.acme.example'],
+      { maxOutputTokens: 2_048 },
+    )
+    const captured: { request?: { max_output_tokens?: number } } = {}
+    Object.defineProperty(provider, 'client', {
+      value: {
+        responses: {
+          create: (request: {
+            max_output_tokens?: number
+          }): AsyncIterable<{ type: string; delta: string }> => {
+            captured.request = request
+            return oneTextDelta()
+          },
+        },
+      },
+      configurable: true,
+    })
+    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+
+    assert.equal(captured.request?.max_output_tokens, 2_048)
+  })
 })
 
 describe('tuned model parameters reach the provider', () => {

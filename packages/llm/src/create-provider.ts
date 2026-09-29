@@ -327,16 +327,15 @@ export function createExtraCloudProvider(
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   const cacheKeyOpt = !provider.local && promptCacheKey ? { promptCacheKey } : {}
   if (provider.apiStyle === 'responses') {
-    // No output ceiling on this transport: the cards we hold were written
-    // against Chat Completions endpoints, and this path has no drop-and-retry
-    // for a ceiling the server rejects. The server's own default stands.
     const { tools, ...extraBody } = provider.extraBody ?? {}
     const serverTools: Tool[] = Array.isArray(tools) ? tools.filter(isServerSideTool) : []
+    const ceiling = resolvedOutputCeiling(model, params)
     return new ResponsesProvider(model, {
       baseURL: provider.baseUrl,
       apiKey,
       serverTools,
       params,
+      ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
       ...cacheKeyOpt,
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })
