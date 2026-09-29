@@ -51,6 +51,14 @@ const PANES = [
     rowProbe: null,
     minImages: 0,
   },
+  {
+    mode: 'roadmap',
+    openLabel: 'Open roadmap',
+    listHost: '#roadmap-host',
+    probe: '#roadmap-host .roadmap-list',
+    rowProbe: '#roadmap-host .roadmap-list-empty',
+    minImages: 0,
+  },
 ] as const
 
 describe('Pane pop-out (mock gh)', () => {
@@ -61,7 +69,7 @@ describe('Pane pop-out (mock gh)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    seedPrPanelChatFixture(process.cwd())
+    seedPrPanelChatFixture(process.cwd(), { roadmapPlansEnabled: true })
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
@@ -184,6 +192,11 @@ describe('Pane pop-out (mock gh)', () => {
           timeout: 30_000,
           timeoutMsg: 'expected the popped-out PR list to load its own data',
         })
+      }
+
+      if (pane.mode === 'roadmap') {
+        await expect(await $('.roadmap-list-empty')).toHaveText('No roadmap items yet')
+        await expect(await $('.memories-error')).not.toBeDisplayed()
       }
 
       // The probe above proves the list element exists, not that it has rows, and
