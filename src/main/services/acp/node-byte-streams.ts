@@ -17,16 +17,25 @@ export function nodeReadableStream(source: Readable): ReadableStream<Uint8Array>
         if (settled) return
         if (typeof chunk === 'string') controller.enqueue(Buffer.from(chunk))
         else if (chunk instanceof Uint8Array) controller.enqueue(chunk)
-        else settle(() => controller.error(new TypeError('ACP stream emitted a non-byte chunk')))
+        else
+          settle(() => {
+            controller.error(new TypeError('ACP stream emitted a non-byte chunk'))
+          })
       })
       source.once('end', () => {
-        settle(() => controller.close())
+        settle(() => {
+          controller.close()
+        })
       })
       source.once('error', (error: unknown) => {
-        settle(() => controller.error(error))
+        settle(() => {
+          controller.error(error)
+        })
       })
       source.once('close', () => {
-        settle(() => controller.error(new Error('ACP stream closed before it ended')))
+        settle(() => {
+          controller.error(new Error('ACP stream closed before it ended'))
+        })
       })
     },
     cancel(): void {
