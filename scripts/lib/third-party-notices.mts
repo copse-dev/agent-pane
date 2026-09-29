@@ -113,6 +113,55 @@ function licenseIds(expression: string): string[] {
     .filter((id) => id.length > 0)
 }
 
+function stripOuterParentheses(expression: string): string {
+  let stripped = expression.trim()
+  while (stripped.startsWith('(') && stripped.endsWith(')')) {
+    let depth = 0
+    let wrapsWholeExpression = true
+    for (let index = 0; index < stripped.length; index += 1) {
+      const character = stripped[index]
+      if (character === '(') depth += 1
+      if (character === ')') depth -= 1
+      if (depth === 0 && index < stripped.length - 1) {
+        wrapsWholeExpression = false
+        break
+      }
+    }
+    if (!wrapsWholeExpression || depth !== 0) break
+    stripped = stripped.slice(1, -1).trim()
+  }
+  return stripped
+}
+
+/** Single-license alternatives that can be named by the notice's election sentence. */
+function electableLicenseIds(expression: string): string[] {
+  const stripped = stripOuterParentheses(expression)
+  const alternatives: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < stripped.length; index += 1) {
+    const character = stripped[index]
+    if (character === '(') depth += 1
+    if (character === ')') depth -= 1
+    if (
+      depth === 0 &&
+      stripped.slice(index, index + 2).toUpperCase() === 'OR' &&
+      /\s/.test(stripped[index - 1] ?? '') &&
+      /\s/.test(stripped[index + 2] ?? '')
+    ) {
+      alternatives.push(stripped.slice(start, index))
+      start = index + 2
+      index += 1
+    }
+  }
+  alternatives.push(stripped.slice(start))
+
+  return alternatives.flatMap((alternative) => {
+    const match = /^([\w.+-]+)(?:\s+WITH\s+[\w.+-]+)?$/i.exec(stripOuterParentheses(alternative))
+    return match?.[1] === undefined ? [] : [match[1]]
+  })
+}
+
 function electedLicenseId(body: string): string | null {
   return ELECTION_RE.exec(body)?.[1] ?? null
 }
@@ -194,7 +243,7 @@ export function findNoticeProblems(
           subject: `${name}@${component.version}`,
           problem: `is dual-licensed (${license}); its entry must say which licence Copse elects`,
         })
-      } else if (!licenseIds(license).includes(election)) {
+      } else if (!electableLicenseIds(license).includes(election)) {
         problems.push({
           subject: `${name}@${component.version}`,
           problem: `entry elects ${election}, which is not an option in ${license}`,
