@@ -68220,10 +68220,13 @@ function stripConversationalLead(value) {
       }
     }
   }
-  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
+  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(
+    /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
+    ""
+  ).replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
 }
 function vagueClause(value) {
-  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?\s*[.!?]*$/i.test(
+  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
     value.trim()
   );
 }
@@ -68245,7 +68248,7 @@ function fallbackThreadTitle(input2) {
     const clause = stripConversationalLead(stripDecoration(rawClause));
     if (!clause || vagueClause(clause)) continue;
     const title = compactTitle(clause, true);
-    if (title) return title;
+    if (title && !vagueClause(title)) return title;
   }
   const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
   return fallback && !vagueClause(fallback) ? fallback : "New Thread";
