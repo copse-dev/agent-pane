@@ -40,18 +40,18 @@ findings, and — as the map shows — nine of them belonged inside something we
 
 ## Where each finding now lives
 
-| ID   | Finding                                                        | Home                                                                                                                                                    |
-| ---- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G-01 | A LAN machine cannot serve models; approval is unreachable     | **#1572** (decision); [`provider-host-allowlist.md`](provider-host-allowlist.md) §5.4, [`execution-runtime-security.md`](execution-runtime-security.md) |
-| G-02 | Hardware class is declared, never measured                     | [`model-roles-and-defaults.md`](model-roles-and-defaults.md) §3; fit-before-download on #1246                                                           |
-| G-03 | Plan steps carry no dependencies, effort, or todo link         | **#1570**; [`plan-mode-and-rewind.md`](plan-mode-and-rewind.md) schema section                                                                          |
-| G-04 | Todo checks resolve against the workspace, not the thread root | **#1571** (defect, unverified; #1439's family)                                                                                                          |
-| G-05 | Voice absent everywhere                                        | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) → Missing                                                                                |
-| G-06 | Memories lack captured sources and user-directed querying      | [`knowledge-store.md`](knowledge-store.md) Phase 4                                                                                                      |
-| G-07 | No named agent profile                                         | **#1573** (R-05, now filed)                                                                                                                             |
-| G-08 | Non-coding work is unmeasured                                  | [`industry-benchmarks.md`](industry-benchmarks.md) — recorded as a scope decision                                                                       |
-| G-09 | Off-desktop reach has issues but no decision                   | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) R-10 (#802 #659 #1382)                                                                   |
-| G-10 | Single-user by construction                                    | [`privacy-data-flow.md`](../privacy-data-flow.md) — recorded as a non-goal                                                                              |
+| ID   | Finding                                                        | Home                                                                                                                                                                           |
+| ---- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G-01 | A LAN machine cannot serve models; approval is unreachable     | **Decided: no ordinary-provider exception**; [`provider-host-allowlist.md`](provider-host-allowlist.md) §5.4, [`execution-runtime-security.md`](execution-runtime-security.md) |
+| G-02 | Hardware class is declared, never measured                     | [`model-roles-and-defaults.md`](model-roles-and-defaults.md) §3; fit-before-download on #1246                                                                                  |
+| G-03 | Plan steps carry no dependencies, effort, or todo link         | **#1570**; [`plan-mode-and-rewind.md`](plan-mode-and-rewind.md) schema section                                                                                                 |
+| G-04 | Todo checks resolve against the workspace, not the thread root | **#1571** (defect, unverified; #1439's family)                                                                                                                                 |
+| G-05 | Voice absent everywhere                                        | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) → Missing                                                                                                       |
+| G-06 | Memories lack captured sources and user-directed querying      | [`knowledge-store.md`](knowledge-store.md) Phase 4                                                                                                                             |
+| G-07 | No named agent profile                                         | **#1573** (R-05, now filed)                                                                                                                                                    |
+| G-08 | Non-coding work is unmeasured                                  | [`industry-benchmarks.md`](industry-benchmarks.md) — recorded as a scope decision                                                                                              |
+| G-09 | Off-desktop reach has issues but no decision                   | [`user-control-surface-gaps.md`](user-control-surface-gaps.md) R-10 (#802 #659 #1382)                                                                                          |
+| G-10 | Single-user by construction                                    | [`privacy-data-flow.md`](../privacy-data-flow.md) — recorded as a non-goal                                                                                                     |
 
 Four new issues and eight amended documents — seven plans plus
 [`privacy-data-flow.md`](../privacy-data-flow.md), which is where the single-user non-goal
@@ -150,9 +150,10 @@ Three findings were closed as **decisions rather than work**: voice (G-05), doma
 written down in a place where "we are not doing this" is legible. From outside, an absence and
 a decision look identical, and only one of them is a position.
 
-Two findings remain genuinely open questions rather than tasks: whether a LAN peer fits the
-threat model (#1572) and whether a named profile is a settings feature or a change to what a
-thread is (#1573). Both are cheap to decide and expensive to answer accidentally.
+One finding remains a genuinely open question rather than a task: whether a named profile is a
+settings feature or a change to what a thread is (#1573). G-01 is now decided: LAN inference is
+not an ordinary provider-host approval exception; a future implementation would require an
+authenticated paired-peer design.
 
 One caveat on priority, since an audit invites being read as a work queue: nothing here
 outranks the surface `mission-control.md` specifies. This document found what nobody had

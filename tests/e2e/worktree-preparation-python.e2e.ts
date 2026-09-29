@@ -50,4 +50,31 @@ describe('automatic Python preparation approval', () => {
     await saveElementScreenshot('#approval-dialog', 'worktree-preparation-python.png')
     await dialog.$('.approval-reject').click()
   })
+
+  it('shows exact hash and wheel-only protections for automatic pip preparation', async () => {
+    rmSync(join(root, 'uv.lock'))
+    rmSync(join(root, 'pyproject.toml'))
+    writeFileSync(
+      join(root, 'requirements.lock'),
+      `example-package==1.2.3 --hash=sha256:${'a'.repeat(64)}\n`,
+    )
+    const planFingerprint = readWorktreePreparationPlan(root).fingerprint
+    await prepareMockToolTurn(
+      'Prepare this hash-locked Python worktree.',
+      { name: 'prepare_worktree', args: { planFingerprint, offline: true } },
+      'The worktree preparation request was declined.',
+    )
+    await $('.submit-btn').click()
+    const dialog = $('#approval-dialog')
+    await dialog.waitForDisplayed({ timeout: 30_000 })
+    const body = await dialog.$('.approval-body').getText()
+    expect(body).toContain('python3')
+    expect(body).toContain('--require-hashes')
+    expect(body).toContain('--only-binary=:all:')
+    const advice = await dialog.$('.approval-advice').getText()
+    expect(advice).toContain('exact SHA-256-locked wheels only')
+    expect(advice).toContain('source builds and package build scripts are disabled')
+    await saveElementScreenshot('#approval-dialog', 'worktree-preparation-pip.png')
+    await dialog.$('.approval-reject').click()
+  })
 })

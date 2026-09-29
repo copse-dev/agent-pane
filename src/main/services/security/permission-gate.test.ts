@@ -757,7 +757,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let approvalBody = ''
     let approvalSubject = ''
@@ -776,7 +776,9 @@ describe('ensureToolPermitted', () => {
         false,
       )
       assert.equal(approvalBody, 'printf hello')
-      assert.match(approvalFooter, /network access is temporarily widened/i)
+      assert.match(approvalFooter, /network allowlist is temporarily widened/i)
+      assert.match(approvalFooter, /this command could inherit that access/i)
+      assert.match(approvalFooter, /before running them at the same time/i)
       assert.equal(approvalSubject, SHELL_DECISION_SUBJECT)
       // The cause is what makes this prompt countable in the D0/U0 report: an
       // artifact of ASRT's process-global allowlist, which a per-runtime
@@ -793,7 +795,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let approvalFooter = ''
     setApprovalHandler(async (request) => {
@@ -802,7 +804,8 @@ describe('ensureToolPermitted', () => {
     })
     try {
       await ensureToolPermitted({ toolName: 'run_shell', args: { command: 'printf hello' } })
-      assert.match(approvalFooter, /widened for ACP agent: codex/)
+      assert.match(approvalFooter, /widened for agent: codex/)
+      assert.match(approvalFooter, /on macOS, this command could inherit that access/)
     } finally {
       setApprovalHandler(null)
       release()
@@ -819,7 +822,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -848,7 +851,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     let approvalCause: string | undefined
     setApprovalHandler(async (request) => {
@@ -877,7 +880,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -907,7 +910,7 @@ describe('ensureToolPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
@@ -1348,7 +1351,7 @@ describe('ensureTerminalPermitted', () => {
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: vendor-agent',
+      label: 'agent: vendor-agent',
     })
     let prompted = false
     setApprovalHandler(async () => {
