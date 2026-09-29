@@ -690,7 +690,10 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     // No local model classifier in unit tests: the gate's own policy decides.
     await setSetting('safetyClassifierEnabled', false)
     storageSet('activeProjectId', 'p1')
-    storageSet('projects', [{ id: 'p1', path: REMOTE_ROOT, sshHost: 'dev' }])
+    storageSet('projects', [
+      { id: 'p1', path: REMOTE_ROOT, sshHost: 'dev' },
+      { id: 'p-local', path: LOCAL_ROOT },
+    ])
     setWorkspaceRootForTest(REMOTE_ROOT)
     prompts = []
     setApprovalHandler((req) => {
@@ -785,11 +788,17 @@ describe('remote ACP agents are never treated as sandboxed', () => {
     root: string,
   ): Promise<{ prompted: boolean; approved: boolean }> {
     const before = prompts.length
-    const response = await respondToPermissionForTest(
-      { id: agentId, title: 'Agent', ...posture },
-      req,
-      root,
-      root,
+    const response = await runWithThreadExecutionContext(
+      {
+        projectId: posture.remote ? 'p1' : 'p-local',
+        threadId: posture.remote ? 't-remote' : 't-local',
+        projectRoot: root,
+        root,
+        checkoutMode: 'shared',
+        branch: null,
+      },
+      () =>
+        respondToPermissionForTest({ id: agentId, title: 'Agent', ...posture }, req, root, root),
     )
     return {
       prompted: prompts.length > before,
