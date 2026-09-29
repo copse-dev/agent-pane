@@ -3,7 +3,7 @@ import { existsSync, renameSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
   getThreadExecutionContext,
-  wasThreadContextProjectPersisted,
+  wasThreadContextResolvedAt,
   type ThreadExecutionContext,
 } from '../thread-execution-context.ts'
 import { getActiveProjectId, getActiveProjectRoot, getProjectRoot } from '../workspace.ts'
@@ -79,12 +79,12 @@ export function threadProjectStoreScope(
   context: Pick<ThreadExecutionContext, 'projectId' | 'projectRoot'>,
 ): ProjectStoreScope {
   const currentRoot = getProjectRoot(context.projectId)
-  if (currentRoot !== null) {
-    rememberPersistedProjectRoot(context.projectId, currentRoot)
-  } else if (wasThreadContextProjectPersisted(context.projectId)) {
+  if (currentRoot !== null) rememberPersistedProjectRoot(context.projectId, currentRoot)
+  if (wasThreadContextResolvedAt(context.projectId, context.projectRoot)) {
     // Context resolution already verified this id/root pair while the project
-    // was persisted. Keep that pairing after removal so first-use migration
-    // can still adopt this project's legacy path-hash directory.
+    // was persisted there. Keep that pairing after the project is removed or
+    // relocated, so first-use migration can still adopt the legacy path-hash
+    // directory of the root this turn started in.
     rememberPersistedProjectRoot(context.projectId, context.projectRoot)
   }
   const persisted = persistedProjectRoots.has(context.projectId)
