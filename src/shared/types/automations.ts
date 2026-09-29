@@ -55,6 +55,36 @@ export interface AutomationScheduleInput {
   permissions?: AutomationPermission[]
 }
 
+/** Versioned event workflow. Existing cron schedules keep their stored shape until migrated. */
+export interface BranchCiAutomation {
+  v: 1
+  id: string
+  projectId: string
+  name: string
+  trigger: { kind: 'github-ci-failed'; repository: string; branch: string }
+  prompt: string
+  model: string
+  enabled: boolean
+  maxLiveWorktrees: AutomationLiveWorktreeLimit
+  revision: string
+  createdAt: number
+  updatedAt: number
+  /** Recent run+attempt identities, advanced only after inbox admission. */
+  seenDeliveries: string[]
+  lastRunAt?: number | undefined
+  lastCreatedThreadId?: string | undefined
+}
+
+export interface BranchCiAutomationInput {
+  id?: string
+  name: string
+  branch: string
+  prompt: string
+  model: string
+  enabled: boolean
+  maxLiveWorktrees?: AutomationLiveWorktreeLimit
+}
+
 export interface AutomationTriggerEvent {
   projectId: string
   scheduleId: string

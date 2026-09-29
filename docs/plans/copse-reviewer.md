@@ -1527,3 +1527,8 @@ Reviewers read it before the diff. Copse Reviewer now does the same, under B4 as
 - **Not read back.** `--read-pr` (§Pull request conversation and images) drops this block
   from the description before Stage 1 sees it (`summary-block.ts`), so the reviewer never
   reads its own summary as the author's intent. A block the author wrote or edited is kept.
+- **Calibration.** `pnpm run bench:risk` scores the risk level against what happened to each
+  change after it merged (reverts, later fixes that blame it, `main` CI), over a hand-ruled
+  corpus in [`benchmarks/review-risk/`](../../benchmarks/review-risk/README.md). Its first
+  results (2026-09-27, posted ratings only) and a proposed rubric are there; the rubric is
+  unchanged until a model A/B supports it.
