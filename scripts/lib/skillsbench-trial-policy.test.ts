@@ -10,6 +10,8 @@ print(json.dumps([
     classify_trial(982, 2),
     classify_trial(1000, 1),
     classify_trial(2000, 0),
+    classify_trial(None, 3),
+    classify_trial(2000, None),
 ]))
 `
 
@@ -22,6 +24,8 @@ describe('SkillsBench minimum-work policy', () => {
       { status: 'void', reason: 'input tokens 982 < 1000' },
       { status: 'scored', reason: null },
       { status: 'void', reason: 'tool calls 0 < 1' },
+      { status: 'void', reason: 'input tokens not reported' },
+      { status: 'void', reason: 'tool calls not reported' },
     ])
   })
 
