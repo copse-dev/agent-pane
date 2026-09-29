@@ -239,6 +239,22 @@ describe('memory-tools', () => {
     assert.match(all, /Memory truncated/)
   })
 
+  it('keeps a clipped memory within the cap when one of its tags is huge', async () => {
+    addKnowledgeNote({
+      type: MEMORY_TYPE,
+      title: 'Tagged',
+      body: 'short body',
+      tags: ['x'.repeat(RECALL_ALL_MAX_CHARS * 2), 'small'],
+      fields: { [EXTERNAL_CONTEXT_FIELD]: 'true' },
+    })
+
+    const all = await run(recallTool, {})
+
+    assert.ok(all.length < RECALL_ALL_MAX_CHARS + 1_000, String(all.length))
+    assert.match(all, /## Tagged/)
+    assert.match(all, /ingested external content/)
+  })
+
   it('does not taint the turn for a tainted memory the cap left out', async () => {
     const big = 'x'.repeat(RECALL_ALL_MAX_CHARS)
     addKnowledgeNote({ type: MEMORY_TYPE, title: 'Shown', body: big })

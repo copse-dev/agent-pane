@@ -96,22 +96,48 @@ export const rememberTool = defineTool({
 export const RECALL_ALL_MAX_MEMORIES = 50
 export const RECALL_ALL_MAX_CHARS = 20_000
 
-/** Longest title an oversized, clipped memory keeps; the body is what gets trimmed. */
+/**
+ * Longest title, and longest combined tag list, an oversized clipped memory
+ * keeps. Both are bounded so the heading has a fixed ceiling and the body —
+ * the only part trimmed to fit — always has the rest of the budget.
+ */
 const CLIPPED_TITLE_MAX_CHARS = 200
+const CLIPPED_TAGS_MAX_CHARS = 200
+const CLIPPED_UPDATED_AT_MAX_CHARS = 64
+
+/** Keep tags in order while their joined length fits, marking any dropped with `…`. */
+function clipTags(tags: readonly string[]): string[] {
+  const kept: string[] = []
+  let used = 0
+  for (const tag of tags) {
+    const cost = tag.length + (kept.length > 0 ? 2 : 0)
+    if (used + cost > CLIPPED_TAGS_MAX_CHARS) {
+      if (kept.length === 0) kept.push(`${tag.slice(0, CLIPPED_TAGS_MAX_CHARS)}…`)
+      else kept.push('…')
+      return kept
+    }
+    kept.push(tag)
+    used += cost
+  }
+  return kept
+}
 
 /**
- * A memory cut down to `maxChars`. The title is capped and only the body is
- * trimmed, so the external-content caution — which `formatMemory` places after
- * the title — always survives, however long the title is.
+ * A memory cut down to `maxChars`. The title and tags are capped and only the
+ * body is trimmed, so the external-content caution — which `formatMemory` places
+ * after the heading — always survives, however long the title or tags are.
  */
 function clipMemory(note: KnowledgeNote, maxChars: number): string {
   const title =
     note.title.length > CLIPPED_TITLE_MAX_CHARS
       ? `${note.title.slice(0, CLIPPED_TITLE_MAX_CHARS)}…`
       : note.title
-  const header = formatMemory({ ...note, title, body: '' })
+  const tags = clipTags(note.tags)
+  // A timestamp, but read back from a file a person may have edited.
+  const updatedAt = note.updatedAt.slice(0, CLIPPED_UPDATED_AT_MAX_CHARS)
+  const header = formatMemory({ ...note, title, tags, updatedAt, body: '' })
   const body = note.body.slice(0, Math.max(0, maxChars - header.length))
-  return `${formatMemory({ ...note, title, body })}\n\n(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`
+  return `${formatMemory({ ...note, title, tags, updatedAt, body })}\n\n(Memory truncated at ${RECALL_ALL_MAX_CHARS.toLocaleString('en-GB')} characters; call recall with a query naming it to read it in full.)`
 }
 
 /**
