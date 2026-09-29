@@ -59,6 +59,16 @@ human approval** before it can reach the host or the network, and should leave a
 | Session vs. runtime        | Durable thread and execution metadata   | Replaceable process, container, VM, or provider session |
 | This device vs. LAN peers  | Desktop approval and local thread store | Other devices on the selected private network           |
 
+LAN model serving is not part of the ordinary custom-provider trust grant. Literal private and
+link-local IP addresses, single-label names, and mDNS hostnames remain denied before the
+approved-host list is consulted, so a provider address that names a LAN device directly cannot be
+approved. This is a hostname policy, not an IP policy: a public hostname that resolves to a private
+address is not detected (DNS rebinding is out of scope; see
+[the provider host allowlist plan](plans/provider-host-allowlist.md)), so approving a hostname is
+still trust in whatever that name resolves to. A future LAN model feature would require an
+explicitly paired peer with authenticated identity, credential scope, revocation, and a visible
+full-context data-flow disclosure; it must not weaken this default.
+
 The existing design already encodes several of these: custom tools load **only**
 from the user-controlled `<userData>/tools/` directory (never the workspace),
 project-defined MCP servers are gated behind workspace trust, the

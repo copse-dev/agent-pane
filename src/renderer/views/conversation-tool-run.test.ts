@@ -327,6 +327,11 @@ describe('cross-message tool runs (component)', () => {
     const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
     assert.equal(run.open, false)
     assert.equal(run.dataset['status'], 'interrupted')
+    // Settled, not pending: the folded run must not wear the running glyph.
+    assert.equal(
+      run.querySelector(':scope > summary .tool-status-icon svg')?.getAttribute('data-icon'),
+      'minus',
+    )
     assert.equal(
       run.querySelector(':scope > summary .tool-name')?.textContent,
       'Used 18 tools · 5 steps · Interrupted',
@@ -378,6 +383,93 @@ describe('cross-message tool runs (component)', () => {
       run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
       'Interrupted by you.',
     )
+  })
+
+  it('labels a Stop pressed with a prompt already queued as a Stop, not a send-now', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    // The prompt was queued mid-run, so its timestamp precedes the abort, and
+    // the drain placed it right after the cancelled turn — exactly what a
+    // send-now looks like. The recorded abort cause tells them apart.
+    addMessage(store, threadId, 'user', 'Queued while the run was going.')
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      userAbort: 'stop',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now() + 1_000,
+    })
+    const host = mount(store)
+
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    run.open = true
+    assert.equal(
+      run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
+      'Interrupted by you.',
+    )
+  })
+
+  it('credits a recorded send-now even when the prompt landed after the abort settled', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      userAbort: 'send_now',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now() - 1_000,
+    })
+    addMessage(store, threadId, 'user', 'Change the markdown reference instead.')
+    const host = mount(store)
+
+    const run = qsRequired<HTMLDetailsElement>(host, '.tool-card-rollup')
+    run.open = true
+    assert.equal(
+      run.querySelector(':scope > .tool-rollup-body > .tool-interruption-note')?.textContent,
+      'Interrupted when you sent a new message.',
+    )
+  })
+
+  it('folds an already-rendered failure once the user-cancel outcome lands', () => {
+    const { store, threadId, ids } = seedRun()
+    const last = ids.at(-1)
+    assert.ok(last)
+    updateToolCall(store, last, `${last}-0`, {
+      status: 'error',
+      result: ACP_CANCELLED_TOOL_CALL_RESULT,
+    })
+    const host = mount(store)
+    // The host's cancelled-call update arrives before the turn outcome.
+    assert.equal(qsRequired(host, '.tool-card-rollup').dataset['status'], 'error')
+
+    setMessageTurnOutcome(store, threadId, last, {
+      status: 'cancelled',
+      stopReason: 'cancelled',
+      source: 'user',
+      userAbort: 'stop',
+      executor: 'acp',
+      provider: 'codex-acp',
+      model: 'acp:codex-acp#gpt-5.6-sol',
+      endedAt: Date.now(),
+    })
+    store.emit('message_done', last)
+    assert.equal(qsRequired(host, '.tool-card-rollup').dataset['status'], 'interrupted')
   })
 
   it('keeps a genuine tool failure visible beside a user interruption', () => {

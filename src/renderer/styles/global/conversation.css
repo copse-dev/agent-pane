@@ -1163,6 +1163,16 @@ span.acp-resource-title {
   text-align: center;
   user-select: none;
 }
+/* The sign is decorative for assistive tech; this names the change instead,
+   so a screen reader hears "Added" / "Deleted" rather than nothing. */
+.acp-diff-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .acp-diff-add {
   background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--text-primary);
@@ -1250,6 +1260,38 @@ span.acp-resource-title {
   .code-block-run.is-running .ui-icon {
     animation: none;
   }
+}
+/* A Play run's terminal output, directly under the command that produced it.
+   Terminal text keeps its columns, so long lines and logs scroll in place. */
+.code-block-output {
+  margin-top: var(--spacing-xs);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  font-size: var(--font-size-sm);
+}
+.code-block-output-summary {
+  padding: 4px var(--spacing-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.code-block-output[data-run-state='failed'] > .code-block-output-summary {
+  color: var(--error);
+}
+.code-block-output-text,
+.code-block-output-empty {
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: pre;
+}
+.code-block-output-empty {
+  color: var(--text-muted);
+  font-style: italic;
 }
 /* GFM table copy control (#615): mirror the code-block hover affordance. The
    shell carries the table's block margin so wrapping causes no layout shift, and

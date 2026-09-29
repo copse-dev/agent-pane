@@ -20,9 +20,16 @@ function estimateUserContentTokens(content: UserContent): number {
   if (typeof content === 'string') return content.length / CHARS_PER_TOKEN
   let total = 0
   for (const block of content) {
-    if (block.type === 'text') total += block.text.length / CHARS_PER_TOKEN
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- explicit guard so future non-image block types are not miscounted as images
-    else if (block.type === 'image') total += ESTIMATED_IMAGE_TOKENS
+    // A switch rather than if/else so a future block type is not miscounted as
+    // an image; switch-exhaustiveness-check flags the new case instead.
+    switch (block.type) {
+      case 'text':
+        total += block.text.length / CHARS_PER_TOKEN
+        break
+      case 'image':
+        total += ESTIMATED_IMAGE_TOKENS
+        break
+    }
   }
   return total
 }

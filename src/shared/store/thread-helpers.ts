@@ -26,6 +26,7 @@ import type {
   Thread,
   ThreadReview,
   ThreadReviewReport,
+  ReviewerInputAnswer,
 } from '@shared/types'
 import type { PreparedThreadCheckout, ThreadWorktree } from '@shared/types/worktree.ts'
 import {
@@ -33,11 +34,13 @@ import {
   recordThreadProposalDecision,
   type ThreadProposalDecision,
 } from '@shared/threads/thread-proposal.ts'
+import { parseReviewerInputAnswers } from '@shared/threads/reviewer-input.ts'
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import type { VisualEvidenceDraft } from '@copse/agent/visual-evidence.ts'
 
 import { isHumanUserPrompt, sortThreadsNewestFirst } from '@copse/thread-store/thread-sort.ts'
+import { sumLegacyFoldedSubagentUsage } from '@shared/usage/footer-usage-summary.ts'
 export {
   isHumanUserPrompt,
   lastHumanPromptAt,
@@ -763,6 +766,7 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
           usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier),
         )
   byModel[delta.model] = mergeModelUsage(prev, usage)
+  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : undefined)
   updateUsage(
     store,
     threadId,
@@ -771,12 +775,46 @@ export function addUsageDelta(store: AppStore, threadId: string, delta: UsageDel
         inputTokens: thread.usage.inputTokens + delta.inputTokens,
         outputTokens: thread.usage.outputTokens + delta.outputTokens,
         byModel,
+        subagentInputTokens:
+          subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
+        subagentOutputTokens:
+          subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0),
       },
       thread.usage.cacheReadTokens,
       thread.usage.cacheCreationTokens,
       delta,
     ),
   )
+}
+
+/**
+ * The subagent share already folded into `thread.usage`. Usage recorded before
+ * the share was tracked starts from sessions in turns that are not known to
+ * have failed or been cancelled, excluding the still-live trailing turn.
+ */
+function foldedSubagentUsage(
+  thread: Thread,
+  incoming?: Pick<UsageDelta, 'inputTokens' | 'outputTokens'>,
+): { inputTokens: number; outputTokens: number } {
+  const { usage } = thread
+  if (usage.subagentInputTokens !== undefined || usage.subagentOutputTokens !== undefined) {
+    return {
+      inputTokens: usage.subagentInputTokens ?? 0,
+      outputTokens: usage.subagentOutputTokens ?? 0,
+    }
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 }
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === 'running')
+  // A subagent session is persisted before the main process emits the usage
+  // chunk that folds it into the thread total. On the first post-upgrade fold,
+  // the legacy seed therefore already contains the incoming delta; remove it
+  // here because addUsageDelta adds that same delta immediately afterwards.
+  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0))
+  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0))
+  return {
+    inputTokens: Math.min(priorInput, usage.inputTokens),
+    outputTokens: Math.min(priorOutput, usage.outputTokens),
+  }
 }
 
 export function updateContextSnapshot(
@@ -1084,6 +1122,25 @@ export function setThreadProposalDecision(
   patchThreadAnywhere(store, threadId, (t) => ({
     ...t,
     threadProposals: recordThreadProposalDecision(t.threadProposals, decision),
+    updatedAt: Date.now(),
+  }))
+  store.emit('threads_changed')
+}
+
+/** One answer per saved review question. The ordinary user message carries it to the model. */
+export function setReviewerInputAnswer(
+  store: AppStore,
+  threadId: string,
+  answer: ReviewerInputAnswer,
+): void {
+  patchThreadAnywhere(store, threadId, (thread) => ({
+    ...thread,
+    reviewerInputAnswers: [
+      ...parseReviewerInputAnswers(thread.reviewerInputAnswers).filter(
+        (entry) => entry.id !== answer.id,
+      ),
+      answer,
+    ],
     updatedAt: Date.now(),
   }))
   store.emit('threads_changed')

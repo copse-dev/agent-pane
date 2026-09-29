@@ -12,6 +12,12 @@ import {
   REVIEW_TOOL_NAMES,
   type ParsedReviewVerdict,
 } from '@copse/agent/review-subagent.ts'
+import {
+  RUN_SPECIALIST_CHECK_TOOL_NAME,
+  specialistCheckRequestSchema,
+  type SpecialistCheckRequest,
+  type SpecialistCheckResult,
+} from '@copse/agent/specialist-checks.ts'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
 import { resolveMaxReviewCycles } from '@copse/agent/plugins/post-turn-review-plugin.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
@@ -39,6 +45,7 @@ import { subagentHookCallbacks } from './hooks/subagent.ts'
 import { agentWorkspaceLabel } from './execution-root.ts'
 import { getGitDiffText } from './github/git-service.ts'
 import { classifyAgentError } from './agent-errors.ts'
+import { specialistCheckTool } from './specialist-check-runner.ts'
 
 export interface PostTurnReviewOutcome {
   summary: string
@@ -84,17 +91,29 @@ export interface RunParentContinuationOptions {
   continuationBudget?: ContinuationGrant
 }
 
-function filterReviewTools(registry: ToolRegistry): LLMTool[] {
+function filterReviewTools(registry: ToolRegistry, specialistEnabled: boolean): LLMTool[] {
   const names = new Set<string>(REVIEW_TOOL_NAMES)
-  return registry.toLLMTools().filter((t) => names.has(t.name))
+  const tools = registry.toLLMTools().filter((t) => names.has(t.name))
+  return specialistEnabled ? [...tools, specialistCheckTool] : tools
 }
 
-function executeReviewTool(
+async function executeReviewTool(
   registry: ToolRegistry,
   name: string,
   args: unknown,
   signal: AbortSignal,
+  runSpecialist?: (request: SpecialistCheckRequest) => Promise<SpecialistCheckResult>,
 ): Promise<ToolExecuteResult> {
+  if (name === RUN_SPECIALIST_CHECK_TOOL_NAME) {
+    if (!runSpecialist) return 'Specialist checks are unavailable for this review.'
+    const request = specialistCheckRequestSchema.parse(args)
+    const result = await runSpecialist(request)
+    return JSON.stringify({
+      ...result,
+      instruction:
+        'This is internal evidence, not a review verdict. Independently decide whether it supports a final finding.',
+    })
+  }
   if (!(REVIEW_TOOL_NAMES as readonly string[]).includes(name)) {
     throw new Error(`Tool not allowed in review subagent: ${name}`)
   }
@@ -213,6 +232,7 @@ export interface RunPostTurnReviewOnceOptions {
   signal: AbortSignal
   usageModel: string
   onUsage: (usage: ModelUsage) => void
+  runSpecialistCheck?: (request: SpecialistCheckRequest) => Promise<SpecialistCheckResult>
 }
 
 export async function runPostTurnReviewOnce(
@@ -247,12 +267,13 @@ export async function runPostTurnReviewOnce(
       provider: opts.provider,
       prompt,
       parentGoal: `${opts.parentGoal}\nWorkspace: ${workspace}`,
-      tools: filterReviewTools(opts.registry),
+      tools: filterReviewTools(opts.registry, opts.runSpecialistCheck !== undefined),
       parentToolCallId: 'post-turn-review',
       signal: opts.signal,
       maxContextTokens: opts.contextWindow,
       toolSchemaReserveTokens: opts.toolSchemaReserve,
-      executeTool: (name, args, sig) => executeReviewTool(opts.registry, name, args, sig),
+      executeTool: (name, args, sig) =>
+        executeReviewTool(opts.registry, name, args, sig, opts.runSpecialistCheck),
       onSubagentChunk,
       systemPrompt: REVIEW_SYSTEM_PROMPT,
       userTask: prompt,

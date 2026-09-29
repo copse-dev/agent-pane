@@ -57,3 +57,16 @@ Each capsule contains the complete BenchFlow rollout plus `manifest.json`, inclu
 reward, release and task revisions, task digest, profile/content hash, reasoning policy and
 checkpoint summary, full skill-bundle inventory and digest, model, tokens, tool/skill-read counts,
 elapsed time, and Copse source commit.
+
+## Minimum-work policy
+
+Before aggregation, `minimum-work-v1` voids a trial with fewer than 1,000 input tokens or no tool
+calls. The capsule retains the verifier's raw reward as `verifierReward`, but exposes a null
+`officialReward` for a void trial so it cannot silently count as a scored failure. Its `status`,
+`voidReason`, and complete `trialPolicy` travel with the capsule, and the fetch workflow reports the
+void count in both `trial-summary.jsonl` and the Actions summary.
+
+The 1,000-token boundary was declared in response to the 982-input-token `dialogue-parser` trial
+from run 30225392613: it made two calls, ended without a runner or verifier error, and remains
+unexplained. This policy distinguishes that missing trial from a genuine zero reward without
+retroactively changing the threshold after viewing a new cohort.

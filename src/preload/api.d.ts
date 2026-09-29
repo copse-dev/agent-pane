@@ -42,7 +42,9 @@ import type {
   AppleOperationLogPage,
   AppleProjectDetection,
   AppleProjectState,
+  AppleProjectSuggestion,
   AppleSelection,
+  AppleSuggestionAnswer,
 } from '@shared/types/apple-development.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { SupervisedTaskSummary } from '@shared/types/supervised-task.ts'
@@ -52,6 +54,8 @@ import type {
   GitFileDiff,
   GitStatusResult,
   GitBranchStatus,
+  ThreadWorktreeAttachment,
+  ThreadWorktreeReattachResult,
   GitPromptState,
   GitBranchInfo,
   SessionBackup,
@@ -153,6 +157,7 @@ export interface DetectedEnvKey {
 
 export interface ApiClient {
   mobile: {
+    manage: () => Promise<void>
     onChat: (
       handler: (command: import('@shared/mobile-chat.ts').MobileChatCommand) => void,
     ) => () => void
@@ -869,6 +874,14 @@ export interface ApiClient {
   appIcon: {
     apply: () => Promise<void>
   }
+  about: {
+    /** The app version and the third-party licence report the build shipped. */
+    getInfo: () => Promise<import('@shared/third-party-licenses.mts').AboutInfo>
+    /** Open one of the shipped licence files in the system's default viewer. */
+    openLicenseFile: (
+      kind: import('@shared/third-party-licenses.mts').LicenseFileKind,
+    ) => Promise<void>
+  }
   usage: {
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
     getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
@@ -1122,6 +1135,8 @@ export interface ApiClient {
   appleDevelopment: {
     state: (projectId: string, threadId: string) => Promise<AppleProjectState>
     detectProject: (projectId: string) => Promise<AppleProjectDetection>
+    suggestion: (projectId: string) => Promise<AppleProjectSuggestion>
+    answerSuggestion: (projectId: string, answer: AppleSuggestionAnswer) => Promise<void>
     setEnrolled: (
       projectId: string,
       threadId: string,
@@ -1221,6 +1236,10 @@ export interface ApiClient {
       threadId: string,
       forBranch?: string,
     ) => Promise<GitBranchStatus>
+    /** Whether the thread's isolated checkout is detached, without throwing for it. */
+    worktreeAttachment: (projectId: string, threadId: string) => Promise<ThreadWorktreeAttachment>
+    /** Put a detached thread checkout back on its branch, keeping any detached commits. */
+    reattachWorktree: (projectId: string, threadId: string) => Promise<ThreadWorktreeReattachResult>
     /** HEAD commit + dirty state snapshot for a prompt about to be sent. */
     promptState: (projectId: string, threadId: string) => Promise<GitPromptState>
     checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>

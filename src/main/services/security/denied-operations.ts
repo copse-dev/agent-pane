@@ -69,14 +69,78 @@ export function recordApprovedDeniedOperation(
 }
 
 /**
- * Advice for `operation` if — and only if — this exact operation was already
- * confirmed denied earlier in this thread. Returns null for any other
+ * Cap for the *display* of a prior command cited in a denial note. The live
+ * command under review is truncated separately; this only keeps a long multi-
+ * line script from blowing up the "earlier in this thread" block. The live
+ * command remains complete in its independently scrollable command region.
+ */
+export const CACHED_DENIAL_COMMAND_DISPLAY_MAX = 120
+
+/**
+ * Single-line, quote-safe preview of a previously denied command for UI copy.
+ * Newlines become spaces so a multi-line script cannot break a bullet or run
+ * into surrounding prose; length is capped so the note stays scannable.
+ */
+export function formatCachedDenialCommandForDisplay(
+  command: string,
+  maxChars: number = CACHED_DENIAL_COMMAND_DISPLAY_MAX,
+): string {
+  const singleLine = command.replace(/\s+/g, ' ').trim()
+  if (singleLine.length <= maxChars) return singleLine
+  const remaining = singleLine.length - maxChars
+  return `${singleLine.slice(0, maxChars)}… (+${String(remaining)} more characters)`
+}
+
+/**
+ * Structured prior-denial note for the approval UI. Kept separate from the live
+ * command and from reason bullets so a long prior script cannot concatenate into
+ * either. Prefer this over {@link cachedDenialAdvice} when building prompts.
+ */
+export interface CachedDenialNote {
+  /** Operation-specific denial sentence (no prior-command splice). */
+  advice: string
+  /** Single-line truncated prior command that confirmed the denial. */
+  priorCommandDisplay: string
+  /**
+   * Full prose for places that still take a single string (model-facing notes,
+   * tests). Uses plain quotes, never markdown backticks.
+   */
+  text: string
+}
+
+/**
+ * Marker substring used by prompt formatters to pull a cached-denial reason out
+ * of a mixed reasons array and render it as its own block (not a bullet that
+ * also holds the live command).
+ */
+export const PRIOR_DENIAL_MARKER = 'Earlier in this thread: already confirmed denied'
+
+/**
+ * Prior-denial note for `operation` if — and only if — this exact operation was
+ * already confirmed denied earlier in this thread. Returns null for any other
  * operation, including a different action on the same command/tool (e.g. a
  * `git push` after a denied `git fetch`), so an unrelated operation is never
  * reported as blocked (issue #1436 point 2).
  */
-export function cachedDenialAdvice(threadId: string | null, operation: string): string | null {
+export function cachedDenialNote(
+  threadId: string | null,
+  operation: string,
+): CachedDenialNote | null {
   const entry = deniedOperations.get(threadId, operation)
   if (!entry) return null
-  return `${entry.advice} (Already confirmed denied earlier in this thread by \`${entry.command}\`.)`
+  const priorCommandDisplay = formatCachedDenialCommandForDisplay(entry.command)
+  return {
+    advice: entry.advice,
+    priorCommandDisplay,
+    text:
+      `${entry.advice}\n\n${PRIOR_DENIAL_MARKER} ` + `(matched command: "${priorCommandDisplay}").`,
+  }
+}
+
+/**
+ * Flat string form of {@link cachedDenialNote} for callers that only need prose
+ * (e.g. legacy reason arrays). Never wraps the prior command in backticks.
+ */
+export function cachedDenialAdvice(threadId: string | null, operation: string): string | null {
+  return cachedDenialNote(threadId, operation)?.text ?? null
 }

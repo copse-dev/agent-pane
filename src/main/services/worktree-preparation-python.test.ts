@@ -75,6 +75,44 @@ it('requires the uv project manifest and a reviewed lock', () => {
   assert.ok(readWorktreePreparationPlan(root).problems.length)
 })
 
+it('detects exact hash-locked pip wheels and rejects broader requirements syntax', () => {
+  rmSync(join(root, 'uv.lock'))
+  rmSync(join(root, 'pyproject.toml'))
+  const hash = 'a'.repeat(64)
+  write('requirements.lock', `example-package==1.2.3 --hash=sha256:${hash}\n`)
+  const plan = readWorktreePreparationPlan(root)
+  assert.equal(plan.ecosystem, 'pip')
+  assert.deepEqual(plan.problems, [])
+  assert.deepEqual(
+    plan.prepare.map((step) => step.command),
+    ['python3', '.venv/bin/python'],
+  )
+  const approval = formatPreparationApproval(plan, false)
+  assert.match(approval.body, /--require-hashes/)
+  assert.match(approval.body, /--only-binary=:all:/)
+  assert.match(approval.bodyAdvice, /source builds.*disabled/)
+  assert.doesNotMatch(approval.bodyAdvice, /executes repository code/)
+
+  for (const version of ['1', '1.2.3', '2.0.0rc1', '1.0.post2', '1!2.0', '1.2.3+local.7']) {
+    write('requirements.lock', `example-package==${version} --hash=sha256:${hash}\n`)
+    assert.deepEqual(readWorktreePreparationPlan(root).problems, [], version)
+  }
+
+  for (const unsafe of [
+    `example-package>=1.2.3 --hash=sha256:${hash}`,
+    'example-package==1.2.3',
+    '-r another.txt',
+    `example-package @ https://example.test/pkg.whl --hash=sha256:${hash}`,
+    `example-package==1.* --hash=sha256:${hash}`,
+    `example-package==1.0,<2 --hash=sha256:${hash}`,
+    `example-package===1.2.3 --hash=sha256:${hash}`,
+    `example-package==1.2.3,!=1.2.4 --hash=sha256:${hash}`,
+  ]) {
+    write('requirements.lock', `${unsafe}\n`)
+    assert.match(readWorktreePreparationPlan(root).problems.join(' '), /exact name==version/)
+  }
+})
+
 it('rechecks locked dependencies, pins the environment location and invalidates runtime changes', async () => {
   write('.venv/bin/python', 'fixture interpreter')
   let runtime = 'Python 3.12.1'

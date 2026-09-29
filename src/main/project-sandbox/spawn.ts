@@ -37,6 +37,7 @@ import {
   isSshExecutionTarget,
   resolveExecutionTarget,
   resolveSshExecutionTargetForCwd,
+  threadProjectExecutionTarget,
   type ExecutionTarget,
 } from '../services/ssh-workspace/execution-target.ts'
 import {
@@ -98,11 +99,35 @@ async function requireLocalWorkingDirectory(cwd: string): Promise<void> {
 }
 
 function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
+  // Inside an agent turn the turn's own project decides, not whichever project
+  // the window shows now: the gate and the spawn resolve the same answer even
+  // if the user switches projects between them.
+  if (!explicit) {
+    const threadTarget = threadProjectExecutionTarget()
+    if (threadTarget) return threadTarget
+  }
   const target = resolveExecutionTarget(explicit)
   if (isSshExecutionTarget(target)) return target
   // Activation races can leave activeProjectId without sshHost while cwd is already
   // a remote project path — recover instead of applying a local seatbelt to /etc/….
   return resolveSshExecutionTargetForCwd(cwd) ?? target
+}
+
+/**
+ * Whether a spawn in `cwd` with no explicit target runs on an SSH host, where
+ * no sandbox applies. The same resolution every spawn above uses, so the
+ * permission gate cannot judge a command as locally contained while the
+ * spawn sends it to a remote host (`docs/shell-permissions.md`, SSH
+ * workspaces). A resolution error means the active project is remote but
+ * cannot route over SSH; the spawn refuses in that case, and this answers
+ * `true` so the gate fails toward "not contained" rather than local.
+ */
+export function spawnRunsOnSshTarget(cwd: string | null): boolean {
+  try {
+    return isSshExecutionTarget(resolveSpawnTarget(undefined, cwd ?? ''))
+  } catch {
+    return true
+  }
 }
 
 export async function spawnInProjectSandbox(
