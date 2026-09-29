@@ -402,6 +402,13 @@
           1
         ]
       },
+      "browser:export-artefact": {
+        "api": "browser.exportArtefact",
+        "args": [
+          1,
+          1
+        ]
+      },
       "browser:export-pdf": {
         "api": "browser.exportPdf",
         "args": [
