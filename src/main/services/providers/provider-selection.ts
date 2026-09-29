@@ -39,6 +39,7 @@ import {
 } from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
@@ -163,6 +164,11 @@ export async function buildSubagentRoute(parentModel: string): Promise<SubagentR
  */
 export async function buildReviewRoute(): Promise<SubagentRoute | null> {
   return buildTaskRoleRoute(routedRoleModelSelection('reviewModel'))
+}
+
+/** Build a host-selected route for a registered reviewer specialist check. */
+export async function buildSpecialistCheckRoute(model: string): Promise<SubagentRoute> {
+  return buildTaskRoleRoute(model)
 }
 
 // Builds the provider for the main agent loop. LM Studio models are encoded as
@@ -305,6 +311,7 @@ export async function describeProvider(
   model: string,
   opts: BuildProviderOptions = {},
 ): Promise<ProviderDescription> {
+  assertModelMakerAllowed(model)
   const hostRouted = hostRoutedNamespace(model)
   if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)

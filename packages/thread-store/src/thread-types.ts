@@ -652,6 +652,8 @@ export interface Message {
 
 export interface UsageDelta extends ModelUsage {
   model: string
+  /** Folds in subagent sessions' usage; see `ThreadUsage.subagentInputTokens`. */
+  subagentUsage?: boolean
   requestedServiceTier?: ServiceTier
   responseServiceTier?: ServiceTier
 }
