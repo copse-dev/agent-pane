@@ -29,6 +29,7 @@ test('loads every first-paint setting concurrently', async () => {
     'theme',
     'fontSize',
     'animateAgentAvatars',
+    'conciseThreadsEnabled',
     'uiScale',
     'uiAccentColor',
     'uiTintColor',
@@ -41,6 +42,7 @@ test('loads every first-paint setting concurrently', async () => {
   const loaded = await pending
   assert.equal(loaded.model, 'model')
   assert.equal(loaded.animateAgentAvatars, 'animateAgentAvatars')
+  assert.equal(loaded.conciseThreadsEnabled, 'conciseThreadsEnabled')
   assert.equal(loaded.uiTintStrength, 'uiTintStrength')
   assert.equal(loaded.developerMode, 'developerMode')
 })
