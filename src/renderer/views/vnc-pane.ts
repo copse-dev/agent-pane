@@ -22,6 +22,10 @@ import { dedupeNearbyVncServers, parseVncEndpoint, preferredVncUsername } from '
 import { showToast } from './toast.ts'
 import { createSimulatorDesktopView, type SimulatorDesktopView } from './simulator-desktop-view.ts'
 import { openRightPanel } from '../controller/panels.ts'
+import { DESKTOP_VIEWER_OFF_DETAIL, DESKTOP_VIEWER_OFF_TITLE } from '@shared/desktop-viewer.ts'
+
+const CHOOSE_MACHINE_TEXT =
+  'Choose this machine, a nearby device, another address, or a saved SSH machine.'
 
 function vncModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -437,11 +441,7 @@ function mountVncSession(
   controlsRoot.append(controlsBody)
 
   const screen = el('div', { class: 'vnc-screen', 'aria-label': 'Remote desktop' })
-  const empty = el(
-    'div',
-    { class: 'panel-empty vnc-empty' },
-    'Choose this machine, a nearby device, another address, or a saved SSH machine.',
-  )
+  const empty = el('div', { class: 'panel-empty vnc-empty' }, CHOOSE_MACHINE_TEXT)
   viewerRoot.append(screen, empty)
 
   let rfb: RFB | null = null
@@ -716,8 +716,7 @@ function mountVncSession(
     hideAuthentication()
     resetControlState()
     screen.replaceChildren()
-    empty.textContent =
-      'Choose this machine, a nearby device, another address, or a saved SSH machine.'
+    empty.textContent = CHOOSE_MACHINE_TEXT
     setSessionUi(false)
     setStatus(title, kind, detail)
     void refreshSavedLogin()
@@ -989,8 +988,7 @@ function mountVncSession(
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? 'this Simulator'}.`
       note.hidden = true
     } else if (!channel) {
-      empty.textContent =
-        'Choose this machine, a nearby device, another address, or a saved SSH machine.'
+      empty.textContent = CHOOSE_MACHINE_TEXT
       note.hidden = false
     }
     const nearby = selectedNearbyServer()
@@ -1106,6 +1104,7 @@ function mountVncSession(
 
   async function discoverSelectedMachine(): Promise<void> {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return
+    if (await stoppedByViewerOff()) return
     const generation = ++discoveryGeneration
     discoverButton.hidden = true
     discoverButton.disabled = true
@@ -1138,6 +1137,7 @@ function mountVncSession(
   }
 
   async function discoverNearby(): Promise<void> {
+    if (await stoppedByViewerOff()) return
     const generation = ++nearbyGeneration
     const previous = machineSelect.value
     const previousNearby = selectedNearbyServer()
@@ -1172,6 +1172,13 @@ function mountVncSession(
       .getState()
       .projects.find((project) => project.id === store.getState().activeProjectId)
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous
+    // Every discovery IPC refuses while the viewer is off, so check the setting
+    // first and send none of them; say so once instead of surfacing each
+    // refusal as a raw per-machine error.
+    if (!(await desktopViewerEnabled())) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff()
+      return
+    }
     let discoveryError = ''
     const [canStoreCredentials, devices] = await Promise.all([
       api.vnc.canStoreCredentials().catch(() => false),
@@ -1186,6 +1193,43 @@ function mountVncSession(
     await Promise.all([discoverSelectedMachine(), discoverNearby()])
     if (discoveryError && !simulatorSessionId && !channel)
       setStatus('Couldn’t discover local emulators', 'error', discoveryError)
+  }
+
+  async function desktopViewerEnabled(): Promise<boolean> {
+    return (await api.settings.get('vncEnabled').catch(() => false)) === true
+  }
+
+  /**
+   * True (after showing the viewer-off notice) when the viewer has been turned
+   * off, possibly while this pane was open; the discovery IPCs would only be
+   * refused, and their raw rejection is not what the user should read.
+   */
+  async function stoppedByViewerOff(): Promise<boolean> {
+    if (await desktopViewerEnabled()) return false
+    if (!simulatorSessionId && !channel) showDesktopViewerOff()
+    return true
+  }
+
+  function showDesktopViewerOff(): void {
+    setStatus(DESKTOP_VIEWER_OFF_TITLE, 'error', DESKTOP_VIEWER_OFF_DETAIL)
+    empty.textContent = `${DESKTOP_VIEWER_OFF_TITLE}. ${DESKTOP_VIEWER_OFF_DETAIL}`
+    // Nearby discovery never starts while the viewer is off; the next
+    // discoverNearby() after it is turned on shows this feedback again.
+    nearbyFeedback.hidden = true
+  }
+
+  function desktopViewerOffShown(): boolean {
+    return !status.hidden && statusTitle.textContent === DESKTOP_VIEWER_OFF_TITLE
+  }
+
+  /** Clear the "viewer is off" notice once the user turns the viewer on. */
+  async function recoverDesktopViewer(): Promise<void> {
+    if (!desktopViewerOffShown() || !(await desktopViewerEnabled())) return
+    // Another status may have replaced the notice while the setting was read.
+    if (!desktopViewerOffShown()) return
+    status.hidden = true
+    empty.textContent = CHOOSE_MACHINE_TEXT
+    await loadMachines()
   }
 
   async function connectSimulator(
@@ -1264,6 +1308,13 @@ function mountVncSession(
     presentation?: SimulatorDesktopPresentation,
   ): Promise<void> {
     openRightPanel(store, 'vnc')
+    // A Run from the Apple panel presents its Simulator here even when the
+    // experimental Desktop viewer is off. Device discovery is refused in that
+    // state, which must not read as the Simulator having stopped.
+    if (!(await desktopViewerEnabled())) {
+      showDesktopViewerOff()
+      return
+    }
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`
     if (simulatorSessionId && machineSelect.value === machine) {
       if (presentation?.control) setControlEnabled(true)
@@ -1292,6 +1343,7 @@ function mountVncSession(
   }
 
   async function connect(): Promise<void> {
+    if (await stoppedByViewerOff()) return
     const simulator = selectedSimulator()
     if (simulator) {
       await connectSimulator(simulator)
@@ -1688,6 +1740,7 @@ function mountVncSession(
   })
   const stopSettings = store.on('settings_changed', () => {
     void refreshSshHosts()
+    void recoverDesktopViewer()
   })
 
   setSessionUi(false)
