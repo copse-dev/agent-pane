@@ -11,8 +11,7 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import { spawn } from 'node:child_process'
-import { Writable } from 'node:stream'
-import { nodeReadableStream } from './node-readable-stream.ts'
+import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 
 /**
@@ -332,7 +331,7 @@ function spawnProbeTransport(
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   // `stdio: ['pipe', 'pipe', ...]` types stdin/stdout as non-null.
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const readable = nodeReadableStream(child.stdout)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),

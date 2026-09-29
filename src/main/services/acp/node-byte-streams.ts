@@ -1,6 +1,6 @@
-import type { Readable } from 'node:stream'
+import { Writable, type Readable } from 'node:stream'
 
-/** Bridge Node streams to the SDK's DOM Web Stream type without cross-lib casts. */
+/** Bridge a Node readable to the SDK's DOM Web Stream type without cross-lib casts. */
 export function nodeReadableStream(source: Readable): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller): void {
@@ -20,4 +20,9 @@ export function nodeReadableStream(source: Readable): ReadableStream<Uint8Array>
       source.destroy()
     },
   })
+}
+
+/** Bridge a Node writable to the SDK's DOM Web Stream type without cross-lib casts. */
+export function nodeWritableStream(source: Writable): WritableStream<Uint8Array> {
+  return Writable.toWeb(source)
 }

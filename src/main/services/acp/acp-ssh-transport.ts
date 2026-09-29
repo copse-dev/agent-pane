@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { PassThrough, Readable, Writable } from 'node:stream'
+import { PassThrough } from 'node:stream'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -23,6 +23,7 @@ import { approveRemoteAcpInstall } from './acp-remote-install-approval.ts'
 import { emitShellOutput } from '../exec/shell-output-context.ts'
 import type { AcpTransport } from './acp-client.ts'
 import { watchAgentStderr, REMOTE_OPEN_FILE_LIMIT_LABEL } from './acp-resource-fault.ts'
+import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { posixQuote } from '../security/safe-install.ts'
 
 /**
@@ -625,19 +626,10 @@ export async function spawnRemoteAcpTransport(
   const envPreamble = buildRemoteEnvPreamble(input.env)
   if (envPreamble) child.stdin.write(`${envPreamble}\n`)
 
-  // Writable.toWeb is assignable to the DOM WritableStream brand; Readable.toWeb
-  // is not (node vs DOM ReadableStream). Re-wrap stdout through a global
-  // TransformStream so ndJsonStream typechecks without an `as` cast — new files
-  // must not expand eslint-suppressions.json (docs/type-safety.md).
-  const writable: WritableStream<Uint8Array> = Writable.toWeb(child.stdin)
-  const fromAgent = new TransformStream<Uint8Array, Uint8Array>()
-  void Readable.toWeb(stdout)
-    .pipeTo(fromAgent.writable)
-    .catch(() => {
-      /* child exit / dispose aborts the pipe */
-    })
+  const writable = nodeWritableStream(child.stdin)
+  const readable = nodeReadableStream(stdout)
   return {
-    stream: ndJsonStream(writable, fromAgent.readable),
+    stream: ndJsonStream(writable, readable),
     dispose: (): void => {
       terminateProcessTree(child)
     },

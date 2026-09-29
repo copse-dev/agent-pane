@@ -23,7 +23,7 @@ import {
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { Writable } from 'node:stream'
+import { nodeWritableStream } from './node-byte-streams.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type {
@@ -946,7 +946,7 @@ async function spawnTransport(
   }
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
   const stderr = captureAcpChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   return {
     stream: ndJsonStream(writable, readable),
@@ -1378,7 +1378,7 @@ export async function probeAcpAgent(
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
   const stderr = captureAcpChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const readable = acpChildStdoutStream(child, config.command, stderr.tail)
   const stream = ndJsonStream(writable, readable)
   const app = client({ name: 'copse' })

@@ -10,9 +10,9 @@ import {
   type WriteTextFileRequest,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { Writable } from 'node:stream'
 import { isRecord } from '@shared/unknown-value.ts'
 import { tapAcpWireStream } from './acp-wire-tap.ts'
+import { nodeWritableStream } from './node-byte-streams.ts'
 
 /**
  * Tier-2 ACP **behavioural probe** (issue #832): spawn an external ACP agent,
@@ -446,7 +446,7 @@ function spawnProbeTransport(
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const stderrTail = captureProbeChildStderr(child, config.command)
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const { readable, dispose } = probeChildStdoutStream(child, config.command, stderrTail)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),
