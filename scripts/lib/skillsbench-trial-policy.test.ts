@@ -30,7 +30,7 @@ describe('SkillsBench minimum-work policy', () => {
     assert.match(runner, /"trialPolicy": MINIMUM_WORK_POLICY/)
     assert.match(runner, /"status": trial_classification\["status"\]/)
     assert.match(runner, /"verifierReward": verifier_reward/)
-    assert.match(runner, /"officialReward": verifier_reward if .* == "scored" else None/)
+    assert.match(runner, /"officialReward": \([\s\S]*? == "scored" else None\s*\)/)
 
     const workflow = readFileSync('.github/workflows/skillsbench-scaleway-spike.yml', 'utf8')
     assert.match(workflow, /status: \.status/)
