@@ -11,8 +11,12 @@ export interface CodeBlockRunRequest {
 
 export interface CodeBlockRunResult {
   id: string
+  projectId: string
   threadId: string
   exitCode: number | null
+  /** The terminal's text alone, for showing under the command's code block. */
+  output: string
+  /** The attachment the agent receives: command, exit code and output. */
   shell: {
     tabId: string
     label: string
