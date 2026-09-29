@@ -24,6 +24,7 @@ from copse_planes import (
     CopseRolloutPlanes,
     OracleRolloutPlanes,
 )
+from trial_policy import MINIMUM_WORK_POLICY, classify_trial
 
 
 PROFILES = ("skills-none", "skills-product", "skills-explicit")
@@ -414,6 +415,8 @@ async def _run_trial(
         (capsule / "reasoning-checkpoints.jsonl").write_text(
             "".join(json.dumps(record, default=str) + "\n" for record in checkpoints)
         )
+    verifier_reward = _reward(result)
+    trial_classification = classify_trial(result.n_input_tokens, result.n_tool_calls)
     manifest = {
         "schemaVersion": 1,
         "benchmark": {
@@ -446,6 +449,7 @@ async def _run_trial(
         "model": model,
         "networkPolicy": NETWORK_POLICY,
         "verifierDeps": _verifier_deps_provenance(task_name),
+        "trialPolicy": MINIMUM_WORK_POLICY,
         "budgets": {
             "agentTimeoutSeconds": getattr(rollout, "_timeout", None),
             "defaultCommandTimeoutSeconds": 120,
@@ -461,7 +465,12 @@ async def _run_trial(
         },
         "attempt": attempt,
         "elapsedSeconds": round(elapsed, 3),
-        "officialReward": _reward(result),
+        "status": trial_classification["status"],
+        "voidReason": trial_classification["reason"],
+        "verifierReward": verifier_reward,
+        "officialReward": (
+            verifier_reward if trial_classification["status"] == "scored" else None
+        ),
         "reasoning": _reasoning_summary(profile_metadata["reasoningPolicy"], checkpoints),
         "result": _result_mapping(result),
     }
@@ -469,7 +478,8 @@ async def _run_trial(
     reward = manifest["officialReward"]
     reasoning = manifest["reasoning"]
     print(
-        f"skillsbench trial={trial_id} reward={reward} tools={result.n_tool_calls} "
+        f"skillsbench trial={trial_id} status={manifest['status']} reward={reward} "
+        f"tools={result.n_tool_calls} "
         f"skill_reads={result.n_skill_invocations} "
         f"checkpoints={reasoning['checkpoints']} circle_cuts={reasoning['circleCuts']} "
         f"elapsed={elapsed:.1f}s",
