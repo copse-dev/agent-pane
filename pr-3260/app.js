@@ -62191,7 +62191,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     );
     const headingActions = el("div", { class: "apple-development-heading-actions" });
     panel.append(el("div", { class: "apple-development-heading" }, title, status, headingActions));
-    if (options.allowEnrollment && options.pluginEnabled !== false) {
+    if (options.allowEnrollment && options.pluginEnabled !== false && (state.supportedHost || state.enrolled)) {
       const enrollment = el(
         "button",
         { type: "button", class: "btn btn-secondary" },
@@ -68249,15 +68249,92 @@ var init_worktree_policy = __esm({
   }
 });
 
+// src/shared/thread-title.ts
+function stripDecoration(value) {
+  return value.replace(/^\s*\x60{1,3}/, "").replace(/\x60{1,3}\s*$/, "").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/(?:\*{1,2}|_{1,2})\s*$/, "").replace(/^(?:here(?:'s| is)(?: the)?\s+)?(?:thread\s+)?title\s*:\s*/i, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/^[“”"'‘’]+|[“”"'‘’]+$/g, "").trim();
+}
+function stripConversationalLead(value) {
+  let result = value.trim();
+  let changed = true;
+  while (changed && result) {
+    changed = false;
+    for (const pattern of CONVERSATIONAL_LEADS) {
+      const next = result.replace(pattern, "").trim();
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+  }
+  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(
+    /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
+    ""
+  ).replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
+}
+function vagueClause(value) {
+  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
+    value.trim()
+  );
+}
+function compactTitle(value, capitalize) {
+  const words = value.replace(BIDI_FORMAT_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").replace(/[.!?,:;\s]+$/g, "").trim().split(" ").filter(Boolean).slice(0, MAX_THREAD_TITLE_WORDS);
+  let title = words.join(" ");
+  const chars = Array.from(title);
+  if (chars.length > MAX_THREAD_TITLE_CHARS) {
+    const clipped = chars.slice(0, MAX_THREAD_TITLE_CHARS + 1).join("");
+    const boundary = clipped.lastIndexOf(" ");
+    title = (boundary > 0 ? clipped.slice(0, boundary) : chars.slice(0, MAX_THREAD_TITLE_CHARS).join("")).trim();
+  }
+  return capitalize ? title.replace(/^([a-z])/, (letter) => letter.toUpperCase()) : title;
+}
+function fallbackThreadTitle(input2) {
+  const plain = input2.replace(/\x60{3}(?:[a-z0-9_-]+)?/gi, " ").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/gm, "").replace(/\s+/g, " ").trim();
+  const clauses = plain.split(/(?<=[.!?])\s+/);
+  for (const rawClause of clauses) {
+    const clause = stripConversationalLead(stripDecoration(rawClause));
+    if (!clause || vagueClause(clause)) continue;
+    const title = compactTitle(clause, true);
+    if (title && !vagueClause(title)) return title;
+  }
+  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
+  return fallback && !vagueClause(fallback) ? fallback : "New Thread";
+}
+var MAX_THREAD_TITLE_CHARS, MAX_THREAD_TITLE_WORDS, CONVERSATIONAL_LEADS, CONTROL_CHARS, BIDI_FORMAT_CHARS, MODEL_PREAMBLE;
+var init_thread_title = __esm({
+  "src/shared/thread-title.ts"() {
+    MAX_THREAD_TITLE_CHARS = 60;
+    MAX_THREAD_TITLE_WORDS = 6;
+    CONVERSATIONAL_LEADS = [
+      /^(?:got it|sure|okay|ok)\b[\s,:;—-]*/i,
+      /^(?:a\s+)?proposed thread\b[\s,:;—-]*/i,
+      /^(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?/i,
+      /^(?:i(?:'d| would)\s+like|i\s+want|we\s+need)\s+(?:you\s+)?(?:to\s+)?/i,
+      /^(?:how|what|why)\s+(?:can|could|might|do|does|would|should)\s+(?:you|we|i)\s+/i,
+      /^(?:sometimes\s+)?when(?:ever)?\s+(?:i|we)\s+/i,
+      /^please\s+/i,
+      /^help\s+(?:me|us)\s+(?:to\s+)?/i
+    ];
+    CONTROL_CHARS = /\p{Cc}/gu;
+    BIDI_FORMAT_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
+    MODEL_PREAMBLE = new RegExp(
+      [
+        // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
+        String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
+        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
+        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
+      ].join("|"),
+      "i"
+    );
+  }
+});
+
 // src/renderer/controller/thread-naming.ts
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
     (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
-}
-function firstWords(text2, n2 = 6) {
-  return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
 function promptWords(message2) {
   return stripPastePlaceholders(message2.content);
@@ -68316,7 +68393,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
+    const fallback = passes === 0 ? fallbackThreadTitle(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -68332,6 +68409,7 @@ var init_thread_naming = __esm({
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
+    init_thread_title();
     inFlight2 = /* @__PURE__ */ new Set();
     PASS_THRESHOLDS = [1, 3, 8];
     branchRenameInFlight = /* @__PURE__ */ new Set();
@@ -70759,7 +70837,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
             code === 43)) {
               const raw = url2.charCodeAt(i2);
               if (raw === 9 || raw === 10 || raw === 13) {
-                return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+                return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
               }
               return null;
             }
@@ -70775,7 +70853,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
         for (let i2 = start; i2 < end; i2 += 1) {
           const code = url2.charCodeAt(i2);
           if (code === 9 || code === 10 || code === 13) {
-            return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+            return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
           }
           if (code === 58) {
             indexOfColon = i2;
@@ -70912,7 +70990,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
       }
     }
     if (hasControl) {
-      return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+      return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
     }
     if (indexOfIdentifier !== -1 && indexOfIdentifier >= start && indexOfIdentifier < end) {
       start = indexOfIdentifier + 1;
@@ -70946,10 +71024,10 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
   }
   return hostname3;
 }
-var CONTROL_CHARS, extractedHostnameValidated;
+var CONTROL_CHARS2, extractedHostnameValidated;
 var init_extract_hostname = __esm({
   "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
-    CONTROL_CHARS = /[\t\n\r]/g;
+    CONTROL_CHARS2 = /[\t\n\r]/g;
     extractedHostnameValidated = false;
   }
 });
@@ -131824,6 +131902,16 @@ var init_simulator_desktop_view = __esm({
   }
 });
 
+// src/shared/desktop-viewer.ts
+var DESKTOP_VIEWER_SETTING_LOCATION, DESKTOP_VIEWER_OFF_TITLE, DESKTOP_VIEWER_OFF_DETAIL;
+var init_desktop_viewer = __esm({
+  "src/shared/desktop-viewer.ts"() {
+    DESKTOP_VIEWER_SETTING_LOCATION = "Settings \u2192 Experimental \u2192 Remote desktop viewer";
+    DESKTOP_VIEWER_OFF_TITLE = "Desktop viewer is off";
+    DESKTOP_VIEWER_OFF_DETAIL = `Turn on ${DESKTOP_VIEWER_SETTING_LOCATION} to watch the Simulator here.`;
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -132182,11 +132270,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
-  const empty = el(
-    "div",
-    { class: "panel-empty vnc-empty" },
-    "Choose this machine, a nearby device, another address, or a saved SSH machine."
-  );
+  const empty = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty);
   let rfb = null;
   let channel = null;
@@ -132426,7 +132510,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hideAuthentication();
     resetControlState();
     screen.replaceChildren();
-    empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+    empty.textContent = CHOOSE_MACHINE_TEXT;
     setSessionUi(false);
     setStatus(title, kind, detail);
     void refreshSavedLogin();
@@ -132653,7 +132737,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
       note.hidden = true;
     } else if (!channel) {
-      empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+      empty.textContent = CHOOSE_MACHINE_TEXT;
       note.hidden = false;
     }
     const nearby = selectedNearbyServer();
@@ -132761,6 +132845,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function discoverSelectedMachine() {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
@@ -132784,6 +132869,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
   }
   async function discoverNearby() {
+    if (await stoppedByViewerOff()) return;
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
@@ -132815,6 +132901,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    if (!await desktopViewerEnabled()) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff();
+      return;
+    }
     let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
@@ -132829,6 +132919,29 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
     if (discoveryError && !simulatorSessionId && !channel)
       setStatus("Couldn\u2019t discover local emulators", "error", discoveryError);
+  }
+  async function desktopViewerEnabled() {
+    return await api2.settings.get("vncEnabled").catch(() => false) === true;
+  }
+  async function stoppedByViewerOff() {
+    if (await desktopViewerEnabled()) return false;
+    if (!simulatorSessionId && !channel) showDesktopViewerOff();
+    return true;
+  }
+  function showDesktopViewerOff() {
+    setStatus(DESKTOP_VIEWER_OFF_TITLE, "error", DESKTOP_VIEWER_OFF_DETAIL);
+    empty.textContent = `${DESKTOP_VIEWER_OFF_TITLE}. ${DESKTOP_VIEWER_OFF_DETAIL}`;
+    nearbyFeedback.hidden = true;
+  }
+  function desktopViewerOffShown() {
+    return !status.hidden && statusTitle.textContent === DESKTOP_VIEWER_OFF_TITLE;
+  }
+  async function recoverDesktopViewer() {
+    if (!desktopViewerOffShown() || !await desktopViewerEnabled()) return;
+    if (!desktopViewerOffShown()) return;
+    status.hidden = true;
+    empty.textContent = CHOOSE_MACHINE_TEXT;
+    await loadMachines();
   }
   async function connectSimulator(device, immediateControl = false) {
     if (device.unavailableReason) {
@@ -132898,6 +133011,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function showSimulatorFromAgent(udid, presentation) {
     openRightPanel(store2, "vnc");
+    if (!await desktopViewerEnabled()) {
+      showDesktopViewerOff();
+      return;
+    }
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`;
     if (simulatorSessionId && machineSelect.value === machine) {
       if (presentation?.control) setControlEnabled(true);
@@ -132924,6 +133041,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await connectSimulator(device, presentation?.control === true);
   }
   async function connect() {
+    if (await stoppedByViewerOff()) return;
     const simulator = selectedSimulator();
     if (simulator) {
       await connectSimulator(simulator);
@@ -133283,6 +133401,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   });
   const stopSettings = store2.on("settings_changed", () => {
     void refreshSshHosts();
+    void recoverDesktopViewer();
   });
   setSessionUi(false);
   portInput.value = "5901";
@@ -133515,7 +133634,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
+var CHOOSE_MACHINE_TEXT, LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -133531,6 +133650,8 @@ var init_vnc_pane = __esm({
     init_toast();
     init_simulator_desktop_view();
     init_panels();
+    init_desktop_viewer();
+    CHOOSE_MACHINE_TEXT = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
     LOCAL_MACHINE = "local";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
