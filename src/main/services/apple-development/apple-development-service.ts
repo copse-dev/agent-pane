@@ -132,9 +132,11 @@ function setupMessage(
   discovery: AppleDriverDiscovery | undefined,
   selection: AppleSelection | null,
 ): string | null {
+  // The host check comes first: on Linux or Windows neither enabling the plugin
+  // nor enrolling the project can make Xcode available, so never suggest either.
+  if (platform !== 'darwin') return 'Apple Development requires a local macOS host.'
   if (!pluginEnabled) return 'Enable Apple Development in Settings → Plugins.'
   if (!enrolled) return 'Enroll this project to use Apple Development.'
-  if (platform !== 'darwin') return 'Apple Development requires a local macOS host.'
   if (!discovery) return 'Discover the installed Xcode and project targets to continue.'
   if (discovery.setupMessage) return discovery.setupMessage
   if (!selection) return 'Choose a workspace or project, scheme, configuration, and destination.'
@@ -282,6 +284,15 @@ export class AppleDevelopmentService {
   async setEnrolled(invocation: AppleInvocation, enrolled: boolean): Promise<AppleProjectState> {
     if (!this.pluginEnabled()) throw new Error('Apple Development is disabled.')
     const { projectId, threadId } = invocation.owner
+    // Removing an enrollment stays possible everywhere (e.g. a profile synced
+    // from a Mac); only adding one is refused where Xcode can never run.
+    if (enrolled && !isAppleDevelopmentProjectSupported(projectId, this.platform)) {
+      throw new Error(
+        this.platform === 'darwin'
+          ? 'Remote projects are not a supported Apple Development execution target.'
+          : 'Apple Development requires a local macOS host.',
+      )
+    }
     const context = await this.resolveContext(projectId, threadId)
     await this.updateStore((store) => {
       const current = store.projects[projectId] ?? { enrolled: false, threads: {} }
@@ -297,7 +308,7 @@ export class AppleDevelopmentService {
       this.discoveries.delete(projectId)
       this.destinationCache.delete(projectId)
       await this.cancelProject(projectId)
-    } else if (this.platform === 'darwin' && !isRemoteProject(projectId)) {
+    } else {
       const discovery = await this.driver.discover(context.root, false, invocation.signal)
       this.setDiscovery(invocation.owner, discovery)
     }
