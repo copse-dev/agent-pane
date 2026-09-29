@@ -3,8 +3,9 @@ import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
 // The same seeded turn — narration, reads, an edit, a failed-then-passing test
 // run, a screenshot and a summary — rendered for a model above the concise gate
-// and for one below it, plus the capable model mid-run. Asserts what each view
-// paints and leaves each as a reviewable capture.
+// and for one below it, plus the capable model mid-run and with the
+// experimental setting off. Asserts what each view paints and leaves each as a
+// reviewable capture.
 
 interface TranscriptState {
   toolCards: number
@@ -61,6 +62,17 @@ describe('concise thread view', () => {
       document.querySelector('.messages-list')?.scrollTo({ top: 0 })
     })
     await saveAppScreenshot('concise-thread-full-top.png')
+  })
+
+  it('keeps the full transcript for a capable model while the experiment is off', async () => {
+    await browser.url('/?scenario=concise-thread-disabled')
+    await $('.msg-assistant .tool-card').waitForExist()
+    await expect($('.msg-concise')).not.toBeExisting()
+
+    const state = await transcriptState()
+    expect(state.toolCards).toBeGreaterThan(0)
+    expect(state.reasoning).toBe(1)
+    expect(state.texts.length).toBeGreaterThan(1)
   })
 
   it('shows just the spinner and the current item while the model works', async () => {

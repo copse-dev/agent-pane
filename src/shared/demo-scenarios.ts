@@ -439,17 +439,24 @@ function conciseThreadMessages(model: string, live: boolean): Thread['messages']
   ]
 }
 
+/** `enabled` is the experimental Concise threads setting; on unless a scenario opts out. */
 function conciseThreadScenario(
   id: string,
   label: string,
   model: string,
-  live: boolean,
+  { live = false, enabled = true }: { live?: boolean; enabled?: boolean } = {},
 ): DemoScenario {
   return {
     id,
     label,
     project: project(`demo-${id}-project`),
-    settings: { onboardingCompleted: true, theme: 'dark', uiTintStrength: 'off', model },
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model,
+      conciseThreadsEnabled: enabled,
+    },
     threads: [
       {
         id: `demo-${id}-thread`,
@@ -1579,18 +1586,22 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     'concise-thread',
     'Concise thread view for a capable model',
     'claude-opus-5-5',
-    false,
   ),
   conciseThreadScenario(
     'concise-thread-full',
     'Full thread view for a model below the concise gate',
     'gpt-4o',
-    false,
   ),
   conciseThreadScenario(
     'concise-thread-working',
     'Concise thread view while a capable model works',
     'claude-opus-5-5',
-    true,
+    { live: true },
+  ),
+  conciseThreadScenario(
+    'concise-thread-disabled',
+    'Full thread view for a capable model while the experiment is off',
+    'claude-opus-5-5',
+    { enabled: false },
   ),
 ]

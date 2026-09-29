@@ -10,6 +10,10 @@
 // composite scale is a different ruler (see `intellect-lookup.ts`) and never
 // qualifies; an unsourced model keeps the full view.
 //
+// Experimental and off by default: Settings → Experimental → Concise threads
+// (`conciseThreadsEnabled`, held in app state so rendering reads it
+// synchronously). With it off, every transcript renders in full.
+//
 // A turn that *failed* is exempt: the model never saw that error, so it cannot
 // have handled it, and hiding it would leave a stopped spinner and nothing else.
 
@@ -56,13 +60,17 @@ export function isConciseWorkingMessage(
   return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== 'failed'
 }
 
-/** Toggle the classes the stylesheet keys the concise view on. */
+/**
+ * Toggle the classes the stylesheet keys the concise view on. `enabled` is the
+ * experimental setting; with it off both classes are cleared.
+ */
 export function syncConciseMessageClasses(
   msgEl: HTMLElement,
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
+  enabled: boolean,
 ): void {
-  msgEl.classList.toggle('msg-concise', isConciseMessage(msg))
-  msgEl.classList.toggle('msg-concise-working', isConciseWorkingMessage(msg))
+  msgEl.classList.toggle('msg-concise', enabled && isConciseMessage(msg))
+  msgEl.classList.toggle('msg-concise-working', enabled && isConciseWorkingMessage(msg))
 }
 
 /**

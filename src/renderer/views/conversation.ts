@@ -3148,7 +3148,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
     // A concise turn hides its tool cards, so the row names the current item.
     const thread = getActiveThread(store)
-    const conciseLabel = thread && isConciseThread(thread) ? conciseActivityLabel(thread) : null
+    const conciseLabel =
+      thread && store.getState().conciseThreadsEnabled && isConciseThread(thread)
+        ? conciseActivityLabel(thread)
+        : null
     const label = conciseLabel ?? requested
     // Assigning textContent replaces the text node even when the string is
     // identical, and the row is aria-live, so an unconditional write re-announces
@@ -3468,7 +3471,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     msgEl.classList.toggle('msg-tool-run-member', isRunMember)
     // Tool calls arriving mid-stream turn a concise bubble's text into narration.
     const message = activeThread?.messages.find((m) => m.id === msgId)
-    if (message) syncConciseMessageClasses(msgEl, message)
+    if (message) syncConciseMessageClasses(msgEl, message, store.getState().conciseThreadsEnabled)
 
     const nestReasoning =
       run === undefined &&
@@ -3719,7 +3722,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
           : ''
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? ' msg-image-input-unsupported' : ''}`
     const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
-    syncConciseMessageClasses(msgEl, msg)
+    syncConciseMessageClasses(msgEl, msg, store.getState().conciseThreadsEnabled)
     if (origin?.kind === 'hook') msgEl.setAttribute('data-hook-id', origin.hookId)
     if (origin?.kind === 'machine') msgEl.setAttribute('data-operation-id', origin.operationId)
     const body = el('div', { class: 'message-body' })
@@ -4034,6 +4037,22 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     syncAvatarMotion()
   }
 
+  /**
+   * Re-apply the concise view to every rendered message, for when the
+   * experimental setting flips; the activity row picks it up on its next label.
+   */
+  function syncConciseThreadClasses(): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const enabled = store.getState().conciseThreadsEnabled
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]))
+    list.querySelectorAll<HTMLElement>('[data-message-id]').forEach((msgEl) => {
+      const msg = byId.get(msgEl.dataset['messageId'] ?? '')
+      if (msg) syncConciseMessageClasses(msgEl, msg, enabled)
+    })
+    syncFromStore()
+  }
+
   function syncAvatarMotion(): void {
     const thread = getActiveThread(store)
     if (!thread || thread.status !== 'running' || !store.getState().animateAgentAvatars) {
@@ -4152,7 +4171,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     // A failed turn keeps its text even in the concise view; the outcome lands
     // after the bubble was built, and this runs whenever it may have changed.
     const msg = thread?.messages.find((candidate) => candidate.id === messageId)
-    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg)
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled)
     const recovery = turnRecoveryForMessage(thread, messageId)
     if (!projectId || !msgEl || !recovery) return
 
@@ -4461,6 +4480,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       agentNamesRequested = false
       agentNamesRevision++
       syncModelLabels()
+      syncConciseThreadClasses()
     }),
     store.on('message_added', (tid, mid) => {
       appendMessageEl(tid, mid)
