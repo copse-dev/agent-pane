@@ -660,7 +660,7 @@ export async function runAcpAgentFromSettings(
     await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
     // An agent on a remote host answering "Authentication required" needs
     // remote-side remedies; replace the dead-end message with ones that work.
-    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, cwd, options.agentId) ?? err, {
+    throw new AcpTurnFailure(remoteAcpAuthRequiredHint(err, sshTarget, options.agentId) ?? err, {
       assistantText,
       usage: turn
         ? { inputTokens: turn.inputTokens, outputTokens: turn.outputTokens }
