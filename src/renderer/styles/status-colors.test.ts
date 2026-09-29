@@ -37,7 +37,7 @@ function assertNoStatusFill(css: string, selector: string): void {
   for (const body of bodiesOf(css, selector)) {
     assert.doesNotMatch(
       body,
-      /background(?:-(?:color|image))?\s*:[^;{}]*var\(--(?:success|warning|danger|error|info|important)\b/i,
+      /background(?:-(?:color|image))?\s*:[^;{}]*var\(--(?:success|warning|danger|error|info|important|(?:change|diff)-[a-z0-9-]+)\b/i,
       `${selector} must not be a status-coloured fill (docs/ui-taste.md, approval prompts)`,
     )
   }
@@ -101,7 +101,20 @@ describe('status colours come from tokens (#3065)', () => {
   })
 
   it('rejects every semantic status hue in background declarations', () => {
-    for (const token of ['success', 'warning', 'danger', 'error', 'info', 'important']) {
+    for (const token of [
+      'success',
+      'warning',
+      'danger',
+      'error',
+      'info',
+      'important',
+      'change-added',
+      'change-deleted',
+      'change-modified',
+      'change-renamed',
+      'diff-delete',
+      'diff-insert',
+    ]) {
       const property = token === 'success' ? 'background-color' : 'background'
       const value =
         token === 'info' ? `linear-gradient(var(--${token}), var(--bg-base))` : `var(--${token})`
