@@ -127,6 +127,34 @@ describe('evidence', () => {
     assert.equal(found[2]?.excerpt, 'shares src/main/widget.ts')
   })
 
+  it('windows a fix-overlap by when the fix merged, not when it was opened', () => {
+    const at = (days: number): string =>
+      new Date(Date.parse(MERGED) + days * 86_400_000).toISOString()
+    const fix = (
+      number: number,
+      opened: number,
+      merged: number,
+    ): EvidenceInput['mentioners'][number] => ({
+      kind: 'pr',
+      number,
+      title: 'Fix widget sizing',
+      body: 'No mention.',
+      createdAt: at(opened),
+      mergedAt: at(merged),
+      files: ['src/main/widget.ts'],
+    })
+    const found = localEvidence(
+      input([fix(301, 6, 10), fix(302, -9, 2), fix(303, -9, -1), fix(304, 1, 3)]),
+    )
+    assert.deepEqual(
+      found.map((item) => [item.source, item.ref, item.daysAfterMerge]),
+      [
+        ['fix-overlap', '#302', 2],
+        ['fix-overlap', '#304', 3],
+      ],
+    )
+  })
+
   it("does not read a later description's summary block as a mention", () => {
     const block = renderSummaryBlock(
       {

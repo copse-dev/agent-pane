@@ -323,10 +323,19 @@ export function localEvidence(input: EvidenceInput): RiskEvidence[] {
   )
   const evidence: RiskEvidence[] = []
   for (const later of input.mentioners) {
-    if (later.number === input.number || !within(later.createdAt)) continue
+    if (later.number === input.number) continue
     const text = `${later.title}\n${withoutSummaryBlock(later.body)}`
-    const days = daysBetween(input.mergedAt, later.createdAt)
     const ref = `#${String(later.number)}`
+    // A fix counts from when it landed: one opened before this change but
+    // merged inside the window is a candidate, one merged after it is not.
+    if (!within(later.createdAt)) {
+      if (later.mergedAt !== null && within(later.mergedAt) && !pattern.test(text)) {
+        const overlap = fixOverlap(later, own, input.mergedAt)
+        if (overlap !== null) evidence.push(overlap)
+      }
+      continue
+    }
+    const days = daysBetween(input.mergedAt, later.createdAt)
     if (
       later.kind === 'pr' &&
       /^revert\b/i.test(later.title) &&
@@ -353,19 +362,33 @@ export function localEvidence(input: EvidenceInput): RiskEvidence[] {
       })
       continue
     }
-    if (later.kind !== 'pr' || later.mergedAt === null || !isFixTitle(later.title)) continue
-    const shared = later.files.filter((path) => own.has(path))
-    if (shared.length === 0) continue
-    evidence.push({
-      source: 'fix-overlap',
-      ref,
-      title: later.title,
-      daysAfterMerge: days,
-      excerpt: `shares ${shared.slice(0, 4).join(', ')}${shared.length > 4 ? ` and ${String(shared.length - 4)} more` : ''}`,
-      verdict: 'unverified',
-    })
+    if (later.mergedAt === null || !within(later.mergedAt)) continue
+    const overlap = fixOverlap(later, own, input.mergedAt)
+    if (overlap !== null) evidence.push(overlap)
   }
   return evidence
+}
+
+/**
+ * A fix-titled pull request that merged in the window and changed one of the
+ * change's (not hot) source files, dated by its merge.
+ */
+function fixOverlap(
+  later: Mentioner,
+  own: ReadonlySet<string>,
+  mergedAt: string,
+): RiskEvidence | null {
+  if (later.kind !== 'pr' || later.mergedAt === null || !isFixTitle(later.title)) return null
+  const shared = later.files.filter((path) => own.has(path))
+  if (shared.length === 0) return null
+  return {
+    source: 'fix-overlap',
+    ref: `#${String(later.number)}`,
+    title: later.title,
+    daysAfterMerge: daysBetween(mergedAt, later.mergedAt),
+    excerpt: `shares ${shared.slice(0, 4).join(', ')}${shared.length > 4 ? ` and ${String(shared.length - 4)} more` : ''}`,
+    verdict: 'unverified',
+  }
 }
 
 /** Keep verdicts and notes a person already recorded for the same item. */

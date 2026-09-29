@@ -166,6 +166,15 @@
           "excerpt": "Closing — **`main` already has this fix.** #1715 (`6df6cbf4`) landed the identical change while this was queued: ```ts // Bound eagerly: the spy below replaces `monaco.editor.createModel`, so the // original has to be captured now rather than looked up at call time. const createModel = monaco.edi…",
           "verdict": "unrelated",
           "note": "Closed as already fixed on main by #1715."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#1698",
+          "title": "Stop re-listing a thread's checkout on every thread switch, and reindex the right one after an edit",
+          "daysAfterMerge": 1.1,
+          "excerpt": "shares src/main/services/diff-queue.ts",
+          "verdict": "unrelated",
+          "note": "Shared diff-queue file only; #1698 fixes file-index re-listing (#1694), not the Changes pane."
         }
       ]
     },
@@ -630,6 +639,15 @@
           "excerpt": "test(renderer): format the legacy ACP picker case Follow-up to #1836. Prettier collapsed the single ACP-agent fixture onto one line; without this mechanical change, current `main` fails `npm run format:check`. Validated locally…",
           "verdict": "incomplete",
           "note": "main failed format:check after #1836; a mechanical format fix."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#1785",
+          "title": "fix: preserve and recover terminal agent turns",
+          "daysAfterMerge": 0.1,
+          "excerpt": "shares src/main/services/agent-errors.ts",
+          "verdict": "unrelated",
+          "note": "Shared agent-errors file only; #1785 adds terminal-outcome persistence, not an adapter fix."
         }
       ]
     },
@@ -1477,6 +1495,15 @@
           "excerpt": "…on this base: **8,611 passing / 0 failing**. - The plugin-service regression test confirmed failing on the old body before the fix. - Rebased onto `main` after #2421 landed; re-ran the full gate on the rebased base. No renderer-visible change (`persistence.ts` is a patch-shape helper with the same output), so no visual eva…",
           "verdict": "unrelated",
           "note": "#2524 rebased onto #2421; the gate it fixes was broken by the dynamic-key `in`, not by #2421."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#2383",
+          "title": "fix: allow native SSH-signed commits in sandbox",
+          "daysAfterMerge": 0.8,
+          "excerpt": "shares src/main/services/storage/settings-writable.ts",
+          "verdict": "unrelated",
+          "note": "Shared settings file only; #2383 adds an SSH-signing permission, unrelated to the isRecord sweep."
         }
       ]
     },
@@ -1625,6 +1652,15 @@
           "excerpt": "…*Size and change shape:** no change under 100 source lines regressed (0 of 37). But every regression came from a mostly *additive* change that altered an existing decision or behaviour, so an added-vs-deleted ratio is not a safe proxy for \"low\". - **#3079** was rated High for crossing \"renderer-to-main dispatch and persisted thread review metadata … an API protocol version bump\". The reason names surfaces touched, not what the change does to them (optional fields, no migration). It merged today, so i…",
           "verdict": "unrelated",
           "note": "This eval's own description."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 1,
+          "excerpt": "shares src/main/services/review/review-service.ts, src/renderer/controller/message-queue.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
         }
       ],
       "note": "Case study from the task: rated High for an optional field on a persisted report type, an optional field on the renderer-to-main run payload (API protocol 20 -> 21), and a gated prompt paragraph; no migration, nothing existing changed shape. Merged 2026-09-27, so its outcome window has barely started."
@@ -1776,6 +1812,15 @@
           "excerpt": "5. **`git-changes-committed-diff.png` on main shows the wrong diff.** #3123 merged with the render from its commit 5856148 (blob `32ef764`), which captured the stale `staged.ts` diff rather than the committed file's diff (see https://github.com/copse-dev/agent-pane/pull/3123#issuecomment-5847901551). The previous reference…",
           "verdict": "incomplete",
           "note": "#3123 merged a reference screenshot captured from the stale diff; test references only."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 2,
+          "excerpt": "shares src/renderer/views/terminals-pane.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
         }
       ]
     },
@@ -1865,6 +1910,24 @@
           "excerpt": "## Outcome ACP activity stays compact by default, and Copse tool labels from Codex and Claude ACP are normalized. This is reconciled with current `main` in merge 35dc1cb32. Where the two conflicted, it keeps main's sentence-case tool names (#3128) and main's grouping of an expanded run into steps by assistant message. It does not use the flat list or Title Case this PR originally had. What this PR adds on top of main: - **Reasoning is closed by default, even while live.** Blank reasoning is…",
           "verdict": "unrelated",
           "note": "Keeps #3128's sentence-case names in a merge."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3215",
+          "title": "Stop Copse refreshing the Claude OAuth login behind Claude Code's back",
+          "daysAfterMerge": 0.9,
+          "excerpt": "shares packages/plan-usage/src/claude.ts",
+          "verdict": "unrelated",
+          "note": "Shared plan-usage file only; #3215 changes OAuth refresh, not the copy edits."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3099",
+          "title": "Fix plugin rollout seeds and live canvas toggle (default-on audit, slice 2)",
+          "daysAfterMerge": 1.4,
+          "excerpt": "shares packages/agent/src/plugins/devtools-shortcut-plugin.ts, packages/agent/src/plugins/mcp-ui-canvas-plugin.ts, src/main/services/plugins/plugin-service.ts",
+          "verdict": "unrelated",
+          "note": "Shared plugin files only; #3099 fixes default-on audit findings, not the copy edits."
         }
       ]
     },
@@ -2044,7 +2107,17 @@
         "reviewIssues": null
       },
       "observedDays": 1.1,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 2.1,
+          "excerpt": "shares src/renderer/views/terminals-pane.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
     },
     {
       "number": 3137,
@@ -2309,7 +2382,17 @@
         "reviewIssues": null
       },
       "observedDays": 0.3,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 1.3,
+          "excerpt": "shares src/main/services/review/review-service.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
     },
     {
       "number": 3191,
@@ -2350,6 +2433,15 @@
           "excerpt": "…e-pane render. I took CI's Linux render instead of restoring the older blob `2d672cd`. - Its unstaged list still shows the sandbox `.bashrc`, which #3181 and #3191 cover. - `process-manager` and `process-manager-agent-working` are left out: #3121 changed them on `main`, and `main`'s copies win. **24 references re-rendere…",
           "verdict": "unrelated",
           "note": "Mentions #3191 as covering a render artefact."
+        },
+        {
+          "source": "fix-overlap",
+          "ref": "#3181",
+          "title": "Stop Linux sandbox placeholders leaking into the checkout: run Copse's own reads on the read-only overlay",
+          "daysAfterMerge": 0,
+          "excerpt": "shares src/main/project-sandbox/config.ts",
+          "verdict": "unrelated",
+          "note": "Parallel fix for the pre-existing bwrap placeholder problem; opened before this change and does not fix it."
         }
       ]
     },
@@ -2663,7 +2755,17 @@
         "reviewIssues": null
       },
       "observedDays": 1.1,
-      "evidence": []
+      "evidence": [
+        {
+          "source": "fix-overlap",
+          "ref": "#3102",
+          "title": "Fix what 37 eslint-disable directives were hiding",
+          "daysAfterMerge": 2.1,
+          "excerpt": "shares src/shared/usage/footer-usage-summary.ts",
+          "verdict": "unrelated",
+          "note": "Shared file only; #3102 is a repo-wide eslint-disable cleanup, not a fix to this change."
+        }
+      ]
     },
     {
       "number": 3212,

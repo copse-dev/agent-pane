@@ -52,9 +52,10 @@ sources:
    repository's URL). Matches come from its description, or from GitHub's cross-reference
    timeline, which covers comments and commits. Dependabot bodies are skipped because they
    quote upstream issue numbers.
-3. **fix-overlap**: a later merged pull request with a fix-like title (`Fix`, `Stop`,
-   `Restore`, `Keep`, …) that changed one of this change's source files. Files touched by 2%
-   or more of the window's merged changes are excluded as too hot to mean anything.
+3. **fix-overlap**: a pull request with a fix-like title (`Fix`, `Stop`, `Restore`, `Keep`, …)
+   that merged within the window and changed one of this change's source files. It is dated
+   by its merge, since a fix counts from when it lands. Files touched by 2% or more of the
+   window's merged changes are excluded as too hot to mean anything.
 4. **main-ci**: the `CI` push run failed on the landed commit and passed on its parent.
 
 Every item starts `unverified`, and a person rules on it. The verdicts, with a one-line note
@@ -72,8 +73,8 @@ or `incomplete`, and **Low** otherwise. A case with any `unverified` item is not
 merged case is **mature** once its full window has been observed. Re-collecting keeps every
 verdict and note.
 
-In this corpus, 88 evidence items were ruled on: 9 regressions, 1 cosmetic, 12 incomplete and
-66 unrelated. Most fix-overlaps and many references turn out to be noise (a formatter switch
+In this corpus, 99 evidence items were ruled on: 9 regressions, 1 cosmetic, 12 incomplete and
+77 unrelated. Most fix-overlaps and many references turn out to be noise (a formatter switch
 shares a file with every later fix; screenshot re-baselines list the PRs whose UI they
 capture), which is why every item needs a ruling.
 
