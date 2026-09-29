@@ -111,7 +111,11 @@ export async function installMockScenario(
           if (status.errors.length > 0) throw new Error(status.errors.join('\n'))
           return status.complete
         },
-        { timeout: timeoutMs, interval: 50, timeoutMsg: 'The conversation scenario did not finish' },
+        {
+          timeout: timeoutMs,
+          interval: 50,
+          timeoutMsg: 'The conversation scenario did not finish',
+        },
       )
     },
     async assertComplete() {
