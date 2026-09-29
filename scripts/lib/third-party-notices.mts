@@ -155,13 +155,24 @@ export function findNoticeProblems(
   for (const component of components) {
     byName.set(component.name, [...(byName.get(component.name) ?? []), component])
   }
-  const entriesByName = new Map(notices.entries.map((entry) => [entry.packageName, entry]))
+  const entriesByName = new Map<string, NoticeEntry[]>()
+  for (const entry of notices.entries) {
+    entriesByName.set(entry.packageName, [...(entriesByName.get(entry.packageName) ?? []), entry])
+  }
+  for (const [name, entries] of entriesByName) {
+    if (entries.length > 1) {
+      problems.push({
+        subject: name,
+        problem: `has ${String(entries.length)} THIRD_PARTY_NOTICES.md entries; keep exactly one`,
+      })
+    }
+  }
 
   for (const [name, shipped] of byName) {
     const needing = shipped.filter((component) => needsNoticeEntry(component.license))
     const first = needing[0]
     if (first === undefined) continue
-    const entry = entriesByName.get(name)
+    const entry = entriesByName.get(name)?.[0]
     if (!entry) {
       problems.push({
         subject: `${name}@${first.version}`,

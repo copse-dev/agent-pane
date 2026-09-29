@@ -148,6 +148,19 @@ describe('findNoticeProblems', () => {
     ])
   })
 
+  it('rejects duplicate entries without letting a later one mask an invalid election', () => {
+    const markdown = `${NOTICES.replace('BSD-3-Clause option', 'GPL-3.0 option')}
+## Duplicate Forge entry (node-forge)
+
+- **License:** \`(BSD-3-Clause OR GPL-2.0)\`. Copse elects the BSD-3-Clause option.
+- **Modifications:** none. Version 1.4.0 is shipped as published.
+`
+    assert.deepEqual(problemsFor(SHIPPED, markdown), [
+      'node-forge: has 2 THIRD_PARTY_NOTICES.md entries; keep exactly one',
+      'node-forge@1.4.0: entry elects GPL-3.0, which is not an option in (BSD-3-Clause OR GPL-2.0)',
+    ])
+  })
+
   it('requires a quoted version list to cover every shipped version of a package', () => {
     const splitVersions = [
       ...SHIPPED,
