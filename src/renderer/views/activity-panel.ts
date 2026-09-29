@@ -499,6 +499,37 @@ export function mountActivityPanel(
     return rowOpeners().find((opener) => opener.getAttribute('aria-current') === 'true')
   }
 
+  /** Preserve what the reader is looking at while a live activity update redraws the list. */
+  function captureListScrollAnchor(): { rowKey: string; viewportTop: number } | null {
+    const listRect = list.getBoundingClientRect()
+    for (const row of list.querySelectorAll<HTMLElement>('.activity-row')) {
+      const rowKey = row.dataset['rowKey']
+      if (!rowKey) continue
+      const rowRect = row.getBoundingClientRect()
+      if (rowRect.bottom > listRect.top) {
+        return { rowKey, viewportTop: rowRect.top }
+      }
+    }
+    return null
+  }
+
+  function restoreListScrollAnchor(
+    anchor: { rowKey: string; viewportTop: number } | null,
+    fallbackScrollTop: number,
+  ): void {
+    if (anchor) {
+      const row = [...list.querySelectorAll<HTMLElement>('.activity-row')].find(
+        (candidate) => candidate.dataset['rowKey'] === anchor.rowKey,
+      )
+      if (row) {
+        const delta = row.getBoundingClientRect().top - anchor.viewportTop
+        if (Math.abs(delta) > 0.5) list.scrollTop += delta
+        return
+      }
+    }
+    if (list.scrollTop !== fallbackScrollTop) list.scrollTop = fallbackScrollTop
+  }
+
   /** Where focus was, so a re-render can put it back: the list, or a detail control. */
   function captureFocus():
     | { area: 'list' }
@@ -555,6 +586,8 @@ export function mountActivityPanel(
     const at = now()
     lastRenderAt = at
     const focus = captureFocus()
+    const previousListScrollTop = list.scrollTop
+    const listScrollAnchor = captureListScrollAnchor()
     const groups = deriveActivity({
       threads: collectActivityThreads(store),
       approvals: sources.approvals.pending(),
@@ -609,6 +642,7 @@ export function mountActivityPanel(
       }
       children.push(...populated.map((group) => groupElement(group, at)))
       list.replaceChildren(...children)
+      restoreListScrollAnchor(listScrollAnchor, previousListScrollTop)
       renderDetail(selected, at)
     }
     dialog.dataset['needsYou'] = String(needCount)
