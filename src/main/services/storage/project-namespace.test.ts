@@ -189,6 +189,20 @@ describe('projectStoreNamespaceDir', () => {
     assert.equal(projectStoreNamespaceDir(base), join(base, 'project-b'), 'outside the turn')
   })
 
+  it("keeps a turn's store in its project's directory after the project is removed", () => {
+    const base = tempBase()
+    openTwoProjects('project-b')
+    const turn = turnIn('project-a', '/repos/alpha')
+
+    const before = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+    // The user removes project A while its background turn is still running.
+    storageSet('projects', [{ id: 'project-b', path: '/repos/beta', name: 'beta' }])
+    const after = runWithThreadExecutionContext(turn, () => projectStoreNamespaceDir(base))
+
+    assert.equal(before, join(base, 'project-a'))
+    assert.equal(after, before, 'the rest of the turn writes where it started')
+  })
+
   it("migrates a background turn's own legacy directory under its own id", () => {
     const base = tempBase()
     const legacyA = join(base, legacyName('/repos/alpha'))
