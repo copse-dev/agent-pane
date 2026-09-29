@@ -140,11 +140,26 @@ describe('AppleDevelopmentService enrollment', () => {
     })
 
     it('stays silent for an enrolled project and after the user removes it', async () => {
+      // Enrolling is refused off macOS, so the enrolled state needs a Mac host;
+      // enrolling then discovers the project, which must not start real Xcode.
+      const driver = new InstalledXcodeDriver()
+      driver.discover = (): Promise<AppleDriverDiscovery> =>
+        Promise.resolve({
+          toolchain: {
+            developerDir: '/Applications/Xcode.app/Contents/Developer',
+            version: 'Xcode 18',
+          },
+          candidates: [],
+          destinations: [],
+          metadataRequiresExecution: false,
+          setupMessage: null,
+        })
       const service = new AppleDevelopmentService({
         supervisor: new TaskSupervisor({ store: new EmptyTaskStore() }),
+        driver,
         pluginEnabled: (): boolean => true,
         suggestionsEnabled: (): boolean => true,
-        platform: 'linux',
+        platform: 'darwin',
         resolveProjectRoot: (): string => '/project',
         detectProject: (): Promise<boolean> => Promise.resolve(true),
         resolveContext: (projectId, threadId): Promise<ThreadExecutionContext> =>
