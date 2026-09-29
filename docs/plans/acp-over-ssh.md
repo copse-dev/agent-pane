@@ -166,6 +166,9 @@ host and appear in the picker.
 - **Local secrets cross the wire only with consent** — locale allow-list on the
   command line; configured agent `env` only after the forwarding prompt, via
   stdin (above).
+- **Remembered tool approvals are host-scoped.** The durable ACP grant key
+  includes the configured SSH host id, so an agent/tool-kind approval on one
+  remote account cannot silently authorize the same agent on another host.
 - **`ssh` classification is untouched** — the transport is injected below
   command routing, so user-authored `ssh` stays hard-external.
 - **Host trust** is the user's own `known_hosts` via OpenSSH; no parallel store.

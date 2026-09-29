@@ -44,6 +44,11 @@ describe('acp-permission-grants', () => {
     ])
   })
 
+  it('does not reuse a legacy host-agnostic remote grant', () => {
+    storageSet(GRANTS_KEY, ['a@remote:read'])
+    assert.equal(isAcpPermissionRemembered('a', 'read', { kind: 'remote', hostId: 'dev' }), false)
+  })
+
   it('concurrent grants do not drop each other', async () => {
     await Promise.all([
       rememberAcpPermission('a', 'read'),

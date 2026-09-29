@@ -134,7 +134,8 @@ reads the original command.
   Copse's loopback native-tool bridge or its token, so bridged-title auto-approval does not apply
   either. Configured agent `env` reaches the host only after a consent prompt, over stdin; a
   missing curated adapter is installed only after an approval that names the host and the pinned
-  `package@version`.
+  `package@version`. Remembered ACP tool-kind approvals are scoped to the configured SSH host;
+  an approval on one host never authorizes the same agent on another.
 - **Native `run_shell` and `run_background`** on an SSH workspace currently take the gate's
   sandbox state from the local machine, although the command itself runs on the remote host
   unsandboxed. That is a known gap against this contract (ambiguity without containment must
