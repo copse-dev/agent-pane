@@ -35,6 +35,8 @@ import { exploreTool } from '../tools/explore-tool.ts'
 import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
+import { reviewerInputTool } from '../tools/reviewer-input-tool.ts'
+import { REVIEWER_INPUT_PLUGIN_ID } from '@copse/agent/plugins/reviewer-input-plugin.ts'
 import { proposeThreadTool } from '../tools/propose-thread-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { registerBrowserTools } from '../tools/browser-tools.ts'
@@ -85,6 +87,7 @@ import {
   openSimulatorDesktopTool,
 } from '../tools/simulator-desktop-tool.ts'
 import { launchGuiAppTool } from '../tools/gui-app-launch-tool.ts'
+import { deviceHubTool } from '../tools/device-hub-tool.ts'
 import { IMAGE_GEN_TOOL_NAME, imageGenTool } from '../tools/image-gen-tool.ts'
 
 export function createRegistry(): ToolRegistry {
@@ -135,10 +138,9 @@ export function createRegistry(): ToolRegistry {
   syncLongHorizonTasksTools(registry)
   // Experimental model classifier (off by default, issue #557). Adds a
   // suggest_model tool that recommends a capability tier for a task so work can
-  // be routed to the cheapest model that can handle it. Advisory only.
-  if (getSetting<boolean>(MODEL_CLASSIFIER_ENABLED_SETTING, false)) {
-    registry.register(suggestModelTool)
-  }
+  // be routed to the cheapest model that can handle it. Advisory only. Live
+  // toggles route through {@link syncModelClassifierTools} on `settings:set`.
+  syncModelClassifierTools(registry)
   // Experimental client-side advisor strategy (off by default, issue #566). Adds
   // an `advisor` tool that forwards the full transcript + verified repo state to
   // a larger advisor model for strategic guidance, so the executor can run on a
@@ -151,10 +153,9 @@ export function createRegistry(): ToolRegistry {
   // Experimental orchestration strategy (off by default) — the advisor's
   // inverse: the chat model stays the orchestrator and a `delegate_step` tool
   // hands each bounded implementation step to a cheaper/faster worker model
-  // running as a subagent, with the parent observing between steps.
-  if (getSetting<boolean>(ORCHESTRATION_STRATEGY_ENABLED_SETTING, false)) {
-    registry.register(delegateStepTool)
-  }
+  // running as a subagent, with the parent observing between steps. Live
+  // toggles route through {@link syncOrchestrationStrategyTools} on `settings:set`.
+  syncOrchestrationStrategyTools(registry)
   // Copse Reviewer on demand (docs/plans/copse-reviewer.md, Phase 3). Gated by
   // the `copse.review` first-party plugin — the plugin toggle in Settings >
   // Plugins is the atomic master switch. Live toggles route through
@@ -203,6 +204,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
+  syncReviewerInputTools(registry)
   // Model-proposed threads. Always registered: an agent can spot work worth
   // splitting out in any project, and the card it draws is inert until clicked
   // (see `propose-thread-tool.ts`), so there is nothing to gate.
@@ -242,8 +244,10 @@ export function syncAppleDevelopmentTools(
     if (!registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)) {
       registry.register(openSimulatorDesktopTool)
     }
+    if (!registry.has(deviceHubTool.name)) registry.register(deviceHubTool)
   } else {
     registry.unregister(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)
+    registry.unregister(deviceHubTool.name)
   }
 }
 
@@ -283,6 +287,15 @@ export function syncRoadmapPlanTools(registry: ToolRegistry): void {
     if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
   } else {
     registry.unregister('roadmap_plan')
+  }
+}
+
+/** Keep saved reviewer questions available to agents only while the experiment is enabled. */
+export function syncReviewerInputTools(registry: ToolRegistry): void {
+  if (getDefaultPluginRegistry().isEnabled(REVIEWER_INPUT_PLUGIN_ID)) {
+    if (!registry.has(reviewerInputTool.name)) registry.register(reviewerInputTool)
+  } else {
+    registry.unregister(reviewerInputTool.name)
   }
 }
 
@@ -473,6 +486,52 @@ export function syncParallelSearchTools(registry: ToolRegistry): void {
   } else {
     registry.unregister(PARALLEL_SEARCH_TOOL_NAME)
   }
+}
+
+/**
+ * Register or unregister the experimental `suggest_model` tool to match the
+ * `modelClassifierEnabled` setting. Called at startup (via createRegistry) and
+ * again from `settings:set` when the Settings checkbox changes, so the tool
+ * appears or disappears without an app restart.
+ */
+export function syncModelClassifierTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(MODEL_CLASSIFIER_ENABLED_SETTING, false)) {
+    if (!registry.has(suggestModelTool.name)) registry.register(suggestModelTool)
+  } else {
+    registry.unregister(suggestModelTool.name)
+  }
+}
+
+/**
+ * Register or unregister the experimental `delegate_step` tool to match the
+ * `orchestrationStrategyEnabled` setting. Called at startup (via createRegistry)
+ * and again from `settings:set` when the Settings checkbox changes, so the tool
+ * appears or disappears without an app restart.
+ */
+export function syncOrchestrationStrategyTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(ORCHESTRATION_STRATEGY_ENABLED_SETTING, false)) {
+    if (!registry.has(delegateStepTool.name)) registry.register(delegateStepTool)
+  } else {
+    registry.unregister(delegateStepTool.name)
+  }
+}
+
+/**
+ * Main-side mirror of the Settings lock on credential-gated plugins: refuse to
+ * switch `copse.parallel-search` on while no Parallel API key resolves, since
+ * {@link syncParallelSearchTools} would register nothing and the plugin would
+ * read as on while contributing no tool. Returns the refusal reason, or null
+ * when the toggle may proceed. Never blocks the off-direction.
+ */
+export function pluginEnableRefusal(pluginId: string, enabled: boolean): string | null {
+  if (
+    enabled &&
+    pluginId === PARALLEL_SEARCH_PLUGIN_ID &&
+    resolveApiKey(PARALLEL_SEARCH_PROVIDER_ID) === null
+  ) {
+    return 'Add a Parallel API key before enabling copse.parallel-search.'
+  }
+  return null
 }
 
 /** Register skill tools after the skills registry has been populated. */
