@@ -82,12 +82,11 @@ The hardware budget is a declared class (`HARDWARE_CLASSES`, Compact ≈8 GB thr
 `src/main/services/diagnostics/event-loop-watchdog.ts`; sizing advice links out to a
 third-party VRAM calculator (`src/shared/context-window-advice.ts:22`).
 
-### G-03 — Plan steps have no shape
+### G-03 — Plan-step shape — resolved
 
-`planStepSchema` is `{ id, label }` (`src/shared/threads/plan-schema.ts:29`). Todos separately
-carry `status`, an optional `check`, and `assignedModel: 'cloud' | 'local'`
-(`packages/agent/src/wire-types.ts:31`). No relation between the two, no dependency edges, no
-effort tier, no expected output.
+`planStepSchema` retains `{ id, label }` as the compatible minimum and now accepts optional
+`dependsOn`, `effort`, `todoId`, and `expectedOutput` metadata. This supplies the durable shape
+for future plan writers and schedulers without claiming execution behavior in the P1 schema layer.
 
 ### G-04 — Verification runs against the wrong root
 
