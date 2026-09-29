@@ -31,6 +31,11 @@ html.is-demo-pane-expanded #pane-chat {
   width: var(--demo-focus-chat-width);
   min-width: 320px;
 }
+html.is-demo-pane-expanded .messages-list > .msg-user {
+  position: relative;
+  top: auto;
+  z-index: auto;
+}
 html.is-demo-pane-expanded #resizer-files {
   display: block !important;
 }
