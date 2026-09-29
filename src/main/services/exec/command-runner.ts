@@ -193,10 +193,11 @@ export function runCommand(
             }, timeout_ms)
           : undefined
 
-      // The ASRT lease must end exactly once, when the child is gone. A timeout
-      // settles the promise early, so the `close` that follows the kill still
-      // releases it. Otherwise ASRT keeps deferring the Linux write-deny mount
-      // point cleanup (.bashrc, .gitconfig, ...) for every later command.
+      // The ASRT and Git SSH leases must end exactly once, when the child is
+      // gone. A timeout settles the promise early, so the `close` that follows
+      // the kill still releases them. Otherwise ASRT keeps deferring the Linux
+      // write-deny mount point cleanup (.bashrc, .gitconfig, ...) for every
+      // later command.
       let sandboxReleased = false
       const releaseSandbox = (): void => {
         if (sandboxReleased || opts.unsandboxed) return
@@ -204,12 +205,19 @@ export function runCommand(
         afterSandboxedCommand()
       }
 
-      const finish = (fn: () => void): void => {
+      let resourcesReleased = false
+      const releaseResources = (): void => {
+        if (resourcesReleased) return
+        resourcesReleased = true
         if (timer) clearTimeout(timer)
         cancelKill?.()
         opts.signal?.removeEventListener('abort', onAbort)
         releaseGitSsh?.()
         releaseSandbox()
+      }
+
+      const finish = (fn: () => void): void => {
+        releaseResources()
         fn()
       }
 
@@ -240,7 +248,7 @@ export function runCommand(
 
       proc.on('close', (code) => {
         if (settled) {
-          releaseSandbox()
+          releaseResources()
           return
         }
         settled = true
@@ -259,7 +267,9 @@ export function runCommand(
 
       proc.on('error', (err) => {
         if (settled) {
-          releaseSandbox()
+          // A failed signal can emit `error` while the timed-out child is still
+          // running. `close`, not `error`, is the boundary where its sandbox
+          // and SSH resources are safe to release.
           return
         }
         settled = true
