@@ -310,6 +310,35 @@ describe('ResponsesProvider streaming', () => {
     assert.equal(usage.responseServiceTier, 'priority')
   })
 
+  it('retries without an output ceiling that the endpoint rejects', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-sol', {
+      apiKey: 'test-key',
+      maxOutputTokens: 2_048,
+    })
+    const requests: CapturedRequest[] = []
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async (
+      request,
+    ): Promise<AsyncIterable<TestEvent>> => {
+      requests.push(request)
+      if (requests.length === 1) {
+        throw Object.assign(new Error('max_output_tokens exceeds the limit for this model'), {
+          status: 400,
+        })
+      }
+      return streamEvents([{ type: 'response.output_text.delta', delta: 'ok' }])
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+
+    const chunks = await collect(provider)
+
+    assert.equal(at(requests, 0).max_output_tokens, 2_048)
+    assert.equal(at(requests, 1).max_output_tokens, undefined)
+    assert.deepEqual(chunks, [{ type: 'text', text: 'ok' }])
+  })
+
   it('synthesizes a tool-call id when a Responses endpoint omits call_id', async () => {
     const provider = new ResponsesProvider('openai/gpt-test', {
       baseURL: 'https://api.perplexity.ai/v1',

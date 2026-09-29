@@ -768,6 +768,32 @@ describe('createProvider OpenAI transport routing', () => {
     assert.equal(request.prompt_cache_key, 'thread-abc')
   })
 
+  it('sends an explicit output ceiling on the Responses transport', async () => {
+    const provider = createProvider('gpt-5.6-sol', { openAiApiKey: 'sk-test' }, undefined, {
+      params: { maxOutputTokens: 2_048 },
+    })
+    assert.ok(provider instanceof ResponsesProvider)
+    const captured: { request?: { max_output_tokens?: number } } = {}
+    Object.defineProperty(provider, 'client', {
+      value: {
+        responses: {
+          create: (request: {
+            max_output_tokens?: number
+          }): AsyncIterable<{ type: string; delta: string }> => {
+            captured.request = request
+            return oneTextDelta()
+          },
+        },
+      },
+      configurable: true,
+    })
+    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+
+    assert.equal(captured.request?.max_output_tokens, 2_048)
+  })
+
   it('never routes an OpenRouter-hosted OpenAI model to the first-party transport', () => {
     // OpenRouter serves its own endpoint; it must stay on the aggregator path.
     const provider = createOpenRouterProvider('openai/gpt-5.6-sol', 'sk-or-test')

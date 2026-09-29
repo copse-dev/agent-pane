@@ -73,16 +73,18 @@ function openAiResponsesProvider(
   model: string,
   apiKey: string,
   promptCacheKey: string | undefined,
-  serviceTier: ServiceTier | undefined,
+  opts: {
+    serviceTier?: ServiceTier
+    params: ModelParameters
+    maxOutputTokens?: number
+  },
 ): LLMProvider {
   return new ResponsesProvider(model, {
     apiKey,
     reasoningSummaries: true,
     encryptedReasoning: true,
+    ...opts,
     ...(promptCacheKey ? { promptCacheKey } : {}),
-    // A billing choice, not a transport detail: moving a model to Responses
-    // must not silently drop the tier the user selected.
-    ...(serviceTier ? { serviceTier } : {}),
     ...OPENAI_STORE_OPT_OUT,
   })
 }
@@ -134,7 +136,10 @@ export function createProvider(
       )
     }
     if (usesResponsesApi(m) && !forceChatCompletions) {
-      return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, opts.serviceTier)
+      return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, {
+        ...tierOpt,
+        ...tunedOpts(m),
+      })
     }
     return new OpenAIProvider(m, {
       apiKey: openAiApiKey,
@@ -162,7 +167,10 @@ export function createProvider(
   if (openAiApiKey) {
     const id = model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o'
     if (usesResponsesApi(id) && !forceChatCompletions) {
-      return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, opts.serviceTier)
+      return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, {
+        ...tierOpt,
+        ...tunedOpts(id),
+      })
     }
     return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
