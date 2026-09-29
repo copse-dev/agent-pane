@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer, type Server } from 'node:https'
-import { networkInterfaces } from 'node:os'
+import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { isPrivateOrLinkLocalHost } from '@copse/llm/credential-url.ts'
@@ -25,10 +25,20 @@ export const MOBILE_PORT = 42773
 const pairSchema = z.object({ label: z.string().trim().min(1).max(64) })
 const idPattern = /^[\w-]{1,128}$/
 
-export function mobileLanAddresses(): string[] {
-  return Object.values(networkInterfaces()).flatMap((entries) =>
+export interface MobileLanAddress {
+  address: string
+  interfaceName: string
+}
+
+/** Keep interface identity: laptops commonly have Wi-Fi, VPN and VM addresses. */
+export function mobileLanAddresses(
+  interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces(),
+): MobileLanAddress[] {
+  return Object.entries(interfaces).flatMap(([interfaceName, entries]) =>
     (entries ?? []).flatMap((entry) =>
-      entry.family === 'IPv4' && !entry.internal && isRfc1918(entry.address) ? [entry.address] : [],
+      entry.family === 'IPv4' && !entry.internal && isRfc1918(entry.address)
+        ? [{ address: entry.address, interfaceName }]
+        : [],
     ),
   )
 }
@@ -111,7 +121,7 @@ export async function startMobileServer(options: {
   assetsDir?: string
   onStop?: () => void
 }): Promise<MobileServer> {
-  if (!mobileLanAddresses().includes(options.address))
+  if (!mobileLanAddresses().some((candidate) => candidate.address === options.address))
     throw new Error('Choose an active private IPv4 interface')
   const identity = mobileCertificate(options.address)
   const assets = options.assetsDir ?? join(__dirname, '..', 'mobile')
@@ -228,7 +238,7 @@ export async function startMobileServer(options: {
           if (principal.access !== 'control') {
             send(res, 403, {
               error:
-                'Enable control for this phone in View → Mobile Companion → Manage paired phones on the Mac.',
+                'Enable control for this phone in Settings → Experimental → Mobile Companion on the Mac.',
             })
             return
           }

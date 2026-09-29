@@ -2,6 +2,7 @@ import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
 import { THREAD_PROPOSAL_TOOL } from '@shared/threads/thread-proposal.ts'
+import { isReviewerInputCall } from '@shared/threads/reviewer-input.ts'
 import type { ToolRun, ToolRunStep } from './tool-runs.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
@@ -67,6 +68,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   read_terminal: { running: 'Reading shell', done: 'Read shell' },
   video_frames: { running: 'Reading video', done: 'Read video' },
   ask_user: { running: 'Asking user', done: 'Asked user' },
+  request_review_input: { running: 'Saving question', done: 'Saved question' },
   propose_thread: { running: 'Proposing a thread', done: 'Proposed a thread' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
@@ -469,7 +471,7 @@ export function buildToolCallDisplayItems(
     // A proposed thread is an offer addressed to the user, so it keeps a
     // top-level card for the same reason a subagent does: folded into
     // `Used 12 tools` it is an offer nobody is ever shown.
-    else if (tc.name === THREAD_PROPOSAL_TOOL) proposals.push(tc)
+    else if (tc.name === THREAD_PROPOSAL_TOOL || isReviewerInputCall(tc)) proposals.push(tc)
     else regular.push(tc)
   }
 

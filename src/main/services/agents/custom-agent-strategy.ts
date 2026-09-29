@@ -28,6 +28,7 @@ export const CUSTOM_AGENT_FORBIDDEN_TOOLS: readonly string[] = [
   'advisor',
   'review_changes',
   'ask_user',
+  'request_review_input',
   'git_commit',
 ]
 
