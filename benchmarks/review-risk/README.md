@@ -125,6 +125,10 @@ come from the environment in the same way `copse-review` takes them. `--provider
 --mock-script <file>` runs the whole path without a model; the self-test in
 `scripts/bench-risk.test.ts` does this.
 
+A case the reviewer cannot rate is recorded with its error, and `run` still writes and
+scores the rest, but it exits 1 whenever any case failed. Re-run the failed cases with
+`--case <n>` before comparing sets.
+
 ## Results (2026-09-27)
 
 **What was measured with a live model: nothing.** This environment has no model-provider

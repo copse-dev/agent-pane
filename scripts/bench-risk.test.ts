@@ -13,12 +13,14 @@ import {
   type RiskCase,
   type RiskCorpus,
   type RiskEvidence,
+  type RiskRatingSet,
 } from '@copse/review/risk-eval.ts'
 import { safeJsonParse } from '@copse/std/safe-json.ts'
 import {
   areaOf,
   changeShape,
   excerptAround,
+  failedRatings,
   fetchPulls,
   isBlamingEvidence,
   isFixTitle,
@@ -406,6 +408,30 @@ describe('pickMature', () => {
     assert.deepEqual(
       picked.map((candidate) => candidate.number),
       [...picked.map((candidate) => candidate.number)].sort((a, b) => a - b),
+    )
+  })
+})
+
+describe('failedRatings', () => {
+  it('counts every case a run could not rate, not only a run that rated none', () => {
+    const set = (ratings: RiskRatingSet['ratings']): RiskRatingSet => ({
+      kind: 'copse-risk-ratings',
+      label: 'run',
+      source: 'mock',
+      reviewerRevision: null,
+      promptDigest: null,
+      generatedAt: MERGED,
+      ratings,
+    })
+    assert.equal(failedRatings(set([{ number: 1, risk: 'low', reason: 'Docs.' }])), 0)
+    assert.equal(
+      failedRatings(
+        set([
+          { number: 1, risk: 'low', reason: 'Docs.' },
+          { number: 2, error: 'the provider timed out' },
+        ]),
+      ),
+      1,
     )
   })
 })

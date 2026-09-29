@@ -907,6 +907,14 @@ export async function runRatings(options: RunOptions): Promise<RiskRatingSet> {
   }
 }
 
+/**
+ * The cases a run could not rate. `run` still writes and scores a partial set, but exits 1
+ * when this is non-zero so automation never takes it for a complete benchmark.
+ */
+export function failedRatings(ratings: RiskRatingSet): number {
+  return ratings.ratings.filter((rating) => rating.error !== undefined).length
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 
@@ -1034,12 +1042,12 @@ export async function main(
       })
       const path = join(values.out, `${values.label}.json`)
       writeJson(path, ratings)
-      const failed = ratings.ratings.filter((rating) => rating.error !== undefined).length
+      const failed = failedRatings(ratings)
       io.stdout(
         `bench:risk: wrote ${String(ratings.ratings.length)} ratings (${String(failed)} failed) to ${path}\n`,
       )
       io.stdout(renderRiskReport(scoreRatings(corpus, ratings)))
-      return failed === ratings.ratings.length && failed > 0 ? 1 : 0
+      return failed > 0 ? 1 : 0
     }
     if (command === 'score') {
       const score = scoreRatings(corpus, loadRatings(corpus, values.ratings))
