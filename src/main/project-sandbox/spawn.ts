@@ -37,6 +37,7 @@ import {
   isSshExecutionTarget,
   resolveExecutionTarget,
   resolveSshExecutionTargetForCwd,
+  threadProjectExecutionTarget,
   type ExecutionTarget,
 } from '../services/ssh-workspace/execution-target.ts'
 import {
@@ -98,6 +99,13 @@ async function requireLocalWorkingDirectory(cwd: string): Promise<void> {
 }
 
 function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
+  // Inside an agent turn the turn's own project decides, not whichever project
+  // the window shows now: the gate and the spawn resolve the same answer even
+  // if the user switches projects between them.
+  if (!explicit) {
+    const threadTarget = threadProjectExecutionTarget()
+    if (threadTarget) return threadTarget
+  }
   const target = resolveExecutionTarget(explicit)
   if (isSshExecutionTarget(target)) return target
   // Activation races can leave activeProjectId without sshHost while cwd is already

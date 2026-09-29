@@ -38,6 +38,7 @@ import {
 } from './permission-gate.ts'
 import { decideMcpPermission, describeMcpAnnotations } from './permission-policy.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { spawnRunsOnSshTarget } from '../../project-sandbox/spawn.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { clearReadOutsideProjectGrants, grantReadOutsideProject } from './read-outside-grant.ts'
@@ -63,7 +64,10 @@ import { AUTO_APPROVAL_LEVEL_SETTING, type AutoApprovalLevel } from '@shared/aut
 import { setWorkspaceTrusted } from './workspace-trust.ts'
 import { clearGitRemotesCache } from './git-remotes.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import { runWithThreadExecutionContext } from '../thread-execution-context.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
 import { runWithActiveRunIdentity, setActiveRunTurnTreeId } from '../thread-models.ts'
 import { shellReplayLeaseStore } from './capability-lease.ts'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -1255,6 +1259,47 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     const unroutable = await runGate(AMBIGUOUS, 'ssh-unroutable')
     assert.equal(unroutable.permitted, false)
     assert.deepEqual(unroutable.prompts, ['shell-no-containment'])
+  })
+  it("keeps a turn on its own project's target when the window switches projects", async () => {
+    // A turn in a local project, with the user switching the window to an SSH
+    // project between the gate's decision and the spawn. Both must still see
+    // the turn's own (local) project, or a command approved as contained
+    // would run on the remote host.
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('projects', [
+      { id: 'local-p1', path: LOCAL_ROOT },
+      { id: 'remote-p1', path: REMOTE_ROOT, sshHost: 'dev' },
+    ])
+    const turn = (projectId: string, root: string): ThreadExecutionContext => ({
+      projectId,
+      threadId: 'thread-1',
+      projectRoot: root,
+      root,
+      checkoutMode: 'shared',
+      branch: null,
+    })
+    const restoreRoot = setWorkspaceRootForTest(REMOTE_ROOT)
+    try {
+      storageSet('activeProjectId', 'remote-p1')
+      assert.equal(spawnRunsOnSshTarget(LOCAL_ROOT), true, 'outside a turn the window decides')
+      runWithThreadExecutionContext(turn('local-p1', LOCAL_ROOT), () => {
+        assert.equal(spawnRunsOnSshTarget(LOCAL_ROOT), false)
+      })
+      // And the reverse: an SSH turn stays remote after a switch to a local project.
+      storageSet('activeProjectId', 'local-p1')
+      runWithThreadExecutionContext(turn('remote-p1', REMOTE_ROOT), () => {
+        assert.equal(spawnRunsOnSshTarget(REMOTE_ROOT), true)
+      })
+    } finally {
+      restoreRoot()
+      storageSet('activeProjectId', null)
+      storageSet('projects', [])
+      await setSetting('sshWorkspaceEnabled', false)
+      await setSetting('sshWorkspaceHosts', [])
+    }
   })
 })
 
