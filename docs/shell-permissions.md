@@ -295,9 +295,10 @@ wording stays an expectation, per the section above.
 
 Every project can use `preflight_worktree` and `prepare_worktree`. Preflight detects npm, pnpm,
 Yarn Classic/modern, and Bun from an exact package-manager declaration or an unambiguous lockfile.
-Python projects with `pyproject.toml` and `uv.lock` use locked uv workspace synchronization with an
-installed compatible Python. uv package builds may execute repository code, which approval states;
-automatic Python/tool installation is disabled.
+Python projects use locked uv workspace synchronization (`pyproject.toml` + `uv.lock`) or
+wheel-only pip installation when every root requirement is exact and SHA-256-hashed. uv package
+builds may execute repository code, which approval states; automatic pip source builds and global
+Python/tool installation are disabled.
 It reports runtime requirements, dependency state, declared checks, configuration problems, exact
 setup commands, and a plan fingerprint. The optional `directory` selects a nested project inside
 the execution root. There is no repository-name check or implicit Electron/native requirement.
