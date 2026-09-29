@@ -1,11 +1,9 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
-describe('compact titlebar', () => {
+describe('browser-hosted compact titlebar geometry', () => {
   before(async () => {
-    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
+    await browser.url('/?scenario=chat-layout-styling')
     await $('#titlebar').waitForDisplayed({ timeout: 30_000 })
   })
 
@@ -19,8 +17,6 @@ describe('compact titlebar', () => {
       if (!app || !editor || !editorLabel || !workspaceName || !branch) {
         throw new Error('Missing titlebar fixture element')
       }
-      const onboarding = document.getElementById('onboarding-dialog')
-      if (onboarding) onboarding.hidden = true
       app.style.width = '1024px'
       app.style.maxWidth = '1024px'
       app.style.boxSizing = 'border-box'
@@ -66,6 +62,6 @@ describe('compact titlebar', () => {
     expect(layout.dragWidth).toBeGreaterThanOrEqual(16)
     expect(layout.displayedLabels).toBe(0)
 
-    await $('#titlebar').saveScreenshot(join(E2E_SCREENSHOT_DIR, 'titlebar-compact-width.png'))
+    await saveElementScreenshot('#titlebar', 'titlebar-compact-width.png')
   })
 })

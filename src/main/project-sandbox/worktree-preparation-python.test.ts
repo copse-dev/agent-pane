@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createServer } from 'node:http'
 import {
   existsSync,
   mkdirSync,
@@ -18,6 +20,92 @@ import { baseSandboxConfig } from './config.ts'
 import { setProjectSandboxEnabled } from './enabled.ts'
 import { runWorktreePreparationProcess } from './worktree-preparation.ts'
 import { inspectWorktreePreparation, prepareWorktree } from '../services/worktree-preparation.ts'
+
+const WHEEL_FIXTURE_SCRIPT = `
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'w') as wheel:
+    wheel.writestr('sample_fixture.py', 'VALUE = 42\\n')
+    wheel.writestr('sample_fixture-1.0.0.dist-info/METADATA', 'Metadata-Version: 2.1\\nName: sample-fixture\\nVersion: 1.0.0\\n')
+    wheel.writestr('sample_fixture-1.0.0.dist-info/WHEEL', 'Wheel-Version: 1.0\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n')
+    wheel.writestr('sample_fixture-1.0.0.dist-info/RECORD', '')
+`
+
+function serveWheel(wheel: string, wheelName: string): ReturnType<typeof createServer> {
+  return createServer((request, response) => {
+    if (request.url === '/simple/sample-fixture/') {
+      response.setHeader('content-type', 'text/html')
+      response.end(`<a href="/packages/${wheelName}">${wheelName}</a>`)
+      return
+    }
+    if (request.url === `/packages/${wheelName}`) {
+      response.end(readFileSync(wheel))
+      return
+    }
+    response.statusCode = 404
+    response.end('not found')
+  })
+}
+
+async function exercisePipPreparation(
+  parent: string,
+  root: string,
+  wheel: string,
+  wheelName: string,
+): Promise<void> {
+  const server = serveWheel(wheel, wheelName)
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolvePromise)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address === 'object')
+  const env = {
+    ...process.env,
+    COPSE_DIR: join(parent, 'profile'),
+    PIP_INDEX_URL: `http://127.0.0.1:${String(address.port)}/simple`,
+    PIP_TRUSTED_HOST: '127.0.0.1',
+  }
+  await runPipPreparationFixture(server, parent, root, env)
+}
+
+async function runPipPreparationFixture(
+  server: ReturnType<typeof createServer>,
+  parent: string,
+  root: string,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  await SandboxManager.initialize(baseSandboxConfig(), undefined, false)
+  setProjectSandboxEnabled(true)
+  try {
+    await preparePipFixture(root, env)
+  } finally {
+    setProjectSandboxEnabled(false)
+    await SandboxManager.reset()
+    server.close()
+    rmSync(parent, { recursive: true, force: true })
+  }
+}
+
+async function preparePipFixture(root: string, env: NodeJS.ProcessEnv): Promise<void> {
+  const before = await inspectWorktreePreparation(root, { env })
+  assert.equal(before.state, 'absent')
+  const prepared = await prepareWorktree(root, {
+    env,
+    planFingerprint: before.planFingerprint,
+    offline: false,
+    signal: new AbortController().signal,
+  })
+  assert.equal(prepared.state, 'ready')
+  assert.equal(
+    await runWorktreePreparationProcess(
+      '.venv/bin/python',
+      ['-I', '-c', 'import sample_fixture; print(sample_fixture.VALUE)'],
+      { root, env, mode: 'preflight', offline: true },
+    ),
+    '42',
+  )
+  assert.equal((await inspectWorktreePreparation(root, { env, offline: true })).state, 'ready')
+}
 
 it(
   'preflight scratch is disposable and does not grant project or shared-cache writes',
@@ -160,5 +248,28 @@ with zipfile.ZipFile(sys.argv[1], 'w') as wheel:
       await SandboxManager.reset()
       rmSync(parent, { recursive: true, force: true })
     }
+  },
+)
+
+it(
+  'installs a real hash-locked wheel through pip without running source builds',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    if (spawnSync('python3', ['-m', 'pip', '--version']).status !== 0) {
+      t.skip('real pip fixture requires installed Python and pip; no global tool installation')
+      return
+    }
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'pip-preparation-test-')))
+    const root = join(parent, 'project')
+    mkdirSync(join(root, 'vendor'), { recursive: true })
+    const wheelName = 'sample_fixture-1.0.0-py3-none-any.whl'
+    const wheel = join(root, 'vendor', wheelName)
+    const archive = spawnSync('python3', ['-c', WHEEL_FIXTURE_SCRIPT, wheel], {
+      encoding: 'utf8',
+    })
+    assert.equal(archive.status, 0, archive.stderr)
+    const hash = createHash('sha256').update(readFileSync(wheel)).digest('hex')
+    writeFileSync(join(root, 'requirements.lock'), `sample-fixture==1.0.0 --hash=sha256:${hash}\n`)
+    await exercisePipPreparation(parent, root, wheel, wheelName)
   },
 )

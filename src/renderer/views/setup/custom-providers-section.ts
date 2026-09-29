@@ -124,6 +124,22 @@ const LOCAL_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
   { label: 'text-generation-webui', baseUrl: 'http://127.0.0.1:5000/v1', slug: 'textgen' },
 ]
 
+type ApiStyle = NonNullable<ExtraProvider['apiStyle']>
+
+function apiStyleSelect(current: ApiStyle = 'chat-completions'): HTMLSelectElement {
+  const select = el('select', { name: 'providerApiStyle', class: 'provider-api-style' })
+  select.append(
+    el('option', { value: 'chat-completions' }, 'Chat Completions'),
+    el('option', { value: 'responses' }, 'Responses'),
+  )
+  select.value = current
+  return select
+}
+
+function selectedApiStyle(select: HTMLSelectElement): ApiStyle {
+  return select.value === 'responses' ? 'responses' : 'chat-completions'
+}
+
 // ---- Privacy badge -------------------------------------------------------
 // Data-policy badge + hint shown in every provider form so it's visible where
 // prompts go by default (see packages/llm/src/data-policies.ts and
@@ -407,6 +423,7 @@ export function createCustomProvidersSection(
         },
         chipLabel(key),
       )
+      chip.dataset['provider'] = key
       chip.classList.toggle('active', key === selected)
       if (key !== 'other' && configured.has(key)) {
         chip.append(el('span', { class: 'provider-chip-dot', title: 'Key configured' }))
@@ -686,10 +703,26 @@ export function createCustomProvidersSection(
       placeholder: '{ "provider": { "require_parameters": true } }',
     })
     extraBodyArea.value = provider.extraBody ? JSON.stringify(provider.extraBody, null, 2) : ''
+    const apiStyle = apiStyleSelect(provider.apiStyle)
     const advanced = el(
       'details',
       { class: 'provider-advanced' },
       disclosureSummary('Advanced'),
+      ...(provider.builtin
+        ? []
+        : [
+            el(
+              'label',
+              {},
+              'API format',
+              apiStyle,
+              el(
+                'span',
+                { class: 'field-hint' },
+                'Choose Responses only when this endpoint implements the OpenAI Responses API.',
+              ),
+            ),
+          ]),
       el(
         'label',
         { class: 'checkbox-label' },
@@ -744,6 +777,7 @@ export function createCustomProvidersSection(
           await api.settings.saveExtraProvider({
             slug: provider.id,
             ...(provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() }),
+            ...(provider.builtin ? {} : { apiStyle: selectedApiStyle(apiStyle) }),
             models: editor.read(),
             includeUsage: usageBox.checked,
             ...(Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {}),
@@ -812,6 +846,7 @@ export function createCustomProvidersSection(
       placeholder: 'API key (optional)',
       autocomplete: 'off',
     })
+    const apiStyle = apiStyleSelect()
     const addBtn = el('button', { type: 'button', class: 'provider-save' }, 'Add provider')
     const status = el('span', { class: 'key-status' })
 
@@ -859,6 +894,7 @@ export function createCustomProvidersSection(
             ...(slug ? { slug } : {}),
             ...(label ? { label } : {}),
             baseUrl,
+            apiStyle: selectedApiStyle(apiStyle),
           })
           const savedRecord = next.find((p) => p.id === slug)
           // The resolved slug is the provider we just created (or re-saved), so
@@ -927,6 +963,17 @@ export function createCustomProvidersSection(
         ),
       ),
       el('label', {}, 'API key', keyInput),
+      el(
+        'label',
+        {},
+        'API format',
+        apiStyle,
+        el(
+          'span',
+          { class: 'field-hint' },
+          'Most compatible endpoints use Chat Completions. Choose Responses only when documented.',
+        ),
+      ),
       el('div', { class: 'provider-actions provider-form-footer' }, addBtn, status),
     )
   }
