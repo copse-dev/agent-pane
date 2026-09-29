@@ -148,6 +148,36 @@ describe('image expand lightbox', () => {
     dialog.close()
   })
 
+  it('opens the clicked image after unusable gallery entries are removed', () => {
+    const second =
+      'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22/%3E'
+    const third =
+      'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%222%22/%3E'
+    const img = document.createElement('img')
+    img.src = second
+    document.body.append(img)
+    attachImageExpand(
+      img,
+      'second',
+      [
+        { src: PNG, alt: 'first' },
+        { src: '', alt: 'unusable' },
+        { src: second, alt: 'second' },
+        { src: third, alt: 'third' },
+      ],
+      2,
+    )
+
+    mouseClick(img)
+    const dialog = qsRequired<HTMLDialogElement>(document, '.attachment-preview-dialog')
+    const expanded = qsRequired<HTMLImageElement>(dialog, '.image-expand-image')
+    assert.equal(expanded.src, second)
+    assert.equal(expanded.dataset['imageIndex'], '1')
+    assert.equal(qsRequired(dialog, '.image-expand-counter').textContent, '2 / 3')
+    assert.equal(dialog.querySelectorAll('.image-expand-thumbnail').length, 3)
+    dialog.close()
+  })
+
   it('openImageExpand is a no-op for an empty src', () => {
     const existing = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
     existing?.close()

@@ -215,11 +215,11 @@ describe('Screenshot click-to-expand', () => {
     await expect($$('.image-expand-thumbnail')).toBeElementsArrayOfSize(3)
     await expect($('.image-expand-counter')).toHaveText('1 / 3')
     assert.equal(await $('.image-expand-image').getAttribute('data-image-index'), '0')
-    assert.equal((await $('.image-expand-nav-prev').getCSSProperty('opacity')).value, '0')
-    assert.equal((await $('.image-expand-nav-next').getCSSProperty('opacity')).value, '0')
+    assert.equal(Number((await $('.image-expand-nav-prev').getCSSProperty('opacity')).value), 0)
+    assert.equal(Number((await $('.image-expand-nav-next').getCSSProperty('opacity')).value), 0)
     await $('.image-expand-nav-zone-next').moveTo()
     await browser.waitUntil(
-      async () => (await $('.image-expand-nav-next').getCSSProperty('opacity')).value !== '0',
+      async () => Number((await $('.image-expand-nav-next').getCSSProperty('opacity')).value) > 0,
       { timeout: 2_000, timeoutMsg: 'expected the next arrow to appear on edge hover' },
     )
     await $('.image-expand-nav-next').click()
@@ -329,8 +329,8 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(layout.shadow, 'none')
 
     await browser.action('pointer').move({ x: 0, y: 0 }).perform()
-    assert.equal((await $('.image-expand-nav-prev').getCSSProperty('opacity')).value, '0')
-    assert.equal((await $('.image-expand-nav-next').getCSSProperty('opacity')).value, '0')
+    assert.equal(Number((await $('.image-expand-nav-prev').getCSSProperty('opacity')).value), 0)
+    assert.equal(Number((await $('.image-expand-nav-next').getCSSProperty('opacity')).value), 0)
     await saveAppScreenshot(ASSISTANT_GALLERY_SHOT)
 
     await browser.keys('ArrowRight')

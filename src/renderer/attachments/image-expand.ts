@@ -257,14 +257,20 @@ export function openImageGallery(
   initialIndex = 0,
   returnFocus?: () => HTMLElement | null,
 ): void {
-  const usableItems = items.filter((item) => item.src.length > 0)
+  const usableItems: ImageExpandItem[] = []
+  let usableIndex = 0
+  for (const [index, item] of items.entries()) {
+    if (item.src.length === 0) continue
+    if (index < initialIndex) usableIndex += 1
+    usableItems.push(item)
+  }
   if (usableItems.length === 0) return
   if (usableItems.length === 1) {
     const item = usableItems[0]
     if (item) openSingleImage(item.src, item.alt, returnFocus)
     return
   }
-  openImageGalleryViewer(usableItems, initialIndex, returnFocus)
+  openImageGalleryViewer(usableItems, usableIndex, returnFocus)
 }
 
 /**
