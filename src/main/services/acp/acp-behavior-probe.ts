@@ -335,7 +335,7 @@ function acpProbeErrorDataDetail(err: unknown): string | null {
   return null
 }
 
-function acpProbeErrorMessage(err: unknown): string {
+export function acpProbeErrorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err)
   const detail = acpProbeErrorDataDetail(err)
   if (!detail || message.includes(detail)) return message
@@ -437,8 +437,8 @@ function probeChildStdoutStream(
 }
 
 /** Default transport: spawn the agent process and frame stdio as ndjson. */
-function spawnProbeTransport(
-  config: AcpBehaviorProbeConfig,
+export function spawnProbeTransport(
+  config: Pick<AcpBehaviorProbeConfig, 'command' | 'args' | 'env' | 'cwd'>,
 ): Promise<{ stream: Stream; dispose: () => void }> {
   const child = spawn(config.command, config.args ?? [], {
     cwd: config.cwd,

@@ -1053,6 +1053,10 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         resolved({ ok: false, count: 0, error: 'Unavailable in demo' }),
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: 'demo', report: null }),
+      openLicenseFile: resolvedVoid,
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -1274,6 +1278,13 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
           supportedHost: state.supportedHost,
         })
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) =>
+        resolved({
+          offer: 'none',
+          pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled,
+        }),
+      answerSuggestion: () => resolved(undefined),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId)
         const state: AppleProjectState = {

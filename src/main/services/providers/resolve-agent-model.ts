@@ -12,6 +12,7 @@ import { isProviderKeyUsable } from './provider-key-status.ts'
 import { buildProvider } from './provider-selection.ts'
 import { isProviderAvailable } from '../storage/settings.ts'
 import { resolveDynamicModelId } from './dynamic-model.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 
 export interface ResolvedAgentChatModel {
   /** Model id actually used for the turn. */
@@ -103,9 +104,12 @@ export async function resolveAgentChatModel(requested: string): Promise<Resolved
   // user's literal choice — an unexpanded selector would fall through as a bare
   // model id and be handed to a provider that has never heard of it.
   if (isDynamicModel(requested)) {
-    return { model: await resolveDynamicModelId(requested) }
+    const model = await resolveDynamicModelId(requested)
+    assertModelMakerAllowed(model)
+    return { model }
   }
 
+  assertModelMakerAllowed(requested)
   const remoteProvider = parseRemoteAgentModel(requested)
   if (!remoteProvider) return { model: requested }
 
