@@ -53478,88 +53478,6 @@ var init_model_options = __esm({
   }
 });
 
-// src/renderer/keyboard-shortcuts.ts
-function isTypingTarget(target) {
-  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
-  const tag = target.tagName;
-  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
-  return "isContentEditable" in target && target.isContentEditable === true;
-}
-function matchNewThreadShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "n" || e3.key === "N";
-}
-function matchFindInChatShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return false;
-  return e3.key === "f" || e3.key === "F";
-}
-function matchUiScaleShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || e3.shiftKey) return null;
-  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
-  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
-  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
-    return "out";
-  }
-  return null;
-}
-function matchCommandPaletteShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "k" || e3.key === "K";
-}
-function matchModelPickerShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "m" || e3.key === "M";
-}
-function matchActivityPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
-  return e3.key === "a" || e3.key === "A";
-}
-function matchPanelShortcut(e3) {
-  const meta3 = e3.ctrlKey || e3.metaKey;
-  if (!meta3 || e3.altKey) return null;
-  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "togglePanel";
-  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
-  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
-  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
-  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
-  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
-  return null;
-}
-function handlePanelShortcut(store2, api2, action) {
-  if (action === "togglePanel") {
-    toggleFilesPaneWithWorkspace(store2, api2);
-    return;
-  }
-  openRightPanelWithWorkspace(store2, api2, action.openPanel);
-}
-function registerPanelKeyboardShortcuts(store2, api2) {
-  document.addEventListener("keydown", (e3) => {
-    if (matchNewThreadShortcut(e3)) {
-      if (!store2.getState().workspaceRoot) return;
-      e3.preventDefault();
-      openNewThread(store2);
-      return;
-    }
-    if (isTypingTarget(e3.target)) return;
-    const action = matchPanelShortcut(e3);
-    if (!action) return;
-    e3.preventDefault();
-    handlePanelShortcut(store2, api2, action);
-  });
-}
-var init_keyboard_shortcuts = __esm({
-  "src/renderer/keyboard-shortcuts.ts"() {
-    init_thread_helpers();
-    init_panels();
-  }
-});
-
 // src/renderer/views/model-picker.ts
 function isTypeToFilterKey(e3) {
   if (e3.ctrlKey || e3.metaKey || e3.altKey) return false;
@@ -54074,14 +53992,10 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
       document,
       "keydown",
       (e3) => {
-        if (pickerOpts.enableShortcut === true && matchModelPickerShortcut(e3) && !document.querySelector("dialog[open]")) {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
           e3.preventDefault();
-          e3.stopPropagation();
-          if (open2) {
-            setOpen(false);
-          } else {
-            setOpen(true);
-          }
+          setOpen(true);
           return;
         }
         if (!open2) return;
@@ -54228,7 +54142,6 @@ var init_model_picker = __esm({
     init_context_menu();
     init_helpers();
     init_icons();
-    init_keyboard_shortcuts();
     init_model_options();
     init_nullish2();
     RECENT_MODEL_LIMIT = 5;
@@ -138979,6 +138892,83 @@ function bindChatComposerLayout(store2) {
 }
 var init_chat_layout = __esm({
   "src/renderer/views/chat-layout.ts"() {
+  }
+});
+
+// src/renderer/keyboard-shortcuts.ts
+function isTypingTarget(target) {
+  if (target === null || !("tagName" in target) || typeof target.tagName !== "string") return false;
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
+  return "isContentEditable" in target && target.isContentEditable === true;
+}
+function matchNewThreadShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "n" || e3.key === "N";
+}
+function matchFindInChatShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return false;
+  return e3.key === "f" || e3.key === "F";
+}
+function matchUiScaleShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || e3.shiftKey) return null;
+  if (e3.key === "0" || e3.code === "Digit0" || e3.code === "Numpad0") return "reset";
+  if (e3.key === "=" || e3.key === "+" || e3.code === "Equal" || e3.code === "NumpadAdd") return "in";
+  if (e3.key === "-" || e3.key === "_" || e3.code === "Minus" || e3.code === "NumpadSubtract") {
+    return "out";
+  }
+  return null;
+}
+function matchCommandPaletteShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "k" || e3.key === "K";
+}
+function matchActivityPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey || !e3.shiftKey) return false;
+  return e3.key === "a" || e3.key === "A";
+}
+function matchPanelShortcut(e3) {
+  const meta3 = e3.ctrlKey || e3.metaKey;
+  if (!meta3 || e3.altKey) return null;
+  if (!e3.shiftKey && (e3.key === "b" || e3.key === "B")) return "togglePanel";
+  if (!e3.shiftKey && (e3.key === "j" || e3.key === "J")) return "togglePanel";
+  if (e3.shiftKey && (e3.key === "e" || e3.key === "E")) return { openPanel: "explorer" };
+  if (e3.shiftKey && (e3.key === "g" || e3.key === "G")) return { openPanel: "changes" };
+  if (e3.shiftKey && (e3.key === "b" || e3.key === "B")) return { openPanel: "browser" };
+  if (!e3.shiftKey && (e3.key === "`" || e3.code === "Backquote")) return { openPanel: "terminal" };
+  return null;
+}
+function handlePanelShortcut(store2, api2, action) {
+  if (action === "togglePanel") {
+    toggleFilesPaneWithWorkspace(store2, api2);
+    return;
+  }
+  openRightPanelWithWorkspace(store2, api2, action.openPanel);
+}
+function registerPanelKeyboardShortcuts(store2, api2) {
+  document.addEventListener("keydown", (e3) => {
+    if (matchNewThreadShortcut(e3)) {
+      if (!store2.getState().workspaceRoot) return;
+      e3.preventDefault();
+      openNewThread(store2);
+      return;
+    }
+    if (isTypingTarget(e3.target)) return;
+    const action = matchPanelShortcut(e3);
+    if (!action) return;
+    e3.preventDefault();
+    handlePanelShortcut(store2, api2, action);
+  });
+}
+var init_keyboard_shortcuts = __esm({
+  "src/renderer/keyboard-shortcuts.ts"() {
+    init_thread_helpers();
+    init_panels();
   }
 });
 
