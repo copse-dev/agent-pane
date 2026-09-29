@@ -73,7 +73,9 @@ describe('Changes view "Review" gesture', function () {
 
     // The gate resolves asynchronously through `plugins:list`; wait for the
     // header to settle before reading the button's state.
-    await $('.git-changes-refresh-btn').waitForDisplayed({ timeout: 30_000 })
+    await $(
+      '#git-changes-host .git-changes-refresh-btn[aria-label="Refresh changes"]',
+    ).waitForDisplayed({ timeout: 30_000 })
     await browser.pause(500)
     const hidden = await browser.execute(
       () => document.querySelector<HTMLElement>('.git-changes-review-btn')?.hidden ?? null,
