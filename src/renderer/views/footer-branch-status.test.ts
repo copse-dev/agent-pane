@@ -5,6 +5,7 @@ import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitBranchInfo, GitBranchStatus } from '@shared/types/git.ts'
+import type { CodeBlockRunRequest } from '@shared/store/events.ts'
 import { mountFooterBranchStatus } from './footer-branch-status.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
@@ -185,9 +186,9 @@ describe('footer branch status', () => {
     it('continues an interrupted rebase in a terminal instead of reattaching', async () => {
       let reattachCalled = false
       const store = detachedStore()
-      const commands: string[] = []
-      store.on('request_terminal_command', (command) => {
-        commands.push(command)
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
       })
       const host = mountDetached(
         {
@@ -218,16 +219,31 @@ describe('footer branch status', () => {
       assert.match(reattach.title, /a rebase stopped part-way\. Continue it in a terminal/)
       reattach.click()
       await settle()
-      assert.deepEqual(commands, ['git rebase --continue'])
+      assert.equal(requests.at(0)?.command, 'git rebase --continue')
+      assert.equal(requests.at(0)?.completion?.type, 'continue')
+      assert.equal(reattach.disabled, true)
+      const request = requests.at(0)
+      assert.ok(request)
+      store.emit('code_block_run_finished', {
+        id: request.id,
+        projectId: request.projectId,
+        threadId: request.threadId,
+        exitCode: 0,
+        output: '',
+        shell: { tabId: 'recovery', label: 'Git recovery', content: '' },
+        ...(request.completion ? { completion: request.completion } : {}),
+      })
+      await settle()
+      assert.equal(reattach.disabled, false)
       assert.equal(reattachCalled, false)
     })
 
     it('resets an active bisect in a terminal instead of stranding its state', async () => {
       let reattachCalled = false
       const store = detachedStore()
-      const commands: string[] = []
-      store.on('request_terminal_command', (command) => {
-        commands.push(command)
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
       })
       const host = mountDetached(
         {
@@ -258,15 +274,16 @@ describe('footer branch status', () => {
       assert.match(button.title, /Git bisect is in progress\. Reset the bisect in a terminal/)
       button.click()
       await settle()
-      assert.deepEqual(commands, ['git bisect reset'])
+      assert.equal(requests.at(0)?.command, 'git bisect reset')
+      assert.equal(requests.at(0)?.completion?.type, 'continue')
       assert.equal(reattachCalled, false)
     })
 
     it('commits a pick that failed to sign before continuing the rebase', async () => {
       const store = detachedStore()
-      const commands: string[] = []
-      store.on('request_terminal_command', (command) => {
-        commands.push(command)
+      const requests: CodeBlockRunRequest[] = []
+      store.on('code_block_run_requested', (request) => {
+        requests.push(request)
       })
       const commit = 'aad0cc78baea8ca39676cbdf2de560c6f04d8417'
       const host = mountDetached(
@@ -292,7 +309,8 @@ describe('footer branch status', () => {
       assert.match(button.title, /applied aad0cc7 but could not commit it/)
       button.click()
       await settle()
-      assert.deepEqual(commands, [`git commit -S -C ${commit} && git rebase --continue`])
+      assert.equal(requests.at(0)?.command, `git commit -S -C ${commit} && git rebase --continue`)
+      assert.equal(requests.at(0)?.completion?.type, 'continue')
     })
 
     it('keeps the button and reports the failure when git refuses to reattach', async () => {

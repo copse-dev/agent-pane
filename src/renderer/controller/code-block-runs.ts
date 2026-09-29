@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { CodeBlockRunResult } from '@shared/store/events.ts'
 import type { AgentRunPayload } from '@shared/types/skills.ts'
+import type { MessageOrigin } from '@shared/types'
 import { addMessage, getThreadById, setThreadWorkingBrief } from '@shared/store/thread-helpers.ts'
 import { threadGitBranchMismatch } from '@shared/git/thread-branch.ts'
 import { buildTextWithAttachments } from '@copse/agent/build-text-with-attachments.ts'
@@ -33,6 +34,11 @@ export async function sendCodeBlockRunResult(
   result: CodeBlockRunResult,
 ): Promise<boolean> {
   const { projectId, threadId, shell } = result
+  const completion = result.completion
+  // A continuation is only valid after the recovery command completes. Keep
+  // failed output available to the user, but never ask the model to continue
+  // from a command that did not finish.
+  if (completion && result.exitCode !== 0) return false
   // Renderer thread ids are scoped to their project. If the user changed
   // projects while the command ran, a same-id thread in the newly active
   // project must not receive the old project's output.
@@ -73,11 +79,15 @@ export async function sendCodeBlockRunResult(
   )
     return false
 
+  const messageText = completion?.prompt ?? ''
   const content = buildTextWithAttachments(
-    '',
+    messageText,
     [],
     [{ label: `Shell: ${shell.label}`, content: shell.content }],
   )
+  const origin: MessageOrigin | undefined = completion
+    ? { kind: 'machine', operationId: completion.operationId }
+    : undefined
   const workingBrief = nextWorkingBrief(current.workingBrief, content)
   if (workingBrief && workingBrief !== current.workingBrief) {
     setThreadWorkingBrief(store, threadId, workingBrief)
@@ -88,27 +98,31 @@ export async function sendCodeBlockRunResult(
     priorTodos: current.todos ?? [],
     ...(workingBrief !== undefined ? { workingBrief } : {}),
   }
-  const messageId = addMessage(
-    store,
-    threadId,
-    'user',
-    '',
-    undefined,
-    [{ kind: 'shell', label: shell.label, content: shell.content }],
-    promptState
+  const messageMeta = {
+    ...(promptState
       ? {
           ...(promptState.startingCommit !== null
             ? { startingCommit: promptState.startingCommit }
             : {}),
           dirty: promptState.dirty,
         }
-      : undefined,
+      : {}),
+    ...(origin ? { origin } : {}),
+  }
+  const messageId = addMessage(
+    store,
+    threadId,
+    'user',
+    messageText,
+    undefined,
+    [{ kind: 'shell', label: shell.label, content: shell.content }],
+    messageMeta,
   )
   const queued = { messageId, payload, createdAt: Date.now() }
   if (getThreadById(store, threadId)?.status === 'running') {
     enqueueUserMessage(store, threadId, queued)
   } else {
-    startHumanTurnTree(store, threadId)
+    if (!completion) startHumanTurnTree(store, threadId)
     dispatchAgentRun(store, api, threadId, payload, queued)
   }
   return true

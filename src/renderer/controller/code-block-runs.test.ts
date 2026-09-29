@@ -176,3 +176,27 @@ test('a result is not sent when the checkout branch cannot be read', async () =>
   assert.deepEqual(runs, [])
   assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
 })
+
+test('a successful recovery run sends a machine-originated continuation', async () => {
+  const store = storeWith(runThread('idle'))
+  const { api, runs } = sendApi()
+  const recovery: CodeBlockRunResult = {
+    ...result(),
+    exitCode: 0,
+    completion: {
+      type: 'continue',
+      prompt: 'Continue after the Git recovery command completed.',
+      operationId: 'git-recovery:test',
+    },
+  }
+
+  assert.equal(await sendCodeBlockRunResult(store, api, recovery), true)
+  assert.deepEqual(runs, ['thread-1'])
+
+  const message = getThreadById(store, 'thread-1')?.messages.at(-1)
+  assert.ok(message)
+  assert.equal(message.content, 'Continue after the Git recovery command completed.')
+  assert.ok(message.origin)
+  if (message.origin.kind !== 'machine') throw new Error('Expected a machine-originated message')
+  assert.equal(message.origin.operationId, 'git-recovery:test')
+})
