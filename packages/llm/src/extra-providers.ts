@@ -124,6 +124,8 @@ export interface StoredExtraProvider {
   label?: string
   baseUrl?: string
   keyPrefix?: string
+  /** Custom-provider wire protocol. Built-in presets keep their shipped protocol. */
+  apiStyle?: 'chat-completions' | 'responses'
   /** Replaces the default model shortlist when present. */
   models?: ExtraProviderModel[]
   fallbackContextWindow?: number
@@ -317,6 +319,7 @@ function customToProvider(stored: StoredExtraProvider): ExtraProvider | null {
     ...(typeof stored.keyPrefix === 'string' && stored.keyPrefix
       ? { keyPrefix: stored.keyPrefix }
       : {}),
+    ...(stored.apiStyle ? { apiStyle: stored.apiStyle } : {}),
     fallbackContextWindow:
       typeof stored.fallbackContextWindow === 'number' && stored.fallbackContextWindow > 0
         ? stored.fallbackContextWindow
