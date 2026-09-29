@@ -888,6 +888,13 @@ export async function runRatings(options: RunOptions): Promise<RiskRatingSet> {
   const cases = options.corpus.cases.filter(
     (riskCase) => wanted.size === 0 || wanted.has(riskCase.number),
   )
+  // A mistyped or stale `--case` must not pass as a successful, empty run.
+  const known = new Set(options.corpus.cases.map((riskCase) => riskCase.number))
+  const unknown = [...wanted].filter((number) => !known.has(number))
+  if (unknown.length > 0)
+    throw new Error(
+      `no case ${unknown.map((number) => `#${String(number)}`).join(', ')} in the corpus`,
+    )
   const ratings: RiskRating[] = []
   for (const riskCase of cases) {
     const rating = await rateCase(options, riskCase)

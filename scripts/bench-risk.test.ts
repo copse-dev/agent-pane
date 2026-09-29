@@ -544,6 +544,16 @@ describe('git and the run path', () => {
     out.length = 0
     assert.equal(await main(['score', '--corpus', join(outDir, 'missing.json')], io), 1)
     assert.match(out.join(''), /does not exist; run collect first/)
+    out.length = 0
+    const unknownOut = join(outDir, 'unknown')
+    assert.equal(
+      await main(
+        ['run', '--label', 'unknown', '--corpus', corpusPath, '--out', unknownOut, '--case', '999'],
+        io,
+      ),
+      1,
+    )
+    assert.match(out.join(''), /no case #999 in the corpus/)
     const written = safeJsonParse(await readFile(ratingsPath, 'utf8'), decodeRiskRatingSet)
     assert.equal(written?.label, 'mock')
   })
