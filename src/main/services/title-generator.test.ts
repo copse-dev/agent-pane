@@ -155,6 +155,18 @@ describe('fallbackThreadTitle', () => {
     assert.equal(fallbackThreadTitle('Allow threads to be pinned'), 'Allow threads to be pinned')
     assert.equal(fallbackThreadTitle('Make it easier to use'), 'Make it easier to use')
   })
+
+  it('rechecks vagueness after compacting and keeps concrete request tails', () => {
+    assert.equal(fallbackThreadTitle(`Please fix this ${'x'.repeat(100)}`), 'New Thread')
+    assert.equal(
+      fallbackThreadTitle('Please fix this by updating the terminal output clipping behavior'),
+      'Updating the terminal output clipping behavior',
+    )
+    assert.equal(
+      fallbackThreadTitle('Can we fix this quickly? The terminal freezes on startup.'),
+      'Terminal freezes on startup',
+    )
+  })
 })
 
 describe('completeThreadTitleWithRoutes', () => {

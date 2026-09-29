@@ -41,6 +41,10 @@ function stripConversationalLead(value: string): string {
   }
   return result
     .replace(/^make\s+(?:this|that|it)\s+have\s+/i, 'add ')
+    .replace(
+      /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
+      '',
+    )
     .replace(/^investigate\s+(?:why|how)\s+/i, '')
     .replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, '')
     .replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, 'thread mention ')
@@ -53,7 +57,7 @@ function stripConversationalLead(value: string): string {
 }
 
 function vagueClause(value: string): boolean {
-  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?\s*[.!?]*$/i.test(
+  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
     value.trim(),
   )
 }
@@ -174,7 +178,7 @@ export function fallbackThreadTitle(input: string): string {
     const clause = stripConversationalLead(stripDecoration(rawClause))
     if (!clause || vagueClause(clause)) continue
     const title = compactTitle(clause, true)
-    if (title) return title
+    if (title && !vagueClause(title)) return title
   }
 
   const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true)
