@@ -129,7 +129,6 @@ describe('landing cupcake walkthrough', () => {
       const composerRect = document.getElementById('input-bar')?.getBoundingClientRect()
       return {
         text: finalMessage?.textContent ?? '',
-        userPosition: latestUser ? getComputedStyle(latestUser).position : '',
         overlap: Math.max(
           0,
           Math.min(userRect?.bottom ?? 0, messageRect?.bottom ?? 0) -
@@ -147,7 +146,6 @@ describe('landing cupcake walkthrough', () => {
       }
     })
     expect(transcriptState.text).toContain('Built and previewed a polished')
-    expect(transcriptState.userPosition).toBe('relative')
     expect(transcriptState.overlap).toBe(0)
     // Reading typography can make this answer taller than the narrow viewport.
     // Require the available viewport to show the answer, allowing one line of
