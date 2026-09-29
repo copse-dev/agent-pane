@@ -136,7 +136,7 @@ describe('shared model picker', () => {
     picker.destroy()
   })
 
-  it('opens on Cmd/Ctrl+Shift+M when the composer shortcut is enabled', async () => {
+  it('opens on the existing Cmd/Ctrl+Shift+M shortcut', async () => {
     const host = document.createElement('div')
     document.body.append(host)
     const picker = mountModelPicker(
@@ -164,15 +164,18 @@ describe('shared model picker', () => {
     assert.equal(host.querySelector('.model-picker-menu')?.hasAttribute('hidden'), false)
     assert.equal(host.querySelector('.model-picker-view-title')?.textContent, 'Recent')
 
-    const closeEvent = new window.KeyboardEvent('keydown', {
+    // Repeating the existing shortcut keeps the menu open, as it did before
+    // the capture-phase keyboard handling was added.
+    const repeatEvent = new window.KeyboardEvent('keydown', {
       key: 'M',
       metaKey: true,
       shiftKey: true,
       bubbles: true,
       cancelable: true,
     })
-    document.dispatchEvent(closeEvent)
-    assert.equal(host.querySelector('.model-picker-menu')?.hasAttribute('hidden'), true)
+    document.dispatchEvent(repeatEvent)
+    assert.equal(repeatEvent.defaultPrevented, true)
+    assert.equal(host.querySelector('.model-picker-menu')?.hasAttribute('hidden'), false)
 
     picker.destroy()
   })
