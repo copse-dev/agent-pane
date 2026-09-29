@@ -404,6 +404,7 @@ function issueUrl(target: ForgeTarget): string {
 }
 
 const forgejoLabelSchema = z.array(z.object({ id: z.number(), name: z.string() }))
+const FORGEJO_LABEL_PAGE_SIZE = 50
 
 async function addFeedbackLabel(
   target: ForgeTarget,
@@ -417,9 +418,13 @@ async function addFeedbackLabel(
   }
 
   const labelsUrl = `${repositoryUrl(target)}/labels`
-  for (let page = 1; page <= 10; page++) {
+  const seenPages = new Set<string>()
+  for (let page = 1; ; page++) {
     const labels = safeJsonParse(
-      await request('GET', `${labelsUrl}?limit=50&page=${String(page)}`),
+      await request(
+        'GET',
+        `${labelsUrl}?limit=${String(FORGEJO_LABEL_PAGE_SIZE)}&page=${String(page)}`,
+      ),
       decodeWithSchema(forgejoLabelSchema),
     )
     if (labels === null) throw new Error('forgejo returned an unreadable label list')
@@ -428,7 +433,12 @@ async function addFeedbackLabel(
       await request('POST', `${url}/labels`, { labels: [match.id] })
       return
     }
-    if (labels.length < 50) break
+    if (labels.length < FORGEJO_LABEL_PAGE_SIZE) break
+    const signature = labels.map((candidate) => candidate.id).join(',')
+    if (seenPages.has(signature)) {
+      throw new Error('forgejo repeated a full label page while resolving feedback label')
+    }
+    seenPages.add(signature)
   }
   throw new Error(`forgejo label ${JSON.stringify(label)} does not exist`)
 }
