@@ -37491,6 +37491,7 @@ function createDemoApi(scenario, options = {}) {
       shareScreenshot: unsupported,
       captureScreenshot: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -117532,6 +117533,17 @@ function shareableWebContentsId(tab) {
     return null;
   }
 }
+function downloadableArtefact(tab) {
+  return tab.artefact?.mimeType === "text/html" ? tab.artefact : null;
+}
+function seededArtefact(value) {
+  if (!isRecord(value)) return null;
+  const { title, mimeType, body } = value;
+  if (typeof title !== "string" || typeof mimeType !== "string" || typeof body !== "string") {
+    return null;
+  }
+  return { title, mimeType, body };
+}
 function isBrowserPopoutSeed(seed) {
   if (!seed || typeof seed !== "object") return false;
   return "tabs" in seed && Array.isArray(seed.tabs);
@@ -118151,6 +118163,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
     tab.artefactProjectId = artefact.owner?.projectId ?? store2.getState().activeProjectId;
     tab.artefactContentReady = true;
+    tab.artefact = artefact;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -118255,6 +118268,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       downloadIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Export PDF")
     );
+    const downloadCanvasItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Download canvas")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -118273,6 +118292,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem
@@ -118333,6 +118353,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       closeMenu: () => {
         setMenuOpen(false);
@@ -118372,6 +118393,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        downloadCanvasItem.disabled = downloadableArtefact(tab) === null || !api2?.browser.exportArtefact;
         exportPdfItem.disabled = shareableId === null || !api2?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api2?.shell;
         inspectorItem.disabled = !tab.webview;
@@ -118414,6 +118436,21 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         if (filePath) showToast(`Exported PDF to ${filePath}`);
       }).catch((error62) => {
         showErrorToast("Could not export PDF", error62);
+      });
+    });
+    downloadCanvasItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const artefact = downloadableArtefact(tab);
+      const exportArtefact = api2?.browser.exportArtefact;
+      if (!artefact || !exportArtefact) return;
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body
+      }).then((filePath) => {
+        if (filePath) showToast(`Downloaded canvas to ${filePath}`);
+      }).catch((error62) => {
+        showErrorToast("Could not download canvas", error62);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -118551,7 +118588,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
-          artefactProjectId: tab.artefactProjectId
+          artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact ? {
+            title: tab.artefact.title,
+            mimeType: tab.artefact.mimeType,
+            body: tab.artefact.body
+          } : null
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -118583,6 +118625,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.artefactContentReady = Boolean(entry.url && entry.url !== "about:blank");
         tab.urlInput.placeholder = entry.artefactTitle;
+        tab.artefact = seededArtefact(entry.artefact);
       }
       if (entry.url && entry.url !== "about:blank") {
         tab.pendingUrl = entry.url;
@@ -118760,6 +118803,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
 var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
+    init_unknown_value3();
     init_helpers();
     init_icons();
     init_pane_maximize_button();
