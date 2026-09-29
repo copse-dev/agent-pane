@@ -39,6 +39,21 @@ function authHeader(init?: RequestInit): string | undefined {
   return expectStringRecord(headers)['Authorization']
 }
 
+describe('model maker execution policy', () => {
+  afterEach(() => {
+    setSetting('blockedModelMakers', [])
+  })
+
+  it('rejects a blocked maker before building a direct or OpenRouter provider', async () => {
+    setSetting('blockedModelMakers', ['xai'])
+    await assert.rejects(
+      () => describeProvider('openrouter:x-ai/grok-4.5'),
+      /xAI models are blocked/,
+    )
+    await assert.rejects(() => describeProvider('grok-4.5'), /xAI models are blocked/)
+  })
+})
+
 describe('lm-studio-models source integrity', () => {
   it('contains no embedded null bytes', () => {
     const src = readFileSync(SOURCE_PATH)

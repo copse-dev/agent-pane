@@ -7,8 +7,23 @@ import { frontierForKnownModels } from '@copse/llm/pareto-frontier.ts'
 import { pickDynamicModel } from '@copse/llm/dynamic-model-pick.ts'
 import { applyPlanCoverage } from '@shared/plan-inclusion.ts'
 import { planAcpFrontierCandidates } from '@shared/plan-frontier-candidates.ts'
+import { setSetting } from '../storage/settings.test-shim.ts'
 
 describe('resolveBestValueFromFrontier', () => {
+  it('removes blocked xAI routes before choosing the automatic winner', async () => {
+    const candidates = [
+      { id: 'openrouter:x-ai/grok-4.5', intellect: 100, costPerMTok: 0.0001 },
+      { id: 'openrouter:z-ai/glm-5.3', intellect: 50, costPerMTok: 0.0002 },
+    ]
+    await setSetting('blockedModelMakers', [])
+    try {
+      assert.equal(resolveBestValueFromFrontier(candidates, null), 'openrouter:x-ai/grok-4.5')
+      await setSetting('blockedModelMakers', ['xai'])
+      assert.equal(resolveBestValueFromFrontier(candidates, null), 'openrouter:z-ai/glm-5.3')
+    } finally {
+      await setSetting('blockedModelMakers', [])
+    }
+  })
   it('routes a local winner with the lmstudio: prefix', () => {
     const picked = resolveBestValueFromFrontier(
       [
