@@ -169,9 +169,7 @@ describe('keyboard-shortcuts', () => {
     assert.equal(matchModelPickerShortcut(keyEvent({ metaKey: true, key: 'm' })), false)
     assert.equal(matchModelPickerShortcut(keyEvent({ shiftKey: true, key: 'm' })), false)
     assert.equal(
-      matchModelPickerShortcut(
-        keyEvent({ ctrlKey: true, shiftKey: true, altKey: true, key: 'm' }),
-      ),
+      matchModelPickerShortcut(keyEvent({ ctrlKey: true, shiftKey: true, altKey: true, key: 'm' })),
       false,
     )
     assert.equal(
