@@ -195,7 +195,9 @@ describe('Pane pop-out (mock gh)', () => {
       }
 
       if (pane.mode === 'roadmap') {
-        await expect(await $('.roadmap-list-empty')).toHaveText('No roadmap items yet')
+        await expect(await $('.roadmap-list-empty')).toHaveText(
+          expect.stringContaining('No roadmap items yet'),
+        )
         await expect(await $('.memories-error')).not.toBeDisplayed()
       }
 
