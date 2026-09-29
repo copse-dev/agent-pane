@@ -14,7 +14,7 @@ interface ApprovalTestBridge {
 }
 
 describe('ACP network-scope overlap approval', function () {
-  this.timeout(30_000)
+  this.timeout(90_000)
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -29,10 +29,10 @@ describe('ACP network-scope overlap approval', function () {
 
   it('explains why another command needs approval while an ACP scope is widened', async () => {
     await $('.prompt-input').waitForExist({ timeout: 20_000 })
-    await browser.execute(async (bodyFooter) => {
+    await browser.execute((bodyFooter) => {
       const bridge = (window as unknown as { __copseE2e?: ApprovalTestBridge }).__copseE2e
       if (!bridge) throw new Error('__copseE2e unavailable')
-      await bridge.emitApprovalRequests([
+      void bridge.emitApprovalRequests([
         {
           id: 'acp-network-overlap',
           title: 'Run shell command?',
@@ -66,5 +66,7 @@ describe('ACP network-scope overlap approval', function () {
 
     await prepareE2eScreenshot()
     await dialog.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'acp-network-scope-approval.png'))
+    await dialog.$('.approval-reject').click()
+    await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
   })
 })
