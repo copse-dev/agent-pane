@@ -2,17 +2,14 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
-import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
+import { resetUserData, writeSeedConfig, writeSettings } from './helpers/seed-config.ts'
 
 describe('custom provider API format', () => {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     const projectId = 'e2e-settings-custom-provider-api-style'
-    writeSeedConfig({
-      projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
-      activeProjectId: projectId,
-      [`threads:${projectId}`]: [],
+    writeSettings({
       extraProviders: [
         {
           slug: 'acme',
@@ -22,6 +19,11 @@ describe('custom provider API format', () => {
           models: [{ id: 'acme-reasoner' }],
         },
       ],
+    })
+    writeSeedConfig({
+      projects: [{ id: projectId, path: process.cwd(), name: 'workspace' }],
+      activeProjectId: projectId,
+      [`threads:${projectId}`]: [],
     })
     await browser.reloadSession()
   })
