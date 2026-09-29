@@ -91,6 +91,12 @@ capture), which is why every item needs a ruling.
 - **The `rated` cohort is immature.** Those changes merged between 2026-09-26 and
   2026-09-27, so they have 0 to 1.3 days of history, not 7. Re-run `collect` after
   2026-10-04 to mature them; verdicts carry over.
+- **The mature sample was drawn before a paging fix.** The committed snapshot paged pull
+  requests by creation date, so 16 that were opened before 2026-08-09 but merged in the
+  mature window never entered the candidate pool. `collect` now pages by update time. A
+  re-collect with the fix samples none of the 16, and none is blamed: blamed candidates are
+  always sampled first, so a blamed one would have been picked. The snapshot is kept as
+  drawn rather than reshuffled.
 
 ## Running it
 
