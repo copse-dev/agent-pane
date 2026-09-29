@@ -36,16 +36,21 @@ function bodiesOf(css: string, selector: string): string[] {
 const STATUS_TOKEN =
   /var\(--(?:success|warning|danger|error|info|important|(?:change|diff)-[a-z0-9-]+)\b/i
 
-function customProperties(bodies: readonly string[]): ReadonlyMap<string, readonly string[]> {
+/**
+ * Every custom-property declaration in the sheet. CSS variables inherit, so a
+ * button background can resolve through an alias declared on any ancestor. A
+ * stylesheet contract cannot prove the complete DOM/cascade cheaply; treating
+ * every declaration of a referenced alias as reachable is deliberately
+ * conservative and keeps an indirect status fill from slipping through.
+ */
+function customProperties(css: string): ReadonlyMap<string, readonly string[]> {
   const properties = new Map<string, string[]>()
-  for (const body of bodies) {
-    for (const match of body.matchAll(/(?:^|;)\s*(--[-_a-z0-9]+)\s*:\s*([^;{}]*)/gi)) {
-      const [, name, value] = match
-      if (name === undefined || value === undefined) continue
-      const values = properties.get(name) ?? []
-      values.push(value)
-      properties.set(name, values)
-    }
+  for (const match of css.matchAll(/(?:^|[;{])\s*(--[-_a-z0-9]+)\s*:\s*([^;{}]*)/gi)) {
+    const [, name, value] = match
+    if (name === undefined || value === undefined) continue
+    const values = properties.get(name) ?? []
+    values.push(value)
+    properties.set(name, values)
   }
   return properties
 }
@@ -72,7 +77,7 @@ function valueUsesStatusToken(
 
 function assertNoStatusFill(css: string, selector: string): void {
   const bodies = bodiesOf(css, selector)
-  const properties = customProperties(bodies)
+  const properties = customProperties(css)
   for (const body of bodies) {
     for (const match of body.matchAll(
       /(?:^|;)\s*background(?:-(?:color|image))?\s*:\s*([^;{}]*)/gi,
@@ -205,6 +210,21 @@ describe('status colours come from tokens (#3065)', () => {
     const css = `
       .diff-accept-btn {
         --accept-fill: var(--success);
+        --button-fill: var(--accept-fill);
+        background: var(--button-fill);
+      }
+    `
+    assert.throws(() => {
+      assertNoStatusFill(css, '.diff-accept-btn')
+    }, /must not be/)
+  })
+
+  it('follows inherited custom properties used by button backgrounds', () => {
+    const css = `
+      .diff-approval-bar {
+        --accept-fill: var(--success);
+      }
+      .diff-accept-btn {
         --button-fill: var(--accept-fill);
         background: var(--button-fill);
       }
