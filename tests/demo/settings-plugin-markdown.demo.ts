@@ -43,8 +43,12 @@ describe('browser-hosted plugin rows', () => {
     await summary.scrollIntoView({ block: 'center' })
     await summary.click()
     const model = advisor.$('#advisorModel')
-    await model.waitForDisplayed()
+    const modelTrigger = advisor.$('.model-picker-trigger[aria-label="Advisor model"]')
+    await modelTrigger.waitForDisplayed()
     await expect(advisor.$('.plugin-setting-title')).toHaveText('Advisor model')
+    await expect(modelTrigger.$('.model-picker-label')).toHaveText(
+      expect.stringContaining('Most capable'),
+    )
     assert.equal(await model.getValue(), 'auto:best-intellect')
     const hint = advisor.$('.plugin-setting-desc')
     await hint.waitForDisplayed()
