@@ -36,6 +36,7 @@ import {
   attachBrowserGuestContextMenu,
   attachBrowserGuestShareShortcut,
 } from './windows/browser-context-menu.ts'
+import { startAutoArchive } from './services/auto-archive-bootstrap.ts'
 import { applyAppIcon } from './app-icon.ts'
 import { isWorktreeDeferralPending } from '@shared/git/worktree-policy.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
@@ -555,6 +556,7 @@ app
       developerMode,
     )
     void resumeMobileCompanion()
+    startAutoArchive()
     initUpdatePrompt(win)
     initCloseConfirm(win)
     guardWindowClose(win)

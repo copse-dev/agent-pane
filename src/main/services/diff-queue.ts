@@ -311,6 +311,15 @@ function cloneEntry(entry: QueueEntry): QueueEntry {
   return { ...entry }
 }
 
+/**
+ * How many proposed diffs a thread has waiting, without creating queue state for
+ * it (unlike {@link listStagedDiffEntries}). The queue is in memory only, so a
+ * thread from an earlier session reports zero — its proposals did not survive.
+ */
+export function countStagedDiffs(owner: ThreadExecutionOwner): number {
+  return statesByProject.get(owner.projectId)?.get(owner.threadId)?.queue.length ?? 0
+}
+
 export function listStagedDiffEntries(owner?: ThreadExecutionOwner): QueueEntry[] {
   return stateFor(owner).queue.map(cloneEntry)
 }
