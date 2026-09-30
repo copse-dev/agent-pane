@@ -547,6 +547,8 @@ export function seedEmptyProject(
      * the prototype steering hook). Ships off, like the other experimental packs.
      */
     mcpUiCanvasEnabled?: boolean
+    /** Opt into the experimental CI investigator pack. */
+    ciInvestigatorEnabled?: boolean
     developerMode?: boolean
     /** Opt into the read-only Remote Desktop pane. */
     vncEnabled?: boolean
@@ -624,6 +626,7 @@ export function seedEmptyProject(
   if (options?.roadmapPlansEnabled) enabledPlugins.push('copse.roadmap-plans')
   if (options?.okfMemoriesEnabled) enabledPlugins.push('copse.okf-memories')
   if (options?.mcpUiCanvasEnabled) enabledPlugins.push('copse.mcp-ui-canvas')
+  if (options?.ciInvestigatorEnabled) enabledPlugins.push('copse.ci-investigator')
   seedConfig.pluginDisabled =
     options?.pluginDisabled !== undefined
       ? [...options.pluginDisabled]
