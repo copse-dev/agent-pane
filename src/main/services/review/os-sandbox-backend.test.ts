@@ -1,12 +1,18 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { homedir, tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { wrapCommandWithSandboxMacOS } from '@anthropic-ai/sandbox-runtime/dist/sandbox/macos-sandbox-utils.js'
 import type { CellSpec } from '@copse/review/isolation.ts'
 import { createOsSandboxBackend, reviewCellSandboxOverlay } from './os-sandbox-backend.ts'
+
+const HOMEBREW_OPENSSL_CONFIGS = [
+  '/opt/homebrew/etc/openssl@3/openssl.cnf',
+  '/usr/local/etc/openssl@3/openssl.cnf',
+] as const
 
 const spec: CellSpec = {
   checkouts: { base: '/tmp/review-cell/base', head: '/tmp/review-cell/head' },
@@ -55,6 +61,13 @@ describe('reviewCellSandboxOverlay', () => {
     ]) {
       assert.ok(allow.includes(path), `${path} must be readable`)
     }
+    for (const path of HOMEBREW_OPENSSL_CONFIGS) {
+      assert.ok(allow.includes(path), `${path} must be readable for Homebrew Node`)
+    }
+    assert.ok(!allow.includes('/opt/homebrew/etc'))
+    assert.ok(!allow.includes('/opt/homebrew/etc/**'))
+    assert.ok(!allow.includes('/usr/local/etc'))
+    assert.ok(!allow.includes('/usr/local/etc/**'))
     for (const path of allow) {
       assert.ok(
         !path.startsWith(homedir()) ||
@@ -118,8 +131,10 @@ it(
         )
       assert.equal(run(`/bin/cat '${join(cell, 'inside.txt')}'`), 'CELL_DATA')
       assert.throws(() => run(`/bin/cat '${outside}'`), /Operation not permitted/)
+      const opensslConfig = HOMEBREW_OPENSSL_CONFIGS.find((path) => existsSync(path))
+      const opensslEnv = opensslConfig ? `/usr/bin/env OPENSSL_CONF='${opensslConfig}' ` : ''
       assert.equal(
-        run(`'${process.execPath}' -e 'process.stdout.write("node works")'`),
+        run(`${opensslEnv}'${process.execPath}' -e 'process.stdout.write("node works")'`),
         'node works',
       )
     } finally {
