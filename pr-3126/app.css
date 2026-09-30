@@ -21,11 +21,20 @@ html.is-demo-pane-expanded #resizer-projects,
 html.is-demo-pane-expanded #welcome {
   display: none !important;
 }
+html.is-demo-pane-expanded #titlebar {
+  display: none;
+}
 html.is-demo-pane-expanded #pane-chat {
+  --demo-focus-chat-width: clamp(360px, 32vw, 480px);
   display: flex !important;
-  flex: 0 0 280px;
-  width: 280px;
-  min-width: 280px;
+  flex: 0 1 var(--demo-focus-chat-width);
+  width: var(--demo-focus-chat-width);
+  min-width: 320px;
+}
+html.is-demo-pane-expanded .messages-list > .msg-user {
+  position: relative !important;
+  top: auto !important;
+  z-index: auto !important;
 }
 html.is-demo-pane-expanded #resizer-files {
   display: block !important;
