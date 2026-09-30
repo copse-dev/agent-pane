@@ -157,6 +157,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-opus-5-5": {
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "claude-sonnet-4-6": {
         inputPricePerMTok: 3,
         outputPricePerMTok: 15,
@@ -327,6 +335,28 @@ var init_model_catalog_generated = __esm({
             outputPricePerMTok: 100,
             cacheReadPricePerMTok: 2,
             cacheCreationPricePerMTok: 25
+          }
+        },
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
+      },
+      "gpt-6.1-sol": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.1,
+        cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 5,
+            cacheReadPricePerMTok: 0.05,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 20,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 5
           }
         },
         contextWindow: 922e3,
@@ -625,12 +655,14 @@ var init_model_catalog = __esm({
       "claude-fable-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-haiku-4-5",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
@@ -645,12 +677,14 @@ var init_model_catalog = __esm({
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
       "claude-sonnet-5-5": "Claude Sonnet 5.5",
+      "claude-opus-5-5": "Claude Opus 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6.1-sol": "GPT-6.1 Sol",
       "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
@@ -709,9 +743,9 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
@@ -841,7 +875,7 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -888,12 +922,14 @@ var init_model_parameters = __esm({
       "claude-opus-4-5"
     ];
     CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "claude-fable-5",
       "claude-mythos-5",
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -905,7 +941,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -46008,6 +46044,46 @@ var init_model_intellect_generated = __esm({
           asOf: "2026-07-18"
         }
       ],
+      "gpt-6-1-sol": [
+        {
+          value: 51.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-high": [
+        {
+          value: 50.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-low": [
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-medium": [
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-xhigh": [
+        {
+          value: 51,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+          asOf: "2026-09-30"
+        }
+      ],
       "gpt-6-astra": [
         {
           value: 52.7,
@@ -51280,6 +51356,7 @@ var init_model_intellect_generated = __esm({
       "anthropic/claude-haiku-4-5": "claude-haiku-4-5",
       "anthropic/claude-opus-4-8": "claude-opus-4-8",
       "anthropic/claude-opus-5": "claude-opus-5",
+      "anthropic/claude-opus-5-5": "claude-opus-5-5",
       "anthropic/claude-sonnet-4-6": "claude-sonnet-4-6",
       "anthropic/claude-sonnet-5": "claude-sonnet-5",
       "Claude Fable 5": "claude-fable-5",
@@ -51287,6 +51364,7 @@ var init_model_intellect_generated = __esm({
       "claude-fable-5-latest": "claude-fable-5",
       "claude-haiku-4-5-latest": "claude-haiku-4-5",
       "claude-opus-4-8-latest": "claude-opus-4-8",
+      "claude-opus-5-5-latest": "claude-opus-5-5",
       "claude-opus-5-latest": "claude-opus-5",
       "claude-sonnet-4-6-latest": "claude-sonnet-4-6",
       "claude-sonnet-5-latest": "claude-sonnet-5",
@@ -51313,6 +51391,8 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Sol": "gpt-5.6-sol",
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
+      "GPT-6.1 Sol": "gpt-6-1-sol",
+      "gpt-6.1-sol": "gpt-6-1-sol",
       "Grok 4.5": "grok-4.5",
       "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
@@ -51341,8 +51421,10 @@ var init_model_intellect_generated = __esm({
       "openai/gpt-5.6-luna": "gpt-5.6-luna",
       "openai/gpt-5.6-sol": "gpt-5.6-sol",
       "openai/gpt-5.6-terra": "gpt-5.6-terra",
+      "openai/gpt-6.1-sol": "gpt-6-1-sol",
       "Opus 4.8": "claude-opus-4-8",
       "Opus 5": "claude-opus-5",
+      "Opus 5.5": "claude-opus-5-5",
       "phi-4": "microsoft/phi-4",
       "Phi-4": "microsoft/phi-4",
       "qwen2-5-coder-32b-instruct": "qwen/qwen2.5-coder-32b",
