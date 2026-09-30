@@ -50,9 +50,20 @@ export function isConciseMessage(msg: Pick<Message, 'role' | 'model' | 'requeste
 }
 
 /**
- * Whether a concise message is process rather than product: it carries tool
- * calls, so its text is narration between steps rather than the summary, and
- * everything but its produced output is hidden. A failed turn keeps its text.
+ * Whether a concise message carries tool calls, so its text narrates steps
+ * unless it is the turn's last bubble (the stylesheet decides that from the DOM,
+ * which stays right as later bubbles arrive). A failed turn keeps its text.
+ */
+export function isConciseStepsMessage(
+  msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
+): boolean {
+  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== 'failed'
+}
+
+/**
+ * Whether a concise message is process rather than product: a tool is running
+ * in it, so its text is narration rather than the summary, and everything but
+ * its produced output is hidden. A failed turn keeps its text.
  */
 export function isConciseWorkingMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
@@ -75,6 +86,7 @@ export function syncConciseMessageClasses(
 ): void {
   msgEl.classList.toggle('msg-concise', enabled && isConciseMessage(msg))
   msgEl.classList.toggle('msg-concise-working', enabled && isConciseWorkingMessage(msg))
+  msgEl.classList.toggle('msg-concise-steps', enabled && isConciseStepsMessage(msg))
 }
 
 /**
