@@ -3,7 +3,7 @@
 // cross-version equating maps. Source of truth: scripts/data/intellect-scores.json.
 // Absent models mean "no sourced measurement yet", not zero.
 // Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)
-// Last synced: 2026-09-22
+// Last synced: 2026-09-30
 
 import type { EquatingMap } from './intellect-equating.ts'
 
@@ -4086,6 +4086,51 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
       asOf: '2026-07-18',
+    },
+  ],
+  'gpt-6-1-sol': [
+    {
+      value: 51.8,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+      asOf: '2026-09-30',
+    },
+  ],
+  'gpt-6-1-sol-high': [
+    {
+      value: 50.2,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+      asOf: '2026-09-30',
+    },
+  ],
+  'gpt-6-1-sol-low': [
+    {
+      value: 42.1,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+      asOf: '2026-09-30',
+    },
+  ],
+  'gpt-6-1-sol-medium': [
+    {
+      value: 47.8,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+      asOf: '2026-09-30',
+    },
+  ],
+  'gpt-6-1-sol-xhigh': [
+    {
+      value: 51,
+      indexVersion: 'v4.3',
+      source:
+        "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+      asOf: '2026-09-30',
     },
   ],
   'gpt-6-astra': [
@@ -9669,6 +9714,7 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'anthropic/claude-haiku-4-5': 'claude-haiku-4-5',
   'anthropic/claude-opus-4-8': 'claude-opus-4-8',
   'anthropic/claude-opus-5': 'claude-opus-5',
+  'anthropic/claude-opus-5-5': 'claude-opus-5-5',
   'anthropic/claude-sonnet-4-6': 'claude-sonnet-4-6',
   'anthropic/claude-sonnet-5': 'claude-sonnet-5',
   'Claude Fable 5': 'claude-fable-5',
@@ -9676,6 +9722,7 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'claude-fable-5-latest': 'claude-fable-5',
   'claude-haiku-4-5-latest': 'claude-haiku-4-5',
   'claude-opus-4-8-latest': 'claude-opus-4-8',
+  'claude-opus-5-5-latest': 'claude-opus-5-5',
   'claude-opus-5-latest': 'claude-opus-5',
   'claude-sonnet-4-6-latest': 'claude-sonnet-4-6',
   'claude-sonnet-5-latest': 'claude-sonnet-5',
@@ -9702,6 +9749,8 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'GPT-5.6 Sol': 'gpt-5.6-sol',
   'GPT-5.6 Terra': 'gpt-5.6-terra',
   'GPT-5.6-Terra': 'gpt-5.6-terra',
+  'GPT-6.1 Sol': 'gpt-6-1-sol',
+  'gpt-6.1-sol': 'gpt-6-1-sol',
   'Grok 4.5': 'grok-4.5',
   'Grok Build 0.1': 'grok-build-0-1-06-16',
   'grok-4-5': 'grok-4.5',
@@ -9730,8 +9779,10 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'openai/gpt-5.6-luna': 'gpt-5.6-luna',
   'openai/gpt-5.6-sol': 'gpt-5.6-sol',
   'openai/gpt-5.6-terra': 'gpt-5.6-terra',
+  'openai/gpt-6.1-sol': 'gpt-6-1-sol',
   'Opus 4.8': 'claude-opus-4-8',
   'Opus 5': 'claude-opus-5',
+  'Opus 5.5': 'claude-opus-5-5',
   'phi-4': 'microsoft/phi-4',
   'Phi-4': 'microsoft/phi-4',
   'qwen2-5-coder-32b-instruct': 'qwen/qwen2.5-coder-32b',

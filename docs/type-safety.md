@@ -31,6 +31,20 @@ same tools the gates invoke.
 
 ## Write code the linter never has to flag
 
+### Keep non-switch union branches exhaustive
+
+The switch exhaustiveness lint rule covers `switch`, but it cannot protect an
+implicit final fallback in an `if` / `else if` chain over a discriminated
+union. Prefer an exhaustive switch for those mappings and end its default with
+`assertNever(value, context)` from `@copse/std/assert-never.ts`. Adding a union
+member then fails type-checking, and invalid runtime data produces a contextual
+error instead of silently taking an implicit fallback. Do not suppress
+`no-unnecessary-condition` to force a final always-true discriminant check.
+
+Do not add `ts-pattern` solely for exhaustiveness. The existing switch rule
+and the small shared helper cover the current needs without adding a runtime
+dependency; reconsider only if nested-shape matching becomes common.
+
 ### Minimise `as` casts
 
 A cast asserts a type the compiler can't verify, so each one is a place a refactor can silently go

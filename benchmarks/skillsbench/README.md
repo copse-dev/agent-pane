@@ -5,6 +5,11 @@ verifier lifecycle. It pins SkillsBench tag `v1.1` at
 `b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af` and BenchFlow `0.6.3`. The checked descriptor retains
 all 87 active tasks and all 14 upstream exclusions.
 
+Copse additionally predeclares study exclusions in the descriptor without rewriting the upstream
+roster. The v1.1 study excludes `data-to-d3` because its reference `solve.sh` fetches d3 while both
+agent trials and oracles run without network access. Requesting a study-excluded task fails before
+either kind of trial launches; solution dependencies are not staged into the task image.
+
 The spike replaces only BenchFlow's agent/ACP composition plane. BenchFlow still builds the task
 image, injects the official skill bundle for the two skill arms, executes the official verifier,
 and writes its native result and trajectory artifacts. Copse runs on the worker host and forwards

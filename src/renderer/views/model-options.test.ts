@@ -842,6 +842,15 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
+  it('shows GPT-6.1 Sol with any working OpenAI key, labelled with its intellect', async () => {
+    // Generally available on paid tiers, so unlike Astra there is no account gate.
+    const options = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
+    const sol = options.find((option) => option.value === 'gpt-6.1-sol')
+    assert.ok(sol)
+    assert.equal(sol.label, `GPT-6.1 Sol — ${currentCloudIntellectHint('gpt-6.1-sol')}`)
+    assert.equal(sol.group, 'Cloud models')
+  })
+
   it('keeps the current selection selectable even with no key', async () => {
     const options = await fetchModelOptions(mockApi(), 'gpt-5')
     const current = options.find((o) => o.value === 'gpt-5')
