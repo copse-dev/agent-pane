@@ -50,7 +50,8 @@ describe('advisor pair assessment hint', function () {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-advisor-pair-good', {
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
-      advisorModel: 'claude-fable-5-1',
+      // The top band's representative (BAND_REPRESENTATIVE_MODEL.top).
+      advisorModel: 'claude-opus-5-5',
     })
     await browser.reloadSession()
     await openPacksSection()
