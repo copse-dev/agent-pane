@@ -8,7 +8,7 @@ import {
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { copseDataRoot } from '../storage/copse-paths.ts'
-import { der, derInteger } from './der.ts'
+import { der, derInteger, positiveSerial } from './der.ts'
 
 // The certificate profile is deliberately small. All DER values below have one
 // fixed shape; no untrusted ASN.1 is decoded or re-encoded here.
@@ -76,7 +76,7 @@ function certificate(input: {
   extensions: Buffer[]
 }): string {
   const now = Date.now()
-  const serial = randomBytes(16)
+  const serial = positiveSerial(() => randomBytes(16))
   const tbs = sequence(
     der(0xa0, integer(Buffer.from([2]))),
     integer(serial),

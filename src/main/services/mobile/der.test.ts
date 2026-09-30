@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { derInteger } from './der.ts'
+import { derInteger, positiveSerial } from './der.ts'
 
 const hex = (bytes: number[]): string => derInteger(Buffer.from(bytes)).toString('hex')
 
@@ -26,5 +26,27 @@ describe('derInteger', () => {
   it('encodes zero as a single octet', () => {
     assert.equal(hex([0x00]), '020100')
     assert.equal(hex([0x00, 0x00]), '020100')
+  })
+})
+
+describe('positiveSerial', () => {
+  it('returns a nonzero draw unchanged', () => {
+    const draw = Buffer.from([0x00, 0x01])
+    assert.equal(
+      positiveSerial(() => draw),
+      draw,
+    )
+  })
+
+  it('redraws an all-zero serial', () => {
+    const draws = [Buffer.alloc(16), Buffer.alloc(16), Buffer.from([0x00, 0x00, 0x05])]
+    let calls = 0
+    const serial = positiveSerial(() => draws[calls++] ?? Buffer.alloc(16))
+    assert.equal(serial.toString('hex'), '000005')
+    assert.equal(calls, 3)
+  })
+
+  it('throws when the generator only ever returns zero', () => {
+    assert.throws(() => positiveSerial(() => Buffer.alloc(16)), /only zero octets/)
   })
 })

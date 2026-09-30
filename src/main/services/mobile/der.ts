@@ -25,3 +25,17 @@ export function derInteger(magnitude: Buffer): Buffer {
   const needsSignPad = ((value[0] ?? 0) & 0x80) !== 0
   return der(0x02, ...(needsSignPad ? [Buffer.from([0])] : []), value)
 }
+
+/**
+ * A certificate serial from `generate` that is not all zero octets. RFC 5280
+ * requires a positive serial, and a zero one is otherwise possible (about
+ * 2^-128 for 16 random octets), so an all-zero draw is discarded and redrawn.
+ * More than a few consecutive zero draws means the generator is broken.
+ */
+export function positiveSerial(generate: () => Buffer): Buffer {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const serial = generate()
+    if (serial.some((octet) => octet !== 0)) return serial
+  }
+  throw new Error('serial generator returned only zero octets')
+}
