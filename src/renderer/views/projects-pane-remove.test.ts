@@ -44,6 +44,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
       workspaceOpen?: () => Promise<string | null>
       loadProject?: (projectId: string) => Promise<Thread[]>
       onListOrphans?: () => void
+      listOrphans?: () => Promise<OrphanProjectStore[]>
     } = {},
   ): ApiClient {
     const storage: Record<string, unknown> = { ...(opts.storage ?? {}) }
@@ -74,7 +75,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
           catalog: async (): Promise<never[]> => [],
           listOrphans: async (): Promise<OrphanProjectStore[]> => {
             opts.onListOrphans?.()
-            return [...orphans]
+            return opts.listOrphans ? opts.listOrphans() : [...orphans]
           },
         },
       } satisfies ApiClient
@@ -248,6 +249,42 @@ describe('projects pane remove-from-sidebar (component)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(scans, 2)
     assert.equal(document.querySelector('.orphan-name'), null)
+  })
+
+  it('keeps the newest result when orphan scans finish out of order', async () => {
+    const first = Promise.withResolvers<OrphanProjectStore[]>()
+    const second = Promise.withResolvers<OrphanProjectStore[]>()
+    let scans = 0
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'b', path: '/b', name: 'Beta' },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+    })
+    mount(
+      store,
+      makeApi([], {
+        listOrphans: () => {
+          scans += 1
+          return scans === 1 ? first.promise : second.promise
+        },
+      }),
+    )
+
+    store.setState({ projects: [{ id: 'a', path: '/a', name: 'Alpha' }] })
+    store.emit('projects_changed')
+    assert.equal(scans, 2)
+
+    second.resolve([{ id: 'b', threadCount: 1, sampleTitles: ['Thread b'], updatedAt: 2 }])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Thread b')
+
+    first.resolve([])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(document.querySelector('.orphan-name')?.textContent, 'Thread b')
   })
 
   it('renders a quarantined project notice and recoverable orphan stores', async () => {

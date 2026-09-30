@@ -456,6 +456,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   // Project selection and expansion also emit `projects_changed`, but only a
   // change to the project ids can alter which thread stores are orphaned.
   let knownProjectIds = new Set(store.getState().projects.map((project) => project.id))
+  let orphanScanGeneration = 0
 
   // Inline rename state survives `render()` (which rebuilds the chat list).
   let renaming: { threadId: string; draft: string } | null = null
@@ -742,8 +743,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   }
 
   function refreshOrphans(): void {
+    const generation = ++orphanScanGeneration
     void listOrphanProjects(api)
       .then((scanned) => {
+        if (generation !== orphanScanGeneration) return
         // Recovery can emit before its new project id reaches main-process
         // config. Exclude ids already known to the renderer from that stale scan.
         const known = new Set(store.getState().projects.map((project) => project.id))
@@ -764,6 +767,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         if (changed) render()
       })
       .catch((err: unknown) => {
+        if (generation !== orphanScanGeneration) return
         showErrorToast('Could not scan recoverable threads', err)
       })
   }
@@ -1784,6 +1788,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   return () => {
     contentFilter.cancel()
     prStatusGeneration += 1
+    orphanScanGeneration += 1
     dismissContextMenu()
     renaming = null
     renamingGroup = null
