@@ -61,7 +61,7 @@ function commentBody(
   options: { ticked?: string[]; trigger?: boolean; head?: string } = {},
 ): string {
   const ticked = options.ticked ?? ['a.png']
-  const box = (name: string) => `- [${ticked.includes(name) ? 'x' : ' '}] \`${name}\``
+  const box = (name: string): string => `- [${ticked.includes(name) ? 'x' : ' '}] \`${name}\``
   return [
     '<!-- copse-e2e-screenshot-review -->',
     START,
