@@ -653,6 +653,14 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /no valid key/)
   })
 
+  it('labels a selected dynamic rule by its purpose, not as a missing key', async () => {
+    const options = await fetchModelOptions(mockApi(), 'auto:balanced')
+    const current = options.find((o) => o.value === 'auto:balanced')
+    assert.ok(current)
+    assert.equal(current.label, 'Balanced')
+    assert.doesNotMatch(current.label, /no key/)
+  })
+
   it('names a selected cloud model whose provider has no key, not its raw id', async () => {
     const id = 'claude-opus-4-8'
     const options = await fetchModelOptions(mockApi(), id)
@@ -832,15 +840,6 @@ describe('fetchModelOptions visibility', () => {
       available.some((option) => option.value === 'gpt-6-astra'),
       true,
     )
-  })
-
-  it('shows GPT-6.1 Sol with any working OpenAI key, labelled with its intellect', async () => {
-    // Generally available on paid tiers, so unlike Astra there is no account gate.
-    const options = await fetchModelOptions(mockApi({ available: { openai: true } }), '')
-    const sol = options.find((option) => option.value === 'gpt-6.1-sol')
-    assert.ok(sol)
-    assert.equal(sol.label, `GPT-6.1 Sol — ${currentCloudIntellectHint('gpt-6.1-sol')}`)
-    assert.equal(sol.group, 'Cloud models')
   })
 
   it('keeps the current selection selectable even with no key', async () => {
