@@ -44,11 +44,15 @@ describe('prompt profiles', () => {
     // A deliberate prompt edit updates these hashes; an accidental one fails here.
     assert.equal(
       sha256(BASE_SYSTEM_PROMPT),
-      'f4cb08ce2ffbac5fdf3edce91472138c9040f2bcb4a22045c1ca8292ee1fcc3f',
+      '27c6f794183f7faaf33680f457efe1f45da57d1b7d45cd1459f87784e63284ab',
     )
     assert.equal(
       sha256(BASE_SYSTEM_PROMPT_DIRECT_READS),
-      '7f44bff96e68d5247cd522de84ed2e2e86006cdcff615053dd6a7bf8ae4debed',
+      'ad72ed98fbd932c34bdaeafacbee78ac723a3cc03bc88134906adefdb00745ee',
+    )
+    assert.equal(
+      sha256(BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI),
+      'e89d824d07300652f99234da090b53adc39d02646f9b8aabbaa31c5d8b32e40f',
     )
     assert.equal(baseSystemPromptFor('explore', 'default'), BASE_SYSTEM_PROMPT)
     assert.equal(
