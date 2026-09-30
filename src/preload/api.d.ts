@@ -544,6 +544,8 @@ export interface ApiClient {
         }>,
       ) => void,
     ) => () => void
+    /** Main archived these threads (all PRs merged, nothing left to lose). */
+    onAutoArchived: (handler: (projectId: string, threadIds: string[]) => void) => () => void
     /** A PR was just opened by `gh_pr_create` on the named thread. */
     onPrCreated: (
       handler: (

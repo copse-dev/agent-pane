@@ -876,6 +876,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
       onPrRefs: () => () => undefined,
+      // The demo never runs the auto-archive sweep.
+      onAutoArchived: () => () => undefined,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,
       create: (_projectId: string, thread: Thread) => {
