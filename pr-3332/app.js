@@ -629,13 +629,211 @@ var init_model_selection = __esm({
   }
 });
 
+// packages/llm/src/model-families.ts
+function hasModelIdPrefix(id, prefix) {
+  return id === prefix || id.startsWith(prefix) && BOUNDARY.test(id.slice(prefix.length));
+}
+function findFamily(modelId) {
+  let best;
+  for (const entry of FAMILIES) {
+    if (!hasModelIdPrefix(modelId, entry.match)) continue;
+    if (best === void 0 || entry.match.length > best.match.length) best = entry;
+  }
+  return best;
+}
+function withFeatures(features) {
+  return { ...NO_FEATURES, ...features };
+}
+function nonFirstPartyTransport(namespace) {
+  switch (namespace) {
+    case "openrouter":
+    case "extra-provider":
+      return "openai-compatible";
+    case "lmstudio":
+      return "local";
+    case "acp":
+    case "remote-agent":
+    case "plugin-model":
+    case "auto":
+      return "host-routed";
+    case "cloud":
+      return "unknown";
+  }
+}
+function routeGated(features, firstParty) {
+  if (firstParty) return features;
+  return {
+    ...features,
+    supportsStrictTools: false,
+    supportsVerbosity: false,
+    supportsParallelToolCallsControl: false,
+    supportsServerCompaction: false
+  };
+}
+function resolveModelFamily(model) {
+  const selection2 = typeof model === "string" ? parseModelSelection(model) : model;
+  const { namespace } = selection2;
+  if (!CLOUD_ROUTED.has(namespace)) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: nonFirstPartyTransport(namespace),
+      provider: null,
+      family: null,
+      known: false
+    };
+  }
+  const direct = namespace === "cloud";
+  const entry = findFamily(selection2.modelId);
+  if (entry !== void 0) {
+    return {
+      ...routeGated(withFeatures(entry.features), direct),
+      namespace,
+      transport: direct ? entry.transport : "openai-compatible",
+      provider: direct ? entry.provider : null,
+      family: entry.match,
+      known: true
+    };
+  }
+  const fallback = FIRST_PARTY_FALLBACKS.find(
+    (candidate) => selection2.modelId.startsWith(candidate.prefix)
+  );
+  if (direct && fallback !== void 0) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: fallback.transport,
+      provider: fallback.provider,
+      family: null,
+      known: false
+    };
+  }
+  return {
+    ...NO_FEATURES,
+    namespace,
+    transport: direct ? "unknown" : "openai-compatible",
+    provider: null,
+    family: null,
+    known: false
+  };
+}
+function firstPartyProviderOf(model) {
+  return resolveModelFamily(model).provider;
+}
+var NO_FEATURES, GPT_REASONING_FEATURES, O_SERIES_FEATURES, CLAUDE_MID_SYSTEM, FAMILIES, FIRST_PARTY_FALLBACKS, BOUNDARY, CLOUD_ROUTED;
+var init_model_families = __esm({
+  "packages/llm/src/model-families.ts"() {
+    init_model_selection();
+    NO_FEATURES = {
+      supportsStrictTools: false,
+      supportsVerbosity: false,
+      supportsParallelToolCallsControl: false,
+      supportsServerCompaction: false,
+      prefersApplyPatch: false,
+      acceptsDeveloperRole: false,
+      acceptsMidConversationSystem: false
+    };
+    GPT_REASONING_FEATURES = {
+      supportsStrictTools: true,
+      supportsVerbosity: true,
+      supportsParallelToolCallsControl: true,
+      prefersApplyPatch: true,
+      acceptsDeveloperRole: true
+    };
+    O_SERIES_FEATURES = {
+      supportsStrictTools: true,
+      acceptsDeveloperRole: true
+    };
+    CLAUDE_MID_SYSTEM = { acceptsMidConversationSystem: true };
+    FAMILIES = [
+      // Anthropic. Mid-conversation `system` messages: Opus 5 / 4.8, Fable 5, Mythos 5.
+      // `claude-sonnet-5-5` — the default model — does not take one, so leading-system
+      // placement is the common path, not an edge case.
+      {
+        match: "claude-opus-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-opus-4-8",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-opus-4-7", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-haiku-4-5", provider: "anthropic", transport: "anthropic" },
+      {
+        match: "claude-fable-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-mythos-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-mythos-preview", provider: "anthropic", transport: "anthropic" },
+      // OpenAI, Responses API.
+      {
+        match: "gpt-5",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6-astra",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6.1-sol",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      { match: "o1", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o3", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o4", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      // OpenAI, Chat Completions: non-reasoning models gain nothing from Responses.
+      {
+        match: "gpt-4o",
+        provider: "openai",
+        transport: "openai-chat",
+        features: {
+          supportsStrictTools: true,
+          supportsParallelToolCallsControl: true,
+          acceptsDeveloperRole: true
+        }
+      },
+      // Open-weights models OpenAI publishes. Not a first-party API model — it is
+      // reached through aggregators or local servers, never `developer`-role aware —
+      // and the entry exists to stop the broad `gpt-` fallback claiming its features.
+      { match: "gpt-oss", provider: "openai", transport: "openai-chat" }
+    ];
+    FIRST_PARTY_FALLBACKS = [
+      { prefix: "claude-", provider: "anthropic", transport: "anthropic" },
+      { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
+    ];
+    BOUNDARY = /^[-.:@]/;
+    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+  }
+});
+
 // packages/llm/src/model-catalog.ts
 function getModelInfo(model) {
   return MODEL_CATALOG[model] ?? null;
 }
 function inferCloudModelProvider(model) {
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
+  const { provider } = resolveModelFamily(model);
+  if (provider !== null) return provider;
   throw new Error(`Unknown cloud model provider for '${model}'`);
 }
 function cloudModelDisplayLabel(model) {
@@ -647,7 +845,7 @@ var init_model_catalog = __esm({
   "packages/llm/src/model-catalog.ts"() {
     init_model_catalog_generated();
     init_model_label();
-    init_model_selection();
+    init_model_families();
     DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
@@ -714,6 +912,9 @@ function isEmptyModelParameters(params) {
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
 }
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
+}
 function claudeSupport(modelId) {
   const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
   if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
@@ -743,7 +944,7 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
       reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
@@ -752,7 +953,7 @@ function openAiSupport(modelId) {
       temperatureMax: 2
     };
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: "openai-effort",
@@ -784,8 +985,9 @@ function modelParameterSupport(model) {
     };
   }
   if (selection2.namespace === "cloud") {
-    if (selection2.modelId.startsWith("claude")) return claudeSupport(selection2.modelId);
-    if (selection2.modelId.startsWith("gpt")) return openAiSupport(selection2.modelId);
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
     return {
       reasoning: [],
       reasoningWire: "none",
@@ -879,6 +1081,7 @@ var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_C
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
+    init_model_families();
     init_model_selection();
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -21898,6 +22101,16 @@ var init_trace_player = __esm({
   }
 });
 
+// packages/llm/src/model-capabilities.ts
+var init_model_capabilities = __esm({
+  "packages/llm/src/model-capabilities.ts"() {
+    init_model_catalog();
+    init_model_families();
+    init_model_parameters();
+    init_model_selection();
+  }
+});
+
 // packages/agent/src/token-estimate.ts
 var CHARS_PER_TOKEN;
 var init_token_estimate = __esm({
@@ -23932,14 +24145,17 @@ function tenseFromStatus(status) {
   return status === "running" ? "running" : "done";
 }
 function parseMcp(name) {
-  if (!name.startsWith(MCP_PREFIX)) return null;
-  const rest = name.slice(MCP_PREFIX.length);
-  const sep = rest.indexOf("__");
-  if (sep < 0) return null;
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
+  const server = match?.[1];
+  const tool = match?.[2];
+  return server && tool ? { server, tool } : null;
+}
+function nativeDisplayToolName(name) {
+  const mcp = parseMcp(name);
+  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
 }
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[name];
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
@@ -23961,8 +24177,9 @@ function getApplyPatchFiles(tc2) {
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
-  if (tc2.name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
-  const key = FILE_EDIT_PATH_ARG[tc2.name];
+  const name = nativeDisplayToolName(tc2.name);
+  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
+  const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
   return stringArg(tc2.args, key);
 }
@@ -23990,11 +24207,14 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  if (tc2.name === "write_file" || tc2.name === "str_replace") {
+  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
+  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
   }
-  if (tc2.name === "apply_patch") {
+  if (name === "apply_patch") {
     const files = getApplyPatchFiles(tc2);
     if (files.length === 1) {
       const only = files[0]?.path ?? "";
@@ -24004,36 +24224,36 @@ function getToolCallLabel(tc2) {
       return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
     }
   }
-  if (tc2.name === "delete_file") {
+  if (name === "delete_file") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
-  if (tc2.name === "rename_file") {
+  if (name === "rename_file") {
     const from = stringArg(tc2.args, "from");
     const to = stringArg(tc2.args, "to");
     if (from && to) {
       return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
     }
   }
-  if (tc2.name === "make_directory") {
+  if (name === "make_directory") {
     const path = fileEditPath(tc2.args);
     if (path) {
       return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
     }
   }
-  if (tc2.name === "task") {
+  if (name === "task") {
     const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
   }
-  if (tc2.name === "run_shell" || tc2.kind === "execute") {
+  if (name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
-    if (tc2.title) return tc2.title;
+    if (title) return title;
   }
-  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
-  return getToolDisplayName(tc2.name, tense);
+  if (title) return title;
+  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
   const builtIn = TOOL_TO_GROUP.get(name);
@@ -24122,13 +24342,17 @@ function summarizeToolTurn(toolCalls, items) {
   } else {
     base = `Used ${String(n2)} tools`;
   }
-  if (failed > 0 && status !== "running") {
+  if (failed > 0) {
     return `${base} \xB7 ${String(failed)} failed`;
   }
   return base;
 }
+function isSurfacedFailure(tc2, opts) {
+  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
+}
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
   const subagents = [];
   const proposals = [];
   const regular = [];
@@ -24139,14 +24363,18 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   }
   const result = [];
   const grouped = buildGroupedDisplayItems(regular);
-  if (regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
     result.push({
       type: "rollup",
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
-      children: grouped,
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
       toolCalls: regular
     });
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
   } else {
     result.push(...grouped);
   }
@@ -24170,31 +24398,26 @@ function summarizeToolRun(run2) {
     parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
   }
   parts.push(`${String(run2.steps.length)} steps`);
-  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  if (failed > 0) parts.push(`${String(failed)} failed`);
   return parts.join(" \xB7 ");
 }
 function summarizeToolRunStep(step, children) {
   const polished = step.summary?.trim();
   if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
   const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
-  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== "running") {
-    return `${polished} \xB7 ${String(failed)} failed`;
-  }
-  return polished;
+  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
 }
 function buildToolRunDisplayItems(run2, opts) {
   if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
-  const children = run2.steps.map((step) => {
-    const grouped = buildGroupedDisplayItems(step.toolCalls);
-    return {
-      type: "step",
-      key: `step:${step.messageId}`,
-      label: summarizeToolRunStep(step, grouped),
-      messageId: step.messageId,
-      children: grouped,
-      toolCalls: step.toolCalls
-    };
-  });
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const children = run2.steps.map((step) => ({
+    type: "step",
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
+    toolCalls: step.toolCalls
+  }));
   return [
     {
       type: "rollup",
@@ -24202,10 +24425,11 @@ function buildToolRunDisplayItems(run2, opts) {
       label: summarizeToolRun(run2),
       children,
       toolCalls: run2.toolCalls
-    }
+    },
+    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
   ];
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
     init_apply_patch();
@@ -24345,7 +24569,6 @@ var init_tool_display = __esm({
       search: "searching",
       fetch: "web"
     };
-    MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
     RUN_ROLLUP_KEY = "run";
@@ -36482,7 +36705,15 @@ function conciseThreadMessages(model, live) {
         role: "assistant",
         model,
         content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-audit-${model}`,
+            name: "workspace_edit_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: FIXED_TIME + 3e3
       }
     ]
@@ -37022,6 +37253,37 @@ var init_demo_scenarios = __esm({
           error: null,
           continuedFrom: null
         }
+      },
+      {
+        id: "balanced-model-label",
+        label: "Balanced model rule label",
+        project: project("demo-balanced-model-label-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          model: "auto:balanced"
+        },
+        threads: [
+          {
+            id: "demo-balanced-model-label-thread",
+            title: "Balanced model label",
+            status: "idle",
+            model: "auto:balanced",
+            messages: [
+              {
+                id: "demo-balanced-model-label-user",
+                role: "user",
+                content: "Keep this conversation on the balanced model rule.",
+                toolCalls: [],
+                createdAt: FIXED_TIME
+              }
+            ],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       },
       {
         id: "footer-compact",
@@ -37910,9 +38172,7 @@ function providerSlug(model) {
   if (model === void 0) return void 0;
   const colon = model.indexOf(":");
   if (colon > 0) return model.slice(0, colon);
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
-  return void 0;
+  return firstPartyProviderOf(model) ?? void 0;
 }
 function stringArg2(args, key) {
   if (!isRecord(args)) return void 0;
@@ -38908,6 +39168,7 @@ var init_demo_api = __esm({
     init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
+    init_model_capabilities();
     init_token_estimate();
     init_files();
     init_unknown_value3();
@@ -53556,11 +53817,9 @@ function dataPolicyForModelPath(modelId, providers = [], opts = {}) {
     const bySlug = dataPolicyForProvider({ id: slug2 });
     if (bySlug) return { policy: bySlug, local: false };
   }
-  if (id.startsWith("claude")) {
-    return { policy: dataPolicyForProvider({ id: "anthropic" }), local: false };
-  }
-  if (id.startsWith("gpt")) {
-    return { policy: dataPolicyForProvider({ id: "openai" }), local: false };
+  const firstParty = firstPartyProviderOf(id);
+  if (firstParty !== null) {
+    return { policy: dataPolicyForProvider({ id: firstParty }), local: false };
   }
   if (id.toLowerCase().includes("grok")) {
     return {
@@ -53584,6 +53843,7 @@ function isNoTrainingModelPath(modelId, opts = {}) {
 var POLICIES_BY_SLUG, POLICIES_BY_HOST;
 var init_data_policies = __esm({
   "packages/llm/src/data-policies.ts"() {
+    init_model_families();
     init_provider_metadata2();
     POLICIES_BY_SLUG = /* @__PURE__ */ new Map();
     POLICIES_BY_HOST = /* @__PURE__ */ new Map();
@@ -53938,7 +54198,11 @@ async function fetchModelOptions(api2, current, opts = {}) {
         disabled: true
       });
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
+      const dynamicLabel = dynamicModelLabel(current);
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`
+      });
     }
   }
   let blockedMakers = parseBlockedModelMakers(null);
@@ -54055,6 +54319,13 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function isTypeToFilterKey(e3) {
+  if (e3.ctrlKey || e3.metaKey || e3.altKey) return false;
+  if (e3.key.length !== 1) return false;
+  if (e3.key === " ") return false;
+  const code = e3.key.codePointAt(0);
+  return code !== void 0 && code >= 32;
+}
 function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
   if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
   return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
@@ -54472,20 +54743,35 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   filter.addEventListener("input", () => {
     renderMenu(cachedOptions);
   });
-  menu.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
+  function enterAppliesHighlight(target) {
+    if (target === filter || target === menu || target === list) return true;
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.matches(".model-picker-option")) return true;
+    return !menu.contains(target);
+  }
+  function handleOpenMenuKeydown(e3) {
+    if (!open2 || e3.isComposing) return false;
     if (e3.key === "ArrowDown") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(1);
-    } else if (e3.key === "ArrowUp") {
+      return true;
+    }
+    if (e3.key === "ArrowUp") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(-1);
-    } else if (e3.key === "Enter" && (e3.target === filter || e3.target instanceof HTMLElement && e3.target.matches(".model-picker-option"))) {
+      return true;
+    }
+    if (e3.key === "Enter" && enterAppliesHighlight(e3.target)) {
       e3.preventDefault();
+      e3.stopPropagation();
       if (view === "group") {
         if (activeValue !== null) selectGroupValue(activeValue);
       } else selectOption(activeValue);
-    } else if (e3.key === "Escape") {
+      return true;
+    }
+    if (e3.key === "Escape") {
       e3.preventDefault();
       e3.stopPropagation();
       if (view === "group") {
@@ -54496,35 +54782,68 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         setOpen(false);
         if (!recentMode) trigger.focus();
       }
-    } else if (e3.key === "ArrowLeft" && view === "group") {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "group") {
       e3.preventDefault();
       e3.stopPropagation();
       activeValue = null;
       setView(homeView);
-    } else if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("all");
-    } else if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("recent");
+      return true;
     }
+    if (recentMode && view === "recent" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value = e3.key;
+      setView("all");
+      return true;
+    }
+    if (view === "all" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value += e3.key;
+      filter.focus();
+      renderMenu(cachedOptions);
+      return true;
+    }
+    return false;
+  }
+  menu.addEventListener("keydown", (e3) => {
+    handleOpenMenuKeydown(e3);
   });
   cleanups.push(
     on(document, "click", (e3) => {
       if (!open2) return;
       if (!(e3.target instanceof Node) || !wrap.contains(e3.target)) setOpen(false);
     }),
-    on(document, "keydown", (e3) => {
-      const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
-      if (isOpenShortcut && !document.querySelector("dialog[open]")) {
-        e3.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (e3.key === "Escape" && open2) setOpen(false);
-    })
+    on(
+      document,
+      "keydown",
+      (e3) => {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
+          e3.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (!open2) return;
+        if (e3.target instanceof Node && menu.contains(e3.target)) return;
+        handleOpenMenuKeydown(e3);
+      },
+      { capture: true }
+    )
   );
   const removalObserver = new MutationObserver(() => {
     if (document.contains(wrap)) return;
@@ -58208,13 +58527,14 @@ function createModelRoutingSection(api2, options = {}) {
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
   if (!trimmed2) return "";
-  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+  if (trimmed2.includes(":") || firstPartyProviderOf(trimmed2) !== null) {
     return trimmed2;
   }
   return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
+    init_model_capabilities();
     init_preferred_models();
     init_array_utils2();
     init_lm_studio_defaults();
@@ -79022,6 +79342,11 @@ function statusLabel(status) {
       return "Review";
   }
 }
+function skippedReviewReason(summary) {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, "");
+  if (!reason) return "No review ran.";
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+}
 function shouldCollapseCleanReview(review) {
   return review.status === "done" && review.issuesFound === false;
 }
@@ -79040,6 +79365,11 @@ function appendReviewHeader(panel, review, onRetry) {
   if (review.status === "error" && onRetry) {
     header.append(createRetryButton(onRetry));
   }
+  if (review.status === "skipped") {
+    header.append(
+      el("span", { class: "review-panel-skipped-summary" }, skippedReviewReason(review.summary))
+    );
+  }
   panel.append(header);
 }
 function createReviewCardEl(review, api2, onRetry) {
@@ -79050,7 +79380,7 @@ function createReviewCardEl(review, api2, onRetry) {
     ...review.issuesFound !== void 0 ? { "data-issues-found": review.issuesFound ? "true" : "false" } : {}
   });
   appendReviewHeader(panel, review, onRetry);
-  if (review.status === "running") return panel;
+  if (review.status === "running" || review.status === "skipped") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
   const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
 
@@ -79317,12 +79647,16 @@ function messageModel(msg) {
 function isConciseMessage(msg) {
   return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
 }
-function isConciseWorkingMessage(msg) {
+function isConciseStepsMessage(msg) {
   return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
 }
 function syncConciseMessageClasses(msgEl, msg, enabled) {
   msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
   msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+  msgEl.classList.toggle("msg-concise-steps", enabled && isConciseStepsMessage(msg));
 }
 function isConciseThread(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
@@ -81852,6 +82186,10 @@ function createGroupToolCard(item) {
   }
   return card;
 }
+function rollupHeaderCount(item) {
+  const only = item.children.length === 1 ? item.children[0] : void 0;
+  return only?.type === "group" && only.toolCalls.length === item.toolCalls.length ? item.toolCalls.length : void 0;
+}
 function createRollupToolCard(item, api2, threadId, store2) {
   const status = cardStatus2(item.toolCalls);
   const card = el("details", {
@@ -81860,7 +82198,7 @@ function createRollupToolCard(item, api2, threadId, store2) {
     "data-status": status,
     "data-tool-count": String(item.toolCalls.length)
   });
-  const count = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+  const count = rollupHeaderCount(item);
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
     const childCard = createToolCard(child, api2, threadId, store2);
@@ -81898,7 +82236,7 @@ function createToolCard(item, api2, threadId, store2) {
   return createIndividualToolCard(item.toolCall, item.label, api2, threadId, store2);
 }
 function toolCardKey(item) {
-  if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "rollup") return "r:activity";
   if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
@@ -82022,8 +82360,10 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
       card.dataset["stepMessageId"] = item.messageId;
+    } else {
+      card.dataset["rollupKey"] = item.key;
     }
-    const count = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
     replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
     let body = Array.from(card.children).find(
       (node2) => node2 instanceof HTMLElement && node2.classList.contains("tool-rollup-body")
@@ -82473,15 +82813,7 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
     body.append(createMessageImages(msg.images));
   }
   if (msg.role === "assistant" && hasReasoningContent(msg.reasoning, msg.reasoningBlocks) && opts?.nestReasoningInTools !== true) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? "",
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot
-      )
-    );
+    body.append(buildReasoningEl(msg.reasoning ?? "", false, msg.reasoningBlocks, workspaceRoot));
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -82613,10 +82945,9 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
+function buildReasoningEl(reasoning, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
-    class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
-    open: open2
+    class: `message-reasoning${live ? " message-reasoning-live" : ""}`
   });
   const summary = el(
     "summary",
@@ -82672,7 +83003,7 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
@@ -82681,7 +83012,6 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
       renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
-  if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
 function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
@@ -82693,7 +83023,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(reasoning ?? "", live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
     if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
@@ -82705,25 +83035,27 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
   });
 }
 function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
+  let anchorTrail = card.querySelector(
+    ":scope > .tool-rollup-body > .message-reasoning"
+  );
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
+    if (!details && anchorTrail && step.messageId === run2.anchorId) {
+      details = anchorTrail;
+      anchorTrail = null;
+      body.prepend(details);
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? "",
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot
-      );
+      details = buildReasoningEl(step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
       body.prepend(details);
       continue;
     }
@@ -82732,6 +83064,7 @@ function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
       renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
+  anchorTrail?.remove();
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -83286,7 +83619,11 @@ function mountConversation(root, store2, api2) {
     const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".msg:not(.msg-concise) .message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && [
+      ...list.querySelectorAll(
+        ".msg:not(.msg-concise) .message-reasoning.message-reasoning-live"
+      )
+    ].some((details) => !details.parentElement?.closest("details:not([open]), [hidden]"))) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
@@ -83400,6 +83737,8 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (item.type === "rollup" || item.type === "step") {
+      card.open = false;
     } else if (failed) {
       card.open = true;
       autoOpenedDisclosures.add(key);
@@ -83461,7 +83800,12 @@ function mountConversation(root, store2, api2) {
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
     if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
-    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
+    const isInterrupted = (call) => userInterruption(call) !== void 0;
+    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
+      ...buildToolRunDisplayItems(run2, { isInterrupted }),
+      ...buildSubagentDisplayItems(toolCalls)
+    ] : buildToolCallDisplayItems(toolCalls, {
+      isInterrupted,
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
@@ -97299,9 +97643,7 @@ function threadHasExportableContent(thread) {
 function providerFromModelId(modelId) {
   const colon = modelId.indexOf(":");
   if (colon > 0) return modelId.slice(0, colon);
-  if (modelId.startsWith("claude")) return "anthropic";
-  if (modelId.startsWith("gpt")) return "openai";
-  return "unknown";
+  return firstPartyProviderOf(modelId) ?? "unknown";
 }
 function providersFromUsage(usage) {
   const models = usage.byModel ? Object.keys(usage.byModel) : [];
@@ -97365,6 +97707,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
+    init_model_families();
     THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });
