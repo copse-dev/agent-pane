@@ -7742,6 +7742,7 @@ dialog.settings-overlay::backdrop {
   font-size: var(--font-size-sm);
 }
 .settings-content label select,
+.settings-content label input:not([type]),
 .settings-content label input[type=text],
 .settings-content label input[type=password],
 .settings-content label input[type=number],
@@ -7749,15 +7750,19 @@ dialog.settings-overlay::backdrop {
 .settings-content label input[type=email],
 .settings-content label input[type=search] {
   width: 100%;
-  max-width: 480px;
   min-height: var(--action-min-height);
 }
+.settings-content label select {
+  max-width: 480px;
+}
+.settings-content label input:not([type]),
 .settings-content label input[type=text],
 .settings-content label input[type=password],
 .settings-content label input[type=number],
 .settings-content label input[type=url],
 .settings-content label input[type=email],
 .settings-content label input[type=search] {
+  max-width: 360px;
   padding-inline: var(--spacing-md);
 }
 .settings-content label select {
@@ -13846,6 +13851,13 @@ dialog.activity-panel-overlay {
   display: grid;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
+}
+.ssh-host-form label input:not([type]),
+.ssh-host-form label input[type=text] {
+  width: 100%;
+  max-width: 360px;
+  min-height: var(--action-min-height);
+  padding-inline: var(--spacing-md);
 }
 .ssh-import-config {
   margin: var(--spacing-sm) 0;

@@ -24625,7 +24625,11 @@ function attachThreadHydration(store2, api2) {
   hydrateActive();
   const offPrRefs = api2.threads.onPrRefs((projectId, refs) => {
     const state = store2.getState();
-    if (state.activeProjectId !== projectId || refs.length === 0) return;
+    if (refs.length === 0) return;
+    if (state.activeProjectId !== projectId) {
+      if (applyCachedSidebarPrRefs(projectId, refs)) store2.emit("threads_changed");
+      return;
+    }
     const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]));
     if (!state.threads.some((t2) => byThread.has(t2.id))) return;
     store2.setState({
@@ -24652,6 +24656,7 @@ var init_thread_hydration = __esm({
     init_perf();
     init_thread_helpers();
     init_artefact_previews();
+    init_projects();
     HYDRATED_THREAD_BUDGET = 8;
     activeHydrator = null;
     failedThreadIds = /* @__PURE__ */ new Set();
@@ -34030,30 +34035,35 @@ function openRemoteFolderDialog(api2) {
   );
   const draft = emptySshHostDraft();
   const idInput = el("input", {
+    type: "text",
     name: "remoteFolderHostId",
     class: "remote-folder-host-id",
     placeholder: "my-server",
     "aria-label": "Host id"
   });
   const labelInput = el("input", {
+    type: "text",
     name: "remoteFolderHostLabel",
     class: "remote-folder-host-label",
     placeholder: "Production",
     "aria-label": "Host label"
   });
   const hostInput = el("input", {
+    type: "text",
     name: "remoteFolderHostHost",
     class: "remote-folder-host-host",
     placeholder: "example.com or ~/.ssh/config alias",
     "aria-label": "Hostname"
   });
   const userInput = el("input", {
+    type: "text",
     name: "remoteFolderHostUser",
     class: "remote-folder-host-user",
     placeholder: "ubuntu",
     "aria-label": "SSH user"
   });
   const portInput = el("input", {
+    type: "text",
     name: "remoteFolderHostPort",
     class: "remote-folder-host-port",
     placeholder: "22",
@@ -34061,6 +34071,7 @@ function openRemoteFolderDialog(api2) {
     "aria-label": "SSH port"
   });
   const identityInput = el("input", {
+    type: "text",
     name: "remoteFolderHostIdentity",
     class: "remote-folder-host-identity",
     placeholder: "~/.ssh/id_ed25519",
@@ -34430,6 +34441,20 @@ function getSidebarThreads(store2, projectId) {
   const { activeProjectId, threads } = store2.getState();
   const list = projectId === activeProjectId ? threads : threadCache.get(projectId) ?? [];
   return list.filter((t2) => t2.archivedAt == null);
+}
+function applyCachedSidebarPrRefs(projectId, refs) {
+  const cached2 = threadCache.get(projectId);
+  if (!cached2) return false;
+  const byThread = new Map(refs.map(({ threadId, prRefs }) => [threadId, prRefs]));
+  if (!cached2.some((thread) => byThread.has(thread.id))) return false;
+  threadCache.set(
+    projectId,
+    cached2.map((thread) => {
+      const prRefs = byThread.get(thread.id);
+      return prRefs ? { ...thread, prRefs } : thread;
+    })
+  );
+  return true;
 }
 function isProjectSwitchInFlight(store2, projectId) {
   const { activeProjectId, expandedProjectId, workspaceRoot } = store2.getState();
@@ -35285,7 +35310,10 @@ function showContextMenu(clientX, clientY, items, withinDialog) {
     dismiss();
   };
   const onKeyDown = (e3) => {
-    if (e3.key === "Escape") dismiss();
+    if (e3.key !== "Escape") return;
+    e3.preventDefault();
+    e3.stopPropagation();
+    dismiss();
   };
   const dialog2 = withinDialog?.closest("dialog");
   (dialog2 ?? document.body).append(menu);
@@ -38065,6 +38093,7 @@ function createDemoApi(scenario, options = {}) {
       // on screen.
       loadMessages: (_projectId, threadId) => scenario.holdThreadHydration === true ? new Promise(() => void 0) : scenario.failThreadHydration === true ? Promise.reject(new Error("demo: transcript read failed")) : resolved(structuredClone(threads.find((t2) => t2.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => void 0,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => void 0,
@@ -70223,9 +70252,16 @@ function mountProjectsPane(root, store2, api2) {
   syncRemoteOpenAvailability();
   store2.on("settings_changed", syncRemoteOpenAvailability);
   const visibleThreadCounts = /* @__PURE__ */ new Map();
+  const prBackfillRequested = /* @__PURE__ */ new Map();
+  const prBackfillRetryAttempts = /* @__PURE__ */ new Map();
+  const prBackfillRetryTimers = /* @__PURE__ */ new Set();
+  let prBackfillRowsByKey = /* @__PURE__ */ new Map();
+  let prBackfillObserver = null;
   let automationsSectionExpanded = false;
   const expandedAutomationSchedules = /* @__PURE__ */ new Set();
   let orphans = [];
+  let knownProjectIds = new Set(store2.getState().projects.map((project2) => project2.id));
+  let orphanScanGeneration = 0;
   let renaming = null;
   let renamingGroup = null;
   let activeDrag = null;
@@ -70444,8 +70480,20 @@ function mountProjectsPane(root, store2, api2) {
     }
     return section;
   }
+  function refreshOrphansIfProjectSetChanged() {
+    const nextIds = new Set(store2.getState().projects.map((project2) => project2.id));
+    if (nextIds.size === knownProjectIds.size && [...nextIds].every((id) => knownProjectIds.has(id))) {
+      return;
+    }
+    knownProjectIds = nextIds;
+    refreshOrphans();
+  }
   function refreshOrphans() {
-    void listOrphanProjects(api2).then((next) => {
+    const generation = ++orphanScanGeneration;
+    void listOrphanProjects(api2).then((scanned) => {
+      if (generation !== orphanScanGeneration) return;
+      const known = new Set(store2.getState().projects.map((project2) => project2.id));
+      const next = scanned.filter((orphan) => !known.has(orphan.id));
       const changed = next.length !== orphans.length || next.some((o3, i2) => {
         const prev = orphans[i2];
         return !prev || o3.id !== prev.id || o3.threadCount !== prev.threadCount || o3.updatedAt !== prev.updatedAt || o3.sampleTitles.join("\0") !== prev.sampleTitles.join("\0");
@@ -70453,6 +70501,7 @@ function mountProjectsPane(root, store2, api2) {
       orphans = next;
       if (changed) render();
     }).catch((err2) => {
+      if (generation !== orphanScanGeneration) return;
       showErrorToast("Could not scan recoverable threads", err2);
     });
   }
@@ -70676,7 +70725,10 @@ function mountProjectsPane(root, store2, api2) {
     return entries2;
   }
   function render() {
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
     clear(list);
+    const prBackfillRows = [];
     const { projects, projectGroups, activeProjectId, expandedProjectId, activeThreadId } = store2.getState();
     const expandedId = expandedProjectId ?? activeProjectId;
     if (projects.length === 0 && projectGroups.length === 0 && orphans.length === 0) {
@@ -70816,6 +70868,9 @@ function mountProjectsPane(root, store2, api2) {
       if (prRollup) {
         chatRow.classList.add("has-pr-status");
         chatRow.append(chatPrStatus(prRollup));
+      }
+      if (thread.prRefs === void 0) {
+        prBackfillRows.push({ row: chatRow, projectId: project2.id, threadId: thread.id });
       }
       if (canMutate) {
         const del = el(
@@ -71274,6 +71329,66 @@ function mountProjectsPane(root, store2, api2) {
       else list.append(renderProjectEntry(node2.project));
     }
     if (orphans.length > 0) list.append(renderOrphansSection());
+    prBackfillRowsByKey = new Map(
+      prBackfillRows.map(({ row: row2, projectId, threadId }) => [`${projectId}\0${threadId}`, row2])
+    );
+    if (prBackfillRows.length > 0 && typeof IntersectionObserver !== "undefined") {
+      const rowThreads = new Map(
+        prBackfillRows.map(({ row: row2, projectId, threadId }) => [row2, { projectId, threadId }])
+      );
+      const observer = new IntersectionObserver((entries2) => {
+        if (prBackfillObserver !== observer) return;
+        const pending = /* @__PURE__ */ new Map();
+        for (const entry of entries2) {
+          if (!entry.isIntersecting) continue;
+          observer.unobserve(entry.target);
+          const thread = rowThreads.get(entry.target);
+          if (!thread) continue;
+          const requested = prBackfillRequested.get(thread.projectId) ?? /* @__PURE__ */ new Set();
+          prBackfillRequested.set(thread.projectId, requested);
+          if (requested.has(thread.threadId)) continue;
+          requested.add(thread.threadId);
+          const rows = pending.get(thread.projectId) ?? [];
+          rows.push({ threadId: thread.threadId, row: entry.target });
+          pending.set(thread.projectId, rows);
+        }
+        for (const [projectId, rows] of pending) {
+          const requested = prBackfillRequested.get(projectId);
+          for (let i2 = 0; i2 < rows.length; i2 += 10) {
+            const batch = rows.slice(i2, i2 + 10);
+            const threadIds = batch.map(({ threadId }) => threadId);
+            void api2.threads.backfillPrRefs(projectId, threadIds).then(() => {
+              for (const threadId of threadIds) {
+                prBackfillRetryAttempts.delete(`${projectId}\0${threadId}`);
+              }
+            }).catch((err2) => {
+              let attempt = 1;
+              for (const threadId of threadIds) {
+                const key = `${projectId}\0${threadId}`;
+                const nextAttempt = (prBackfillRetryAttempts.get(key) ?? 0) + 1;
+                prBackfillRetryAttempts.set(key, nextAttempt);
+                attempt = Math.max(attempt, nextAttempt);
+              }
+              const delay = Math.min(1e3 * 2 ** (attempt - 1), 3e4);
+              const timer = setTimeout(() => {
+                prBackfillRetryTimers.delete(timer);
+                for (const { threadId } of batch) requested?.delete(threadId);
+                const currentObserver = prBackfillObserver;
+                if (!currentObserver) return;
+                for (const { threadId } of batch) {
+                  const row2 = prBackfillRowsByKey.get(`${projectId}\0${threadId}`);
+                  if (row2?.isConnected) currentObserver.observe(row2);
+                }
+              }, delay);
+              prBackfillRetryTimers.add(timer);
+              console.warn("[threads] visible PR-ref backfill failed:", err2);
+            });
+          }
+        }
+      });
+      prBackfillObserver = observer;
+      for (const { row: row2 } of prBackfillRows) observer.observe(row2);
+    }
   }
   const unsubs = [
     store2.on("projects_changed", render),
@@ -71293,15 +71408,21 @@ function mountProjectsPane(root, store2, api2) {
     }),
     store2.on("attention_changed", render),
     store2.on("attention_changed", syncActivityButton),
-    // Recovering an orphan or relocating a project changes the project set, which
-    // in turn changes which store dirs count as orphaned — re-scan on that.
-    store2.on("projects_changed", refreshOrphans)
+    // Switches emit `projects_changed` twice; neither changes which stores are
+    // orphaned. Re-scan only when a project is added, removed, or recovered.
+    store2.on("projects_changed", refreshOrphansIfProjectSetChanged)
   ];
   render();
   refreshOrphans();
   return () => {
     contentFilter.cancel();
+    for (const timer of prBackfillRetryTimers) clearTimeout(timer);
+    prBackfillRetryTimers.clear();
+    prBackfillObserver?.disconnect();
+    prBackfillObserver = null;
+    prBackfillRowsByKey.clear();
     prStatusGeneration += 1;
+    orphanScanGeneration += 1;
     dismissContextMenu();
     renaming = null;
     renamingGroup = null;
@@ -81999,7 +82120,7 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
   if (msg.role === "user" && msg.images?.length) {
     body.append(createMessageImages(msg.images));
   }
-  if (msg.role === "assistant" && (msg.reasoning || msg.reasoningBlocks?.length) && opts?.nestReasoningInTools !== true) {
+  if (msg.role === "assistant" && hasReasoningContent(msg.reasoning, msg.reasoningBlocks) && opts?.nestReasoningInTools !== true) {
     body.append(
       buildReasoningEl(
         msg.reasoning ?? "",
@@ -82037,6 +82158,9 @@ function syncAcpMessageContent(msgEl, blocks, workspaceRoot) {
   }
   if (current) replaceAcpResourceBlock(current, replacement);
   else body.append(replacement);
+}
+function hasReasoningContent(reasoning, blocks) {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length);
 }
 function shouldNestReasoningInTools(toolCalls) {
   return toolCalls.some((tc2) => !tc2.subagent);
@@ -82191,7 +82315,7 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
   );
   const host = rollupBody ?? body;
   let details = msgEl.querySelector(".message-reasoning");
-  if (!msg.reasoning && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove();
     return;
   }
@@ -113580,6 +113704,27 @@ function collectLinkedPrs(store2) {
   }
   return refs;
 }
+function indexThreadLinks(store2) {
+  const links = /* @__PURE__ */ new Map();
+  for (const thread of store2.getState().threads) {
+    for (const ref of thread.prRefs ?? []) {
+      const key = githubPrKey(ref);
+      if (!links.has(key)) links.set(key, { threadId: thread.id, title: thread.title });
+    }
+  }
+  const activeThread = getActiveThread(store2);
+  if (activeThread) {
+    for (const message2 of activeThread.messages) {
+      for (const ref of extractGithubPrUrls(message2.content)) {
+        const key = githubPrKey(ref);
+        if (!links.has(key)) {
+          links.set(key, { threadId: activeThread.id, title: activeThread.title });
+        }
+      }
+    }
+  }
+  return links;
+}
 function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   const listHeader = el("div", { class: "pane-header" });
   listHeader.append(
@@ -113636,6 +113781,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
   let detailsRequestId = 0;
   let ghStatus = null;
   let agentLinks = /* @__PURE__ */ new Map();
+  let threadLinks = indexThreadLinks(store2);
   let agentLinksGen = 0;
   let linkedRefs = [];
   let myPrs = [];
@@ -113991,18 +114137,24 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       void api2.shell.openExternal(prUrl);
     });
     const agent = agentLinks.get(githubPrKey(selectedPr));
-    const openThreadBtn = agent ? el(
+    const producingThread = threadLinks.get(githubPrKey(selectedPr));
+    const producingThreadId = agent?.threadId ?? producingThread?.threadId;
+    const openThreadBtn = producingThreadId ? el(
       "button",
       {
         type: "button",
         class: "ui-btn ui-btn-ghost ui-btn-compact pr-open-thread-btn",
-        "data-tooltip": `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent`
+        "data-tooltip": agent ? `Go to the thread that launched this ${agentProviderLabel(agent.provider)} agent` : "Go to the thread that opened this pull request"
       },
-      el("span", {}, `Open ${agentProviderLabel(agent.provider)} agent thread`)
+      el(
+        "span",
+        {},
+        agent ? `Open ${agentProviderLabel(agent.provider)} agent thread` : "Open producing thread"
+      )
     ) : null;
-    if (openThreadBtn && agent) {
+    if (openThreadBtn && producingThreadId) {
       openThreadBtn.addEventListener("click", () => {
-        switchThread(store2, agent.threadId);
+        switchThread(store2, producingThreadId);
       });
     }
     const newThreadBtn = el(
@@ -114393,6 +114545,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       }
     }
     const gen = ++agentLinksGen;
+    threadLinks = indexThreadLinks(store2);
     ghStatus = await api2.gh.status();
     const entries2 = await api2.gh.agentPrLinks().catch(() => []);
     if (gen !== agentLinksGen) return;
@@ -114500,6 +114653,7 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
       workspacePrs = [];
       prList = [];
       agentLinks = /* @__PURE__ */ new Map();
+      threadLinks = indexThreadLinks(store2);
       agentLinksGen++;
       titleGen++;
       titleInFlight.clear();
@@ -114512,9 +114666,11 @@ function mountPrPane(listRoot, viewerRoot, store2, api2, monaco) {
     }),
     store2.on("threads_changed", () => {
       if (!prsModeActive(store2)) return;
+      threadLinks = indexThreadLinks(store2);
       linkedRefs = collectLinkedPrs(store2);
       prList = mergePrLists(linkedRefs, [workspacePrs, myPrs]);
       renderList();
+      if (selectedPr && prDetails) renderMeta();
       const gen = agentLinksGen;
       void api2.gh.agentPrLinks().then((entries2) => {
         if (gen !== agentLinksGen) return;
@@ -137580,6 +137736,7 @@ function mountProcessManagerDialog(api2, store2) {
     status.textContent = "Loading processes\u2026";
     updated.textContent = "";
     open2();
+    closeButton.focus({ preventScroll: true });
     void refresh();
     timer = setInterval(() => void refresh(), 1e3);
   };
@@ -139901,6 +140058,7 @@ function handlePanelShortcut(store2, api2, action) {
 }
 function registerPanelKeyboardShortcuts(store2, api2) {
   document.addEventListener("keydown", (e3) => {
+    if (isAnyDialogOpen()) return;
     if (matchNewThreadShortcut(e3)) {
       if (!store2.getState().workspaceRoot) return;
       e3.preventDefault();
@@ -139918,6 +140076,7 @@ var init_keyboard_shortcuts = __esm({
   "src/renderer/keyboard-shortcuts.ts"() {
     init_thread_helpers();
     init_panels();
+    init_dialog_shell();
   }
 });
 
@@ -148827,6 +148986,12 @@ function updateFilesPane() {
 function registerKeyboardShortcuts() {
   document.addEventListener("keydown", (e3) => {
     const meta3 = e3.ctrlKey || e3.metaKey;
+    if (meta3 && e3.key === "w") {
+      e3.preventDefault();
+      if (!isAnyDialogOpen()) void confirmDeleteThread();
+      return;
+    }
+    if (isAnyDialogOpen()) return;
     if (meta3 && e3.key === "t") {
       e3.preventDefault();
       openNewThread(store);
@@ -148865,10 +149030,6 @@ function registerKeyboardShortcuts() {
       e3.preventDefault();
       if (uiScaleAction === "reset") void resetUiScale(store, api);
       else void bumpUiScale(store, api, uiScaleAction === "in" ? 1 : -1);
-    }
-    if (meta3 && e3.key === "w") {
-      e3.preventDefault();
-      if (!isAnyDialogOpen()) void confirmDeleteThread();
     }
     if (e3.key === "Escape") {
       if (isCommandPaletteOpen()) {
