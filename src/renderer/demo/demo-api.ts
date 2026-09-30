@@ -16,6 +16,7 @@ import { workingBriefFromUserContent } from '@copse/agent/working-brief.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { DemoScenario } from './scenarios.ts'
 import { playTrace, type TracePlayerOptions } from './trace-player.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import { CHARS_PER_TOKEN } from '@copse/agent/token-estimate.ts'
 import { detectLanguage } from '../controller/files.ts'
 import { isRecord } from '@shared/unknown-value.ts'
@@ -329,9 +330,7 @@ function providerSlug(model: string | undefined): string | undefined {
   if (model === undefined) return undefined
   const colon = model.indexOf(':')
   if (colon > 0) return model.slice(0, colon)
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
-  return undefined
+  return firstPartyProviderOf(model) ?? undefined
 }
 
 export interface DemoApiOptions {
