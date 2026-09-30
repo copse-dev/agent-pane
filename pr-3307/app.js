@@ -157,6 +157,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-opus-5-5": {
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "claude-sonnet-4-6": {
         inputPricePerMTok: 3,
         outputPricePerMTok: 15,
@@ -327,6 +335,28 @@ var init_model_catalog_generated = __esm({
             outputPricePerMTok: 100,
             cacheReadPricePerMTok: 2,
             cacheCreationPricePerMTok: 25
+          }
+        },
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
+      },
+      "gpt-6.1-sol": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.1,
+        cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 5,
+            cacheReadPricePerMTok: 0.05,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 20,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 5
           }
         },
         contextWindow: 922e3,
@@ -625,12 +655,14 @@ var init_model_catalog = __esm({
       "claude-fable-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-haiku-4-5",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
@@ -645,12 +677,14 @@ var init_model_catalog = __esm({
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
       "claude-sonnet-5-5": "Claude Sonnet 5.5",
+      "claude-opus-5-5": "Claude Opus 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6.1-sol": "GPT-6.1 Sol",
       "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
@@ -709,9 +743,9 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
@@ -841,7 +875,7 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -888,12 +922,14 @@ var init_model_parameters = __esm({
       "claude-opus-4-5"
     ];
     CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "claude-fable-5",
       "claude-mythos-5",
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -905,7 +941,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -21531,6 +21567,259 @@ var init_parse_agent_run_payload = __esm({
   }
 });
 
+// packages/llm/src/agent-roles.ts
+function getAgentRole(id) {
+  return AGENT_ROLES.find((role) => role.id === id) ?? null;
+}
+var AGENT_ROLES, AGENT_ROLE_IDS;
+var init_agent_roles = __esm({
+  "packages/llm/src/agent-roles.ts"() {
+    AGENT_ROLES = [
+      {
+        id: "coder",
+        label: "Coder",
+        description: "Writing new code \u2014 the chat default when coding",
+        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
+      },
+      {
+        id: "debugger",
+        label: "Debugger",
+        description: "Fixing bugs through careful, iterative analysis",
+        wants: ["swe-bench", "livecodebench", "gpqa"]
+      },
+      {
+        id: "reviewer",
+        label: "Reviewer",
+        description: "Post-turn diff review and maintainability",
+        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "security-auditor",
+        label: "Security auditor",
+        description: "Finding vulnerabilities with low false negatives",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "judge",
+        label: "Judge",
+        description: "Accept/reject a patch or answer against a rubric",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "test-gen",
+        label: "Test generator",
+        description: "Unit, integration, and property tests",
+        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
+      },
+      {
+        id: "refactor",
+        label: "Refactorer",
+        description: "Behaviour-preserving changes",
+        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
+      },
+      {
+        id: "planner",
+        label: "Planner",
+        description: "Breaking work into prioritised tasks",
+        wants: ["gpqa", "mmlu-pro", "arena"]
+      },
+      {
+        id: "advisor",
+        label: "Advisor",
+        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
+        wants: ["gpqa", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "docs",
+        label: "Documentation",
+        description: "READMEs, comments, and API docs",
+        wants: ["mmlu-pro", "arena"]
+      },
+      {
+        id: "research",
+        label: "Research assistant",
+        description: "API/framework lookup and synthesis (exploration subagent)",
+        wants: ["mmlu-pro", "gpqa", "arena"]
+      },
+      {
+        id: "tool-use",
+        label: "Tool-use agent",
+        description: "Calling tools correctly with structured output",
+        wants: ["tau-bench", "multipl-e"]
+      },
+      {
+        id: "small-tasks",
+        label: "Small tasks",
+        description: "Thread titles and other lightweight prompts",
+        wants: ["arena"]
+      },
+      {
+        id: "safety",
+        label: "Instruct / safety",
+        description: "Classifies shell commands when the OS sandbox is off",
+        wants: ["arena"]
+      }
+    ];
+    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
+  }
+});
+
+// packages/llm/src/dynamic-model.ts
+function minIntellectSelector(threshold) {
+  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
+}
+function roleModelSelector(role) {
+  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
+}
+function isDynamicModel(value) {
+  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
+}
+function parseDynamicModel(value) {
+  if (typeof value !== "string") return null;
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "auto") return null;
+  const body = selection2.id;
+  if (body === "best-value") return { kind: "best-value" };
+  if (body === "best-intellect") return { kind: "best-intellect" };
+  if (body === "best-local") return { kind: "best-local" };
+  if (body === "cheapest") return { kind: "cheapest" };
+  if (body === "balanced") return { kind: "balanced" };
+  if (body.startsWith(MIN_INTELLECT_INFIX)) {
+    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
+    if (!Number.isFinite(threshold) || threshold <= 0) return null;
+    return { kind: "min-intellect", threshold };
+  }
+  if (body.startsWith(ROLE_INFIX)) {
+    const role = getAgentRole(body.slice(ROLE_INFIX.length));
+    return role ? { kind: "role", role: role.id } : null;
+  }
+  return null;
+}
+function dynamicModelLabel(value) {
+  const selector = parseDynamicModel(value);
+  if (!selector) return null;
+  switch (selector.kind) {
+    case "best-value":
+      return "Best value";
+    case "best-intellect":
+      return "Most capable";
+    case "best-local":
+      return "Best on-device";
+    case "cheapest":
+      return "Cheapest";
+    case "balanced":
+      return "Balanced";
+    case "min-intellect":
+      return `At least ${String(selector.threshold)} intelligence`;
+    case "role":
+      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
+  }
+}
+function dynamicModelChoices() {
+  const choices = [
+    {
+      value: BEST_VALUE_MODEL_SELECTOR,
+      label: "Best value",
+      description: "Best intelligence per pound across your plans, providers, and local server",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_INTELLECT_MODEL_SELECTOR,
+      label: "Most capable",
+      description: "Highest intelligence available, ignoring price",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_LOCAL_MODEL_SELECTOR,
+      label: "Best on-device",
+      description: "Strongest model loaded on your machine",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: CHEAPEST_MODEL_SELECTOR,
+      label: "Cheapest",
+      description: "Lowest token price; plans and local count as free",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_MODEL_SELECTOR,
+      label: "Balanced",
+      description: "Strong capability at a fair price; favors plans",
+      group: AUTOMATIC_GROUP
+    }
+  ];
+  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
+    choices.push({
+      value: minIntellectSelector(threshold),
+      label: `At least ${String(threshold)} intelligence`,
+      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
+      group: INTELLIGENCE_GROUP
+    });
+  }
+  for (const role of AGENT_ROLES) {
+    choices.push({
+      value: roleModelSelector(role.id),
+      label: role.label,
+      description: role.description,
+      group: ROLE_GROUP
+    });
+  }
+  return choices;
+}
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var init_dynamic_model = __esm({
+  "packages/llm/src/dynamic-model.ts"() {
+    init_agent_roles();
+    init_model_selection();
+    init_reserved_prefixes();
+    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
+    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
+    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
+    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    MIN_INTELLECT_INFIX = "min-intellect:";
+    ROLE_INFIX = "role:";
+    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
+    AUTOMATIC_GROUP = "Automatic";
+    INTELLIGENCE_GROUP = "Minimum intelligence";
+    ROLE_GROUP = "By role";
+  }
+});
+
+// packages/agent/src/plugins/advisor-strategy-plugin.ts
+var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
+var init_advisor_strategy_plugin = __esm({
+  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
+    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
+    ADVISOR_MODEL_SETTING_ID = "advisorModel";
+    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    advisorStrategyPlugin = definePlugin(
+      {
+        name: ADVISOR_STRATEGY_PLUGIN_ID,
+        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
+        settings: {
+          [ADVISOR_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID
+          }
+        },
+        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
+      },
+      {
+        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
+      }
+    );
+  }
+});
+
 // packages/agent/src/working-brief.ts
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
@@ -24971,6 +25260,15 @@ var init_github_pr_url2 = __esm({
   }
 });
 
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
@@ -25027,19 +25325,23 @@ function summarizeThreadPrStatus(states, refs = []) {
   return { kind: "closed", totalCount: knownCount };
 }
 function describeThreadPrStatus(rollup) {
-  if (rollup.kind === "open") {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`;
-    }
-    return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
   }
-  if (rollup.kind === "merged") {
-    return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-  }
-  return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
   "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
     init_github_pr_url();
   }
 });
@@ -38493,6 +38795,7 @@ var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_automations_plugin();
     init_parse_agent_run_payload();
+    init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
     init_token_estimate();
@@ -38629,22 +38932,22 @@ var init_demo_api = __esm({
         settings: []
       },
       {
-        id: "copse.advisor-strategy",
+        id: ADVISOR_STRATEGY_PLUGIN_ID,
         trust: "first-party",
         stability: "experimental",
         name: "Advisor strategy",
         version: "0.3.1",
-        description: "Pairs a second model with the executor to review strategy before long or risky work starts.",
+        description: "Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.",
         enabled: true,
-        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["consult_advisor"] },
+        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
         settings: [
           {
-            id: "maxReviewCycles",
-            kind: "number",
-            title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn. `0` turns retries off.",
-            default: 2,
-            value: 2
+            id: ADVISOR_MODEL_SETTING_ID,
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID,
+            value: DEFAULT_ADVISOR_MODEL_ID
           }
         ]
       },
@@ -41367,225 +41670,6 @@ var init_app_icon_variants = __esm({
       lagoon: "Lagoon"
     };
     isAppIconVariant = memberOf(APP_ICON_VARIANTS);
-  }
-});
-
-// packages/llm/src/agent-roles.ts
-function getAgentRole(id) {
-  return AGENT_ROLES.find((role) => role.id === id) ?? null;
-}
-var AGENT_ROLES, AGENT_ROLE_IDS;
-var init_agent_roles = __esm({
-  "packages/llm/src/agent-roles.ts"() {
-    AGENT_ROLES = [
-      {
-        id: "coder",
-        label: "Coder",
-        description: "Writing new code \u2014 the chat default when coding",
-        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
-      },
-      {
-        id: "debugger",
-        label: "Debugger",
-        description: "Fixing bugs through careful, iterative analysis",
-        wants: ["swe-bench", "livecodebench", "gpqa"]
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        description: "Post-turn diff review and maintainability",
-        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "security-auditor",
-        label: "Security auditor",
-        description: "Finding vulnerabilities with low false negatives",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "judge",
-        label: "Judge",
-        description: "Accept/reject a patch or answer against a rubric",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "test-gen",
-        label: "Test generator",
-        description: "Unit, integration, and property tests",
-        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
-      },
-      {
-        id: "refactor",
-        label: "Refactorer",
-        description: "Behaviour-preserving changes",
-        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
-      },
-      {
-        id: "planner",
-        label: "Planner",
-        description: "Breaking work into prioritised tasks",
-        wants: ["gpqa", "mmlu-pro", "arena"]
-      },
-      {
-        id: "advisor",
-        label: "Advisor",
-        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
-        wants: ["gpqa", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "docs",
-        label: "Documentation",
-        description: "READMEs, comments, and API docs",
-        wants: ["mmlu-pro", "arena"]
-      },
-      {
-        id: "research",
-        label: "Research assistant",
-        description: "API/framework lookup and synthesis (exploration subagent)",
-        wants: ["mmlu-pro", "gpqa", "arena"]
-      },
-      {
-        id: "tool-use",
-        label: "Tool-use agent",
-        description: "Calling tools correctly with structured output",
-        wants: ["tau-bench", "multipl-e"]
-      },
-      {
-        id: "small-tasks",
-        label: "Small tasks",
-        description: "Thread titles and other lightweight prompts",
-        wants: ["arena"]
-      },
-      {
-        id: "safety",
-        label: "Instruct / safety",
-        description: "Classifies shell commands when the OS sandbox is off",
-        wants: ["arena"]
-      }
-    ];
-    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
-  }
-});
-
-// packages/llm/src/dynamic-model.ts
-function minIntellectSelector(threshold) {
-  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
-}
-function roleModelSelector(role) {
-  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
-}
-function isDynamicModel(value) {
-  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
-}
-function parseDynamicModel(value) {
-  if (typeof value !== "string") return null;
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "auto") return null;
-  const body = selection2.id;
-  if (body === "best-value") return { kind: "best-value" };
-  if (body === "best-intellect") return { kind: "best-intellect" };
-  if (body === "best-local") return { kind: "best-local" };
-  if (body === "cheapest") return { kind: "cheapest" };
-  if (body === "balanced") return { kind: "balanced" };
-  if (body.startsWith(MIN_INTELLECT_INFIX)) {
-    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
-    if (!Number.isFinite(threshold) || threshold <= 0) return null;
-    return { kind: "min-intellect", threshold };
-  }
-  if (body.startsWith(ROLE_INFIX)) {
-    const role = getAgentRole(body.slice(ROLE_INFIX.length));
-    return role ? { kind: "role", role: role.id } : null;
-  }
-  return null;
-}
-function dynamicModelLabel(value) {
-  const selector = parseDynamicModel(value);
-  if (!selector) return null;
-  switch (selector.kind) {
-    case "best-value":
-      return "Best value";
-    case "best-intellect":
-      return "Most capable";
-    case "best-local":
-      return "Best on-device";
-    case "cheapest":
-      return "Cheapest";
-    case "balanced":
-      return "Balanced";
-    case "min-intellect":
-      return `At least ${String(selector.threshold)} intelligence`;
-    case "role":
-      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
-  }
-}
-function dynamicModelChoices() {
-  const choices = [
-    {
-      value: BEST_VALUE_MODEL_SELECTOR,
-      label: "Best value",
-      description: "Best intelligence per pound across your plans, providers, and local server",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_INTELLECT_MODEL_SELECTOR,
-      label: "Most capable",
-      description: "Highest intelligence available, ignoring price",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_LOCAL_MODEL_SELECTOR,
-      label: "Best on-device",
-      description: "Strongest model loaded on your machine",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: CHEAPEST_MODEL_SELECTOR,
-      label: "Cheapest",
-      description: "Lowest token price; plans and local count as free",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BALANCED_MODEL_SELECTOR,
-      label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
-      group: AUTOMATIC_GROUP
-    }
-  ];
-  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
-    choices.push({
-      value: minIntellectSelector(threshold),
-      label: `At least ${String(threshold)} intelligence`,
-      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
-      group: INTELLIGENCE_GROUP
-    });
-  }
-  for (const role of AGENT_ROLES) {
-    choices.push({
-      value: roleModelSelector(role.id),
-      label: role.label,
-      description: role.description,
-      group: ROLE_GROUP
-    });
-  }
-  return choices;
-}
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
-var init_dynamic_model = __esm({
-  "packages/llm/src/dynamic-model.ts"() {
-    init_agent_roles();
-    init_model_selection();
-    init_reserved_prefixes();
-    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
-    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
-    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
-    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
-    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
-    MIN_INTELLECT_INFIX = "min-intellect:";
-    ROLE_INFIX = "role:";
-    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
-    AUTOMATIC_GROUP = "Automatic";
-    INTELLIGENCE_GROUP = "Minimum intelligence";
-    ROLE_GROUP = "By role";
   }
 });
 
@@ -46129,6 +46213,46 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
           asOf: "2026-07-18"
+        }
+      ],
+      "gpt-6-1-sol": [
+        {
+          value: 51.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-high": [
+        {
+          value: 50.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-low": [
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-medium": [
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-xhigh": [
+        {
+          value: 51,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+          asOf: "2026-09-30"
         }
       ],
       "gpt-6-astra": [
@@ -51403,6 +51527,7 @@ var init_model_intellect_generated = __esm({
       "anthropic/claude-haiku-4-5": "claude-haiku-4-5",
       "anthropic/claude-opus-4-8": "claude-opus-4-8",
       "anthropic/claude-opus-5": "claude-opus-5",
+      "anthropic/claude-opus-5-5": "claude-opus-5-5",
       "anthropic/claude-sonnet-4-6": "claude-sonnet-4-6",
       "anthropic/claude-sonnet-5": "claude-sonnet-5",
       "Claude Fable 5": "claude-fable-5",
@@ -51410,6 +51535,7 @@ var init_model_intellect_generated = __esm({
       "claude-fable-5-latest": "claude-fable-5",
       "claude-haiku-4-5-latest": "claude-haiku-4-5",
       "claude-opus-4-8-latest": "claude-opus-4-8",
+      "claude-opus-5-5-latest": "claude-opus-5-5",
       "claude-opus-5-latest": "claude-opus-5",
       "claude-sonnet-4-6-latest": "claude-sonnet-4-6",
       "claude-sonnet-5-latest": "claude-sonnet-5",
@@ -51436,6 +51562,8 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Sol": "gpt-5.6-sol",
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
+      "GPT-6.1 Sol": "gpt-6-1-sol",
+      "gpt-6.1-sol": "gpt-6-1-sol",
       "Grok 4.5": "grok-4.5",
       "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
@@ -51464,8 +51592,10 @@ var init_model_intellect_generated = __esm({
       "openai/gpt-5.6-luna": "gpt-5.6-luna",
       "openai/gpt-5.6-sol": "gpt-5.6-sol",
       "openai/gpt-5.6-terra": "gpt-5.6-terra",
+      "openai/gpt-6.1-sol": "gpt-6-1-sol",
       "Opus 4.8": "claude-opus-4-8",
       "Opus 5": "claude-opus-5",
+      "Opus 5.5": "claude-opus-5-5",
       "phi-4": "microsoft/phi-4",
       "Phi-4": "microsoft/phi-4",
       "qwen2-5-coder-32b-instruct": "qwen/qwen2.5-coder-32b",
@@ -52809,40 +52939,6 @@ var init_orchestration_strategy = __esm({
     init_model_catalog();
     init_dynamic_model();
     DEFAULT_ORCHESTRATION_WORKER_MODEL = BEST_VALUE_MODEL_SELECTOR;
-  }
-});
-
-// packages/agent/src/plugins/advisor-strategy-plugin.ts
-var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
-var init_advisor_strategy_plugin = __esm({
-  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
-    init_dynamic_model();
-    init_plugin_manifest();
-    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
-    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
-    ADVISOR_MODEL_SETTING_ID = "advisorModel";
-    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
-    advisorStrategyPlugin = definePlugin(
-      {
-        name: ADVISOR_STRATEGY_PLUGIN_ID,
-        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
-        settings: {
-          [ADVISOR_MODEL_SETTING_ID]: {
-            kind: "model",
-            title: "Advisor model",
-            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
-            default: DEFAULT_ADVISOR_MODEL_ID
-          }
-        },
-        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
-      },
-      {
-        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
-      }
-    );
   }
 });
 
