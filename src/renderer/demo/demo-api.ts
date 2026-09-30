@@ -1031,6 +1031,8 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       test: unsupported,
       screening: () => resolved(null),
       setScreening: unsupported,
+      background: () => resolved(null),
+      setBackground: unsupported,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),

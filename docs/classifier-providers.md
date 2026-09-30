@@ -3,8 +3,8 @@
 Copse stores classifier connections separately from chat providers. Open **Settings → Classifiers**
 to add a TypeSafe/Jev, Kev, SemIf, Featherless/Simple Jev, or compatible custom connection. Saving a
 profile or its key makes no inference request. **Test** submits a small sample and displays the
-answer and duration. These profiles are available for safety screening, explicit calls and evals;
-they never appear as chat models or change model routing or the agent loop.
+answer and duration. These profiles are available for safety screening, background questions and
+evals; they never appear as chat models or change model routing or the agent loop.
 
 ## Safety screening
 
@@ -62,6 +62,36 @@ only with that preset's own endpoint; the rule is derived from `CLASSIFIER_PRESE
 dedicated `COPSE_CLASSIFIER_*` environment variable or a saved key. Other app/cloud credentials
 cannot be selected as classifier tokens. The explicit headless `--config` mode can name any
 environment variable supplied by the caller.
+
+## Background questions
+
+**Settings → Classifiers → Background questions** chooses what answers fixed-choice judgements that
+nothing waits on. Today those are a roadmap item's complexity (`low` / `medium` / `high`) and
+category (`bug` / `feature` / `project`), stamped when the item is saved. The default is the
+small-tasks model. Any saved connection can be chosen, SemIf included, since no one waits on the
+answer; the connection's own timeout applies. The choice is its own `backgroundClassifier`
+setting. A choice naming a removed connection reads as none, and removing the chosen connection
+clears it. Choosing makes no inference call.
+
+Each question is defined once (`BackgroundChoiceQuestion` in
+`src/main/services/classifiers/background-classification.ts`) and asked in this order:
+
+1. The chosen connection, as one `choice` question. The verdict is the likeliest offered option
+   read from the probabilities, never the provider's `choice`. A tie goes to the earlier option,
+   so options are listed in the order a tie should break (`low` before `medium`, `feature` before
+   `project`).
+2. When no connection is chosen, or it fails for any reason (removed, no key, timeout, malformed
+   answer), the same question rendered as a one-word prompt for the small-tasks model. The rendered
+   prompt matches, word for word, the one these features used before.
+3. The chat model, when the small-tasks model fails or replies without an offered word.
+
+Only an answer from a classifier carries probabilities, so a caller can apply a threshold only
+to that. When nothing answers, the item is left without a badge, as before. Classifier and model
+tokens are both recorded as `small-tasks` usage. A hosted classifier receives the item's text,
+with known saved keys redacted.
+
+Safety screening does not use this path: it has its own time budget, and a failed screening
+classifier asks the user rather than falling back to a model.
 
 ## Self-hosted systemone servers
 

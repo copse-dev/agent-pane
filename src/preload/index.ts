@@ -1013,6 +1013,8 @@ const api: ApiClient = {
     test: (id: string) => ipcRenderer.invoke('classifiers:test', id),
     screening: () => ipcRenderer.invoke('classifiers:screening'),
     setScreening: (id: string | null) => ipcRenderer.invoke('classifiers:set-screening', id),
+    background: () => ipcRenderer.invoke('classifiers:background'),
+    setBackground: (id: string | null) => ipcRenderer.invoke('classifiers:set-background', id),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

@@ -50,6 +50,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     removals: string[]
     screening: string | null
     screenings: Array<string | null>
+    background: string | null
+    backgrounds: Array<string | null>
   }
 } {
   const state = {
@@ -60,6 +62,8 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
     })),
     screening: null as string | null,
     screenings: new Array<string | null>(),
+    background: null as string | null,
+    backgrounds: new Array<string | null>(),
     tests: new Array<string>(),
     saves: new Array<ClassifierProfile>(),
     keys: new Array<{ id: string; key: string; allowPlaintext: boolean }>(),
@@ -89,6 +93,7 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         state.removals.push(id)
         state.profiles = state.profiles.filter((item) => item.profile.id !== id)
         if (state.screening === id) state.screening = null
+        if (state.background === id) state.background = null
         return structuredClone(state.profiles)
       },
       test: async (id) => {
@@ -102,6 +107,13 @@ function setup(initial: ClassifierProfile[] = [HTTP_PROFILE]): {
         if (state.failure) throw new Error(state.failure)
         state.screening = id
         return state.screening
+      },
+      background: async () => state.background,
+      setBackground: async (id) => {
+        state.backgrounds.push(id)
+        if (state.failure) throw new Error(state.failure)
+        state.background = id
+        return state.background
       },
     },
     settings: {
@@ -220,6 +232,68 @@ describe('classifier connections settings', () => {
       [''],
     )
     assert.equal(screening.value, '')
+  })
+
+  it('routes background questions to any saved connection, SemIf included, and back', async () => {
+    const { section, state } = setup([
+      HTTP_PROFILE,
+      {
+        id: 'local-semif',
+        label: 'Local SemIf',
+        model: '/models/semif',
+        timeoutMs: 30_000,
+        connection: {
+          type: 'semif',
+          executable: 'semif-score',
+          backend: 'torch',
+          revision: 'local',
+          mode: 'direct',
+        },
+      },
+    ])
+    await section.refresh()
+    const background = qsRequired<HTMLSelectElement>(section.root, '[name="classifierBackground"]')
+    // Nothing waits on a background answer, so a SemIf scorer is offered here.
+    assert.deepEqual(
+      [...background.options].map((option) => [option.value, option.textContent]),
+      [
+        ['', 'Small-tasks model'],
+        ['fixture', 'Fixture classifier'],
+        ['local-semif', 'Local SemIf'],
+      ],
+    )
+    assert.equal(background.value, '')
+
+    background.value = 'local-semif'
+    background.dispatchEvent(new Event('change'))
+    await setImmediate()
+    assert.deepEqual(state.backgrounds, ['local-semif'])
+    assert.equal(background.value, 'local-semif')
+    assert.match(section.root.textContent, /Background questions now use Local SemIf/)
+    // The screening choice is separate and untouched.
+    assert.deepEqual(state.screenings, [])
+
+    background.value = ''
+    background.dispatchEvent(new Event('change'))
+    await setImmediate()
+    assert.deepEqual(state.backgrounds, ['local-semif', null])
+    assert.match(section.root.textContent, /Background questions now use the small-tasks model/)
+    assert.deepEqual(state.tests, [])
+  })
+
+  it('drops a removed connection from the background choices', async () => {
+    const { section, state } = setup()
+    state.background = 'fixture'
+    await section.refresh()
+    const background = qsRequired<HTMLSelectElement>(section.root, '[name="classifierBackground"]')
+    assert.equal(background.value, 'fixture')
+    button(section.root, 'remove').click()
+    await setImmediate()
+    assert.deepEqual(
+      [...background.options].map((option) => option.value),
+      [''],
+    )
+    assert.equal(background.value, '')
   })
 
   it('never calls inference on refresh, typing, or saving; tests only the saved profile', async () => {

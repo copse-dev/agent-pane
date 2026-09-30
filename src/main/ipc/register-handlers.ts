@@ -14,10 +14,12 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { classifierProfileSchema } from '@copse/llm/classifiers/schemas.ts'
 import {
+  backgroundClassifierId,
   listClassifierProfiles,
   saveClassifierProfile,
   removeClassifierProfile,
   screeningClassifierId,
+  setBackgroundClassifier,
   setScreeningClassifier,
   testClassifierProfile,
 } from '../services/classifiers/classifier-service.ts'
@@ -1342,6 +1344,14 @@ export function registerAllHandlers(
   ipcMain.handle('classifiers:set-screening', (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     return setScreeningClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
+  })
+  ipcMain.handle('classifiers:background', (event) => {
+    assertMainFrameSender(event, win)
+    return backgroundClassifierId()
+  })
+  ipcMain.handle('classifiers:set-background', (event, raw: unknown) => {
+    assertMainFrameSender(event, win)
+    return setBackgroundClassifier(parseIpcArgs(keyProviderSchema.max(53).nullable(), [raw]))
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {

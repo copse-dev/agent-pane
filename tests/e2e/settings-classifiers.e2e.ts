@@ -344,6 +344,27 @@ describe('classifier connections settings', () => {
     assert.equal(requests, 4, 'choosing a screening classifier must not call inference')
     await saveElementScreenshot('#settings-dialog', 'settings-classifiers-screening.png')
 
+    // Background questions are routed separately, through their own IPC.
+    const background = host.$('[name="classifierBackground"]')
+    await background.scrollIntoView({ block: 'center' })
+    await expect(background).toHaveValue('')
+    await background.selectByVisibleText('Kev fixture')
+    await browser.waitUntil(
+      async () =>
+        /Background questions now use Kev fixture/.test(
+          await host.$('.classifier-status').getText(),
+        ),
+      { timeout: 10_000, timeoutMsg: 'background choice did not save' },
+    )
+    assert.equal(
+      await browser.execute(async () => window.api.classifiers.background()),
+      screeningId,
+    )
+    await expect(background).toHaveValue(screeningId)
+    await expect(screening).toHaveValue(screeningId)
+    assert.equal(requests, 4, 'choosing a background classifier must not call inference')
+    await saveElementScreenshot('#settings-dialog', 'settings-classifiers-background.png')
+
     fail = true
     await clickAction('test')
     await browser.waitUntil(
@@ -360,6 +381,9 @@ describe('classifier connections settings', () => {
     // Removing the screening connection hands screening back to the safety model.
     await expect(screening).toHaveValue('')
     assert.equal(await browser.execute(async () => window.api.classifiers.screening()), null)
+    // Background questions go back to the small-tasks model too.
+    await expect(background).toHaveValue('')
+    assert.equal(await browser.execute(async () => window.api.classifiers.background()), null)
     await clickAction('remove')
     await browser.waitUntil(async () => (await host.$$('[data-classifier-id]')).length === 0, {
       timeout: 10_000,

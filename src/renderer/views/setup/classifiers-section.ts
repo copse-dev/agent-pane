@@ -85,6 +85,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
   const formHost = el('div', { class: 'provider-form-host' })
   const status = el('p', { class: 'classifier-status', role: 'status', 'aria-live': 'polite' })
   const screening = el('select', { name: 'classifierScreening' })
+  const background = el('select', { name: 'classifierBackground' })
   const root = el(
     'fieldset',
     { class: 'classifiers-section' },
@@ -92,7 +93,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Connect local or hosted classifiers for safety screening, evals and explicit calls. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge.',
+      'Connect local or hosted classifiers for safety screening, background questions and evals. Save a connection, then use Test classifier to send a small sample. Hosted tests may incur a charge.',
     ),
     el(
       'label',
@@ -105,12 +106,24 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
         'Which classifier checks shell commands when no OS sandbox is running, and terminal output before the agent reads it. A hosted classifier receives that text, with saved keys redacted. If it fails or takes longer than 8 seconds, you are asked instead. Turn screening on or off in Permissions.',
       ),
     ),
+    el(
+      'label',
+      { class: 'classifier-background' },
+      'Background questions',
+      background,
+      el(
+        'span',
+        { class: 'field-hint' },
+        "Which classifier rates a roadmap item's complexity and category when you save it. If it fails, the small-tasks model answers instead, then the chat model. A hosted classifier receives the item's text, with saved keys redacted.",
+      ),
+    ),
     chips,
     formHost,
     status,
   )
   let profiles: ClassifierProfileStatus[] = []
   let screeningId: string | null = null
+  let backgroundId: string | null = null
   let selectedId: string | null = null
   const drafts = new Map<string, ClassifierProfile>()
   let captureDraft: (() => void) | undefined
@@ -170,37 +183,77 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       : ''
   }
 
-  screening.addEventListener('change', () => {
-    const id = screening.value || null
-    if (busy) {
-      renderScreening()
-      return
+  function renderBackground(): void {
+    clear(background)
+    background.append(el('option', { value: '' }, 'Small-tasks model'))
+    // Nothing waits on these answers, so a SemIf scorer's startup is acceptable.
+    for (const { profile } of profiles) {
+      background.append(el('option', { value: profile.id }, profile.label))
     }
-    busy = true
-    root.disabled = true
-    void (async (): Promise<void> => {
-      try {
-        screeningId = await api.classifiers.setScreening(id)
-        const chosen = profiles.find((item) => item.profile.id === screeningId)?.profile.label
-        setInlineStatus(
-          status,
-          'ok',
-          chosen
-            ? `Safety screening now uses ${chosen}. No test call has been made.`
-            : 'Safety screening now uses the Instruct / safety model.',
-        )
-      } catch (error) {
-        setInlineStatus(status, 'error', classifierErrorMessage(error))
-      } finally {
-        busy = false
-        root.disabled = false
-        renderScreening()
+    background.value = profiles.some((item) => item.profile.id === backgroundId)
+      ? (backgroundId ?? '')
+      : ''
+  }
+
+  /** Save a routing choice; choosing makes no inference call. */
+  function onRouteChange(
+    select: HTMLSelectElement,
+    renderRoute: () => void,
+    save: (id: string | null) => Promise<string | null>,
+    describeChoice: (label: string | undefined) => string,
+  ): void {
+    select.addEventListener('change', () => {
+      const id = select.value || null
+      if (busy) {
+        renderRoute()
+        return
       }
-    })()
-  })
+      busy = true
+      root.disabled = true
+      void (async (): Promise<void> => {
+        try {
+          const saved = await save(id)
+          const chosen = profiles.find((item) => item.profile.id === saved)?.profile.label
+          setInlineStatus(status, 'ok', describeChoice(chosen))
+        } catch (error) {
+          setInlineStatus(status, 'error', classifierErrorMessage(error))
+        } finally {
+          busy = false
+          root.disabled = false
+          renderRoute()
+        }
+      })()
+    })
+  }
+
+  onRouteChange(
+    screening,
+    renderScreening,
+    async (id) => {
+      screeningId = await api.classifiers.setScreening(id)
+      return screeningId
+    },
+    (chosen) =>
+      chosen
+        ? `Safety screening now uses ${chosen}. No test call has been made.`
+        : 'Safety screening now uses the Instruct / safety model.',
+  )
+  onRouteChange(
+    background,
+    renderBackground,
+    async (id) => {
+      backgroundId = await api.classifiers.setBackground(id)
+      return backgroundId
+    },
+    (chosen) =>
+      chosen
+        ? `Background questions now use ${chosen}. No test call has been made.`
+        : 'Background questions now use the small-tasks model.',
+  )
 
   function render(): void {
     renderScreening()
+    renderBackground()
     renderChips()
     clear(formHost)
     clear(status)
@@ -591,8 +644,11 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       void run(async () => {
         if (saved) {
           profiles = await api.classifiers.remove(profile.id)
-          // Removing the screening connection hands screening back to the safety model.
-          screeningId = await api.classifiers.screening()
+          // Removing a routed connection hands its work back to the model that did it before.
+          ;[screeningId, backgroundId] = await Promise.all([
+            api.classifiers.screening(),
+            api.classifiers.background(),
+          ])
         }
         pending.delete(profile.id)
         selectedId = profiles[0]?.profile.id ?? null
@@ -611,9 +667,10 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
     if (busy) return
     captureDraft?.()
     try {
-      ;[profiles, screeningId] = await Promise.all([
+      ;[profiles, screeningId, backgroundId] = await Promise.all([
         api.classifiers.list(),
         api.classifiers.screening(),
+        api.classifiers.background(),
       ])
       selectedId ??= profiles[0]?.profile.id ?? null
       if (
