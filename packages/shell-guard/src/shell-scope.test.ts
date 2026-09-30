@@ -76,6 +76,9 @@ describe('analyzeShellCommand', () => {
       'gh issue view 42',
       'gh run list',
       'gh run view 123 --log',
+      'gh run download',
+      'gh run download 123 --repo other/repo --dir .tmp/artifacts --clobber',
+      "gh run download 123 --pattern 'screenshots-*' --dir .tmp/artifacts",
     ]) {
       const r = analyzeShellCommand(cmd, root)
       assert.equal(r.verdict, 'sandbox', `expected sandbox for: ${cmd}`)
@@ -86,12 +89,12 @@ describe('analyzeShellCommand', () => {
     }
   })
 
-  it('keeps writing / non-read-only gh subcommands ambiguous', () => {
-    // Only the read verbs are carved out; writes and `gh api` (which can POST/DELETE)
-    // still route through the ambiguous matcher.
+  it('keeps writing / non-read-only gh subcommands out of the sandbox-safe bucket', () => {
+    // Read verbs and artifact downloads are sandbox-contained; writes and `gh api`
+    // (which can POST/DELETE) still route through the prompt path.
     for (const cmd of ['gh pr create', 'gh pr merge 3', 'gh issue close 7', 'gh api repos/x/y']) {
       const r = analyzeShellCommand(cmd, root)
-      assert.equal(r.verdict, 'ambiguous', `expected ambiguous for: ${cmd}`)
+      assert.notEqual(r.verdict, 'sandbox', `expected a prompt-worthy verdict for: ${cmd}`)
       assert.ok(r.reasons.some((x) => x.includes('GitHub CLI')))
     }
   })

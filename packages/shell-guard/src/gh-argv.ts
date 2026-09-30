@@ -22,7 +22,8 @@ export function flagName(token: string): string {
 /**
  * `gh` subcommand pairs that only read from GitHub. `gh api` is classified
  * separately by {@link isGhApiRead}: it can issue any request, so only the
- * narrow GET shape counts as a read.
+ * narrow GET shape counts as a read. Artifact downloads are read-grant shapes
+ * because the project sandbox contains their local writes.
  */
 const GH_READ_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'pr view',
@@ -154,6 +155,10 @@ export function classifyGhSegment(argv: readonly string[]): GhSegmentKind | null
   if (argv[1] === 'api') return isGhApiRead(argv.slice(2)) ? 'read' : null
   const words = argv.slice(1).filter((token) => !isFlag(token))
   const pair = `${words[0] ?? ''} ${words[1] ?? ''}`.trim()
+  // Artifact downloads use the existing GitHub read grant. Their local writes are
+  // contained by the active project sandbox, so the classifier does not need to
+  // predict a safe run ID, selector, repository, or destination shape.
+  if (pair === 'run download') return 'read'
   // `gh auth status` reads, except with the flag that prints the token itself.
   if (pair === 'auth status' && argv.some((token) => token === '--show-token' || token === '-t')) {
     return null

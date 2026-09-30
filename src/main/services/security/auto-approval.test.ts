@@ -64,6 +64,11 @@ describe('assessAutoApproval — the commands from a real session', () => {
       `cd ${root} && git diff origin/main --stat`,
       `cd ${root} && git show --stat copse/browser-panel-url-bar-cmd-l-select`,
       'git ls-remote origin',
+      'gh run download',
+      'gh run download 36573253027',
+      'gh run download 36573253027 --pattern screenshots --dir .tmp/artifacts --repo other/repo --clobber',
+      "gh run download 36573253027 --pattern 'reference-screenshot-candidates-*' --dir .tmp/pr3296-screenshot-candidates",
+      "gh run download 36573253027 -p 'screenshots-shard-[16]' --dir ./.tmp/pr3296-e2e-final",
     ]) {
       assert.equal(approved(command, 'read'), 'read', command)
     }
