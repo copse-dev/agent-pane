@@ -77,7 +77,10 @@ describe('concise thread model gate', () => {
 
   it('treats a concise bubble with a running tool as working', () => {
     const working = message({ model: CAPABLE, toolCalls: [tool()] })
-    assert.equal(isConciseWorkingMessage({ ...working, toolCalls: [tool({ status: 'running' })] }), true)
+    assert.equal(
+      isConciseWorkingMessage({ ...working, toolCalls: [tool({ status: 'running' })] }),
+      true,
+    )
     assert.equal(isConciseWorkingMessage(working), false)
     assert.equal(isConciseWorkingMessage(message({ model: CAPABLE })), false)
     assert.equal(isConciseWorkingMessage({ ...working, turnOutcome: failedOutcome() }), false)
