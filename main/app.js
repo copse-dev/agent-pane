@@ -23932,14 +23932,17 @@ function tenseFromStatus(status) {
   return status === "running" ? "running" : "done";
 }
 function parseMcp(name) {
-  if (!name.startsWith(MCP_PREFIX)) return null;
-  const rest = name.slice(MCP_PREFIX.length);
-  const sep = rest.indexOf("__");
-  if (sep < 0) return null;
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+  const match = /^mcp__([\w.-]+?)__([\w.-]+)$/i.exec(name) ?? /^mcp\.([\w-]+)\.([\w.-]+)$/i.exec(name);
+  const server = match?.[1];
+  const tool = match?.[2];
+  return server && tool ? { server, tool } : null;
+}
+function nativeDisplayToolName(name) {
+  const mcp = parseMcp(name);
+  return mcp?.server.toLowerCase() === "copse" ? mcp.tool : name;
 }
 function getToolDisplayName(name, tense = "done") {
-  const known = TOOL_DISPLAY_NAMES[name];
+  const known = TOOL_DISPLAY_NAMES[nativeDisplayToolName(name)];
   if (known) return pickLabel(known, tense);
   const mcp = parseMcp(name);
   if (mcp?.tool === "startup") return `${mcp.server} startup`;
@@ -23961,8 +23964,9 @@ function getApplyPatchFiles(tc2) {
   return input2 === null ? [] : summarizePatch(input2);
 }
 function getToolEditPath(tc2) {
-  if (tc2.name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
-  const key = FILE_EDIT_PATH_ARG[tc2.name];
+  const name = nativeDisplayToolName(tc2.name);
+  if (name === "apply_patch") return getApplyPatchFiles(tc2)[0]?.path ?? null;
+  const key = FILE_EDIT_PATH_ARG[name];
   if (!key) return null;
   return stringArg(tc2.args, key);
 }
@@ -23990,11 +23994,14 @@ function shellCommandsFromToolCalls(toolCalls) {
 }
 function getToolCallLabel(tc2) {
   const tense = tenseFromStatus(tc2.status);
-  if (tc2.name === "write_file" || tc2.name === "str_replace") {
+  const mcpTitle = tc2.title && parseMcp(tc2.title) ? tc2.title : void 0;
+  const name = nativeDisplayToolName(mcpTitle ?? tc2.name);
+  const title = tc2.title && !mcpTitle && !/^MCP\s*:\s*tool$/i.test(tc2.title) ? tc2.title : void 0;
+  if (name === "write_file" || name === "str_replace") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Editing ${path}` : `Edited ${path}`;
   }
-  if (tc2.name === "apply_patch") {
+  if (name === "apply_patch") {
     const files = getApplyPatchFiles(tc2);
     if (files.length === 1) {
       const only = files[0]?.path ?? "";
@@ -24004,36 +24011,36 @@ function getToolCallLabel(tc2) {
       return tense === "running" ? `Patching ${String(files.length)} files` : `Patched ${String(files.length)} files`;
     }
   }
-  if (tc2.name === "delete_file") {
+  if (name === "delete_file") {
     const path = fileEditPath(tc2.args);
     if (path) return tense === "running" ? `Deleting ${path}` : `Deleted ${path}`;
   }
-  if (tc2.name === "rename_file") {
+  if (name === "rename_file") {
     const from = stringArg(tc2.args, "from");
     const to = stringArg(tc2.args, "to");
     if (from && to) {
       return tense === "running" ? `Renaming ${from} \u2192 ${to}` : `Renamed ${from} \u2192 ${to}`;
     }
   }
-  if (tc2.name === "make_directory") {
+  if (name === "make_directory") {
     const path = fileEditPath(tc2.args);
     if (path) {
       return tense === "running" ? `Creating directory ${path}` : `Created directory ${path}`;
     }
   }
-  if (tc2.name === "task") {
+  if (name === "task") {
     const agentName = tc2.subagent?.agentName ?? stringArg(tc2.args, "subagent_type");
     if (agentName) {
       return tense === "running" ? `Running ${agentName}` : `Ran ${agentName}`;
     }
   }
-  if (tc2.name === "run_shell" || tc2.kind === "execute") {
+  if (name === "run_shell" || tc2.kind === "execute") {
     const command = shellCommandArg(tc2.args);
     if (command) return shellCommandLabel(command);
-    if (tc2.title) return tc2.title;
+    if (title) return title;
   }
-  if (tc2.title && !/^MCP\s*:\s*tool$/i.test(tc2.title)) return tc2.title;
-  return getToolDisplayName(tc2.name, tense);
+  if (title) return title;
+  return getToolDisplayName(mcpTitle ?? tc2.name, tense);
 }
 function getToolGroupKey(name, kind) {
   const builtIn = TOOL_TO_GROUP.get(name);
@@ -24122,13 +24129,17 @@ function summarizeToolTurn(toolCalls, items) {
   } else {
     base = `Used ${String(n2)} tools`;
   }
-  if (failed > 0 && status !== "running") {
+  if (failed > 0) {
     return `${base} \xB7 ${String(failed)} failed`;
   }
   return base;
 }
+function isSurfacedFailure(tc2, opts) {
+  return tc2.status === "error" && opts?.isInterrupted?.(tc2) !== true;
+}
 function buildToolCallDisplayItems(toolCalls, opts) {
   if (toolCalls.length === 0) return [];
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
   const subagents = [];
   const proposals = [];
   const regular = [];
@@ -24139,14 +24150,18 @@ function buildToolCallDisplayItems(toolCalls, opts) {
   }
   const result = [];
   const grouped = buildGroupedDisplayItems(regular);
-  if (regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
+  const hasQuietCall = regular.some((tc2) => !isVisibleFailure(tc2));
+  if (hasQuietCall && regular.length >= 2 || opts?.forceRollup === true && regular.length >= 1) {
     result.push({
       type: "rollup",
       key: TURN_ROLLUP_KEY,
       label: summarizeToolTurn(regular, grouped),
-      children: grouped,
+      // One disclosure for quiet work; failed calls stay visible beside it.
+      // A call the user interrupted is not a failure, so it stays folded in.
+      children: buildGroupedDisplayItems(regular.filter((tc2) => !isVisibleFailure(tc2))),
       toolCalls: regular
     });
+    result.push(...buildGroupedDisplayItems(regular.filter(isVisibleFailure)));
   } else {
     result.push(...grouped);
   }
@@ -24170,31 +24185,26 @@ function summarizeToolRun(run2) {
     parts.push(status === "running" ? `Using ${String(n2)} tools` : `Used ${String(n2)} tools`);
   }
   parts.push(`${String(run2.steps.length)} steps`);
-  if (failed > 0 && status !== "running") parts.push(`${String(failed)} failed`);
+  if (failed > 0) parts.push(`${String(failed)} failed`);
   return parts.join(" \xB7 ");
 }
 function summarizeToolRunStep(step, children) {
   const polished = step.summary?.trim();
   if (!polished) return summarizeToolTurn(step.toolCalls, children) || "Reasoned";
   const failed = step.toolCalls.filter((tc2) => tc2.status === "error").length;
-  if (failed > 0 && aggregateToolStatus(step.toolCalls) !== "running") {
-    return `${polished} \xB7 ${String(failed)} failed`;
-  }
-  return polished;
+  return failed > 0 ? `${polished} \xB7 ${String(failed)} failed` : polished;
 }
 function buildToolRunDisplayItems(run2, opts) {
   if (run2.steps.length < 2) return buildToolCallDisplayItems(run2.toolCalls, opts);
-  const children = run2.steps.map((step) => {
-    const grouped = buildGroupedDisplayItems(step.toolCalls);
-    return {
-      type: "step",
-      key: `step:${step.messageId}`,
-      label: summarizeToolRunStep(step, grouped),
-      messageId: step.messageId,
-      children: grouped,
-      toolCalls: step.toolCalls
-    };
-  });
+  const isVisibleFailure = (tc2) => isSurfacedFailure(tc2, opts);
+  const children = run2.steps.map((step) => ({
+    type: "step",
+    key: `step:${step.messageId}`,
+    label: summarizeToolRunStep(step, buildGroupedDisplayItems(step.toolCalls)),
+    messageId: step.messageId,
+    children: buildGroupedDisplayItems(step.toolCalls.filter((tc2) => !isVisibleFailure(tc2))),
+    toolCalls: step.toolCalls
+  }));
   return [
     {
       type: "rollup",
@@ -24202,10 +24212,11 @@ function buildToolRunDisplayItems(run2, opts) {
       label: summarizeToolRun(run2),
       children,
       toolCalls: run2.toolCalls
-    }
+    },
+    ...buildGroupedDisplayItems(run2.toolCalls.filter(isVisibleFailure))
   ];
 }
-var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_PREFIX, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
+var TOOL_DISPLAY_NAMES, TOOL_GROUPS, TOOL_TO_GROUP, ACP_KIND_TO_GROUP, MCP_GROUP_PREFIX, TURN_ROLLUP_KEY, RUN_ROLLUP_KEY, FILE_EDIT_PATH_ARG, SHELL_CD_PREFIX_RE, SHELL_LABEL_MAX, ERROR_BUCKET_SUFFIX;
 var init_tool_display = __esm({
   "src/shared/tools/tool-display.ts"() {
     init_apply_patch();
@@ -24345,7 +24356,6 @@ var init_tool_display = __esm({
       search: "searching",
       fetch: "web"
     };
-    MCP_PREFIX = "mcp__";
     MCP_GROUP_PREFIX = "mcp:";
     TURN_ROLLUP_KEY = "turn";
     RUN_ROLLUP_KEY = "run";
@@ -81820,6 +81830,10 @@ function createGroupToolCard(item) {
   }
   return card;
 }
+function rollupHeaderCount(item) {
+  const only = item.children.length === 1 ? item.children[0] : void 0;
+  return only?.type === "group" && only.toolCalls.length === item.toolCalls.length ? item.toolCalls.length : void 0;
+}
 function createRollupToolCard(item, api2, threadId, store2) {
   const status = cardStatus2(item.toolCalls);
   const card = el("details", {
@@ -81828,7 +81842,7 @@ function createRollupToolCard(item, api2, threadId, store2) {
     "data-status": status,
     "data-tool-count": String(item.toolCalls.length)
   });
-  const count = item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+  const count = rollupHeaderCount(item);
   const body = el("div", { class: "tool-rollup-body" });
   for (const child of item.children) {
     const childCard = createToolCard(child, api2, threadId, store2);
@@ -81866,7 +81880,7 @@ function createToolCard(item, api2, threadId, store2) {
   return createIndividualToolCard(item.toolCall, item.label, api2, threadId, store2);
 }
 function toolCardKey(item) {
-  if (item.type === "rollup") return `r:${item.key}`;
+  if (item.type === "rollup") return "r:activity";
   if (item.type === "step") return `s:${item.key}`;
   if (item.type === "group") return `g:${item.key}`;
   return `t:${item.toolCall.id}`;
@@ -81990,8 +82004,10 @@ function reconcileToolCard(card, item, api2, threadId, store2) {
     card.dataset["toolCount"] = String(item.toolCalls.length);
     if (item.type === "step") {
       card.dataset["stepMessageId"] = item.messageId;
+    } else {
+      card.dataset["rollupKey"] = item.key;
     }
-    const count = item.type === "rollup" && item.children.length === 1 && item.children[0]?.type === "group" ? item.toolCalls.length : void 0;
+    const count = item.type === "rollup" ? rollupHeaderCount(item) : void 0;
     replaceDirectToolHeader(card, createToolHeader(item.label, status, "tool-card-header", count));
     let body = Array.from(card.children).find(
       (node2) => node2 instanceof HTMLElement && node2.classList.contains("tool-rollup-body")
@@ -82441,15 +82457,7 @@ function appendMessageContent(body, msg, api2, workspaceRoot, opts) {
     body.append(createMessageImages(msg.images));
   }
   if (msg.role === "assistant" && hasReasoningContent(msg.reasoning, msg.reasoningBlocks) && opts?.nestReasoningInTools !== true) {
-    body.append(
-      buildReasoningEl(
-        msg.reasoning ?? "",
-        !msg.content.trim(),
-        false,
-        msg.reasoningBlocks,
-        workspaceRoot
-      )
-    );
+    body.append(buildReasoningEl(msg.reasoning ?? "", false, msg.reasoningBlocks, workspaceRoot));
   }
   const textEl = el("div", { class: "message-text streaming-markdown" });
   body.append(textEl);
@@ -82581,10 +82589,9 @@ function renderUserTranscript(host, content, attachments, api2) {
 function countChipPlaceholders(text2) {
   return text2.split(CHIP_CHAR).length - 1;
 }
-function buildReasoningEl(reasoning, open2, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
+function buildReasoningEl(reasoning, live, blocks = emptyReasoningBlocks, workspaceRoot = null) {
   const details = el("details", {
-    class: `message-reasoning${live ? " message-reasoning-live" : ""}`,
-    open: open2
+    class: `message-reasoning${live ? " message-reasoning-live" : ""}`
   });
   const summary = el(
     "summary",
@@ -82640,7 +82647,7 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
     return;
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning ?? "", true, live, msg.reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     host.prepend(details);
   } else {
     if (details.parentElement !== host) host.prepend(details);
@@ -82649,7 +82656,6 @@ function syncReasoningEl(msgEl, msg, live, workspaceRoot) {
       renderReasoningText(textEl, msg.reasoning ?? "", live, msg.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
-  if (!details.dataset["userToggled"] && !msg.content.trim()) details.open = true;
 }
 function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live, workspaceRoot) {
   const rollupBody = card.querySelector(":scope > .tool-rollup-body");
@@ -82661,7 +82667,7 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
     return;
   }
   if (!details) {
-    details = buildReasoningEl(reasoning ?? "", true, live, reasoningBlocks, workspaceRoot);
+    details = buildReasoningEl(reasoning ?? "", live, reasoningBlocks, workspaceRoot);
   } else {
     const textEl = details.querySelector(".message-reasoning-text");
     if (textEl) renderReasoningText(textEl, reasoning ?? "", live, reasoningBlocks, workspaceRoot);
@@ -82673,25 +82679,27 @@ function syncNestedRollupReasoning(card, msgEl, reasoning, reasoningBlocks, live
   });
 }
 function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
+  let anchorTrail = card.querySelector(
+    ":scope > .tool-rollup-body > .message-reasoning"
+  );
   for (const step of run2.steps) {
     const body = card.querySelector(
       `:scope > .tool-rollup-body > .tool-card-step[data-step-message-id="${step.messageId}"] > .tool-rollup-body`
     );
     if (!body) continue;
     let details = body.querySelector(":scope > .message-reasoning");
+    if (!details && anchorTrail && step.messageId === run2.anchorId) {
+      details = anchorTrail;
+      anchorTrail = null;
+      body.prepend(details);
+    }
     if (!step.reasoning?.trim() && !step.reasoningBlocks?.length) {
       details?.remove();
       continue;
     }
     const live = step.messageId === liveStepId;
     if (!details) {
-      details = buildReasoningEl(
-        step.reasoning ?? "",
-        live,
-        live,
-        step.reasoningBlocks,
-        workspaceRoot
-      );
+      details = buildReasoningEl(step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
       body.prepend(details);
       continue;
     }
@@ -82700,6 +82708,7 @@ function syncRunStepReasoning(card, run2, liveStepId, workspaceRoot) {
       renderReasoningText(textEl, step.reasoning ?? "", live, step.reasoningBlocks, workspaceRoot);
     setReasoningDisclosureTitle(details, live);
   }
+  anchorTrail?.remove();
 }
 function hydrationNoticeEl(running) {
   const notice = el(
@@ -83254,7 +83263,11 @@ function mountConversation(root, store2, api2) {
     const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".msg:not(.msg-concise) .message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && [
+      ...list.querySelectorAll(
+        ".msg:not(.msg-concise) .message-reasoning.message-reasoning-live"
+      )
+    ].some((details) => !details.parentElement?.closest("details:not([open]), [hidden]"))) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
@@ -83368,6 +83381,8 @@ function mountConversation(root, store2, api2) {
     }
     if (preference !== void 0) {
       card.open = preference;
+    } else if (item.type === "rollup" || item.type === "step") {
+      card.open = false;
     } else if (failed) {
       card.open = true;
       autoOpenedDisclosures.add(key);
@@ -83429,7 +83444,12 @@ function mountConversation(root, store2, api2) {
     const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
     if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
-    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
+    const isInterrupted = (call) => userInterruption(call) !== void 0;
+    const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [
+      ...buildToolRunDisplayItems(run2, { isInterrupted }),
+      ...buildSubagentDisplayItems(toolCalls)
+    ] : buildToolCallDisplayItems(toolCalls, {
+      isInterrupted,
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
     });
     if (!run2) for (const item of items) applyRollupSummaries(item, opts);
