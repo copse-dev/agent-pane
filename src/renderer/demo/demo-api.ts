@@ -687,6 +687,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         emitChunk(threadId, { type: 'done', stopReason: 'end_turn' })
         return resolvedVoid()
       },
+      runMachine: () => resolved('completed' as const),
       describeImages: () => resolved({ text: 'Demo image description.' }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { CodeBlockRunResult } from '@shared/store/events.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
-import type { Thread } from '@shared/types'
+import type { MachineAgentRunRequest, MachineDispatchResult, Thread } from '@shared/types'
 import { sendCodeBlockRunResult, type CodeBlockRunSendApi } from './code-block-runs.ts'
 
 function runThread(status: Thread['status']): Thread {
@@ -41,14 +41,24 @@ function result(threadId = 'thread-1'): CodeBlockRunResult {
   }
 }
 
-function sendApi(): { api: CodeBlockRunSendApi; runs: string[] } {
+function sendApi(machineResult: MachineDispatchResult = 'completed'): {
+  api: CodeBlockRunSendApi
+  runs: string[]
+  machineRuns: MachineAgentRunRequest[]
+} {
   const runs: string[] = []
+  const machineRuns: MachineAgentRunRequest[] = []
   return {
     runs,
+    machineRuns,
     api: {
       agent: {
         run: async (_projectId, threadId): Promise<void> => {
           runs.push(threadId)
+        },
+        runMachine: async (request): Promise<MachineDispatchResult> => {
+          machineRuns.push(request)
+          return machineResult
         },
       },
       git: {
@@ -175,4 +185,91 @@ test('a result is not sent when the checkout branch cannot be read', async () =>
 
   assert.deepEqual(runs, [])
   assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
+})
+
+test('a successful recovery run sends a machine-originated continuation', async () => {
+  const store = storeWith({ ...runThread('idle'), currentEpoch: 'tree-current' })
+  const { api, runs, machineRuns } = sendApi()
+  const recovery: CodeBlockRunResult = {
+    ...result(),
+    exitCode: 0,
+    completion: {
+      type: 'continue',
+      prompt: 'Continue after the Git recovery command completed.',
+      operationId: 'git-recovery:test',
+      turnTreeId: 'tree-current',
+    },
+  }
+
+  assert.equal(await sendCodeBlockRunResult(store, api, recovery), true)
+  assert.deepEqual(runs, [])
+  assert.equal(getThreadById(store, 'thread-1')?.messages.length, 1)
+  assert.equal(machineRuns.length, 1)
+  const machineRun = machineRuns[0]
+  assert.ok(machineRun)
+  assert.equal(machineRun.operationId, 'git-recovery:test')
+  assert.equal(machineRun.turnTreeId, 'tree-current')
+  assert.equal(machineRun.display.content, 'Continue after the Git recovery command completed.')
+  assert.deepEqual(machineRun.display.attachments, [
+    { kind: 'shell', label: recovery.shell.label, content: recovery.shell.content },
+  ])
+  assert.equal(machineRun.display.startingCommit, 'a'.repeat(40))
+  assert.equal(machineRun.display.dirty, true)
+  assert.match(machineRun.payload, /Shell: Run · pnpm test · exit 1/)
+  assert.match(getThreadById(store, 'thread-1')?.workingBrief ?? '', /Shell: Run · pnpm test/)
+})
+
+test('a recovery continuation follows its thread after its project is backgrounded', async () => {
+  const origin = { ...runThread('idle'), currentEpoch: 'tree-current' }
+  const active = { ...runThread('idle'), id: 'thread-2' }
+  const store = createStore({
+    projects: [
+      { id: 'project-1', name: 'Origin', path: '/origin' },
+      { id: 'project-2', name: 'Active', path: '/active' },
+    ],
+    activeProjectId: 'project-2',
+    activeThreadId: active.id,
+    threads: [active],
+    backgroundThreads: [{ projectId: 'project-1', thread: origin }],
+  })
+  const { api, machineRuns } = sendApi()
+  const recovery: CodeBlockRunResult = {
+    ...result(),
+    exitCode: 0,
+    completion: {
+      type: 'continue',
+      prompt: 'Continue after the Git recovery command completed.',
+      operationId: 'git-recovery:background',
+      turnTreeId: 'tree-current',
+    },
+  }
+
+  assert.equal(await sendCodeBlockRunResult(store, api, recovery), true)
+  assert.equal(machineRuns.length, 1)
+  const machineRun = machineRuns[0]
+  assert.ok(machineRun)
+  assert.equal(machineRun.projectId, 'project-1')
+  assert.equal(machineRun.threadId, 'thread-1')
+})
+
+test('a stale recovery continuation stays visible for manual follow-up', async () => {
+  const store = storeWith({ ...runThread('idle'), currentEpoch: 'tree-new' })
+  const { api } = sendApi('stale')
+  const recovery: CodeBlockRunResult = {
+    ...result(),
+    exitCode: 0,
+    completion: {
+      type: 'continue',
+      prompt: 'Continue after the Git recovery command completed.',
+      operationId: 'git-recovery:stale',
+      turnTreeId: 'tree-old',
+    },
+  }
+
+  assert.equal(await sendCodeBlockRunResult(store, api, recovery), false)
+  assert.match(
+    String(getThreadById(store, 'thread-1')?.messages.at(-1)?.content),
+    /thread advanced.*Send a message to continue/,
+  )
+  assert.equal(getThreadById(store, 'thread-1')?.workingBrief, undefined)
 })
