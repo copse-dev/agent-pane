@@ -102,6 +102,7 @@ import {
   buildSubagentDisplayItems,
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
+  getApplyPatchFiles,
   getToolCallLabel,
   getToolEditPath,
   RUN_ROLLUP_KEY,
@@ -259,6 +260,49 @@ function statusIcon(status: ToolCardStatus): SVGSVGElement {
 // The disclosure is omitted entirely when there are no arguments to show — e.g.
 // external ACP agents run no-argument commands (grep/search with the query in
 // the title, not `rawInput`), which otherwise render an empty "Arguments" box.
+const PATCH_OP_LABEL = { add: 'Added', update: 'Edited', delete: 'Deleted', move: 'Moved' } as const
+
+/** Per-file rows for an `apply_patch` card: what each file gets, with line counts. */
+function createPatchFilesSection(tc: ToolCall): HTMLElement | null {
+  if (tc.name !== 'apply_patch') return null
+  const files = getApplyPatchFiles(tc)
+  if (files.length === 0) return null
+  return el(
+    'ul',
+    { class: 'tool-patch-files', 'aria-label': 'Files in patch' },
+    ...files.map((file) => {
+      const target = file.movePath ?? file.path
+      return el(
+        'li',
+        {},
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'tool-patch-file',
+            'data-op': file.op,
+            'data-edit-path': target,
+            'data-tooltip': 'View changes',
+          },
+          el('span', { class: 'tool-patch-op' }, PATCH_OP_LABEL[file.op]),
+          el(
+            'span',
+            { class: 'tool-patch-path' },
+            file.movePath === undefined ? file.path : `${file.path} → ${file.movePath}`,
+          ),
+          // A delete names no lines, so its counts would read as a misleading +0 -0.
+          ...(file.op === 'delete'
+            ? []
+            : [
+                el('span', { class: 'tool-stat tool-stat-add' }, `+${String(file.additions)}`),
+                el('span', { class: 'tool-stat tool-stat-del' }, `-${String(file.deletions)}`),
+              ]),
+        ),
+      )
+    }),
+  )
+}
+
 function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   const rendered = renderToolArgs(args)
   if (!rendered.trim()) return null
@@ -445,6 +489,7 @@ function appendStandardToolSections(
   const buildBody = (): void => {
     const argsSection = createToolArgsSection(tc.args)
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc)),
       ...appendIfPresent(argsSection),
       ...(userInterruption(tc) !== undefined
         ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
@@ -2613,12 +2658,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
   })
 
-  // Clicking a file edit's +/- counts reveals that file in the Changes panel.
+  // Clicking a file edit's +/- counts (or a row of an apply_patch card) reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
   list.addEventListener('click', (e) => {
     const statsBtn =
-      e.target instanceof Element ? e.target.closest<HTMLElement>('.tool-edit-stats') : null
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>('.tool-edit-stats, .tool-patch-file')
+        : null
     const path = statsBtn?.dataset['editPath']
     if (!path) return
     e.preventDefault()
