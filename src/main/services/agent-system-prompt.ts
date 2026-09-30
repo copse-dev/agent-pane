@@ -20,6 +20,7 @@ import {
 import { extractContextPathsFromText, type CursorRuleContext } from './skills/cursor-rules.ts'
 import {
   baseSystemPromptFor,
+  type BasePromptVariant,
   BROWSER_TOOLS_BLOCK,
   EXTERNAL_API_SAFETY_BLOCK,
   EXTERNAL_CONTENT_BLOCK,
@@ -36,6 +37,10 @@ import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { PII_REDACTION_PLUGIN_ID } from '@copse/agent/plugins/pii-redaction-plugin.ts'
+import {
+  INVESTIGATE_CI_TOOL_NAME,
+  isInvestigateCiOffered,
+} from './github/ci-investigator-availability.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
   READ_TERMINAL_ENABLED_SETTING,
@@ -144,7 +149,18 @@ export async function buildSystemPromptWithMetadata(
   )
   const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
-  const basePrompt = baseSystemPromptFor(subagentsEnabled, resolvePromptProfile(opts.model))
+  // Name investigate_ci only when this turn can call it: the shared predicate
+  // (plugin on, gh usable, subagents on, not read-only), and — on a real turn —
+  // the exact offered tool list parentTools built for it.
+  const investigateCiOffered =
+    isInvestigateCiOffered(subagentsEnabled) &&
+    (opts.availableToolNames?.includes(INVESTIGATE_CI_TOOL_NAME) ?? true)
+  const variant: BasePromptVariant = !subagentsEnabled
+    ? 'directReads'
+    : investigateCiOffered
+      ? 'explore'
+      : 'exploreWithoutInvestigateCi'
+  const basePrompt = baseSystemPromptFor(variant, resolvePromptProfile(opts.model))
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
   const browserToolsEnabled = getSetting<boolean>(
     BROWSER_TOOLS_ENABLED_SETTING,

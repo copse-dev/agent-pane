@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import {
   BASE_SYSTEM_PROMPT,
+  BASE_PROMPT_VARIANTS,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
+  BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI,
   baseSystemPromptFor,
   buildAblatedBasePrompt,
   EXPLORE_BASE_PROMPT_VARS,
@@ -48,15 +50,19 @@ describe('prompt profiles', () => {
       sha256(BASE_SYSTEM_PROMPT_DIRECT_READS),
       '7f44bff96e68d5247cd522de84ed2e2e86006cdcff615053dd6a7bf8ae4debed',
     )
-    assert.equal(baseSystemPromptFor(true, 'default'), BASE_SYSTEM_PROMPT)
-    assert.equal(baseSystemPromptFor(false, 'default'), BASE_SYSTEM_PROMPT_DIRECT_READS)
+    assert.equal(baseSystemPromptFor('explore', 'default'), BASE_SYSTEM_PROMPT)
+    assert.equal(
+      baseSystemPromptFor('exploreWithoutInvestigateCi', 'default'),
+      BASE_SYSTEM_PROMPT_WITHOUT_INVESTIGATE_CI,
+    )
+    assert.equal(baseSystemPromptFor('directReads', 'default'), BASE_SYSTEM_PROMPT_DIRECT_READS)
   })
 
   it('renders exactly the sections each profile declares', () => {
     for (const profile of PROMPT_PROFILES) {
       const declaredOut = PROMPT_SECTION_IDS.filter((id) => !SECTION_PROFILES[id].includes(profile))
       assert.equal(
-        baseSystemPromptFor(true, profile),
+        baseSystemPromptFor('explore', profile),
         buildAblatedBasePrompt(EXPLORE_BASE_PROMPT_VARS, declaredOut),
         profile,
       )
@@ -65,13 +71,16 @@ describe('prompt profiles', () => {
 
   it('returns the same string every call so a thread keeps one prompt prefix', () => {
     for (const profile of PROMPT_PROFILES) {
-      assert.equal(baseSystemPromptFor(false, profile), baseSystemPromptFor(false, profile))
+      for (const variant of BASE_PROMPT_VARIANTS) {
+        assert.equal(baseSystemPromptFor(variant, profile), baseSystemPromptFor(variant, profile))
+      }
     }
   })
 
   it('keeps the gpt profile equal to default until a measurement earns a difference', () => {
     // Update with the eval numbers when a section is dropped for gpt.
-    assert.equal(baseSystemPromptFor(true, 'gpt'), BASE_SYSTEM_PROMPT)
-    assert.equal(baseSystemPromptFor(false, 'gpt'), BASE_SYSTEM_PROMPT_DIRECT_READS)
+    for (const variant of BASE_PROMPT_VARIANTS) {
+      assert.equal(baseSystemPromptFor(variant, 'gpt'), baseSystemPromptFor(variant, 'default'))
+    }
   })
 })
