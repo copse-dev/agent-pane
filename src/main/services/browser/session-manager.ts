@@ -46,18 +46,39 @@ interface PreviewContents {
 const LAYOUT_SCRIPT = 'document.documentElement.getBoundingClientRect().width'
 
 /**
+ * The latest preview capture queued on each tab. Two quick re-renders of one
+ * artefact can capture the same tab at once, and each capture restores the
+ * zoom it found, so interleaved captures would leave the tab at the preview
+ * zoom. Captures of one tab therefore run one after another.
+ */
+const previewCaptures = new WeakMap<PreviewContents, Promise<string | null>>()
+
+/**
  * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
  * zoom back so the agent's own screenshots and snapshots keep the desktop
  * viewport. Returns null instead of throwing, like `capturePreview`.
  */
-export async function capturePreviewDataUrl(
+export function capturePreviewDataUrl(
   wc: PreviewContents,
   maxWidth = PREVIEW_WIDTH,
 ): Promise<string | null> {
+  const previous = previewCaptures.get(wc) ?? Promise.resolve(null)
+  // `captureAtPreviewZoom` never rejects, so one failed capture cannot stall
+  // the queue behind it.
+  const capture = previous.then(() => captureAtPreviewZoom(wc, maxWidth))
+  previewCaptures.set(wc, capture)
+  return capture
+}
+
+async function captureAtPreviewZoom(wc: PreviewContents, maxWidth: number): Promise<string | null> {
   const zoom = wc.getZoomFactor()
   try {
     wc.setZoomFactor(PREVIEW_ZOOM_FACTOR)
     await wc.executeJavaScript(LAYOUT_SCRIPT, false)
+    // A hidden tab paints only while `capturePage` holds it visible, so the
+    // first capture can still copy the frame from before the zoom. Discard it;
+    // the second capture sees the zoomed layout that the first one painted.
+    await wc.capturePage()
     const image = await wc.capturePage()
     if (image.isEmpty()) return null
     const { width } = image.getSize()

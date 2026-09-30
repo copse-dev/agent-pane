@@ -68,9 +68,20 @@ describe('capturePreviewDataUrl', () => {
       `zoom ${String(PREVIEW_ZOOM_FACTOR)}`,
       'layout',
       `capture at ${String(PREVIEW_ZOOM_FACTOR)}`,
+      `capture at ${String(PREVIEW_ZOOM_FACTOR)}`,
       'zoom 1',
     ])
     assert.equal(tab.zoom(), 1)
+  })
+
+  it('keeps the second capture, not the frame painted before the zoom', async () => {
+    // A hidden tab paints only while capturePage holds it visible, so the first
+    // capture after the zoom can still hold the 1280px desktop layout.
+    const frames = [image(1000), image(1280)]
+    const tab = contents(() => Promise.resolve(frames.shift() ?? image(0, true)))
+
+    assert.equal(await capturePreviewDataUrl(tab), 'data:image/png;base64,1280')
+    assert.equal(frames.length, 0)
   })
 
   it('never waits for an animation frame before capturing', async () => {
@@ -81,6 +92,22 @@ describe('capturePreviewDataUrl', () => {
     await capturePreviewDataUrl(tab)
     assert.equal(tab.scripts.length, 1)
     for (const script of tab.scripts) assert.doesNotMatch(script, /requestAnimationFrame/)
+  })
+
+  it('takes overlapping captures of one tab in turn and leaves it at its own zoom', async () => {
+    // Two quick re-renders of the same artefact can capture its tab at once.
+    // Each capture snapshots the zoom it restores, so interleaving them left the
+    // tab stuck at the preview zoom and captured one render at the desktop zoom.
+    const tab = contents(() => Promise.resolve(image(1280)), 1)
+
+    await Promise.all([capturePreviewDataUrl(tab), capturePreviewDataUrl(tab)])
+
+    const captureZoom = `capture at ${String(PREVIEW_ZOOM_FACTOR)}`
+    assert.deepEqual(
+      tab.events.filter((event) => event.startsWith('capture')),
+      [captureZoom, captureZoom, captureZoom, captureZoom],
+    )
+    assert.equal(tab.zoom(), 1)
   })
 
   it('restores a non-default zoom rather than resetting it', async () => {
