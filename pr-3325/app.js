@@ -138261,6 +138261,10 @@ function startAgentController(store2, api2) {
       case "panel_update": {
         break;
       }
+      case "provider_state":
+      case "context_compacted": {
+        break;
+      }
       case "todo_worker_start":
       case "todo_worker_done": {
         activity(threadId);
