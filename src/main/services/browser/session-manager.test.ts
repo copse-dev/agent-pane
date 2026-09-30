@@ -23,25 +23,29 @@ interface FakeTab {
   zoom(): number
   getZoomFactor(): number
   setZoomFactor(factor: number): void
-  executeJavaScript(): Promise<unknown>
+  scripts: string[]
+  executeJavaScript(code: string): Promise<unknown>
   capturePage(): Promise<FakeImage>
 }
 
 /** A tab whose capture records the zoom it was taken at. */
 function contents(capture: () => Promise<FakeImage>, initialZoom = 1): FakeTab {
   const events: string[] = []
+  const scripts: string[] = []
   let zoom = initialZoom
   return {
     events,
+    scripts,
     zoom: () => zoom,
     getZoomFactor: () => zoom,
     setZoomFactor: (factor): void => {
       zoom = factor
       events.push(`zoom ${String(factor)}`)
     },
-    executeJavaScript: (): Promise<unknown> => {
-      events.push('frame')
-      return Promise.resolve(undefined)
+    executeJavaScript: (code): Promise<unknown> => {
+      scripts.push(code)
+      events.push('layout')
+      return Promise.resolve(640)
     },
     capturePage: (): Promise<FakeImage> => {
       events.push(`capture at ${String(zoom)}`)
@@ -62,11 +66,21 @@ describe('capturePreviewDataUrl', () => {
     assert.equal(preview, 'data:image/png;base64,1280')
     assert.deepEqual(tab.events, [
       `zoom ${String(PREVIEW_ZOOM_FACTOR)}`,
-      'frame',
+      'layout',
       `capture at ${String(PREVIEW_ZOOM_FACTOR)}`,
       'zoom 1',
     ])
     assert.equal(tab.zoom(), 1)
+  })
+
+  it('never waits for an animation frame before capturing', async () => {
+    // Hidden agent tabs schedule no frames until capturePage makes them paint,
+    // so a requestAnimationFrame wait never resolved and hung every canvas
+    // tool call that awaits its preview.
+    const tab = contents(() => Promise.resolve(image(1280)))
+    await capturePreviewDataUrl(tab)
+    assert.equal(tab.scripts.length, 1)
+    for (const script of tab.scripts) assert.doesNotMatch(script, /requestAnimationFrame/)
   })
 
   it('restores a non-default zoom rather than resetting it', async () => {

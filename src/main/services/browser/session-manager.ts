@@ -37,9 +37,13 @@ interface PreviewContents {
   capturePage(): Promise<PreviewImage>
 }
 
-/** Resolves once the page has painted a frame at its current zoom. */
-const NEXT_FRAME_SCRIPT =
-  'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))'
+/**
+ * Reads layout, so the page has applied the new zoom before `capturePage`.
+ * Never wait on `requestAnimationFrame` here: a hidden agent tab schedules no
+ * frames until `capturePage` makes it paint, so that wait never resolves and
+ * the canvas tool call awaiting the preview hangs with it.
+ */
+const LAYOUT_SCRIPT = 'document.documentElement.getBoundingClientRect().width'
 
 /**
  * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
@@ -53,7 +57,7 @@ export async function capturePreviewDataUrl(
   const zoom = wc.getZoomFactor()
   try {
     wc.setZoomFactor(PREVIEW_ZOOM_FACTOR)
-    await wc.executeJavaScript(NEXT_FRAME_SCRIPT, false)
+    await wc.executeJavaScript(LAYOUT_SCRIPT, false)
     const image = await wc.capturePage()
     if (image.isEmpty()) return null
     const { width } = image.getSize()
