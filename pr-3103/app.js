@@ -25224,6 +25224,15 @@ var init_github_pr_url2 = __esm({
   }
 });
 
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
@@ -25280,19 +25289,23 @@ function summarizeThreadPrStatus(states, refs = []) {
   return { kind: "closed", totalCount: knownCount };
 }
 function describeThreadPrStatus(rollup) {
-  if (rollup.kind === "open") {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`;
-    }
-    return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
   }
-  if (rollup.kind === "merged") {
-    return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-  }
-  return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
   "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
     init_github_pr_url();
   }
 });
