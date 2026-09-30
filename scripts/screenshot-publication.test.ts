@@ -83,9 +83,23 @@ interface PrFile {
   status: string
 }
 
+interface WorkflowArtifact {
+  id: number
+  name: string
+  expired: boolean
+  expires_at?: string
+}
+
 async function discover(
   liveParent = parent(),
-  artifacts = [{ id: 42, name: 'reference-screenshot-candidates-99', expired: false }],
+  artifacts: WorkflowArtifact[] = [
+    {
+      id: 42,
+      name: 'reference-screenshot-candidates-99',
+      expired: false,
+      expires_at: '2026-09-27T03:11:41Z',
+    },
+  ],
   runHeadSha = SHA,
   setFailed: (message: string) => void = assert.fail,
   files: PrFile[] | Error = [],
@@ -123,6 +137,7 @@ describe('screenshot publication', () => {
     assert.equal(outputs.get('eligible'), 'true')
     assert.equal(outputs.get('has-artifact'), 'true')
     assert.equal(outputs.get('artifact-id'), '42')
+    assert.equal(outputs.get('artifact-expires-at'), '2026-09-27T03:11:41.000Z')
     assert.equal(outputs.get('compare-branch'), COMPARE_BRANCH)
     assert.deepEqual(
       [...outputs.keys()].filter((key) => /review/.test(key)),
@@ -187,6 +202,14 @@ describe('screenshot publication', () => {
       assert.equal(outputs.get('eligible'), 'true')
       assert.equal(outputs.get('has-artifact'), 'false')
     }
+  })
+
+  it('leaves expiry unset when the artifact metadata does not provide it', async () => {
+    const outputs = await discover(parent(), [
+      { id: 42, name: 'reference-screenshot-candidates-99', expired: false },
+    ])
+    assert.equal(outputs.get('has-artifact'), 'true')
+    assert.equal(outputs.has('artifact-expires-at'), false)
   })
 
   it('does not publish evidence for stale, closed, external, or integration parents', async () => {
@@ -662,6 +685,7 @@ async function publish(
         PARENT_NUMBER: '123',
         EXPECTED_HEAD_SHA: SHA,
         ARTIFACT_ID: '42',
+        ARTIFACT_EXPIRES_AT: '2026-09-27T03:11:41.000Z',
         COMPARE_BRANCH,
         COMPARE_PUSHED: 'true',
         COMPARE_COMMIT,
@@ -713,7 +737,8 @@ describe('parent screenshot evidence comment', () => {
     assert.ok(body.includes(`git checkout ${COMPARE_COMMIT} -- tests/e2e/screenshots/<name>.png`))
     assert.match(body, /actions\/runs\/99\/artifacts\/42/)
     assert.match(body, /abc123abc123/)
-    assert.match(body, /14 days/)
+    assert.match(body, /expires at `2026-09-27 03:11:41 UTC`/)
+    assert.doesNotMatch(body, /14 days/)
     assert.match(body, /add `update-screenshots`, then remove it after that run/)
     assert.match(body, /Do not refresh references merely to absorb unrelated rendering drift/)
     assert.doesNotMatch(body, /review PR|screenshot PR|PNG review|merge (?:it|this)/i)
@@ -725,6 +750,12 @@ describe('parent screenshot evidence comment', () => {
     assert.match(body, /Remove the label now to avoid repeating full runs/)
     assert.ok(body.includes(`git cherry-pick ${COMPARE_COMMIT}`))
     assert.doesNotMatch(body, /review PR|screenshot PR/i)
+  })
+
+  it('uses neutral retention wording when artifact expiry metadata is absent', async () => {
+    const body = (await publish({ ARTIFACT_EXPIRES_AT: '' })).bodies[0] ?? ''
+    assert.match(body, /Artifact expiry is governed by repository retention/)
+    assert.doesNotMatch(body, /retained for|expires at/)
   })
 
   it('previews before and after images pinned to immutable commits', async () => {

@@ -143,7 +143,7 @@ import { applyArchiveToolAvailability, getThreadArchives } from './archive/threa
 import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import type { ArchiveAttachmentRef } from '@shared/archive/archive-media.ts'
 import { runWithCiInvestigatorContext } from './ci-investigator-runner.ts'
-import { resolveAdvisorModelId } from './advisor-runner.ts'
+import { resolveAdvisorModelForGating, resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
 import {
@@ -357,6 +357,8 @@ function parentTools(
   subagentsEnabled: boolean,
   readonlyMode: boolean,
   executorModel: string,
+  /** The concrete model the advisor would consult; null when the tool is not registered. */
+  advisorModel: string | null,
   threadId: string,
   threadVideos: readonly VideoAttachmentRef[],
   threadArchives: readonly ArchiveAttachmentRef[],
@@ -371,8 +373,9 @@ function parentTools(
   // would only spend tokens for no lift. Conservative: cross-scale/unannotated
   // pairings keep it (see advisorAddsLift). No-op unless the tool is registered.
   if (
+    advisorModel !== null &&
     tools.some((t) => t.name === 'advisor') &&
-    !advisorAddsLift(executorModel, resolveAdvisorModelId())
+    !advisorAddsLift(executorModel, advisorModel)
   ) {
     tools = tools.filter((t) => t.name !== 'advisor')
   }
@@ -907,11 +910,17 @@ export async function runAgent(
   // for stable placeholders before the prompt leaves the device — for every
   // provider path (local, remote, ACP). The redacted form is also what we persist
   // to thread history, so placeholders stay consistent across turns. No-op when
-  // the feature is off or Rampart is unavailable.
-  const outboundPrompt = await redactUserContent(
+  // the feature is off. When it is on but Rampart cannot run, the prompt goes out
+  // unchanged and the user is told so through the same turn notice as a model
+  // fallback.
+  const redaction = await redactUserContent(
     threadId,
     withReviewContext(userPrompt, options?.reviewContext),
   )
+  const outboundPrompt = redaction.content
+  if (redaction.notice) {
+    sendChunk({ type: 'text', text: redaction.notice })
+  }
   const resolvePluginSetting =
     options?.resolvePluginSetting ??
     ((pluginId: string, key: string): unknown => getPluginService().getSetting(pluginId, key))
@@ -1663,15 +1672,20 @@ export async function runAgent(
     // skills may depend on host tools (notably Codex's imagegen -> image_gen), so
     // the prompt must not advertise one this turn has filtered out.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const [threadVideos, threadArchives] = await Promise.all([
+    const [threadVideos, threadArchives, advisorModelForGating] = await Promise.all([
       getThreadVideos(),
       getThreadArchives(),
+      // Expanded before grading: the default `auto:best-intellect` selector
+      // names no model, so comparing it as-is would always keep the tool — even
+      // for an executor that is already the model the advisor would consult.
+      registry.has('advisor') ? resolveAdvisorModelForGating() : Promise.resolve(null),
     ])
     const parentLoopTools = parentTools(
       registry,
       subagentsEnabled,
       readonlyMode,
       model,
+      advisorModelForGating,
       threadId,
       threadVideos,
       threadArchives,

@@ -7,6 +7,12 @@
     "revision": "b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af",
     "benchflow": "0.6.3"
   },
+  "studyExcluded": [
+    {
+      "name": "data-to-d3",
+      "reason": "upstream solve.sh fetches d3, but Copse trials and oracles run without network"
+    }
+  ],
   "active": [
     {
       "name": "3d-scan-calc",
