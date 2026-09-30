@@ -209,6 +209,10 @@ export interface ApiClient {
     captureScreenshot: (webContentsId: number) => Promise<BrowserImageShare>
     /** Print the tab to a PDF the user picks; resolves null when cancelled. */
     exportPdf: (webContentsId: number) => Promise<string | null>
+    /** Download an HTML canvas artefact as a self-contained document. */
+    exportArtefact: (
+      artefact: Pick<CanvasArtefact, 'title' | 'mimeType' | 'body'>,
+    ) => Promise<string | null>
     onShareText: (handler: (share: BrowserTextShare) => void) => () => void
     onShareImage: (handler: (share: BrowserImageShare) => void) => () => void
     onPluginTabRequest: (

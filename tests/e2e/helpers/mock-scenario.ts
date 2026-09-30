@@ -26,6 +26,8 @@ declare global {
 export interface ScenarioHandle {
   release(hold: string): Promise<void>
   waitForHold(hold: string): Promise<void>
+  /** Wait for every scripted response to be consumed, whichever thread is selected. */
+  waitForComplete(timeoutMs?: number): Promise<void>
   assertComplete(): Promise<void>
 }
 
@@ -96,6 +98,24 @@ export async function installMockScenario(
           return status.waitingFor === hold
         },
         { timeout: 30_000, interval: 50, timeoutMsg: `Scenario did not reach hold: ${hold}` },
+      )
+    },
+    async waitForComplete(timeoutMs = 25_000) {
+      await browser.waitUntil(
+        async () => {
+          const status = await browser.execute(async (scenarioId) => {
+            const bridge = window.__copseE2e
+            if (!bridge) throw new Error('The test scenario bridge is unavailable')
+            return bridge.mockScenarioStatus(scenarioId)
+          }, id)
+          if (status.errors.length > 0) throw new Error(status.errors.join('\n'))
+          return status.complete
+        },
+        {
+          timeout: timeoutMs,
+          interval: 50,
+          timeoutMsg: 'The conversation scenario did not finish',
+        },
       )
     },
     async assertComplete() {

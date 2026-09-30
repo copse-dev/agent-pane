@@ -9,8 +9,12 @@ import type {
 import { withAppAttribution } from './app-attribution.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { isServiceTier, serviceTierBody, type ServiceTier } from './service-tier.ts'
+import {
+  isOutputCeilingRejectedError,
+  isOutputCeilingRejectedMessage,
+  yieldStreamWithRetry,
+} from './stream-retry.ts'
 import { toolCallIdOrSynthesized } from './tool-call-id.ts'
-import { yieldStreamWithRetry } from './stream-retry.ts'
 import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { responsesParameterFields, type ModelParameters } from './model-parameters.ts'
@@ -28,6 +32,7 @@ export class ResponsesProvider implements LLMProvider {
   private readonly serverTools: Tool[]
   private readonly extraBody: Record<string, unknown> | undefined
   private readonly serviceTier: ServiceTier | undefined
+  private readonly maxOutputTokens: number | undefined
   /** User-tuned reasoning / sampling, in this API's request shape. */
   private readonly tuned: ReturnType<typeof responsesParameterFields>
   private readonly promptCacheKey: string | undefined
@@ -64,6 +69,8 @@ export class ResponsesProvider implements LLMProvider {
       /** OpenAI `service_tier` (e.g. `'flex'`, `'priority'`). Omitted when unset. */
       serviceTier?: ServiceTier
       params?: ModelParameters
+      /** Resolved request ceiling, sent as Responses API `max_output_tokens`. */
+      maxOutputTokens?: number
       promptCacheKey?: string
       /** Ask for visible reasoning summaries (`reasoning.summary: 'auto'`). */
       reasoningSummaries?: boolean
@@ -75,6 +82,7 @@ export class ResponsesProvider implements LLMProvider {
     this.serverTools = opts.serverTools ?? []
     this.extraBody = opts.extraBody
     this.serviceTier = opts.serviceTier
+    this.maxOutputTokens = opts.maxOutputTokens
     this.tuned = responsesParameterFields(opts.params ?? {})
     this.promptCacheKey = opts.promptCacheKey
     this.reasoningSummaries = opts.reasoningSummaries ?? false
@@ -104,34 +112,65 @@ export class ResponsesProvider implements LLMProvider {
           parameters: tool.parameters,
           strict: false,
         }))
-        const response = await self.client.responses.create(
-          {
-            model: self.model,
-            input: toResponsesInput(messages, self.reasoningByToolCall),
-            stream: true,
-            tools: [...self.serverTools, ...localTools],
-            ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
-            // Without this, `store: false` leaves nothing to replay: OpenAI
-            // holds no server-side copy, so the encrypted blob has to come back
-            // on the response itself or the reasoning is gone.
-            ...(self.encryptedReasoning
-              ? { include: ['reasoning.encrypted_content' as const] }
-              : {}),
-            ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
-            ...serviceTierBody(self.serviceTier),
-            // Last, so an explicit extraBody entry still wins — that field is
-            // the user's own escape hatch for provider-specific overrides.
-            ...self.tuned,
-            ...(self.extraBody ?? {}),
-          },
-          { signal },
-        )
+        let ceiling = self.maxOutputTokens
+        let droppedCeiling = false
+        for (;;) {
+          let response
+          try {
+            response = await self.client.responses.create(
+              {
+                model: self.model,
+                input: toResponsesInput(messages, self.reasoningByToolCall),
+                stream: true,
+                tools: [...self.serverTools, ...localTools],
+                ...(self.reasoningSummaries ? { reasoning: { summary: 'auto' as const } } : {}),
+                // Without this, `store: false` leaves nothing to replay: OpenAI
+                // holds no server-side copy, so the encrypted blob has to come back
+                // on the response itself or the reasoning is gone.
+                ...(self.encryptedReasoning
+                  ? { include: ['reasoning.encrypted_content' as const] }
+                  : {}),
+                ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+                ...serviceTierBody(self.serviceTier),
+                ...(ceiling === undefined ? {} : { max_output_tokens: ceiling }),
+                // Last, so an explicit extraBody entry still wins — that field is
+                // the user's own escape hatch for provider-specific overrides.
+                ...self.tuned,
+                ...(self.extraBody ?? {}),
+              },
+              { signal },
+            )
+          } catch (err) {
+            if (!droppedCeiling && ceiling !== undefined && isOutputCeilingRejectedError(err)) {
+              droppedCeiling = true
+              ceiling = undefined
+              continue
+            }
+            throw err
+          }
 
-        // Reasoning items seen in *this* response, in order. Flushed onto each
-        // tool call the model emits after them.
-        const turnReasoning: ReasoningItem[] = []
-        for await (const event of response) {
-          yield* streamEventChunks(event, self.model, self, turnReasoning)
+          // Reasoning items seen in *this* response, in order. Flushed onto each
+          // tool call the model emits after them.
+          const turnReasoning: ReasoningItem[] = []
+          let yielded = false
+          let ceilingRejected = false
+          for await (const event of response) {
+            // Some endpoints reject the ceiling in the stream instead of the
+            // request. Retrying is only safe before anything reached the caller.
+            if (!yielded && !droppedCeiling && ceiling !== undefined) {
+              if (ceilingRejectedInStream(event)) {
+                ceilingRejected = true
+                break
+              }
+            }
+            for (const chunk of streamEventChunks(event, self.model, self, turnReasoning)) {
+              yielded = true
+              yield chunk
+            }
+          }
+          if (!ceilingRejected) return
+          droppedCeiling = true
+          ceiling = undefined
         }
       },
       { ...(signal ? { signal } : {}) },
@@ -163,6 +202,15 @@ function toReasoningItem(item: { type: string; id?: string }): ReasoningItem | n
   const encrypted = 'encrypted_content' in item ? item.encrypted_content : undefined
   if (typeof encrypted !== 'string' || encrypted === '') return null
   return { type: 'reasoning', id: item.id, summary: [], encrypted_content: encrypted }
+}
+
+/** A stream `error` / `response.failed` event that rejects the output ceiling. */
+function ceilingRejectedInStream(event: ResponseStreamEvent): boolean {
+  if (event.type === 'error') return isOutputCeilingRejectedMessage(event.message, event.param)
+  if (event.type === 'response.failed') {
+    return isOutputCeilingRejectedMessage(event.response.error?.message ?? '')
+  }
+  return false
 }
 
 function* streamEventChunks(

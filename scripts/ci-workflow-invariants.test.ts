@@ -1,7 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 /**
  * Structural pins for workflow contracts that unit tests can enforce without
@@ -396,6 +406,38 @@ describe('ci.yml workflow invariants', () => {
       /- uses: \.\/\.github\/actions\/setup\n {8}if: steps\.changed\.outputs\.any == 'true'/,
       'setup must be gated on there being something to fix',
     )
+  })
+
+  it('accepts ignored-only autofix diffs while still formatting source and rejecting parse errors', () => {
+    const commands = [...jobBlock('autoformat').matchAll(/npx oxfmt ([^\n]+)/g)]
+    assert.equal(commands.length, 2, 'exercise both the initial formatter run and its OOM retry')
+    const root = mkdtempSync(join(tmpdir(), 'copse-autoformat-'))
+    const formatter = resolve('node_modules/.bin/oxfmt')
+    try {
+      writeFileSync(join(root, '.prettierignore'), 'package-lock.json\n')
+      const lockfile = '{ "generated":true }\n'
+      writeFileSync(join(root, 'package-lock.json'), lockfile)
+      for (const command of commands) {
+        assert.equal(command[1]?.endsWith('-- "${files[@]}"'), true)
+        const options = command[1].split(' -- ')[0]?.split(' ')
+        assert.ok(options)
+        const run = (files: string[]): SpawnSyncReturns<string> =>
+          spawnSync(formatter, [...options, '--', ...files], { cwd: root, encoding: 'utf8' })
+        const ignored = run(['package-lock.json'])
+        assert.equal(ignored.status, 0, ignored.stderr)
+        writeFileSync(join(root, 'source.json'), '{"source":true}\n')
+        const mixed = run(['package-lock.json', 'source.json'])
+        assert.equal(mixed.status, 0, mixed.stderr)
+        assert.equal(readFileSync(join(root, 'source.json'), 'utf8'), '{ "source": true }\n')
+        assert.equal(readFileSync(join(root, 'package-lock.json'), 'utf8'), lockfile)
+        writeFileSync(join(root, 'source.json'), '{ invalid json\n')
+        const malformed = run(['package-lock.json', 'source.json'])
+        assert.notEqual(malformed.status, 0, 'real formatter errors must still fail the job')
+        assert.equal(malformed.error, undefined)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('lets every branch-checkout job no-op when the PR merged and deleted its head', () => {
@@ -1038,6 +1080,24 @@ describe('acp-v2-watch.yml workflow invariants', () => {
     // call here would quietly reintroduce the multi-minute node_modules restore.
     assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/)
     assert.match(workflow, /run: pnpm run watch:acp-v2/)
+  })
+})
+
+describe('install-free scheduled repository script invariants', () => {
+  const workflows = [
+    '.github/workflows/acp-v2-watch.yml',
+    '.github/workflows/prune-scaleway-ips.yml',
+    '.github/workflows/prune-scaleway-volumes.yml',
+  ].map((path) => readFileSync(resolve(path), 'utf8'))
+
+  it('resolves the workspace leaf from source without restoring node_modules', () => {
+    for (const workflow of workflows) {
+      assert.ok(!workflow.includes('uses: ./.github/actions/setup'))
+    }
+    const watch = readFileSync(resolve('scripts/acp-v2-watch.mts'), 'utf8')
+    const helper = readFileSync(resolve('scripts/lib/cloud-hosts.mts'), 'utf8')
+    assert.ok(watch.includes('../packages/std/src/unknown-value.ts'))
+    assert.ok(helper.includes('../../packages/std/src/unknown-value.ts'))
   })
 })
 

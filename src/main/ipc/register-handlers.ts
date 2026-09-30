@@ -37,6 +37,7 @@ import { isVisibleBrowserSessionPartition } from '@shared/browser-session.ts'
 import {
   captureBrowserPageText,
   captureBrowserScreenshot,
+  exportCanvasArtefact,
   exportBrowserPagePdf,
 } from '../services/browser/browser-share.ts'
 import { workspacePreviewFileUrl } from '../services/browser/static-preview-server.ts'
@@ -812,6 +813,35 @@ export function registerAllHandlers(
       },
       async (filePath, data) => {
         await writeFile(filePath, data)
+      },
+    )
+  })
+
+  ipcMain.handle('browser:export-artefact', async (event, rawArtefact: unknown) => {
+    assertMainFrameSender(event, win)
+    const artefact = parseIpcArgs(
+      z.strictObject({
+        title: z.string().trim().min(1).max(200),
+        mimeType: z.literal('text/html'),
+        body: z
+          .string()
+          .min(1)
+          .max(512 * 1024),
+      }),
+      [rawArtefact],
+    )
+    return await exportCanvasArtefact(
+      artefact,
+      async (defaultFilename) => {
+        const result = await dialog.showSaveDialog(win, {
+          title: 'Download canvas',
+          defaultPath: defaultFilename,
+          filters: [{ name: 'HTML document', extensions: ['html'] }],
+        })
+        return result.canceled || !result.filePath ? null : result.filePath
+      },
+      async (filePath, body) => {
+        await writeFile(filePath, body, 'utf8')
       },
     )
   })
