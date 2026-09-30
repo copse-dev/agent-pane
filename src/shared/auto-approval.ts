@@ -29,10 +29,11 @@ export const AUTO_APPROVAL_LEVEL_SETTING = 'shellAutoApprovalLevel'
  * level includes every tier below it.
  *
  * - `off` — classify nothing; every command that prompts today keeps prompting.
- * - `read` — no mutation anywhere and no repo-controlled code execution: local
- *   reads (`ls`, `grep`, `git status`/`log`/`diff`) plus network *reads* against
- *   a remote already configured in the repository (`git fetch origin`,
- *   `gh pr view`).
+ * - `read` — local reads plus GitHub read operations and artifact downloads
+ *   while the project sandbox contains their local writes, with no repo-controlled
+ *   code execution: local reads (`ls`, `grep`, `git status`/`log`/`diff`) plus
+ *   network *reads* against a remote already configured in the repository
+ *   (`git fetch origin`, `gh pr view`, and `gh run download`).
  * - `local-write` — additionally mutates the local repository (`git add`,
  *   `git commit`, `git checkout -b`, `git stash`). These run repo-controlled git
  *   hooks, so this tier can execute code the repository supplies.

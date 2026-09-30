@@ -191,14 +191,15 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: ScopeReason; ambiguous?: bo
     ambiguous: true,
   },
   // GitHub CLI. Read-only subcommands (`gh pr view`, `gh issue list`, `gh run status`,
-  // …) are carved out by the negative lookahead below: they only *read* from GitHub,
-  // so they fall through to a `sandbox` verdict (classifier/seatbelt-gated like any
-  // local command) instead of prompting outright where there's no OS sandbox to
-  // auto-run inside. Kept deliberately narrow — `gh api` (can POST/DELETE) and every
-  // write subcommand (`create`, `merge`, `close`, …) still match here and stay
-  // ambiguous. (#500)
+  // …) and artifact downloads stay inside the project sandbox. Unrecognized and
+  // writing subcommands still match here and remain ambiguous, so `gh api` (which
+  // can POST/DELETE) and every write subcommand (`create`, `merge`, `close`, …)
+  // continue through the prompt path. (#500)
   {
-    re: new RegExp(`${CMD_POS}gh\\b(?!\\s+(?:pr|issue|run)\\s+(?:list|view|status)\\b)`, 'i'),
+    re: new RegExp(
+      `${CMD_POS}gh\\b(?!\\s+(?:pr|issue|run)\\s+(?:list|view|status)\\b|\\s+run\\s+download\\b)`,
+      'i',
+    ),
     reason: 'GitHub CLI (may reach GitHub)',
     ambiguous: true,
   },
