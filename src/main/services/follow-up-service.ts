@@ -27,8 +27,23 @@ import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
+import { askClassifierBatch, trueProbability } from './classifiers/background-classification.ts'
 
 const MAX_SUGGESTIONS = 3
+
+/** How many model-picked bubbles a turn may add. */
+const MAX_MODEL_PICKS = 2
+
+/** The same budget the small-tasks pick has: the bubbles wait on this answer. */
+const PICK_TIMEOUT_MS = 15_000
+
+/**
+ * How sure a classifier must be before a preset is offered. The model prompt
+ * asks for presets that are "obviously relevant" and nothing when unsure, so
+ * "more likely than not" is too low a bar. A starting point, to be tuned with
+ * an eval set.
+ */
+export const FOLLOW_UP_PROBABILITY = 0.7
 
 /** Parse a JSON array of preset ids from model output. */
 export function parseModelFollowUpIds(raw: string): string[] {
@@ -43,7 +58,69 @@ export function parseModelFollowUpIds(raw: string): string[] {
     .filter(Boolean)
 }
 
+function exchangeText(context: FollowUpContext): string {
+  const tools =
+    context.toolNames.length > 0 ? `\n\nTools used: ${context.toolNames.join(', ')}` : ''
+  return (
+    `User:\n${context.userMessage.slice(0, 800)}\n\n` +
+    `Assistant:\n${context.assistantMessage.slice(0, 1200)}${tools}`
+  )
+}
+
+/**
+ * Ask the classifier connection chosen for background questions: one request
+ * with one yes/no question per preset. Presets at or above
+ * {@link FOLLOW_UP_PROBABILITY} are offered, likeliest first. An empty list is
+ * an answer — nothing is clearly useful. Null when no connection is chosen or
+ * its answer is unusable, so the small-tasks model can pick instead.
+ */
+export async function classifyFollowUps(
+  context: FollowUpContext,
+  ask: typeof askClassifierBatch = askClassifierBatch,
+): Promise<FollowUpSuggestion[] | null> {
+  const results = await ask(
+    [
+      {
+        state: exchangeText(context),
+        questions: Object.fromEntries(
+          MODEL_FOLLOW_UP_PRESETS.map((preset) => [
+            preset.id,
+            {
+              type: 'boolean',
+              instructions:
+                'An AI coding assistant just finished the turn above. Is this follow-up ' +
+                `obviously relevant for the user to send next: ${JSON.stringify(preset.label)} ` +
+                `(${preset.prompt})? Answer true only when it clearly is.`,
+            },
+          ]),
+        ),
+      },
+    ],
+    { timeoutMs: PICK_TIMEOUT_MS },
+  )
+  const answers = results?.[0]?.answers
+  if (!answers) return null
+  const scored: { preset: (typeof MODEL_FOLLOW_UP_PRESETS)[number]; probability: number }[] = []
+  for (const preset of MODEL_FOLLOW_UP_PRESETS) {
+    const probability = trueProbability(answers[preset.id])
+    if (probability === null) return null
+    if (probability >= FOLLOW_UP_PROBABILITY) scored.push({ preset, probability })
+  }
+  return scored
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, MAX_MODEL_PICKS)
+    .map(({ preset }) => ({ id: preset.id, label: preset.label, prompt: preset.prompt }))
+}
+
+/**
+ * Model-picked bubbles: the background classifier when one is chosen, else the
+ * small-tasks model. Never the chat model — this runs after every turn.
+ */
 async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
+  return (await classifyFollowUps(context)) ?? (await pickSmallTasksFollowUps(context))
+}
+
+async function pickSmallTasksFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
   const route = await resolveSmallTasksRoute()
   if (!route) return []
 
@@ -65,7 +142,11 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
     toolSummary
 
   try {
-    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 15_000)
+    const { text: out, usage } = await completeTextWithUsage(
+      route.provider,
+      prompt,
+      PICK_TIMEOUT_MS,
+    )
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
         model: route.model,
@@ -83,7 +164,7 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
       if (!preset) continue
       seen.add(id)
       suggestions.push({ id: preset.id, label: preset.label, prompt: preset.prompt })
-      if (suggestions.length >= 2) break
+      if (suggestions.length >= MAX_MODEL_PICKS) break
     }
     return suggestions
   } catch {

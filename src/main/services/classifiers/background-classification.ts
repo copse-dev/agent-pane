@@ -1,4 +1,9 @@
-import type { ClassifierQuestion, ClassifierResult } from '@copse/llm/classifiers/types.ts'
+import type {
+  ClassifierAnswer,
+  ClassifierQuestion,
+  ClassifierRequest,
+  ClassifierResult,
+} from '@copse/llm/classifiers/types.ts'
 import { memberOf } from '@shared/member-of.ts'
 import type { ModelUsage } from '@shared/types'
 import { completeTextWithUsage } from '../providers/llm-complete-text.ts'
@@ -7,9 +12,10 @@ import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { backgroundClassifierId, createClassifierSession } from './classifier-service.ts'
 
 /**
- * Background questions: a fixed-choice judgement nobody waits on, such as a
- * roadmap item's complexity or category. One question definition serves two
- * backends. A classifier connection chosen in Settings → Classifiers answers
+ * Background questions: fixed-choice judgements made on the app's behalf — a
+ * roadmap item's complexity or category, which open issues the roadmap already
+ * covers, which follow-ups to offer after a turn. For the one-question shape
+ * (complexity, category), one question definition serves two backends. A classifier connection chosen in Settings → Classifiers answers
  * first, with a probability for every choice. When none is chosen, or it
  * fails, the question is rendered as a one-word prompt for the small-tasks
  * model, and for the chat model only when that call fails. When nothing
@@ -109,14 +115,13 @@ export function parseChoiceWord<T extends string>(choices: readonly T[], text: s
 
 /**
  * The likeliest offered choice, read from the probabilities rather than the
- * provider's `choice`, the same rule screening follows. An answer that leaves
- * an offered choice out is unusable.
+ * provider's `choice`, the same rule screening follows. A tie goes to the
+ * earlier choice. An answer that leaves an offered choice out is unusable.
  */
-function likeliestChoice<T extends string>(
+export function likeliestChoice<T extends string>(
   choices: readonly T[],
-  result: ClassifierResult | undefined,
-): { choice: T; probabilities: Readonly<Record<string, number>> } | null {
-  const answer = result?.answers[QUESTION_ID]
+  answer: ClassifierAnswer | undefined,
+): { choice: T; probability: number; probabilities: Readonly<Record<string, number>> } | null {
   if (answer?.type !== 'choice') return null
   let best: { choice: T; probability: number } | null = null
   for (const choice of choices) {
@@ -124,7 +129,51 @@ function likeliestChoice<T extends string>(
     if (probability === undefined) return null
     if (!best || probability > best.probability) best = { choice, probability }
   }
-  return best && { choice: best.choice, probabilities: answer.probabilities }
+  return best && { ...best, probabilities: answer.probabilities }
+}
+
+/** A boolean answer's probability of `true`, or null when the answer is not one. */
+export function trueProbability(answer: ClassifierAnswer | undefined): number | null {
+  return answer?.type === 'boolean' ? answer.probability : null
+}
+
+/** The session's own ceiling on one batch; larger work is split. */
+const MAX_BATCH = 1000
+
+/**
+ * Ask the chosen classifier connection a batch of requests, for callers whose
+ * questions do not fit one question per text. Results come back in request
+ * order. Any failure — no connection chosen, a removed connection, a missing
+ * key, a timeout, a malformed answer — returns null so the caller's model path
+ * can answer instead. `timeoutMs` overrides the connection's own timeout for
+ * each call, for a caller someone is waiting on.
+ */
+export async function askClassifierBatch(
+  requests: readonly ClassifierRequest[],
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  id: string | null = backgroundClassifierId(),
+  recordUsage: RecordUsage = recordSmallTasksUsage,
+): Promise<ClassifierResult[] | null> {
+  if (!id || requests.length === 0) return null
+  try {
+    const session = createClassifierSession(id)
+    const results: ClassifierResult[] = []
+    for (let start = 0; start < requests.length; start += MAX_BATCH) {
+      const batch = await session.invokeBatch(requests.slice(start, start + MAX_BATCH), options)
+      for (const result of batch) {
+        if (result.usage?.inputTokens || result.usage?.outputTokens) {
+          recordUsage(result.model, {
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+          })
+        }
+      }
+      results.push(...batch)
+    }
+    return results.length === requests.length ? results : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -139,22 +188,20 @@ export async function askClassifierChoice<T extends string>(
   id: string | null = backgroundClassifierId(),
   recordUsage: RecordUsage = recordSmallTasksUsage,
 ): Promise<BackgroundChoice<T> | null> {
-  if (!id) return null
-  try {
-    const [result] = await createClassifierSession(id).invokeBatch([
-      { state, questions: { [QUESTION_ID]: backgroundClassifierQuestion(question) } },
-    ])
-    if (result?.usage?.inputTokens || result?.usage?.outputTokens) {
-      recordUsage(result.model, {
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-      })
-    }
-    const answer = likeliestChoice(question.choices, result)
-    if (!result || !answer) return null
-    return { ...answer, source: 'classifier', model: result.model }
-  } catch {
-    return null
+  const results = await askClassifierBatch(
+    [{ state, questions: { [QUESTION_ID]: backgroundClassifierQuestion(question) } }],
+    {},
+    id,
+    recordUsage,
+  )
+  const result = results?.[0]
+  const answer = result && likeliestChoice(question.choices, result.answers[QUESTION_ID])
+  if (!result || !answer) return null
+  return {
+    choice: answer.choice,
+    probabilities: answer.probabilities,
+    source: 'classifier',
+    model: result.model,
   }
 }
 

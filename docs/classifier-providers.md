@@ -65,16 +65,29 @@ environment variable supplied by the caller.
 
 ## Background questions
 
-**Settings → Classifiers → Background questions** chooses what answers fixed-choice judgements that
-nothing waits on. Today those are a roadmap item's complexity (`low` / `medium` / `high`) and
-category (`bug` / `feature` / `project`), stamped when the item is saved. The default is the
-small-tasks model. Any saved connection can be chosen, SemIf included, since no one waits on the
-answer; the connection's own timeout applies. The choice is its own `backgroundClassifier`
-setting. A choice naming a removed connection reads as none, and removing the chosen connection
-clears it. Choosing makes no inference call.
+**Settings → Classifiers → Background questions** chooses what answers the fixed-choice
+judgements Copse makes on its own account. The default is the small-tasks model. Any saved
+connection can be chosen, SemIf included. The choice is its own `backgroundClassifier` setting. A
+choice naming a removed connection reads as none, and removing the chosen connection clears it.
+Choosing makes no inference call. It is asked:
 
-Each question is defined once (`BackgroundChoiceQuestion` in
-`src/main/services/classifiers/background-classification.ts`) and asked in this order:
+| Question                        | When                                        | Classifier request                                                                                            | If it fails                                           |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Roadmap complexity and category | A roadmap prompt is saved                   | One `choice` question on the prompt; the connection's own timeout                                             | Small-tasks model, then the chat model (see below)    |
+| Issue coverage                  | The issue-import picker checks open issues  | One request per issue, one `none` / `partial` / `likely` question per roadmap item; 30 s per call and overall | The small-tasks model, asked about every pair at once |
+| Follow-up suggestions           | A turn ends and a bubble slot is still free | One request on the exchange, one yes/no question per preset; 15 s                                             | The small-tasks model's pick                          |
+
+A hosted classifier receives that text — roadmap prompts, the issues being imported, and **each
+finished turn's user message, assistant reply and tool names** — with known saved keys redacted.
+
+Coverage verdicts are read from the probabilities with ties going to `none`, because a `likely`
+match disables importing the issue. Each issue keeps its strongest match, the likelier one on a
+tie. Follow-ups offer the presets with P(`true`) of at least 0.7, likeliest first, at most two;
+none above the bar is an answer, not a failure. Neither falls back to the chat model: follow-ups
+run after every turn, and coverage keeps the model it used before.
+
+The roadmap labels share one question definition (`BackgroundChoiceQuestion` in
+`src/main/services/classifiers/background-classification.ts`) and are asked in this order:
 
 1. The chosen connection, as one `choice` question. The verdict is the likeliest offered option
    read from the probabilities, never the provider's `choice`. A tie goes to the earlier option,
@@ -89,9 +102,8 @@ Each question is defined once (`BackgroundChoiceQuestion` in
    spend the chat model on every save.
 
 Only an answer from a classifier carries probabilities, so a caller can apply a threshold only
-to that. When nothing answers, the item is left without a badge, as before. Classifier and model
-tokens are both recorded as `small-tasks` usage. A hosted classifier receives the item's text,
-with known saved keys redacted.
+to that. When nothing answers, the item is left without a badge, as before. For every background
+question, classifier and model tokens are both recorded as `small-tasks` usage.
 
 Safety screening does not use this path: it has its own time budget, and a failed screening
 classifier asks the user rather than falling back to a model.

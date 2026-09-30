@@ -114,7 +114,7 @@ export function createClassifiersSection(api: ClassifiersSectionApi): Classifier
       el(
         'span',
         { class: 'field-hint' },
-        "Which classifier rates a roadmap item's complexity and category when you save it. If it fails, the small-tasks model answers instead, then the chat model. A hosted classifier receives the item's text, with saved keys redacted.",
+        "Which classifier rates roadmap items when you save them, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including each finished turn's messages, with saved keys redacted.",
       ),
     ),
     chips,

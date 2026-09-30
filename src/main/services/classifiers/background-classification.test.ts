@@ -9,6 +9,7 @@ import type { SmallTasksRoute } from '../providers/small-tasks-provider.ts'
 import { deleteApiKey, deleteSetting, getSetting, setSetting } from '../storage/settings.ts'
 import {
   askBackgroundChoice,
+  askClassifierBatch,
   askClassifierChoice,
   askModelChoice,
   backgroundChoicePrompt,
@@ -265,6 +266,34 @@ describe('askClassifierChoice', () => {
     await setBackgroundClassifier('kev')
     classifierAnswers({ small: 0.5, large: 0.5 }, 'large')
     assert.equal((await askClassifierChoice(QUESTION, 'x'))?.choice, 'small')
+  })
+
+  it('asks a batch in request order, recording each result, and nothing without a connection', async () => {
+    assert.equal(await askClassifierBatch([{ state: 'x', questions: {} }]), null)
+    await saveClassifierProfile(preset('kev'))
+    await setBackgroundClassifier('kev')
+    const sent = classifierAnswers({ small: 0.6, large: 0.4 })
+    const usage: string[] = []
+    const request = {
+      questions: { answer: backgroundClassifierQuestion(QUESTION) },
+    }
+    const results = await askClassifierBatch(
+      [
+        { ...request, state: 'first' },
+        { ...request, state: 'second' },
+      ],
+      { timeoutMs: 1_000 },
+      undefined,
+      (model) => {
+        usage.push(model)
+      },
+    )
+    assert.equal(results?.length, 2)
+    assert.deepEqual(
+      sent.map((body) => JSON.stringify(body).includes('first')),
+      [true, false],
+    )
+    assert.deepEqual(usage, ['kev-fixture', 'kev-fixture'])
   })
 
   it('returns null for a failing connection so the models can answer', async () => {
