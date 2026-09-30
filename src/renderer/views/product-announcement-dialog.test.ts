@@ -73,8 +73,9 @@ async function mount(
   data: ReturnType<typeof fixture>,
   catalog = entries,
   navigate: Parameters<typeof mountProductAnnouncements>[2] = () => {},
+  isNewUser = false,
 ): Promise<() => void> {
-  const dispose = await mountProductAnnouncements(data.settings, catalog, navigate)
+  const dispose = await mountProductAnnouncements(data.settings, catalog, navigate, isNewUser)
   cleanup.push(dispose)
   return dispose
 }
@@ -97,7 +98,7 @@ describe('product announcements', () => {
     assert.equal(data.saveCalls, 0)
   })
 
-  it('queues fresh-profile changes and remembers them across remounts', async () => {
+  it('queues changes for existing users without announcement history and remembers them across remounts', async () => {
     const data = fixture(null)
     await mount(data)
     assert.equal(dialog().dataset['announcementId'], 'first')
@@ -114,6 +115,40 @@ describe('product announcements', () => {
     assert.equal(document.querySelector('#product-announcement-dialog'), null)
     await mount(data)
     assert.equal(document.querySelector('#product-announcement-dialog'), null)
+  })
+
+  it('silently baselines new users and shows only subsequent changes', async () => {
+    const data = fixture(['retired'])
+    await mount(data, entries, () => {}, true)
+    assert.deepEqual(data.history, ['retired', 'first', 'second'])
+    assert.equal(document.querySelector('#product-announcement-dialog'), null)
+    await mount(data)
+    assert.equal(document.querySelector('#product-announcement-dialog'), null)
+    await mount(data, [
+      ...entries,
+      { id: 'third', title: 'Later change', message: 'New since signup.' },
+    ])
+    assert.equal(dialog().dataset['announcementId'], 'third')
+  })
+
+  it('baselines an empty catalog for new users without suppressing future changes', async () => {
+    const data = fixture(null)
+    await mount(data, [], () => {}, true)
+    assert.deepEqual(data.history, [])
+    assert.equal(document.querySelector('#product-announcement-dialog'), null)
+    await mount(data)
+    assert.equal(dialog().dataset['announcementId'], 'first')
+  })
+
+  it('never presents a modal when saving a new-user baseline fails', async () => {
+    const data = fixture()
+    data.setFailSave(true)
+    await assert.rejects(
+      mount(data, entries, () => {}, true),
+      /Disk unavailable/,
+    )
+    assert.equal(document.querySelector('#product-announcement-dialog'), null)
+    assert.deepEqual(data.history, [])
   })
 
   it('shows only newly added IDs after an update and preserves retired IDs', async () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { $, browser, expect } from '@wdio/globals'
-import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
+import { saveAppScreenshot, saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 async function load(scenario: string): Promise<void> {
   await browser.url(`/?scenario=product-announcements-${scenario}`)
@@ -31,8 +31,8 @@ async function assertFits(): Promise<void> {
 }
 
 describe('shipped product announcement component', () => {
-  it('shows a fresh profile queue and navigates to real Appearance settings', async () => {
-    await load('fresh')
+  it('shows an existing user queue and navigates to real Appearance settings', async () => {
+    await load('existing')
     await $('#product-announcement-dialog').waitForDisplayed()
     await browser.execute(async () => {
       await document.fonts.ready
@@ -58,6 +58,23 @@ describe('shipped product announcement component', () => {
     assert.deepEqual(history, ['demo-compact-released', 'demo-announcements-ready'])
   })
 
+  it('silently records current notices for new users, including after onboarding', async () => {
+    await load('fresh')
+    await browser.waitUntil(async () =>
+      browser.execute(() => document.documentElement.dataset['announcementsReady'] === 'true'),
+    )
+    await expect($('#onboarding-dialog')).toBeDisplayed()
+    await expect($('#product-announcement-dialog')).not.toExist()
+    await $('#onboarding-skip').click()
+    await expect($('#onboarding-dialog')).not.toBeDisplayed()
+    await expect($('#product-announcement-dialog')).not.toExist()
+    await saveAppScreenshot('product-announcement-fresh.png')
+    const history = await browser.execute(async () =>
+      window.api.settings.get('acknowledgedProductAnnouncements'),
+    )
+    assert.deepEqual(history, ['demo-compact-released', 'demo-announcements-ready'])
+  })
+
   it('skips old IDs on upgrade, and all IDs for an acknowledged profile', async () => {
     await load('update')
     await $('#product-announcement-dialog').waitForDisplayed()
@@ -73,7 +90,7 @@ describe('shipped product announcement component', () => {
   })
 
   it('keeps real controls readable in light theme and a narrow pane', async () => {
-    await load('fresh')
+    await load('existing')
     await $('#product-announcement-dialog').waitForDisplayed()
     await browser.execute(() => {
       document.documentElement.dataset['theme'] = 'light'

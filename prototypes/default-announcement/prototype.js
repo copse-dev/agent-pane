@@ -4,6 +4,11 @@ const status = document.querySelector('#preview-status')
 
 function showAnnouncement(context) {
   if (appearance.open) appearance.close()
+  if (context === 'fresh install') {
+    if (announcement.open) announcement.close()
+    status.textContent = 'Preview: fresh install · no announcements'
+    return
+  }
   status.textContent = `Preview: ${context}`
   if (!announcement.open) announcement.showModal()
   document.querySelector('#acknowledge').focus()

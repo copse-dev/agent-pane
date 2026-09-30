@@ -4,7 +4,8 @@ import { saveElementScreenshot } from '../e2e/helpers/screenshot.ts'
 
 async function open(context: string): Promise<void> {
   await browser.url(`/prototypes/default-announcement/index.html?context=${context}`)
-  await $('#announcement').waitForDisplayed()
+  await $('#preview-status').waitForDisplayed()
+  if (context !== 'fresh') await $('#announcement').waitForDisplayed()
   await browser.execute(async () => {
     await document.fonts.ready
   })
@@ -43,9 +44,11 @@ describe('default change announcement prototype', () => {
     await expect($('#preview-status')).toHaveText('Preview: after update')
   })
 
-  it('uses the same announcement for fresh installs and opens appearance settings', async () => {
+  it('skips fresh installs and opens appearance settings for an update', async () => {
     await open('fresh')
-    await expect($('#preview-status')).toHaveText('Preview: fresh install')
+    await expect($('#preview-status')).toHaveText('Preview: fresh install · no announcements')
+    await expect($('#announcement')).not.toBeDisplayed()
+    await $('#update').click()
     await $('#appearance').click()
     await expect($('#announcement')).not.toBeDisplayed()
     await expect($('#appearance-dialog')).toBeDisplayed()
@@ -53,7 +56,7 @@ describe('default change announcement prototype', () => {
     await $('input[value="expanded"]').click()
     await expect($('input[value="expanded"]')).toBeSelected()
     await $('#done').click()
-    await $('#fresh').click()
+    await $('#update').click()
     await expect($('#announcement')).toBeDisplayed()
     await browser.keys('Escape')
     await expect($('#announcement')).not.toBeDisplayed()

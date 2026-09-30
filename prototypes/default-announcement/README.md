@@ -4,14 +4,14 @@ Interactive browser prototype for the future Compact graduation announcement.
 Uses the app's local fonts, theme tokens, and button styles. The background chat
 and settings destination are illustrative; no product defaults or saved settings change.
 
-Acceptance: show the same clear announcement for fresh installs and updates;
+Acceptance: fresh installs show no announcement; updates show a clear announcement;
 Got it and Escape dismiss it; Appearance settings opens a preview destination;
 keep the modal readable on narrow screens and in light/dark themes.
 Base revision: 81215fcf7. Scope is static prototype and focused browser coverage.
 No persisted data, update machinery, or runtime boundaries are changed.
 
 Open `prototypes/default-announcement/index.html` in the browser preview.
-Add `?context=fresh` for the fresh-install entry. After dismissing the modal,
+Add `?context=fresh` to preview a fresh install with no announcement. After dismissal,
 the preview toolbar lets you replay either entry or switch themes.
 The setting choices are illustrative names pending the final product implementation.
 

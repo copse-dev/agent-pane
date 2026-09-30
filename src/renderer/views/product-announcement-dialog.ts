@@ -10,17 +10,23 @@ import { uiActions } from '../ui/index.ts'
 
 /**
  * One at a time, after any existing modal (including first-run onboarding).
- * History is saved only after explicit dismissal; interrupted announcements
+ * New profiles silently baseline the current catalog. Existing profiles save
+ * history only after explicit dismissal; interrupted announcements
  * remain eligible on the next launch. Copy is plain text, never HTML.
  */
 export async function mountProductAnnouncements(
   settings: Pick<ApiClient['settings'], 'get' | 'set'>,
   announcements: readonly ProductAnnouncement[],
   openSettings: (section: SettingsSection) => void,
+  isNewUser: boolean,
 ): Promise<() => void> {
-  if (announcements.length === 0) return () => {}
+  if (announcements.length === 0 && !isNewUser) return () => {}
   const seen = new Set(parseAnnouncementHistory(await settings.get(ANNOUNCEMENT_HISTORY_SETTING)))
   const unique = new Map(announcements.map((entry) => [entry.id, entry]))
+  if (isNewUser) {
+    await settings.set(ANNOUNCEMENT_HISTORY_SETTING, [...new Set([...seen, ...unique.keys()])])
+    return () => {}
+  }
   const pending = [...unique.values()].filter((entry) => !seen.has(entry.id))
   if (pending.length === 0) return () => {}
 

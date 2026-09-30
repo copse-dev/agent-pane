@@ -1311,6 +1311,23 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     id: 'product-announcements-fresh',
     label: 'Product announcements — fresh',
     project: project('demo-announcements-project'),
+    settings: { onboardingCompleted: false, theme: 'dark', acknowledgedProductAnnouncements: [] },
+    threads: [
+      {
+        id: 'demo-announcements-thread',
+        title: 'Polish the release',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'product-announcements-existing',
+    label: 'Product announcements — existing',
+    project: project('demo-announcements-project'),
     settings: { onboardingCompleted: true, theme: 'dark', acknowledgedProductAnnouncements: [] },
     threads: [
       {

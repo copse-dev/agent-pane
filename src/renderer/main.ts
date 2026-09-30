@@ -551,12 +551,18 @@ async function boot(): Promise<void> {
   // Never in a pop-out: the early return above only covers popouts that already
   // restored a workspace, but a fresh-profile popout would fall through here.
   if (!popoutMode) {
-    if (await shouldShowOnboarding(api)) openOnboardingDialog()
+    const isNewUser = await shouldShowOnboarding(api)
     try {
-      await mountProductAnnouncements(api.settings, PRODUCT_ANNOUNCEMENTS, openSettingsDialog)
+      await mountProductAnnouncements(
+        api.settings,
+        PRODUCT_ANNOUNCEMENTS,
+        openSettingsDialog,
+        isNewUser,
+      )
     } catch (error) {
       showErrorToast('Could not load announcements', error)
     }
+    if (isNewUser) openOnboardingDialog()
   }
 }
 

@@ -44,6 +44,7 @@ void import('../main.ts').then(async (main) => {
       window.api.settings,
       DEMO_PRODUCT_ANNOUNCEMENTS,
       openSettingsDialog,
+      scenario.settings['onboardingCompleted'] !== true,
     )
     document.documentElement.dataset['announcementsReady'] = 'true'
   }
