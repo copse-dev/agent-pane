@@ -72,6 +72,8 @@ jobs:
     env:
       REVIEW_MODEL: ${{ vars.COPSE_REVIEW_MODEL || 'claude-sonnet-5' }}
       REVIEW_LENSES: ${{ vars.COPSE_REVIEW_LENSES || 'correctness' }}
+      # Set COPSE_REVIEW_FEEDBACK_LABEL to change the label used for findings.
+      REVIEW_FEEDBACK_LABEL: ${{ vars.COPSE_REVIEW_FEEDBACK_LABEL || 'review-has-feedback' }}
     steps:
       # The base branch: this checkout's CLI reviews, the pull request's is
       # only read.
@@ -114,6 +116,7 @@ jobs:
             --model "$REVIEW_MODEL" \
             --lenses "$REVIEW_LENSES" \
             --post-review forgejo \
+            --feedback-label "$REVIEW_FEEDBACK_LABEL" \
             --post-summary forgejo \
             --forge-url "$GITHUB_SERVER_URL" \
             --repo "$GITHUB_REPOSITORY" \

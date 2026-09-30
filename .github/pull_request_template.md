@@ -8,7 +8,7 @@
 
 ## Validation
 
-<!-- Record exact commands/results or immutable CI links. For visible changes, link the focused visual evidence. Distinguish completed checks from planned or blocked validation. If the full local check was deferred under the low-risk fast path, say so explicitly and name the required CI gate that will run it. -->
+<!-- Record the final source SHA and exact commands/results or immutable CI links. For visible changes, link the focused visual evidence and its review result. Distinguish completed checks from planned or blocked validation. Before handoff, replace stale draft/intermediate status with the final-head result. If the full local check was deferred under the low-risk fast path, say so explicitly and name the required CI gate that will run it. -->
 
 ## Remaining work
 

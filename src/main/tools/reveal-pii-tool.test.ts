@@ -34,7 +34,10 @@ function fakeGuard(): PiiGuard {
   }
 }
 
-const fakeModule: RampartModule = { createGuard: () => Promise.resolve(fakeGuard()) }
+const fakeModule: RampartModule = {
+  createGuard: () => Promise.resolve(fakeGuard()),
+  detectHeuristics: () => [],
+}
 const signal = new AbortController().signal
 
 describe('reveal_pii tool', () => {
@@ -110,7 +113,7 @@ describe('reveal_pii tool', () => {
       setActiveRunThread('thread-1')
       return runReveal('[PII_9]')
     })
-    assert.match(out, /not a known/)
+    assert.match(out, /cannot be revealed: it is not a placeholder from this app session/)
     assert.equal(prompted, false)
   })
 })

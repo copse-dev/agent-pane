@@ -130,6 +130,8 @@ jobs:
       REVIEW_MAX_STEPS: ${{ vars.COPSE_REVIEW_MAX_STEPS || '12' }}
       REVIEW_MAX_VERIFY: ${{ vars.COPSE_REVIEW_MAX_VERIFY || '3' }}
       REVIEW_VERIFY_CONCURRENCY: ${{ vars.COPSE_REVIEW_VERIFY_CONCURRENCY || '2' }}
+      # Set COPSE_REVIEW_FEEDBACK_LABEL to change the label used for findings.
+      REVIEW_FEEDBACK_LABEL: ${{ vars.COPSE_REVIEW_FEEDBACK_LABEL || 'review-has-feedback' }}
       REVIEW_CELL_IMAGE: copse-review-cell:${{ github.sha }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -327,6 +329,7 @@ jobs:
             --max-verify "$REVIEW_MAX_VERIFY" \
             --verify-concurrency "$REVIEW_VERIFY_CONCURRENCY" \
             --post-review github \
+            --feedback-label "$REVIEW_FEEDBACK_LABEL" \
             --post-summary github \
             --read-pr github \
             --repo "$GITHUB_REPOSITORY" \

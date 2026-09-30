@@ -12,7 +12,7 @@ export const automationsPlugin: RegisteredPlugin = definePlugin(
   {
     name: AUTOMATIONS_PLUGIN_ID,
     description:
-      'Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.',
+      'Project-scoped schedules and branch CI failures that start fresh, grouped tasks while Copse is running.',
     trust: 'first-party',
     stability: 'experimental',
     ui: [
