@@ -8,6 +8,7 @@ import {
   pluginEnableRefusal,
   registerSkillTools,
   syncAppleDevelopmentTools,
+  syncCiInvestigatorTools,
   syncGhTools,
   syncImageGenerationTools,
   syncModelClassifierTools,
@@ -33,6 +34,10 @@ import {
 } from './skills/bundled-cursor-skills.ts'
 import { OKF_MEMORIES_PLUGIN_ID } from '@copse/agent/plugins/okf-memories-plugin.ts'
 import { PARALLEL_SEARCH_PLUGIN_ID } from '@copse/agent/plugins/parallel-search-plugin.ts'
+import {
+  CI_INVESTIGATOR_PLUGIN_ID,
+  CI_INVESTIGATOR_PLUGIN_TOOL_NAMES,
+} from '@copse/agent/plugins/ci-investigator-plugin.ts'
 import { APPLE_DEVELOPMENT_PLUGIN_ID } from '@copse/agent/plugins/apple-development-plugin.ts'
 import { OPEN_SIMULATOR_DESKTOP_TOOL_NAME } from '../tools/simulator-desktop-tool.ts'
 import { IMAGE_GEN_TOOL_NAME } from '../tools/image-gen-tool.ts'
@@ -213,17 +218,30 @@ describe('syncAppleDevelopmentTools', () => {
     const registry = new ToolRegistry()
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
     assert.equal(registry.has('device_hub'), false)
 
     plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
     assert.equal(registry.has('device_hub'), true)
 
     plugins.disable(APPLE_DEVELOPMENT_PLUGIN_ID)
-    syncAppleDevelopmentTools(registry)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
+  })
+
+  it('never registers the Simulator tool on a host without Xcode', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    plugins.enable(APPLE_DEVELOPMENT_PLUGIN_ID)
+    syncAppleDevelopmentTools(registry, 'darwin')
+    assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), true)
+
+    syncAppleDevelopmentTools(registry, 'linux')
     assert.equal(registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME), false)
     assert.equal(registry.has('device_hub'), false)
   })
@@ -351,6 +369,50 @@ describe('syncParallelSearchTools', () => {
     plugins.disable(PARALLEL_SEARCH_PLUGIN_ID)
     syncParallelSearchTools(registry)
     assert.equal(registry.has('parallel_search'), false)
+  })
+})
+
+describe('syncCiInvestigatorTools', () => {
+  afterEach(() => {
+    setGhAvailableForTest(null)
+    setDefaultPluginRegistry(null)
+  })
+
+  const registered = (registry: ToolRegistry): boolean[] =>
+    CI_INVESTIGATOR_PLUGIN_TOOL_NAMES.map((name) => registry.has(name))
+
+  it('registers the entry tool and gh_run_* helpers only with the plugin on and gh usable', () => {
+    const plugins = createFirstPartyPluginRegistry()
+    setDefaultPluginRegistry(plugins)
+    const registry = new ToolRegistry()
+
+    // Plugin on, gh unusable: nothing to advertise.
+    plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    setGhAvailableForTest(false)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [false, false, false])
+
+    // gh probe answers: all three appear.
+    setGhAvailableForTest(true)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [true, true, true])
+
+    // Idempotent while enabled.
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [true, true, true])
+
+    // Plugin off drops all three even though gh is still usable.
+    plugins.disable(CI_INVESTIGATOR_PLUGIN_ID)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [false, false, false])
+
+    // Re-enable, then gh goes away: the tools follow gh too.
+    plugins.enable(CI_INVESTIGATOR_PLUGIN_ID)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [true, true, true])
+    setGhAvailableForTest(false)
+    syncCiInvestigatorTools(registry)
+    assert.deepEqual(registered(registry), [false, false, false])
   })
 })
 

@@ -39,7 +39,7 @@ export const preflightWorktreeTool = defineTool({
 export const prepareWorktreeTool = defineTool({
   name: 'prepare_worktree',
   description:
-    'Prepare the active project using the plan fingerprint returned by preflight_worktree. Approval displays the exact install and setup commands. Automatic JavaScript installs use frozen lockfiles and disabled lifecycle scripts through Socket Firewall. Locked uv projects sync their Python workspace without downloading Python; package builds may execute repository code. Go modules load locked package and test import metadata without running generators, builds, or tests; the project stays read-only. Declared setup runs in the same bounded OS sandbox. Writes stay in this worktree and managed caches. Offline mode blocks network for every subprocess.',
+    'Prepare the active project using the plan fingerprint returned by preflight_worktree. Approval displays the exact install and setup commands. Automatic JavaScript installs use frozen lockfiles and disabled lifecycle scripts through Socket Firewall. Python projects use either locked uv workspace sync or exact SHA-256-locked pip wheels; pip source builds are disabled. Go modules load locked package and test import metadata without running generators, builds, or tests; the project stays read-only. Declared setup runs in the same bounded OS sandbox. Writes stay in this worktree and managed caches. Offline mode blocks network for every subprocess.',
   parameters: z.object({
     directory: z
       .string()

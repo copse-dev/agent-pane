@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { APP_ICON_VARIANTS } from '@shared/app-icon-variants.ts'
 import { AUTO_APPROVAL_LEVELS } from '@shared/auto-approval.ts'
 import { REASONING_LEVELS } from '@copse/llm/model-parameters.ts'
+import { MODEL_MAKER_IDS } from '@copse/llm/model-maker-block.ts'
 import { SERVICE_TIERS } from '@copse/llm/service-tier.ts'
 import {
   validateRemoteAgentBaseUrl,
@@ -221,6 +222,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // sent to another that rejects it.
   modelParameters: modelParametersMapSchema,
   openRouterModel: z.string().max(256),
+  // Model makers blocked across routes (direct, aggregator, and pinned agent models).
+  blockedModelMakers: z.array(z.enum(MODEL_MAKER_IDS)).max(MODEL_MAKER_IDS.length),
   // OpenAI `service_tier` for first-party gpt-* models: 'flex' for slower and
   // cheaper, 'fast' / 'priority' for quicker at a higher price. Empty (the
   // legacy default) omits the field, which OpenAI treats as 'auto' and resolves
@@ -359,6 +362,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // offer one obvious next step as composer placeholder text the user accepts
   // with Tab. See next-step-service.ts.
   nextStepSuggestionEnabled: z.boolean(),
+  // Experimental concise threads: turns from a model scoring above 50 on the
+  // canonical intellect index show only their output (screenshots, summary).
+  // Off by default. See src/renderer/views/concise-thread.ts.
+  conciseThreadsEnabled: z.boolean(),
   // Experimental unattended container runs: a thread's turn in a hardened
   // Docker container, started from the composer. Off by default; needs Docker.
   // See docs/plans/thread-in-container.md and container-run-service.ts.

@@ -337,6 +337,32 @@
      appear "collapsed". Keep every message at its content height. */
   flex-shrink: 0;
 }
+/* Concise thread view (views/concise-thread.ts): a capable model's bubbles
+   show only what its work produced. Tool cards — and with them the tool errors
+   the model recovered from — and reasoning trails stay out of the transcript;
+   the activity row carries the live state. Cards that ask the user stay. */
+.msg-concise > .tool-card:not(.thread-proposal, .reviewer-input-card),
+.msg-concise .message-reasoning,
+.msg-concise .acp-terminal-reference {
+  display: none;
+}
+/* A bubble carrying tool calls is process: its text narrates the steps, so
+   only its produced output (screenshots, evidence, canvas previews) remains. */
+.msg-concise-working > .message-body > :not(.message-visual-evidence, .message-canvas-previews) {
+  display: none;
+}
+/* With no produced output at all, the bubble takes no room. */
+.msg-concise-working:not(
+  :has(
+    > .tool-result-content:has(> :not([hidden], .acp-terminal-reference)),
+    > .thread-proposal,
+    > .reviewer-input-card,
+    > .message-body > .message-visual-evidence,
+    > .message-body > .message-canvas-previews
+  )
+) {
+  display: none;
+}
 /* Reasoning ("thinking") disclosure, shown above the answer. Keep the hatch
    that marks commentary, but fade it toward the center over a solid etched
    surface so longer text remains easy to read. The surface is scoped to [open]: a <details>
@@ -1162,6 +1188,16 @@ span.acp-resource-title {
   width: 2ch;
   text-align: center;
   user-select: none;
+}
+/* The sign is decorative for assistive tech; this names the change instead,
+   so a screen reader hears "Added" / "Deleted" rather than nothing. */
+.acp-diff-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .acp-diff-add {
   background: color-mix(in srgb, var(--success) 14%, transparent);

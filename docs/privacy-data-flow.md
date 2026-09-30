@@ -69,6 +69,12 @@ provider endpoint. Custom OpenAI-compatible providers use the base URL and key
 the user configured. LM Studio and other local endpoints are local only when the
 configured address is local.
 
+“Local” currently means loopback on this device, not another machine on the LAN. Ordinary custom
+provider approval cannot authorize a provider address that names a private, link-local, single-label, or mDNS destination directly (hostnames are checked, not what they resolve to). If
+Copse later adds paired LAN inference, the peer will receive the same full turn context described
+above and must be presented as a separate authenticated destination with explicit revocation and
+data-flow disclosure, rather than as an exception to the public provider-host allow-list.
+
 By default Copse requests the most protective handling each provider offers at
 the request level: OpenRouter traffic is restricted to zero-data-retention,
 non-training upstream endpoints (two independent toggles in Settings →
@@ -89,7 +95,8 @@ dashboard attribution and other providers ignore it.
 
 Experimental on-device PII redaction can redact the text the user typed before a
 provider, remote-agent, or ACP path receives it. It is off by default, fails open
-if the redactor cannot load, and does not cover repository files or tool output.
+(with a turn notice) if the redactor cannot run, and does not cover repository
+files or tool output.
 See [pii-redaction.md](pii-redaction.md).
 
 ## Remote execution boundaries

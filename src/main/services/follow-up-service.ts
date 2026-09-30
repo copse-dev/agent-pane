@@ -16,19 +16,17 @@ import {
   buildDebugCiSuggestion,
   buildFixMergeConflictsSuggestion,
 } from '@shared/follow-ups/presets.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { getSetting } from './storage/settings.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
-import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
+import { isInvestigateCiOffered } from './github/ci-investigator-availability.ts'
 import { REVIEW_FOLLOW_UP_ID } from '@copse/agent/plugins/review-plugin.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
+import { hostRoutedNamespace } from '@copse/llm/model-selection.ts'
 
 const MAX_SUGGESTIONS = 3
 
@@ -46,8 +44,8 @@ export function parseModelFollowUpIds(raw: string): string[] {
 }
 
 async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) return []
+  const route = await resolveSmallTasksRoute()
+  if (!route) return []
 
   const presetLines = MODEL_FOLLOW_UP_PRESETS.map((p) => `- ${p.id}: ${p.label}`).join('\n')
   const toolSummary =
@@ -67,11 +65,10 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
     toolSummary
 
   try {
-    const model = resolveSmallTasksModelId()
-    const { text: out, usage } = await completeTextWithUsage(provider, prompt, 15_000)
+    const { text: out, usage } = await completeTextWithUsage(route.provider, prompt, 15_000)
     if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model,
+        model: route.model,
         source: 'small-tasks',
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
@@ -141,10 +138,31 @@ export function buildPluginFollowUps(
   return out
 }
 
+/**
+ * Whether the executor behind this thread receives Copse's native tool surface.
+ * Host-routed agents and plugin models run through their own tool surfaces, so a
+ * bubble must not tell them to call the native `investigate_ci` tool.
+ */
+export interface FollowUpExecutor {
+  readonly nativeTools: boolean
+}
+
+const NATIVE_EXECUTOR: FollowUpExecutor = { nativeTools: true }
+
+/** Classify the persisted model that actually ran, falling back to its selector. */
+export function followUpExecutorForModels(
+  selectedModel: string | undefined,
+  resolvedModel: string | undefined,
+): FollowUpExecutor {
+  const model = resolvedModel ?? selectedModel
+  return { nativeTools: model !== undefined && hostRoutedNamespace(model) === null }
+}
+
 /** Deterministic bubbles: open-plan first, then git/PR facts. Exported for tests. */
 export function buildDeterministicFollowUps(
   ctx: Awaited<ReturnType<typeof getPrWorkspaceContext>>,
   context: FollowUpContext,
+  executor: FollowUpExecutor = NATIVE_EXECUTOR,
 ): FollowUpSuggestion[] {
   const out: FollowUpSuggestion[] = []
 
@@ -179,11 +197,11 @@ export function buildDeterministicFollowUps(
 
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
     // Point the follow-up at the investigate_ci subagent tool only when the
-    // `copse.ci-investigator` plugin is enabled (the same gate that registers the
-    // tool); otherwise fall back to the generic "Debug CI Failure" prompt.
-    const ci = buildDebugCiSuggestion(
-      getDefaultPluginRegistry().isEnabled(CI_INVESTIGATOR_PLUGIN_ID),
-    )
+    // turn is actually offered it — the same predicate the system prompt's tool
+    // line reads (plugin on, gh usable, subagents on, not read-only), and only
+    // for the native executor that receives that tool; otherwise fall back to
+    // the generic "Debug CI Failure" prompt.
+    const ci = buildDebugCiSuggestion(executor.nativeTools && isInvestigateCiOffered())
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }
 
@@ -229,6 +247,7 @@ export function mockFollowUpSuggestions(): FollowUpSuggestion[] {
 export async function suggestFollowUps(
   context: FollowUpContext,
   root: string | null = getWorkspaceRoot(),
+  executor: FollowUpExecutor = NATIVE_EXECUTOR,
 ): Promise<FollowUpSuggestion[]> {
   if (
     process.env['COPSE_PANEL_MOCK_FOLLOW_UPS'] === '1' ||
@@ -238,7 +257,7 @@ export async function suggestFollowUps(
   }
   const workspaceCtx = await getPrWorkspaceContext(root)
   const prioritized = [
-    ...buildDeterministicFollowUps(workspaceCtx, context),
+    ...buildDeterministicFollowUps(workspaceCtx, context, executor),
     ...buildPluginFollowUps(workspaceCtx),
   ]
   return fillFollowUpSuggestions(prioritized, () => pickModelFollowUps(context))

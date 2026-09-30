@@ -44,6 +44,7 @@ describe('resolveContainerProvider', () => {
     }
     await setSetting('localServerUrl', '')
     await setSetting('registeredAcpAgents', [])
+    await setSetting('blockedModelMakers', [])
   })
 
   it('routes a local model to the configured local server, with its origin as egress', async () => {
@@ -160,6 +161,21 @@ describe('resolveContainerProvider', () => {
   })
 
   describe('ACP agents', () => {
+    it('enforces maker blocks before resolving an ACP harness', async () => {
+      await setSetting('registeredAcpAgents', [CLAUDE_AGENT])
+      await setSetting('blockedModelMakers', ['anthropic'])
+      setApiKey('anthropic', 'sk-ant-run')
+
+      await assert.rejects(
+        resolveContainerProvider('acp:claude-acp#claude-opus-5'),
+        /Anthropic models are blocked/,
+      )
+      assert.deepEqual(await explainContainerModel('acp:claude-acp#claude-opus-5'), {
+        reason:
+          'Anthropic models are blocked in Settings → General → Models. Choose another model or remove that block.',
+      })
+    })
+
     it('runs a key-capable agent under its vendor key, on its catalogue domains', async () => {
       await setSetting('registeredAcpAgents', [CLAUDE_AGENT])
       setApiKey('anthropic', 'sk-ant-run')

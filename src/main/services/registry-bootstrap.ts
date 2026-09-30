@@ -49,7 +49,10 @@ import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
-import { CI_INVESTIGATOR_PLUGIN_ID } from '@copse/agent/plugins/ci-investigator-plugin.ts'
+import {
+  ciInvestigatorToolsRegistrable,
+  INVESTIGATE_CI_TOOL_NAME,
+} from './github/ci-investigator-availability.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
@@ -231,9 +234,16 @@ export function syncImageGenerationTools(registry: ToolRegistry): void {
   }
 }
 
-/** Keep the Simulator panel bridge aligned with the experimental Apple plugin. */
-export function syncAppleDevelopmentTools(registry: ToolRegistry): void {
-  if (getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID)) {
+/**
+ * Keep the Simulator panel bridge aligned with the experimental Apple plugin.
+ * It is only registered on macOS; per-project enrollment is applied per turn by
+ * `isAppleDevelopmentToolOffered`, since this registry is shared by every thread.
+ */
+export function syncAppleDevelopmentTools(
+  registry: ToolRegistry,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (platform === 'darwin' && getDefaultPluginRegistry().isEnabled(APPLE_DEVELOPMENT_PLUGIN_ID)) {
     if (!registry.has(OPEN_SIMULATOR_DESKTOP_TOOL_NAME)) {
       registry.register(openSimulatorDesktopTool)
     }
@@ -405,16 +415,21 @@ export function syncGhTools(registry: ToolRegistry): void {
  * would just surface "gh is not available" on every call. `gh` availability is
  * recomputed here via the same `isGhAvailable()` probe `createRegistry` uses, so
  * a live plugin enable respects the probed environment.
+ *
+ * `parentTools` additionally withholds `investigate_ci` while subagents are off
+ * or read-only mode is on;
+ * `isInvestigateCiOffered` is the combined predicate the prompt and the
+ * CI follow-up read.
  */
 export function syncCiInvestigatorTools(registry: ToolRegistry): void {
-  if (getDefaultPluginRegistry().isEnabled(CI_INVESTIGATOR_PLUGIN_ID) && isGhAvailable()) {
+  if (ciInvestigatorToolsRegistrable()) {
     if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
     if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
-    if (!registry.has('investigate_ci')) registry.register(investigateCiTool)
+    if (!registry.has(INVESTIGATE_CI_TOOL_NAME)) registry.register(investigateCiTool)
   } else {
     registry.unregister('gh_run_list')
     registry.unregister('gh_run_view')
-    registry.unregister('investigate_ci')
+    registry.unregister(INVESTIGATE_CI_TOOL_NAME)
   }
 }
 

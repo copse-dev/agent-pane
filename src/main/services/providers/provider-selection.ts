@@ -39,6 +39,7 @@ import {
 } from '@copse/llm/model-parameters.ts'
 import { withSecretRedaction } from '@copse/llm/redacting-provider.ts'
 import { PROVIDER_ENV_VARS } from './env-key-detection.ts'
+import { assertModelMakerAllowed } from './model-maker-policy.ts'
 
 export { DEFAULT_LM_STUDIO_URL }
 
@@ -165,6 +166,11 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
   return buildTaskRoleRoute(routedRoleModelSelection('reviewModel'))
 }
 
+/** Build a host-selected route for a registered reviewer specialist check. */
+export async function buildSpecialistCheckRoute(model: string): Promise<SubagentRoute> {
+  return buildTaskRoleRoute(model)
+}
+
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
@@ -190,6 +196,17 @@ export interface BuildProviderOptions {
    * would arrive with nothing on screen to explain it.
    */
   maxReasoning?: ReasoningLevel
+  /**
+   * Ceiling on output tokens for this call only, for callers with a fixed output
+   * budget — the advisor consult is capped at `DEFAULT_ADVISOR_MAX_TOKENS`. Lowers
+   * the user's saved cap, never raises it. With no saved cap it stands in for the
+   * model card's recommended ceiling (`resolvedOutputCeiling` prefers an explicit
+   * cap), so it only lowers that ceiling while the card's is larger. Sent by the
+   * transports that carry an output cap (Anthropic, Chat Completions, OpenRouter,
+   * LM Studio, and Responses); compatible endpoints retry once without it when
+   * they reject the field.
+   */
+  maxOutputTokens?: number
 }
 
 /**
@@ -211,7 +228,15 @@ export function resolveTurnParameters(
   const requested = opts.reasoning ?? saved.reasoning
   const reasoning =
     opts.maxReasoning === undefined ? requested : clampReasoning(requested, opts.maxReasoning)
-  return { ...saved, ...(reasoning === undefined ? {} : { reasoning }) }
+  const maxOutputTokens =
+    opts.maxOutputTokens === undefined
+      ? saved.maxOutputTokens
+      : Math.min(opts.maxOutputTokens, saved.maxOutputTokens ?? opts.maxOutputTokens)
+  return {
+    ...saved,
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  }
 }
 
 /**
@@ -305,6 +330,7 @@ export async function describeProvider(
   model: string,
   opts: BuildProviderOptions = {},
 ): Promise<ProviderDescription> {
+  assertModelMakerAllowed(model)
   const hostRouted = hostRoutedNamespace(model)
   if (hostRouted) throw new Error(HOST_ROUTED_MESSAGE[hostRouted](model))
   const params = resolveTurnParameters(model, opts)

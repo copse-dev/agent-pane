@@ -6,6 +6,7 @@ import {
   type AutomationLiveWorktreeLimit,
   type AutomationSchedule,
   type AutomationScheduleInput,
+  type AutomationTriggerEvent,
 } from '@shared/types'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -18,6 +19,7 @@ import {
 } from './model-options.ts'
 import { mountModelSelectPicker } from './model-picker.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { mountBranchCiEditor, type AutomationCreationDraft } from './branch-ci-editor.ts'
 import { ipcErrorMessage } from '../ipc-error-message.ts'
 
 function cleanIpcError(error: unknown): string {
@@ -161,7 +163,7 @@ export function createAutomationPluginSettings(
 
   const heading = el('div', { class: 'automation-plugin-heading' })
   heading.append(
-    el('div', { class: 'plugin-settings-heading' }, 'Schedules'),
+    el('div', { class: 'plugin-settings-heading' }, 'Automations'),
     el(
       'button',
       {
@@ -169,7 +171,7 @@ export function createAutomationPluginSettings(
         class: 'ui-btn ui-btn-secondary ui-btn-compact automation-add-btn',
         disabled: projectId ? undefined : true,
       },
-      'Add schedule',
+      'New automation',
     ),
   )
   const addButton = heading.querySelector<HTMLButtonElement>('.automation-add-btn')
@@ -179,19 +181,30 @@ export function createAutomationPluginSettings(
     'p',
     { class: 'automation-scope' },
     project
-      ? `Project: ${project.name} · local time · Copse must be running`
-      : 'Open a project to configure its schedules.',
+      ? `Project: ${project.name} · Copse must be running`
+      : 'Open a project to configure automations.',
   )
   const pluginNotice = (): string =>
     pluginEnabled
-      ? 'Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses.'
-      : 'Enable this plugin to arm schedules. Existing schedules remain editable while disabled.'
+      ? 'Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path.'
+      : 'Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.'
   const notice = el('p', { class: 'automation-notice' }, pluginNotice())
+  const attention = el('div', {
+    class: 'automation-attention',
+    role: 'status',
+    hidden: true,
+  })
   const status = el('div', { class: 'automation-status', role: 'status', hidden: true })
   const list = el('div', { class: 'automation-list' })
 
-  const form = el('form', { class: 'automation-form', hidden: true })
+  const form = el('form', { class: 'automation-form', hidden: true, novalidate: true })
   const formTitle = el('h4', { class: 'automation-form-title' }, 'New automation')
+  const whenSelect = el(
+    'select',
+    { class: 'automation-input automation-when-select' },
+    el('option', { value: 'schedule' }, 'On a schedule'),
+    el('option', { value: 'github-ci-failed' }, 'When CI fails on a branch'),
+  )
   const nameInput = el('input', {
     type: 'text',
     class: 'automation-input automation-name-input',
@@ -302,7 +315,7 @@ export function createAutomationPluginSettings(
   const saveButton = el(
     'button',
     { type: 'submit', class: 'ui-btn ui-btn-primary automation-save-btn' },
-    'Save schedule',
+    'Save automation',
   )
   const cancelButton = el(
     'button',
@@ -311,6 +324,7 @@ export function createAutomationPluginSettings(
   )
   form.append(
     formTitle,
+    el('label', { class: 'automation-label automation-trigger-label' }, 'When', whenSelect),
     el('label', { class: 'automation-label' }, 'Name', nameInput),
     el('label', { class: 'automation-label' }, 'Model', modelSelect),
     scheduleFields,
@@ -330,7 +344,19 @@ export function createAutomationPluginSettings(
     el('label', { class: 'automation-enabled-label' }, enabledInput, 'Schedule enabled'),
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
-  root.append(heading, scope, notice, status, list, form)
+  root.append(heading, scope, notice, attention, status, list, form)
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(undefined, draft),
+  })
   // A schedule fires unattended, potentially months after it was written, so it
   // stores a rule rather than a model id — the same treatment every plugin-owned
   // model setting gets. The rule resolves when the task is created, against the
@@ -366,6 +392,7 @@ export function createAutomationPluginSettings(
 
   function closeForm(): void {
     editingId = null
+    ciEditor.showList()
     form.hidden = true
     list.hidden = false
     heading.hidden = false
@@ -577,25 +604,31 @@ export function createAutomationPluginSettings(
 
   permissionFilterInput.addEventListener('input', renderPermissionChoices)
 
-  async function openForm(schedule?: AutomationSchedule): Promise<void> {
+  async function openForm(
+    schedule?: AutomationSchedule,
+    draft?: AutomationCreationDraft,
+  ): Promise<void> {
     hideStatus()
     editingId = schedule?.id ?? null
     formTitle.textContent = schedule ? 'Edit automation' : 'New automation'
+    whenSelect.value = 'schedule'
+    whenSelect.disabled = Boolean(schedule)
     list.hidden = true
     heading.hidden = true
-    nameInput.value = schedule?.name ?? ''
+    nameInput.value = schedule?.name ?? draft?.name ?? ''
     setScheduleControls(schedule?.cron ?? '0 9 * * 1-5')
-    promptInput.value = schedule?.prompt ?? ''
-    enabledInput.checked = schedule?.enabled ?? true
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1)
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? ''
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1)
     permissionFilterInput.value = ''
     setPermissionChoices(schedule?.permissions ?? [])
     // An existing schedule keeps whatever it stored (including a model pinned
     // before schedules moved to dynamic selection — the picker surfaces it as a
     // pinned row). A new one starts from best value rather than inheriting the
     // chat model, since the chat model is a choice about right now.
-    const configuredModel = schedule?.model.trim() ?? ''
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? ''
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL
+    ciEditor.hideForSchedule()
     form.hidden = false
     nameInput.focus()
     const options = await fetchDynamicModelOptions(defaultModel)
@@ -608,6 +641,12 @@ export function createAutomationPluginSettings(
 
   function renderList(): void {
     clear(list)
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== undefined)
+    attention.hidden = blocked.length === 0
+    attention.textContent =
+      blocked.length === 0
+        ? ''
+        : `${String(blocked.length)} automation${blocked.length === 1 ? '' : 's'} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`
     if (!projectId) return
     if (schedules.length === 0) {
       list.append(el('div', { class: 'automation-empty' }, 'No schedules for this project yet.'))
@@ -615,7 +654,7 @@ export function createAutomationPluginSettings(
     }
     for (const schedule of schedules) {
       const row = el('article', {
-        class: `automation-row${schedule.enabled ? '' : ' automation-row-paused'}`,
+        class: `automation-row${schedule.enabled ? '' : ' automation-row-paused'}${schedule.lastWorktreeLimitAt === undefined ? '' : ' automation-row-blocked'}`,
         'data-schedule-id': schedule.id,
       })
       const copy = el('div', { class: 'automation-row-copy' })
@@ -642,6 +681,15 @@ export function createAutomationPluginSettings(
         ),
         el('div', { class: 'automation-row-last-run' }, lastRunLabel(schedule.lastRunAt)),
       )
+      if (schedule.lastWorktreeLimitAt !== undefined) {
+        copy.append(
+          el(
+            'div',
+            { class: 'automation-row-blocked-message' },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`,
+          ),
+        )
+      }
       const actions = el('div', { class: 'automation-row-actions' })
       const edit = el(
         'button',
@@ -720,7 +768,10 @@ export function createAutomationPluginSettings(
     pendingReveal = undefined
     const schedule = schedules.find((candidate) => candidate.id === scheduleId)
     if (!schedule) {
-      showStatus('That automation is no longer scheduled. Its finished runs stay in the sidebar.')
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          'That automation is no longer scheduled or configured. Its finished runs stay in the sidebar.',
+        )
       return
     }
     void openForm(schedule).then(() => {
@@ -734,6 +785,7 @@ export function createAutomationPluginSettings(
       const [loadedSchedules, loadedPermissions] = await Promise.all([
         api.automations.list(projectId),
         api.automations.permissionOptions(projectId),
+        ciEditor.refresh(),
       ])
       schedules = loadedSchedules
       availablePermissions = loadedPermissions
@@ -749,6 +801,16 @@ export function createAutomationPluginSettings(
   }
 
   addButton.addEventListener('click', () => void openForm())
+  whenSelect.addEventListener('change', () => {
+    if (whenSelect.value !== 'github-ci-failed' || editingId) return
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value),
+    })
+  })
   cancelButton.addEventListener('click', closeForm)
   repeatSelect.addEventListener('change', () => {
     if (repeatSelect.value !== 'custom') {
@@ -764,6 +826,24 @@ export function createAutomationPluginSettings(
     event.preventDefault()
     if (!projectId) return
     hideStatus()
+    // The model picker owns a hidden native select. Browser constraint validation
+    // can silently suppress submit when that select is invalid, leaving Save
+    // looking inert. Validate here so every failed save has visible feedback.
+    if (!nameInput.value.trim()) {
+      showStatus('Enter a name before saving.', true)
+      nameInput.focus()
+      return
+    }
+    if (!promptInput.value.trim()) {
+      showStatus('Enter a prompt before saving.', true)
+      promptInput.focus()
+      return
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus('Choose a model before saving.', true)
+      modelPicker.openMenu()
+      return
+    }
     const cron = cronFromScheduleControls()
     if (cron === null) {
       showStatus('Choose a valid schedule before saving.', true)
@@ -798,12 +878,30 @@ export function createAutomationPluginSettings(
       })
   })
 
+  const unsubscribeTriggered = api.automations.onTriggered(
+    (event: AutomationTriggerEvent): void => {
+      if (event.projectId !== projectId) return
+      // A started run clears a previous worktree-limit block; a limit skip sets one.
+      const changesLimitStatus =
+        event.disposition === 'started' || event.coalescedReason === 'worktree-limit'
+      if (!changesLimitStatus) return
+      void refresh()
+    },
+  )
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return
+    removalObserver.disconnect()
+    unsubscribeTriggered()
+  })
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true })
+
   void refresh()
   return Object.assign(root, {
     setPluginEnabled(enabled: boolean): void {
       pluginEnabled = enabled
       notice.textContent = pluginNotice()
       renderList()
+      ciEditor.setPluginEnabled(enabled)
     },
   })
 }

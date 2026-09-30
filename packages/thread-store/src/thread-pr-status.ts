@@ -1,3 +1,4 @@
+import { assertNever } from '@copse/std/assert-never.ts'
 import type { Thread } from './thread-types.ts'
 import {
   extractGithubPrUrls,
@@ -97,30 +98,38 @@ export function summarizeThreadPrStatus(
 
 /** Short label for the projects-pane chip. */
 export function formatThreadPrStatus(rollup: ThreadPrRollup): string {
-  if (rollup.kind === 'open') {
-    if (rollup.primaryNumber != null) return `#${String(rollup.primaryNumber)}`
-    return rollup.openCount === 1 ? '1 open' : `${String(rollup.openCount)} open`
+  switch (rollup.kind) {
+    case 'open':
+      if (rollup.primaryNumber != null) return `#${String(rollup.primaryNumber)}`
+      return rollup.openCount === 1 ? '1 open' : `${String(rollup.openCount)} open`
+    case 'merged':
+      return rollup.totalCount === 1 ? 'merged' : 'all merged'
+    case 'closed':
+      return rollup.totalCount === 1 ? 'closed' : 'all closed'
+    default:
+      return assertNever(rollup, 'formatThreadPrStatus')
   }
-  if (rollup.kind === 'merged') {
-    return rollup.totalCount === 1 ? 'merged' : 'all merged'
-  }
-  return rollup.totalCount === 1 ? 'closed' : 'all closed'
 }
 
 /** Accessible description for the chip. */
 export function describeThreadPrStatus(rollup: ThreadPrRollup): string {
-  if (rollup.kind === 'open') {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`
-    }
-    return rollup.openCount === 1
-      ? '1 pull request is open'
-      : `${String(rollup.openCount)} pull requests are open`
+  switch (rollup.kind) {
+    case 'open':
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`
+      }
+      return rollup.openCount === 1
+        ? '1 pull request is open'
+        : `${String(rollup.openCount)} pull requests are open`
+    case 'merged':
+      return rollup.totalCount === 1
+        ? 'Pull request is merged'
+        : 'All linked pull requests are merged'
+    case 'closed':
+      return rollup.totalCount === 1
+        ? 'Pull request is closed'
+        : 'All linked pull requests are closed'
+    default:
+      return assertNever(rollup, 'describeThreadPrStatus')
   }
-  if (rollup.kind === 'merged') {
-    return rollup.totalCount === 1
-      ? 'Pull request is merged'
-      : 'All linked pull requests are merged'
-  }
-  return rollup.totalCount === 1 ? 'Pull request is closed' : 'All linked pull requests are closed'
 }
