@@ -1229,7 +1229,7 @@ describe('ensureShellCommandPermitted — SSH workspace execution target', () =>
     const READ = 'cat /home/alice/.bash_history'
     const thread = 'thread-ssh-read-grant'
     clearReadOutsideProjectGrants()
-    grantReadOutsideProject(thread)
+    grantReadOutsideProject(thread, ['/home/alice/.bash_history'])
     try {
       const local = await runWithActiveRunIdentity(thread, () => runGate(READ, 'local'))
       assert.deepEqual(local, { permitted: true, prompts: [] }, 'the grant covers a local read')
