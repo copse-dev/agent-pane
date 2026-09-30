@@ -91,6 +91,15 @@ passed the release checklist.
 
 Decision owner/date: Jonathan Kingston, 2026-08-27.
 
+## D10 — English-only Chromium locales in the Mac app
+
+The macOS app ships only Electron's English locale bundles (`electronLanguages: ["en"]`), matching
+Copse's English-only interface and keeping each installed architecture under the 750 MiB release
+budget (#806). Chromium- and macOS-provided menu and dialog strings therefore appear in English
+for every user. Revisit when Copse localizes its own interface.
+
+Decision owner/date: Jonathan Kingston, 2026-09-30.
+
 ## Human review assignment
 
 Jonathan Kingston is the human security reviewer and release owner. D1/D2 are merged and were
