@@ -39,37 +39,59 @@
 
     <script src="runtime.js"></script>
     <script>
-      const { seg, lerp, E, clamp } = Timeline;
-      const mono = 'ui-monospace, Menlo, monospace';
+      const { seg, lerp, E, clamp } = Timeline
+      const mono = 'ui-monospace, Menlo, monospace'
 
       // ---- isometric projection: +x goes down-right, +y goes down-left, z is up.
       const TW = 108,
         TH = 54,
         ZH = 58,
         OX = 626,
-        OY = 95;
-      const P = (x, y, z = 0) => [OX + (x - y) * (TW / 2), OY + (x + y) * (TH / 2) - z * ZH];
-      const pts = (arr) => arr.map((p) => P(...p).map((n) => n.toFixed(1)).join(',')).join(' ');
+        OY = 95
+      const P = (x, y, z = 0) => [OX + (x - y) * (TW / 2), OY + (x + y) * (TH / 2) - z * ZH]
+      const pts = (arr) =>
+        arr
+          .map((p) =>
+            P(...p)
+              .map((n) => n.toFixed(1))
+              .join(','),
+          )
+          .join(' ')
       function shade(hex, k) {
-        const n = parseInt(hex.slice(1), 16);
-        const c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => Math.round(clamp(v * k, 0, 255)));
-        return `rgb(${c})`;
+        const n = parseInt(hex.slice(1), 16)
+        const c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => Math.round(clamp(v * k, 0, 255)))
+        return `rgb(${c})`
       }
       // A box: top + two visible sides. Returns {depth, svg}.
       function box(x, y, z, w, d, h, color, extra = '') {
-        const top = pts([[x, y, z + h], [x + w, y, z + h], [x + w, y + d, z + h], [x, y + d, z + h]]);
-        const left = pts([[x, y + d, z], [x + w, y + d, z], [x + w, y + d, z + h], [x, y + d, z + h]]);
-        const right = pts([[x + w, y, z], [x + w, y + d, z], [x + w, y + d, z + h], [x + w, y, z + h]]);
+        const top = pts([
+          [x, y, z + h],
+          [x + w, y, z + h],
+          [x + w, y + d, z + h],
+          [x, y + d, z + h],
+        ])
+        const left = pts([
+          [x, y + d, z],
+          [x + w, y + d, z],
+          [x + w, y + d, z + h],
+          [x, y + d, z + h],
+        ])
+        const right = pts([
+          [x + w, y, z],
+          [x + w, y + d, z],
+          [x + w, y + d, z + h],
+          [x + w, y, z + h],
+        ])
         return {
           depth: x + w / 2 + y + d / 2 + z * 0.01,
           svg: `<g ${extra}><polygon points="${left}" fill="${shade(color, 0.82)}"/><polygon points="${right}" fill="${shade(color, 0.66)}"/><polygon points="${top}" fill="${color}"/></g>`,
-        };
+        }
       }
       // Flat label plate in screen space, anchored at an iso point.
       function label(x, y, z, lines, fill = '#fffdf7', fg = '#002e2b', size = 19) {
-        const [sx, sy] = P(x, y, z);
-        const w = Math.max(...lines.map((l) => l.length)) * size * 0.56 + 26;
-        const h = lines.length * (size + 5) + 14;
+        const [sx, sy] = P(x, y, z)
+        const w = Math.max(...lines.map((l) => l.length)) * size * 0.56 + 26
+        const h = lines.length * (size + 5) + 14
         return {
           depth: 999,
           svg: `<g transform="translate(${sx} ${sy})"><rect x="${-w / 2}" y="${-h}" width="${w}" height="${h}" rx="10" fill="${fill}" stroke="#002e2b" stroke-width="2.5"/>${lines
@@ -77,8 +99,10 @@
               (l, i) =>
                 `<text x="0" y="${-h + 14 + size + i * (size + 5) - 4}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${fg}">${l}</text>`,
             )
-            .join('')}<path d="M-7 0 L0 9 L7 0z" fill="${fill}" stroke="#002e2b" stroke-width="2.5" stroke-linejoin="round" transform="translate(0 0)"/></g>`,
-        };
+            .join(
+              '',
+            )}<path d="M-7 0 L0 9 L7 0z" fill="${fill}" stroke="#002e2b" stroke-width="2.5" stroke-linejoin="round" transform="translate(0 0)"/></g>`,
+        }
       }
 
       // ---- layout (floor is 12 x 10 tiles)
@@ -86,166 +110,191 @@
         { name: 'auth/', y: 0.9, lane: 2.5, color: '#20fd85', hue: '#c9b98f' },
         { name: 'api/', y: 3.4, lane: 5.0, color: '#ff9fc5', hue: '#c9b98f' },
         { name: 'ui/', y: 5.9, lane: 7.5, color: '#8ec8ff', hue: '#c9b98f' },
-      ];
+      ]
       const SLOTS = 6,
         X0 = 2.0,
-        SLOT = 1.0;
-      const DESK = { x: 0.2, y: 3.0 };
-      const FOUND = { shelf: 0, slot: 3 }; // auth/ shelf, 4th parcel holds the login handler
-      const START = { x: 1.4 };
+        SLOT = 1.0
+      const DESK = { x: 0.2, y: 3.0 }
+      const FOUND = { shelf: 0, slot: 3 } // auth/ shelf, 4th parcel holds the login handler
+      const START = { x: 1.4 }
 
       function floor() {
-        const out = [];
-        const c = (x, y) => P(x, y, 0).map((n) => n.toFixed(1)).join(',');
+        const out = []
+        const c = (x, y) =>
+          P(x, y, 0)
+            .map((n) => n.toFixed(1))
+            .join(',')
         out.push(
           `<polygon points="${c(-0.8, -0.5)} ${c(9, -0.5)} ${c(9, 8.2)} ${c(-0.8, 8.2)}" fill="#e2d7bd" stroke="#b9ab86" stroke-width="3" stroke-linejoin="round"/>`,
-        );
+        )
         // floor edge thickness
         const a = P(9, -0.5, 0),
           b = P(9, 8.2, 0),
-          d = P(-0.8, 8.2, 0);
-        out.push(`<polygon points="${d.join(',')} ${b.join(',')} ${b[0]},${b[1] + 14} ${d[0]},${d[1] + 14}" fill="#b9ab86"/>`);
-        out.push(`<polygon points="${b.join(',')} ${a.join(',')} ${a[0]},${a[1] + 14} ${b[0]},${b[1] + 14}" fill="#9d9070"/>`);
+          d = P(-0.8, 8.2, 0)
+        out.push(
+          `<polygon points="${d.join(',')} ${b.join(',')} ${b[0]},${b[1] + 14} ${d[0]},${d[1] + 14}" fill="#b9ab86"/>`,
+        )
+        out.push(
+          `<polygon points="${b.join(',')} ${a.join(',')} ${a[0]},${a[1] + 14} ${b[0]},${b[1] + 14}" fill="#9d9070"/>`,
+        )
         // aisle strips
         SHELVES.forEach((s) => {
           out.push(
             `<polygon points="${c(1.0, s.lane - 0.4)} ${c(9, s.lane - 0.4)} ${c(9, s.lane + 0.4)} ${c(1.0, s.lane + 0.4)}" fill="#d3c7a8"/>`,
-          );
-        });
-        return out.join('');
+          )
+        })
+        return out.join('')
       }
 
       // parcel "lit" amount by scan progress
       function shelf(si, scanX, foundOn) {
-        const s = SHELVES[si];
-        const out = [];
-        out.push(box(X0 - 0.15, s.y, 0, SLOTS * SLOT + 0.3, 1, 0.12, '#9a8a66'));
+        const s = SHELVES[si]
+        const out = []
+        out.push(box(X0 - 0.15, s.y, 0, SLOTS * SLOT + 0.3, 1, 0.12, '#9a8a66'))
         for (let k = 0; k < SLOTS; k++) {
           for (let lv = 0; lv < 2; lv++) {
-            const x = X0 + k * SLOT + 0.06;
-            const lit = scanX > x + 0.3;
-            const isFound = foundOn && si === FOUND.shelf && k === FOUND.slot && lv === 0;
-            const base = isFound ? '#ffd23f' : lit ? s.color : '#d9c9a0';
-            out.push(box(x, s.y + 0.08, 0.12 + lv * 0.7, 0.86, 0.84, 0.62, base));
+            const x = X0 + k * SLOT + 0.06
+            const lit = scanX > x + 0.3
+            const isFound = foundOn && si === FOUND.shelf && k === FOUND.slot && lv === 0
+            const base = isFound ? '#ffd23f' : lit ? s.color : '#d9c9a0'
+            out.push(box(x, s.y + 0.08, 0.12 + lv * 0.7, 0.86, 0.84, 0.62, base))
           }
         }
-        return out;
+        return out
       }
 
       function cart(x, y, color, carrying) {
-        const out = [];
-        out.push(box(x, y, 0.14, 1.1, 0.75, 0.42, color));
-        out.push(box(x + 0.08, y - 0.08, 0, 0.2, 0.14, 0.16, '#333'));
-        out.push(box(x + 0.82, y - 0.08, 0, 0.2, 0.14, 0.16, '#333'));
-        out.push(box(x + 0.08, y + 0.69, 0, 0.2, 0.14, 0.16, '#333'));
-        out.push(box(x + 0.82, y + 0.69, 0, 0.2, 0.14, 0.16, '#333'));
-        out.push(box(x + 0.15, y + 0.12, 0.56, 0.3, 0.5, 0.36, '#fffdf7'));
-        if (carrying) out.push(box(x + 0.55, y + 0.12, 0.56, 0.4, 0.5, 0.12, '#ffd23f'));
-        return out;
+        const out = []
+        out.push(box(x, y, 0.14, 1.1, 0.75, 0.42, color))
+        out.push(box(x + 0.08, y - 0.08, 0, 0.2, 0.14, 0.16, '#333'))
+        out.push(box(x + 0.82, y - 0.08, 0, 0.2, 0.14, 0.16, '#333'))
+        out.push(box(x + 0.08, y + 0.69, 0, 0.2, 0.14, 0.16, '#333'))
+        out.push(box(x + 0.82, y + 0.69, 0, 0.2, 0.14, 0.16, '#333'))
+        out.push(box(x + 0.15, y + 0.12, 0.56, 0.3, 0.5, 0.36, '#fffdf7'))
+        if (carrying) out.push(box(x + 0.55, y + 0.12, 0.56, 0.4, 0.5, 0.12, '#ffd23f'))
+        return out
       }
 
-      const lanes = SHELVES.map((s) => s.lane);
+      const lanes = SHELVES.map((s) => s.lane)
 
       function render(t) {
-        const items = [];
-        const pop = E.out(seg(t, 0, 0.8));
+        const items = []
+        const pop = E.out(seg(t, 0, 0.8))
 
         // ---- choreography
-        let foundOn = false;
-        const scan = [0, 0, 0]; // x-extent scanned per shelf
-        const carts = []; // {x,y,color,name,carry,show}
-        const deskP = { x: DESK.x, y: DESK.y };
+        let foundOn = false
+        const scan = [0, 0, 0] // x-extent scanned per shelf
+        const carts = [] // {x,y,color,name,carry,show}
+        const deskP = { x: DESK.x, y: DESK.y }
 
         // Agent cart
-        let ag = { x: DESK.x + 1.0, y: DESK.y + 0.3, show: true, carry: false };
+        let ag = { x: DESK.x + 1.0, y: DESK.y + 0.3, show: true, carry: false }
         // P1: drive to lane 1, scan slowly
         if (t < 4.6) {
-          const d1 = E.inOut(seg(t, 0.9, 2.0));
-          ag.x = lerp(DESK.x + 1.0, START.x, d1);
-          ag.y = lerp(DESK.y + 0.3, lanes[0] - 0.3, d1);
-          const sp = seg(t, 2.0, 4.4);
-          ag.x = lerp(ag.x, X0 + 1.8, E.lin(sp) * 1);
-          scan[0] = t > 2.0 ? ag.x + 0.4 : 0;
+          const d1 = E.inOut(seg(t, 0.9, 2.0))
+          ag.x = lerp(DESK.x + 1.0, START.x, d1)
+          ag.y = lerp(DESK.y + 0.3, lanes[0] - 0.3, d1)
+          const sp = seg(t, 2.0, 4.4)
+          ag.x = lerp(ag.x, X0 + 1.8, E.lin(sp) * 1)
+          scan[0] = t > 2.0 ? ag.x + 0.4 : 0
         } else {
           // come back to desk and wait
-          const rb = E.inOut(seg(t, 4.6, 5.6));
+          const rb = E.inOut(seg(t, 4.6, 5.6))
           const fromX = X0 + 1.8,
-            fromY = lanes[0] - 0.3;
-          ag.x = lerp(fromX, DESK.x + 1.0, rb);
-          ag.y = lerp(fromY, DESK.y + 0.3, rb);
-          scan[0] = X0 + 1.8 + 0.4;
+            fromY = lanes[0] - 0.3
+          ag.x = lerp(fromX, DESK.x + 1.0, rb)
+          ag.y = lerp(fromY, DESK.y + 0.3, rb)
+          scan[0] = X0 + 1.8 + 0.4
         }
 
         // Subagents
-        const subColors = ['#20fd85', '#ff9fc5', '#8ec8ff'];
-        const dur = [2.3, 2.6, 2.9];
+        const subColors = ['#20fd85', '#ff9fc5', '#8ec8ff']
+        const dur = [2.3, 2.6, 2.9]
         const subs = SHELVES.map((s, i) => {
-          const spawn = seg(t, 5.7 + i * 0.12, 6.1 + i * 0.12);
-          if (spawn <= 0 || t > 12.5) return { show: false };
-          const drive = E.inOut(seg(t, 6.1, 7.0));
-          const scanStart = 7.0 + i * 0.1;
-          const sp = seg(t, scanStart, scanStart + dur[i] + 1.2);
-          let x = lerp(DESK.x + 1.0, START.x, drive);
-          let y = lerp(DESK.y + 0.3 + (i - 1) * 0.2, s.lane - 0.3, drive);
-          if (t >= scanStart) x = lerp(START.x, X0 + SLOTS * SLOT - 0.4, E.lin(sp));
-          if (t >= scanStart) scan[i] = Math.max(scan[i], x + 0.4);
+          const spawn = seg(t, 5.7 + i * 0.12, 6.1 + i * 0.12)
+          if (spawn <= 0 || t > 12.5) return { show: false }
+          const drive = E.inOut(seg(t, 6.1, 7.0))
+          const scanStart = 7.0 + i * 0.1
+          const sp = seg(t, scanStart, scanStart + dur[i] + 1.2)
+          let x = lerp(DESK.x + 1.0, START.x, drive)
+          let y = lerp(DESK.y + 0.3 + (i - 1) * 0.2, s.lane - 0.3, drive)
+          if (t >= scanStart) x = lerp(START.x, X0 + SLOTS * SLOT - 0.4, E.lin(sp))
+          if (t >= scanStart) scan[i] = Math.max(scan[i], x + 0.4)
           // return
-          const back = E.inOut(seg(t, 9.6 + i * 0.25, 11.0 + i * 0.25));
+          const back = E.inOut(seg(t, 9.6 + i * 0.25, 11.0 + i * 0.25))
           if (back > 0) {
-            x = lerp(X0 + SLOTS * SLOT - 0.4, DESK.x + 1.3, back);
-            y = lerp(s.lane - 0.3, DESK.y + 0.4 + (i - 1) * 0.75, back);
-            scan[i] = 99;
+            x = lerp(X0 + SLOTS * SLOT - 0.4, DESK.x + 1.3, back)
+            y = lerp(s.lane - 0.3, DESK.y + 0.4 + (i - 1) * 0.75, back)
+            scan[i] = 99
           }
-          return { show: true, x, y, carry: sp >= 1, back, spawn };
-        });
-        if (t > 9.0) foundOn = true;
-        if (t >= 12.5) scan.fill(99);
+          return { show: true, x, y, carry: sp >= 1, back, spawn }
+        })
+        if (t > 9.0) foundOn = true
+        if (t >= 12.5) scan.fill(99)
 
         // ---- build scene
-        items.push({ depth: -1, svg: floor() });
-        SHELVES.forEach((s, i) => shelf(i, scan[i], foundOn).forEach((b) => items.push(b)));
+        items.push({ depth: -1, svg: floor() })
+        SHELVES.forEach((s, i) => shelf(i, scan[i], foundOn).forEach((b) => items.push(b)))
 
         // desk + monitor
-        items.push(box(DESK.x - 0.4, DESK.y - 0.2, 0, 1.0, 1.6, 0.55, '#7a5a3a'));
-        items.push(box(DESK.x - 0.3, DESK.y + 0.5, 0.55, 0.12, 0.6, 0.45, '#002e2b'));
+        items.push(box(DESK.x - 0.4, DESK.y - 0.2, 0, 1.0, 1.6, 0.55, '#7a5a3a'))
+        items.push(box(DESK.x - 0.3, DESK.y + 0.5, 0.55, 0.12, 0.6, 0.45, '#002e2b'))
         // agent cart
-        cart(ag.x, ag.y, '#ff9fc5', false).forEach((b) => items.push(b));
+        cart(ag.x, ag.y, '#ff9fc5', false).forEach((b) => items.push(b))
         // subagent carts
         subs.forEach((sb, i) => {
-          if (!sb.show) return;
-          const k = E.back(sb.spawn);
-          cart(sb.x, sb.y, subColors[i], sb.carry).forEach((b) => items.push(b));
-        });
+          if (!sb.show) return
+          const k = E.back(sb.spawn)
+          cart(sb.x, sb.y, subColors[i], sb.carry).forEach((b) => items.push(b))
+        })
 
         // ---- labels
-        const L = [];
-        L.push(label(ag.x + 0.45, ag.y + 0.3, 1.25, ['Agent'], '#ff9fc5'));
+        const L = []
+        L.push(label(ag.x + 0.45, ag.y + 0.3, 1.25, ['Agent'], '#ff9fc5'))
         if (t > 0.3) {
-          const a = E.out(seg(t, 0.3, 0.9));
-          const [sx, sy] = P(DESK.x - 0.6, DESK.y + 0.8, 1.0);
-          const fade = 1 - seg(t, 10.4, 10.9);
+          const a = E.out(seg(t, 0.3, 0.9))
+          const [sx, sy] = P(DESK.x - 0.6, DESK.y + 0.8, 1.0)
+          const fade = 1 - seg(t, 10.4, 10.9)
           L.push({
             depth: 999,
             svg: `<g opacity="${a * fade}" transform="translate(${sx - 96} ${sy - 10 - (1 - a) * 12})"><rect x="-96" y="-86" width="192" height="86" rx="10" fill="#fffdf7" stroke="#002e2b" stroke-width="2.5"/><text x="0" y="-58" text-anchor="middle" font-size="16" font-weight="700" fill="#5a6b66">YOUR TASK</text><text x="0" y="-36" text-anchor="middle" font-size="19" font-weight="700" fill="#002e2b">Where is login</text><text x="0" y="-14" text-anchor="middle" font-size="19" font-weight="700" fill="#002e2b">handled?</text></g>`,
-          });
+          })
         }
         SHELVES.forEach((s, i) => {
-          const dim = t < 5.6 && i > 0 ? 0.55 : 1;
-          const active = scan[i] > 0 && scan[i] < 99;
-          const waiting = t < 5.6 && i > 0 && t > 2.0;
+          const dim = t < 5.6 && i > 0 ? 0.55 : 1
+          const active = scan[i] > 0 && scan[i] < 99
+          const waiting = t < 5.6 && i > 0 && t > 2.0
           L.push(
-            label(X0 + SLOTS + 0.3, s.y + 0.5, 1.6, waiting ? [s.name, 'waiting…'] : [s.name], waiting ? '#e8e0cc' : '#fffdf7', '#002e2b', 22),
-          );
-        });
+            label(
+              X0 + SLOTS + 0.3,
+              s.y + 0.5,
+              1.6,
+              waiting ? [s.name, 'waiting…'] : [s.name],
+              waiting ? '#e8e0cc' : '#fffdf7',
+              '#002e2b',
+              22,
+            ),
+          )
+        })
         subs.forEach((sb, i) => {
-          if (!sb.show || sb.back > 0.6) return;
-          L.push(label(sb.x + 0.45, sb.y + 0.3, 1.25, ['Subagent', SHELVES[i].name], subColors[i], '#002e2b', 17));
-        });
+          if (!sb.show || sb.back > 0.6) return
+          L.push(
+            label(
+              sb.x + 0.45,
+              sb.y + 0.3,
+              1.25,
+              ['Subagent', SHELVES[i].name],
+              subColors[i],
+              '#002e2b',
+              17,
+            ),
+          )
+        })
 
         // report notes flying to desk + summary
         if (t > 10.6) {
-          const a = E.back(seg(t, 11.2, 11.9));
-          const [sx, sy] = P(DESK.x - 0.6, DESK.y + 0.8, 1.0);
+          const a = E.back(seg(t, 11.2, 11.9))
+          const [sx, sy] = P(DESK.x - 0.6, DESK.y + 0.8, 1.0)
           L.push({
             depth: 1000,
             svg: `<g transform="translate(${sx - 110} ${sy + 105}) scale(${Math.max(0.01, a)})" opacity="${clamp(a)}">
@@ -259,44 +308,64 @@
               <circle cx="178" cy="-60" r="22" fill="#20fd85" stroke="#002e2b" stroke-width="3"/>
               <path d="M167 -60 l8 9 l16 -19" fill="none" stroke="#002e2b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
             </g>`,
-          });
+          })
         }
 
         if (foundOn) {
-          const a = E.back(seg(t, 9.0, 9.5));
-          L.push({ ...label(X0 + FOUND.slot + 0.5, SHELVES[0].y + 0.5, 2.3, ['Found it!'], '#ffd23f', '#002e2b', 20), depth: 1002 });
+          const a = E.back(seg(t, 9.0, 9.5))
+          L.push({
+            ...label(
+              X0 + FOUND.slot + 0.5,
+              SHELVES[0].y + 0.5,
+              2.3,
+              ['Found it!'],
+              '#ffd23f',
+              '#002e2b',
+              20,
+            ),
+            depth: 1002,
+          })
         }
 
         // slips flying from agent to shelves
         for (let i = 0; i < 3; i++) {
-          const s0 = 5.5 + i * 0.12;
-          const p = seg(t, s0, s0 + 0.6);
+          const s0 = 5.5 + i * 0.12
+          const p = seg(t, s0, s0 + 0.6)
           if (p > 0 && p < 1) {
-            const k = E.inOut(p);
-            const [ax, ay] = P(DESK.x + 1.2, DESK.y + 0.4, 0.9);
-            const [bx, by] = P(START.x + 0.4, lanes[i] - 0.2, 0.9);
+            const k = E.inOut(p)
+            const [ax, ay] = P(DESK.x + 1.2, DESK.y + 0.4, 0.9)
+            const [bx, by] = P(START.x + 0.4, lanes[i] - 0.2, 0.9)
             L.push({
               depth: 1001,
               svg: `<g transform="translate(${lerp(ax, bx, k)} ${lerp(ay, by, k) - Math.sin(Math.PI * k) * 40})"><rect x="-44" y="-16" width="88" height="32" rx="6" fill="#fffdf7" stroke="#002e2b" stroke-width="2.5"/><text x="0" y="6" text-anchor="middle" font-size="15" font-weight="700" fill="#002e2b">Search ${SHELVES[i].name}</text></g>`,
-            });
+            })
           }
         }
 
-        items.push(...L);
-        items.sort((a, b) => a.depth - b.depth);
-        document.getElementById('world').innerHTML = items.map((i) => i.svg).join('');
-        document.getElementById('world').style.opacity = pop;
+        items.push(...L)
+        items.sort((a, b) => a.depth - b.depth)
+        document.getElementById('world').innerHTML = items.map((i) => i.svg).join('')
+        document.getElementById('world').style.opacity = pop
       }
 
       Timeline.start({
         duration: 14,
         render,
         beats: [
-          { at: 0, text: 'One agent searching a big codebase goes aisle by aisle. The other aisles just wait.' },
-          { at: 4.8, text: 'Copse hands each area to its own subagent. They all search at the same time.' },
-          { at: 9.6, text: 'Each subagent reports back a short note, so the agent gets one clear answer.' },
+          {
+            at: 0,
+            text: 'One agent searching a big codebase goes aisle by aisle. The other aisles just wait.',
+          },
+          {
+            at: 4.8,
+            text: 'Copse hands each area to its own subagent. They all search at the same time.',
+          },
+          {
+            at: 9.6,
+            text: 'Each subagent reports back a short note, so the agent gets one clear answer.',
+          },
         ],
-      });
+      })
     </script>
   </body>
 </html>
