@@ -4,6 +4,7 @@ import type { AutoApprovalLevel } from '@shared/auto-approval.ts'
 import type { ApiClient } from './api.d.ts'
 import type { ClassifierProfile } from '@copse/llm/classifiers/types.ts'
 import type { PrComposerCreateRequest } from '@shared/types/git.ts'
+import type { AppleSuggestionAnswer } from '@shared/types/apple-development.ts'
 import { exposePerfBridge, installPreloadPerfTracing } from './perf-bridge.ts'
 
 // DEBUG BRANCH (`COPSE_PERF=1` only): patch `invoke` before the API object below
@@ -73,6 +74,8 @@ const api: ApiClient = {
     scrollPosition: (webContentsId: number) =>
       ipcRenderer.invoke('browser:scroll-position', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
+      ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, url: string, partition?: string): void => {
         handler(url, partition)
@@ -1056,6 +1059,10 @@ const api: ApiClient = {
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
   },
+  about: {
+    getInfo: () => ipcRenderer.invoke('about:get-info'),
+    openLicenseFile: (kind) => ipcRenderer.invoke('about:open-license-file', kind),
+  },
   usage: {
     getSummary: () => ipcRenderer.invoke('usage:get-summary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:get-plan-usage'),
@@ -1342,6 +1349,16 @@ const api: ApiClient = {
       ipcRenderer.invoke('automations:remove', projectId, scheduleId),
     runNow: (projectId: string, scheduleId: string) =>
       ipcRenderer.invoke('automations:run-now', projectId, scheduleId),
+    listBranchCi: (projectId: string) =>
+      ipcRenderer.invoke('automations:list-branch-ci', projectId),
+    upsertBranchCi: (projectId: string, input: unknown) =>
+      ipcRenderer.invoke('automations:upsert-branch-ci', projectId, input),
+    removeBranchCi: (projectId: string, id: string) =>
+      ipcRenderer.invoke('automations:remove-branch-ci', projectId, id),
+    testBranchCi: (projectId: string, branch: string) =>
+      ipcRenderer.invoke('automations:test-branch-ci', projectId, branch),
+    canStart: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('automations:can-start', projectId, threadId),
     onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
@@ -1374,6 +1391,10 @@ const api: ApiClient = {
       ipcRenderer.invoke('apple-development:state', projectId, threadId),
     detectProject: (projectId: string) =>
       ipcRenderer.invoke('apple-development:detect-project', projectId),
+    suggestion: (projectId: string) =>
+      ipcRenderer.invoke('apple-development:suggestion', projectId),
+    answerSuggestion: (projectId: string, answer: AppleSuggestionAnswer) =>
+      ipcRenderer.invoke('apple-development:answer-suggestion', projectId, answer),
     setEnrolled: (projectId: string, threadId: string, enrolled: boolean) =>
       ipcRenderer.invoke('apple-development:set-enrolled', projectId, threadId, enrolled),
     discover: (projectId: string, threadId: string, includeMetadata: boolean) =>

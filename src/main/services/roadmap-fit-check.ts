@@ -1,9 +1,6 @@
 import { resolveIssueRef } from '@shared/git/issue-ref.ts'
 import { parseFitVerdict, type RoadmapFit } from '@shared/roadmap/fit.ts'
-import {
-  resolveSmallTasksProvider,
-  resolveSmallTasksModelId,
-} from './providers/small-tasks-provider.ts'
+import { resolveSmallTasksRoute } from './providers/small-tasks-provider.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { getKnowledgeNote, updateKnowledgeNote } from './storage/knowledge-store.ts'
@@ -43,11 +40,10 @@ export async function checkRoadmapFit(id: string): Promise<RoadmapFitResult> {
   const issue = await resolveGitHubBackend().getIssue(coords)
   if (!issue) throw new Error(`Issue ${ref} was not found on GitHub.`)
 
-  const provider = await resolveSmallTasksProvider()
-  if (!provider) {
+  const route = await resolveSmallTasksRoute()
+  if (!route) {
     throw new Error('No model available for the fit check — configure a small-tasks model.')
   }
-  const model = resolveSmallTasksModelId()
   const ask =
     'A coding agent will be given the PROMPT below. Judge whether executing it would ' +
     'plausibly resolve the GitHub ISSUE below. First line: exactly one word — ' +
@@ -55,10 +51,10 @@ export async function checkRoadmapFit(id: string): Promise<RoadmapFitResult> {
     'the prompt misses or should double-check. Judge only from the text given.\n\n' +
     `ISSUE #${String(issue.number)}: ${issue.title}\n${issue.body.slice(0, 4000)}\n\n` +
     `PROMPT:\n${note.body.slice(0, 4000)}`
-  const { text, usage } = await completeTextWithUsage(provider, ask, FIT_TIMEOUT_MS)
+  const { text, usage } = await completeTextWithUsage(route.provider, ask, FIT_TIMEOUT_MS)
   if (usage.inputTokens || usage.outputTokens) {
     recordUsageEvent({
-      model,
+      model: route.model,
       source: 'small-tasks',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,

@@ -52,6 +52,19 @@ describe('extra provider lookups against a resolved list', () => {
     assert.equal(extraProviderForModel(providers, 'claude-sonnet-4-6'), null)
   })
 
+  it('restores the selected wire protocol for a custom provider', () => {
+    const [custom] = resolveExtraProviders([
+      {
+        slug: 'acme',
+        label: 'Acme',
+        baseUrl: 'https://api.acme.example/v1',
+        apiStyle: 'responses',
+      },
+    ]).filter((provider) => provider.id === 'acme')
+    assert.ok(custom)
+    assert.equal(custom.apiStyle, 'responses')
+  })
+
   it('ships Perplexity as a Responses API preset with server-side web search', () => {
     const perplexity = providers.find((provider) => provider.id === 'perplexity')
     assert.ok(perplexity)

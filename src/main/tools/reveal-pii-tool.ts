@@ -14,12 +14,12 @@ import { requestApproval } from '../services/approval.ts'
 export const revealPiiTool = defineTool({
   name: 'reveal_pii',
   description:
-    'Reveal the real value behind a redacted PII placeholder such as [EMAIL_1] or [GIVEN_NAME_2]. ' +
+    'Reveal the real value behind a redacted PII placeholder such as [EMAIL_QJXKT_1] or [SSN_QJXKT_2]. ' +
     'The user typed these values, but they were replaced with placeholders before the message was sent, to keep personal data on-device. ' +
     'Only call this when you truly need the underlying value to complete the task (for example, to write it verbatim into a local file or command) — placeholders are usually enough to reason with. ' +
     'IMPORTANT: every call prompts the user to approve revealing that specific placeholder, and they may decline. If they decline, keep using the placeholder. Never guess, reconstruct, or hardcode the underlying value yourself.',
   parameters: z.object({
-    placeholder: z.string().describe('The placeholder token to reveal, e.g. "[EMAIL_1]".'),
+    placeholder: z.string().describe('The placeholder token to reveal, e.g. "[EMAIL_QJXKT_1]".'),
   }),
   async execute({ placeholder }, signal) {
     const threadId = getActiveRunThread()
@@ -28,7 +28,10 @@ export const revealPiiTool = defineTool({
     const token = placeholder.trim()
     const value = revealPlaceholder(threadId, token)
     if (value === null) {
-      return `"${token}" is not a known redacted placeholder in this conversation. Use it as-is.`
+      // Unknown covers tokens minted before an app restart: the reverse map is
+      // memory-only, and each session tags its tokens so an old one can never
+      // resolve to a value typed later (see `mintSessionTag` in pii-redactor.ts).
+      return `"${token}" cannot be revealed: it is not a placeholder from this app session. Placeholders from before Copse restarted cannot be recovered because the redaction map is kept in memory only. Use it as-is.`
     }
 
     const decision = await requestApproval(

@@ -193,31 +193,31 @@ async function openWith(
 describe('openAcpSession applies stored config options', () => {
   it('sends set_config_option for a stored, offered, non-current value', async () => {
     const { calls, open } = await openWith({ thinking: 'high' })
-    open.dispose()
+    await open.dispose()
     assert.deepEqual(calls, [{ configId: 'thinking', value: 'high' }])
   })
 
   it('does not switch when the stored value is already the agent’s current one', async () => {
     const { calls, open } = await openWith({ thinking: 'medium' })
-    open.dispose()
+    await open.dispose()
     assert.deepEqual(calls, [])
   })
 
   it('skips a value the agent no longer offers, and an unknown option id', async () => {
     const { calls, open } = await openWith({ thinking: 'ultra', missing: 'x' })
-    open.dispose()
+    await open.dispose()
     assert.deepEqual(calls, [])
   })
 
   it('does nothing when the agent advertises no config options', async () => {
     const { calls, open } = await openWith({ thinking: 'high' }, [])
-    open.dispose()
+    await open.dispose()
     assert.deepEqual(calls, [])
   })
 
   it('applies several stored options in one session', async () => {
     const { calls, open } = await openWith({ thinking: 'low', model: 'opus' })
-    open.dispose()
+    await open.dispose()
     assert.deepEqual(calls, [
       { configId: 'thinking', value: 'low' },
       { configId: 'model', value: 'opus' },
@@ -244,7 +244,7 @@ describe('config options switch live between turns', () => {
         { configId: 'thinking', value: 'low' },
       ])
     } finally {
-      open.dispose()
+      await open.dispose()
     }
   })
 
@@ -255,7 +255,7 @@ describe('config options switch live between turns', () => {
       await runAcpSessionPrompt(open, 'one', undefined)
       assert.deepEqual(calls, [])
     } finally {
-      open.dispose()
+      await open.dispose()
     }
   })
 })

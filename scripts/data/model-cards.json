@@ -38,6 +38,15 @@
       "asOf": "2026-09-02"
     },
     {
+      "modelId": "claude-opus-5-5",
+      "publisher": "Anthropic",
+      "kind": "system-card",
+      "title": "Claude Opus 5.5 system card",
+      "url": "https://www.anthropic.com/claude-opus-5-5-system-card",
+      "source": "Listed on Anthropic's system-cards hub (https://www.anthropic.com/system-cards); the stable slug redirects to the vendor-published 'Claude Opus 5.5 System Card.pdf' on www-cdn.anthropic.com. Verified 2026-09-30.",
+      "asOf": "2026-09-30"
+    },
+    {
       "modelId": "claude-opus-5",
       "publisher": "Anthropic",
       "kind": "system-card",
@@ -54,6 +63,15 @@
       "url": "https://www.anthropic.com/claude-sonnet-4-6-system-card",
       "source": "Listed on Anthropic's system-cards hub (https://www.anthropic.com/system-cards); the slug is the stable entry point and redirects to the PDF on www-cdn.anthropic.com, whose opaque path changes between revisions. Verified 2026-09-02.",
       "asOf": "2026-09-02"
+    },
+    {
+      "modelId": "claude-sonnet-5-5",
+      "publisher": "Anthropic",
+      "kind": "system-card",
+      "title": "Claude Sonnet 5.5 system card",
+      "url": "https://www.anthropic.com/claude-sonnet-5-5-system-card",
+      "source": "Linked from Anthropic's Sonnet 5.5 launch page and verified 2026-09-28; the stable Anthropic URL redirects to the vendor-published PDF.",
+      "asOf": "2026-09-28"
     },
     {
       "modelId": "claude-sonnet-5",
@@ -81,6 +99,15 @@
       "url": "https://deploymentsafety.openai.com/gpt-6-astra/vision",
       "source": "OpenAI Deployment Safety Hub's GPT-6 Astra System Card, published 2026-09-03 and verified 2026-09-04.",
       "asOf": "2026-09-04"
+    },
+    {
+      "modelId": "gpt-6-1-sol",
+      "publisher": "OpenAI",
+      "kind": "system-card",
+      "title": "GPT-6.1 Sol system card addendum",
+      "url": "https://deploymentsafety.openai.com/gpt-6-1-sol",
+      "source": "OpenAI Deployment Safety Hub's 'Addendum to GPT-6 Astra System Card: GPT-6.1 Sol', published with the 2026-09-29 launch and verified 2026-09-30.",
+      "asOf": "2026-09-30"
     },
     {
       "modelId": "gemini-2-5-flash",

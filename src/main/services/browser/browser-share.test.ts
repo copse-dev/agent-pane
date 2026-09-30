@@ -5,8 +5,10 @@ import {
   captureBrowserPageText,
   captureBrowserScreenshot,
   captureBrowserScrollPosition,
+  exportCanvasArtefact,
   exportBrowserPagePdf,
   shareBrowserGuestContent,
+  suggestedCanvasFilename,
   suggestedPdfFilename,
 } from './browser-share.ts'
 
@@ -238,5 +240,58 @@ describe('browser PDF export', () => {
 
     assert.equal(saved, null)
     assert.equal(printed, 0, 'cancelling skips the print entirely')
+  })
+})
+
+describe('canvas HTML export', () => {
+  it('names a self-contained document after the canvas title', () => {
+    assert.equal(suggestedCanvasFilename('Sales dashboard'), 'Sales dashboard.html')
+    assert.equal(suggestedCanvasFilename('../../etc/passwd'), '-..-etc-passwd.html')
+    assert.equal(suggestedCanvasFilename(''), 'Canvas artefact.html')
+  })
+
+  it('writes the original HTML body to the chosen path', async () => {
+    const writes: { filePath: string; body: string }[] = []
+    const body = '<!doctype html><style>body{color:red}</style><script>window.ready=1</script>'
+    const saved = await exportCanvasArtefact(
+      { title: 'Sales dashboard', mimeType: 'text/html', body },
+      (defaultFilename) => {
+        assert.equal(defaultFilename, 'Sales dashboard.html')
+        return Promise.resolve('/tmp/out/Sales dashboard.html')
+      },
+      (filePath, html) => {
+        writes.push({ filePath, body: html })
+        return Promise.resolve()
+      },
+    )
+
+    assert.equal(saved, '/tmp/out/Sales dashboard.html')
+    assert.deepEqual(writes, [{ filePath: '/tmp/out/Sales dashboard.html', body }])
+  })
+
+  it('does not write when the user cancels the save dialog', async () => {
+    let writes = 0
+    const saved = await exportCanvasArtefact(
+      { title: 'Sales dashboard', mimeType: 'text/html', body: '<h1>Sales</h1>' },
+      () => Promise.resolve(null),
+      () => {
+        writes += 1
+        return Promise.resolve()
+      },
+    )
+
+    assert.equal(saved, null)
+    assert.equal(writes, 0)
+  })
+
+  it('rejects non-HTML artefacts instead of creating a misleading file', async () => {
+    await assert.rejects(
+      exportCanvasArtefact(
+        { title: 'Remote page', mimeType: 'text/uri-list', body: 'https://example.com' },
+        () => Promise.resolve('/tmp/out/Remote page.html'),
+        () => Promise.resolve(),
+      ),
+      /Only HTML canvas artefacts can be downloaded/,
+    )
   })
 })

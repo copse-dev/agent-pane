@@ -1,3 +1,4 @@
+import { isRecord } from '@shared/unknown-value.ts'
 import { el } from '../dom/helpers.ts'
 import {
   arrowLeftIcon,
@@ -92,6 +93,8 @@ interface BrowserTab {
   artefactProjectId: string | null
   /** Whether this tab has canvas content, rather than only restored identity metadata. */
   artefactContentReady: boolean
+  /** The live canvas body, retained so it can be downloaded as HTML. */
+  artefact: CanvasArtefact | null
   /** Collapse this tab's overflow ("…") menu, if open. */
   closeMenu: () => void
   /** Drawing overlay, mounted on first use; null until the user annotates. */
@@ -179,6 +182,10 @@ function shareableWebContentsId(tab: BrowserTab): number | null {
   }
 }
 
+function downloadableArtefact(tab: BrowserTab): CanvasArtefact | null {
+  return tab.artefact?.mimeType === 'text/html' ? tab.artefact : null
+}
+
 const WEBVIEW_PREFS = 'contextIsolation=true'
 
 interface BrowserPopoutSeed {
@@ -189,8 +196,19 @@ interface BrowserPopoutSeed {
     artefactTitle?: string | null
     artefactThreadId?: string | null
     artefactProjectId?: string | null
+    /** What Download canvas needs, so a popped-out tab keeps its export. */
+    artefact?: { title: string; mimeType: string; body: string } | null
   }>
   activeTabIndex: number
+}
+
+function seededArtefact(value: unknown): CanvasArtefact | null {
+  if (!isRecord(value)) return null
+  const { title, mimeType, body } = value
+  if (typeof title !== 'string' || typeof mimeType !== 'string' || typeof body !== 'string') {
+    return null
+  }
+  return { title, mimeType, body }
 }
 
 function isBrowserPopoutSeed(seed: unknown): seed is BrowserPopoutSeed {
@@ -499,6 +517,57 @@ export function mountBrowserPane(
   const pendingProjectWaits = new Set<() => void>()
   /** One canvas-store read per artefact while a restore request is in flight. */
   const pendingArtefactReopens = new Map<string, Promise<boolean>>()
+  /** Canvas artefacts from background threads wait until that thread is selected. */
+  let pendingBackgroundArtefacts: CanvasArtefact[] = []
+  let lastThreadScope = activeThreadScope()
+
+  function activeThreadScope(): string {
+    const { activeProjectId, activeThreadId } = store.getState()
+    return `${activeProjectId ?? ''}\u0000${activeThreadId ?? ''}`
+  }
+
+  function artefactThreadId(artefact: CanvasArtefact): string | undefined {
+    return artefact.owner?.threadId ?? artefact.threadId
+  }
+
+  function artefactBelongsToActiveThread(artefact: CanvasArtefact): boolean {
+    const threadId = artefactThreadId(artefact)
+    if (!threadId) return true
+    const { activeProjectId, activeThreadId } = store.getState()
+    return (
+      threadId === activeThreadId &&
+      (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId)
+    )
+  }
+
+  function pendingArtefactIdentity(artefact: CanvasArtefact): string {
+    return `${artefact.owner?.projectId ?? ''}\u0000${artefactThreadId(artefact) ?? ''}\u0000${artefact.title}`
+  }
+
+  function queueBackgroundArtefact(artefact: CanvasArtefact): void {
+    const identity = pendingArtefactIdentity(artefact)
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity,
+    )
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact
+    else pendingBackgroundArtefacts.push(artefact)
+  }
+
+  function flushBackgroundArtefacts(): void {
+    const ready = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread)
+    if (ready.length === 0) return
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact),
+    )
+    for (const artefact of ready) openArtefact(artefact)
+  }
+
+  function onThreadMaybeChanged(): void {
+    const nextScope = activeThreadScope()
+    if (nextScope === lastThreadScope) return
+    lastThreadScope = nextScope
+    flushBackgroundArtefacts()
+  }
 
   function closeAllMenus(): void {
     for (const tab of tabs.values()) tab.closeMenu()
@@ -1031,6 +1100,10 @@ export function mountBrowserPane(
   }
 
   function openArtefact(artefact: CanvasArtefact): void {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact)
+      return
+    }
     // text/html renders inline via an opaque data: URL; a URL-list artefact
     // navigates normally (and is still subject to the browser origin policy).
     // Shared with the agent browser session so both load the identical document.
@@ -1083,6 +1156,7 @@ export function mountBrowserPane(
     // the window is next opened.
     tab.artefactProjectId = artefact.owner?.projectId ?? store.getState().activeProjectId
     tab.artefactContentReady = true
+    tab.artefact = artefact
     tab.urlInput.value = ''
     tab.urlInput.placeholder = artefact.title
     syncTabLabel(tab)
@@ -1195,6 +1269,12 @@ export function mountBrowserPane(
       downloadIcon('ui-icon ui-icon-sm'),
       el('span', {}, 'Export PDF'),
     )
+    const downloadCanvasItem = el(
+      'button',
+      { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
+      downloadIcon('ui-icon ui-icon-sm'),
+      el('span', {}, 'Download canvas'),
+    )
     const openExternalItem = el(
       'button',
       { type: 'button', class: 'browser-menu-item', role: 'menuitem' },
@@ -1213,6 +1293,7 @@ export function mountBrowserPane(
       shareTextItem,
       shareScreenshotItem,
       el('div', { class: 'browser-menu-separator', role: 'separator' }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem,
@@ -1277,6 +1358,7 @@ export function mountBrowserPane(
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       annotationScroll: null,
       closeMenu: () => {
@@ -1361,6 +1443,8 @@ export function mountBrowserPane(
         const shareableId = shareableWebContentsId(tab)
         shareTextItem.disabled = shareableId === null || !api
         shareScreenshotItem.disabled = shareableId === null || !api
+        downloadCanvasItem.disabled =
+          downloadableArtefact(tab) === null || !api?.browser.exportArtefact
         // Printing needs a main-process guest; the demo/site iframe host has no
         // `exportPdf`, so leave the item visible but inert there.
         exportPdfItem.disabled = shareableId === null || !api?.browser.exportPdf
@@ -1410,6 +1494,24 @@ export function mountBrowserPane(
         })
         .catch((error: unknown) => {
           showErrorToast('Could not export PDF', error)
+        })
+    })
+    downloadCanvasItem.addEventListener('click', () => {
+      setMenuOpen(false)
+      const artefact = downloadableArtefact(tab)
+      const exportArtefact = api?.browser.exportArtefact
+      if (!artefact || !exportArtefact) return
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body,
+      })
+        .then((filePath) => {
+          // Null means the user cancelled the save dialog — stay quiet.
+          if (filePath) showToast(`Downloaded canvas to ${filePath}`)
+        })
+        .catch((error: unknown) => {
+          showErrorToast('Could not download canvas', error)
         })
     })
     openExternalItem.addEventListener('click', () => {
@@ -1585,6 +1687,13 @@ export function mountBrowserPane(
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
           artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact
+            ? {
+                title: tab.artefact.title,
+                mimeType: tab.artefact.mimeType,
+                body: tab.artefact.body,
+              }
+            : null,
         }
       }),
       activeTabIndex: activeIndexOf(ordered),
@@ -1619,6 +1728,7 @@ export function mountBrowserPane(
         tab.artefactProjectId = entry.artefactProjectId ?? null
         tab.artefactContentReady = Boolean(entry.url && entry.url !== 'about:blank')
         tab.urlInput.placeholder = entry.artefactTitle
+        tab.artefact = seededArtefact(entry.artefact)
       }
       if (entry.url && entry.url !== 'about:blank') {
         tab.pendingUrl = entry.url
@@ -1788,6 +1898,8 @@ export function mountBrowserPane(
   })
 
   const unsubs = [
+    store.on('threads_changed', onThreadMaybeChanged),
+    store.on('workspace_changed', onThreadMaybeChanged),
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
     store.on('right_panel_maximized_changed', onRightPanelMaximizedChanged),

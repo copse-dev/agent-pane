@@ -11,9 +11,9 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import { spawn } from 'node:child_process'
-import { Writable } from 'node:stream'
-import { nodeReadableStream } from './node-readable-stream.ts'
+import { nodeReadableStream, nodeWritableStream } from './node-byte-streams.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
+import type { AcpContinuitySnapshot } from './acp-continuity-probe.ts'
 
 /**
  * Tier-1 ACP **capability probe** (issue #264): spawn an external ACP agent,
@@ -143,6 +143,12 @@ export interface AcpCapabilityReport {
   error?: string
   /** The negotiated capabilities; present iff `ok`. */
   snapshot?: AcpCapabilitySnapshot
+  /**
+   * Observed (not advertised) session continuity across an agent restart,
+   * including a restart into a different cwd — present only when the Tier-2
+   * continuity trials ran (`npm run probe:acp -- --continuity`).
+   */
+  continuity?: AcpContinuitySnapshot | { error: string }
 }
 
 /** Config for spawning the agent to probe. Mirrors the client's spawn shape. */
@@ -332,7 +338,7 @@ function spawnProbeTransport(
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   // `stdio: ['pipe', 'pipe', ...]` types stdin/stdout as non-null.
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
+  const writable = nodeWritableStream(child.stdin)
   const readable = nodeReadableStream(child.stdout)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),

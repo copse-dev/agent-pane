@@ -151,6 +151,40 @@ export async function exportBrowserPagePdf(
   return filePath
 }
 
+interface BrowserCanvasArtefactContents {
+  title: string
+  mimeType: string
+  body: string
+}
+
+/** Filename hint for Download canvas — the artefact title as a plain HTML file. */
+export function suggestedCanvasFilename(title: string): string {
+  const base = cleanLabelPart(title)
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/^\.+/, '')
+    .trim()
+  return `${base || 'Canvas artefact'}.html`
+}
+
+/**
+ * Save a self-contained HTML canvas artefact exactly as it was rendered. The
+ * canvas contract accepts complete HTML documents, so preserving the original
+ * body keeps inline styles, scripts, and data URLs usable after download.
+ */
+export async function exportCanvasArtefact(
+  contents: BrowserCanvasArtefactContents,
+  saveAs: (defaultFilename: string) => Promise<string | null>,
+  writeHtml: (filePath: string, body: string) => Promise<void>,
+): Promise<string | null> {
+  if (contents.mimeType !== 'text/html') {
+    throw new Error('Only HTML canvas artefacts can be downloaded.')
+  }
+  const filePath = await saveAs(suggestedCanvasFilename(contents.title))
+  if (!filePath) return null
+  await writeHtml(filePath, contents.body)
+  return filePath
+}
+
 /**
  * Share whatever the browser guest currently shows: its live text selection
  * when there is one, otherwise a screenshot of the viewport. Backs the

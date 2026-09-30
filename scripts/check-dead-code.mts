@@ -41,6 +41,7 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
   'src/main/services/acp/acp-behavior-matrix.ts': 'manual ACP behavior-probe report formatter',
   'src/main/services/acp/acp-behavior-probe.ts': 'manual ACP behavior probe',
   'src/main/services/acp/acp-capability-probe.ts': 'manual ACP capability probe',
+  'src/main/services/acp/acp-continuity-probe.ts': 'manual ACP session-continuity probe',
   'src/main/services/acp/acp-long-run-probe.ts': 'manual ACP long-run probe',
   'src/main/services/acp/acp-protocol-negotiate.ts': 'ACP v2 readiness prototype',
   'src/main/services/acp/acp-support-matrix.ts': 'manual ACP capability report formatter',
@@ -50,11 +51,7 @@ const ALLOWED_SUPPORT_ONLY: Record<string, string> = {
     'container integration-test fixture',
   'src/main/services/providers/test-response.ts': 'shared provider test response fixture',
   'src/main/services/ssh-workspace/fake-ssh-transport.ts': 'SSH integration-test transport',
-  'src/main/services/supervisor/event-inbox-store.ts':
-    'event automation inbox is not startup-wired yet',
-  'src/main/services/supervisor/event-inbox.ts': 'event automation inbox is not startup-wired yet',
   'src/shared/agent/doctrine-compliance.ts': 'nightly and local doctrine evaluation support',
-  'src/shared/supervisor/event-inbox-schema.ts': 'event automation inbox is not startup-wired yet',
   'src/shared/types/cursor-hooks.ts': 'documented compatibility re-export for hook dialect types',
 }
 

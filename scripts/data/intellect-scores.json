@@ -9004,7 +9004,8 @@
       "value": 57.6,
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'claude-opus-5-5', fetched 2026-09-22",
-      "asOf": "2026-09-22"
+      "asOf": "2026-09-22",
+      "aliases": ["Opus 5.5", "anthropic/claude-opus-5-5", "claude-opus-5-5-latest"]
     },
     {
       "modelId": "gpt-6-luna-medium",
@@ -9103,6 +9104,42 @@
       "indexVersion": "v4.3",
       "source": "Artificial Analysis API (index v4.3), model 'claude-opus-5-5-high', fetched 2026-09-22",
       "asOf": "2026-09-22"
+    },
+    {
+      "modelId": "gpt-6-1-sol",
+      "value": 51.8,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+      "asOf": "2026-09-30",
+      "aliases": ["GPT-6.1 Sol", "gpt-6.1-sol", "openai/gpt-6.1-sol"]
+    },
+    {
+      "modelId": "gpt-6-1-sol-xhigh",
+      "value": 51,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+      "asOf": "2026-09-30"
+    },
+    {
+      "modelId": "gpt-6-1-sol-high",
+      "value": 50.2,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+      "asOf": "2026-09-30"
+    },
+    {
+      "modelId": "gpt-6-1-sol-medium",
+      "value": 47.8,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+      "asOf": "2026-09-30"
+    },
+    {
+      "modelId": "gpt-6-1-sol-low",
+      "value": 42.1,
+      "indexVersion": "v4.3",
+      "source": "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+      "asOf": "2026-09-30"
     }
   ],
   "wanted": [

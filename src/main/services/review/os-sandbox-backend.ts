@@ -100,6 +100,13 @@ export function reviewCellSandboxOverlay(spec: CellSpec): Partial<SandboxRuntime
       '/etc/localtime',
       '/etc/ld.so.cache',
     ].flatMap(tree),
+    // Homebrew Node links OpenSSL but keeps its default configuration outside
+    // the Cellar/opt trees. Node opens this file before evaluating JavaScript,
+    // so denying it prevents the review cell from starting at all (#2939).
+    // Keep these literal files separate from `tree()`: granting either etc
+    // directory would expose unrelated host configuration to reviewed code.
+    '/opt/homebrew/etc/openssl@3/openssl.cnf',
+    '/usr/local/etc/openssl@3/openssl.cnf',
     ...writable.flatMap(tree),
     ...readOnly.flatMap(tree),
     ...resolveNodeToolchainAllowRead({ PATH: nodeBins.join(delimiter) }),
