@@ -2,11 +2,23 @@
 import type { ThreadStatus, ToolCall } from '@shared/types'
 import type { CanvasArtefact, CanvasArtefactIdentity } from '@shared/types/canvas.ts'
 
+export interface CodeBlockRunCompletion {
+  /** Automatically start a follow-up turn after the background command succeeds. */
+  type: 'continue'
+  /** The prompt shown in the transcript and sent to the model. */
+  prompt: string
+  /** Stable attribution for the machine-originated follow-up. */
+  operationId: string
+  /** Turn tree that authorized this continuation. */
+  turnTreeId: string
+}
+
 export interface CodeBlockRunRequest {
   id: string
   command: string
   projectId: string
   threadId: string
+  completion?: CodeBlockRunCompletion
 }
 
 export interface CodeBlockRunResult {
@@ -22,6 +34,7 @@ export interface CodeBlockRunResult {
     label: string
     content: string
   }
+  completion?: CodeBlockRunCompletion
 }
 
 export interface StoreEvents {

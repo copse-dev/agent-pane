@@ -1,3 +1,4 @@
+import { summarizePatch, type PatchFileSummary } from '../patch/apply-patch.ts'
 import type { ToolCall } from '@shared/types'
 import { isRecord } from '@shared/unknown-value.ts'
 import { humanizeIdentifier } from '@shared/humanize-identifier.ts'
@@ -60,6 +61,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   get_ci_failure_logs: { running: 'Fetching CI failure logs', done: 'Fetched CI failure logs' },
   write_file: { running: 'Writing file', done: 'Wrote file' },
   str_replace: { running: 'Replacing in file', done: 'Replaced in file' },
+  apply_patch: { running: 'Applying patch', done: 'Applied patch' },
   delete_file: { running: 'Deleting file', done: 'Deleted file' },
   rename_file: { running: 'Renaming file', done: 'Renamed file' },
   make_directory: { running: 'Creating directory', done: 'Created directory' },
@@ -131,7 +133,14 @@ const TOOL_GROUPS: Record<string, ToolGroupDef> = {
     label: { running: 'Checking git', done: 'Checked git' },
   },
   writing: {
-    tools: ['write_file', 'str_replace', 'delete_file', 'rename_file', 'make_directory'],
+    tools: [
+      'write_file',
+      'str_replace',
+      'apply_patch',
+      'delete_file',
+      'rename_file',
+      'make_directory',
+    ],
     label: { running: 'Editing files', done: 'Edited files' },
   },
   shell: {
@@ -240,9 +249,17 @@ const FILE_EDIT_PATH_ARG: Record<string, string> = {
   make_directory: 'path',
 }
 
+/** Files an `apply_patch` call names, read tolerantly from its (possibly still streaming) input. */
+export function getApplyPatchFiles(tc: ToolCall): PatchFileSummary[] {
+  const input = stringArg(tc.args, 'input')
+  return input === null ? [] : summarizePatch(input)
+}
+
 /** Workspace-relative path a file-edit tool touched, or null for non-edit tools. */
 export function getToolEditPath(tc: ToolCall): string | null {
-  const key = FILE_EDIT_PATH_ARG[nativeDisplayToolName(tc.name)]
+  const name = nativeDisplayToolName(tc.name)
+  if (name === 'apply_patch') return getApplyPatchFiles(tc)[0]?.path ?? null
+  const key = FILE_EDIT_PATH_ARG[name]
   if (!key) return null
   return stringArg(tc.args, key)
 }
@@ -297,6 +314,18 @@ export function getToolCallLabel(tc: ToolCall): string {
   if (name === 'write_file' || name === 'str_replace') {
     const path = fileEditPath(tc.args)
     if (path) return tense === 'running' ? `Editing ${path}` : `Edited ${path}`
+  }
+  if (name === 'apply_patch') {
+    const files = getApplyPatchFiles(tc)
+    if (files.length === 1) {
+      const only = files[0]?.path ?? ''
+      return tense === 'running' ? `Patching ${only}` : `Patched ${only}`
+    }
+    if (files.length > 1) {
+      return tense === 'running'
+        ? `Patching ${String(files.length)} files`
+        : `Patched ${String(files.length)} files`
+    }
   }
   if (name === 'delete_file') {
     const path = fileEditPath(tc.args)

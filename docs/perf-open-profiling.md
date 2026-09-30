@@ -179,12 +179,14 @@ change did exactly that; the thread-store tests caught it.
 ### Keeping the sidebar honest
 
 - **PR chips** come from links in message text, which a metadata-only load never
-  reads. `prRefs` is now cached on thread metadata: merged in as each message is
-  appended, and backfilled for older threads by a one-pass-per-project background
-  scan behind the load, which pushes batches over `threads:pr-refs` so chips fill
-  in without a relaunch. `sidebarPrRefs` still prefers a transcript that is in
-  memory — a streaming thread must re-scrape, since `appendToken` mutates content
-  in place.
+  reads. `prRefs` is cached on thread metadata and merged in as each message is
+  appended. For older threads, sidebar rows request backfill only as they enter
+  the visible viewport, in batches of at most ten; later pages wait until the
+  user reveals them. Backfill batches share a global queue with at most two
+  transcript reads at once. Results with links arrive over `threads:pr-refs` so chips
+  appear without a relaunch. `sidebarPrRefs` still prefers a transcript that is
+  in memory — a streaming thread must re-scrape, since `appendToken` mutates
+  content in place.
 - **Background writes** (automation triggers, queue resume after restart) call
   `ensureThreadMessages` before dispatch, so a run never appends onto a
   transcript that was never read. The agent's own LLM context is unaffected

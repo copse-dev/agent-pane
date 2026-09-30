@@ -83,7 +83,11 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
+import {
+  attachImageCopyMenu,
+  attachImageExpand,
+  type ImageExpandItem,
+} from '../attachments/image-expand.ts'
 import {
   acpWorkspaceRoot,
   hydrateAcpResourceImages,
@@ -102,6 +106,7 @@ import {
   buildSubagentDisplayItems,
   buildToolCallDisplayItems,
   buildToolRunDisplayItems,
+  getApplyPatchFiles,
   getToolCallLabel,
   getToolEditPath,
   RUN_ROLLUP_KEY,
@@ -259,6 +264,49 @@ function statusIcon(status: ToolCardStatus): SVGSVGElement {
 // The disclosure is omitted entirely when there are no arguments to show — e.g.
 // external ACP agents run no-argument commands (grep/search with the query in
 // the title, not `rawInput`), which otherwise render an empty "Arguments" box.
+const PATCH_OP_LABEL = { add: 'Added', update: 'Edited', delete: 'Deleted', move: 'Moved' } as const
+
+/** Per-file rows for an `apply_patch` card: what each file gets, with line counts. */
+function createPatchFilesSection(tc: ToolCall): HTMLElement | null {
+  if (tc.name !== 'apply_patch') return null
+  const files = getApplyPatchFiles(tc)
+  if (files.length === 0) return null
+  return el(
+    'ul',
+    { class: 'tool-patch-files', 'aria-label': 'Files in patch' },
+    ...files.map((file) => {
+      const target = file.movePath ?? file.path
+      return el(
+        'li',
+        {},
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'tool-patch-file',
+            'data-op': file.op,
+            'data-edit-path': target,
+            'data-tooltip': 'View changes',
+          },
+          el('span', { class: 'tool-patch-op' }, PATCH_OP_LABEL[file.op]),
+          el(
+            'span',
+            { class: 'tool-patch-path' },
+            file.movePath === undefined ? file.path : `${file.path} → ${file.movePath}`,
+          ),
+          // A delete names no lines, so its counts would read as a misleading +0 -0.
+          ...(file.op === 'delete'
+            ? []
+            : [
+                el('span', { class: 'tool-stat tool-stat-add' }, `+${String(file.additions)}`),
+                el('span', { class: 'tool-stat tool-stat-del' }, `-${String(file.deletions)}`),
+              ]),
+        ),
+      )
+    }),
+  )
+}
+
 function createToolArgsSection(args: unknown): HTMLDetailsElement | null {
   const rendered = renderToolArgs(args)
   if (!rendered.trim()) return null
@@ -445,6 +493,7 @@ function appendStandardToolSections(
   const buildBody = (): void => {
     const argsSection = createToolArgsSection(tc.args)
     card.append(
+      ...appendIfPresent(createPatchFilesSection(tc)),
       ...appendIfPresent(argsSection),
       ...(userInterruption(tc) !== undefined
         ? [el('div', { class: 'tool-interruption-note' }, interruptionLabel(tc))]
@@ -1499,16 +1548,17 @@ function reconcileToolCard(
 
 function createMessageImages(images: string[]): HTMLElement {
   const wrap = el('div', { class: 'message-images' })
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: 'Attached image' }))
+  images.forEach((dataUrl, index) => {
     const img = el('img', {
       class: 'message-image',
       src: dataUrl,
       alt: 'Attached image',
       loading: 'lazy',
     })
-    attachImageExpand(img, 'Attached image')
+    attachImageExpand(img, 'Attached image', gallery, index)
     wrap.append(img)
-  }
+  })
   return wrap
 }
 
@@ -1529,6 +1579,7 @@ function createAcpContentBlock(
   context: 'message' | 'reasoning' | 'tool',
   workspaceRoot: string | null,
   previewImageDataUrls?: ReadonlySet<string>,
+  imageGallery?: { items: readonly ImageExpandItem[]; index: number },
 ): HTMLElement | null {
   if (block.type === 'text') return null
   if (block.type === 'image') {
@@ -1554,7 +1605,7 @@ function createAcpContentBlock(
       alt: label,
       loading: 'lazy',
     })
-    attachImageExpand(img, label)
+    attachImageExpand(img, label, imageGallery?.items, imageGallery?.index)
     return img
   }
   if (block.type === 'audio') {
@@ -1629,8 +1680,21 @@ function createAcpContentBlocks(
   context: 'message' | 'reasoning',
   workspaceRoot: string | null,
 ): HTMLElement | null {
+  const images: ImageExpandItem[] =
+    context === 'message'
+      ? blocks.flatMap((block) =>
+          block.type === 'image'
+            ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : 'Agent image' }]
+            : [],
+        )
+      : []
+  let imageIndex = 0
   const nodes = blocks.flatMap((block) => {
-    const node = createAcpContentBlock(block, context, workspaceRoot)
+    const gallery =
+      context === 'message' && block.type === 'image'
+        ? { items: images, index: imageIndex++ }
+        : undefined
+    const node = createAcpContentBlock(block, context, workspaceRoot, undefined, gallery)
     return node ? [node] : []
   })
   if (nodes.length === 0) return null
@@ -2061,7 +2125,7 @@ function appendMessageContent(
   // summary heading. History renders as settled ("Reasoned").
   if (
     msg.role === 'assistant' &&
-    (msg.reasoning?.trim() || msg.reasoningBlocks?.length) &&
+    hasReasoningContent(msg.reasoning, msg.reasoningBlocks) &&
     opts?.nestReasoningInTools !== true
   ) {
     body.append(buildReasoningEl(msg.reasoning ?? '', false, msg.reasoningBlocks, workspaceRoot))
@@ -2100,6 +2164,18 @@ function syncAcpMessageContent(
   }
   if (current) replaceAcpResourceBlock(current, replacement)
   else body.append(replacement)
+}
+
+/**
+ * Whether a message has any reasoning worth a disclosure. Whitespace-only text
+ * (blank thought chunks streamed by some ACP agents) counts as none, matching
+ * run derivation, so a blank trail can't paint an empty "Reasoned" block.
+ */
+function hasReasoningContent(
+  reasoning: string | undefined,
+  blocks: readonly AcpContentBlock[] | undefined,
+): boolean {
+  return Boolean(reasoning?.trim()) || Boolean(blocks?.length)
 }
 
 /** True when reasoning should fold into the tool rollup for this message. */
@@ -2372,7 +2448,7 @@ function syncReasoningEl(
   )
   const host = rollupBody ?? body
   let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
-  if (!msg.reasoning?.trim() && !msg.reasoningBlocks?.length) {
+  if (!hasReasoningContent(msg.reasoning, msg.reasoningBlocks)) {
     details?.remove()
     return
   }
@@ -2608,12 +2684,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     store.emit('code_block_run_requested', { id, command, projectId, threadId })
   })
 
-  // Clicking a file edit's +/- counts reveals that file in the Changes panel.
+  // Clicking a file edit's +/- counts (or a row of an apply_patch card) reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
   list.addEventListener('click', (e) => {
     const statsBtn =
-      e.target instanceof Element ? e.target.closest<HTMLElement>('.tool-edit-stats') : null
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>('.tool-edit-stats, .tool-patch-file')
+        : null
     const path = statsBtn?.dataset['editPath']
     if (!path) return
     e.preventDefault()

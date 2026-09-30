@@ -4,6 +4,7 @@ import type { Thread } from '@shared/types'
 import { begin as perfBegin } from '../perf.ts'
 import { lastHumanPromptAt } from '@shared/store/thread-helpers.ts'
 import { hydrateArtefactPreviews } from '../canvas/artefact-previews.ts'
+import { applyCachedSidebarPrRefs } from './projects.ts'
 
 /**
  * On-demand transcripts.
@@ -234,8 +235,8 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   const offWorkspace = store.on('workspace_changed', hydrateActive)
   hydrateActive()
 
-  // Batches from the main process's one-time PR-ref backfill, and live pushes
-  // from `gh_pr_create` linking the PR it just opened. Applied only to the
+  // Results for visible legacy sidebar rows, and live pushes from
+  // `gh_pr_create` linking the PR it just opened. Applied only to the
   // project they belong to, but to hydrated threads too: each batch carries the
   // thread's full merged ref set, and `sidebarPrRefs` unions it with the live
   // transcript scrape — a tool-recorded PR would otherwise be invisible on
@@ -243,7 +244,11 @@ export function attachThreadHydration(store: AppStore, api: ApiClient): () => vo
   // URL.
   const offPrRefs = api.threads.onPrRefs((projectId, refs): void => {
     const state = store.getState()
-    if (state.activeProjectId !== projectId || refs.length === 0) return
+    if (refs.length === 0) return
+    if (state.activeProjectId !== projectId) {
+      if (applyCachedSidebarPrRefs(projectId, refs)) store.emit('threads_changed')
+      return
+    }
     const byThread = new Map(refs.map((entry) => [entry.threadId, entry.prRefs]))
     if (!state.threads.some((t) => byThread.has(t.id))) return
     store.setState({

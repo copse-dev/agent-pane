@@ -66,6 +66,31 @@ describe('showContextMenu', () => {
     assert.equal(document.body.querySelector(':scope > .context-menu'), null)
   })
 
+  it('owns Escape without also dismissing its parent dialog', () => {
+    const dialog = document.createElement('dialog')
+    const trigger = document.createElement('button')
+    dialog.append(trigger)
+    document.body.append(dialog)
+    dialog.open = true
+    let reachedDialog = false
+    dialog.addEventListener('keydown', () => {
+      reachedDialog = true
+    })
+    showContextMenu(10, 20, [{ label: 'Copy', onSelect: (): void => {} }], trigger)
+
+    const escape = new window.KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    })
+    trigger.dispatchEvent(escape)
+
+    assert.equal(document.querySelector('.context-menu'), null)
+    assert.equal(escape.defaultPrevented, true)
+    assert.equal(reachedDialog, false)
+    assert.equal(dialog.open, true)
+  })
+
   it('falls back to document.body when withinDialog is outside any dialog', () => {
     const host = document.createElement('div')
     document.body.append(host)
