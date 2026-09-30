@@ -174,4 +174,32 @@ describe('scoreDoctrineCompliance', () => {
       assert.ok(!report.violations.includes('uiBehaviorVerification'))
     }
   })
+
+  it('rejects a renderer view change accompanied only by an unrelated test edit', () => {
+    const report = scoreDoctrineCompliance({
+      userMessage: 'Make Cmd+L focus the browser address bar',
+      userIntent: 'request',
+      toolCalls: [
+        {
+          name: 'str_replace',
+          args: {
+            path: 'src/renderer/views/browser-pane.ts',
+            old_string: 'old handler',
+            new_string: 'new handler',
+          },
+        },
+        {
+          name: 'str_replace',
+          args: {
+            path: 'src/shared/agent/unrelated.test.ts',
+            old_string: 'a',
+            new_string: 'b',
+          },
+        },
+      ],
+      finalMessage: 'Cmd+L now focuses the browser address bar.',
+    })
+
+    assert.ok(report.violations.includes('uiBehaviorVerification'))
+  })
 })

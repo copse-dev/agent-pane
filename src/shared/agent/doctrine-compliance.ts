@@ -380,6 +380,13 @@ function scoreFollowExplicitConstraints(
   return { id, pass: true, detail: 'exact command issued without added preparation' }
 }
 
+/** `src/renderer/views/browser-pane.ts` -> `browser-pane`. */
+function fileStem(path: string): string {
+  const base = path.split('/').pop() ?? ''
+  const dot = base.indexOf('.')
+  return dot === -1 ? base : base.slice(0, dot)
+}
+
 /**
  * A renderer behaviour change is not verified by an unrelated green suite.
  * Engage only for production files under `src/renderer/views`: broader visual
@@ -389,15 +396,22 @@ function scoreFollowExplicitConstraints(
 function scoreUiBehaviorVerification(toolCalls: readonly DoctrineToolCall[]): DoctrineRuleResult {
   const id = 'uiBehaviorVerification' as const
   const paths = editedPaths([...toolCalls]).map((path) => path.replace(/\\/g, '/'))
-  const changedRendererView = paths.some(
+  const changedViews = paths.filter(
     (path) => RENDERER_VIEW_PATH.test(path) && !TEST_PATH.test(path),
   )
+  const changedRendererView = changedViews.length > 0
   if (!changedRendererView) {
     return { id, pass: true, detail: 'no renderer view behaviour changed — rule skipped' }
   }
 
-  if (paths.some((path) => TEST_PATH.test(path))) {
-    return { id, pass: true, detail: 'renderer view change includes a test change' }
+  const viewStems = changedViews.map(fileStem)
+  const relevantTest = paths.some(
+    (path) =>
+      TEST_PATH.test(path) &&
+      viewStems.some((stem) => stem.length > 0 && path.split('/').pop()?.includes(stem)),
+  )
+  if (relevantTest) {
+    return { id, pass: true, detail: 'renderer view change includes a test for that view' }
   }
 
   const launchedApp = toolCalls.some((call) => {
@@ -413,7 +427,7 @@ function scoreUiBehaviorVerification(toolCalls: readonly DoctrineToolCall[]): Do
     id,
     pass: false,
     detail:
-      'renderer view changed without a test change or app launch — unverified; add a focused test or launch the app via the run skill',
+      'renderer view changed without a test for that view or an app launch — unverified; add a focused test or launch the app via the run skill',
   }
 }
 
