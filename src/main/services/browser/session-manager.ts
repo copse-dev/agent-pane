@@ -10,10 +10,65 @@ import { CANVAS_TRANSPARENT_ROOT_PROBE, canvasGuestTextCss } from '@shared/canva
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
 const DEFAULT_HEIGHT = 800
-// Keep the preview at the canvas viewport's logical width. The transcript card
-// can occupy this full width; shrinking to 480px made Chromium enlarge the
+// Keep the preview bitmap at the tab's full width. The transcript card can be
+// up to the chat column's 960px; shrinking to 480px made Chromium enlarge the
 // bitmap by 2–3× and blurred every text-heavy prototype.
 const PREVIEW_WIDTH = DEFAULT_WIDTH
+// Lay the preview out at a reading-column width, not the tab's 1280px desktop
+// viewport. Transcript cards are roughly 380–960px wide, so a 1280px layout
+// shrank body text to under a third of its size (#3240). Zooming instead of
+// resizing keeps the full-width bitmap: at 2× the page reflows at 640 CSS px
+// and still rasters at 1280 device px, so text stays sharp in a wide card.
+export const PREVIEW_ZOOM_FACTOR = 2
+
+/** The parts of a captured `NativeImage` that a preview needs. */
+interface PreviewImage {
+  isEmpty(): boolean
+  getSize(): { width: number }
+  resize(options: { width: number; quality: 'best' }): PreviewImage
+  toDataURL(): string
+}
+
+/** The parts of a tab's `webContents` that a preview capture touches. */
+interface PreviewContents {
+  getZoomFactor(): number
+  setZoomFactor(factor: number): void
+  executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
+  capturePage(): Promise<PreviewImage>
+}
+
+/** Resolves once the page has painted a frame at its current zoom. */
+const NEXT_FRAME_SCRIPT =
+  'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))'
+
+/**
+ * Capture `wc` as a preview laid out at the preview zoom, then put the tab's
+ * zoom back so the agent's own screenshots and snapshots keep the desktop
+ * viewport. Returns null instead of throwing, like `capturePreview`.
+ */
+export async function capturePreviewDataUrl(
+  wc: PreviewContents,
+  maxWidth = PREVIEW_WIDTH,
+): Promise<string | null> {
+  const zoom = wc.getZoomFactor()
+  try {
+    wc.setZoomFactor(PREVIEW_ZOOM_FACTOR)
+    await wc.executeJavaScript(NEXT_FRAME_SCRIPT, false)
+    const image = await wc.capturePage()
+    if (image.isEmpty()) return null
+    const { width } = image.getSize()
+    const scaled = width > maxWidth ? image.resize({ width: maxWidth, quality: 'best' }) : image
+    return scaled.toDataURL()
+  } catch {
+    return null
+  } finally {
+    try {
+      wc.setZoomFactor(zoom)
+    } catch {
+      // The tab closed mid-capture; there is no zoom left to restore.
+    }
+  }
+}
 
 interface Tab {
   id: string
@@ -221,15 +276,7 @@ export class BrowserSessionManager {
   async capturePreview(viewId: string, maxWidth = PREVIEW_WIDTH): Promise<string | null> {
     const tab = this.tabs.find((t) => t.id === viewId)
     if (!tab) return null
-    try {
-      const image = await tab.window.webContents.capturePage()
-      if (image.isEmpty()) return null
-      const { width } = image.getSize()
-      const scaled = width > maxWidth ? image.resize({ width: maxWidth, quality: 'best' }) : image
-      return scaled.toDataURL()
-    } catch {
-      return null
-    }
+    return capturePreviewDataUrl(tab.window.webContents, maxWidth)
   }
 
   async click(ref: string, viewId?: string): Promise<string> {
