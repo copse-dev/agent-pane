@@ -706,9 +706,10 @@ dialog.settings-overlay::backdrop {
 }
 /* Every text-entry type, not just text/password/number: a Base URL field
    (`type="url"`) that missed this list stretched the full column and sat a few
-   px off its siblings. An `<input>` in Settings always names its type, so the
-   attribute selectors below are the whole field family. */
+   px off its siblings. The selector list includes the HTML default text type,
+   so dynamically mounted fields cannot silently stretch the form. */
 .settings-content label select,
+.settings-content label input:not([type]),
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],
 .settings-content label input[type='number'],
@@ -716,19 +717,23 @@ dialog.settings-overlay::backdrop {
 .settings-content label input[type='email'],
 .settings-content label input[type='search'] {
   width: 100%;
-  max-width: 480px;
   /* Fields are the section's other main target. `forms.css` sizes them from
      `--spacing-sm` alone, which lands a ~30px control; match the nav rows and
      the action buttons so nothing in the form is fiddlier than the chrome
      around it. */
   min-height: var(--action-min-height);
 }
+.settings-content label select {
+  max-width: 480px;
+}
+.settings-content label input:not([type]),
 .settings-content label input[type='text'],
 .settings-content label input[type='password'],
 .settings-content label input[type='number'],
 .settings-content label input[type='url'],
 .settings-content label input[type='email'],
 .settings-content label input[type='search'] {
+  max-width: 360px;
   padding-inline: var(--spacing-md);
 }
 /* select only gets the roomier left inset: a `padding-inline` shorthand here

@@ -1823,6 +1823,13 @@
           3
         ]
       },
+      "threads:backfill-pr-refs": {
+        "api": "threads.backfillPrRefs",
+        "args": [
+          2,
+          2
+        ]
+      },
       "threads:catalog": {
         "api": "threads.catalog",
         "args": [

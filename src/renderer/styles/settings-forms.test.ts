@@ -32,14 +32,40 @@ function bodiesFor(css: string, selector: string): string {
 }
 
 const settings = read('settings.css')
+const sshWorkspace = read('ssh-workspace.css')
 
 describe('Settings form recipes', () => {
   it('gives every text-entry input type the field recipe', () => {
     for (const type of ['text', 'password', 'number', 'url', 'email', 'search']) {
       const body = bodiesFor(settings, `.settings-content label input[type='${type}']`)
-      assert.match(body, /max-width:\s*480px/, `${type} inputs share the width cap`)
+      assert.match(body, /max-width:\s*360px/, `${type} inputs share the width cap`)
       assert.match(body, /min-height:\s*var\(--action-min-height\)/, `${type} target height`)
       assert.match(body, /padding-inline:\s*var\(--spacing-md\)/, `${type} inputs share the inset`)
+    }
+  })
+
+  it('includes inputs that use HTML’s default text type', () => {
+    const body = bodiesFor(settings, '.settings-content label input:not([type])')
+    assert.match(body, /max-width:\s*360px/)
+    assert.match(body, /min-height:\s*var\(--action-min-height\)/)
+    assert.match(body, /padding-inline:\s*var\(--spacing-md\)/)
+  })
+
+  it('keeps the host policy select wider than text fields', () => {
+    const body = bodiesFor(settings, '.settings-content label select')
+    assert.match(body, /max-width:\s*480px/)
+    assert.match(body, /min-height:\s*var\(--action-min-height\)/)
+  })
+
+  it('caps text fields in the shared SSH host form', () => {
+    for (const selector of [
+      '.ssh-host-form label input:not([type])',
+      ".ssh-host-form label input[type='text']",
+    ]) {
+      const body = bodiesFor(sshWorkspace, selector)
+      assert.match(body, /max-width:\s*360px/)
+      assert.match(body, /min-height:\s*var\(--action-min-height\)/)
+      assert.match(body, /padding-inline:\s*var\(--spacing-md\)/)
     }
   })
 
