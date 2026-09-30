@@ -1,3 +1,4 @@
+import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
@@ -67,6 +68,7 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'read_file',
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',
@@ -314,6 +316,8 @@ export function bridgedWorkspaceWritePaths(
       return stringValue('path')
     case 'rename_file':
       return [...stringValue('from'), ...stringValue('to')]
+    case 'apply_patch':
+      return patchTouchedPaths(args['input'])
     default:
       return []
   }

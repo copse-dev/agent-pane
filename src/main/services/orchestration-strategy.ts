@@ -58,6 +58,7 @@ export const ORCHESTRATION_WORKER_TOOL_NAMES = [
   'find_files',
   'write_file',
   'str_replace',
+  'apply_patch',
   'delete_file',
   'rename_file',
   'make_directory',
@@ -73,7 +74,7 @@ A stronger orchestrator model has broken the task into steps and delegated exact
 Rules:
 - Implement ONLY the delegated step. Do not expand scope, refactor opportunistically, or start the next step.
 - Read the files you are about to change first (read_file / search_codebase); never assume content the brief did not include.
-- Use str_replace for surgical edits and write_file for full rewrites; use run_shell for the builds/tests the step calls for.
+- Use str_replace for surgical edits, apply_patch for changes that span several files or hunks, and write_file for full rewrites; use run_shell for the builds/tests the step calls for.
 - Do not commit, push, or change version-control state — git_status and git_diff are for inspecting your own work only.
 - If the brief is insufficient or contradicts what you find in the code, stop and report the mismatch instead of guessing.
 - Finish with a concise report for the orchestrator: what you changed (file paths), how you verified it, and anything the next step needs to know.`
