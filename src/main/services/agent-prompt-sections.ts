@@ -11,6 +11,8 @@
  * template so shipping prompts cannot drift from the sectioned source.
  */
 
+import type { PromptProfile } from './agent-prompt-profile.ts'
+
 export const PROMPT_SECTION_IDS = [
   'preamble',
   'tools',
@@ -23,6 +25,24 @@ export const PROMPT_SECTION_IDS = [
 ] as const
 
 export type PromptSectionId = (typeof PROMPT_SECTION_IDS)[number]
+
+/**
+ * Profiles that include each section. Every section is in every profile until an
+ * ablation on that model family shows removing it is neutral or better (the
+ * 2026-09 GPT investigation could not run: no OpenAI credentials in the
+ * environment, so no section was dropped — see the doctrine-evals plan). Drop a
+ * profile from a section here, with the measurement in the same PR.
+ */
+export const SECTION_PROFILES: Readonly<Record<PromptSectionId, readonly PromptProfile[]>> = {
+  preamble: ['default', 'gpt'],
+  tools: ['default', 'gpt'],
+  workspace: ['default', 'gpt'],
+  openEnded: ['default', 'gpt'],
+  modifyingFiles: ['default', 'gpt'],
+  toolChoice: ['default', 'gpt'],
+  workingStyle: ['default', 'gpt'],
+  gitBranchSafety: ['default', 'gpt'],
+}
 
 export interface PromptSectionVars {
   /** Mode-specific tool lines listed above the shared git/run_shell tail. */
@@ -86,12 +106,17 @@ ${v.toolChoice}`,
  * Join rules mirror the historical template:
  * - `tools` and `workspace` share a single newline (no blank line between them)
  * - every other kept section is separated by a blank line
+ * Sections the profile does not include are omitted like ablated ones.
  */
 export function assemblePromptFromSections(
   sections: PromptSections,
   omit: readonly PromptSectionId[] = [],
+  profile: PromptProfile = 'default',
 ): string {
   const omitted = new Set<PromptSectionId>(omit)
+  for (const id of PROMPT_SECTION_IDS) {
+    if (!SECTION_PROFILES[id].includes(profile)) omitted.add(id)
+  }
   const parts: string[] = []
 
   const push = (id: PromptSectionId): void => {

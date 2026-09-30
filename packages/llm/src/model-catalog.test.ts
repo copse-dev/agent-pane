@@ -10,6 +10,7 @@ import {
   inferCloudModelProvider,
   MODEL_CATALOG,
   isOpus5Model,
+  modelFamily,
   operatorInstructionPlacement,
   supportsMidConversationSystem,
   TRACKED_MODELS,
@@ -177,5 +178,15 @@ describe('model catalog', () => {
     assert.equal(isOpus5Model('remote-agent:anthropic#claude-opus-5'), false)
     assert.equal(isOpus5Model('acp:claude-code#claude-opus-5'), false)
     assert.equal(isOpus5Model('plugin-model:some-plugin:claude-opus-5'), false)
+  })
+
+  it('classifies model families across routes and skips non-cloud namespaces', () => {
+    assert.equal(modelFamily('gpt-5.5'), 'gpt')
+    assert.equal(modelFamily('openrouter:openai/gpt-5'), 'gpt')
+    assert.equal(modelFamily('claude-sonnet-5-5'), 'claude')
+    assert.equal(modelFamily('openrouter:anthropic/claude-opus-5'), 'claude')
+    assert.equal(modelFamily('gpt-oss-120b'), 'other')
+    assert.equal(modelFamily('lmstudio:gpt-5-distill-q4'), 'other')
+    assert.equal(modelFamily('acp:codex#gpt-5.5'), 'other')
   })
 })

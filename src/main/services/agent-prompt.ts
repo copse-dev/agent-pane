@@ -4,6 +4,7 @@ import {
   type PromptSectionId,
   type PromptSectionVars,
 } from './agent-prompt-sections.ts'
+import type { PromptProfile } from './agent-prompt-profile.ts'
 import { AGENT_EXECUTION_GUIDANCE } from './agent-execution-guidance.ts'
 
 export {
@@ -91,8 +92,8 @@ function toSectionVars(v: BasePromptVars): PromptSectionVars {
   }
 }
 
-function buildBasePrompt(v: BasePromptVars): string {
-  return assemblePromptFromSections(buildPromptSections(toSectionVars(v)))
+function buildBasePrompt(v: BasePromptVars, profile: PromptProfile = 'default'): string {
+  return assemblePromptFromSections(buildPromptSections(toSectionVars(v)), [], profile)
 }
 
 /**
@@ -145,6 +146,27 @@ ${SHARED_WEB_TOOLS}`,
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt(EXPLORE_MODE_VARS)
 export const BASE_SYSTEM_PROMPT_DIRECT_READS = buildBasePrompt(DIRECT_READS_MODE_VARS)
+
+const PROFILE_BASE_PROMPTS = new Map<PromptProfile, { explore?: string; direct?: string }>()
+
+/**
+ * Base prompt for a profile. The `default` profile is exactly the shipping
+ * `BASE_SYSTEM_PROMPT*` constants; other profiles are built once and reused, so
+ * a thread's prompt prefix is identical on every turn.
+ */
+export function baseSystemPromptFor(subagentsEnabled: boolean, profile: PromptProfile): string {
+  if (profile === 'default') {
+    return subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
+  }
+  const cached = PROFILE_BASE_PROMPTS.get(profile) ?? {}
+  PROFILE_BASE_PROMPTS.set(profile, cached)
+  const slot = subagentsEnabled ? 'explore' : 'direct'
+  const prompt =
+    cached[slot] ??
+    buildBasePrompt(subagentsEnabled ? EXPLORE_MODE_VARS : DIRECT_READS_MODE_VARS, profile)
+  cached[slot] = prompt
+  return prompt
+}
 
 /** Vars for the explore-mode base prompt — ablation evals pin against these. */
 export const EXPLORE_BASE_PROMPT_VARS = EXPLORE_MODE_VARS

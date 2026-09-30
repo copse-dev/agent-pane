@@ -77,6 +77,44 @@ and passed the doctrine 9/9. The full arm used approximately 1,143 tokens per so
 token figures are marked as estimates; this first run shows no behavioral lift from the
 enumerated tool-list prose on the three-task subset.
 
+## Prompt profiles and the GPT investigation (2026-09)
+
+`resolvePromptProfile(model)` (`agent-prompt-profile.ts`, backed by `modelFamily` in
+`packages/llm/src/model-catalog.ts`) picks `default` or `gpt`; `SECTION_PROFILES` in
+`agent-prompt-sections.ts` says which profiles include each section. Non-GPT models, an
+absent model, local/ACP namespaces and `gpt-oss-*` stay on `default`. The prompt is a pure
+function of (mode, profile), so it does not vary turn to turn within a thread (the Opus 5
+blocks in `agent-system-prompt.ts` are the separate, older per-model exception).
+
+**Result: no GPT-specific difference ships.** The environment that ran this work had no
+OpenAI or Anthropic credentials and blocked `api.openai.com`, so none of the hypotheses
+below were measured; the `gpt` profile is intentionally identical to `default`, pinned by
+`agent-prompt-profile.test.ts`. Do not treat the hypotheses as findings.
+
+Inventory of steering that could be redundant for native-reasoning models (hypotheses only):
+
+| Steering                                       | Where                                                            | Hypothesis for GPT-5-class                                                |
+| ---------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Tool list prose                                | `tools` section                                                  | Already a no-lift result on Qwen; API tool schemas duplicate it           |
+| `openEnded` gather/avoid-repeat                | `openEnded`                                                      | Possibly redundant; `avoidRepeat` may still curb repeated reads           |
+| Todo steering                                  | `TODO_STEERING_PROMPT` / `shouldSteerTodos` (turn-start hook)    | May be heavy planning steering; measure tool-call count                   |
+| Forced planning                                | `packages/agent/src/forced-planning.ts`                          | Same; needs its own arm, hooks plan is binding                            |
+| Reasoning checkpoints / circle detector        | `reasoning-checkpoint-policy.ts`, `reasoning-circle-detector.ts` | Runtime guards, not prompt text; only revisit if GPT reasoning trips them |
+| "Lead with the outcome", "readable over terse" | `workingStyle`                                                   | Untested whether GPT over-narrates; a tool-call preamble is also untested |
+
+To measure (needs `OPENAI_API_KEY` and, for the control, `ANTHROPIC_API_KEY`; `--sections`
+adds one omit arm per section, and the report already gives solve rate and tokens per solve;
+tool-call count and nudge frequency are read from the JSONL traces):
+
+```bash
+pnpm run eval:doctrine -- --provider openai --repeats 5 --sections tools,openEnded,workingStyle
+pnpm run eval:doctrine -- --provider anthropic --repeats 5 --sections tools,openEnded,workingStyle
+```
+
+Only remove a profile from `SECTION_PROFILES` when the omit arm matches or beats `full` on
+solve rate across repeats, and record the table here in the same PR. Todo/forced-planning
+arms need harness support that does not exist yet.
+
 ## Follow-on use of the evidence
 
 - Refresh reviewed baselines intentionally when a model or prompt changes materially; never
