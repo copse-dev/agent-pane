@@ -766,6 +766,28 @@ describe('startAcpNativeBridge', () => {
     assert.match(contentText(call) ?? '', /not offered/)
   })
 
+  it('offers propose_thread to ACP agents when it is registered', async () => {
+    const registry = testRegistry([])
+    registry.register({
+      name: 'propose_thread',
+      description: 'Offer a separate thread for the user to start',
+      parameters: z.object({
+        title: z.string(),
+        summary: z.string(),
+        prompt: z.string(),
+      }),
+      execute: () => Promise.resolve('Offered to the user.'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal, {
+      threadId: 'bridge-test',
+    })
+    assert.ok(bridge)
+
+    const listed = await rpc(bridge, LIST_TOOLS)
+    const tools = recordArrayOrEmpty(rpcResult(listed)['tools'])
+    assert.ok(tools.some((tool) => tool['name'] === 'propose_thread'))
+  })
+
   it('rejects requests without the per-turn bearer token', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal, {
