@@ -92,6 +92,15 @@
       "asOf": "2026-09-04"
     },
     {
+      "modelId": "gpt-6-1-sol",
+      "publisher": "OpenAI",
+      "kind": "system-card",
+      "title": "GPT-6.1 Sol system card addendum",
+      "url": "https://deploymentsafety.openai.com/gpt-6-1-sol",
+      "source": "OpenAI Deployment Safety Hub's 'Addendum to GPT-6 Astra System Card: GPT-6.1 Sol', published with the 2026-09-29 launch and verified 2026-09-30.",
+      "asOf": "2026-09-30"
+    },
+    {
       "modelId": "gemini-2-5-flash",
       "publisher": "Google DeepMind",
       "kind": "model-card",
