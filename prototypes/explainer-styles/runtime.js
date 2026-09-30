@@ -35,13 +35,13 @@
     window.__duration = duration
     if (params.has('t')) return seek(parseFloat(params.get('t')))
     const hold = 1.2
-    const t0 = performance.now()
+    const t0 = window.performance.now()
     const tick = (now) => {
       const el = (now - t0) / 1000
       seek(params.get('loop') === '0' ? el : el % (duration + hold))
-      requestAnimationFrame(tick)
+      window.requestAnimationFrame(tick)
     }
-    requestAnimationFrame(tick)
+    window.requestAnimationFrame(tick)
   }
   window.Timeline = { clamp, seg, lerp, E, start }
 })()
