@@ -184,6 +184,18 @@ describe('image expand lightbox', () => {
     const existing = qs<HTMLDialogElement>(document, '.attachment-preview-dialog')
     existing?.close()
     const img = document.createElement('img')
+    img.setAttribute('src', '')
+    // Browsers resolve an explicitly empty src property to the document URL.
+    // The authored attribute, rather than that resolved fallback, determines
+    // whether the clicked gallery item is usable.
+    Object.defineProperty(img, 'src', {
+      configurable: true,
+      get: () => document.baseURI,
+    })
+    Object.defineProperty(img, 'currentSrc', {
+      configurable: true,
+      get: () => document.baseURI,
+    })
     document.body.append(img)
     attachImageExpand(
       img,

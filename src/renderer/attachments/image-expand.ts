@@ -67,6 +67,13 @@ export interface ImageExpandItem {
   alt: string
 }
 
+function expandableImageSource(image: HTMLImageElement): string {
+  const authoredSrc = image.getAttribute('src')
+  const authoredSrcset = image.getAttribute('srcset')
+  if (!authoredSrc?.trim() && !authoredSrcset?.trim()) return ''
+  return image.currentSrc || image.src
+}
+
 function imageTitle(item: ImageExpandItem): string {
   return item.alt.trim() || 'Expanded attachment'
 }
@@ -296,14 +303,14 @@ export function attachImageExpand(
 
   const open = (): void => {
     const label = alt ?? (img.alt || 'Expanded attachment')
-    const src = img.currentSrc || img.src
+    const src = expandableImageSource(img)
     if (!src) return
     const focusTarget = (): HTMLElement | null => {
       if (img.isConnected) return img
       for (const candidate of document.querySelectorAll<HTMLImageElement>('img.image-expandable')) {
         if (
           candidate.getAttribute('aria-label') === 'Expand ' + label &&
-          (candidate.currentSrc || candidate.src) === src
+          expandableImageSource(candidate) === src
         ) {
           return candidate
         }
