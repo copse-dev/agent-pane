@@ -14,6 +14,7 @@ import {
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
 const THREAD_SHOT = 'image-expand-thread.png'
 const ASSISTANT_GALLERY_SHOT = 'image-expand-assistant-gallery.png'
+const GALLERY_ANNOTATION_SHOT = 'image-expand-gallery-annotation.png'
 const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
@@ -114,6 +115,31 @@ async function chipRadius(selector: string): Promise<{ chip: string; token: stri
       token: getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(),
     }
   }, selector)
+}
+
+async function drawGalleryAnnotation(): Promise<void> {
+  await browser.execute(() => {
+    const surface = document.querySelector(
+      '.image-expand-frame:not([hidden]) .annotation-layer-svg',
+    )
+    if (!surface) throw new Error('gallery annotation surface missing')
+    const bounds = surface.getBoundingClientRect()
+    const pointer = (type: string, fraction: number): PointerEvent =>
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: bounds.left + bounds.width * fraction,
+        clientY: bounds.top + bounds.height * fraction,
+        pointerId: 1,
+        pointerType: 'mouse',
+        pressure: 0.5,
+      })
+    surface.dispatchEvent(pointer('pointerdown', 0.2))
+    for (let step = 3; step <= 7; step++) {
+      window.dispatchEvent(pointer('pointermove', step / 10))
+    }
+    window.dispatchEvent(pointer('pointerup', 0.8))
+  })
 }
 
 /**
@@ -338,6 +364,29 @@ describe('Screenshot click-to-expand', () => {
     await $('.attachment-preview-close').click()
   })
 
+  it('annotates a gallery image and attaches the marked image to the composer', async () => {
+    const responseImages = $$('.msg-assistant .acp-message-content .acp-content-image')
+    const secondImage = responseImages[1]
+    assert.ok(secondImage)
+    await secondImage.click()
+    const annotate = $('.image-expand-annotate')
+    await expect(annotate).toHaveText('Annotate')
+    await annotate.click()
+    await expect(annotate).toHaveAttribute('aria-pressed', 'true')
+    await drawGalleryAnnotation()
+    await expect($('.image-expand-frame:not([hidden]) .annotation-layer-svg > *')).toExist()
+    await expect($('.annotation-send')).toBeEnabled()
+    await saveAppScreenshot(GALLERY_ANNOTATION_SHOT)
+
+    await $('.annotation-send').click()
+    await expect($('dialog.attachment-preview-dialog[open]')).not.toExist()
+    await expect($('.attachment-chips .image-chip')).toExist()
+    await browser.waitUntil(async () => (await $$('.toast')).length === 0, {
+      timeout: 5_000,
+      timeoutMsg: 'expected annotation confirmation to clear before the next screenshot',
+    })
+  })
+
   it('previews a sent text file in the same modal shell', async () => {
     const chip = $('.transcript-attachment-file.text-expandable')
     await chip.waitForDisplayed({ timeout: 10_000 })
@@ -387,6 +436,10 @@ describe('Screenshot click-to-expand', () => {
     assert.equal(clipboardText, DIFF_TEXT)
 
     await $('.attachment-preview-close').click()
+    await browser.waitUntil(async () => (await $$('.toast')).length === 0, {
+      timeout: 5_000,
+      timeoutMsg: 'expected copy confirmation to clear before the next screenshot',
+    })
   })
 
   /**

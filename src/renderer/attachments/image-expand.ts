@@ -1,8 +1,10 @@
 import { showContextMenu } from '../dom/context-menu.ts'
 import { el } from '../dom/helpers.ts'
-import { arrowLeftIcon, arrowRightIcon } from '../dom/icons.ts'
+import { arrowLeftIcon, arrowRightIcon, penLineIcon } from '../dom/icons.ts'
+import { mountAnnotationLayer, type AnnotationLayer } from '../drawing/annotation-layer.ts'
+import { attachAnnotation } from '../drawing/attach-annotation.ts'
 import { showErrorToast, showToast } from '../views/toast.ts'
-import { openAttachmentPreview } from './attachment-preview.ts'
+import { openAttachmentPreview, type AttachmentPreviewSession } from './attachment-preview.ts'
 
 /** Decode a base64 PNG directly without waiting for canvas encoding. */
 function pngDataUrlToBlob(dataUrl: string): Blob {
@@ -78,12 +80,89 @@ function imageTitle(item: ImageExpandItem): string {
   return item.alt.trim() || 'Expanded attachment'
 }
 
+function annotatableImage(
+  item: ImageExpandItem,
+  closePreview: () => void,
+): {
+  frame: HTMLElement
+  image: HTMLImageElement
+  button: HTMLButtonElement
+  deactivate: () => void
+  dispose: () => void
+} {
+  const frame = el('div', { class: 'image-expand-frame' })
+  const image = el('img', { class: 'image-expand-photo image-expand-image', alt: imageTitle(item) })
+  image.src = item.src
+  attachImageCopyMenu(image)
+  const button = el(
+    'button',
+    {
+      type: 'button',
+      class: 'ui-btn ui-btn-ghost image-expand-annotate',
+      'aria-label': `Annotate ${imageTitle(item)}`,
+      'aria-pressed': 'false',
+    },
+    penLineIcon('ui-icon ui-icon-sm'),
+    'Annotate',
+  )
+  let annotation: AnnotationLayer | null = null
+  const captureBase = (): Promise<string | null> => {
+    if (!image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) {
+      return Promise.resolve(null)
+    }
+    const { width, height } = frame.getBoundingClientRect()
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(width))
+    canvas.height = Math.max(1, Math.round(height))
+    const context = canvas.getContext('2d')
+    if (!context) return Promise.resolve(null)
+    const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight)
+    const drawnWidth = image.naturalWidth * scale
+    const drawnHeight = image.naturalHeight * scale
+    context.drawImage(
+      image,
+      (canvas.width - drawnWidth) / 2,
+      (canvas.height - drawnHeight) / 2,
+      drawnWidth,
+      drawnHeight,
+    )
+    return Promise.resolve(canvas.toDataURL('image/png'))
+  }
+  button.addEventListener('click', () => {
+    annotation ??= mountAnnotationLayer(frame, {
+      label: imageTitle(item),
+      captureBase,
+      onSend: (payload): boolean => {
+        const attached = attachAnnotation(payload, imageTitle(item))
+        if (attached) closePreview()
+        return attached
+      },
+      onDeactivate: (): void => {
+        button.setAttribute('aria-pressed', 'false')
+      },
+    })
+    button.setAttribute('aria-pressed', String(annotation.toggle()))
+  })
+  frame.append(image)
+  return {
+    frame,
+    image,
+    button,
+    deactivate: (): void => annotation?.deactivate(),
+    dispose: (): void => {
+      annotation?.dispose()
+      image.removeAttribute('src')
+    },
+  }
+}
+
 function openImageGalleryViewer(
   items: readonly ImageExpandItem[],
   initialIndex: number,
   returnFocus?: () => HTMLElement | null,
 ): void {
   let currentIndex = Math.min(Math.max(initialIndex, 0), items.length - 1)
+  let session: AttachmentPreviewSession | null = null
   const viewer = el('div', {
     class: 'image-expand-viewer',
     role: 'group',
@@ -91,8 +170,7 @@ function openImageGalleryViewer(
     tabindex: '-1',
   })
   const stage = el('div', { class: 'image-expand-stage' })
-  const imageEl = el('img', { class: 'image-expand-image', alt: '' })
-  attachImageCopyMenu(imageEl)
+  const images = items.map((item) => annotatableImage(item, () => session?.close()))
 
   const previousButton = el(
     'button',
@@ -122,7 +200,7 @@ function openImageGalleryViewer(
     { class: 'image-expand-nav-zone image-expand-nav-zone-next' },
     nextButton,
   )
-  stage.append(imageEl, previousZone, nextZone)
+  stage.append(...images.map(({ frame }) => frame), previousZone, nextZone)
 
   const thumbnailButtons = items.map((item, index) => {
     const thumbnail = el('img', {
@@ -143,8 +221,7 @@ function openImageGalleryViewer(
       thumbnail,
     )
     button.addEventListener('click', () => {
-      currentIndex = index
-      render()
+      move(index)
     })
     return button
   })
@@ -154,20 +231,27 @@ function openImageGalleryViewer(
     ...thumbnailButtons,
   )
   const counter = el('span', { class: 'image-expand-counter', 'aria-live': 'polite' })
-  const footer = el('div', { class: 'image-expand-gallery-footer' }, thumbnailStrip)
+  const actionSlot = el('div', { class: 'image-expand-gallery-action' })
+  const footer = el('div', { class: 'image-expand-gallery-footer' }, thumbnailStrip, actionSlot)
   viewer.append(counter, stage, footer)
 
   const render = (): void => {
     const item = items[currentIndex]
     if (!item) return
     const label = imageTitle(item)
-    imageEl.src = item.src
-    imageEl.alt = label
-    imageEl.dataset['imageIndex'] = String(currentIndex)
-    imageEl.setAttribute(
+    for (const [index, entry] of images.entries()) {
+      const selected = index === currentIndex
+      entry.frame.hidden = !selected
+      entry.image.classList.toggle('image-expand-image', selected)
+    }
+    const selectedImage = images[currentIndex]
+    if (!selectedImage) return
+    selectedImage.image.dataset['imageIndex'] = String(currentIndex)
+    selectedImage.image.setAttribute(
       'aria-label',
       label + ', image ' + String(currentIndex + 1) + ' of ' + String(items.length),
     )
+    actionSlot.replaceChildren(selectedImage.button)
     viewer.setAttribute(
       'aria-label',
       'Attached images, image ' + String(currentIndex + 1) + ' of ' + String(items.length),
@@ -188,15 +272,18 @@ function openImageGalleryViewer(
   }
 
   const move = (nextIndex: number): void => {
-    if (nextIndex < 0 || nextIndex >= items.length) return
+    if (nextIndex < 0 || nextIndex >= items.length || nextIndex === currentIndex) return
+    images[currentIndex]?.deactivate()
     currentIndex = nextIndex
     render()
   }
   previousButton.addEventListener('click', () => {
     move(currentIndex - 1)
+    viewer.focus({ preventScroll: true })
   })
   nextButton.addEventListener('click', () => {
     move(currentIndex + 1)
+    viewer.focus({ preventScroll: true })
   })
   viewer.addEventListener('keydown', (event) => {
     if (event.key === 'ArrowLeft') {
@@ -215,14 +302,14 @@ function openImageGalleryViewer(
   render()
   const initialItem = items[currentIndex]
   if (!initialItem) return
-  const session = openAttachmentPreview({
+  session = openAttachmentPreview({
     kind: 'image-gallery',
     title: 'Attached images · ' + String(items.length),
     ariaLabel: 'Image preview: ' + imageTitle(initialItem),
     content: viewer,
     ...(returnFocus ? { returnFocus } : {}),
     onClose: () => {
-      imageEl.removeAttribute('src')
+      for (const entry of images) entry.dispose()
       for (const button of thumbnailButtons) {
         button.querySelector('img')?.removeAttribute('src')
       }
@@ -234,18 +321,18 @@ function openImageGalleryViewer(
 }
 
 function openSingleImage(src: string, alt: string, returnFocus?: () => HTMLElement | null): void {
-  const imageEl = el('img', { class: 'image-expand-image', alt })
-  imageEl.src = src
-  attachImageCopyMenu(imageEl)
-  openAttachmentPreview({
+  let session: AttachmentPreviewSession | null = null
+  const entry = annotatableImage({ src, alt }, () => session?.close())
+  const content = el('div', { class: 'image-expand-single' }, entry.frame, entry.button)
+  session = openAttachmentPreview({
     kind: 'image',
     title: alt,
     ariaLabel: 'Image preview: ' + alt,
-    content: imageEl,
+    content,
     ...(returnFocus ? { returnFocus } : {}),
     onClose: () => {
-      imageEl.removeAttribute('src')
-      imageEl.alt = 'Expanded attachment'
+      entry.dispose()
+      entry.image.alt = 'Expanded attachment'
     },
   })
 }
