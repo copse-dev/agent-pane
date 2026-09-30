@@ -83,7 +83,7 @@ var init_automations_plugin = __esm({
     automationsPlugin = definePlugin(
       {
         name: AUTOMATIONS_PLUGIN_ID,
-        description: "Project-scoped cron schedules that start fresh, grouped, worktree-backed tasks while Copse is running.",
+        description: "Project-scoped schedules and branch CI failures that start fresh, grouped tasks while Copse is running.",
         trust: "first-party",
         stability: "experimental",
         ui: [
@@ -157,6 +157,14 @@ var init_model_catalog_generated = __esm({
         contextWindow: 1e6,
         maxOutputTokens: 128e3
       },
+      "claude-opus-5-5": {
+        inputPricePerMTok: 4,
+        outputPricePerMTok: 20,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
       "claude-sonnet-4-6": {
         inputPricePerMTok: 3,
         outputPricePerMTok: 15,
@@ -166,6 +174,14 @@ var init_model_catalog_generated = __esm({
         maxOutputTokens: 128e3
       },
       "claude-sonnet-5": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.2,
+        cacheCreationPricePerMTok: 2.5,
+        contextWindow: 1e6,
+        maxOutputTokens: 128e3
+      },
+      "claude-sonnet-5-5": {
         inputPricePerMTok: 2,
         outputPricePerMTok: 10,
         cacheReadPricePerMTok: 0.2,
@@ -323,6 +339,28 @@ var init_model_catalog_generated = __esm({
         },
         contextWindow: 922e3,
         maxOutputTokens: 128e3
+      },
+      "gpt-6.1-sol": {
+        inputPricePerMTok: 2,
+        outputPricePerMTok: 10,
+        cacheReadPricePerMTok: 0.1,
+        cacheCreationPricePerMTok: 2.5,
+        serviceTierPricing: {
+          flex: {
+            inputPricePerMTok: 1,
+            outputPricePerMTok: 5,
+            cacheReadPricePerMTok: 0.05,
+            cacheCreationPricePerMTok: 1.25
+          },
+          priority: {
+            inputPricePerMTok: 4,
+            outputPricePerMTok: 20,
+            cacheReadPricePerMTok: 0.2,
+            cacheCreationPricePerMTok: 5
+          }
+        },
+        contextWindow: 922e3,
+        maxOutputTokens: 128e3
       }
     };
   }
@@ -411,8 +449,8 @@ function humanizeModelName(labelOrId) {
   }, "");
 }
 function modelDisplayName(labelOrId) {
-  const canonical = canonicalModelLabel(labelOrId);
-  return canonical === labelOrId ? humanizeModelName(labelOrId) : canonical;
+  const canonical2 = canonicalModelLabel(labelOrId);
+  return canonical2 === labelOrId ? humanizeModelName(labelOrId) : canonical2;
 }
 function claudeName(family, version2, rest) {
   if (rest !== "" && !/^\s/.test(rest)) return null;
@@ -610,18 +648,21 @@ var init_model_catalog = __esm({
     init_model_catalog_generated();
     init_model_label();
     init_model_selection();
-    DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6";
+    DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-sonnet-5",
+      "claude-sonnet-4-6",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-haiku-4-5",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
+      "gpt-6.1-sol",
       "gpt-6-astra",
       "gpt-5.5",
       "gpt-5",
@@ -635,12 +676,15 @@ var init_model_catalog = __esm({
       "claude-fable-5-1": "Claude Fable 5.1",
       "claude-fable-5": "Claude Fable 5",
       "claude-sonnet-5": "Claude Sonnet 5",
+      "claude-sonnet-5-5": "Claude Sonnet 5.5",
+      "claude-opus-5-5": "Claude Opus 5.5",
       "claude-opus-5": "Claude Opus 5",
       "claude-opus-4-8": "Claude Opus 4.8",
       "claude-haiku-4-5": "Claude Haiku 4.5",
       "gpt-5.6-sol": "GPT-5.6 Sol",
       "gpt-5.6-terra": "GPT-5.6 Terra",
       "gpt-5.6-luna": "GPT-5.6 Luna",
+      "gpt-6.1-sol": "GPT-6.1 Sol",
       "gpt-6-astra": "GPT-6 Astra",
       "gpt-5.5": "GPT-5.5",
       "gpt-5": "GPT-5",
@@ -699,9 +743,9 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
       sampling: [],
       outputCap: false,
@@ -831,7 +875,7 @@ function decodeModelParametersMap(value) {
   }
   return out;
 }
-var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_ASTRA_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_ASTRA_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
+var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_COMPATIBLE_SAMPLING, OPENAI_SAMPLING, ANTHROPIC_SAMPLING, UNIVERSAL_SAMPLING, AGENT_NAMESPACES, CLAUDE_EFFORT_NO_SAMPLING, CLAUDE_EFFORT_WITH_SAMPLING, CLAUDE_THINKING_ALWAYS_ON, OPENAI_REASONING_PREFIXES, OPENAI_GPT6_PREFIXES, FULL_EFFORT_LADDER, CAPPED_EFFORT_LADDER, BUDGET_LADDER, OPENAI_LADDER, OPENAI_GPT6_LADDER, OPENAI_COMPATIBLE_LADDER, SAMPLING_BOUNDS, RECOMMENDATIONS;
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
@@ -878,12 +922,14 @@ var init_model_parameters = __esm({
       "claude-opus-4-5"
     ];
     CLAUDE_THINKING_ALWAYS_ON = [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "claude-fable-5",
       "claude-mythos-5",
       "claude-mythos-preview"
     ];
     OPENAI_REASONING_PREFIXES = ["gpt-5", "o1", "o3", "o4"];
-    OPENAI_ASTRA_PREFIXES = ["gpt-6-astra"];
+    OPENAI_GPT6_PREFIXES = ["gpt-6-astra", "gpt-6.1-sol"];
     FULL_EFFORT_LADDER = [
       "off",
       "low",
@@ -895,7 +941,7 @@ var init_model_parameters = __esm({
     CAPPED_EFFORT_LADDER = ["off", "low", "medium", "high", "max"];
     BUDGET_LADDER = ["off", "low", "medium", "high"];
     OPENAI_LADDER = ["minimal", "low", "medium", "high"];
-    OPENAI_ASTRA_LADDER = ["low", "medium", "high", "xhigh", "max"];
+    OPENAI_GPT6_LADDER = ["low", "medium", "high", "xhigh", "max"];
     OPENAI_COMPATIBLE_LADDER = [
       "off",
       "minimal",
@@ -21521,6 +21567,259 @@ var init_parse_agent_run_payload = __esm({
   }
 });
 
+// packages/llm/src/agent-roles.ts
+function getAgentRole(id) {
+  return AGENT_ROLES.find((role) => role.id === id) ?? null;
+}
+var AGENT_ROLES, AGENT_ROLE_IDS;
+var init_agent_roles = __esm({
+  "packages/llm/src/agent-roles.ts"() {
+    AGENT_ROLES = [
+      {
+        id: "coder",
+        label: "Coder",
+        description: "Writing new code \u2014 the chat default when coding",
+        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
+      },
+      {
+        id: "debugger",
+        label: "Debugger",
+        description: "Fixing bugs through careful, iterative analysis",
+        wants: ["swe-bench", "livecodebench", "gpqa"]
+      },
+      {
+        id: "reviewer",
+        label: "Reviewer",
+        description: "Post-turn diff review and maintainability",
+        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "security-auditor",
+        label: "Security auditor",
+        description: "Finding vulnerabilities with low false negatives",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "judge",
+        label: "Judge",
+        description: "Accept/reject a patch or answer against a rubric",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "test-gen",
+        label: "Test generator",
+        description: "Unit, integration, and property tests",
+        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
+      },
+      {
+        id: "refactor",
+        label: "Refactorer",
+        description: "Behaviour-preserving changes",
+        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
+      },
+      {
+        id: "planner",
+        label: "Planner",
+        description: "Breaking work into prioritised tasks",
+        wants: ["gpqa", "mmlu-pro", "arena"]
+      },
+      {
+        id: "advisor",
+        label: "Advisor",
+        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
+        wants: ["gpqa", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "docs",
+        label: "Documentation",
+        description: "READMEs, comments, and API docs",
+        wants: ["mmlu-pro", "arena"]
+      },
+      {
+        id: "research",
+        label: "Research assistant",
+        description: "API/framework lookup and synthesis (exploration subagent)",
+        wants: ["mmlu-pro", "gpqa", "arena"]
+      },
+      {
+        id: "tool-use",
+        label: "Tool-use agent",
+        description: "Calling tools correctly with structured output",
+        wants: ["tau-bench", "multipl-e"]
+      },
+      {
+        id: "small-tasks",
+        label: "Small tasks",
+        description: "Thread titles and other lightweight prompts",
+        wants: ["arena"]
+      },
+      {
+        id: "safety",
+        label: "Instruct / safety",
+        description: "Classifies shell commands when the OS sandbox is off",
+        wants: ["arena"]
+      }
+    ];
+    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
+  }
+});
+
+// packages/llm/src/dynamic-model.ts
+function minIntellectSelector(threshold) {
+  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
+}
+function roleModelSelector(role) {
+  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
+}
+function isDynamicModel(value) {
+  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
+}
+function parseDynamicModel(value) {
+  if (typeof value !== "string") return null;
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "auto") return null;
+  const body = selection2.id;
+  if (body === "best-value") return { kind: "best-value" };
+  if (body === "best-intellect") return { kind: "best-intellect" };
+  if (body === "best-local") return { kind: "best-local" };
+  if (body === "cheapest") return { kind: "cheapest" };
+  if (body === "balanced") return { kind: "balanced" };
+  if (body.startsWith(MIN_INTELLECT_INFIX)) {
+    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
+    if (!Number.isFinite(threshold) || threshold <= 0) return null;
+    return { kind: "min-intellect", threshold };
+  }
+  if (body.startsWith(ROLE_INFIX)) {
+    const role = getAgentRole(body.slice(ROLE_INFIX.length));
+    return role ? { kind: "role", role: role.id } : null;
+  }
+  return null;
+}
+function dynamicModelLabel(value) {
+  const selector = parseDynamicModel(value);
+  if (!selector) return null;
+  switch (selector.kind) {
+    case "best-value":
+      return "Best value";
+    case "best-intellect":
+      return "Most capable";
+    case "best-local":
+      return "Best on-device";
+    case "cheapest":
+      return "Cheapest";
+    case "balanced":
+      return "Balanced";
+    case "min-intellect":
+      return `At least ${String(selector.threshold)} intelligence`;
+    case "role":
+      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
+  }
+}
+function dynamicModelChoices() {
+  const choices = [
+    {
+      value: BEST_VALUE_MODEL_SELECTOR,
+      label: "Best value",
+      description: "Best intelligence per pound across your plans, providers, and local server",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_INTELLECT_MODEL_SELECTOR,
+      label: "Most capable",
+      description: "Highest intelligence available, ignoring price",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_LOCAL_MODEL_SELECTOR,
+      label: "Best on-device",
+      description: "Strongest model loaded on your machine",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: CHEAPEST_MODEL_SELECTOR,
+      label: "Cheapest",
+      description: "Lowest token price; plans and local count as free",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_MODEL_SELECTOR,
+      label: "Balanced",
+      description: "Strong capability at a fair price; favors plans",
+      group: AUTOMATIC_GROUP
+    }
+  ];
+  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
+    choices.push({
+      value: minIntellectSelector(threshold),
+      label: `At least ${String(threshold)} intelligence`,
+      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
+      group: INTELLIGENCE_GROUP
+    });
+  }
+  for (const role of AGENT_ROLES) {
+    choices.push({
+      value: roleModelSelector(role.id),
+      label: role.label,
+      description: role.description,
+      group: ROLE_GROUP
+    });
+  }
+  return choices;
+}
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var init_dynamic_model = __esm({
+  "packages/llm/src/dynamic-model.ts"() {
+    init_agent_roles();
+    init_model_selection();
+    init_reserved_prefixes();
+    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
+    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
+    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
+    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    MIN_INTELLECT_INFIX = "min-intellect:";
+    ROLE_INFIX = "role:";
+    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
+    AUTOMATIC_GROUP = "Automatic";
+    INTELLIGENCE_GROUP = "Minimum intelligence";
+    ROLE_GROUP = "By role";
+  }
+});
+
+// packages/agent/src/plugins/advisor-strategy-plugin.ts
+var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
+var init_advisor_strategy_plugin = __esm({
+  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
+    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
+    ADVISOR_MODEL_SETTING_ID = "advisorModel";
+    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    advisorStrategyPlugin = definePlugin(
+      {
+        name: ADVISOR_STRATEGY_PLUGIN_ID,
+        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
+        settings: {
+          [ADVISOR_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID
+          }
+        },
+        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
+      },
+      {
+        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
+      }
+    );
+  }
+});
+
 // packages/agent/src/working-brief.ts
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
@@ -22018,6 +22317,251 @@ var init_thread_sort = __esm({
   }
 });
 
+// packages/llm/src/estimate-cost.ts
+function isLocalModel(model) {
+  return model === "lm-studio" || model.startsWith("lmstudio:");
+}
+function pricingForModel(model, pricing) {
+  if (isLocalModel(model)) return null;
+  const info = getModelInfo(model) ?? pricing?.[model];
+  if (!info) return null;
+  return info;
+}
+function pricingForTier(model, tier, pricing) {
+  const standard = pricingForModel(model, pricing);
+  if (!standard) return { pricing: null, fallback: false };
+  const tierPricing = standard.serviceTierPricing?.[tier];
+  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
+}
+function hasModelPricing(model, pricing) {
+  return pricingForModel(model, pricing) !== null;
+}
+function hasZeroModelPricing(model, pricing) {
+  const info = pricingForModel(model, pricing);
+  if (!info) return false;
+  return info.inputPricePerMTok === 0 && info.outputPricePerMTok === 0 && (info.cacheReadPricePerMTok ?? 0) === 0 && (info.cacheCreationPricePerMTok ?? 0) === 0;
+}
+function costForUsage(usage, info) {
+  if (!info) return 0;
+  const cacheRead = usage.cacheReadTokens ?? 0;
+  const cacheCreation = usage.cacheCreationTokens ?? 0;
+  const hasCacheBreakdown = usage.cacheReadTokens !== void 0 || usage.cacheCreationTokens !== void 0;
+  const freshInput = hasCacheBreakdown ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation) : usage.inputTokens;
+  const inputRate = info.inputPricePerMTok;
+  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate;
+  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
+  return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
+}
+function costForModelUsageWithDetails(model, usage, pricing) {
+  const standard = pricingForModel(model, pricing);
+  const split = splitServiceTierUsage(usage);
+  let costUsd = costForUsage(split.standard, standard);
+  let tierPricingFallback = false;
+  for (const tier of USAGE_SERVICE_TIERS) {
+    const tierUsage = split.tiers[tier];
+    if (!tierUsage) continue;
+    const resolved3 = pricingForTier(model, tier, pricing);
+    costUsd += costForUsage(tierUsage, resolved3.pricing);
+    tierPricingFallback ||= resolved3.fallback;
+  }
+  return { costUsd, tierPricingFallback };
+}
+function costForModelUsage(model, usage, pricing) {
+  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
+}
+function estimateUsageCost(byModel, pricing, options = {}) {
+  const entries2 = Object.entries(byModel).filter(([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0);
+  if (entries2.length === 0) return "";
+  let totalCost = 0;
+  let hasLocal = false;
+  let hasPricedCloud = false;
+  let hasUnpricedCloud = false;
+  let hasTierPricingFallback = false;
+  for (const [model, usage] of entries2) {
+    if (isLocalModel(model)) {
+      hasLocal = true;
+      continue;
+    }
+    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
+    else hasUnpricedCloud = true;
+    const cost = costForModelUsageWithDetails(model, usage, pricing);
+    totalCost += cost.costUsd;
+    hasTierPricingFallback ||= cost.tierPricingFallback;
+  }
+  if (totalCost === 0) {
+    if (hasUnpricedCloud) return "";
+    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
+    if (hasLocal) return "free (local)";
+    return "";
+  }
+  const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
+  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
+  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
+  return hasLocal && !options.localFreeExplained ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
+}
+function formatThreadUsageCost(usage, fallbackChatModel, pricing, options = {}) {
+  if (usage.byModel && Object.keys(usage.byModel).length > 0) {
+    return estimateUsageCost(usage.byModel, pricing, options);
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return "";
+  return estimateUsageCost(
+    {
+      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
+    },
+    pricing,
+    options
+  );
+}
+var init_estimate_cost = __esm({
+  "packages/llm/src/estimate-cost.ts"() {
+    init_model_catalog();
+    init_model_usage();
+    init_service_tier();
+  }
+});
+
+// src/shared/usage/format-usage-summary.ts
+function formatUsd(amount) {
+  if (amount <= 0) return "$0.00";
+  if (amount < 0.01) return "<$0.01";
+  return `~$${amount.toFixed(2)}`;
+}
+function formatTokenCount(n2) {
+  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
+  if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
+  return String(n2);
+}
+function formatPeriodHeadline(summary) {
+  const localCount = summary.localModels.length;
+  const cloudCount = summary.cloudModels.length;
+  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
+  const parts = [cost];
+  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
+  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
+  return parts.join(" \xB7 ");
+}
+var init_format_usage_summary = __esm({
+  "src/shared/usage/format-usage-summary.ts"() {
+  }
+});
+
+// src/shared/usage/footer-usage-summary.ts
+function collectSubagentUsage(toolCalls, totals) {
+  for (const toolCall of toolCalls) {
+    const session = toolCall.subagent;
+    if (!session) continue;
+    if (session.kind === "container") continue;
+    if (session.usage) {
+      totals.runs += 1;
+      totals.inputTokens += session.usage.inputTokens;
+      totals.outputTokens += session.usage.outputTokens;
+    }
+    for (const message2 of session.messages) {
+      collectSubagentUsage(message2.toolCalls, totals);
+    }
+  }
+}
+function sumSubagentUsage(messages) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  for (const message2 of messages) {
+    collectSubagentUsage(message2.toolCalls, totals);
+  }
+  return totals;
+}
+function sumLegacyFoldedSubagentUsage(messages, trailingTurnRunning) {
+  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
+  let turnStart = 0;
+  const collectTurn = (turnEnd, isTrailingTurn) => {
+    if (trailingTurnRunning && isTrailingTurn) return;
+    let outcome;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const candidate = messages[i2]?.turnOutcome;
+      if (candidate !== void 0) outcome = candidate;
+    }
+    if (outcome !== void 0 && outcome.status !== "completed") return;
+    for (let i2 = turnStart; i2 < turnEnd; i2 += 1) {
+      const message2 = messages[i2];
+      if (message2) collectSubagentUsage(message2.toolCalls, totals);
+    }
+  };
+  for (let i2 = 1; i2 <= messages.length; i2 += 1) {
+    if (i2 < messages.length && messages[i2]?.role !== "user") continue;
+    collectTurn(i2, i2 === messages.length);
+    turnStart = i2;
+  }
+  return totals;
+}
+function estimateAssistantOutputTokens(messages) {
+  let chars = 0;
+  for (const message2 of messages) {
+    if (message2.role !== "assistant") continue;
+    chars += message2.content.length;
+    for (const toolCall of message2.toolCalls) {
+      for (const subMessage of toolCall.subagent?.messages ?? []) {
+        if (subMessage.role === "assistant") chars += subMessage.content.length;
+      }
+    }
+  }
+  return Math.round(chars / CHARS_PER_TOKEN);
+}
+function foldedSubagentShare(measured, legacyFoldedSessions) {
+  if (measured.subagentInputTokens !== void 0 || measured.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: measured.subagentInputTokens ?? 0,
+      outputTokens: measured.subagentOutputTokens ?? 0
+    };
+  }
+  return legacyFoldedSessions;
+}
+function resolveFooterUsage(input2) {
+  const { inputTokens, outputTokens } = input2.measured;
+  if (inputTokens || outputTokens) {
+    const subagents = sumSubagentUsage(input2.messages);
+    const folded = foldedSubagentShare(
+      input2.measured,
+      sumLegacyFoldedSubagentUsage(input2.messages, input2.running)
+    );
+    return {
+      inputTokens: Math.max(0, inputTokens - folded.inputTokens),
+      outputTokens: Math.max(0, outputTokens - folded.outputTokens),
+      estimated: false,
+      ...subagents.runs > 0 ? {
+        subagentInputTokens: subagents.inputTokens,
+        subagentOutputTokens: subagents.outputTokens
+      } : {}
+    };
+  }
+  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
+  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
+  const total2 = (estimatedInput ?? 0) + estimatedOutput;
+  if (!total2 && !input2.running) return null;
+  return {
+    inputTokens: estimatedInput ?? 0,
+    outputTokens: estimatedOutput,
+    estimated: true
+  };
+}
+function formatFooterUsageSummary(display) {
+  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
+  return display.estimated ? `~${value}` : value;
+}
+function formatFooterUsageDetail(display, opts) {
+  const { inputTokens, outputTokens, estimated } = display;
+  const approx = estimated ? "~" : "";
+  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
+  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
+  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
+  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
+  return `Usage: ${parts.join(" \xB7 ")}`;
+}
+var init_footer_usage_summary = __esm({
+  "src/shared/usage/footer-usage-summary.ts"() {
+    init_estimate_cost();
+    init_token_estimate();
+    init_format_usage_summary();
+  }
+});
+
 // src/shared/store/thread-helpers.ts
 function getThreadById(store2, id) {
   if (!id) return void 0;
@@ -22464,6 +23008,7 @@ function addUsageDelta(store2, threadId, delta) {
     usageServiceTierForCall(delta.requestedServiceTier, delta.responseServiceTier)
   );
   byModel[delta.model] = mergeModelUsage(prev, usage);
+  const subagentShare = foldedSubagentUsage(thread, delta.subagentUsage ? delta : void 0);
   updateUsage(
     store2,
     threadId,
@@ -22471,13 +23016,32 @@ function addUsageDelta(store2, threadId, delta) {
       {
         inputTokens: thread.usage.inputTokens + delta.inputTokens,
         outputTokens: thread.usage.outputTokens + delta.outputTokens,
-        byModel
+        byModel,
+        subagentInputTokens: subagentShare.inputTokens + (delta.subagentUsage ? delta.inputTokens : 0),
+        subagentOutputTokens: subagentShare.outputTokens + (delta.subagentUsage ? delta.outputTokens : 0)
       },
       thread.usage.cacheReadTokens,
       thread.usage.cacheCreationTokens,
       delta
     )
   );
+}
+function foldedSubagentUsage(thread, incoming) {
+  const { usage } = thread;
+  if (usage.subagentInputTokens !== void 0 || usage.subagentOutputTokens !== void 0) {
+    return {
+      inputTokens: usage.subagentInputTokens ?? 0,
+      outputTokens: usage.subagentOutputTokens ?? 0
+    };
+  }
+  if (!usage.inputTokens && !usage.outputTokens) return { inputTokens: 0, outputTokens: 0 };
+  const recorded = sumLegacyFoldedSubagentUsage(thread.messages, thread.status === "running");
+  const priorInput = Math.max(0, recorded.inputTokens - (incoming?.inputTokens ?? 0));
+  const priorOutput = Math.max(0, recorded.outputTokens - (incoming?.outputTokens ?? 0));
+  return {
+    inputTokens: Math.min(priorInput, usage.inputTokens),
+    outputTokens: Math.min(priorOutput, usage.outputTokens)
+  };
 }
 function updateContextSnapshot(store2, threadId, snapshot) {
   patchThreadAnywhere(store2, threadId, (t2) => ({
@@ -22718,6 +23282,7 @@ var init_thread_helpers = __esm({
     init_thread_proposal2();
     init_reviewer_input();
     init_thread_sort();
+    init_footer_usage_summary();
     init_thread_sort();
     randomUUID = () => globalThis.crypto.randomUUID();
     messageIndexByStore = /* @__PURE__ */ new WeakMap();
@@ -23231,8 +23796,8 @@ var init_review_reports = __esm({
 
 // src/shared/humanize-identifier.ts
 function casedWord(word, leading) {
-  const canonical = CANONICAL_WORDS.get(word);
-  if (canonical !== void 0) return canonical;
+  const canonical2 = CANONICAL_WORDS.get(word);
+  if (canonical2 !== void 0) return canonical2;
   const [, before = "", core = "", after = ""] = /^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u.exec(word) ?? [];
   if (core && (before || after)) return `${before}${casedWord(core, leading)}${after}`;
   for (const separator of ["-", ":"]) {
@@ -23634,7 +24199,10 @@ var init_tool_display = __esm({
         done: "Ran unattended in a container"
       },
       preflight_worktree: { running: "Checking worktree", done: "Checked worktree" },
-      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" }
+      prepare_worktree: { running: "Preparing worktree", done: "Prepared worktree" },
+      coordination_check: { running: "Checking overlapping work", done: "Checked overlapping work" },
+      coordination_note: { running: "Sending peer note", done: "Sent peer note" },
+      coordination_read: { running: "Reading peer notes", done: "Read peer notes" }
     };
     TOOL_GROUPS = {
       reading: {
@@ -24119,6 +24687,20 @@ var init_agent_turn_busy = __esm({
   }
 });
 
+// src/renderer/controller/send-now-aborts.ts
+function markSendNowAbort(threadId) {
+  sendNowThreads.add(threadId);
+}
+function takeSendNowAbort(threadId) {
+  return sendNowThreads.delete(threadId);
+}
+var sendNowThreads;
+var init_send_now_aborts = __esm({
+  "src/renderer/controller/send-now-aborts.ts"() {
+    sendNowThreads = /* @__PURE__ */ new Set();
+  }
+});
+
 // src/renderer/controller/message-queue.ts
 function isHeldMessage(item) {
   return item.autoDispatch === false;
@@ -24417,6 +24999,7 @@ function sendQueuedMessageNow(store2, api2, threadId, messageId) {
   store2.setState({ threads });
   store2.emit("threads_changed");
   if (thread.status === "running") {
+    markSendNowAbort(threadId);
     void api2.agent.abort(threadId);
   } else {
     drainMessageQueue(store2, api2, threadId);
@@ -24477,6 +25060,7 @@ var init_message_queue = __esm({
     init_thread_hydration();
     init_perf();
     init_agent_turn_busy();
+    init_send_now_aborts();
     pendingDispatches = /* @__PURE__ */ new WeakMap();
   }
 });
@@ -24676,6 +25260,15 @@ var init_github_pr_url2 = __esm({
   }
 });
 
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
@@ -24732,19 +25325,23 @@ function summarizeThreadPrStatus(states, refs = []) {
   return { kind: "closed", totalCount: knownCount };
 }
 function describeThreadPrStatus(rollup) {
-  if (rollup.kind === "open") {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`;
-    }
-    return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
   }
-  if (rollup.kind === "merged") {
-    return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-  }
-  return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
   "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
     init_github_pr_url();
   }
 });
@@ -25317,6 +25914,15 @@ function imageIcon(className = DEFAULT) {
       "m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21",
       "M14 19.5 16.5 17a2 2 0 0 1 2.8 0l1.7 1.7",
       "M9 9h.01"
+    ],
+    className
+  );
+}
+function sparkleIcon(className = DEFAULT) {
+  return outlineIcon(
+    "sparkle",
+    [
+      "M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"
     ],
     className
   );
@@ -29719,14 +30325,14 @@ function canonicalize(value, base) {
 function canonicalizePrefixes(prefixes) {
   const out = [];
   for (const prefix of prefixes) {
-    const canonical = canonicalize(prefix);
-    if (canonical !== null)
-      out.push(canonical);
+    const canonical2 = canonicalize(prefix);
+    if (canonical2 !== null)
+      out.push(canonical2);
   }
   return out;
 }
-function isUnderAllowedPrefix(canonical, prefixes) {
-  return prefixes.some((prefix) => canonical.startsWith(prefix));
+function isUnderAllowedPrefix(canonical2, prefixes) {
+  return prefixes.some((prefix) => canonical2.startsWith(prefix));
 }
 function resolveHref(raw, defaultOrigin) {
   const absolute = canonicalize(raw);
@@ -29773,8 +30379,8 @@ function enforceImage(node2, policy) {
   node2.removeAttribute("src");
   addBlockedClass(node2, policy.blockedImageClass);
 }
-function isDataUrl(canonical) {
-  return canonical.slice(0, 5).toLowerCase() === "data:";
+function isDataUrl(canonical2) {
+  return canonical2.slice(0, 5).toLowerCase() === "data:";
 }
 function applyLinkImagePolicy(node2, tagName) {
   const policy = resolvedPolicy();
@@ -34137,8 +34743,8 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
   if (enabled !== true) {
     throw new Error("Enable SSH workspaces in Settings \u2192 SSH before opening a remote folder.");
   }
-  const canonical = await api2.sshWorkspace.registerRoot(hostId, path);
-  const existing = findProjectByKey(store2.getState().projects, hostId, canonical);
+  const canonical2 = await api2.sshWorkspace.registerRoot(hostId, path);
+  const existing = findProjectByKey(store2.getState().projects, hostId, canonical2);
   let id;
   if (existing) {
     id = existing.id;
@@ -34150,11 +34756,11 @@ async function addProjectFromRemotePath(store2, api2, hostId, path) {
     store2.setState({
       projects: [
         ...store2.getState().projects,
-        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId }
+        { id, path: canonical2, name: formatSshProjectName(label, canonical2), sshHost: hostId }
       ]
     });
   }
-  return activateAndWait(store2, api2, id, canonical, hostId);
+  return activateAndWait(store2, api2, id, canonical2, hostId);
 }
 function activateAndWait(store2, api2, id, path, sshHost) {
   activate(store2, api2, id, path, sshHost, null);
@@ -35514,7 +36120,116 @@ url: http://localhost:61025/index.html
 function demoScenarioPrompt(scenario) {
   return scenario.trace?.prompt ?? "";
 }
-var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, DEMO_SCENARIOS;
+function conciseThreadMessages(model, live) {
+  return [
+    {
+      id: `concise-user-${model}`,
+      role: "user",
+      content: "Fix the settings form so Save stays aligned on narrow windows.",
+      toolCalls: [],
+      createdAt: FIXED_TIME
+    },
+    {
+      id: `concise-step-1-${model}`,
+      role: "assistant",
+      model,
+      reasoning: "The Save button is absolutely positioned; check the form layout first.",
+      content: "Let me look at how the settings form lays out its footer.",
+      toolCalls: [
+        {
+          id: `concise-read-${model}`,
+          name: "read_file",
+          args: { path: "src/renderer/views/settings-dialog.ts" },
+          status: "done",
+          result: "export function mountSettings() { \u2026 }"
+        },
+        {
+          id: `concise-edit-${model}`,
+          name: "str_replace",
+          args: { path: "src/renderer/styles/settings.css" },
+          status: "done",
+          result: "Replaced 1 occurrence.",
+          editStats: { additions: 4, deletions: 2 }
+        },
+        {
+          id: `concise-test-fail-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: "error",
+          result: "Error: settings-forms.test.ts expected footer to use grid"
+        },
+        {
+          id: `concise-test-pass-${model}`,
+          name: "run_shell",
+          args: { command: "pnpm test -- settings-forms" },
+          status: live ? "running" : "done",
+          result: live ? null : "\u2139 pass 12"
+        }
+      ],
+      createdAt: FIXED_TIME + 1e3
+    },
+    ...live ? [] : [
+      {
+        id: `concise-step-2-${model}`,
+        role: "assistant",
+        model,
+        content: "Capturing the narrow layout to confirm.",
+        toolCalls: [
+          {
+            id: `concise-shot-${model}`,
+            name: "browser_screenshot",
+            args: { width: 480 },
+            status: "done",
+            result: "Captured the settings dialog at 480px.",
+            images: [
+              {
+                dataUrl: CONCISE_SCREENSHOT,
+                name: "settings-480px.png",
+                kind: "screenshot"
+              }
+            ]
+          }
+        ],
+        createdAt: FIXED_TIME + 2e3
+      },
+      {
+        id: `concise-summary-${model}`,
+        role: "assistant",
+        model,
+        content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
+        toolCalls: [],
+        createdAt: FIXED_TIME + 3e3
+      }
+    ]
+  ];
+}
+function conciseThreadScenario(id, label, model, { live = false, enabled = true } = {}) {
+  return {
+    id,
+    label,
+    project: project(`demo-${id}-project`),
+    settings: {
+      onboardingCompleted: true,
+      theme: "dark",
+      uiTintStrength: "off",
+      model,
+      conciseThreadsEnabled: enabled
+    },
+    threads: [
+      {
+        id: `demo-${id}-thread`,
+        title: "Concise thread view",
+        status: live ? "running" : "idle",
+        model,
+        messages: conciseThreadMessages(model, live),
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME
+      }
+    ]
+  };
+}
+var FIXED_TIME, FOOTER_INPUT_TOKENS, FOOTER_OUTPUT_TOKENS, DEMO_CODEX_ACP_AGENT, FOOTER_COMPACT_EXPECTATIONS, markdownContent, syntaxContrastContent, project, semanticSearchSummary, readingLayoutContent, READING_LAYOUT_TRACE, PROPOSED_INDEX_HTML, PROPOSED_STYLES_CSS, PROPOSED_DIFF_TRACE, CONCISE_SCREENSHOT, DEMO_SCENARIOS;
 var init_demo_scenarios = __esm({
   "src/shared/demo-scenarios.ts"() {
     init_landing();
@@ -35730,6 +36445,20 @@ var init_demo_scenarios = __esm({
         { chunk: { type: "done", stopReason: "end_turn" }, delayMs: 300 }
       ]
     };
+    CONCISE_SCREENSHOT = `data:image/svg+xml;base64,${btoa(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">',
+        '<rect width="480" height="270" fill="#f4f1ea"/>',
+        '<rect width="480" height="36" fill="#2f3a2f"/>',
+        '<text x="16" y="23" font-family="sans-serif" font-size="14" fill="#fff">Settings</text>',
+        '<rect x="16" y="56" width="200" height="14" rx="3" fill="#c9c2b3"/>',
+        '<rect x="16" y="84" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="16" y="140" width="448" height="44" rx="6" fill="#fff" stroke="#d8d2c4"/>',
+        '<rect x="384" y="210" width="80" height="32" rx="6" fill="#4f7a4f"/>',
+        '<text x="405" y="231" font-family="sans-serif" font-size="13" fill="#fff">Save</text>',
+        "</svg>"
+      ].join("")
+    )}`;
     DEMO_SCENARIOS = [
       {
         // First, so a bare `/demo/<branch>/` opens on the walkthrough rather than a
@@ -36831,6 +37560,50 @@ var init_demo_scenarios = __esm({
             updatedAt: FIXED_TIME
           }
         ]
+      },
+      conciseThreadScenario(
+        "concise-thread",
+        "Concise thread view for a capable model",
+        "claude-opus-5-5"
+      ),
+      conciseThreadScenario(
+        "concise-thread-full",
+        "Full thread view for a model below the concise gate",
+        "gpt-4o"
+      ),
+      conciseThreadScenario(
+        "concise-thread-working",
+        "Concise thread view while a capable model works",
+        "claude-opus-5-5",
+        { live: true }
+      ),
+      conciseThreadScenario(
+        "concise-thread-disabled",
+        "Full thread view for a capable model while the experiment is off",
+        "claude-opus-5-5",
+        { enabled: false }
+      ),
+      {
+        id: "roadmap-chat-min-width",
+        label: "Roadmap side panel minimum chat width",
+        project: project("demo-roadmap-chat-min-width-project"),
+        settings: {
+          onboardingCompleted: true,
+          theme: "dark",
+          uiTintStrength: "off",
+          layout: { filesPaneWidth: 4e3 }
+        },
+        threads: [
+          {
+            id: "demo-roadmap-chat-min-width-thread",
+            title: "Roadmap layout bounds",
+            status: "idle",
+            messages: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: FIXED_TIME,
+            updatedAt: FIXED_TIME
+          }
+        ]
       }
     ];
   }
@@ -37021,6 +37794,7 @@ function createDemoApi(scenario, options = {}) {
       captureScreenshot: unsupported,
       scrollPosition: unsupported,
       exportPdf: unsupported,
+      exportArtefact: unsupported,
       onShareText: subscribe,
       onShareImage: subscribe,
       onPluginTabRequest: subscribe
@@ -37460,6 +38234,10 @@ function createDemoApi(scenario, options = {}) {
       refreshHuggingFaceModels: () => resolved({ ok: false, count: 0, error: "Unavailable in demo" })
     },
     appIcon: { apply: resolvedVoid },
+    about: {
+      getInfo: () => resolved({ version: "demo", report: null }),
+      openLicenseFile: resolvedVoid
+    },
     usage: {
       getSummary: () => {
         const emptyPeriod = {
@@ -37646,6 +38424,11 @@ function createDemoApi(scenario, options = {}) {
       upsert: unsupported,
       remove: unsupported,
       runNow: unsupported,
+      listBranchCi: emptyArray,
+      upsertBranchCi: unsupported,
+      removeBranchCi: unsupported,
+      testBranchCi: unsupported,
+      canStart: () => resolved({ allowed: true }),
       onTriggered: subscribe
     },
     appRun: {
@@ -37670,6 +38453,12 @@ function createDemoApi(scenario, options = {}) {
           supportedHost: state.supportedHost
         });
       },
+      // The demo never interrupts a scenario with the open-time suggestion.
+      suggestion: (projectId) => resolved({
+        offer: "none",
+        pluginEnabled: appleDevelopmentStateFor(projectId).pluginEnabled
+      }),
+      answerSuggestion: () => resolved(void 0),
       setEnrolled: (projectId, _threadId, enrolled) => {
         const current = appleDevelopmentStateFor(projectId);
         const state = {
@@ -37828,6 +38617,7 @@ var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_automations_plugin();
     init_parse_agent_run_payload();
+    init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
     init_token_estimate();
@@ -37964,22 +38754,22 @@ var init_demo_api = __esm({
         settings: []
       },
       {
-        id: "copse.advisor-strategy",
+        id: ADVISOR_STRATEGY_PLUGIN_ID,
         trust: "first-party",
         stability: "experimental",
         name: "Advisor strategy",
         version: "0.3.1",
-        description: "Pairs a second model with the executor to review strategy before long or risky work starts.",
+        description: "Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.",
         enabled: true,
-        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["consult_advisor"] },
+        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
         settings: [
           {
-            id: "maxReviewCycles",
-            kind: "number",
-            title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn. `0` turns retries off.",
-            default: 2,
-            value: 2
+            id: ADVISOR_MODEL_SETTING_ID,
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID,
+            value: DEFAULT_ADVISOR_MODEL_ID
           }
         ]
       },
@@ -38692,6 +39482,7 @@ function createStore(initial) {
     fontSize: 14,
     uiScale: 1,
     animateAgentAvatars: true,
+    conciseThreadsEnabled: false,
     autoPortraitRightPanel: true,
     rightPanelPosition: "auto",
     openLinksInBuiltInBrowser: true,
@@ -40704,225 +41495,6 @@ var init_app_icon_variants = __esm({
   }
 });
 
-// packages/llm/src/agent-roles.ts
-function getAgentRole(id) {
-  return AGENT_ROLES.find((role) => role.id === id) ?? null;
-}
-var AGENT_ROLES, AGENT_ROLE_IDS;
-var init_agent_roles = __esm({
-  "packages/llm/src/agent-roles.ts"() {
-    AGENT_ROLES = [
-      {
-        id: "coder",
-        label: "Coder",
-        description: "Writing new code \u2014 the chat default when coding",
-        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
-      },
-      {
-        id: "debugger",
-        label: "Debugger",
-        description: "Fixing bugs through careful, iterative analysis",
-        wants: ["swe-bench", "livecodebench", "gpqa"]
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        description: "Post-turn diff review and maintainability",
-        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "security-auditor",
-        label: "Security auditor",
-        description: "Finding vulnerabilities with low false negatives",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "judge",
-        label: "Judge",
-        description: "Accept/reject a patch or answer against a rubric",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "test-gen",
-        label: "Test generator",
-        description: "Unit, integration, and property tests",
-        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
-      },
-      {
-        id: "refactor",
-        label: "Refactorer",
-        description: "Behaviour-preserving changes",
-        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
-      },
-      {
-        id: "planner",
-        label: "Planner",
-        description: "Breaking work into prioritised tasks",
-        wants: ["gpqa", "mmlu-pro", "arena"]
-      },
-      {
-        id: "advisor",
-        label: "Advisor",
-        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
-        wants: ["gpqa", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "docs",
-        label: "Documentation",
-        description: "READMEs, comments, and API docs",
-        wants: ["mmlu-pro", "arena"]
-      },
-      {
-        id: "research",
-        label: "Research assistant",
-        description: "API/framework lookup and synthesis (exploration subagent)",
-        wants: ["mmlu-pro", "gpqa", "arena"]
-      },
-      {
-        id: "tool-use",
-        label: "Tool-use agent",
-        description: "Calling tools correctly with structured output",
-        wants: ["tau-bench", "multipl-e"]
-      },
-      {
-        id: "small-tasks",
-        label: "Small tasks",
-        description: "Thread titles and other lightweight prompts",
-        wants: ["arena"]
-      },
-      {
-        id: "safety",
-        label: "Instruct / safety",
-        description: "Classifies shell commands when the OS sandbox is off",
-        wants: ["arena"]
-      }
-    ];
-    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
-  }
-});
-
-// packages/llm/src/dynamic-model.ts
-function minIntellectSelector(threshold) {
-  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
-}
-function roleModelSelector(role) {
-  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
-}
-function isDynamicModel(value) {
-  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
-}
-function parseDynamicModel(value) {
-  if (typeof value !== "string") return null;
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "auto") return null;
-  const body = selection2.id;
-  if (body === "best-value") return { kind: "best-value" };
-  if (body === "best-intellect") return { kind: "best-intellect" };
-  if (body === "best-local") return { kind: "best-local" };
-  if (body === "cheapest") return { kind: "cheapest" };
-  if (body === "balanced") return { kind: "balanced" };
-  if (body.startsWith(MIN_INTELLECT_INFIX)) {
-    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
-    if (!Number.isFinite(threshold) || threshold <= 0) return null;
-    return { kind: "min-intellect", threshold };
-  }
-  if (body.startsWith(ROLE_INFIX)) {
-    const role = getAgentRole(body.slice(ROLE_INFIX.length));
-    return role ? { kind: "role", role: role.id } : null;
-  }
-  return null;
-}
-function dynamicModelLabel(value) {
-  const selector = parseDynamicModel(value);
-  if (!selector) return null;
-  switch (selector.kind) {
-    case "best-value":
-      return "Best value";
-    case "best-intellect":
-      return "Most capable";
-    case "best-local":
-      return "Best on-device";
-    case "cheapest":
-      return "Cheapest";
-    case "balanced":
-      return "Balanced";
-    case "min-intellect":
-      return `At least ${String(selector.threshold)} intelligence`;
-    case "role":
-      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
-  }
-}
-function dynamicModelChoices() {
-  const choices = [
-    {
-      value: BEST_VALUE_MODEL_SELECTOR,
-      label: "Best value",
-      description: "Best intelligence per pound across your plans, providers, and local server",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_INTELLECT_MODEL_SELECTOR,
-      label: "Most capable",
-      description: "Highest intelligence available, ignoring price",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_LOCAL_MODEL_SELECTOR,
-      label: "Best on-device",
-      description: "Strongest model loaded on your machine",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: CHEAPEST_MODEL_SELECTOR,
-      label: "Cheapest",
-      description: "Lowest token price; plans and local count as free",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BALANCED_MODEL_SELECTOR,
-      label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
-      group: AUTOMATIC_GROUP
-    }
-  ];
-  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
-    choices.push({
-      value: minIntellectSelector(threshold),
-      label: `At least ${String(threshold)} intelligence`,
-      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
-      group: INTELLIGENCE_GROUP
-    });
-  }
-  for (const role of AGENT_ROLES) {
-    choices.push({
-      value: roleModelSelector(role.id),
-      label: role.label,
-      description: role.description,
-      group: ROLE_GROUP
-    });
-  }
-  return choices;
-}
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
-var init_dynamic_model = __esm({
-  "packages/llm/src/dynamic-model.ts"() {
-    init_agent_roles();
-    init_model_selection();
-    init_reserved_prefixes();
-    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
-    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
-    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
-    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
-    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
-    MIN_INTELLECT_INFIX = "min-intellect:";
-    ROLE_INFIX = "role:";
-    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
-    AUTOMATIC_GROUP = "Automatic";
-    INTELLIGENCE_GROUP = "Minimum intelligence";
-    ROLE_GROUP = "By role";
-  }
-});
-
 // src/shared/lm-studio-defaults.ts
 function isBestValueChatModel(model) {
   return model === BEST_VALUE_CHAT_MODEL;
@@ -40947,6 +41519,90 @@ var init_lm_studio_defaults = __esm({
     SAFETY_MODEL_MIN_INTELLECT = 20;
     DEFAULT_SAFETY_MODEL = minIntellectSelector(SAFETY_MODEL_MIN_INTELLECT);
     DEFAULT_APP_CHAT_MODEL = BEST_VALUE_CHAT_MODEL;
+  }
+});
+
+// packages/llm/src/model-maker-block.ts
+function parseBlockedModelMakers(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => isModelMaker(entry));
+}
+function makerFromName(name) {
+  const normalized = name.toLowerCase();
+  if (normalized === "anthropic" || normalized.startsWith("claude-")) return "anthropic";
+  if (normalized === "openai" || normalized.startsWith("gpt-") || /^o[1-9](?:-|$)/.test(normalized))
+    return "openai";
+  if (normalized === "google" || normalized === "gemini" || normalized.startsWith("gemini-") || normalized.startsWith("gemma-"))
+    return "google";
+  if (normalized === "deepseek" || normalized.startsWith("deepseek-")) return "deepseek";
+  if (normalized === "mistralai" || MISTRAL_MODEL_FAMILIES.some(
+    (family) => normalized === family || normalized.startsWith(`${family}-`)
+  ))
+    return "mistral";
+  if (normalized === "x-ai" || normalized === "xai" || normalized === "spacexai" || normalized === "grok" || normalized.startsWith("grok-"))
+    return "xai";
+  return null;
+}
+function makerFromAgent(agent) {
+  const normalized = agent.toLowerCase();
+  if (normalized.startsWith("claude")) return "anthropic";
+  if (normalized.startsWith("codex")) return "openai";
+  if (normalized.startsWith("gemini")) return "google";
+  if (normalized.startsWith("mistral")) return "mistral";
+  if (normalized.startsWith("grok")) return "xai";
+  return null;
+}
+function modelMakerForSelection(value) {
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace === "auto" || selection2.namespace === "plugin-model") return null;
+  if (selection2.namespace === "remote-agent" && !selection2.id) {
+    return selection2.agent === "anthropic" ? "anthropic" : null;
+  }
+  if (selection2.namespace === "acp" && !selection2.id) return makerFromAgent(selection2.agent);
+  const id = selection2.id.toLowerCase();
+  const parts = id.split("/");
+  const first = parts[0] ?? "";
+  const last = parts.at(-1) ?? "";
+  const fromModel = makerFromName(first) ?? makerFromName(last);
+  if (fromModel) return fromModel;
+  if (selection2.namespace === "acp") return makerFromAgent(selection2.agent);
+  return makerFromName(selection2.slug);
+}
+function blockedModelMaker(selection2, blocked) {
+  const maker = modelMakerForSelection(selection2);
+  return maker && blocked.includes(maker) ? maker : null;
+}
+var MODEL_MAKER_IDS, MODEL_MAKERS, isModelMaker, MISTRAL_MODEL_FAMILIES;
+var init_model_maker_block = __esm({
+  "packages/llm/src/model-maker-block.ts"() {
+    init_model_selection();
+    init_member_of();
+    MODEL_MAKER_IDS = [
+      "anthropic",
+      "openai",
+      "google",
+      "deepseek",
+      "mistral",
+      "xai"
+    ];
+    MODEL_MAKERS = [
+      { id: "anthropic", label: "Anthropic" },
+      { id: "openai", label: "OpenAI" },
+      { id: "google", label: "Google" },
+      { id: "deepseek", label: "DeepSeek" },
+      { id: "mistral", label: "Mistral" },
+      { id: "xai", label: "xAI" }
+    ];
+    isModelMaker = memberOf(MODEL_MAKER_IDS);
+    MISTRAL_MODEL_FAMILIES = [
+      "mistral",
+      "mixtral",
+      "codestral",
+      "devstral",
+      "magistral",
+      "ministral",
+      "pixtral"
+    ];
   }
 });
 
@@ -41040,8 +41696,8 @@ function canonicalAcpAgentId(id) {
   return LEGACY_ACP_AGENT_IDS[id] ?? id;
 }
 function findAcpCatalogEntry(id) {
-  const canonical = canonicalAcpAgentId(id);
-  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical);
+  const canonical2 = canonicalAcpAgentId(id);
+  return KNOWN_ACP_AGENTS.find((agent) => agent.id === canonical2) ?? RETIRED_ACP_AGENTS.find((agent) => agent.id === canonical2);
 }
 var LEGACY_ACP_AGENT_IDS, RETIRED_ACP_AGENTS, KNOWN_ACP_AGENTS;
 var init_acp_known_agents = __esm({
@@ -41494,103 +42150,6 @@ var init_acp = __esm({
       ["pnpm", ["dlx", "exec"]],
       ["yarn", ["dlx"]]
     ]);
-  }
-});
-
-// packages/llm/src/estimate-cost.ts
-function isLocalModel(model) {
-  return model === "lm-studio" || model.startsWith("lmstudio:");
-}
-function pricingForModel(model, pricing) {
-  if (isLocalModel(model)) return null;
-  const info = getModelInfo(model) ?? pricing?.[model];
-  if (!info) return null;
-  return info;
-}
-function pricingForTier(model, tier, pricing) {
-  const standard = pricingForModel(model, pricing);
-  if (!standard) return { pricing: null, fallback: false };
-  const tierPricing = standard.serviceTierPricing?.[tier];
-  return tierPricing ? { pricing: tierPricing, fallback: false } : { pricing: standard, fallback: true };
-}
-function hasModelPricing(model, pricing) {
-  return pricingForModel(model, pricing) !== null;
-}
-function costForUsage(usage, info) {
-  if (!info) return 0;
-  const cacheRead = usage.cacheReadTokens ?? 0;
-  const cacheCreation = usage.cacheCreationTokens ?? 0;
-  const hasCacheBreakdown = usage.cacheReadTokens !== void 0 || usage.cacheCreationTokens !== void 0;
-  const freshInput = hasCacheBreakdown ? Math.max(0, usage.inputTokens - cacheRead - cacheCreation) : usage.inputTokens;
-  const inputRate = info.inputPricePerMTok;
-  const cacheReadRate = info.cacheReadPricePerMTok ?? inputRate;
-  const cacheCreationRate = info.cacheCreationPricePerMTok ?? inputRate;
-  return freshInput / 1e6 * inputRate + cacheRead / 1e6 * cacheReadRate + cacheCreation / 1e6 * cacheCreationRate + usage.outputTokens / 1e6 * info.outputPricePerMTok;
-}
-function costForModelUsageWithDetails(model, usage, pricing) {
-  const standard = pricingForModel(model, pricing);
-  const split = splitServiceTierUsage(usage);
-  let costUsd = costForUsage(split.standard, standard);
-  let tierPricingFallback = false;
-  for (const tier of USAGE_SERVICE_TIERS) {
-    const tierUsage = split.tiers[tier];
-    if (!tierUsage) continue;
-    const resolved3 = pricingForTier(model, tier, pricing);
-    costUsd += costForUsage(tierUsage, resolved3.pricing);
-    tierPricingFallback ||= resolved3.fallback;
-  }
-  return { costUsd, tierPricingFallback };
-}
-function costForModelUsage(model, usage, pricing) {
-  return costForModelUsageWithDetails(model, usage, pricing).costUsd;
-}
-function estimateUsageCost(byModel, pricing) {
-  const entries2 = Object.entries(byModel).filter(([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0);
-  if (entries2.length === 0) return "";
-  let totalCost = 0;
-  let hasLocal = false;
-  let hasPricedCloud = false;
-  let hasUnpricedCloud = false;
-  let hasTierPricingFallback = false;
-  for (const [model, usage] of entries2) {
-    if (isLocalModel(model)) {
-      hasLocal = true;
-      continue;
-    }
-    if (hasModelPricing(model, pricing)) hasPricedCloud = true;
-    else hasUnpricedCloud = true;
-    const cost = costForModelUsageWithDetails(model, usage, pricing);
-    totalCost += cost.costUsd;
-    hasTierPricingFallback ||= cost.tierPricingFallback;
-  }
-  if (totalCost === 0) {
-    if (hasUnpricedCloud) return "";
-    if (hasPricedCloud) return hasTierPricingFallback ? "free (standard tier fallback)" : "free";
-    if (hasLocal) return "free (local)";
-    return "";
-  }
-  const costStr = totalCost < 0.01 ? "<$0.01" : `~$${totalCost.toFixed(2)}`;
-  const qualifiedCost = hasUnpricedCloud ? `${costStr} (partial)` : costStr;
-  const tierQualifiedCost = hasTierPricingFallback ? `${qualifiedCost} (standard tier fallback)` : qualifiedCost;
-  return hasLocal ? `${tierQualifiedCost} (+ local free)` : tierQualifiedCost;
-}
-function formatThreadUsageCost(usage, fallbackChatModel, pricing) {
-  if (usage.byModel && Object.keys(usage.byModel).length > 0) {
-    return estimateUsageCost(usage.byModel, pricing);
-  }
-  if (!usage.inputTokens && !usage.outputTokens) return "";
-  return estimateUsageCost(
-    {
-      [fallbackChatModel]: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
-    },
-    pricing
-  );
-}
-var init_estimate_cost = __esm({
-  "packages/llm/src/estimate-cost.ts"() {
-    init_model_catalog();
-    init_model_usage();
-    init_service_tier();
   }
 });
 
@@ -45476,6 +46035,46 @@ var init_model_intellect_generated = __esm({
           indexVersion: "v4.1",
           source: "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
           asOf: "2026-07-18"
+        }
+      ],
+      "gpt-6-1-sol": [
+        {
+          value: 51.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol' (GPT-6.1 Sol max), intelligenceIndex 51.83, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-high": [
+        {
+          value: 50.2,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-high', intelligenceIndex 50.24, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-high",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-low": [
+        {
+          value: 42.1,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-low', intelligenceIndex 42.08, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-low",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-medium": [
+        {
+          value: 47.8,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-medium', intelligenceIndex 47.78, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-medium",
+          asOf: "2026-09-30"
+        }
+      ],
+      "gpt-6-1-sol-xhigh": [
+        {
+          value: 51,
+          indexVersion: "v4.3",
+          source: "Artificial Analysis model page (index v4.3.2), model 'gpt-6-1-sol-xhigh', intelligenceIndex 51.04, fetched 2026-09-30; https://artificialanalysis.ai/models/gpt-6-1-sol-xhigh",
+          asOf: "2026-09-30"
         }
       ],
       "gpt-6-astra": [
@@ -50750,6 +51349,7 @@ var init_model_intellect_generated = __esm({
       "anthropic/claude-haiku-4-5": "claude-haiku-4-5",
       "anthropic/claude-opus-4-8": "claude-opus-4-8",
       "anthropic/claude-opus-5": "claude-opus-5",
+      "anthropic/claude-opus-5-5": "claude-opus-5-5",
       "anthropic/claude-sonnet-4-6": "claude-sonnet-4-6",
       "anthropic/claude-sonnet-5": "claude-sonnet-5",
       "Claude Fable 5": "claude-fable-5",
@@ -50757,6 +51357,7 @@ var init_model_intellect_generated = __esm({
       "claude-fable-5-latest": "claude-fable-5",
       "claude-haiku-4-5-latest": "claude-haiku-4-5",
       "claude-opus-4-8-latest": "claude-opus-4-8",
+      "claude-opus-5-5-latest": "claude-opus-5-5",
       "claude-opus-5-latest": "claude-opus-5",
       "claude-sonnet-4-6-latest": "claude-sonnet-4-6",
       "claude-sonnet-5-latest": "claude-sonnet-5",
@@ -50783,6 +51384,8 @@ var init_model_intellect_generated = __esm({
       "GPT-5.6 Sol": "gpt-5.6-sol",
       "GPT-5.6 Terra": "gpt-5.6-terra",
       "GPT-5.6-Terra": "gpt-5.6-terra",
+      "GPT-6.1 Sol": "gpt-6-1-sol",
+      "gpt-6.1-sol": "gpt-6-1-sol",
       "Grok 4.5": "grok-4.5",
       "Grok Build 0.1": "grok-build-0-1-06-16",
       "grok-4-5": "grok-4.5",
@@ -50811,8 +51414,10 @@ var init_model_intellect_generated = __esm({
       "openai/gpt-5.6-luna": "gpt-5.6-luna",
       "openai/gpt-5.6-sol": "gpt-5.6-sol",
       "openai/gpt-5.6-terra": "gpt-5.6-terra",
+      "openai/gpt-6.1-sol": "gpt-6-1-sol",
       "Opus 4.8": "claude-opus-4-8",
       "Opus 5": "claude-opus-5",
+      "Opus 5.5": "claude-opus-5-5",
       "phi-4": "microsoft/phi-4",
       "Phi-4": "microsoft/phi-4",
       "qwen2-5-coder-32b-instruct": "qwen/qwen2.5-coder-32b",
@@ -52159,40 +52764,6 @@ var init_orchestration_strategy = __esm({
   }
 });
 
-// packages/agent/src/plugins/advisor-strategy-plugin.ts
-var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
-var init_advisor_strategy_plugin = __esm({
-  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
-    init_dynamic_model();
-    init_plugin_manifest();
-    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
-    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
-    ADVISOR_MODEL_SETTING_ID = "advisorModel";
-    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
-    advisorStrategyPlugin = definePlugin(
-      {
-        name: ADVISOR_STRATEGY_PLUGIN_ID,
-        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
-        settings: {
-          [ADVISOR_MODEL_SETTING_ID]: {
-            kind: "model",
-            title: "Advisor model",
-            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
-            default: DEFAULT_ADVISOR_MODEL_ID
-          }
-        },
-        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
-      },
-      {
-        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
-      }
-    );
-  }
-});
-
 // src/shared/file-bytes.ts
 function fileExtension(name) {
   const dot = name.lastIndexOf(".");
@@ -53075,17 +53646,28 @@ async function fetchModelOptions(api2, current, opts = {}) {
       options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` });
     }
   }
-  const concreteCount = options.filter(
+  let blockedMakers = parseBlockedModelMakers(null);
+  try {
+    blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+  } catch {
+  }
+  const visibleOptions = options.flatMap((option) => {
+    const maker = blockedModelMaker(option.value, blockedMakers);
+    if (!maker) return [option];
+    if (option.value !== current) return [];
+    return [{ ...option, label: `${option.label} (blocked in Settings)`, disabled: true }];
+  });
+  const concreteCount = visibleOptions.filter(
     (o3) => !isBestValueChatModel(o3.value) && o3.value !== "" && !o3.value.startsWith(AUTO_MODEL_PREFIX)
   ).length;
   if (concreteCount === 0) {
-    options.push({
+    visibleOptions.push({
       value: "",
       label: "No models available \u2014 add a provider or API key in Settings",
       disabled: true
     });
   }
-  return options;
+  return visibleOptions;
 }
 function autoModelOption(label) {
   return { value: "", label };
@@ -53164,6 +53746,7 @@ var init_model_options = __esm({
     init_agent_model_identity();
     init_model_display();
     init_nullish2();
+    init_model_maker_block();
     ACP_GROUP = "Agents on this device";
     OPENROUTER_GROUP = "OpenRouter";
     CHAT_DEFAULT_GROUP = "Chat default";
@@ -54033,6 +54616,18 @@ var init_disclosure_summary = __esm({
 });
 
 // src/renderer/views/setup/custom-providers-section.ts
+function apiStyleSelect(current = "chat-completions") {
+  const select = el("select", { name: "providerApiStyle", class: "provider-api-style" });
+  select.append(
+    el("option", { value: "chat-completions" }, "Chat Completions"),
+    el("option", { value: "responses" }, "Responses")
+  );
+  select.value = current;
+  return select;
+}
+function selectedApiStyle(select) {
+  return select.value === "responses" ? "responses" : "chat-completions";
+}
 function privacyBadgeEl(badge) {
   return el("span", { class: `ui-badge provider-privacy-badge ${badge.kind}` }, badge.label);
 }
@@ -54235,6 +54830,7 @@ function createCustomProvidersSection(api2, opts = {}) {
         },
         chipLabel(key)
       );
+      chip2.dataset["provider"] = key;
       chip2.classList.toggle("active", key === selected);
       if (key !== "other" && configured.has(key)) {
         chip2.append(el("span", { class: "provider-chip-dot", title: "Key configured" }));
@@ -54471,10 +55067,24 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: '{ "provider": { "require_parameters": true } }'
     });
     extraBodyArea.value = provider.extraBody ? JSON.stringify(provider.extraBody, null, 2) : "";
+    const apiStyle = apiStyleSelect(provider.apiStyle);
     const advanced = el(
       "details",
       { class: "provider-advanced" },
       disclosureSummary("Advanced"),
+      ...provider.builtin ? [] : [
+        el(
+          "label",
+          {},
+          "API format",
+          apiStyle,
+          el(
+            "span",
+            { class: "field-hint" },
+            "Choose Responses only when this endpoint implements the OpenAI Responses API."
+          )
+        )
+      ],
       el(
         "label",
         { class: "checkbox-label" },
@@ -54525,6 +55135,7 @@ function createCustomProvidersSection(api2, opts = {}) {
           await api2.settings.saveExtraProvider({
             slug: provider.id,
             ...provider.builtin ? {} : { label: provider.label, baseUrl: urlInput.value.trim() },
+            ...provider.builtin ? {} : { apiStyle: selectedApiStyle(apiStyle) },
             models: editor.read(),
             includeUsage: usageBox.checked,
             ...Number.isFinite(ctx) && ctx > 0 ? { fallbackContextWindow: ctx } : {},
@@ -54591,6 +55202,7 @@ function createCustomProvidersSection(api2, opts = {}) {
       placeholder: "API key (optional)",
       autocomplete: "off"
     });
+    const apiStyle = apiStyleSelect();
     const addBtn = el("button", { type: "button", class: "provider-save" }, "Add provider");
     const status = el("span", { class: "key-status" });
     let slugEdited = false;
@@ -54631,7 +55243,8 @@ function createCustomProvidersSection(api2, opts = {}) {
           const next = await api2.settings.saveExtraProvider({
             ...slug2 ? { slug: slug2 } : {},
             ...label ? { label } : {},
-            baseUrl
+            baseUrl,
+            apiStyle: selectedApiStyle(apiStyle)
           });
           const savedRecord = next.find((p2) => p2.id === slug2);
           let keyFailure = null;
@@ -54688,6 +55301,17 @@ function createCustomProvidersSection(api2, opts = {}) {
         )
       ),
       el("label", {}, "API key", keyInput),
+      el(
+        "label",
+        {},
+        "API format",
+        apiStyle,
+        el(
+          "span",
+          { class: "field-hint" },
+          "Most compatible endpoints use Chat Completions. Choose Responses only when documented."
+        )
+      ),
       el("div", { class: "provider-actions provider-form-footer" }, addBtn, status)
     );
   }
@@ -57630,31 +58254,6 @@ var init_model_parameters_section = __esm({
   }
 });
 
-// src/shared/usage/format-usage-summary.ts
-function formatUsd(amount) {
-  if (amount <= 0) return "$0.00";
-  if (amount < 0.01) return "<$0.01";
-  return `~$${amount.toFixed(2)}`;
-}
-function formatTokenCount(n2) {
-  if (n2 >= 1e6) return `${(n2 / 1e6).toFixed(1)}M`;
-  if (n2 >= 1e3) return `${(n2 / 1e3).toFixed(1)}k`;
-  return String(n2);
-}
-function formatPeriodHeadline(summary) {
-  const localCount = summary.localModels.length;
-  const cloudCount = summary.cloudModels.length;
-  const cost = summary.hasUnpricedCloudUsage ? summary.totalCostUsd > 0 ? `Known cost ${formatUsd(summary.totalCostUsd)}` : "Cost unavailable" : formatUsd(summary.totalCostUsd);
-  const parts = [cost];
-  if (cloudCount) parts.push(`${String(cloudCount)} cloud model${cloudCount === 1 ? "" : "s"}`);
-  if (localCount) parts.push(`${String(localCount)} local model${localCount === 1 ? "" : "s"}`);
-  return parts.join(" \xB7 ");
-}
-var init_format_usage_summary = __esm({
-  "src/shared/usage/format-usage-summary.ts"() {
-  }
-});
-
 // packages/llm/src/frontier-candidates.ts
 function localFrontierCandidates(localModelIds) {
   const out = [];
@@ -57768,8 +58367,8 @@ var init_model_card_cache = __esm({
 function canonicalAnchors() {
   const out = /* @__PURE__ */ new Map();
   for (const [modelId, entries2] of Object.entries(MODEL_INTELLECT_RAW)) {
-    const canonical = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
-    if (canonical) out.set(modelId, canonical.value);
+    const canonical2 = entries2.find((m2) => m2.indexVersion === CANONICAL_INTELLECT_VERSION);
+    if (canonical2) out.set(modelId, canonical2.value);
   }
   return out;
 }
@@ -57787,12 +58386,12 @@ function verifyLiveCohort(liveModels, reportedVersion) {
   for (const live of liveModels) {
     const modelId = resolveIntellectModelId(live.id);
     if (modelId === null) continue;
-    const canonical = anchors.get(modelId);
-    if (canonical === void 0) continue;
+    const canonical2 = anchors.get(modelId);
+    if (canonical2 === void 0) continue;
     anchorsChecked += 1;
-    const drift = Math.abs(live.intellect - canonical);
+    const drift = Math.abs(live.intellect - canonical2);
     maxDrift = Math.max(maxDrift, drift);
-    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical, live: live.intellect });
+    if (drift > LIVE_ANCHOR_TOLERANCE) mismatches.push({ modelId, canonical: canonical2, live: live.intellect });
   }
   const version2 = normalizeIndexVersion(reportedVersion);
   const versionMismatch = version2 !== void 0 && version2 !== CANONICAL_INTELLECT_VERSION;
@@ -60484,6 +61083,170 @@ var init_usage_section = __esm({
   }
 });
 
+// src/renderer/views/setup/about-section.ts
+function describeInclusion(component) {
+  if (component.partOf) return `Compiled into ${component.partOf}`;
+  const labels = component.shippedAs.map((as2) => SHIPPED_AS_LABEL[as2]);
+  const text2 = labels.join(", ");
+  return text2.charAt(0).toUpperCase() + text2.slice(1);
+}
+function licenseBody(component, texts) {
+  const meta3 = el("p", { class: "about-license-meta" }, describeInclusion(component));
+  if (component.source) {
+    meta3.append(
+      " \xB7 ",
+      el("a", { href: component.source, target: "_blank", rel: "noopener noreferrer" }, "Source")
+    );
+  }
+  const body = el("div", { class: "about-license-body" }, meta3);
+  if (component.note) body.append(el("p", { class: "about-license-note" }, component.note));
+  for (const file2 of component.files) {
+    body.append(
+      el("div", { class: "about-license-file-name" }, file2.name),
+      el("pre", { class: "about-license-text" }, (texts[file2.text] ?? "").trim())
+    );
+  }
+  return body;
+}
+function componentRow(component, texts) {
+  const summary = el(
+    "summary",
+    { class: "about-license-summary" },
+    el("span", { class: "about-license-name" }, component.name),
+    el("span", { class: "about-license-version" }, component.version),
+    el("span", { class: "about-license-id" }, component.license)
+  );
+  const details = el("details", { class: "about-license" }, summary);
+  details.addEventListener(
+    "toggle",
+    () => {
+      if (details.open && !details.querySelector(".about-license-body")) {
+        details.append(licenseBody(component, texts));
+      }
+    },
+    { passive: true }
+  );
+  return el(
+    "li",
+    { "data-search": `${component.name} ${component.license}`.toLowerCase() },
+    details
+  );
+}
+function createAboutSection(api2) {
+  const versionEl = el("span", { class: "about-version" }, "\u2026");
+  const openButton = (label, kind) => {
+    const button = el("button", { type: "button", class: "ui-btn ui-btn-secondary" }, label);
+    button.dataset["licenseFile"] = kind;
+    button.addEventListener("click", () => {
+      void api2.about.openLicenseFile(kind).catch((err2) => {
+        statusEl.textContent = errorMessage(err2);
+      });
+    });
+    return button;
+  };
+  const copse = el(
+    "fieldset",
+    { class: "about-copse" },
+    el("legend", {}, "Copse"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Version ",
+      versionEl,
+      ". Copse is free software, licensed under the GNU Affero General Public License, version 3."
+    ),
+    uiActions(openButton("View licence", "copse"), { align: "start" })
+  );
+  const countEl = el("span", {}, "the open-source components");
+  const statusEl = el("p", { class: "field-hint about-licenses-status", "aria-live": "polite" });
+  const thirdParty = el(
+    "fieldset",
+    { class: "about-third-party" },
+    el("legend", {}, "Open-source licences"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Copse is built with ",
+      countEl,
+      " listed below, each used under its own licence. Select one to read its licence. The Chromium and Node.js components inside the Electron runtime are listed separately."
+    ),
+    uiActions(
+      openButton("Open all licences", "third-party"),
+      openButton("Chromium and Node.js notices", "chromium"),
+      { align: "start" }
+    )
+  );
+  const filter = el("input", {
+    type: "search",
+    class: "about-licenses-filter",
+    placeholder: "Filter by name or licence",
+    "aria-label": "Filter open-source components",
+    autocomplete: "off",
+    spellcheck: "false"
+  });
+  const list = el("ul", { class: "about-licenses-list", "aria-label": "Open-source components" });
+  const listHost = el("div", { class: "about-licenses", hidden: true }, filter, statusEl, list);
+  let total2 = 0;
+  const applyFilter = () => {
+    const query = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row2 of Array.from(list.children)) {
+      if (!(row2 instanceof HTMLElement)) continue;
+      const match = query === "" || (row2.dataset["search"] ?? "").includes(query);
+      row2.hidden = !match;
+      if (match) shown++;
+    }
+    statusEl.textContent = query === "" ? `${String(total2)} components` : `${String(shown)} of ${String(total2)} components`;
+  };
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+  const render = (report) => {
+    total2 = report.components.length;
+    countEl.textContent = `the ${String(total2)} open-source components`;
+    list.replaceChildren(...report.components.map((c3) => componentRow(c3, report.texts)));
+    listHost.hidden = false;
+    applyFilter();
+  };
+  let loaded = null;
+  const refresh = () => {
+    loaded ??= api2.about.getInfo().then(
+      (info) => {
+        versionEl.textContent = info.version;
+        if (info.report) {
+          render(info.report);
+        } else {
+          statusEl.textContent = "This build has no licence report. Only a full build (pnpm build) generates one.";
+          listHost.hidden = false;
+        }
+      },
+      (err2) => {
+        loaded = null;
+        statusEl.textContent = errorMessage(err2);
+        listHost.hidden = false;
+      }
+    );
+    return loaded;
+  };
+  const root = el("div", { class: "about-section" }, copse, thirdParty, listHost);
+  return { root, refresh };
+}
+var SHIPPED_AS_LABEL;
+var init_about_section = __esm({
+  "src/renderer/views/setup/about-section.ts"() {
+    init_errors4();
+    init_helpers();
+    init_ui();
+    SHIPPED_AS_LABEL = {
+      bundled: "compiled into Copse",
+      copied: "files copied into Copse",
+      node_modules: "packaged as a module",
+      vendored: "included with Copse"
+    };
+  }
+});
+
 // src/renderer/views/setup/ssh-workspace-section.ts
 function createSshWorkspaceSection(api2, opts = {}) {
   const hostList = el("div", { class: "ssh-host-list" });
@@ -60764,6 +61527,295 @@ var init_ssh_workspace_section = __esm({
   }
 });
 
+// src/renderer/views/branch-ci-editor.ts
+function mountBranchCiEditor(options) {
+  const { root, heading, scheduleList, scheduleForm, projectId, api: api2, showStatus, hideStatus } = options;
+  let pluginEnabled = options.pluginEnabled;
+  let definitions = [];
+  let editingId = null;
+  const section = el("section", { class: "automation-list automation-ci-list" });
+  const sectionHeading = el("div", { class: "plugin-settings-heading" }, "CI events");
+  const rows = el("div", { class: "automation-list" });
+  section.append(sectionHeading, rows);
+  const form = el("form", { class: "automation-form automation-ci-form", hidden: true });
+  const title = el("h4", { class: "automation-form-title" }, "New automation");
+  const when = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
+  const name = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-name",
+    required: true,
+    maxlength: "160",
+    placeholder: "Investigate failing CI"
+  });
+  const branch = el("input", {
+    type: "text",
+    class: "automation-input automation-ci-branch",
+    required: true,
+    maxlength: "200",
+    placeholder: "main",
+    autocomplete: "off",
+    spellcheck: false
+  });
+  const model = el("select", { class: "automation-input automation-ci-model", required: true });
+  const prompt = el("textarea", {
+    class: "automation-input automation-ci-prompt",
+    required: true,
+    maxlength: "100000",
+    placeholder: "Investigate the failed CI run and report the cause\u2026"
+  });
+  const worktrees = el(
+    "select",
+    { class: "automation-input automation-ci-worktrees" },
+    el("option", { value: "1" }, "1 \u2014 wait for prior work"),
+    el("option", { value: "2" }, "2 \u2014 allow one retained checkout"),
+    el("option", { value: "3" }, "3 \u2014 allow two retained checkouts")
+  );
+  const enabled = el("input", { type: "checkbox", class: "automation-ci-enabled" });
+  const summary = el("p", { class: "automation-hint automation-ci-summary" });
+  const preview = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-preview"
+    },
+    "Test match"
+  );
+  const save = el(
+    "button",
+    {
+      type: "submit",
+      class: "ui-btn ui-btn-primary automation-ci-save"
+    },
+    "Save automation"
+  );
+  const cancel = el(
+    "button",
+    {
+      type: "button",
+      class: "ui-btn ui-btn-secondary automation-ci-cancel"
+    },
+    "Cancel"
+  );
+  form.append(
+    title,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", when),
+    el("label", { class: "automation-label" }, "Name", name),
+    el("label", { class: "automation-label" }, "Branch", branch),
+    el("label", { class: "automation-label" }, "Model", model),
+    el("label", { class: "automation-label" }, "Task", prompt),
+    el("label", { class: "automation-label" }, "Maximum live worktrees", worktrees),
+    el("label", { class: "automation-enabled-label" }, enabled, "CI event enabled"),
+    summary,
+    el("div", { class: "automation-form-actions" }, preview, cancel, save)
+  );
+  root.append(section, form);
+  const modelPicker = mountModelSelectPicker(model, {
+    loadOptions: (current) => fetchDynamicModelOptions(current),
+    ariaLabel: "CI automation model",
+    loadOnMount: false
+  });
+  function updateSummary() {
+    const selected = branch.value.trim() || "this branch";
+    summary.textContent = `When CI finishes with a failure on ${selected}, investigate it. One task per run attempt on the current branch head; at most three runs per 24 hours.`;
+  }
+  branch.addEventListener("input", updateSummary);
+  function close() {
+    editingId = null;
+    form.hidden = true;
+    heading.hidden = false;
+    scheduleList.hidden = false;
+    section.hidden = false;
+  }
+  async function open2(definition, draft) {
+    hideStatus();
+    editingId = definition?.id ?? null;
+    title.textContent = definition ? "Edit automation" : "New automation";
+    when.value = "github-ci-failed";
+    when.disabled = Boolean(definition);
+    name.value = definition?.name ?? draft?.name ?? "";
+    branch.value = definition?.trigger.branch ?? "";
+    prompt.value = definition?.prompt ?? draft?.prompt ?? "";
+    worktrees.value = String(definition?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
+    enabled.checked = definition?.enabled ?? draft?.enabled ?? true;
+    updateSummary();
+    heading.hidden = true;
+    scheduleList.hidden = true;
+    scheduleForm.hidden = true;
+    section.hidden = true;
+    form.hidden = false;
+    name.focus();
+    const defaultModel = definition?.model ?? draft?.model ?? BEST_VALUE_CHAT_MODEL;
+    const available = await fetchDynamicModelOptions(defaultModel);
+    const selected = available.find((item) => item.value === defaultModel && !item.disabled)?.value ?? available.find((item) => item.value && !item.disabled)?.value ?? "";
+    await modelPicker.refresh(selected);
+  }
+  function render() {
+    clear(rows);
+    if (definitions.length === 0) {
+      rows.append(el("p", { class: "automation-empty" }, "No CI events for this project yet."));
+      return;
+    }
+    for (const definition of definitions) {
+      const row2 = el("article", {
+        class: `automation-row${definition.enabled ? "" : " automation-row-paused"}`,
+        "data-ci-automation-id": definition.id
+      });
+      const copy = el(
+        "div",
+        { class: "automation-row-copy" },
+        el("div", { class: "automation-row-title" }, definition.name),
+        el(
+          "div",
+          { class: "automation-row-meta" },
+          el(
+            "span",
+            {},
+            `Failed CI \xB7 ${definition.trigger.repository} \xB7 ${definition.trigger.branch}`
+          ),
+          el("span", {}, modelDisplayLabel(definition.model)),
+          el("span", {}, definition.enabled && pluginEnabled ? "Armed" : "Paused")
+        ),
+        el(
+          "div",
+          { class: "automation-row-last-run" },
+          definition.lastRunAt ? `Last started ${new Date(definition.lastRunAt).toLocaleString()}` : "Never run"
+        )
+      );
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-secondary ui-btn-compact automation-row-btn"
+        },
+        "Edit"
+      );
+      edit.addEventListener("click", () => void open2(definition));
+      const remove = el(
+        "button",
+        {
+          type: "button",
+          class: "ui-btn ui-btn-danger ui-btn-compact automation-row-btn"
+        },
+        "Delete"
+      );
+      remove.addEventListener("click", () => {
+        if (!projectId) return;
+        void showConfirmDialog({
+          message: `Delete \u201C${definition.name}\u201D?`,
+          detail: "Already-created tasks are kept.",
+          confirmLabel: "Delete CI event",
+          danger: true
+        }).then(async (confirmed) => {
+          if (!confirmed) return;
+          await api2.automations.removeBranchCi(projectId, definition.id);
+          await refresh();
+        }).catch((error62) => {
+          showStatus(ipcErrorMessage(error62, "Could not delete CI event."), true);
+        });
+      });
+      row2.append(copy, el("div", { class: "automation-row-actions" }, edit, remove));
+      rows.append(row2);
+    }
+  }
+  async function refresh() {
+    if (!projectId) return;
+    definitions = await api2.automations.listBranchCi(projectId);
+    render();
+  }
+  when.addEventListener("change", () => {
+    if (when.value !== "schedule" || editingId) return;
+    options.onScheduleSelected({
+      name: name.value,
+      prompt: prompt.value,
+      model: model.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    });
+  });
+  cancel.addEventListener("click", close);
+  preview.addEventListener("click", () => {
+    if (!projectId || !branch.value.trim()) return;
+    preview.disabled = true;
+    void api2.automations.testBranchCi(projectId, branch.value.trim()).then(
+      (result) => {
+        showStatus(
+          result.latestFailure ? `Latest matching failure on ${result.repository}/${result.branch}: ${result.latestFailure}. Test match did not start a task.` : `No failed run on the current head of ${result.repository}/${result.branch}. Test match did not start a task.`
+        );
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not check recent CI runs."), true);
+      }
+    ).finally(() => {
+      preview.disabled = false;
+    });
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!projectId) return;
+    hideStatus();
+    save.disabled = true;
+    const input2 = {
+      ...editingId ? { id: editingId } : {},
+      name: name.value,
+      branch: branch.value,
+      prompt: prompt.value,
+      model: model.value,
+      enabled: enabled.checked,
+      maxLiveWorktrees: worktrees.value === "3" ? 3 : worktrees.value === "2" ? 2 : 1
+    };
+    void api2.automations.upsertBranchCi(projectId, input2).then(
+      async () => {
+        close();
+        await refresh();
+      },
+      (error62) => {
+        showStatus(ipcErrorMessage(error62, "Could not save CI event."), true);
+      }
+    ).finally(() => {
+      save.disabled = false;
+    });
+  });
+  return {
+    refresh,
+    openNew(draft) {
+      return open2(void 0, draft);
+    },
+    reveal(id) {
+      const definition = definitions.find((candidate) => candidate.id === id);
+      if (!definition) return false;
+      void open2(definition);
+      return true;
+    },
+    hideForSchedule() {
+      form.hidden = true;
+      section.hidden = true;
+    },
+    showList() {
+      form.hidden = true;
+      section.hidden = false;
+    },
+    setPluginEnabled(value) {
+      pluginEnabled = value;
+      render();
+    }
+  };
+}
+var init_branch_ci_editor = __esm({
+  "src/renderer/views/branch-ci-editor.ts"() {
+    init_lm_studio_defaults();
+    init_helpers();
+    init_ipc_error_message();
+    init_model_options();
+    init_model_picker();
+    init_confirm_dialog();
+  }
+});
+
 // src/renderer/views/automation-plugin-settings.ts
 function cleanIpcError(error62) {
   return ipcErrorMessage(error62, "Automation request failed.");
@@ -60848,7 +61900,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
   const heading = el("div", { class: "automation-plugin-heading" });
   heading.append(
-    el("div", { class: "plugin-settings-heading" }, "Schedules"),
+    el("div", { class: "plugin-settings-heading" }, "Automations"),
     el(
       "button",
       {
@@ -60856,7 +61908,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         class: "ui-btn ui-btn-secondary ui-btn-compact automation-add-btn",
         disabled: projectId ? void 0 : true
       },
-      "Add schedule"
+      "New automation"
     )
   );
   const addButton = heading.querySelector(".automation-add-btn");
@@ -60864,14 +61916,25 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const scope = el(
     "p",
     { class: "automation-scope" },
-    project2 ? `Project: ${project2.name} \xB7 local time \xB7 Copse must be running` : "Open a project to configure its schedules."
+    project2 ? `Project: ${project2.name} \xB7 Copse must be running` : "Open a project to configure automations."
   );
-  const pluginNotice = () => pluginEnabled ? "Each run starts a fresh isolated task. Runs group under the schedule name. One live worktree is the safe default; schedules can explicitly allow up to three. Exact actions selected below can run without interrupting you; every other permission still pauses." : "Enable this plugin to arm schedules. Existing schedules remain editable while disabled.";
+  const pluginNotice = () => pluginEnabled ? "Schedules and failing CI events start fresh isolated tasks while Copse is open. One live worktree is the safe default. Tool approvals follow the normal permission path." : "Enable this plugin to arm schedules and CI events. Existing definitions remain editable while disabled.";
   const notice = el("p", { class: "automation-notice" }, pluginNotice());
+  const attention = el("div", {
+    class: "automation-attention",
+    role: "status",
+    hidden: true
+  });
   const status = el("div", { class: "automation-status", role: "status", hidden: true });
   const list = el("div", { class: "automation-list" });
-  const form = el("form", { class: "automation-form", hidden: true });
+  const form = el("form", { class: "automation-form", hidden: true, novalidate: true });
   const formTitle = el("h4", { class: "automation-form-title" }, "New automation");
+  const whenSelect = el(
+    "select",
+    { class: "automation-input automation-when-select" },
+    el("option", { value: "schedule" }, "On a schedule"),
+    el("option", { value: "github-ci-failed" }, "When CI fails on a branch")
+  );
   const nameInput = el("input", {
     type: "text",
     class: "automation-input automation-name-input",
@@ -60982,7 +62045,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   const saveButton = el(
     "button",
     { type: "submit", class: "ui-btn ui-btn-primary automation-save-btn" },
-    "Save schedule"
+    "Save automation"
   );
   const cancelButton = el(
     "button",
@@ -60991,6 +62054,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   );
   form.append(
     formTitle,
+    el("label", { class: "automation-label automation-trigger-label" }, "When", whenSelect),
     el("label", { class: "automation-label" }, "Name", nameInput),
     el("label", { class: "automation-label" }, "Model", modelSelect),
     scheduleFields,
@@ -61010,7 +62074,19 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     el("label", { class: "automation-enabled-label" }, enabledInput, "Schedule enabled"),
     el("div", { class: "automation-form-actions" }, saveButton, cancelButton)
   );
-  root.append(heading, scope, notice, status, list, form);
+  root.append(heading, scope, notice, attention, status, list, form);
+  const ciEditor = mountBranchCiEditor({
+    root,
+    heading,
+    scheduleList: list,
+    scheduleForm: form,
+    projectId,
+    api: api2,
+    pluginEnabled,
+    showStatus,
+    hideStatus,
+    onScheduleSelected: (draft) => void openForm(void 0, draft)
+  });
   const modelPicker = mountModelSelectPicker(modelSelect, {
     loadOptions: (current) => fetchDynamicModelOptions(current),
     ariaLabel: "Automation model",
@@ -61036,6 +62112,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function closeForm() {
     editingId = null;
+    ciEditor.showList();
     form.hidden = true;
     list.hidden = false;
     heading.hidden = false;
@@ -61215,21 +62292,24 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     });
   }
   permissionFilterInput.addEventListener("input", renderPermissionChoices);
-  async function openForm(schedule) {
+  async function openForm(schedule, draft) {
     hideStatus();
     editingId = schedule?.id ?? null;
     formTitle.textContent = schedule ? "Edit automation" : "New automation";
+    whenSelect.value = "schedule";
+    whenSelect.disabled = Boolean(schedule);
     list.hidden = true;
     heading.hidden = true;
-    nameInput.value = schedule?.name ?? "";
+    nameInput.value = schedule?.name ?? draft?.name ?? "";
     setScheduleControls(schedule?.cron ?? "0 9 * * 1-5");
-    promptInput.value = schedule?.prompt ?? "";
-    enabledInput.checked = schedule?.enabled ?? true;
-    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? 1);
+    promptInput.value = schedule?.prompt ?? draft?.prompt ?? "";
+    enabledInput.checked = schedule?.enabled ?? draft?.enabled ?? true;
+    worktreeLimitSelect.value = String(schedule?.maxLiveWorktrees ?? draft?.maxLiveWorktrees ?? 1);
     permissionFilterInput.value = "";
     setPermissionChoices(schedule?.permissions ?? []);
-    const configuredModel = schedule?.model.trim() ?? "";
+    const configuredModel = schedule?.model.trim() ?? draft?.model.trim() ?? "";
     const defaultModel = configuredModel || BEST_VALUE_CHAT_MODEL;
+    ciEditor.hideForSchedule();
     form.hidden = false;
     nameInput.focus();
     const options = await fetchDynamicModelOptions(defaultModel);
@@ -61238,6 +62318,9 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
   }
   function renderList() {
     clear(list);
+    const blocked = schedules.filter((schedule) => schedule.lastWorktreeLimitAt !== void 0);
+    attention.hidden = blocked.length === 0;
+    attention.textContent = blocked.length === 0 ? "" : `${String(blocked.length)} automation${blocked.length === 1 ? "" : "s"} had a run skipped at the live worktree limit. Review earlier work or edit the schedule to allow more worktrees.`;
     if (!projectId) return;
     if (schedules.length === 0) {
       list.append(el("div", { class: "automation-empty" }, "No schedules for this project yet."));
@@ -61245,7 +62328,7 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
     for (const schedule of schedules) {
       const row2 = el("article", {
-        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}`,
+        class: `automation-row${schedule.enabled ? "" : " automation-row-paused"}${schedule.lastWorktreeLimitAt === void 0 ? "" : " automation-row-blocked"}`,
         "data-schedule-id": schedule.id
       });
       const copy = el("div", { class: "automation-row-copy" });
@@ -61270,6 +62353,15 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
         ),
         el("div", { class: "automation-row-last-run" }, lastRunLabel(schedule.lastRunAt))
       );
+      if (schedule.lastWorktreeLimitAt !== void 0) {
+        copy.append(
+          el(
+            "div",
+            { class: "automation-row-blocked-message" },
+            `Last attempt skipped ${new Date(schedule.lastWorktreeLimitAt).toLocaleString()}: live worktree limit reached.`
+          )
+        );
+      }
       const actions = el("div", { class: "automation-row-actions" });
       const edit = el(
         "button",
@@ -61336,7 +62428,10 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     pendingReveal = void 0;
     const schedule = schedules.find((candidate) => candidate.id === scheduleId);
     if (!schedule) {
-      showStatus("That automation is no longer scheduled. Its finished runs stay in the sidebar.");
+      if (!ciEditor.reveal(scheduleId))
+        showStatus(
+          "That automation is no longer scheduled or configured. Its finished runs stay in the sidebar."
+        );
       return;
     }
     void openForm(schedule).then(() => {
@@ -61348,7 +62443,8 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     try {
       const [loadedSchedules, loadedPermissions] = await Promise.all([
         api2.automations.list(projectId),
-        api2.automations.permissionOptions(projectId)
+        api2.automations.permissionOptions(projectId),
+        ciEditor.refresh()
       ]);
       schedules = loadedSchedules;
       availablePermissions = loadedPermissions;
@@ -61363,6 +62459,16 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     }
   }
   addButton.addEventListener("click", () => void openForm());
+  whenSelect.addEventListener("change", () => {
+    if (whenSelect.value !== "github-ci-failed" || editingId) return;
+    void ciEditor.openNew({
+      name: nameInput.value,
+      prompt: promptInput.value,
+      model: modelSelect.value || BEST_VALUE_CHAT_MODEL,
+      enabled: enabledInput.checked,
+      maxLiveWorktrees: liveWorktreeLimit(worktreeLimitSelect.value)
+    });
+  });
   cancelButton.addEventListener("click", closeForm);
   repeatSelect.addEventListener("change", () => {
     if (repeatSelect.value !== "custom") {
@@ -61378,6 +62484,21 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
     event.preventDefault();
     if (!projectId) return;
     hideStatus();
+    if (!nameInput.value.trim()) {
+      showStatus("Enter a name before saving.", true);
+      nameInput.focus();
+      return;
+    }
+    if (!promptInput.value.trim()) {
+      showStatus("Enter a prompt before saving.", true);
+      promptInput.focus();
+      return;
+    }
+    if (!modelSelect.value.trim()) {
+      showStatus("Choose a model before saving.", true);
+      modelPicker.openMenu();
+      return;
+    }
     const cron = cronFromScheduleControls();
     if (cron === null) {
       showStatus("Choose a valid schedule before saving.", true);
@@ -61408,12 +62529,27 @@ function createAutomationPluginSettings(store2, api2, pluginEnabled, revealSched
       saveButton.removeAttribute("disabled");
     });
   });
+  const unsubscribeTriggered = api2.automations.onTriggered(
+    (event) => {
+      if (event.projectId !== projectId) return;
+      const changesLimitStatus = event.disposition === "started" || event.coalescedReason === "worktree-limit";
+      if (!changesLimitStatus) return;
+      void refresh();
+    }
+  );
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(root)) return;
+    removalObserver.disconnect();
+    unsubscribeTriggered();
+  });
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true });
   void refresh();
   return Object.assign(root, {
     setPluginEnabled(enabled) {
       pluginEnabled = enabled;
       notice.textContent = pluginNotice();
       renderList();
+      ciEditor.setPluginEnabled(enabled);
     }
   });
 }
@@ -61427,6 +62563,7 @@ var init_automation_plugin_settings = __esm({
     init_model_options();
     init_model_picker();
     init_confirm_dialog();
+    init_branch_ci_editor();
     init_ipc_error_message();
     WEEKDAYS = [
       "Sunday",
@@ -61944,13 +63081,14 @@ var init_tool_permissions_panel = __esm({
 });
 
 // packages/agent/src/plugins/apple-development-plugin.ts
-var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, appleDevelopmentPlugin;
+var APPLE_DEVELOPMENT_PLUGIN_ID, APPLE_DEVELOPMENT_PANEL_ID, APPLE_DEVELOPMENT_TOOL_NAMES, APPLE_DEVELOPMENT_SUGGEST_SETTING_ID, appleDevelopmentPlugin;
 var init_apple_development_plugin = __esm({
   "packages/agent/src/plugins/apple-development-plugin.ts"() {
     init_plugin_manifest();
     APPLE_DEVELOPMENT_PLUGIN_ID = "copse.apple-development";
     APPLE_DEVELOPMENT_PANEL_ID = "apple-development";
     APPLE_DEVELOPMENT_TOOL_NAMES = ["open_simulator_desktop", "device_hub"];
+    APPLE_DEVELOPMENT_SUGGEST_SETTING_ID = "suggest-projects";
     appleDevelopmentPlugin = definePlugin(
       {
         name: APPLE_DEVELOPMENT_PLUGIN_ID,
@@ -61975,6 +63113,14 @@ var init_apple_development_plugin = __esm({
             title: "Apple Development setup"
           }
         ],
+        settings: {
+          [APPLE_DEVELOPMENT_SUGGEST_SETTING_ID]: {
+            kind: "boolean",
+            title: "Suggest for Apple projects",
+            description: "When you open a project with an Xcode project or workspace, offer to turn on Apple development for it. This works while the plugin is off.",
+            default: true
+          }
+        },
         storage: { namespace: APPLE_DEVELOPMENT_PLUGIN_ID }
       },
       {
@@ -62146,7 +63292,7 @@ function createAppleDevelopmentPanel(store2, api2, options) {
     );
     const headingActions = el("div", { class: "apple-development-heading-actions" });
     panel.append(el("div", { class: "apple-development-heading" }, title, status, headingActions));
-    if (options.allowEnrollment && options.pluginEnabled !== false) {
+    if (options.allowEnrollment && options.pluginEnabled !== false && (state.supportedHost || state.enrolled)) {
       const enrollment = el(
         "button",
         { type: "button", class: "btn btn-secondary" },
@@ -62821,6 +63967,7 @@ function mountSettingsDialog(store2, api2) {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -62865,6 +64012,7 @@ function mountSettingsDialog(store2, api2) {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -63741,6 +64889,20 @@ function mountSettingsDialog(store2, api2) {
             </fieldset>
 
             <fieldset>
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden; while it works, you see what it
+                is doing now. Other models always show the full thread.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
@@ -63802,6 +64964,15 @@ function mountSettingsDialog(store2, api2) {
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -63879,6 +65050,26 @@ function mountSettingsDialog(store2, api2) {
     cloudAgentOptions: qsRequired(overlay, "#settings-cloud-agent-options")
   });
   qsRequired(overlay, "#settings-providers-host").append(providersPanel.root);
+  const makerBlockList = el("div", { class: "model-maker-block-list" });
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        "label",
+        { class: "checkbox-label" },
+        el("input", { type: "checkbox", name: "blockedModelMakers", value: maker.id }),
+        maker.label
+      )
+    );
+  }
+  qsRequired(overlay, "#settings-model-maker-block-host").append(
+    el("h4", { class: "model-role-heading" }, "Blocked model makers"),
+    el(
+      "p",
+      { class: "settings-fieldset-desc" },
+      "Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run."
+    ),
+    makerBlockList
+  );
   const ghCliSection = createGhCliSection(api2);
   qsRequired(overlay, "#settings-gh-cli-host").append(ghCliSection.root);
   const toolPermissionsPanel = createToolPermissionsPanel(api2.toolPermissions);
@@ -63920,6 +65111,8 @@ function mountSettingsDialog(store2, api2) {
   };
   const usageSection = createUsageSection(api2, store2, closeSettingsDialog);
   qsRequired(overlay, "#settings-usage-host").append(usageSection.root);
+  const aboutSection = createAboutSection(api2);
+  qsRequired(overlay, "#settings-about-host").append(aboutSection.root);
   qsRequired(overlay, "#mobile-companion-manage").addEventListener(
     "click",
     () => {
@@ -64144,6 +65337,7 @@ function mountSettingsDialog(store2, api2) {
         if (id === "classifiers") void classifiersSection.refresh();
         if (id === "usage") void usageSection.refresh();
         if (id === "permissions") void toolPermissionsPanel.refresh();
+        if (id === "about") void aboutSection.refresh();
         if (id === "ssh") void sshWorkspaceSection.refresh();
         if (id === "customise") {
           void refreshSources();
@@ -66089,6 +67283,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
     if (openedSection === "ssh") void sshWorkspaceSection.refresh();
     if (openedSection === "usage") void usageSection.refresh();
     if (openedSection === "permissions") void toolPermissionsPanel.refresh();
+    if (openedSection === "about") void aboutSection.refresh();
     if (openedSection === "customise") {
       void refreshSources();
       void revealPluginDetail();
@@ -66127,6 +67322,10 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
       });
       await refreshStage("form-fields", async () => {
         await loadSimpleFields(form, api2);
+        const blockedMakers = parseBlockedModelMakers(await api2.settings.get("blockedModelMakers"));
+        for (const input2 of makerBlockList.querySelectorAll("input")) {
+          input2.checked = blockedMakers.some((maker) => maker === input2.value);
+        }
         syncDeveloperOnlySettings();
         wireSafetySliders(form);
         const savedWebOrigins = storedStringArray(
@@ -66267,6 +67466,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         if (dirtyFieldNames.has(name)) writes.push(api2.settings.set(name, value));
       };
       saveIfDirty("model", model);
+      saveIfDirty("blockedModelMakers", parseBlockedModelMakers(data.getAll("blockedModelMakers")));
       saveIfDirty("smallTasksModel", formDataString(data, "smallTasksModel").trim());
       saveIfDirty(
         "orchestrationWorkerModel",
@@ -66363,6 +67563,7 @@ This will reclaim ${size}. Your package manager can recreate these directories.`
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get("openLinksInBuiltInBrowser") === "on",
         animateAgentAvatars: data.get("animateAgentAvatars") === "on",
+        conciseThreadsEnabled: data.get("conciseThreadsEnabled") === "on",
         developerMode,
         settings: { ...store2.getState().settings, model }
       });
@@ -66398,6 +67599,7 @@ var init_settings_dialog = __esm({
     init_ui_scale();
     init_app_icon_variants();
     init_lm_studio_defaults();
+    init_model_maker_block();
     init_remote_agent();
     init_advisor_strategy();
     init_orchestration_strategy();
@@ -66419,6 +67621,7 @@ var init_settings_dialog = __esm({
     init_model_routing_section();
     init_model_parameters_section();
     init_usage_section();
+    init_about_section();
     init_ssh_workspace_section();
     init_dist();
     init_automations_plugin();
@@ -66440,7 +67643,7 @@ var init_settings_dialog = __esm({
     init_commit_attribution();
     init_appearance();
     init_nullish2();
-    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental";
+    isSettingsSection = (value) => value === "general" || value === "classifiers" || value === "usage" || value === "agent" || value === "permissions" || value === "mcp" || value === "customise" || value === "storage" || value === "appearance" || value === "ssh" || value === "experimental" || value === "about";
     COPSE_SITE_TINT_COLOR = "#002E2B";
     TINT_STRENGTH_AMOUNTS = {
       off: "0%",
@@ -66514,6 +67717,7 @@ var init_settings_dialog = __esm({
       // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
       { name: "modelClassifierEnabled", kind: "checkbox", default: false, save: true },
       { name: "nextStepSuggestionEnabled", kind: "checkbox", default: false, save: true },
+      { name: "conciseThreadsEnabled", kind: "checkbox", default: false, save: true },
       { name: "containerRunsEnabled", kind: "checkbox", default: false, save: true },
       { name: "orchestrationStrategyEnabled", kind: "checkbox", default: false, save: true },
       { name: DEVELOPER_MODE_SETTING, kind: "checkbox", default: false, save: true },
@@ -66792,43 +67996,106 @@ var init_fork_thread3 = __esm({
 });
 
 // src/renderer/controller/thread-filter.ts
+function filterText(value) {
+  return value.normalize("NFC").toLowerCase();
+}
+function filterableContent(message2) {
+  const cached2 = filterableContentCache.get(message2);
+  if (cached2?.content === message2.content) return cached2.text;
+  const text2 = filterText(message2.content);
+  filterableContentCache.set(message2, { content: message2.content, text: text2 });
+  return text2;
+}
+function residentRequestMatches(messages, query) {
+  if (query.length < MIN_REQUEST_QUERY_LENGTH) return false;
+  return messages.some(
+    (message2) => isHumanUserPrompt(message2) && filterableContent(message2).includes(query)
+  );
+}
 function createThreadFilter(store2, api2, changed) {
   const matches2 = /* @__PURE__ */ new Set();
+  const promptIndex = /* @__PURE__ */ new Map();
+  let promptIndexSize = 0;
   let generation = 0;
   let timer;
   let scan = Promise.resolve();
   let pending = false;
+  let waiting = false;
   let failed = false;
+  const forget = (key) => {
+    const entry = promptIndex.get(key);
+    if (!entry) return;
+    promptIndex.delete(key);
+    promptIndexSize -= entry.size;
+  };
+  const remember = (key, entry) => {
+    forget(key);
+    promptIndex.set(key, entry);
+    promptIndexSize += entry.size;
+    for (const oldest of promptIndex.keys()) {
+      if (promptIndexSize <= PROMPT_INDEX_MAX_CHARS || oldest === key) break;
+      forget(oldest);
+    }
+  };
+  const savedPrompts = async (projectId, thread) => {
+    const key = `${projectId}/${thread.id}`;
+    const cached2 = promptIndex.get(key);
+    if (cached2 && cached2.updatedAt === thread.updatedAt && cached2.lastPromptAt === thread.lastPromptAt) {
+      return cached2.prompts;
+    }
+    const messages = await api2.threads.loadMessages(projectId, thread.id);
+    const prompts = messages.filter(isHumanUserPrompt).map((message2) => filterText(message2.content));
+    const size = prompts.reduce((total2, prompt) => total2 + prompt.length, 0);
+    remember(key, {
+      updatedAt: thread.updatedAt,
+      lastPromptAt: thread.lastPromptAt,
+      prompts,
+      size
+    });
+    return prompts;
+  };
+  const notify = () => {
+    try {
+      changed();
+    } catch (error62) {
+      console.error("[thread-filter] sidebar update failed", error62);
+    }
+  };
   const cancel = () => {
     generation += 1;
     clearTimeout(timer);
     matches2.clear();
     pending = false;
+    waiting = false;
     failed = false;
   };
-  const search = (query) => {
+  const search = (rawQuery) => {
     cancel();
+    const query = filterText(rawQuery);
     const { activeProjectId, threads } = store2.getState();
-    if (!query || !activeProjectId) return;
+    if (query.length < MIN_REQUEST_QUERY_LENGTH || !activeProjectId) return;
     const current = generation;
     const isCurrent = () => current === generation && store2.getState().activeProjectId === activeProjectId;
     const candidates = sortThreadsNewestFirst(threads).filter(
-      (thread) => thread.archivedAt == null && !(thread.title || "New Thread").toLowerCase().includes(query)
+      (thread) => thread.archivedAt == null && !filterText(thread.title || "New Thread").includes(query)
     );
-    const containsRequest = (messages) => messages.some(
-      (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(query)
-    );
-    pending = candidates.length > 0;
+    if (candidates.length === 0) return;
+    waiting = true;
     timer = setTimeout(() => {
+      waiting = false;
+      pending = true;
+      notify();
       scan = scan.then(async () => {
         for (const thread of candidates) {
           if (!isCurrent()) return;
           try {
-            const matched = containsRequest(thread.messages) || thread.messagesLoaded === false && containsRequest(await api2.threads.loadMessages(activeProjectId, thread.id));
+            const matched = residentRequestMatches(thread.messages, query) || thread.messagesLoaded === false && (await savedPrompts(activeProjectId, thread)).some(
+              (prompt) => prompt.includes(query)
+            );
             if (!isCurrent()) return;
             if (matched) {
               matches2.add(thread.id);
-              changed();
+              notify();
             }
           } catch {
             if (!isCurrent()) return;
@@ -66837,9 +68104,15 @@ function createThreadFilter(store2, api2, changed) {
         }
         if (!isCurrent()) return;
         pending = false;
-        changed();
+        notify();
+      }).catch((error62) => {
+        console.error("[thread-filter] request scan failed", error62);
+        if (!isCurrent()) return;
+        pending = false;
+        failed = true;
+        notify();
       });
-    }, 200);
+    }, SCAN_DELAY_MS);
   };
   return {
     search,
@@ -66848,14 +68121,22 @@ function createThreadFilter(store2, api2, changed) {
     get pending() {
       return pending;
     },
+    get waiting() {
+      return waiting;
+    },
     get failed() {
       return failed;
     }
   };
 }
+var MIN_REQUEST_QUERY_LENGTH, SCAN_DELAY_MS, PROMPT_INDEX_MAX_CHARS, filterableContentCache;
 var init_thread_filter = __esm({
   "src/renderer/controller/thread-filter.ts"() {
     init_thread_sort();
+    MIN_REQUEST_QUERY_LENGTH = 2;
+    SCAN_DELAY_MS = 200;
+    PROMPT_INDEX_MAX_CHARS = 8e6;
+    filterableContentCache = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -68204,15 +69485,92 @@ var init_worktree_policy = __esm({
   }
 });
 
+// src/shared/thread-title.ts
+function stripDecoration(value) {
+  return value.replace(/^\s*\x60{1,3}/, "").replace(/\x60{1,3}\s*$/, "").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/(?:\*{1,2}|_{1,2})\s*$/, "").replace(/^(?:here(?:'s| is)(?: the)?\s+)?(?:thread\s+)?title\s*:\s*/i, "").replace(/^\s*(?:\*{1,2}|_{1,2})/, "").replace(/^[“”"'‘’]+|[“”"'‘’]+$/g, "").trim();
+}
+function stripConversationalLead(value) {
+  let result = value.trim();
+  let changed = true;
+  while (changed && result) {
+    changed = false;
+    for (const pattern of CONVERSATIONAL_LEADS) {
+      const next = result.replace(pattern, "").trim();
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+  }
+  return result.replace(/^make\s+(?:this|that|it)\s+have\s+/i, "add ").replace(
+    /^(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into)\s+(?:this|that|it|the issue|the problem)\s+(?:by|because|so that)\s+/i,
+    ""
+  ).replace(/^investigate\s+(?:why|how)\s+/i, "").replace(/^(?:start|open|create)\s+(?:a|the|new)\s+thread\s+(?:the\s+)?/i, "").replace(/^@\s+(?:a|the)\s+thread\s+(?:it\s+)?/i, "thread mention ").replace(/^(?:but\s+)?starting\s+it\s+/i, "").replace(/^(?:but\s+)?it\s+/i, "").replace(/^stop\s+(?:the\s+)?(.+?)\s+from\s+(.+)$/i, "prevent $1 $2").replace(/\s+and\s+it\s+(?:stays|remains)\b.*$/i, "").replace(/^(?:the|a|an)\s+/i, "").trim();
+}
+function vagueClause(value) {
+  return /^(?:(?:please\s+)?(?:fix|debug|investigate|inspect|improve|change|update|review|explain|look into))(?:\s+(?:this|that|it|the issue|the problem))?(?:\s+(?:again|now|please|quickly|soon))*\s*[.!?]*$/i.test(
+    value.trim()
+  );
+}
+function compactTitle(value, capitalize) {
+  const words = value.replace(BIDI_FORMAT_CHARS, "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").replace(/[.!?,:;\s]+$/g, "").trim().split(" ").filter(Boolean).slice(0, MAX_THREAD_TITLE_WORDS);
+  let title = words.join(" ");
+  const chars = Array.from(title);
+  if (chars.length > MAX_THREAD_TITLE_CHARS) {
+    const clipped = chars.slice(0, MAX_THREAD_TITLE_CHARS + 1).join("");
+    const boundary = clipped.lastIndexOf(" ");
+    title = (boundary > 0 ? clipped.slice(0, boundary) : chars.slice(0, MAX_THREAD_TITLE_CHARS).join("")).trim();
+  }
+  return capitalize ? title.replace(/^([a-z])/, (letter) => letter.toUpperCase()) : title;
+}
+function fallbackThreadTitle(input2) {
+  const plain = input2.replace(/\x60{3}(?:[a-z0-9_-]+)?/gi, " ").replace(/^\s*(?:\/\/|#+|[-*•>])\s*/gm, "").replace(/\s+/g, " ").trim();
+  const clauses = plain.split(/(?<=[.!?])\s+/);
+  for (const rawClause of clauses) {
+    const clause = stripConversationalLead(stripDecoration(rawClause));
+    if (!clause || vagueClause(clause)) continue;
+    const title = compactTitle(clause, true);
+    if (title && !vagueClause(title)) return title;
+  }
+  const fallback = compactTitle(stripConversationalLead(stripDecoration(plain)), true);
+  return fallback && !vagueClause(fallback) ? fallback : "New Thread";
+}
+var MAX_THREAD_TITLE_CHARS, MAX_THREAD_TITLE_WORDS, CONVERSATIONAL_LEADS, CONTROL_CHARS, BIDI_FORMAT_CHARS, MODEL_PREAMBLE;
+var init_thread_title = __esm({
+  "src/shared/thread-title.ts"() {
+    MAX_THREAD_TITLE_CHARS = 60;
+    MAX_THREAD_TITLE_WORDS = 6;
+    CONVERSATIONAL_LEADS = [
+      /^(?:got it|sure|okay|ok)\b[\s,:;—-]*/i,
+      /^(?:a\s+)?proposed thread\b[\s,:;—-]*/i,
+      /^(?:can|could|would|will)\s+(?:you|we)\s+(?:please\s+)?/i,
+      /^(?:i(?:'d| would)\s+like|i\s+want|we\s+need)\s+(?:you\s+)?(?:to\s+)?/i,
+      /^(?:how|what|why)\s+(?:can|could|might|do|does|would|should)\s+(?:you|we|i)\s+/i,
+      /^(?:sometimes\s+)?when(?:ever)?\s+(?:i|we)\s+/i,
+      /^please\s+/i,
+      /^help\s+(?:me|us)\s+(?:to\s+)?/i
+    ];
+    CONTROL_CHARS = /\p{Cc}/gu;
+    BIDI_FORMAT_CHARS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
+    MODEL_PREAMBLE = new RegExp(
+      [
+        // Interjections only count when punctuated ("Okay," / "Sure!"), so "OK button" survives.
+        String.raw`^(?:sure|okay|ok|got it|alright|certainly)(?:[,!.:;—-]|\s*$)`,
+        String.raw`^(?:here(?:'s| is| are)|let me|let's|based on)\b`,
+        String.raw`^i(?:'ll|'m|'d| will| think| would)\b`,
+        String.raw`^(?:the|this) (?:user|conversation|request)\s+(?:wants|is|asks|asked|needs|would|has|seems|appears|about)\b`
+      ].join("|"),
+      "i"
+    );
+  }
+});
+
 // src/renderer/controller/thread-naming.ts
 function namingMessages(thread) {
   const queued = queuedMessageIds(thread);
   return thread.messages.filter(
     (m2) => m2.role === "user" && !m2.origin && !queued.has(m2.id) && promptWords(m2)
   );
-}
-function firstWords(text2, n2 = 6) {
-  return text2.split(/\s+/).slice(0, n2).join(" ").slice(0, 60) || "New Thread";
 }
 function promptWords(message2) {
   return stripPastePlaceholders(message2.content);
@@ -68271,7 +69629,7 @@ function maybeNameThread(store2, api2, threadId) {
     const current = getThreadById(store2, threadId);
     if (!current) return;
     if (current.title !== titleBefore || (current.autoTitleCount ?? 0) !== passes) return;
-    const fallback = passes === 0 ? firstWords(promptWords(first)) : current.title;
+    const fallback = passes === 0 ? fallbackThreadTitle(promptWords(first)) : current.title;
     setThreadTitle(store2, threadId, nonEmptyStringOr(title?.trim(), fallback), {
       autoTitleCount: passes + 1
     });
@@ -68287,6 +69645,7 @@ var init_thread_naming = __esm({
     init_worktree_policy();
     init_message_queue();
     init_background_threads();
+    init_thread_title();
     inFlight2 = /* @__PURE__ */ new Set();
     PASS_THRESHOLDS = [1, 3, 8];
     branchRenameInFlight = /* @__PURE__ */ new Set();
@@ -68672,6 +70031,33 @@ function automationSetupBtn(label, open2, icon = settingsIcon) {
   });
   return btn;
 }
+function startRunNow(api2, target) {
+  void api2.automations.runNow(target.project.id, target.scheduleId).then((event) => {
+    showToast(
+      event.disposition === "started" ? `Started \u201C${target.scheduleName}\u201D.` : event.coalescedReason === "worktree-limit" ? `\u201C${target.scheduleName}\u201D has reached its live worktree limit.` : `\u201C${target.scheduleName}\u201D is already pending or running.`
+    );
+  }).catch((error62) => {
+    showErrorToast(
+      `Could not run \u201C${target.scheduleName}\u201D`,
+      ipcErrorMessage(error62, "The run could not start")
+    );
+  });
+}
+function automationMenuEntries(api2, target, openSetup) {
+  return [
+    { heading: target.scheduleName },
+    {
+      label: "Run now",
+      onSelect: () => {
+        startRunNow(api2, target);
+      }
+    },
+    {
+      label: "Automation setup\u2026",
+      onSelect: openSetup
+    }
+  ];
+}
 function mountProjectsPane(root, store2, api2) {
   const title = el("span", {}, "Projects");
   const searchToggle = el(
@@ -68726,8 +70112,15 @@ function mountProjectsPane(root, store2, api2) {
     addBtn
   );
   let threadFilter = "";
+  let filteredProjectId = store2.getState().activeProjectId;
+  let renderFrameQueued = false;
   const contentFilter = createThreadFilter(store2, api2, () => {
-    render();
+    if (renderFrameQueued) return;
+    renderFrameQueued = true;
+    requestAnimationFrame(() => {
+      renderFrameQueued = false;
+      render();
+    });
   });
   const searchInput = el("input", {
     type: "text",
@@ -68756,7 +70149,8 @@ function mountProjectsPane(root, store2, api2) {
     }
   });
   searchInput.addEventListener("input", () => {
-    threadFilter = searchInput.value.trim().toLowerCase();
+    threadFilter = filterText(searchInput.value.trim());
+    filteredProjectId = store2.getState().activeProjectId;
     contentFilter.search(threadFilter);
     render();
   });
@@ -69383,6 +70777,16 @@ function mountProjectsPane(root, store2, api2) {
           // just to reach the editor.
           ...scheduleId ? [
             {
+              label: "Run now",
+              onSelect: () => {
+                startRunNow(api2, {
+                  project: project2,
+                  scheduleName: thread.automation?.scheduleName ?? thread.title,
+                  scheduleId
+                });
+              }
+            },
+            {
               label: "Automation setup\u2026",
               onSelect: () => {
                 openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
@@ -69474,6 +70878,18 @@ function mountProjectsPane(root, store2, api2) {
       toggle.addEventListener("click", () => {
         automationsSectionExpanded = !automationsSectionExpanded;
         render();
+      });
+      toggle.addEventListener("contextmenu", (e3) => {
+        e3.preventDefault();
+        e3.stopPropagation();
+        showContextMenu(e3.clientX, e3.clientY, [
+          {
+            label: "New automation\u2026",
+            onSelect: () => {
+              openAutomationDialog(store2, api2, { createNew: true });
+            }
+          }
+        ]);
       });
       section.append(
         el(
@@ -69568,6 +70984,25 @@ function mountProjectsPane(root, store2, api2) {
               })
             )
           );
+          scheduleToggle.addEventListener("contextmenu", (e3) => {
+            e3.preventDefault();
+            e3.stopPropagation();
+            showContextMenu(
+              e3.clientX,
+              e3.clientY,
+              automationMenuEntries(
+                api2,
+                {
+                  project: project2,
+                  scheduleName,
+                  scheduleId
+                },
+                () => {
+                  openAutomationDialog(store2, api2, { projectId: project2.id, scheduleId });
+                }
+              )
+            );
+          });
           if (scheduleRevealed) {
             const runRows = el("div", { class: "automation-schedule-runs" });
             const visibleRuns = showingAllRuns ? runs : attentionScheduleRuns;
@@ -69753,9 +71188,7 @@ function mountProjectsPane(root, store2, api2) {
         (thread) => thread.archivedAt == null
       ) : getSidebarThreads(store2, project2.id);
       const matchingThreads = isFiltering ? sidebarThreads.filter(
-        (t2) => (t2.title || "New Thread").toLowerCase().includes(threadFilter) || contentFilter.matches.has(t2.id) || t2.messages?.some(
-          (message2) => isHumanUserPrompt(message2) && message2.content.toLowerCase().includes(threadFilter)
-        )
+        (t2) => filterText(t2.title || "New Thread").includes(threadFilter) || contentFilter.matches.has(t2.id) || residentRequestMatches(t2.messages ?? [], threadFilter)
       ) : sidebarThreads;
       const conversationThreads = matchingThreads.filter(
         (thread) => thread.automation === void 0
@@ -69802,7 +71235,7 @@ function mountProjectsPane(root, store2, api2) {
             "Some threads could not be searched"
           )
         );
-      } else if (isFiltering && matchingThreads.length === 0) {
+      } else if (isFiltering && !contentFilter.waiting && matchingThreads.length === 0) {
         chats.append(el("div", { class: "sidebar-empty" }, "No matching threads"));
       }
       for (const thread of visibleThreads) {
@@ -69852,7 +71285,8 @@ function mountProjectsPane(root, store2, api2) {
     // show/hide the running-dots mark without a full thread list rewrite.
     store2.on("thread_status_changed", render),
     store2.on("workspace_changed", () => {
-      closeThreadFilter();
+      if (store2.getState().activeProjectId !== filteredProjectId) closeThreadFilter();
+      else if (threadFilter) contentFilter.search(threadFilter);
       prStatusGeneration += 1;
       prLifecycleCache.clear();
       prFetchInFlight.clear();
@@ -69892,6 +71326,7 @@ var init_projects_pane = __esm({
     init_projects();
     init_settings_dialog();
     init_automation_dialog();
+    init_ipc_error_message();
     init_confirm_dialog();
     init_toast();
     init_fork_thread3();
@@ -70214,12 +71649,14 @@ function customAgentId(model) {
 }
 function namedAgentTitles(value) {
   const titles2 = /* @__PURE__ */ new Map();
-  const entries2 = Array.isArray(value) ? value : [];
-  for (const entry of entries2) {
-    if (typeof entry === "object" && entry !== null && "id" in entry && typeof entry.id === "string" && "title" in entry && typeof entry.title === "string" && entry.title.trim())
-      titles2.set(entry.id, entry.title.trim());
+  for (const agent of parseAcpAgentConfigs(value)) {
+    const title = agent.title.trim();
+    if (title) titles2.set(agent.id, title);
   }
   return titles2;
+}
+function agentRouteModel(model) {
+  return parseAcpModelSelection(model)?.model ?? parseRemoteAgentModelSelection(model)?.model;
 }
 function chatAgentIdentity(threadId, message2, names) {
   const model = message2.model ?? message2.requestedModel;
@@ -70714,7 +72151,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
             code === 43)) {
               const raw = url2.charCodeAt(i2);
               if (raw === 9 || raw === 10 || raw === 13) {
-                return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+                return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
               }
               return null;
             }
@@ -70730,7 +72167,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
         for (let i2 = start; i2 < end; i2 += 1) {
           const code = url2.charCodeAt(i2);
           if (code === 9 || code === 10 || code === 13) {
-            return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+            return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
           }
           if (code === 58) {
             indexOfColon = i2;
@@ -70867,7 +72304,7 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
       }
     }
     if (hasControl) {
-      return extractHostname(url2.replace(CONTROL_CHARS, ""), urlIsValidHostname, validate2);
+      return extractHostname(url2.replace(CONTROL_CHARS2, ""), urlIsValidHostname, validate2);
     }
     if (indexOfIdentifier !== -1 && indexOfIdentifier >= start && indexOfIdentifier < end) {
       start = indexOfIdentifier + 1;
@@ -70901,10 +72338,10 @@ function extractHostname(url2, urlIsValidHostname, validate2 = false) {
   }
   return hostname3;
 }
-var CONTROL_CHARS, extractedHostnameValidated;
+var CONTROL_CHARS2, extractedHostnameValidated;
 var init_extract_hostname = __esm({
   "node_modules/.pnpm/tldts-core@7.4.13/node_modules/tldts-core/dist/es6/src/extract-hostname.js"() {
-    CONTROL_CHARS = /[\t\n\r]/g;
+    CONTROL_CHARS2 = /[\t\n\r]/g;
     extractedHostnameValidated = false;
   }
 });
@@ -76853,6 +78290,43 @@ var init_github_link_steering = __esm({
 });
 
 // packages/llm/src/intellect-lookup.ts
+function localCapabilityFor(idOrLabel) {
+  const direct = getLocalModelCapability(idOrLabel);
+  if (direct) return direct;
+  if (idOrLabel.startsWith(LMSTUDIO_MODEL_PREFIX)) {
+    return getLocalModelCapability(idOrLabel.slice(LMSTUDIO_MODEL_PREFIX.length));
+  }
+  return null;
+}
+function canonical(score) {
+  return {
+    value: score.value,
+    scale: "canonical",
+    estimated: score.estimated === true,
+    basis: score.basis ?? score.source
+  };
+}
+function resolveModelIntellect(idOrLabel) {
+  const local = localCapabilityFor(idOrLabel);
+  if (local) {
+    const quantAdjusted = localBenchmarkScore(local, "aa-intelligence");
+    if (quantAdjusted) return canonical(quantAdjusted);
+  }
+  const measured = getIntellectScore(idOrLabel);
+  if (measured) return canonical(measured);
+  if (local) {
+    const composite = compositeIntellect(local);
+    if (composite) {
+      return {
+        value: composite.value,
+        scale: "composite",
+        estimated: true,
+        basis: composite.basis
+      };
+    }
+  }
+  return null;
+}
 var init_intellect_lookup = __esm({
   "packages/llm/src/intellect-lookup.ts"() {
     init_composite_intellect();
@@ -77008,6 +78482,261 @@ var init_todos_plugin = __esm({
         uiContributions: [TODOS_PANEL_UI]
       }
     );
+  }
+});
+
+// src/renderer/views/apple-project-suggestion.ts
+function pluginCard() {
+  const mark2 = el("img", { src: "./brand-mark.svg", alt: "", width: "40", height: "40" });
+  const icon = el("span", { class: "plugin-icon plugin-icon-copse", "aria-hidden": "true" }, mark2);
+  const stability = el("span", { class: "plugin-badge plugin-badge-experimental" }, "experimental");
+  const nameLine = el(
+    "div",
+    { class: "plugin-row-name-line" },
+    el("span", { class: "plugin-name" }, PLUGIN_NAME),
+    stability
+  );
+  const title = el(
+    "div",
+    { class: "plugin-row-title" },
+    el("span", { class: "plugin-badge plugin-badge-first-party" }, "Copse"),
+    nameLine
+  );
+  return el(
+    "div",
+    { class: "plugin-row apple-suggestion-card" },
+    el("div", { class: "plugin-row-header" }, icon, title),
+    el("div", { class: "plugin-row-desc" }, PLUGIN_DESCRIPTION)
+  );
+}
+function showAppleSuggestionDialog(options) {
+  const { dialog: dialog2, open: open2, close } = createOverlayDialog({ id: "apple-suggestion-dialog" });
+  dialog2.setAttribute("aria-labelledby", "apple-suggestion-title");
+  const { projectName, pluginEnabled } = options;
+  const heading = el(
+    "h2",
+    { id: "apple-suggestion-title" },
+    pluginEnabled ? `Use ${PLUGIN_NAME} in ${projectName}?` : `Turn on ${PLUGIN_NAME}?`
+  );
+  const lede = el(
+    "p",
+    { class: "apple-suggestion-lede" },
+    pluginEnabled ? `${projectName} looks like an Apple project. ${PLUGIN_NAME} is already on \u2014 allow the agent to build, run, and debug this project too.` : `${projectName} looks like an Apple project. Copse has a plugin that lets the agent build, run, and debug it. Turning it on allows it for ${projectName}.`
+  );
+  const dontAsk = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-ghost apple-suggestion-dont-ask" },
+    "Don't ask for this project"
+  );
+  const notNow = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-secondary apple-suggestion-not-now" },
+    "Not now"
+  );
+  const accept = el(
+    "button",
+    { type: "button", class: "ui-btn ui-btn-primary apple-suggestion-accept" },
+    pluginEnabled ? "Allow" : "Turn on"
+  );
+  const actions = el(
+    "div",
+    { class: "ui-actions apple-suggestion-actions" },
+    dontAsk,
+    el("span", { class: "apple-suggestion-spacer" }),
+    notNow,
+    accept
+  );
+  dialog2.append(heading, lede, pluginCard(), actions);
+  if (options.signal?.aborted) {
+    dialog2.remove();
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    let choice = "not-now";
+    let deferred = false;
+    let chosen = false;
+    const choose = (next) => {
+      choice = next;
+      chosen = true;
+      close();
+    };
+    const defer = () => {
+      if (chosen) return;
+      deferred = true;
+      close();
+    };
+    dontAsk.addEventListener("click", () => {
+      choose("dont-ask");
+    });
+    notNow.addEventListener("click", () => {
+      choose("not-now");
+    });
+    accept.addEventListener("click", () => {
+      choose("turn-on");
+    });
+    dialog2.addEventListener(
+      "close",
+      () => {
+        options.signal?.removeEventListener("abort", defer);
+        dialog2.remove();
+        resolve(deferred ? null : choice);
+      },
+      { once: true }
+    );
+    options.signal?.addEventListener("abort", defer, { once: true });
+    open2();
+    accept.focus();
+  });
+}
+function mountAppleProjectSuggestions(store2, api2, onAllowed) {
+  const text2 = el("span", { class: "apple-suggestion-notice-text" });
+  const acceptLink = el("button", { type: "button", class: "apple-suggestion-notice-accept" });
+  const dismissLink = el(
+    "button",
+    { type: "button", class: "apple-suggestion-notice-dismiss" },
+    "Dismiss"
+  );
+  const host = el(
+    "div",
+    { class: "apple-suggestion-notice", role: "status", hidden: true },
+    sparkleIcon("ui-icon"),
+    text2,
+    acceptLink,
+    dismissLink
+  );
+  const asked = /* @__PURE__ */ new Set();
+  const reminders = /* @__PURE__ */ new Map();
+  let pendingDialog = null;
+  const lifetime = new AbortController();
+  const projectName = (projectId) => {
+    const project2 = store2.getState().projects.find((candidate) => candidate.id === projectId);
+    return project2 ? projectDisplayName(project2) : "This project";
+  };
+  const renderReminder = () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) {
+      host.hidden = true;
+      return;
+    }
+    const name = projectName(reminder.projectId);
+    text2.textContent = reminder.pluginEnabled ? `${PLUGIN_NAME} isn't allowed in ${name}.` : `${PLUGIN_NAME} is off for ${name}.`;
+    acceptLink.textContent = reminder.pluginEnabled ? "Allow" : "Turn on";
+    host.hidden = false;
+  };
+  const accept = async (projectId, pluginEnabled) => {
+    reminders.delete(projectId);
+    renderReminder();
+    const threadId = store2.getState().activeThreadId;
+    if (!threadId || store2.getState().activeProjectId !== projectId) return;
+    try {
+      if (!pluginEnabled) {
+        await api2.plugins.setEnabled(APPLE_DEVELOPMENT_PLUGIN_ID, true);
+        store2.emit("settings_changed");
+      }
+      await api2.appleDevelopment.setEnrolled(projectId, threadId, true);
+      onAllowed();
+      const name = projectName(projectId);
+      showToast(
+        pluginEnabled ? `${PLUGIN_NAME} is allowed in ${name}.` : `${PLUGIN_NAME} is on and allowed in ${name}. Change this in Settings \u2192 Plugins.`
+      );
+    } catch (error62) {
+      showErrorToast(`Could not turn on ${PLUGIN_NAME}`, error62);
+    }
+  };
+  const answer = (projectId, choice) => {
+    void api2.appleDevelopment.answerSuggestion(projectId, choice).catch((error62) => {
+      showErrorToast("Could not save your answer", error62);
+    });
+  };
+  const offer = async (projectId, suggestion) => {
+    if (suggestion.offer === "reminder") {
+      reminders.set(projectId, { projectId, pluginEnabled: suggestion.pluginEnabled });
+      renderReminder();
+      return;
+    }
+    if (suggestion.offer !== "dialog") return;
+    const controller = new AbortController();
+    pendingDialog = { projectId, controller };
+    const choice = await showAppleSuggestionDialog({
+      projectName: projectName(projectId),
+      pluginEnabled: suggestion.pluginEnabled,
+      signal: controller.signal
+    });
+    if (lifetime.signal.aborted) return;
+    if (pendingDialog.controller === controller) pendingDialog = null;
+    if (choice === null) {
+      asked.delete(projectId);
+      void evaluate();
+      return;
+    }
+    if (choice === "turn-on") await accept(projectId, suggestion.pluginEnabled);
+    else answer(projectId, choice === "dont-ask" ? "dismissed" : "snoozed");
+  };
+  const evaluate = async () => {
+    renderReminder();
+    if (pendingDialog) return;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    if (!activeProjectId || !activeThreadId || asked.has(activeProjectId)) return;
+    asked.add(activeProjectId);
+    let suggestion;
+    try {
+      suggestion = await api2.appleDevelopment.suggestion(activeProjectId);
+    } catch {
+      asked.delete(activeProjectId);
+      return;
+    }
+    if (lifetime.signal.aborted) return;
+    if (store2.getState().activeProjectId !== activeProjectId) {
+      asked.delete(activeProjectId);
+      return;
+    }
+    await offer(activeProjectId, suggestion);
+  };
+  acceptLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (reminder) void accept(reminder.projectId, reminder.pluginEnabled);
+  });
+  dismissLink.addEventListener("click", () => {
+    const active2 = store2.getState().activeProjectId;
+    const reminder = active2 ? reminders.get(active2) : void 0;
+    if (!reminder) return;
+    answer(reminder.projectId, "dismissed");
+    reminders.delete(reminder.projectId);
+    renderReminder();
+  });
+  const unsubscribeWorkspace = store2.on("workspace_changed", () => {
+    const activeProjectId = store2.getState().activeProjectId;
+    if (pendingDialog && pendingDialog.projectId !== activeProjectId) {
+      pendingDialog.controller.abort();
+    }
+    void evaluate();
+  });
+  void evaluate();
+  return {
+    element: host,
+    destroy: () => {
+      lifetime.abort();
+      unsubscribeWorkspace();
+      pendingDialog?.controller.abort();
+      pendingDialog = null;
+      reminders.clear();
+      host.remove();
+    }
+  };
+}
+var PLUGIN_NAME, PLUGIN_DESCRIPTION;
+var init_apple_project_suggestion = __esm({
+  "src/renderer/views/apple-project-suggestion.ts"() {
+    init_apple_development_plugin();
+    init_projects();
+    init_helpers();
+    init_icons();
+    init_dialog_shell();
+    init_toast();
+    PLUGIN_NAME = "Apple development";
+    PLUGIN_DESCRIPTION = "Build, test, and run local Apple projects with an installed Xcode. Adds thread-scoped target selection, supervised operations, diagnostics, and Simulator controls.";
   }
 });
 
@@ -77325,6 +79054,72 @@ var init_visual_evidence_card = __esm({
     init_image_expand();
     init_helpers();
     init_icons();
+  }
+});
+
+// src/renderer/views/concise-thread.ts
+function isConciseThreadModel(model) {
+  if (!model) return false;
+  const cached2 = conciseByModel.get(model);
+  if (cached2 !== void 0) return cached2;
+  const intellect = resolveModelIntellect(model);
+  const concise = intellect?.scale === "canonical" && intellect.value > CONCISE_THREAD_MIN_INTELLECT;
+  conciseByModel.set(model, concise);
+  return concise;
+}
+function messageModel(msg) {
+  return msg.model ?? msg.requestedModel;
+}
+function isConciseMessage(msg) {
+  return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function syncConciseMessageClasses(msgEl, msg, enabled) {
+  msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
+  msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+}
+function isConciseThread(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const msg = thread.messages[i2];
+    if (msg?.role === "assistant") return isConciseMessage(msg);
+  }
+  return isConciseThreadModel(thread.model);
+}
+function runningToolCall(thread) {
+  for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
+    const toolCalls = thread.messages[i2]?.toolCalls ?? [];
+    for (let j3 = toolCalls.length - 1; j3 >= 0; j3--) {
+      const tc2 = toolCalls[j3];
+      if (tc2?.status === "running" || tc2?.subagent?.status === "running") return tc2;
+    }
+  }
+  return null;
+}
+function shellCommand(tc2) {
+  if (tc2.name !== "run_shell" && tc2.kind !== "execute") return null;
+  const command = isRecord(tc2.args) ? tc2.args["command"] : void 0;
+  return typeof command === "string" && command.trim() ? shellCommandLabel(command) : null;
+}
+function conciseActivityLabel(thread) {
+  if (thread.status !== "running") return null;
+  const tc2 = runningToolCall(thread);
+  if (!tc2) return null;
+  const command = shellCommand(tc2);
+  const base = `${command ? `Running ${command}` : getToolCallLabel({ ...tc2, status: "running" })}\u2026`;
+  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null;
+  return todoLabel ? `${base} (${todoLabel})` : base;
+}
+var CONCISE_THREAD_MIN_INTELLECT, conciseByModel;
+var init_concise_thread = __esm({
+  "src/renderer/views/concise-thread.ts"() {
+    init_intellect_lookup();
+    init_todo_logic();
+    init_tool_display();
+    init_unknown_value3();
+    CONCISE_THREAD_MIN_INTELLECT = 50;
+    conciseByModel = /* @__PURE__ */ new Map();
   }
 });
 
@@ -79078,39 +80873,45 @@ var init_markdown_quote = __esm({
 });
 
 // src/renderer/views/conversation.ts
+function interruptionCause(outcome, next) {
+  if (next?.role !== "user" || next.origin !== void 0) return "user";
+  if (outcome.userAbort !== void 0) return outcome.userAbort === "send_now" ? "message" : "user";
+  return next.createdAt <= outcome.endedAt ? "message" : "user";
+}
 function markUserInterruptedCalls(thread) {
-  if (!thread) return;
+  if (!thread || markedTranscripts.has(thread.messages)) return;
+  markedTranscripts.add(thread.messages);
   let turnCalls = [];
   for (const [index, message2] of thread.messages.entries()) {
     if (message2.role !== "assistant") turnCalls = [];
     else turnCalls.push(...message2.toolCalls);
     if (!message2.turnOutcome) continue;
     const next = thread.messages[index + 1];
-    const humanPrompt = next?.role === "user" && next.origin === void 0 && next.createdAt <= message2.turnOutcome.endedAt;
+    const userCancelled = message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0);
+    const cause = userCancelled ? interruptionCause(message2.turnOutcome, next) : null;
     for (const call of turnCalls) {
-      if (!isHostInterruptedToolCall(call)) continue;
-      if (message2.turnOutcome.status === "cancelled" && message2.turnOutcome.source === "user" && !(next?.role === "user" && next.origin !== void 0)) {
-        userInterruptedCalls.set(call, humanPrompt ? "message" : "user");
-      } else {
-        userInterruptedCalls.delete(call);
-      }
+      if (cause) userInterruptedCalls.set(call, cause);
+      else userInterruptedCalls.delete(call);
     }
     turnCalls = [];
   }
 }
+function userInterruption(call) {
+  return isHostInterruptedToolCall(call) ? userInterruptedCalls.get(call) : void 0;
+}
 function cardStatus2(toolCalls) {
   if (toolCalls.some((call) => call.status === "running")) return "running";
-  if (toolCalls.some((call) => call.status === "error" && !userInterruptedCalls.has(call))) {
+  if (toolCalls.some((call) => call.status === "error" && userInterruption(call) === void 0)) {
     return "error";
   }
-  if (toolCalls.some((call) => userInterruptedCalls.has(call))) return "interrupted";
+  if (toolCalls.some((call) => userInterruption(call) !== void 0)) return "interrupted";
   return "done";
 }
 function interruptionLabel(call) {
-  return userInterruptedCalls.get(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
+  return userInterruption(call) === "message" ? "Interrupted when you sent a new message." : "Interrupted by you.";
 }
 function syncRollupInterruptionNote(body, calls) {
-  const interrupted = calls.find((call) => userInterruptedCalls.has(call));
+  const interrupted = calls.find((call) => userInterruption(call) !== void 0);
   const current = body.querySelector(":scope > .tool-interruption-note");
   if (!interrupted) {
     current?.remove();
@@ -79123,6 +80924,7 @@ function syncRollupInterruptionNote(body, calls) {
 function statusIcon3(status) {
   if (status === "done") return checkIcon("ui-icon ui-icon-sm");
   if (status === "error") return closeIcon("ui-icon ui-icon-sm");
+  if (status === "interrupted") return minusIcon("ui-icon ui-icon-sm");
   return moreHorizontalIcon("ui-icon ui-icon-sm");
 }
 function createToolArgsSection(args) {
@@ -79247,7 +81049,7 @@ function appendStandardToolSections(card, tc2, label, summaryClass, count) {
     const argsSection = createToolArgsSection(tc2.args);
     card.append(
       ...appendIfPresent(argsSection),
-      ...userInterruptedCalls.has(tc2) ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
+      ...userInterruption(tc2) !== void 0 ? [el("div", { class: "tool-interruption-note" }, interruptionLabel(tc2))] : [],
       createToolResultSection(
         tc2.result,
         tc2.status,
@@ -79572,7 +81374,14 @@ function subagentCardStatus(tc2, session) {
 function subagentHeaderMarker() {
   return el(
     "span",
-    { class: "tool-subagent-marker", "aria-label": "Subagent", "data-tooltip": "Subagent" },
+    // A named generic `span` is not announced (ARIA 1.2 prohibits naming it),
+    // and the SVG inside is aria-hidden: `img` makes "Subagent" the glyph's name.
+    {
+      class: "tool-subagent-marker",
+      role: "img",
+      "aria-label": "Subagent",
+      "data-tooltip": "Subagent"
+    },
     gitBranchIcon("ui-icon ui-icon-sm")
   );
 }
@@ -79814,13 +81623,13 @@ function toolCardKey(item) {
   return `t:${item.toolCall.id}`;
 }
 function toolCallSignature(call) {
-  return renderSignature({ call, interruption: userInterruptedCalls.get(call) ?? null });
+  return renderSignature({ call, interruption: userInterruption(call) ?? null });
 }
 function toolCardSignature(item, extra) {
   const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
   const base = renderSignature({
     item,
-    interruptions: calls.map((call) => userInterruptedCalls.get(call) ?? null)
+    interruptions: calls.map((call) => userInterruption(call) ?? null)
   });
   return extra === void 0 ? base : `${base}|${extra}`;
 }
@@ -80074,7 +81883,8 @@ function createAcpToolDiff(item, workspaceRoot) {
   const additions = lines.filter((line) => line.kind === "add").length;
   const deletions = lines.filter((line) => line.kind === "del").length;
   const hasChanges = additions > 0 || deletions > 0;
-  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, "No changes");
+  const unchangedLabel = (item.oldText ?? "") === item.newText ? "No changes" : "Only line endings changed";
+  const body = hasChanges ? el("div", { class: "acp-tool-diff-lines" }) : el("div", { class: "acp-content-label" }, unchangedLabel);
   const details = el(
     "details",
     { class: "acp-tool-diff" },
@@ -80113,11 +81923,11 @@ function createAcpToolDiff(item, workspaceRoot) {
           )
         ];
       }
-      const accessibility = line.kind === "add" ? { "aria-label": `Added line: ${line.text}` } : line.kind === "del" ? { "aria-label": `Deleted line: ${line.text}` } : {};
       const row2 = el(
         "div",
-        { class: `acp-diff-line acp-diff-${line.kind}`, ...accessibility },
+        { class: `acp-diff-line acp-diff-${line.kind}` },
         el("span", { class: "acp-diff-sign", "aria-hidden": "true" }, acpDiffLineSigns[line.kind]),
+        ...line.kind === "context" ? [] : [el("span", { class: "acp-diff-sr" }, acpDiffLineNames[line.kind])],
         el("span", { class: "acp-diff-text" }, line.text)
       );
       return line.noNewlineAtEnd ? [row2, el("div", { class: "acp-diff-line acp-diff-eof" }, "\\ No newline at end of file")] : [row2];
@@ -80680,12 +82490,23 @@ function mountConversation(root, store2, api2) {
     },
     arrowDownIcon("ui-icon")
   );
-  scrollArea.append(appleDevelopmentHost, todoHost, list, scrollToBottomBtn);
+  const appleSuggestions = mountAppleProjectSuggestions(
+    store2,
+    api2,
+    () => appleDevelopmentHost.dispatchEvent(new Event("apple-development-refresh"))
+  );
+  scrollArea.append(
+    appleSuggestions.element,
+    appleDevelopmentHost,
+    todoHost,
+    list,
+    scrollToBottomBtn
+  );
   const activityBar = el("div", { class: "agent-activity", role: "status", "aria-live": "polite" });
   const activityLabel = el("span", { class: "agent-activity-label" });
   activityBar.append(reasoningActivityIcon("reasoning-activity-icon"), activityLabel);
   activityBar.addEventListener("click", () => {
-    const trails = list.querySelectorAll(".msg-assistant .message-reasoning");
+    const trails = list.querySelectorAll(REOPENABLE_REASONING);
     const details = trails[trails.length - 1];
     if (!details) return;
     details.dataset["userToggled"] = "1";
@@ -81165,21 +82986,24 @@ function mountConversation(root, store2, api2) {
     syncAcpResourceReferences(list, api2, store2);
     scrollToBottom();
   });
-  function setActivity(label) {
-    if (!label) {
+  function setActivity(requested) {
+    if (!requested) {
       activityBar.hidden = true;
       return;
     }
+    const thread = getActiveThread(store2);
+    const conciseLabel = thread && store2.getState().conciseThreadsEnabled && isConciseThread(thread) ? conciseActivityLabel(thread) : null;
+    const label = conciseLabel ?? requested;
     const changed = activityBar.hidden || activityLabel.textContent !== label;
     if (activityLabel.textContent !== label) activityLabel.textContent = label;
-    if (label.startsWith("Reasoning\u2026") && list.querySelector(".message-reasoning.message-reasoning-live")) {
+    if (label.startsWith("Reasoning\u2026") && list.querySelector(".msg:not(.msg-concise) .message-reasoning.message-reasoning-live")) {
       activityBar.hidden = true;
       scrollToBottom();
       return;
     }
     activityBar.classList.toggle(
       "agent-activity-clickable",
-      !!list.querySelector(".msg-assistant .message-reasoning")
+      !!list.querySelector(REOPENABLE_REASONING)
     );
     activityBar.hidden = false;
     if (changed) scrollToBottom();
@@ -81253,9 +83077,9 @@ function mountConversation(root, store2, api2) {
   }
   function labelUserInterruptions(item) {
     const calls = item.type === "individual" ? [item.toolCall] : item.toolCalls;
-    if (calls.some((call) => userInterruptedCalls.has(call))) {
+    if (calls.some((call) => userInterruption(call) !== void 0)) {
       const failed = calls.filter(
-        (call) => call.status === "error" && !userInterruptedCalls.has(call)
+        (call) => call.status === "error" && userInterruption(call) === void 0
       ).length;
       const base = item.label.replace(/ · \d+ failed$/, "");
       item.label = `${base}${failed ? ` \xB7 ${String(failed)} failed` : ""} \xB7 Interrupted`;
@@ -81344,6 +83168,8 @@ function mountConversation(root, store2, api2) {
     const run2 = opts.run && (opts.run.anchorId === msgId || list.querySelector(`[data-message-id="${opts.run.anchorId}"]`) !== null) ? opts.run : void 0;
     const isRunMember = run2 !== void 0 && run2.anchorId !== msgId;
     msgEl.classList.toggle("msg-tool-run-member", isRunMember);
+    const message2 = activeThread?.messages.find((m2) => m2.id === msgId);
+    if (message2) syncConciseMessageClasses(msgEl, message2, store2.getState().conciseThreadsEnabled);
     const nestReasoning = run2 === void 0 && (Boolean(opts.reasoning?.trim()) || Boolean(opts.reasoningBlocks?.length)) && shouldNestReasoningInTools(toolCalls);
     const items = run2 ? isRunMember ? buildSubagentDisplayItems(toolCalls) : [...buildToolRunDisplayItems(run2), ...buildSubagentDisplayItems(toolCalls)] : buildToolCallDisplayItems(toolCalls, {
       ...nestReasoning || messageKey !== null && liveRollupMessages.has(messageKey) ? { forceRollup: true } : {}
@@ -81494,6 +83320,7 @@ function mountConversation(root, store2, api2) {
     const originClass = origin?.kind === "hook" ? " msg-hook-origin" : origin?.kind === "machine" ? " msg-machine-origin" : "";
     const msgClass = `msg msg-${msg.role}${originClass}${imageInputUnsupported ? " msg-image-input-unsupported" : ""}`;
     const msgEl = el("div", { class: msgClass, "data-message-id": msgId });
+    syncConciseMessageClasses(msgEl, msg, store2.getState().conciseThreadsEnabled);
     if (origin?.kind === "hook") msgEl.setAttribute("data-hook-id", origin.hookId);
     if (origin?.kind === "machine") msgEl.setAttribute("data-operation-id", origin.operationId);
     const body = el("div", { class: "message-body" });
@@ -81643,6 +83470,7 @@ function mountConversation(root, store2, api2) {
         syncModelLabels();
       }).catch((error62) => {
         console.warn("[conversation] Could not load named agent identities", error62);
+        if (revision === agentNamesRevision) agentNamesRequested = false;
       });
     }
     const show2 = shouldShowPrimaryChatModelLabels(thread.messages);
@@ -81654,6 +83482,7 @@ function mountConversation(root, store2, api2) {
     let prevLabel;
     let prevAgentKey;
     for (const msg of thread.messages) {
+      if (msg.role === "user") prevAgentKey = void 0;
       if (msg.role !== "assistant") continue;
       const msgEl = rendered.get(msg.id);
       if (!msgEl) continue;
@@ -81680,9 +83509,10 @@ function mountConversation(root, store2, api2) {
         header?.remove();
         header = null;
       }
-      if (show2 && model && text2 && text2 !== prevLabel && (!identity || model.includes("#"))) {
+      const routeModel = identity && model ? agentRouteModel(model) : void 0;
+      if (show2 && model && text2 && text2 !== prevLabel && (!identity || routeModel)) {
         const label = existing ?? el("div", { class: "message-model" });
-        label.textContent = identity ? formatPrimaryChatModelLabel(model.slice(model.indexOf("#") + 1), msg.parameters) : text2;
+        label.textContent = routeModel ? formatPrimaryChatModelLabel(routeModel, msg.parameters) : text2;
         if (header) {
           if (label.parentElement !== header) header.append(label);
         } else if (label.parentElement !== msgEl) msgEl.prepend(label);
@@ -81694,6 +83524,17 @@ function mountConversation(root, store2, api2) {
       prevAgentKey = identity?.key;
     }
     syncAvatarMotion();
+  }
+  function syncConciseThreadClasses() {
+    const thread = getActiveThread(store2);
+    if (!thread) return;
+    const enabled = store2.getState().conciseThreadsEnabled;
+    const byId = new Map(thread.messages.map((msg) => [msg.id, msg]));
+    list.querySelectorAll("[data-message-id]").forEach((msgEl) => {
+      const msg = byId.get(msgEl.dataset["messageId"] ?? "");
+      if (msg) syncConciseMessageClasses(msgEl, msg, enabled);
+    });
+    syncFromStore();
   }
   function syncAvatarMotion() {
     const thread = getActiveThread(store2);
@@ -81780,6 +83621,8 @@ function mountConversation(root, store2, api2) {
     const projectId = state.activeProjectId;
     const thread = state.threads.find((candidate) => candidate.id === threadId);
     const msgEl = list.querySelector(`[data-message-id="${messageId}"]`);
+    const msg = thread?.messages.find((candidate) => candidate.id === messageId);
+    if (msgEl && msg) syncConciseMessageClasses(msgEl, msg, state.conciseThreadsEnabled);
     const recovery = turnRecoveryForMessage(thread, messageId);
     if (!projectId || !msgEl || !recovery) return;
     const fallback = recovery.lastKnownGoodModel;
@@ -82004,6 +83847,7 @@ function mountConversation(root, store2, api2) {
       agentNamesRequested = false;
       agentNamesRevision++;
       syncModelLabels();
+      syncConciseThreadClasses();
     }),
     store2.on("message_added", (tid, mid) => {
       appendMessageEl(tid, mid);
@@ -82215,6 +84059,7 @@ function mountConversation(root, store2, api2) {
     unbindWorkspaceLinks();
     unbindBrowserLinks();
     unbindCodeBlockRuns();
+    appleSuggestions.destroy();
     roadmapOrigin.destroy();
     unsubs.forEach((u2) => {
       u2();
@@ -82251,7 +84096,7 @@ function attachCopyButton(body, msgId, store2) {
   });
   body.append(copyBtn);
 }
-var userInterruptedCalls, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, BACKFILL_CHUNK_SIZE;
+var userInterruptedCalls, markedTranscripts, lazyToolCardBodies, toolResultContentSignatures, streamingRenderers, streamSmoothers, STREAM_PAINT_EVENT, STREAM_SETTLED_EVENT, showAcpTransportNoiseDisclosure, subagentMessageCommitted, subagentInnerToolsSig, subagentCardChromeSig, toolCardKeys, toolCardSignatures, toolGroupItemSignatures, acpDiffLineSigns, acpDiffLineNames, emptyReasoningBlocks, reasoningRenders, SCROLL_PIN_THRESHOLD_PX, USER_SCROLL_UP_DEBOUNCE_MS, STREAM_FOLLOW_EASE_MS, TOOL_AUTO_REVEAL_DELAY_MS, TOOL_AUTO_REVEAL_MIN_DWELL_MS, TOOL_AUTO_COMPACT_DELAY_MS, INITIAL_RENDER_WINDOW, REOPENABLE_REASONING, BACKFILL_CHUNK_SIZE;
 var init_conversation = __esm({
   "src/renderer/views/conversation.ts"() {
     init_helpers();
@@ -82302,9 +84147,11 @@ var init_conversation = __esm({
     init_plugin_panel2();
     init_todos_plugin();
     init_apple_development_panel();
+    init_apple_project_suggestion();
     init_review_panel();
     init_comparison_panel();
     init_visual_evidence_card();
+    init_concise_thread();
     init_review_findings_card();
     init_review_actions();
     init_tool_args_format();
@@ -82327,6 +84174,7 @@ var init_conversation = __esm({
     init_markdown_quote();
     init_ipc_error_message();
     userInterruptedCalls = /* @__PURE__ */ new WeakMap();
+    markedTranscripts = /* @__PURE__ */ new WeakSet();
     lazyToolCardBodies = /* @__PURE__ */ new WeakMap();
     toolResultContentSignatures = /* @__PURE__ */ new WeakMap();
     streamingRenderers = /* @__PURE__ */ new WeakMap();
@@ -82341,6 +84189,7 @@ var init_conversation = __esm({
     toolCardSignatures = /* @__PURE__ */ new WeakMap();
     toolGroupItemSignatures = /* @__PURE__ */ new WeakMap();
     acpDiffLineSigns = { context: " ", add: "+", del: "-" };
+    acpDiffLineNames = { add: "Added: ", del: "Deleted: " };
     emptyReasoningBlocks = [];
     reasoningRenders = /* @__PURE__ */ new WeakMap();
     SCROLL_PIN_THRESHOLD_PX = 48;
@@ -82350,6 +84199,7 @@ var init_conversation = __esm({
     TOOL_AUTO_REVEAL_MIN_DWELL_MS = 1e3;
     TOOL_AUTO_COMPACT_DELAY_MS = 750;
     INITIAL_RENDER_WINDOW = 40;
+    REOPENABLE_REASONING = ".msg-assistant:not(.msg-concise) .message-reasoning";
     BACKFILL_CHUNK_SIZE = 30;
   }
 });
@@ -95317,87 +97167,6 @@ var init_debug_trace_prompt2 = __esm({
   }
 });
 
-// src/shared/usage/footer-usage-summary.ts
-function collectSubagentUsage(toolCalls, totals) {
-  for (const toolCall of toolCalls) {
-    const session = toolCall.subagent;
-    if (!session) continue;
-    if (session.kind === "container") continue;
-    if (session.usage) {
-      totals.runs += 1;
-      totals.inputTokens += session.usage.inputTokens;
-      totals.outputTokens += session.usage.outputTokens;
-    }
-    for (const message2 of session.messages) {
-      collectSubagentUsage(message2.toolCalls, totals);
-    }
-  }
-}
-function sumSubagentUsage(messages) {
-  const totals = { runs: 0, inputTokens: 0, outputTokens: 0 };
-  for (const message2 of messages) {
-    collectSubagentUsage(message2.toolCalls, totals);
-  }
-  return totals;
-}
-function estimateAssistantOutputTokens(messages) {
-  let chars = 0;
-  for (const message2 of messages) {
-    if (message2.role !== "assistant") continue;
-    chars += message2.content.length;
-    for (const toolCall of message2.toolCalls) {
-      for (const subMessage of toolCall.subagent?.messages ?? []) {
-        if (subMessage.role === "assistant") chars += subMessage.content.length;
-      }
-    }
-  }
-  return Math.round(chars / CHARS_PER_TOKEN);
-}
-function resolveFooterUsage(input2) {
-  const { inputTokens, outputTokens } = input2.measured;
-  if (inputTokens || outputTokens) {
-    const subagents = sumSubagentUsage(input2.messages);
-    return {
-      inputTokens: Math.max(0, inputTokens - subagents.inputTokens),
-      outputTokens: Math.max(0, outputTokens - subagents.outputTokens),
-      estimated: false,
-      ...subagents.runs > 0 ? {
-        subagentInputTokens: subagents.inputTokens,
-        subagentOutputTokens: subagents.outputTokens
-      } : {}
-    };
-  }
-  const estimatedOutput = estimateAssistantOutputTokens(input2.messages);
-  const estimatedInput = input2.contextSnapshot?.conversationTokens ?? (input2.running ? void 0 : input2.breakdown?.totalTokens);
-  const total2 = (estimatedInput ?? 0) + estimatedOutput;
-  if (!total2 && !input2.running) return null;
-  return {
-    inputTokens: estimatedInput ?? 0,
-    outputTokens: estimatedOutput,
-    estimated: true
-  };
-}
-function formatFooterUsageSummary(display) {
-  const value = `${formatTokenCount(display.inputTokens + display.outputTokens)} tokens`;
-  return display.estimated ? `~${value}` : value;
-}
-function formatFooterUsageDetail(display, opts) {
-  const { inputTokens, outputTokens, estimated } = display;
-  const approx = estimated ? "~" : "";
-  const split = `${approx}${formatTokenCount(inputTokens)} in / ${approx}${formatTokenCount(outputTokens)} out`;
-  const rawCost = estimated ? "est." : formatThreadUsageCost(opts.measuredUsage, opts.model, opts.pricing);
-  const cost = !estimated && rawCost && display.subagentInputTokens !== void 0 ? `whole-thread cost ${rawCost}` : rawCost;
-  const parts = [formatFooterUsageSummary(display), split, ...cost ? [cost] : []];
-  return `Usage: ${parts.join(" \xB7 ")}`;
-}
-var init_footer_usage_summary = __esm({
-  "src/shared/usage/footer-usage-summary.ts"() {
-    init_estimate_cost();
-    init_token_estimate();
-    init_format_usage_summary();
-  }
-});
-
 // src/shared/usage/footer-usage-tooltip.ts
 function modelRowValue(model, usage, pricing) {
   const tokens = `${formatTokenCount(usage.inputTokens)} in / ${formatTokenCount(usage.outputTokens)} out`;
@@ -95408,7 +97177,7 @@ function modelRowValue(model, usage, pricing) {
 }
 function freeReason(model, pricing) {
   if (isLocalModel(model)) return "local model";
-  if (!hasModelPricing(model, pricing)) return `${model} has no listed price`;
+  if (hasZeroModelPricing(model, pricing)) return `${model} is listed at a zero rate`;
   return null;
 }
 function buildFreeNote(models, pricing) {
@@ -95436,7 +97205,14 @@ function buildFooterUsageTooltip(display, opts) {
   if (cacheCreation > 0) {
     threadRows.push({ label: "Cache write", value: formatTokenCount(cacheCreation) });
   }
-  const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing);
+  const byModel = Object.entries(usage.byModel ?? {}).filter(
+    ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
+  );
+  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
+  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
+  const cost = estimated ? "" : formatThreadUsageCost(usage, opts.model, opts.pricing, {
+    localFreeExplained: pricedModels.some(isLocalModel)
+  });
   if (cost) threadRows.push({ label: "Cost", value: cost });
   const subagents = estimated ? { runs: 0, inputTokens: 0, outputTokens: 0 } : sumSubagentUsage(opts.messages);
   const subagentRow = subagents.runs > 0 ? {
@@ -95448,20 +97224,15 @@ function buildFooterUsageTooltip(display, opts) {
   const conversationLabel = subagentRow ? "Excluding subagents" : null;
   const threadLabel2 = subagentRow ? "Whole thread" : null;
   const modelRows = [];
-  const byModel = Object.entries(usage.byModel ?? {}).filter(
-    ([, u2]) => u2.inputTokens > 0 || u2.outputTokens > 0
-  );
   if (!estimated && byModel.length > 1) {
     for (const [model, modelUsage] of byModel) {
       modelRows.push({ label: model, value: modelRowValue(model, modelUsage, opts.pricing) });
     }
   }
-  const pricedModels = byModel.length > 0 ? byModel.map(([model]) => model) : [opts.model];
   const hasUnpricedUsage = pricedModels.some(
     (model) => !isLocalModel(model) && !hasModelPricing(model, opts.pricing)
   );
-  const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models without pricing" : "No pricing for this model" : null;
-  const freeNote = estimated ? null : buildFreeNote(pricedModels, opts.pricing);
+  const note = estimated ? "Estimated \u2014 provider usage not reported yet" : hasUnpricedUsage ? cost ? "Cost excludes models with no listed price" : "No listed price for this model" : null;
   return {
     header: `Usage \xB7 ${approx}${formatTokenCount(inputTokens + outputTokens)} tokens`,
     conversationLabel,
@@ -110709,44 +112480,45 @@ var init_staged_diff_ui = __esm({
 function isImageDiff(diff) {
   return diff.beforeImage != null || diff.afterImage != null;
 }
+function imagePane(label, src, alt) {
+  const img = el("img", { class: "git-image-diff-img", src, alt, loading: "lazy" });
+  attachImageExpand(img, alt);
+  const pane = el("div", { class: "git-image-diff-pane" });
+  pane.append(el("div", { class: "git-image-diff-label" }, label), img);
+  return pane;
+}
 function renderImageDiff(container, diff) {
+  const beforeImage = diff.beforeImage ?? null;
+  const afterImage = diff.afterImage ?? null;
+  const current = renderedImageDiffs.get(container);
+  if (current?.grid.parentNode === container && current.path === diff.path && current.beforeImage === beforeImage && current.afterImage === afterImage) {
+    return;
+  }
+  const active2 = document.activeElement;
+  const focusedAlt = active2 && container.contains(active2) ? active2.getAttribute("alt") : null;
   clear(container);
   const grid = el("div", { class: "git-image-diff" });
-  if (diff.beforeImage) {
-    const alt = `${diff.path} (before)`;
-    const img = el("img", {
-      class: "git-image-diff-img",
-      src: diff.beforeImage,
-      alt,
-      loading: "lazy"
-    });
-    attachImageExpand(img, alt);
-    const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(el("div", { class: "git-image-diff-label" }, "Before"), img);
-    grid.append(pane);
-  }
-  if (diff.afterImage) {
-    const alt = `${diff.path} (after)`;
-    const img = el("img", {
-      class: "git-image-diff-img",
-      src: diff.afterImage,
-      alt,
-      loading: "lazy"
-    });
-    attachImageExpand(img, alt);
-    const pane = el("div", { class: "git-image-diff-pane" });
-    pane.append(el("div", { class: "git-image-diff-label" }, "After"), img);
-    grid.append(pane);
-  }
-  if (!diff.beforeImage && !diff.afterImage) {
+  if (beforeImage) grid.append(imagePane("Before", beforeImage, `${diff.path} (before)`));
+  if (afterImage) grid.append(imagePane("After", afterImage, `${diff.path} (after)`));
+  if (!beforeImage && !afterImage) {
     grid.append(el("div", { class: "panel-empty" }, "Could not load image"));
   }
   container.append(grid);
+  renderedImageDiffs.set(container, { grid, path: diff.path, beforeImage, afterImage });
+  if (focusedAlt === null) return;
+  for (const img of grid.querySelectorAll(".git-image-diff-img")) {
+    if (img.alt === focusedAlt) {
+      img.focus({ preventScroll: true });
+      return;
+    }
+  }
 }
+var renderedImageDiffs;
 var init_git_image_diff = __esm({
   "src/renderer/views/git-image-diff.ts"() {
     init_image_expand();
     init_helpers();
+    renderedImageDiffs = /* @__PURE__ */ new WeakMap();
   }
 });
 
@@ -116043,6 +117815,17 @@ function shareableWebContentsId(tab) {
     return null;
   }
 }
+function downloadableArtefact(tab) {
+  return tab.artefact?.mimeType === "text/html" ? tab.artefact : null;
+}
+function seededArtefact(value) {
+  if (!isRecord(value)) return null;
+  const { title, mimeType, body } = value;
+  if (typeof title !== "string" || typeof mimeType !== "string" || typeof body !== "string") {
+    return null;
+  }
+  return { title, mimeType, body };
+}
 function isBrowserPopoutSeed(seed) {
   if (!seed || typeof seed !== "object") return false;
   return "tabs" in seed && Array.isArray(seed.tabs);
@@ -116259,6 +118042,46 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
   }
   const pendingProjectWaits = /* @__PURE__ */ new Set();
   const pendingArtefactReopens = /* @__PURE__ */ new Map();
+  let pendingBackgroundArtefacts = [];
+  let lastThreadScope = activeThreadScope();
+  function activeThreadScope() {
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return `${activeProjectId ?? ""}\0${activeThreadId ?? ""}`;
+  }
+  function artefactThreadId(artefact) {
+    return artefact.owner?.threadId ?? artefact.threadId;
+  }
+  function artefactBelongsToActiveThread(artefact) {
+    const threadId = artefactThreadId(artefact);
+    if (!threadId) return true;
+    const { activeProjectId, activeThreadId } = store2.getState();
+    return threadId === activeThreadId && (!artefact.owner?.projectId || artefact.owner.projectId === activeProjectId);
+  }
+  function pendingArtefactIdentity(artefact) {
+    return `${artefact.owner?.projectId ?? ""}\0${artefactThreadId(artefact) ?? ""}\0${artefact.title}`;
+  }
+  function queueBackgroundArtefact(artefact) {
+    const identity = pendingArtefactIdentity(artefact);
+    const existing = pendingBackgroundArtefacts.findIndex(
+      (candidate) => pendingArtefactIdentity(candidate) === identity
+    );
+    if (existing >= 0) pendingBackgroundArtefacts[existing] = artefact;
+    else pendingBackgroundArtefacts.push(artefact);
+  }
+  function flushBackgroundArtefacts() {
+    const ready3 = pendingBackgroundArtefacts.filter(artefactBelongsToActiveThread);
+    if (ready3.length === 0) return;
+    pendingBackgroundArtefacts = pendingBackgroundArtefacts.filter(
+      (artefact) => !artefactBelongsToActiveThread(artefact)
+    );
+    for (const artefact of ready3) openArtefact(artefact);
+  }
+  function onThreadMaybeChanged() {
+    const nextScope = activeThreadScope();
+    if (nextScope === lastThreadScope) return;
+    lastThreadScope = nextScope;
+    flushBackgroundArtefacts();
+  }
   function closeAllMenus() {
     for (const tab of tabs.values()) tab.closeMenu();
   }
@@ -116601,6 +118424,10 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     }
   }
   function openArtefact(artefact) {
+    if (!artefactBelongsToActiveThread(artefact)) {
+      queueBackgroundArtefact(artefact);
+      return;
+    }
     const target = artefactUrl(artefact);
     const existing = artefactTabFor(
       artefact.title,
@@ -116628,6 +118455,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     tab.artefactThreadId = artefact.owner?.threadId ?? artefact.threadId ?? null;
     tab.artefactProjectId = artefact.owner?.projectId ?? store2.getState().activeProjectId;
     tab.artefactContentReady = true;
+    tab.artefact = artefact;
     tab.urlInput.value = "";
     tab.urlInput.placeholder = artefact.title;
     syncTabLabel(tab);
@@ -116732,6 +118560,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       downloadIcon("ui-icon ui-icon-sm"),
       el("span", {}, "Export PDF")
     );
+    const downloadCanvasItem = el(
+      "button",
+      { type: "button", class: "browser-menu-item", role: "menuitem" },
+      downloadIcon("ui-icon ui-icon-sm"),
+      el("span", {}, "Download canvas")
+    );
     const openExternalItem = el(
       "button",
       { type: "button", class: "browser-menu-item", role: "menuitem" },
@@ -116750,6 +118584,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       shareTextItem,
       shareScreenshotItem,
       el("div", { class: "browser-menu-separator", role: "separator" }),
+      downloadCanvasItem,
       exportPdfItem,
       openExternalItem,
       inspectorItem
@@ -116810,6 +118645,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
       artefactThreadId: null,
       artefactProjectId: null,
       artefactContentReady: false,
+      artefact: null,
       annotation: null,
       annotationScroll: null,
       closeMenu: () => {
@@ -116882,6 +118718,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         const shareableId = shareableWebContentsId(tab);
         shareTextItem.disabled = shareableId === null || !api2;
         shareScreenshotItem.disabled = shareableId === null || !api2;
+        downloadCanvasItem.disabled = downloadableArtefact(tab) === null || !api2?.browser.exportArtefact;
         exportPdfItem.disabled = shareableId === null || !api2?.browser.exportPdf;
         openExternalItem.disabled = !currentHttpUrl(tab) || !api2?.shell;
         inspectorItem.disabled = !tab.webview;
@@ -116924,6 +118761,21 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         if (filePath) showToast(`Exported PDF to ${filePath}`);
       }).catch((error62) => {
         showErrorToast("Could not export PDF", error62);
+      });
+    });
+    downloadCanvasItem.addEventListener("click", () => {
+      setMenuOpen(false);
+      const artefact = downloadableArtefact(tab);
+      const exportArtefact = api2?.browser.exportArtefact;
+      if (!artefact || !exportArtefact) return;
+      void exportArtefact({
+        title: artefact.title,
+        mimeType: artefact.mimeType,
+        body: artefact.body
+      }).then((filePath) => {
+        if (filePath) showToast(`Downloaded canvas to ${filePath}`);
+      }).catch((error62) => {
+        showErrorToast("Could not download canvas", error62);
       });
     });
     openExternalItem.addEventListener("click", () => {
@@ -117064,7 +118916,12 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
           ...snapshot.label !== void 0 ? { label: snapshot.label } : {},
           artefactTitle: tab.artefactTitle,
           artefactThreadId: tab.artefactThreadId,
-          artefactProjectId: tab.artefactProjectId
+          artefactProjectId: tab.artefactProjectId,
+          artefact: tab.artefact ? {
+            title: tab.artefact.title,
+            mimeType: tab.artefact.mimeType,
+            body: tab.artefact.body
+          } : null
         };
       }),
       activeTabIndex: activeIndexOf(ordered)
@@ -117096,6 +118953,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
         tab.artefactProjectId = entry.artefactProjectId ?? null;
         tab.artefactContentReady = Boolean(entry.url && entry.url !== "about:blank");
         tab.urlInput.placeholder = entry.artefactTitle;
+        tab.artefact = seededArtefact(entry.artefact);
       }
       if (entry.url && entry.url !== "about:blank") {
         tab.pendingUrl = entry.url;
@@ -117216,6 +119074,8 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
     apply: applyBrowserSeed
   });
   const unsubs = [
+    store2.on("threads_changed", onThreadMaybeChanged),
+    store2.on("workspace_changed", onThreadMaybeChanged),
     store2.on("right_panel_mode_changed", onBrowserModeChange),
     store2.on("files_pane_changed", onBrowserModeChange),
     store2.on("right_panel_maximized_changed", onRightPanelMaximizedChanged),
@@ -117272,6 +119132,7 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
 var NET_ERROR_ABORTED, NET_ERROR_BLOCKED_BY_CLIENT, WEBVIEW_PREFS2;
 var init_browser_pane = __esm({
   "src/renderer/views/browser-pane.ts"() {
+    init_unknown_value3();
     init_helpers();
     init_icons();
     init_pane_maximize_button();
@@ -132011,6 +133872,16 @@ var init_simulator_desktop_view = __esm({
   }
 });
 
+// src/shared/desktop-viewer.ts
+var DESKTOP_VIEWER_SETTING_LOCATION, DESKTOP_VIEWER_OFF_TITLE, DESKTOP_VIEWER_OFF_DETAIL;
+var init_desktop_viewer = __esm({
+  "src/shared/desktop-viewer.ts"() {
+    DESKTOP_VIEWER_SETTING_LOCATION = "Settings \u2192 Experimental \u2192 Remote desktop viewer";
+    DESKTOP_VIEWER_OFF_TITLE = "Desktop viewer is off";
+    DESKTOP_VIEWER_OFF_DETAIL = `Turn on ${DESKTOP_VIEWER_SETTING_LOCATION} to watch the Simulator here.`;
+  }
+});
+
 // src/renderer/views/vnc-pane.ts
 function vncModeActive(store2) {
   const { filesPaneOpen, rightPanelMode } = store2.getState();
@@ -132369,11 +134240,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   );
   controlsRoot.append(controlsBody);
   const screen = el("div", { class: "vnc-screen", "aria-label": "Remote desktop" });
-  const empty = el(
-    "div",
-    { class: "panel-empty vnc-empty" },
-    "Choose this machine, a nearby device, another address, or a saved SSH machine."
-  );
+  const empty = el("div", { class: "panel-empty vnc-empty" }, CHOOSE_MACHINE_TEXT);
   viewerRoot.append(screen, empty);
   let rfb = null;
   let channel = null;
@@ -132613,7 +134480,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     hideAuthentication();
     resetControlState();
     screen.replaceChildren();
-    empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+    empty.textContent = CHOOSE_MACHINE_TEXT;
     setSessionUi(false);
     setStatus(title, kind, detail);
     void refreshSavedLogin();
@@ -132840,7 +134707,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
       empty.textContent = `Connect to view ${selectedSimulator()?.name ?? "this Simulator"}.`;
       note.hidden = true;
     } else if (!channel) {
-      empty.textContent = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
+      empty.textContent = CHOOSE_MACHINE_TEXT;
       note.hidden = false;
     }
     const nearby = selectedNearbyServer();
@@ -132948,6 +134815,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function discoverSelectedMachine() {
     if (isNetworkMachine(machineSelect.value) || isSimulatorMachine(machineSelect.value)) return;
+    if (await stoppedByViewerOff()) return;
     const generation = ++discoveryGeneration;
     discoverButton.hidden = true;
     discoverButton.disabled = true;
@@ -132971,6 +134839,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     }
   }
   async function discoverNearby() {
+    if (await stoppedByViewerOff()) return;
     const generation = ++nearbyGeneration;
     const previous = machineSelect.value;
     const previousNearby = selectedNearbyServer();
@@ -133002,6 +134871,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     const previous = machineSelect.value;
     const activeProject = store2.getState().projects.find((project2) => project2.id === store2.getState().activeProjectId);
     const preferred = activeProject?.sshHost ? sshMachineValue(activeProject.sshHost) : previous;
+    if (!await desktopViewerEnabled()) {
+      if (!simulatorSessionId && !channel) showDesktopViewerOff();
+      return;
+    }
     let discoveryError = "";
     const [canStoreCredentials, devices] = await Promise.all([
       api2.vnc.canStoreCredentials().catch(() => false),
@@ -133016,6 +134889,29 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await Promise.all([discoverSelectedMachine(), discoverNearby()]);
     if (discoveryError && !simulatorSessionId && !channel)
       setStatus("Couldn\u2019t discover local emulators", "error", discoveryError);
+  }
+  async function desktopViewerEnabled() {
+    return await api2.settings.get("vncEnabled").catch(() => false) === true;
+  }
+  async function stoppedByViewerOff() {
+    if (await desktopViewerEnabled()) return false;
+    if (!simulatorSessionId && !channel) showDesktopViewerOff();
+    return true;
+  }
+  function showDesktopViewerOff() {
+    setStatus(DESKTOP_VIEWER_OFF_TITLE, "error", DESKTOP_VIEWER_OFF_DETAIL);
+    empty.textContent = `${DESKTOP_VIEWER_OFF_TITLE}. ${DESKTOP_VIEWER_OFF_DETAIL}`;
+    nearbyFeedback.hidden = true;
+  }
+  function desktopViewerOffShown() {
+    return !status.hidden && statusTitle.textContent === DESKTOP_VIEWER_OFF_TITLE;
+  }
+  async function recoverDesktopViewer() {
+    if (!desktopViewerOffShown() || !await desktopViewerEnabled()) return;
+    if (!desktopViewerOffShown()) return;
+    status.hidden = true;
+    empty.textContent = CHOOSE_MACHINE_TEXT;
+    await loadMachines();
   }
   async function connectSimulator(device, immediateControl = false) {
     if (device.unavailableReason) {
@@ -133085,6 +134981,10 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   }
   async function showSimulatorFromAgent(udid, presentation) {
     openRightPanel(store2, "vnc");
+    if (!await desktopViewerEnabled()) {
+      showDesktopViewerOff();
+      return;
+    }
     const machine = `${SIMULATOR_MACHINE_PREFIX}${udid}`;
     if (simulatorSessionId && machineSelect.value === machine) {
       if (presentation?.control) setControlEnabled(true);
@@ -133111,6 +135011,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
     await connectSimulator(device, presentation?.control === true);
   }
   async function connect() {
+    if (await stoppedByViewerOff()) return;
     const simulator = selectedSimulator();
     if (simulator) {
       await connectSimulator(simulator);
@@ -133470,6 +135371,7 @@ function mountVncSession(controlsRoot, viewerRoot, store2, api2, options) {
   });
   const stopSettings = store2.on("settings_changed", () => {
     void refreshSshHosts();
+    void recoverDesktopViewer();
   });
   setSessionUi(false);
   portInput.value = "5901";
@@ -133702,7 +135604,7 @@ function mountVncPane(controlsRoot, viewerRoot, store2, api2) {
     tabs.clear();
   };
 }
-var LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
+var CHOOSE_MACHINE_TEXT, LOCAL_MACHINE, MANUAL_MACHINE, NEARBY_MACHINE_PREFIX, SSH_MACHINE_PREFIX, SIMULATOR_MACHINE_PREFIX, isVncCredentialType;
 var init_vnc_pane = __esm({
   async "src/renderer/views/vnc-pane.ts"() {
     await init_rfb();
@@ -133718,6 +135620,8 @@ var init_vnc_pane = __esm({
     init_toast();
     init_simulator_desktop_view();
     init_panels();
+    init_desktop_viewer();
+    CHOOSE_MACHINE_TEXT = "Choose this machine, a nearby device, another address, or a saved SSH machine.";
     LOCAL_MACHINE = "local";
     MANUAL_MACHINE = "network:manual";
     NEARBY_MACHINE_PREFIX = "network:nearby:";
@@ -135582,6 +137486,16 @@ function mountProcessManagerDialog(api2, store2) {
   let generation = 0;
   let refreshing = false;
   const collapsedGroups = /* @__PURE__ */ new Set();
+  const runGenerations = /* @__PURE__ */ new Map();
+  let sampledRuns = /* @__PURE__ */ new Set();
+  function trackRuns(snapshot) {
+    for (const threadId of snapshot.activeRunThreadIds) {
+      if (!sampledRuns.has(threadId)) {
+        runGenerations.set(threadId, (runGenerations.get(threadId) ?? 0) + 1);
+      }
+    }
+    sampledRuns = new Set(snapshot.activeRunThreadIds);
+  }
   function projectForThread(threadId, projectId) {
     return projectId ?? getThreadProjectId(store2, threadId);
   }
@@ -135625,7 +137539,7 @@ function mountProcessManagerDialog(api2, store2) {
       showErrorToast(`Could not stop the ${label}`, error62);
     }
   }
-  function threadMenuEntries(threadId, projectId, running) {
+  function threadMenuEntries(threadId, projectId, running, stillSameRun) {
     const entries2 = [];
     if (projectId && store2.getState().projects.some((project2) => project2.id === projectId)) {
       entries2.push({
@@ -135639,6 +137553,10 @@ function mountProcessManagerDialog(api2, store2) {
       entries2.push({
         label: "Stop agent run",
         onSelect: () => {
+          if (stillSameRun && !stillSameRun()) {
+            showToast("That agent run has already finished.");
+            return;
+          }
           stopAgentRun(threadId);
         }
       });
@@ -135675,6 +137593,15 @@ function mountProcessManagerDialog(api2, store2) {
     });
     cell.append(button);
     return cell;
+  }
+  function activityMenuEntries(threadId, projectId) {
+    const run2 = runGenerations.get(threadId);
+    return threadMenuEntries(
+      threadId,
+      projectId,
+      true,
+      () => current?.activeRunThreadIds.includes(threadId) === true && runGenerations.get(threadId) === run2
+    );
   }
   function menuEntries(row2) {
     const entries2 = row2.threadId ? threadMenuEntries(
@@ -135738,7 +137665,7 @@ function mountProcessManagerDialog(api2, store2) {
         showContextMenu(
           event.clientX,
           event.clientY,
-          threadMenuEntries(threadId, projectId, true),
+          activityMenuEntries(threadId, projectId),
           dialog2
         );
       });
@@ -135746,12 +137673,7 @@ function mountProcessManagerDialog(api2, store2) {
         if (event.key !== "F10" || !event.shiftKey) return;
         event.preventDefault();
         const rect = item.getBoundingClientRect();
-        showContextMenu(
-          rect.left,
-          rect.bottom,
-          threadMenuEntries(threadId, projectId, true),
-          dialog2
-        );
+        showContextMenu(rect.left, rect.bottom, activityMenuEntries(threadId, projectId), dialog2);
       });
       activityList.append(item);
       if (threadId === focusedActivityThread) item.focus({ preventScroll: true });
@@ -135852,6 +137774,7 @@ function mountProcessManagerDialog(api2, store2) {
       const snapshot = await api2.processManager.snapshot();
       if (isRequestCurrent(requestGeneration)) {
         current = snapshot;
+        trackRuns(snapshot);
         render(snapshot);
       }
     } catch {
@@ -135881,6 +137804,8 @@ function mountProcessManagerDialog(api2, store2) {
     if (timer !== null) clearInterval(timer);
     timer = null;
     refreshing = false;
+    runGenerations.clear();
+    sampledRuns = /* @__PURE__ */ new Set();
   });
   return () => {
     if (dialog2.open) return;
@@ -136464,6 +138389,7 @@ function startAgentController(store2, api2) {
           model: chunk.model,
           inputTokens: chunk.inputTokens,
           outputTokens: chunk.outputTokens,
+          ...chunk.subagentUsage ? { subagentUsage: true } : {},
           ...chunk.cacheReadTokens !== void 0 ? { cacheReadTokens: chunk.cacheReadTokens } : {},
           ...chunk.cacheCreationTokens !== void 0 ? { cacheCreationTokens: chunk.cacheCreationTokens } : {},
           ...chunk.requestedServiceTier !== void 0 ? { requestedServiceTier: chunk.requestedServiceTier } : {},
@@ -136613,7 +138539,9 @@ function startAgentController(store2, api2) {
       }
       case "turn_outcome": {
         st2.msgId ??= addAssistantMessage(store2, threadId);
-        setMessageTurnOutcome(store2, threadId, st2.msgId, chunk.outcome);
+        const userCancelled = chunk.outcome.status === "cancelled" && chunk.outcome.source === "user";
+        const outcome = userCancelled ? { ...chunk.outcome, userAbort: takeSendNowAbort(threadId) ? "send_now" : "stop" } : chunk.outcome;
+        setMessageTurnOutcome(store2, threadId, st2.msgId, outcome);
         break;
       }
       case "done": {
@@ -136630,6 +138558,7 @@ function startAgentController(store2, api2) {
           );
           clearReviewReportTarget(store2, threadId);
         }
+        takeSendNowAbort(threadId);
         setThreadStatus(store2, threadId, "idle");
         maybeRenameThreadBranch(store2, api2, threadId);
         store2.emit("agent_activity", threadId, null);
@@ -136765,6 +138694,7 @@ var init_agent = __esm({
     init_thread_naming();
     init_quiet_runs();
     init_review_report_target();
+    init_send_now_aborts();
     init_background_threads();
     init_remote_agent_stream();
     init_perf();
@@ -136781,10 +138711,45 @@ function isPendingAutomation(thread) {
 }
 function attachAutomationController(store2, api2) {
   const starting = /* @__PURE__ */ new Set();
+  const retryTimers = /* @__PURE__ */ new Map();
+  const retrying = /* @__PURE__ */ new Set();
+  const retryPending = (threadId) => {
+    startThread(threadId).catch((error62) => {
+      console.error("[automations] Failed to retry scheduled task:", error62);
+    });
+  };
+  function retryKey(projectId, threadId) {
+    return JSON.stringify([projectId, threadId]);
+  }
+  function clearRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const timer = retryTimers.get(key);
+    if (timer !== void 0) clearTimeout(timer);
+    retryTimers.delete(key);
+    retrying.delete(key);
+  }
+  function scheduleRetry(projectId, threadId) {
+    const key = retryKey(projectId, threadId);
+    const firstDenial = !retrying.has(key);
+    retrying.add(key);
+    if (!retryTimers.has(key)) {
+      const timer = setTimeout(() => {
+        retryTimers.delete(key);
+        if (store2.getState().activeProjectId === projectId) retryPending(threadId);
+      }, AUTOMATION_START_RETRY_MS);
+      retryTimers.set(key, timer);
+    }
+    return firstDenial;
+  }
   async function startThread(threadId) {
     const initial = getThreadById(store2, threadId);
     const projectId = store2.getState().activeProjectId;
-    if (!projectId || !initial || !isPendingAutomation(initial) || starting.has(threadId)) return;
+    if (!projectId) return;
+    if (!initial || !isPendingAutomation(initial)) {
+      clearRetry(projectId, threadId);
+      return;
+    }
+    if (starting.has(threadId)) return;
     const prompt = initial.draftPrompt?.trim();
     if (!prompt) return;
     starting.add(threadId);
@@ -136793,6 +138758,22 @@ function attachAutomationController(store2, api2) {
       await ensureThreadMessages(projectId, threadId);
       hydrated = true;
       if (store2.getState().activeProjectId !== projectId) return;
+      const admission = await api2.automations.canStart(projectId, threadId);
+      if (!admission.allowed) {
+        let shouldRecord = true;
+        if (admission.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            admission.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!admission.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
       if (!initial.worktreeChoice) {
         const prepared = await api2.agent.prepareCheckout(
           projectId,
@@ -136805,7 +138786,27 @@ function attachAutomationController(store2, api2) {
         applyPreparedThreadCheckout(store2, threadId, prepared);
       }
       const current = getThreadById(store2, threadId);
-      if (!current || !isPendingAutomation(current)) return;
+      if (!current || !isPendingAutomation(current)) {
+        clearRetry(projectId, threadId);
+        return;
+      }
+      const beforeDispatch = await api2.automations.canStart(projectId, threadId);
+      if (!beforeDispatch.allowed) {
+        let shouldRecord = true;
+        if (beforeDispatch.retryable) shouldRecord = scheduleRetry(projectId, threadId);
+        else clearRetry(projectId, threadId);
+        if (shouldRecord) {
+          addMessage(
+            store2,
+            threadId,
+            "error",
+            beforeDispatch.reason ?? "This automation run is no longer eligible."
+          );
+        }
+        if (!beforeDispatch.retryable) setThreadDraftPrompt(store2, threadId, "");
+        return;
+      }
+      clearRetry(projectId, threadId);
       addMessage(store2, threadId, "user", prompt);
       setThreadDraftPrompt(store2, threadId, "");
       startAutomationTurnTree(store2, threadId);
@@ -136851,16 +138852,21 @@ Its prompt is kept as a draft, so nothing is lost \u2014 send it once the cause 
   const unsubscribeWorkspace = store2.on("workspace_changed", startPendingForActiveProject);
   startPendingForActiveProject();
   return () => {
+    for (const timer of retryTimers.values()) clearTimeout(timer);
+    retryTimers.clear();
+    retrying.clear();
     unsubscribeTrigger();
     unsubscribeWorkspace();
   };
 }
+var AUTOMATION_START_RETRY_MS;
 var init_automations2 = __esm({
   "src/renderer/controller/automations.ts"() {
     init_ipc_error_message();
     init_thread_helpers();
     init_message_queue();
     init_thread_hydration();
+    AUTOMATION_START_RETRY_MS = 15e3;
   }
 });
 
@@ -137509,6 +139515,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -137524,6 +139531,7 @@ async function loadStartupSettings(settings) {
     settings.get("theme"),
     settings.get("fontSize"),
     settings.get("animateAgentAvatars"),
+    settings.get("conciseThreadsEnabled"),
     settings.get("uiScale"),
     settings.get("uiAccentColor"),
     settings.get("uiTintColor"),
@@ -137540,6 +139548,7 @@ async function loadStartupSettings(settings) {
     theme,
     fontSize,
     animateAgentAvatars,
+    conciseThreadsEnabled,
     uiScale,
     uiAccentColor,
     uiTintColor,
@@ -146814,6 +148823,7 @@ async function boot() {
     fontSize,
     uiScale,
     animateAgentAvatars: startupSettings.animateAgentAvatars !== false,
+    conciseThreadsEnabled: startupSettings.conciseThreadsEnabled === true,
     autoPortraitRightPanel: typeof savedAutoPortraitRightPanel === "boolean" ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition) ? savedRightPanelPosition : "auto",
     openLinksInBuiltInBrowser: typeof savedOpenLinksInBuiltInBrowser === "boolean" ? savedOpenLinksInBuiltInBrowser : true,
