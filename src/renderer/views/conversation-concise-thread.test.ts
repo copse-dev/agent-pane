@@ -39,7 +39,7 @@ function seedCapableTurn(conciseThreadsEnabled: boolean): ReturnType<typeof crea
     id: 'read-1',
     name: 'read_file',
     args: { path: 'form.ts' },
-    status: 'done',
+    status: 'running',
     result: '',
   })
   addMessage(store, threadId, 'assistant', 'Save now stays pinned.', undefined, undefined, {

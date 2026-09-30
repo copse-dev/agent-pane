@@ -89,8 +89,11 @@ describe('concise thread model gate', () => {
 
   it('toggles the stylesheet classes on the bubble', () => {
     const el = document.createElement('div')
-    syncConciseMessageClasses(el, message({ model: CAPABLE, toolCalls: [tool()] }), true)
+    const running = message({ model: CAPABLE, toolCalls: [tool({ status: 'running' })] })
+    syncConciseMessageClasses(el, running, true)
     assert.deepEqual([...el.classList], ['msg-concise', 'msg-concise-working'])
+    syncConciseMessageClasses(el, message({ model: CAPABLE, toolCalls: [tool()] }), true)
+    assert.deepEqual([...el.classList], ['msg-concise'])
     syncConciseMessageClasses(el, message({ model: CAPABLE }), true)
     assert.deepEqual([...el.classList], ['msg-concise'])
     syncConciseMessageClasses(el, message({ model: MODEST }), true)
