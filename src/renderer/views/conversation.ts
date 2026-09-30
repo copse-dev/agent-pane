@@ -83,7 +83,11 @@ import {
 } from '@shared/threads/message-model.ts'
 import { displayModelLabel } from '@shared/model-display.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
-import { attachImageCopyMenu, attachImageExpand } from '../attachments/image-expand.ts'
+import {
+  attachImageCopyMenu,
+  attachImageExpand,
+  type ImageExpandItem,
+} from '../attachments/image-expand.ts'
 import {
   acpWorkspaceRoot,
   hydrateAcpResourceImages,
@@ -1531,16 +1535,17 @@ function reconcileToolCard(
 
 function createMessageImages(images: string[]): HTMLElement {
   const wrap = el('div', { class: 'message-images' })
-  for (const dataUrl of images) {
+  const gallery = images.map((src) => ({ src, alt: 'Attached image' }))
+  images.forEach((dataUrl, index) => {
     const img = el('img', {
       class: 'message-image',
       src: dataUrl,
       alt: 'Attached image',
       loading: 'lazy',
     })
-    attachImageExpand(img, 'Attached image')
+    attachImageExpand(img, 'Attached image', gallery, index)
     wrap.append(img)
-  }
+  })
   return wrap
 }
 
@@ -1561,6 +1566,7 @@ function createAcpContentBlock(
   context: 'message' | 'reasoning' | 'tool',
   workspaceRoot: string | null,
   previewImageDataUrls?: ReadonlySet<string>,
+  imageGallery?: { items: readonly ImageExpandItem[]; index: number },
 ): HTMLElement | null {
   if (block.type === 'text') return null
   if (block.type === 'image') {
@@ -1586,7 +1592,7 @@ function createAcpContentBlock(
       alt: label,
       loading: 'lazy',
     })
-    attachImageExpand(img, label)
+    attachImageExpand(img, label, imageGallery?.items, imageGallery?.index)
     return img
   }
   if (block.type === 'audio') {
@@ -1661,8 +1667,21 @@ function createAcpContentBlocks(
   context: 'message' | 'reasoning',
   workspaceRoot: string | null,
 ): HTMLElement | null {
+  const images: ImageExpandItem[] =
+    context === 'message'
+      ? blocks.flatMap((block) =>
+          block.type === 'image'
+            ? [{ src: block.dataUrl, alt: block.uri ? acpResourceLabel(block.uri) : 'Agent image' }]
+            : [],
+        )
+      : []
+  let imageIndex = 0
   const nodes = blocks.flatMap((block) => {
-    const node = createAcpContentBlock(block, context, workspaceRoot)
+    const gallery =
+      context === 'message' && block.type === 'image'
+        ? { items: images, index: imageIndex++ }
+        : undefined
+    const node = createAcpContentBlock(block, context, workspaceRoot, undefined, gallery)
     return node ? [node] : []
   })
   if (nodes.length === 0) return null
