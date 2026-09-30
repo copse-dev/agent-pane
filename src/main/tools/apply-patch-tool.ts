@@ -4,7 +4,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { isRasterImagePath } from '@shared/fs/image-path.ts'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
-import { parsePatch, planPatch } from '@shared/patch/apply-patch.ts'
+import { parsePatch, planPatch, type PatchHunk } from '@shared/patch/apply-patch.ts'
 import { assertWriteTargetWithinRoot, resolvePathWithinRoot } from '../services/workspace.ts'
 import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
@@ -70,12 +70,18 @@ export const applyPatchTool = defineTool({
     const declared = parsed.hunks.flatMap((hunk) =>
       hunk.kind === 'update' && hunk.movePath !== null ? [hunk.path, hunk.movePath] : [hunk.path],
     )
+    // One file can be spelled several ways (`a.ts`, `dir/../a.ts`, an absolute
+    // path). Plan by resolved location, keeping the first spelling seen, so two
+    // entries for the same file compose instead of each editing the original.
+    const spelling = new Map<string, string>()
     for (const path of declared) {
       try {
         if (isRasterImagePath(path)) {
           return `apply_patch cannot edit ${path}: binary images are not text. No files were changed.`
         }
-        await assertWriteTargetWithinRoot(await resolvePathWithinRoot(path, root), root)
+        const absPath = await resolvePathWithinRoot(path, root)
+        await assertWriteTargetWithinRoot(absPath, root)
+        if (!spelling.has(absPath)) spelling.set(absPath, path)
       } catch (err) {
         return `apply_patch rejected ${path}: ${errorMessage(err)} No files were changed.`
       }
@@ -83,7 +89,21 @@ export const applyPatchTool = defineTool({
 
     // Compose onto pending staged content the way str_replace does, so a patch
     // sees the file as the user will see it after approving earlier edits.
-    const plan = await planPatch(parsed.hunks, async (path) => {
+    const canonical = async (path: string): Promise<string> =>
+      spelling.get(await resolvePathWithinRoot(path, root)) ?? path
+    const hunks: PatchHunk[] = []
+    for (const hunk of parsed.hunks) {
+      hunks.push(
+        hunk.kind === 'update'
+          ? {
+              ...hunk,
+              path: await canonical(hunk.path),
+              movePath: hunk.movePath === null ? null : await canonical(hunk.movePath),
+            }
+          : { ...hunk, path: await canonical(hunk.path) },
+      )
+    }
+    const plan = await planPatch(hunks, async (path) => {
       if (getStagedDiffEntry(path)?.op === 'delete') return null
       const pending = getPendingAfterContent(path)
       if (pending !== null) return pending

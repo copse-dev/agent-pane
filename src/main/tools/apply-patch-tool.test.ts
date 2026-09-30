@@ -133,4 +133,15 @@ describe('applyPatchTool', () => {
     await run(patch('*** Update File: f.py', '@@ def f():', '-return 1', '+return 2'))
     assert.equal(getStagedDiffEntry('f.py')?.after, 'def f():\nreturn 2\n')
   })
+
+  ownedIt('composes two entries that spell the same file differently', async () => {
+    await mkdir(join(tempRoot, 'dir'), { recursive: true })
+    await writeFile(join(tempRoot, 'a.ts'), 'one\ntwo\n', 'utf-8')
+    const out = await run(
+      patch('*** Update File: a.ts', '-one', '+1', '*** Update File: dir/../a.ts', '-two', '+2'),
+    )
+    assert.match(out.result, /apply_patch handled 1 file:/)
+    assert.equal(getStagedDiffEntry('a.ts')?.after, '1\n2\n')
+    assert.equal(listStagedDiffEntries().length, 1)
+  })
 })
