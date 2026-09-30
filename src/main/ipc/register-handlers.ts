@@ -1975,7 +1975,7 @@ export function registerAllHandlers(
     return loadThreadHistorySnapshot(pid, tid)
   })
   ipcMain.handle(
-    'threads:history-edit',
+    'threads:edit-history',
     (event, projectId: unknown, threadId: unknown, request: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, payload] = parseIpcArgs(
@@ -2001,7 +2001,7 @@ export function registerAllHandlers(
     },
   )
   ipcMain.handle(
-    'threads:history-undo',
+    'threads:undo-history-edit',
     (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
       assertMainFrameSender(event, win)
       const [pid, tid, revision] = parseIpcArgs(
