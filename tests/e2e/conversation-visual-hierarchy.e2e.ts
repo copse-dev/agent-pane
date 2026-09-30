@@ -205,5 +205,12 @@ describe('conversation visual hierarchy', () => {
     expect(layout.comparisonLineHeight).toBe(layout.baseLineHeight)
 
     await saveAppScreenshot('conversation-visual-hierarchy.png')
+
+    await browser.execute(() => {
+      const messagesList = document.querySelector<HTMLElement>('.messages-list')
+      messagesList?.scrollTo({ top: 180, behavior: 'instant' })
+    })
+    await browser.pause(100)
+    await saveAppScreenshot('conversation-top-fade-scrolled.png')
   })
 })
