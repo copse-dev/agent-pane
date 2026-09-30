@@ -762,6 +762,37 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     },
   },
   {
+    id: 'balanced-model-label',
+    label: 'Balanced model rule label',
+    project: project('demo-balanced-model-label-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+      model: 'auto:balanced',
+    },
+    threads: [
+      {
+        id: 'demo-balanced-model-label-thread',
+        title: 'Balanced model label',
+        status: 'idle',
+        model: 'auto:balanced',
+        messages: [
+          {
+            id: 'demo-balanced-model-label-user',
+            role: 'user',
+            content: 'Keep this conversation on the balanced model rule.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'footer-compact',
     label: 'Responsive composer footer',
     project: project('demo-footer-project'),
