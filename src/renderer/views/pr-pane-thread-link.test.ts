@@ -33,8 +33,11 @@ test('indexes persisted PR references to their producing threads', () => {
   })
 
   const links = indexThreadLinks(store)
-  assert.deepEqual([...links.values()], [
-    { threadId: 'thread-1', title: 'First thread' },
-    { threadId: 'thread-2', title: 'Fix widget' },
-  ])
+  assert.deepEqual(
+    [...links.values()],
+    [
+      { threadId: 'thread-1', title: 'First thread' },
+      { threadId: 'thread-2', title: 'Fix widget' },
+    ],
+  )
 })
