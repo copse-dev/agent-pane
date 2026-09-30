@@ -21531,6 +21531,259 @@ var init_parse_agent_run_payload = __esm({
   }
 });
 
+// packages/llm/src/agent-roles.ts
+function getAgentRole(id) {
+  return AGENT_ROLES.find((role) => role.id === id) ?? null;
+}
+var AGENT_ROLES, AGENT_ROLE_IDS;
+var init_agent_roles = __esm({
+  "packages/llm/src/agent-roles.ts"() {
+    AGENT_ROLES = [
+      {
+        id: "coder",
+        label: "Coder",
+        description: "Writing new code \u2014 the chat default when coding",
+        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
+      },
+      {
+        id: "debugger",
+        label: "Debugger",
+        description: "Fixing bugs through careful, iterative analysis",
+        wants: ["swe-bench", "livecodebench", "gpqa"]
+      },
+      {
+        id: "reviewer",
+        label: "Reviewer",
+        description: "Post-turn diff review and maintainability",
+        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "security-auditor",
+        label: "Security auditor",
+        description: "Finding vulnerabilities with low false negatives",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "judge",
+        label: "Judge",
+        description: "Accept/reject a patch or answer against a rubric",
+        wants: ["gpqa", "mmlu-pro"]
+      },
+      {
+        id: "test-gen",
+        label: "Test generator",
+        description: "Unit, integration, and property tests",
+        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
+      },
+      {
+        id: "refactor",
+        label: "Refactorer",
+        description: "Behaviour-preserving changes",
+        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
+      },
+      {
+        id: "planner",
+        label: "Planner",
+        description: "Breaking work into prioritised tasks",
+        wants: ["gpqa", "mmlu-pro", "arena"]
+      },
+      {
+        id: "advisor",
+        label: "Advisor",
+        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
+        wants: ["gpqa", "mmlu-pro", "swe-bench"]
+      },
+      {
+        id: "docs",
+        label: "Documentation",
+        description: "READMEs, comments, and API docs",
+        wants: ["mmlu-pro", "arena"]
+      },
+      {
+        id: "research",
+        label: "Research assistant",
+        description: "API/framework lookup and synthesis (exploration subagent)",
+        wants: ["mmlu-pro", "gpqa", "arena"]
+      },
+      {
+        id: "tool-use",
+        label: "Tool-use agent",
+        description: "Calling tools correctly with structured output",
+        wants: ["tau-bench", "multipl-e"]
+      },
+      {
+        id: "small-tasks",
+        label: "Small tasks",
+        description: "Thread titles and other lightweight prompts",
+        wants: ["arena"]
+      },
+      {
+        id: "safety",
+        label: "Instruct / safety",
+        description: "Classifies shell commands when the OS sandbox is off",
+        wants: ["arena"]
+      }
+    ];
+    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
+  }
+});
+
+// packages/llm/src/dynamic-model.ts
+function minIntellectSelector(threshold) {
+  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
+}
+function roleModelSelector(role) {
+  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
+}
+function isDynamicModel(value) {
+  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
+}
+function parseDynamicModel(value) {
+  if (typeof value !== "string") return null;
+  const selection2 = parseModelSelection(value);
+  if (selection2.namespace !== "auto") return null;
+  const body = selection2.id;
+  if (body === "best-value") return { kind: "best-value" };
+  if (body === "best-intellect") return { kind: "best-intellect" };
+  if (body === "best-local") return { kind: "best-local" };
+  if (body === "cheapest") return { kind: "cheapest" };
+  if (body === "balanced") return { kind: "balanced" };
+  if (body.startsWith(MIN_INTELLECT_INFIX)) {
+    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
+    if (!Number.isFinite(threshold) || threshold <= 0) return null;
+    return { kind: "min-intellect", threshold };
+  }
+  if (body.startsWith(ROLE_INFIX)) {
+    const role = getAgentRole(body.slice(ROLE_INFIX.length));
+    return role ? { kind: "role", role: role.id } : null;
+  }
+  return null;
+}
+function dynamicModelLabel(value) {
+  const selector = parseDynamicModel(value);
+  if (!selector) return null;
+  switch (selector.kind) {
+    case "best-value":
+      return "Best value";
+    case "best-intellect":
+      return "Most capable";
+    case "best-local":
+      return "Best on-device";
+    case "cheapest":
+      return "Cheapest";
+    case "balanced":
+      return "Balanced";
+    case "min-intellect":
+      return `At least ${String(selector.threshold)} intelligence`;
+    case "role":
+      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
+  }
+}
+function dynamicModelChoices() {
+  const choices = [
+    {
+      value: BEST_VALUE_MODEL_SELECTOR,
+      label: "Best value",
+      description: "Best intelligence per pound across your plans, providers, and local server",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_INTELLECT_MODEL_SELECTOR,
+      label: "Most capable",
+      description: "Highest intelligence available, ignoring price",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BEST_LOCAL_MODEL_SELECTOR,
+      label: "Best on-device",
+      description: "Strongest model loaded on your machine",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: CHEAPEST_MODEL_SELECTOR,
+      label: "Cheapest",
+      description: "Lowest token price; plans and local count as free",
+      group: AUTOMATIC_GROUP
+    },
+    {
+      value: BALANCED_MODEL_SELECTOR,
+      label: "Balanced",
+      description: "Strong capability at a fair price; favors plans",
+      group: AUTOMATIC_GROUP
+    }
+  ];
+  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
+    choices.push({
+      value: minIntellectSelector(threshold),
+      label: `At least ${String(threshold)} intelligence`,
+      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
+      group: INTELLIGENCE_GROUP
+    });
+  }
+  for (const role of AGENT_ROLES) {
+    choices.push({
+      value: roleModelSelector(role.id),
+      label: role.label,
+      description: role.description,
+      group: ROLE_GROUP
+    });
+  }
+  return choices;
+}
+var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
+var init_dynamic_model = __esm({
+  "packages/llm/src/dynamic-model.ts"() {
+    init_agent_roles();
+    init_model_selection();
+    init_reserved_prefixes();
+    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
+    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
+    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
+    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
+    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
+    MIN_INTELLECT_INFIX = "min-intellect:";
+    ROLE_INFIX = "role:";
+    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
+    AUTOMATIC_GROUP = "Automatic";
+    INTELLIGENCE_GROUP = "Minimum intelligence";
+    ROLE_GROUP = "By role";
+  }
+});
+
+// packages/agent/src/plugins/advisor-strategy-plugin.ts
+var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
+var init_advisor_strategy_plugin = __esm({
+  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
+    init_dynamic_model();
+    init_plugin_manifest();
+    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
+    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
+    ADVISOR_MODEL_SETTING_ID = "advisorModel";
+    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
+    advisorStrategyPlugin = definePlugin(
+      {
+        name: ADVISOR_STRATEGY_PLUGIN_ID,
+        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
+        trust: "first-party",
+        stability: "experimental",
+        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
+        settings: {
+          [ADVISOR_MODEL_SETTING_ID]: {
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID
+          }
+        },
+        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
+      },
+      {
+        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
+      }
+    );
+  }
+});
+
 // packages/agent/src/working-brief.ts
 function workingBriefFromUserContent(content) {
   if (typeof content === "string") {
@@ -24971,6 +25224,15 @@ var init_github_pr_url2 = __esm({
   }
 });
 
+// packages/std/src/assert-never.ts
+function assertNever2(value, context) {
+  throw new Error(`${context}: unhandled value ${JSON.stringify(value)}`);
+}
+var init_assert_never = __esm({
+  "packages/std/src/assert-never.ts"() {
+  }
+});
+
 // packages/thread-store/src/thread-pr-status.ts
 function collectThreadPrRefs(thread) {
   const seen = /* @__PURE__ */ new Set();
@@ -25027,19 +25289,23 @@ function summarizeThreadPrStatus(states, refs = []) {
   return { kind: "closed", totalCount: knownCount };
 }
 function describeThreadPrStatus(rollup) {
-  if (rollup.kind === "open") {
-    if (rollup.primaryNumber != null) {
-      return `Pull request #${String(rollup.primaryNumber)} is open`;
-    }
-    return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+  switch (rollup.kind) {
+    case "open":
+      if (rollup.primaryNumber != null) {
+        return `Pull request #${String(rollup.primaryNumber)} is open`;
+      }
+      return rollup.openCount === 1 ? "1 pull request is open" : `${String(rollup.openCount)} pull requests are open`;
+    case "merged":
+      return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
+    case "closed":
+      return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
+    default:
+      return assertNever2(rollup, "describeThreadPrStatus");
   }
-  if (rollup.kind === "merged") {
-    return rollup.totalCount === 1 ? "Pull request is merged" : "All linked pull requests are merged";
-  }
-  return rollup.totalCount === 1 ? "Pull request is closed" : "All linked pull requests are closed";
 }
 var init_thread_pr_status = __esm({
   "packages/thread-store/src/thread-pr-status.ts"() {
+    init_assert_never();
     init_github_pr_url();
   }
 });
@@ -38314,6 +38580,7 @@ var init_demo_api = __esm({
   "src/renderer/demo/demo-api.ts"() {
     init_automations_plugin();
     init_parse_agent_run_payload();
+    init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
     init_token_estimate();
@@ -38450,22 +38717,22 @@ var init_demo_api = __esm({
         settings: []
       },
       {
-        id: "copse.advisor-strategy",
+        id: ADVISOR_STRATEGY_PLUGIN_ID,
         trust: "first-party",
         stability: "experimental",
         name: "Advisor strategy",
         version: "0.3.1",
-        description: "Pairs a second model with the executor to review strategy before long or risky work starts.",
+        description: "Consult a larger advisor model mid-task via the advisor tool, forwarding the transcript and verified repo state for strategic guidance.",
         enabled: true,
-        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: ["consult_advisor"] },
+        contributions: { ...DEMO_PLUGIN_CONTRIBUTIONS, toolNames: [ADVISOR_STRATEGY_TOOL_NAME] },
         settings: [
           {
-            id: "maxReviewCycles",
-            kind: "number",
-            title: "Max review cycles",
-            description: "How many times a failing review may buy the agent another turn. `0` turns retries off.",
-            default: 2,
-            value: 2
+            id: ADVISOR_MODEL_SETTING_ID,
+            kind: "model",
+            title: "Advisor model",
+            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
+            default: DEFAULT_ADVISOR_MODEL_ID,
+            value: DEFAULT_ADVISOR_MODEL_ID
           }
         ]
       },
@@ -41188,225 +41455,6 @@ var init_app_icon_variants = __esm({
       lagoon: "Lagoon"
     };
     isAppIconVariant = memberOf(APP_ICON_VARIANTS);
-  }
-});
-
-// packages/llm/src/agent-roles.ts
-function getAgentRole(id) {
-  return AGENT_ROLES.find((role) => role.id === id) ?? null;
-}
-var AGENT_ROLES, AGENT_ROLE_IDS;
-var init_agent_roles = __esm({
-  "packages/llm/src/agent-roles.ts"() {
-    AGENT_ROLES = [
-      {
-        id: "coder",
-        label: "Coder",
-        description: "Writing new code \u2014 the chat default when coding",
-        wants: ["swe-bench", "aider-polyglot", "aider-edit", "humaneval-plus", "livecodebench"]
-      },
-      {
-        id: "debugger",
-        label: "Debugger",
-        description: "Fixing bugs through careful, iterative analysis",
-        wants: ["swe-bench", "livecodebench", "gpqa"]
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        description: "Post-turn diff review and maintainability",
-        wants: ["aider-polyglot", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "security-auditor",
-        label: "Security auditor",
-        description: "Finding vulnerabilities with low false negatives",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "judge",
-        label: "Judge",
-        description: "Accept/reject a patch or answer against a rubric",
-        wants: ["gpqa", "mmlu-pro"]
-      },
-      {
-        id: "test-gen",
-        label: "Test generator",
-        description: "Unit, integration, and property tests",
-        wants: ["livecodebench", "humaneval-plus", "multipl-e"]
-      },
-      {
-        id: "refactor",
-        label: "Refactorer",
-        description: "Behaviour-preserving changes",
-        wants: ["aider-polyglot", "aider-edit", "swe-bench"]
-      },
-      {
-        id: "planner",
-        label: "Planner",
-        description: "Breaking work into prioritised tasks",
-        wants: ["gpqa", "mmlu-pro", "arena"]
-      },
-      {
-        id: "advisor",
-        label: "Advisor",
-        description: "Strategic mid-task guidance to a cheaper executor (advisor strategy)",
-        wants: ["gpqa", "mmlu-pro", "swe-bench"]
-      },
-      {
-        id: "docs",
-        label: "Documentation",
-        description: "READMEs, comments, and API docs",
-        wants: ["mmlu-pro", "arena"]
-      },
-      {
-        id: "research",
-        label: "Research assistant",
-        description: "API/framework lookup and synthesis (exploration subagent)",
-        wants: ["mmlu-pro", "gpqa", "arena"]
-      },
-      {
-        id: "tool-use",
-        label: "Tool-use agent",
-        description: "Calling tools correctly with structured output",
-        wants: ["tau-bench", "multipl-e"]
-      },
-      {
-        id: "small-tasks",
-        label: "Small tasks",
-        description: "Thread titles and other lightweight prompts",
-        wants: ["arena"]
-      },
-      {
-        id: "safety",
-        label: "Instruct / safety",
-        description: "Classifies shell commands when the OS sandbox is off",
-        wants: ["arena"]
-      }
-    ];
-    AGENT_ROLE_IDS = AGENT_ROLES.map((r2) => r2.id);
-  }
-});
-
-// packages/llm/src/dynamic-model.ts
-function minIntellectSelector(threshold) {
-  return `${AUTO_MODEL_PREFIX}${MIN_INTELLECT_INFIX}${String(threshold)}`;
-}
-function roleModelSelector(role) {
-  return `${AUTO_MODEL_PREFIX}${ROLE_INFIX}${role}`;
-}
-function isDynamicModel(value) {
-  return typeof value === "string" && parseModelSelection(value).namespace === "auto";
-}
-function parseDynamicModel(value) {
-  if (typeof value !== "string") return null;
-  const selection2 = parseModelSelection(value);
-  if (selection2.namespace !== "auto") return null;
-  const body = selection2.id;
-  if (body === "best-value") return { kind: "best-value" };
-  if (body === "best-intellect") return { kind: "best-intellect" };
-  if (body === "best-local") return { kind: "best-local" };
-  if (body === "cheapest") return { kind: "cheapest" };
-  if (body === "balanced") return { kind: "balanced" };
-  if (body.startsWith(MIN_INTELLECT_INFIX)) {
-    const threshold = Number(body.slice(MIN_INTELLECT_INFIX.length));
-    if (!Number.isFinite(threshold) || threshold <= 0) return null;
-    return { kind: "min-intellect", threshold };
-  }
-  if (body.startsWith(ROLE_INFIX)) {
-    const role = getAgentRole(body.slice(ROLE_INFIX.length));
-    return role ? { kind: "role", role: role.id } : null;
-  }
-  return null;
-}
-function dynamicModelLabel(value) {
-  const selector = parseDynamicModel(value);
-  if (!selector) return null;
-  switch (selector.kind) {
-    case "best-value":
-      return "Best value";
-    case "best-intellect":
-      return "Most capable";
-    case "best-local":
-      return "Best on-device";
-    case "cheapest":
-      return "Cheapest";
-    case "balanced":
-      return "Balanced";
-    case "min-intellect":
-      return `At least ${String(selector.threshold)} intelligence`;
-    case "role":
-      return `Role: ${getAgentRole(selector.role)?.label ?? selector.role}`;
-  }
-}
-function dynamicModelChoices() {
-  const choices = [
-    {
-      value: BEST_VALUE_MODEL_SELECTOR,
-      label: "Best value",
-      description: "Best intelligence per pound across your plans, providers, and local server",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_INTELLECT_MODEL_SELECTOR,
-      label: "Most capable",
-      description: "Highest intelligence available, ignoring price",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BEST_LOCAL_MODEL_SELECTOR,
-      label: "Best on-device",
-      description: "Strongest model loaded on your machine",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: CHEAPEST_MODEL_SELECTOR,
-      label: "Cheapest",
-      description: "Lowest token price; plans and local count as free",
-      group: AUTOMATIC_GROUP
-    },
-    {
-      value: BALANCED_MODEL_SELECTOR,
-      label: "Balanced",
-      description: "Strong capability at a fair price; favors plans",
-      group: AUTOMATIC_GROUP
-    }
-  ];
-  for (const threshold of MIN_INTELLECT_THRESHOLDS) {
-    choices.push({
-      value: minIntellectSelector(threshold),
-      label: `At least ${String(threshold)} intelligence`,
-      description: `Cheapest route scoring ${String(threshold)}+ on the Intelligence Index`,
-      group: INTELLIGENCE_GROUP
-    });
-  }
-  for (const role of AGENT_ROLES) {
-    choices.push({
-      value: roleModelSelector(role.id),
-      label: role.label,
-      description: role.description,
-      group: ROLE_GROUP
-    });
-  }
-  return choices;
-}
-var BEST_VALUE_MODEL_SELECTOR, BEST_INTELLECT_MODEL_SELECTOR, BEST_LOCAL_MODEL_SELECTOR, CHEAPEST_MODEL_SELECTOR, BALANCED_MODEL_SELECTOR, MIN_INTELLECT_INFIX, ROLE_INFIX, MIN_INTELLECT_THRESHOLDS, AUTOMATIC_GROUP, INTELLIGENCE_GROUP, ROLE_GROUP;
-var init_dynamic_model = __esm({
-  "packages/llm/src/dynamic-model.ts"() {
-    init_agent_roles();
-    init_model_selection();
-    init_reserved_prefixes();
-    BEST_VALUE_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-value`;
-    BEST_INTELLECT_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-intellect`;
-    BEST_LOCAL_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}best-local`;
-    CHEAPEST_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}cheapest`;
-    BALANCED_MODEL_SELECTOR = `${AUTO_MODEL_PREFIX}balanced`;
-    MIN_INTELLECT_INFIX = "min-intellect:";
-    ROLE_INFIX = "role:";
-    MIN_INTELLECT_THRESHOLDS = [20, 30, 40, 50, 55];
-    AUTOMATIC_GROUP = "Automatic";
-    INTELLIGENCE_GROUP = "Minimum intelligence";
-    ROLE_GROUP = "By role";
   }
 });
 
@@ -52630,40 +52678,6 @@ var init_orchestration_strategy = __esm({
     init_model_catalog();
     init_dynamic_model();
     DEFAULT_ORCHESTRATION_WORKER_MODEL = BEST_VALUE_MODEL_SELECTOR;
-  }
-});
-
-// packages/agent/src/plugins/advisor-strategy-plugin.ts
-var ADVISOR_STRATEGY_PLUGIN_ID, ADVISOR_STRATEGY_TOOL_NAME, ADVISOR_MODEL_SETTING_ID, DEFAULT_ADVISOR_MODEL_ID, advisorStrategyPlugin;
-var init_advisor_strategy_plugin = __esm({
-  "packages/agent/src/plugins/advisor-strategy-plugin.ts"() {
-    init_dynamic_model();
-    init_plugin_manifest();
-    ADVISOR_STRATEGY_PLUGIN_ID = "copse.advisor-strategy";
-    ADVISOR_STRATEGY_TOOL_NAME = "advisor";
-    ADVISOR_MODEL_SETTING_ID = "advisorModel";
-    DEFAULT_ADVISOR_MODEL_ID = BEST_INTELLECT_MODEL_SELECTOR;
-    advisorStrategyPlugin = definePlugin(
-      {
-        name: ADVISOR_STRATEGY_PLUGIN_ID,
-        description: "Consults a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.",
-        trust: "first-party",
-        stability: "experimental",
-        tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
-        settings: {
-          [ADVISOR_MODEL_SETTING_ID]: {
-            kind: "model",
-            title: "Advisor model",
-            description: "How to choose the model the advisor consults \u2014 re-derived from your configured providers each time it is called, and the advisor side of the executor/advisor pairing hint. A model assigned to the \u201Cadvisor\u201D role still takes precedence.",
-            default: DEFAULT_ADVISOR_MODEL_ID
-          }
-        },
-        storage: { namespace: ADVISOR_STRATEGY_PLUGIN_ID }
-      },
-      {
-        toolNames: [ADVISOR_STRATEGY_TOOL_NAME]
-      }
-    );
   }
 });
 
