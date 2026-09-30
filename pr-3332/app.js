@@ -56544,7 +56544,7 @@ function createClassifiersSection(api2) {
       el(
         "span",
         { class: "field-hint" },
-        "Which classifier rates roadmap items when you save them, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including each finished turn's messages, with saved keys redacted."
+        "Which classifier rates roadmap items when you save them, gives the verdict for fit checks and roadmap reviews, checks which open issues the roadmap already covers, and picks follow-ups after each turn. If it fails, the small-tasks model answers instead. A hosted classifier receives that text, including issues, commit history and each finished turn's messages, with saved keys redacted."
       )
     ),
     chips,
