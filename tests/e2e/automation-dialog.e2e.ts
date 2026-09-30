@@ -70,6 +70,14 @@ describe('automation modal from the project row menu', function () {
     await expect(dialog.$('.automation-form')).not.toBeDisplayed()
     await saveAppScreenshot('automation-manager-modal.png')
 
+    await dialog.$('.automation-row-btn=Edit').click()
+    await dialog.$('.automation-worktree-limit-select').selectByAttribute('value', '2')
+    await dialog.$('.automation-save-btn').click()
+    await expect(dialog.$('.automation-form')).not.toBeDisplayed()
+    await expect(dialog.$('.automation-row-meta')).toHaveText(
+      expect.stringContaining('2 live worktrees max'),
+    )
+
     await dialog.$('[aria-label="Close automations"]').click()
     await $('[aria-label="Settings"]').click()
     const settings = $('#settings-dialog')

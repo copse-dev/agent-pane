@@ -287,6 +287,9 @@ cannot be mislabeled as the cell. The run posts one advisory review
 (`--post-review github --repo owner/name --pr n`), having read the pull request's
 description, discussion, reviews and images first (`--read-pr github`); the default lenses
 are `correctness,visual`, and `visual` runs only when there is an image to look at.
+When configured with `--feedback-label <name>`, a non-empty review adds that label to the
+pull request after posting; the CI workflows use `COPSE_REVIEW_FEEDBACK_LABEL` and default
+to `review-has-feedback`.
 The posted review carries material `finish_review.couldNotVerify` limits from every completed
 reviewer. It says plain “No findings” only when those structured attestations declare nothing
 material unverified; a bounded read-only review is never presented as broader assurance than it was.

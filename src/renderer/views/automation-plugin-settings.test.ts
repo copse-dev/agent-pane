@@ -6,6 +6,9 @@ import type {
   AutomationPermissionOption,
   AutomationSchedule,
   AutomationScheduleInput,
+  AutomationTriggerEvent,
+  BranchCiAutomation,
+  BranchCiAutomationInput,
 } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { BEST_VALUE_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -37,8 +40,10 @@ function stubApi(
 ): {
   api: AutomationSettingsApi
   upserts: Array<{ projectId: string; input: AutomationScheduleInput }>
+  emitTriggered: (event: AutomationTriggerEvent) => void
 } {
   const upserts: Array<{ projectId: string; input: AutomationScheduleInput }> = []
+  const triggerHandlers = new Set<(event: AutomationTriggerEvent) => void>()
   const api: AutomationSettingsApi = {
     automations: {
       list(projectId: string): Promise<AutomationSchedule[]> {
@@ -82,8 +87,21 @@ function stubApi(
           disposition: 'started',
         })
       },
-      onTriggered(): () => void {
-        return (): void => {}
+      listBranchCi: () => Promise.resolve([]),
+      upsertBranchCi: () => Promise.reject(new Error('Not configured in this test')),
+      removeBranchCi: () => Promise.resolve(),
+      testBranchCi: () =>
+        Promise.resolve({
+          repository: 'github.com/owner/repo',
+          branch: 'main',
+          latestFailure: null,
+        }),
+      canStart: () => Promise.resolve({ allowed: true }),
+      onTriggered(handler): () => void {
+        triggerHandlers.add(handler)
+        return (): void => {
+          triggerHandlers.delete(handler)
+        }
       },
     },
     settings: {
@@ -113,7 +131,15 @@ function stubApi(
       },
     },
   }
-  return { api, upserts }
+  return {
+    api,
+    upserts,
+    emitTriggered(event): void {
+      triggerHandlers.forEach((handler) => {
+        handler(event)
+      })
+    },
+  }
 }
 
 describe('automation plugin settings detail', () => {
@@ -152,6 +178,142 @@ describe('automation plugin settings detail', () => {
     const runButton = root.querySelector<HTMLButtonElement>('.automation-run-btn')
     assert.ok(runButton)
     assert.equal(runButton.disabled, true)
+  })
+
+  it('keeps a worktree-limit block visible when the panel opens', async () => {
+    const { api } = stubApi([
+      {
+        id: 'schedule-a',
+        projectId: 'project-a',
+        name: 'Morning review',
+        cron: '0 9 * * 1-5',
+        prompt: 'Review the project.',
+        model: BEST_VALUE_CHAT_MODEL,
+        enabled: true,
+        maxLiveWorktrees: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        lastRunAt: 2,
+        lastWorktreeLimitAt: 3,
+      },
+    ])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+
+    assert.match(
+      root.querySelector('.automation-attention')?.textContent ?? '',
+      /1 automation had a run skipped/,
+    )
+    assert.match(
+      root.querySelector('.automation-row-blocked-message')?.textContent ?? '',
+      /Last attempt skipped/,
+    )
+    assert.ok(root.querySelector('.automation-row-blocked'))
+  })
+
+  it('shows a worktree-limit block when a scheduled run is skipped while open', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: BEST_VALUE_CHAT_MODEL,
+      enabled: true,
+      maxLiveWorktrees: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      lastRunAt: 2,
+    }
+    const { api, emitTriggered } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), true)
+    schedule.lastWorktreeLimitAt = 3
+    emitTriggered({
+      projectId: 'project-a',
+      scheduleId: schedule.id,
+      threadId: 'thread-a',
+      triggeredAt: 3,
+      disposition: 'coalesced',
+      coalescedReason: 'worktree-limit',
+    })
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), false)
+    assert.match(
+      root.querySelector('.automation-row-blocked-message')?.textContent ?? '',
+      /Last attempt skipped/,
+    )
+  })
+
+  it('clears the worktree-limit block when a scheduled run starts while open', async () => {
+    const schedule: AutomationSchedule = {
+      id: 'schedule-a',
+      projectId: 'project-a',
+      name: 'Morning review',
+      cron: '0 9 * * 1-5',
+      prompt: 'Review the project.',
+      model: BEST_VALUE_CHAT_MODEL,
+      enabled: true,
+      maxLiveWorktrees: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      lastRunAt: 2,
+      lastWorktreeLimitAt: 3,
+    }
+    const { api, emitTriggered } = stubApi([schedule])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), false)
+    delete schedule.lastWorktreeLimitAt
+    emitTriggered({
+      projectId: 'project-a',
+      scheduleId: schedule.id,
+      threadId: 'thread-a',
+      triggeredAt: 4,
+      disposition: 'started',
+    })
+    await tick()
+
+    assert.equal(root.querySelector('.automation-attention')?.hasAttribute('hidden'), true)
+    assert.equal(root.querySelector('.automation-row-blocked'), null)
+  })
+
+  it('explains an invalid save instead of silently leaving the editor open', async () => {
+    const { api, upserts } = stubApi([])
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    root
+      .querySelector<HTMLFormElement>('.automation-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    assert.deepEqual(upserts, [])
+    assert.match(root.querySelector('.automation-status')?.textContent ?? '', /Enter a name/)
   })
 
   it('submits a project-scoped schedule with the selected model rule', async () => {
@@ -426,5 +588,104 @@ describe('automation plugin settings detail', () => {
     filter.dispatchEvent(new Event('input', { bubbles: true }))
     assert.equal(root.querySelectorAll('.automation-permission-row').length, 1)
     assert.match(root.textContent, /1 of 3 permissions/)
+  })
+
+  it('shows branch CI events and saves a new trigger from the shared manager', async () => {
+    const { api } = stubApi([])
+    const saved: BranchCiAutomation = {
+      v: 1,
+      id: '11111111-1111-4111-8111-111111111111',
+      projectId: 'project-a',
+      name: 'Investigate CI',
+      trigger: { kind: 'github-ci-failed', repository: 'github.com/owner/repo', branch: 'main' },
+      prompt: 'Investigate the failure.',
+      model: 'gpt-5.4',
+      enabled: false,
+      maxLiveWorktrees: 1,
+      revision: '22222222-2222-4222-8222-222222222222',
+      createdAt: 1,
+      updatedAt: 1,
+      seenDeliveries: [],
+    }
+    const ciUpserts: BranchCiAutomationInput[] = []
+    api.automations.listBranchCi = (): Promise<BranchCiAutomation[]> => Promise.resolve([saved])
+    api.automations.upsertBranchCi = (_projectId, input): Promise<BranchCiAutomation> => {
+      ciUpserts.push(input)
+      return Promise.resolve(saved)
+    }
+    const store = createStore({
+      activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', path: '/repo/a', name: 'Project A' }],
+    })
+    const root = createAutomationPluginSettings(store, api, true)
+    document.body.append(root)
+    await tick()
+    assert.match(root.querySelector('.automation-ci-list')?.textContent ?? '', /owner\/repo · main/)
+    assert.equal(root.querySelectorAll('.automation-add-btn').length, 1)
+    assert.equal(root.querySelector('.automation-add-ci-btn'), null)
+    root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
+    await tick()
+    const scheduleForm = root.querySelector<HTMLFormElement>(
+      '.automation-form:not(.automation-ci-form)',
+    )
+    const scheduleWhen = scheduleForm?.querySelector<HTMLSelectElement>('.automation-when-select')
+    const scheduleName = scheduleForm?.querySelector<HTMLInputElement>('.automation-name-input')
+    const schedulePrompt = scheduleForm?.querySelector<HTMLTextAreaElement>(
+      '.automation-prompt-input',
+    )
+    assert.ok(scheduleForm && scheduleWhen && scheduleName && schedulePrompt)
+    assert.equal(scheduleWhen.value, 'schedule')
+    assert.equal(scheduleWhen.disabled, false)
+    scheduleName.value = 'Investigate release CI'
+    schedulePrompt.value = 'Find the failing check.'
+    scheduleWhen.value = 'github-ci-failed'
+    scheduleWhen.dispatchEvent(new Event('change'))
+    await tick()
+    const ciForm = root.querySelector<HTMLFormElement>('.automation-ci-form')
+    assert.ok(ciForm)
+    assert.equal(ciForm.hidden, false)
+    assert.equal(
+      root.querySelector<HTMLFormElement>('.automation-form:not(.automation-ci-form)')?.hidden,
+      true,
+    )
+    const name = ciForm.querySelector<HTMLInputElement>('.automation-ci-name')
+    const branch = ciForm.querySelector<HTMLInputElement>('.automation-ci-branch')
+    const prompt = ciForm.querySelector<HTMLTextAreaElement>('.automation-ci-prompt')
+    const ciWhen = ciForm.querySelector<HTMLSelectElement>('.automation-when-select')
+    assert.ok(name && branch && prompt && ciWhen)
+    assert.equal(ciWhen.value, 'github-ci-failed')
+    assert.equal(name.value, 'Investigate release CI')
+    assert.equal(prompt.value, 'Find the failing check.')
+    ciWhen.value = 'schedule'
+    ciWhen.dispatchEvent(new Event('change'))
+    await tick()
+    assert.equal(scheduleForm.hidden, false)
+    assert.equal(scheduleName.value, 'Investigate release CI')
+    assert.equal(schedulePrompt.value, 'Find the failing check.')
+    scheduleWhen.value = 'github-ci-failed'
+    scheduleWhen.dispatchEvent(new Event('change'))
+    await tick()
+    assert.equal(ciForm.hidden, false)
+    branch.value = 'release/next'
+    branch.dispatchEvent(new Event('input', { bubbles: true }))
+    prompt.value = 'Find the failing check.'
+    assert.match(ciForm.querySelector('.automation-ci-summary')?.textContent ?? '', /release\/next/)
+    ciForm.querySelector<HTMLButtonElement>('.automation-ci-preview')?.click()
+    await tick()
+    assert.match(
+      root.querySelector('.automation-status')?.textContent ?? '',
+      /did not start a task/,
+    )
+    ciForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await tick()
+    assert.equal(ciUpserts.length, 1)
+    assert.equal(ciUpserts[0]?.branch, 'release/next')
+    assert.equal(ciUpserts[0].prompt, 'Find the failing check.')
+    root
+      .querySelector<HTMLElement>(`[data-ci-automation-id="${saved.id}"] .automation-row-btn`)
+      ?.click()
+    await tick()
+    assert.equal(ciWhen.disabled, true)
+    assert.equal(ciWhen.value, 'github-ci-failed')
   })
 })

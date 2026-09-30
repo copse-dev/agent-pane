@@ -615,7 +615,8 @@ when it would overflow; expand them again when room returns.
 
 The flexible `.titlebar-drag` region always keeps at least `--spacing-lg` of width. Interactive
 controls must not consume that last draggable strip, even when every optional panel mode is visible.
-The regression state lives in [`tests/e2e/titlebar-compact.e2e.ts`](../tests/e2e/titlebar-compact.e2e.ts).
+The regression state lives in
+[`tests/demo/titlebar-compact.demo.ts`](../tests/demo/titlebar-compact.demo.ts).
 
 ## Sticky footers inside scroll containers (gotcha)
 
