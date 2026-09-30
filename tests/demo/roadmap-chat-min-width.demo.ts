@@ -1,35 +1,28 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedE2eThreePaneLayout, seedEmptyProject } from './helpers/seed-config.ts'
-import {
-  E2E_SCREENSHOT_DIR,
-  prepareE2eScreenshot,
-  saveAppScreenshot,
-} from './helpers/screenshot.ts'
+import { saveAppScreenshot } from '../e2e/helpers/screenshot.ts'
 
-describe('roadmap side panel chat width', () => {
+describe('browser-hosted roadmap side panel chat width', () => {
   before(async () => {
-    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
-    resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-roadmap-chat-min-width', {
-      roadmapPlansEnabled: true,
-    })
-    // Reproduce an oversized width persisted from a larger window.
-    seedE2eThreePaneLayout({ filesPaneWidth: 4000 })
-    await browser.reloadSession()
-  })
-
-  after(() => {
-    resetUserData()
+    await browser.url('/?scenario=roadmap-chat-min-width')
   })
 
   it('leaves chat at least one third of the available side-by-side width', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
-    await $('.titlebar-text-btn[aria-label="Open roadmap"]').click()
+    await browser.execute(() => {
+      const roadmap = document.querySelector<HTMLElement>(
+        '.titlebar-text-btn[aria-label="Open roadmap"]',
+      )
+      roadmap?.removeAttribute('hidden')
+      roadmap?.removeAttribute('data-experimental-hidden')
+    })
+    await browser.execute(() =>
+      document
+        .querySelector<HTMLElement>('.titlebar-text-btn[aria-label=\"Open roadmap\"]')
+        ?.click(),
+    )
     await $('#roadmap-host').waitForDisplayed({ timeout: 10_000 })
     await expect($('#body')).not.toHaveElementClass('is-right-panel-horizontal')
-    await prepareE2eScreenshot()
 
     const layout = await browser.execute(() => {
       const projects = document.getElementById('pane-projects')!.getBoundingClientRect()

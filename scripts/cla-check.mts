@@ -50,9 +50,15 @@ export const SIGN_PHRASE = 'I have read the Copse CLA Document and I hereby sign
 export const COMMENT_MARKER = '<!-- copse-cla-check -->'
 export const SIGNATURES_PATH = '.github/cla-signatures.json'
 
-/** Trailers and commit addresses our agents, bots and release tooling use. */
+/**
+ * Trailers and commit addresses our agents, bots and release tooling use:
+ * Claude (`@anthropic.com`), Cursor (`@cursor.com`), Codex (`codex@` and
+ * `noreply@openai.com`), Copse's own agent and git identities (`noreply@` and
+ * `copse@copse.dev`, `copse@localhost` for app-made commits, `copse@copse.invalid`
+ * for container runs) and GitHub bot accounts.
+ */
 export const NON_AUTHOR_EMAIL =
-  /@anthropic\.com$|@cursor\.com$|^noreply@copse\.dev$|\[bot\]@users\.noreply\.github\.com$/i
+  /@anthropic\.com$|@cursor\.com$|^(?:codex|noreply)@openai\.com$|^(?:noreply|copse)@copse\.dev$|^copse@localhost$|^copse@copse\.invalid$|\[bot\]@users\.noreply\.github\.com$/i
 const NOREPLY_ID = /^(\d+)\+([^@]+)@users\.noreply\.github\.com$/i
 const CO_AUTHOR_TRAILER = /^Co-authored-by:.*<([^>]+)>\s*$/gim
 

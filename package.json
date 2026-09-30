@@ -38,6 +38,7 @@
     "postinstall": "node scripts/prepare-native-artifacts.mts",
     "prepare:native": "node scripts/prepare-native-artifacts.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "type-coverage": "type-coverage --strict --project tsconfig.node.json --at-least 99.9 && type-coverage --strict --project tsconfig.web.json --at-least 99.92",
     "lint": "node scripts/run-lint.mts --pass-on-unpruned-suppressions",
     "lint:prune": "eslint . --prune-suppressions",
     "check:dead-code": "node scripts/check-dead-code.mts",
@@ -54,6 +55,7 @@
     "bench:agent": "node scripts/run-bench-agent.mts",
     "review": "copse-review",
     "bench:review": "node scripts/bench-review.mts",
+    "bench:risk": "node scripts/bench-risk.mts",
     "eval:classifier": "node scripts/run-classifier-eval.mts",
     "classifier:serve": "node scripts/serve-local-classifier.mts",
     "eval:doctrine": "node scripts/run-doctrine-eval.mts",
@@ -111,7 +113,7 @@
     "pack:mac": "pnpm run build:release && pnpm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
     "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run prepare:gortex:mac && pnpm run build:release && pnpm run generate:icon && electron-builder --mac -c.mac.notarize=true -c.publish.channel=$(node scripts/release-channel.mts --channel) --publish never && node scripts/finalize-release-metadata.mts",
-    "check:local": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-syntax && pnpm run check:e2e-exclusions",
+    "check:local": "pnpm run typecheck && pnpm run type-coverage && pnpm run lint && pnpm run format:check && pnpm run demo:site:check && pnpm run check:dead-code && pnpm run check:oracle && pnpm run check:e2e-syntax && pnpm run check:e2e-exclusions",
     "check": "pnpm run check:local && pnpm test"
   },
   "build": {
@@ -194,7 +196,7 @@
   "optionalDependencies": {
     "@napi-rs/keyring-darwin-arm64": "2.1.0",
     "@napi-rs/keyring-darwin-x64": "2.1.0",
-    "@nationaldesignstudio/rampart": "^0.1.3"
+    "@nationaldesignstudio/rampart": "0.1.3"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^1.5.0",
@@ -262,6 +264,7 @@
     "semver": "7.8.5",
     "tar": "^7.5.22",
     "tldts": "^7.4.13",
+    "type-coverage": "2.30.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
     "vscode-material-icons": "^0.1.1",

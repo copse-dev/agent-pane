@@ -122,9 +122,20 @@ export function isOutputCeilingRejectedError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
   const status = errorStatus(err)
   if (status !== 400 && status !== 422) return false
-  return /max_tokens|max_completion_tokens|max_output_tokens|maximum output tokens/i.test(
-    err.message,
-  )
+  return OUTPUT_CEILING_FIELD.test(err.message)
+}
+
+const OUTPUT_CEILING_FIELD =
+  /max_tokens|max_completion_tokens|max_output_tokens|maximum output tokens/i
+
+/**
+ * The same rejection delivered inside a stream — a Responses `error` or
+ * `response.failed` event — rather than as the request's HTTP error. An SSE
+ * event carries no status, so the field name (as the event's `param` or in its
+ * message) is the whole signal; unrelated in-stream failures still fail.
+ */
+export function isOutputCeilingRejectedMessage(message: string, param?: string | null): boolean {
+  return param === 'max_output_tokens' || OUTPUT_CEILING_FIELD.test(message)
 }
 
 /**
