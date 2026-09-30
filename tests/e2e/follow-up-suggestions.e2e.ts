@@ -9,50 +9,8 @@ import {
   seedGitChangesFixture,
 } from './helpers/seed-config.ts'
 import { waitForAgentIdle } from './helpers.ts'
-import { setComposerValue } from './helpers/composer.ts'
-import { installMockScenario } from './helpers/mock-scenario.ts'
+import { completeMockTurn } from './helpers/follow-up-suggestions.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
-
-async function completeMockTurn(includeDebugCiFollowUp = false) {
-  await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  const prompt = 'Review my uncommitted changes and suggest any improvements.'
-  const scenario = await installMockScenario({
-    title: 'Review uncommitted changes',
-    turns: [
-      {
-        user: prompt,
-        responses: [
-          {
-            text: 'Start by checking the diff summary, then run the relevant tests before merging.',
-          },
-        ],
-      },
-      ...(includeDebugCiFollowUp
-        ? [
-            {
-              user: 'The pull request for this branch has failing CI checks. Investigate the failures and fix them.',
-              responses: [
-                {
-                  text: 'Start with the first failing CI job, compare its logs with the changed files, and isolate the earliest failing command.',
-                },
-              ],
-            },
-          ]
-        : []),
-    ],
-  })
-  await setComposerValue(prompt)
-  await $('.submit-btn').click()
-
-  await waitForAgentIdle(20_000)
-  await expect($('.msg-assistant .message-text')).toHaveText(
-    'Start by checking the diff summary, then run the relevant tests before merging.',
-    { containing: true },
-  )
-
-  await $('.follow-up-bubble').waitForExist({ timeout: 30_000 })
-  return scenario
-}
 
 describe('follow-up suggestion bubbles', () => {
   describe('mock demo (Debug CI + Compare models + Continue Plan)', () => {
