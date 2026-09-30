@@ -121,6 +121,7 @@ const EXPLORE_MODE_VARS: BasePromptVars = {
 ${INVESTIGATE_CI_TOOL_LINE}
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
+- apply_patch: Edit, add, delete, or move several files or hunks in one patch; validated as a whole, same approval rules
 ${SHARED_WEB_TOOLS}`,
   gather:
     'Use explore to read or search the codebase, then finish with a clear written answer in plain language.',
@@ -137,6 +138,7 @@ const DIRECT_READS_MODE_VARS: BasePromptVars = {
   tools: `- read_file: Read a file from the workspace
 - write_file: Write a complete file directly when safe; otherwise stage a proposed diff for approval
 - str_replace: Replace a substring directly when safe; otherwise stage a proposed diff for approval
+- apply_patch: Edit, add, delete, or move several files or hunks in one patch; validated as a whole, same approval rules
 - list_dir: List directory contents
 - search_codebase: Search by regex or meaning (auto-selects; prefer over search_code)
 - semantic_search: Search by meaning only (native gortex/vera index)

@@ -687,6 +687,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
         emitChunk(threadId, { type: 'done', stopReason: 'end_turn' })
         return resolvedVoid()
       },
+      runMachine: () => resolved('completed' as const),
       describeImages: () => resolved({ text: 'Demo image description.' }),
       // The first message on a blank thread commits a checkout decision before
       // it dispatches, so these cannot stay `unsupported` — rejecting here puts
@@ -875,6 +876,7 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
             ? Promise.reject(new Error('demo: transcript read failed'))
             : resolved(structuredClone(threads.find((t) => t.id === threadId)?.messages ?? [])),
       // Demo threads always arrive whole, so nothing is ever backfilled.
+      backfillPrRefs: () => resolvedVoid(),
       onPrRefs: () => () => undefined,
       // No demo scenario opens a real PR, so nothing ever announces one.
       onPrCreated: () => () => undefined,

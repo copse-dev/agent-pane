@@ -549,6 +549,7 @@ export function mountProcessManagerDialog(api: ApiClient, store: AppStore): () =
     status.textContent = 'Loading processes…'
     updated.textContent = ''
     open()
+    closeButton.focus({ preventScroll: true })
     void refresh()
     timer = setInterval(() => void refresh(), 1_000)
   }

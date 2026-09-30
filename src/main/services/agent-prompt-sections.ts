@@ -86,10 +86,10 @@ ${v.toolTail}
 2. ${v.avoidRepeat}`,
     modifyingFiles: `When modifying files:
 1. ${v.understand}
-2. Use str_replace for partial edits or write_file for full rewrites. Creating a file that does not exist yet always applies directly — there is nothing to overwrite. For an existing file, edits apply directly to disk when git is clean, and are staged for user approval when git already has user/unowned changes or there are pending proposed diffs.
+2. Use str_replace for one small edit, apply_patch when a change spans several files or several places in one file, and write_file for full rewrites. Creating a file that does not exist yet always applies directly — there is nothing to overwrite. For an existing file, edits apply directly to disk when git is clean, and are staged for user approval when git already has user/unowned changes or there are pending proposed diffs.
 3. Do not assume file content; always ${v.inspectVerb} before writing
 4. Generated code must be runnable: include the imports, dependencies, and wiring it needs to run
-5. When you make an edit, use str_replace or write_file rather than pasting the file's new contents into the chat
+5. When you make an edit, use str_replace, apply_patch, or write_file rather than pasting the file's new contents into the chat
 6. Read the tool result carefully: if it says applied directly, run_shell, git, and read_file can validate immediately. If it says staged/pending, those tools still see only on-disk content; use staged_diffs/read_staged_diff to inspect proposed content and ask the user to approve before shell validation.
 7. If staged_diffs reports existing git changes, avoid direct overwrites and preserve the user's dirty tree.
 8. If a retry would not be informed by new information, stop that retry and report the diagnosis. Continue independent work; ask the user only for information or a decision needed to unblock the remaining work`,

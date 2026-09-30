@@ -69,30 +69,35 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
 
   const draft: SshHostDraft = emptySshHostDraft()
   const idInput = el('input', {
+    type: 'text',
     name: 'remoteFolderHostId',
     class: 'remote-folder-host-id',
     placeholder: 'my-server',
     'aria-label': 'Host id',
   })
   const labelInput = el('input', {
+    type: 'text',
     name: 'remoteFolderHostLabel',
     class: 'remote-folder-host-label',
     placeholder: 'Production',
     'aria-label': 'Host label',
   })
   const hostInput = el('input', {
+    type: 'text',
     name: 'remoteFolderHostHost',
     class: 'remote-folder-host-host',
     placeholder: 'example.com or ~/.ssh/config alias',
     'aria-label': 'Hostname',
   })
   const userInput = el('input', {
+    type: 'text',
     name: 'remoteFolderHostUser',
     class: 'remote-folder-host-user',
     placeholder: 'ubuntu',
     'aria-label': 'SSH user',
   })
   const portInput = el('input', {
+    type: 'text',
     name: 'remoteFolderHostPort',
     class: 'remote-folder-host-port',
     placeholder: '22',
@@ -100,6 +105,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     'aria-label': 'SSH port',
   })
   const identityInput = el('input', {
+    type: 'text',
     name: 'remoteFolderHostIdentity',
     class: 'remote-folder-host-identity',
     placeholder: '~/.ssh/id_ed25519',

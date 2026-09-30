@@ -73,6 +73,27 @@ describe('tool-display', () => {
     assert.equal(getToolEditPath(tc('3', 'read_file')), null)
   })
 
+  it('labels apply_patch by file count and deep-links its first file', () => {
+    const input = (...files: string[]): string =>
+      [
+        '*** Begin Patch',
+        ...files.map((f) => `*** Update File: ${f}\n-a\n+b`),
+        '*** End Patch',
+      ].join('\n')
+    const one = { ...tc('1', 'apply_patch'), args: { input: input('src/a.ts') } }
+    assert.equal(getToolCallLabel(one), 'Patched src/a.ts')
+    assert.equal(getToolCallLabel({ ...one, status: 'running' }), 'Patching src/a.ts')
+    assert.equal(getToolEditPath(one), 'src/a.ts')
+    const many = { ...tc('2', 'apply_patch'), args: { input: input('a.ts', 'b.ts', 'c.ts') } }
+    assert.equal(getToolCallLabel(many), 'Patched 3 files')
+    assert.equal(getToolCallLabel({ ...many, status: 'running' }), 'Patching 3 files')
+    assert.equal(getToolEditPath(many), 'a.ts')
+    // Still streaming: no patch text yet, so fall back to the generic name.
+    const pending = { ...tc('3', 'apply_patch'), args: {}, status: 'running' as const }
+    assert.equal(getToolCallLabel(pending), 'Applying patch')
+    assert.equal(getToolEditPath(pending), null)
+  })
+
   it('labels and deep-links file deletions', () => {
     const del = { ...tc('1', 'delete_file'), args: { path: 'src/old.ts' } }
     assert.equal(getToolCallLabel(del), 'Deleted src/old.ts')

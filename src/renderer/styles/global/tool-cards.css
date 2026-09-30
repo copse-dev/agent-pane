@@ -152,6 +152,45 @@
 .tool-edit-stats:focus-visible .tool-stat {
   text-decoration: underline;
 }
+.tool-patch-files {
+  list-style: none;
+  margin: var(--spacing-xs) 0 0 var(--spacing-sm);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tool-patch-file {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.tool-patch-file:hover .tool-patch-path,
+.tool-patch-file:focus-visible .tool-patch-path {
+  text-decoration: underline;
+}
+.tool-patch-op {
+  flex: none;
+  min-width: 4.5em;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.tool-patch-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
 .tool-stat-add {
   color: var(--change-added);
 }
