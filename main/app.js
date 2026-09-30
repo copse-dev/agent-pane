@@ -36482,7 +36482,15 @@ function conciseThreadMessages(model, live) {
         role: "assistant",
         model,
         content: "Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.",
-        toolCalls: [],
+        toolCalls: [
+          {
+            id: `concise-audit-${model}`,
+            name: "workspace_edit_audit",
+            args: {},
+            status: "done",
+            result: "Audit complete."
+          }
+        ],
         createdAt: FIXED_TIME + 3e3
       }
     ]
@@ -79273,12 +79281,16 @@ function messageModel(msg) {
 function isConciseMessage(msg) {
   return msg.role === "assistant" && isConciseThreadModel(messageModel(msg));
 }
-function isConciseWorkingMessage(msg) {
+function isConciseStepsMessage(msg) {
   return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== "failed";
+}
+function isConciseWorkingMessage(msg) {
+  return isConciseMessage(msg) && msg.toolCalls.some((toolCall) => toolCall.status === "running") && msg.turnOutcome?.status !== "failed";
 }
 function syncConciseMessageClasses(msgEl, msg, enabled) {
   msgEl.classList.toggle("msg-concise", enabled && isConciseMessage(msg));
   msgEl.classList.toggle("msg-concise-working", enabled && isConciseWorkingMessage(msg));
+  msgEl.classList.toggle("msg-concise-steps", enabled && isConciseStepsMessage(msg));
 }
 function isConciseThread(thread) {
   for (let i2 = thread.messages.length - 1; i2 >= 0; i2--) {
