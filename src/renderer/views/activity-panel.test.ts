@@ -534,27 +534,30 @@ describe('activity panel', () => {
     emitApproval(shell('first', 'a'))
     emitApproval(shell('second', 'b'))
     panel.open()
-    const list = qsRequired<HTMLElement>(document, '#activity-panel .activity-list')
-    list.scrollTop = 240
+    const list = qsRequired(document, '#activity-panel .activity-list')
     const replaceChildren = list.replaceChildren.bind(list)
     list.replaceChildren = (...nodes): void => {
       replaceChildren(...nodes)
       list.scrollTop = 0
     }
-    const focus = HTMLElement.prototype.focus
+    const focusDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'focus')
+    assert.ok(focusDescriptor)
+    const nativeFocus: unknown = focusDescriptor.value
+    assert.ok(typeof nativeFocus === 'function')
     HTMLElement.prototype.focus = function (options?: FocusOptions): void {
-      focus.call(this, options)
+      Reflect.apply(nativeFocus, this, [options])
       if (this.classList.contains('activity-row-open') && options?.preventScroll !== true) {
         list.scrollTop = 0
       }
     }
     const approve = review('approval:first')
+    list.scrollTop = 240
     try {
       approve.focus()
       approve.click()
       time.advance(ACTIVITY_RENDER_INTERVAL_MS)
     } finally {
-      HTMLElement.prototype.focus = focus
+      Object.defineProperty(HTMLElement.prototype, 'focus', focusDescriptor)
     }
     const opener = qsRequired(rowFor('approval:second'), '.activity-row-open')
     assert.equal(document.activeElement, opener)
