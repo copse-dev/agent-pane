@@ -20,6 +20,10 @@
     "label": "Unattended container run"
   },
   {
+    "id": "balanced-model-label",
+    "label": "Balanced model rule label"
+  },
+  {
     "id": "footer-compact",
     "label": "Responsive composer footer"
   },
