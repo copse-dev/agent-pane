@@ -135,7 +135,8 @@
   --highlight-current-text: #2d2208;
 }
 
-[data-theme='dark'][data-automation-active] {
+[data-theme='dark'][data-automation-active],
+[data-theme='dark'][data-automation-active][data-tint-palette='copse'][data-tint-strength='strong'] {
   --bg-base: color-mix(in srgb, #9b6d00 12%, #1e1e1e);
   --bg-elevated: color-mix(in srgb, #9b6d00 12%, #252526);
   --bg-hover: color-mix(in srgb, #9b6d00 15%, #2a2d2e);

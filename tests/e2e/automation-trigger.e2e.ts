@@ -16,6 +16,11 @@ import {
   writeSeedConfig,
   writeSeedSupervisedTask,
 } from './helpers/seed-config.ts'
+import {
+  COPSE_TINT_COLOR,
+  applyAppearanceViaSettings,
+  editorSurfacePaint,
+} from './helpers/appearance.ts'
 import { assertScheduleHeadingKeepsTitle } from './helpers/text-fit.ts'
 
 const PROJECT_ID = 'e2e-automation-trigger'
@@ -246,6 +251,11 @@ describe('cron automation trigger', function () {
       },
       null,
     )
+    await applyAppearanceViaSettings({
+      theme: 'dark',
+      tintColor: COPSE_TINT_COLOR,
+      tintStrength: 'strong',
+    })
 
     // Only now open the schedule's project, so its scheduled run starts
     // against the scenario above rather than the mock's unscripted fallback.
@@ -353,6 +363,12 @@ describe('cron automation trigger', function () {
       },
     )
     assert.equal(await browser.execute(() => document.documentElement.dataset['theme']), 'dark')
+    assert.equal(await browser.execute(() => document.documentElement.dataset['tintPalette']), 'copse')
+    assert.equal(
+      await browser.execute(() => document.documentElement.dataset['tintStrength']),
+      'strong',
+    )
+    assert.deepEqual((await editorSurfacePaint([])).token, [45, 39, 26])
     await saveAppScreenshot('automation-active.png')
 
     await scenario.release('review-ready')
@@ -378,6 +394,7 @@ describe('cron automation trigger', function () {
         timeoutMsg: 'automation appearance mode did not restore after the scheduled run settled',
       },
     )
+    assert.deepEqual((await editorSurfacePaint([])).token, [0, 46, 43])
 
     const restoreFinalRunTime = await pinTextForCapture(
       '.automation-schedule-runs',
