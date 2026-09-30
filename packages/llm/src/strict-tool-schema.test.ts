@@ -236,6 +236,30 @@ describe('toStrictSchema', () => {
     assert.deepEqual(out['properties'], { a: { type: ['string', 'null'] } })
   })
 
+  it('keeps null in a required object property typed as object or null', () => {
+    const out = converted({
+      type: 'object',
+      properties: {
+        x: {
+          type: ['object', 'null'],
+          properties: { a: { type: 'string' } },
+          required: ['a'],
+          additionalProperties: false,
+        },
+      },
+      required: ['x'],
+      additionalProperties: false,
+    })
+    const props = out['properties']
+    assert.ok(typeof props === 'object' && props !== null && Object.hasOwn(props, 'x'))
+    assert.deepEqual(props.x, {
+      type: ['object', 'null'],
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false,
+    })
+  })
+
   it('rewrites oneOf to anyOf and converts each branch', () => {
     const out = converted({
       type: 'object',

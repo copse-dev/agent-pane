@@ -176,6 +176,10 @@ function convertObject(node: JsonObject, path: string, depth: number, walk: Walk
   if (depth > MAX_OBJECT_DEPTH) {
     return fail(walk, path, `objects nest deeper than ${String(MAX_OBJECT_DEPTH)} levels`)
   }
+  const otherTypes = typeList(node).filter((t) => t !== 'object' && t !== 'null')
+  if (otherTypes.length > 0) {
+    return fail(walk, path, `object mixed with ${otherTypes.join(', ')} in one type array`)
+  }
   const additional = node['additionalProperties']
   if (additional !== undefined && additional !== false) {
     return fail(walk, path, 'open-ended object (additionalProperties other than false)')
@@ -205,7 +209,7 @@ function convertObject(node: JsonObject, path: string, depth: number, walk: Walk
   for (const key of ['title', 'description']) {
     if (node[key] !== undefined) out[key] = node[key]
   }
-  out['type'] = 'object'
+  out['type'] = typeList(node).includes('null') ? ['object', 'null'] : 'object'
   out['properties'] = convertedProps
   out['required'] = Object.keys(convertedProps)
   out['additionalProperties'] = false
