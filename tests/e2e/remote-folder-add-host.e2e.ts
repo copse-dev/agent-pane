@@ -65,6 +65,22 @@ describe('Open remote folder — add host inline', () => {
     assert.equal(emptyState.selectedDisabled, true, 'the placeholder cannot be chosen')
     assert.equal(emptyState.status, '', 'no duplicate hint under the form')
 
+    const addHostFields = await browser.execute(() => {
+      const root = document.querySelector('#remote-folder-dialog')
+      return Array.from(
+        root?.querySelectorAll<HTMLInputElement>('.remote-folder-add-host-form input') ?? [],
+      ).map((field) => ({
+        name: field.name,
+        type: field.type,
+        maxWidth: getComputedStyle(field).maxWidth,
+      }))
+    })
+    assert.equal(addHostFields.length, 6, 'all SSH host fields render')
+    for (const field of addHostFields) {
+      assert.equal(field.type, 'text', `${field.name} uses text input semantics`)
+      assert.equal(field.maxWidth, '360px', `${field.name} uses the shared SSH field width cap`)
+    }
+
     await dialog.$('input[name="remoteFolderHostLabel"]').setValue('Staging Box')
     await dialog.$('input[name="remoteFolderHostHost"]').setValue('staging.example')
     await dialog.$('input[name="remoteFolderHostUser"]').setValue('deploy')

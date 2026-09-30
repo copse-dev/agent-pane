@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedMessageImageFixture } from './helpers/seed-config.ts'
+import { EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS } from '../../packages/agent/src/plugins/first-party-plugins.ts'
+import { resetUserData, writeSeedConfig } from './helpers/seed-config.ts'
 import {
   E2E_SCREENSHOT_DIR,
   saveAppScreenshot,
@@ -12,6 +13,7 @@ import {
 
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
 const THREAD_SHOT = 'image-expand-thread.png'
+const ASSISTANT_GALLERY_SHOT = 'image-expand-assistant-gallery.png'
 const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const TEXT_SHOT = 'attachment-preview-text.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
@@ -27,6 +29,64 @@ const DIFF_TEXT =
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAYAAABOzvzpAAAA0ElEQVR4AeXBQVUFUAxDwUvO14GISniqKqELRKCkEmoJHMRAZr6+f37/MPYG51Xj7A3Oq8bZG5xXjbM3OCKcCCfCiXAinAgnwn32BudV4+wNzqvG2RucV42zNzivGkeEE+FEOBFOhBPhRLjPq8bZG5xXjbM3OK8aZ29wXjXO3uCIcCKcCCfCiXAinAj32RucV42zNzivGmdvcF41zt7gvGocEU6EE+FEOBFOhBPhPq8aZ29wXjXO3uC8apy9wXnVOHuDI8KJcCKcCCfCiXAi3D+9RD21GVAxSwAAAABJRU5ErkJggg=='
 const IMAGE_DATA_URL = `data:image/png;base64,${PNG_BASE64}`
+const SECOND_IMAGE_DATA_URL =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#4c1d95"/></svg>',
+  )
+const THIRD_IMAGE_DATA_URL =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#0f766e"/></svg>',
+  )
+
+/** Seed both entry paths through the native thread store. */
+function seedGalleryThread(workspaceRoot: string): void {
+  const projectId = 'e2e-image-expand-project'
+  const now = Date.now()
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-image-expand-thread',
+        title: 'Screenshot attachment expand',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-image',
+            role: 'user',
+            content: 'Here is the screenshot from the failing UI.',
+            images: [IMAGE_DATA_URL, SECOND_IMAGE_DATA_URL, THIRD_IMAGE_DATA_URL],
+            attachments: [{ kind: 'file', label: 'running-tests.diff', content: DIFF_TEXT }],
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-ack',
+            role: 'assistant',
+            content: 'Got the screenshot — I will inspect it.',
+            contentBlocks: [IMAGE_DATA_URL, SECOND_IMAGE_DATA_URL, THIRD_IMAGE_DATA_URL].map(
+              (dataUrl) => ({
+                type: 'image',
+                dataUrl,
+                mimeType: dataUrl.startsWith('data:image/svg+xml,') ? 'image/svg+xml' : 'image/png',
+              }),
+            ),
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    pluginDisabled: EXPERIMENTAL_FIRST_PARTY_PLUGIN_IDS.filter(
+      (id) => id !== 'copse.roadmap-plans',
+    ),
+  })
+}
 
 /** Deliver files to the roadmap form the way Chromium delivers a paste of OS files. */
 async function pasteFilesIntoForm(
@@ -108,7 +168,7 @@ describe('Screenshot click-to-expand', () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), PROJECT_WORKSPACE_PREFIX))
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedMessageImageFixture(workspaceRoot, IMAGE_DATA_URL, { roadmapPlansEnabled: true })
+    seedGalleryThread(workspaceRoot)
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
   })
@@ -152,6 +212,34 @@ describe('Screenshot click-to-expand', () => {
       typeof expandedSrc === 'string' && expandedSrc.startsWith('data:image/png;base64,'),
       'modal shows the attachment data URL',
     )
+    await expect($$('.image-expand-thumbnail')).toBeElementsArrayOfSize(3)
+    await expect($('.image-expand-counter')).toHaveText('1 / 3')
+    assert.equal(await $('.image-expand-image').getAttribute('data-image-index'), '0')
+    assert.equal(Number((await $('.image-expand-nav-prev').getCSSProperty('opacity')).value), 0)
+    assert.equal(Number((await $('.image-expand-nav-next').getCSSProperty('opacity')).value), 0)
+    await $('.image-expand-nav-zone-next').moveTo()
+    await browser.waitUntil(
+      async () => Number((await $('.image-expand-nav-next').getCSSProperty('opacity')).value) > 0,
+      { timeout: 2_000, timeoutMsg: 'expected the next arrow to appear on edge hover' },
+    )
+    await $('.image-expand-nav-next').click()
+    await browser.waitUntil(
+      async () => (await $('.image-expand-image').getAttribute('data-image-index')) === '1',
+      { timeout: 2_000, timeoutMsg: 'expected the next arrow to select the second image' },
+    )
+    await expect($('.image-expand-counter')).toHaveText('2 / 3')
+    await browser.keys('ArrowRight')
+    await browser.waitUntil(
+      async () => (await $('.image-expand-image').getAttribute('data-image-index')) === '2',
+      { timeout: 2_000, timeoutMsg: 'expected ArrowRight to select the third image' },
+    )
+    await browser.keys('ArrowLeft')
+    await browser.waitUntil(
+      async () => (await $('.image-expand-image').getAttribute('data-image-index')) === '1',
+      { timeout: 2_000, timeoutMsg: 'expected ArrowLeft to select the second image' },
+    )
+    await $('.image-expand-thumbnail').click()
+    await expect($('.image-expand-counter')).toHaveText('1 / 3')
 
     await saveAppScreenshot(THREAD_SHOT)
 
@@ -198,6 +286,56 @@ describe('Screenshot click-to-expand', () => {
     )
     await expect(closed).not.toBeDisplayed()
     await saveAppScreenshot(THREAD_DISMISSED_SHOT)
+  })
+
+  it('opens images from one assistant response as a flat gallery', async () => {
+    const responseImages = $$('.msg-assistant .acp-message-content .acp-content-image')
+    await expect(responseImages).toBeElementsArrayOfSize(3)
+    const secondImage = responseImages[1]
+    assert.ok(secondImage, 'expected the second response image')
+    await secondImage.click()
+
+    const dialog = $('dialog.attachment-preview-dialog[open]')
+    await dialog.waitForExist({ timeout: 5_000 })
+    assert.equal(await dialog.getAttribute('data-preview-kind'), 'image-gallery')
+    await expect($('.image-expand-counter')).toHaveText('2 / 3')
+    await expect($$('.image-expand-thumbnail')).toBeElementsArrayOfSize(3)
+    assert.equal(await $('.image-expand-image').getAttribute('data-image-index'), '1')
+    assert.equal(
+      await $('.image-expand-thumbnail:nth-child(2)').getAttribute('aria-selected'),
+      'true',
+    )
+
+    const layout = await browser.execute(() => {
+      const modal = document.querySelector('dialog.attachment-preview-dialog[open]')
+      const counter = modal?.querySelector('.image-expand-counter')
+      const strip = modal?.querySelector('.image-expand-gallery-footer')
+      if (!modal || !counter || !strip) return null
+      const modalRect = modal.getBoundingClientRect()
+      return {
+        width: modalRect.width,
+        height: modalRect.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        counterTop: counter.getBoundingClientRect().top,
+        stripTop: strip.getBoundingClientRect().top,
+        shadow: getComputedStyle(modal).boxShadow,
+      }
+    })
+    assert.ok(layout, 'expected gallery layout')
+    assert.ok(layout.width >= layout.viewportWidth * 0.7, 'gallery should open wide')
+    assert.ok(layout.height >= layout.viewportHeight * 0.6, 'gallery should open tall')
+    assert.ok(layout.counterTop < layout.stripTop, 'counter sits above the thumbnail strip')
+    assert.equal(layout.shadow, 'none')
+
+    await browser.action('pointer').move({ x: 0, y: 0 }).perform()
+    assert.equal(Number((await $('.image-expand-nav-prev').getCSSProperty('opacity')).value), 0)
+    assert.equal(Number((await $('.image-expand-nav-next').getCSSProperty('opacity')).value), 0)
+    await saveAppScreenshot(ASSISTANT_GALLERY_SHOT)
+
+    await browser.keys('ArrowRight')
+    await expect($('.image-expand-counter')).toHaveText('3 / 3')
+    await $('.attachment-preview-close').click()
   })
 
   it('previews a sent text file in the same modal shell', async () => {

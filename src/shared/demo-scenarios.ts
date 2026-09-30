@@ -432,7 +432,15 @@ function conciseThreadMessages(model: string, live: boolean): Thread['messages']
             model,
             content:
               'Save now stays pinned to the form footer at every width: the footer is a grid instead of an absolutely positioned row. The settings form tests pass.',
-            toolCalls: [],
+            toolCalls: [
+              {
+                id: `concise-audit-${model}`,
+                name: 'workspace_edit_audit',
+                args: {},
+                status: 'done' as const,
+                result: 'Audit complete.',
+              },
+            ],
             createdAt: FIXED_TIME + 3_000,
           },
         ]),

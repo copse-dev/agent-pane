@@ -189,6 +189,18 @@ describe('reasoning display (component)', () => {
     assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
   })
 
+  it('paints no disclosure for whitespace-only reasoning, live or settled', () => {
+    const { store, threadId, messageId } = mountWithReasoning()
+    setThreadStatus(store, threadId, 'running')
+
+    appendReasoning(store, messageId, '\n')
+    appendReasoning(store, messageId, '  ')
+    assert.equal(document.querySelector('.message-reasoning'), null)
+
+    store.emit('message_done', messageId)
+    assert.equal(document.querySelector('.message-reasoning'), null)
+  })
+
   it('moves the waiting activity out of the composer and folds it into live reasoning', () => {
     const { store, threadId, messageId } = mountWithReasoning()
     const input = document.createElement('div')

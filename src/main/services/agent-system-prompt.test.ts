@@ -102,6 +102,45 @@ describe('buildSystemPrompt Opus 5 conciseness steering', () => {
   })
 })
 
+// The system prompt is the first message of every request, so a byte that
+// changes between turns of a thread re-prefills the whole conversation behind
+// it. Nothing time-, turn- or run-dependent may leak into it.
+describe('buildSystemPrompt prefix stability', () => {
+  let tempRoot = ''
+  let restoreWorkspace: (() => void) | undefined
+
+  beforeEach(async () => {
+    setSetting('skillsEnabled', false)
+    setSetting('skillPluginPaths', [])
+    setSetting('customInstructions', '')
+    tempRoot = await mkdtemp(join(tmpdir(), 'copse-system-prompt-stable-'))
+    restoreWorkspace = setWorkspaceRootForTest(tempRoot)
+  })
+
+  afterEach(async () => {
+    restoreWorkspace?.()
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
+  })
+
+  it('is byte-identical across turns whose user text names no path or rule', async () => {
+    const prompts: string[] = []
+    for (const userPrompt of ['first question', 'a different follow-up', 'thanks!']) {
+      prompts.push(
+        await buildSystemPrompt({
+          subagentsEnabled: true,
+          invokedSkills: [],
+          threadId: 'thread-1',
+          userPrompt,
+          model: 'gpt-5.6-sol',
+          availableToolNames: ['read_file', 'run_shell'],
+        }),
+      )
+    }
+    assert.equal(prompts[1], prompts[0])
+    assert.equal(prompts[2], prompts[0])
+  })
+})
+
 // Context-provenance plan, Phase 2: workspace instruction files are wrapped,
 // demoted below Copse steering, and trust-gated; the user layers stay last.
 describe('buildSystemPrompt instruction layers', () => {

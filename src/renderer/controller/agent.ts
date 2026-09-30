@@ -184,9 +184,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           'user',
           userContentToText(chunk.content),
           undefined,
-          undefined,
+          chunk.attachments,
           {
             origin: chunk.origin,
+            ...(chunk.startingCommit !== undefined ? { startingCommit: chunk.startingCommit } : {}),
+            ...(chunk.dirty !== undefined ? { dirty: chunk.dirty } : {}),
           },
         )
         break
