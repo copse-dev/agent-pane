@@ -629,13 +629,211 @@ var init_model_selection = __esm({
   }
 });
 
+// packages/llm/src/model-families.ts
+function hasModelIdPrefix(id, prefix) {
+  return id === prefix || id.startsWith(prefix) && BOUNDARY.test(id.slice(prefix.length));
+}
+function findFamily(modelId) {
+  let best;
+  for (const entry of FAMILIES) {
+    if (!hasModelIdPrefix(modelId, entry.match)) continue;
+    if (best === void 0 || entry.match.length > best.match.length) best = entry;
+  }
+  return best;
+}
+function withFeatures(features) {
+  return { ...NO_FEATURES, ...features };
+}
+function nonFirstPartyTransport(namespace) {
+  switch (namespace) {
+    case "openrouter":
+    case "extra-provider":
+      return "openai-compatible";
+    case "lmstudio":
+      return "local";
+    case "acp":
+    case "remote-agent":
+    case "plugin-model":
+    case "auto":
+      return "host-routed";
+    case "cloud":
+      return "unknown";
+  }
+}
+function routeGated(features, firstParty) {
+  if (firstParty) return features;
+  return {
+    ...features,
+    supportsStrictTools: false,
+    supportsVerbosity: false,
+    supportsParallelToolCallsControl: false,
+    supportsServerCompaction: false
+  };
+}
+function resolveModelFamily(model) {
+  const selection2 = typeof model === "string" ? parseModelSelection(model) : model;
+  const { namespace } = selection2;
+  if (!CLOUD_ROUTED.has(namespace)) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: nonFirstPartyTransport(namespace),
+      provider: null,
+      family: null,
+      known: false
+    };
+  }
+  const direct = namespace === "cloud";
+  const entry = findFamily(selection2.modelId);
+  if (entry !== void 0) {
+    return {
+      ...routeGated(withFeatures(entry.features), direct),
+      namespace,
+      transport: direct ? entry.transport : "openai-compatible",
+      provider: direct ? entry.provider : null,
+      family: entry.match,
+      known: true
+    };
+  }
+  const fallback = FIRST_PARTY_FALLBACKS.find(
+    (candidate) => selection2.modelId.startsWith(candidate.prefix)
+  );
+  if (direct && fallback !== void 0) {
+    return {
+      ...NO_FEATURES,
+      namespace,
+      transport: fallback.transport,
+      provider: fallback.provider,
+      family: null,
+      known: false
+    };
+  }
+  return {
+    ...NO_FEATURES,
+    namespace,
+    transport: direct ? "unknown" : "openai-compatible",
+    provider: null,
+    family: null,
+    known: false
+  };
+}
+function firstPartyProviderOf(model) {
+  return resolveModelFamily(model).provider;
+}
+var NO_FEATURES, GPT_REASONING_FEATURES, O_SERIES_FEATURES, CLAUDE_MID_SYSTEM, FAMILIES, FIRST_PARTY_FALLBACKS, BOUNDARY, CLOUD_ROUTED;
+var init_model_families = __esm({
+  "packages/llm/src/model-families.ts"() {
+    init_model_selection();
+    NO_FEATURES = {
+      supportsStrictTools: false,
+      supportsVerbosity: false,
+      supportsParallelToolCallsControl: false,
+      supportsServerCompaction: false,
+      prefersApplyPatch: false,
+      acceptsDeveloperRole: false,
+      acceptsMidConversationSystem: false
+    };
+    GPT_REASONING_FEATURES = {
+      supportsStrictTools: true,
+      supportsVerbosity: true,
+      supportsParallelToolCallsControl: true,
+      prefersApplyPatch: true,
+      acceptsDeveloperRole: true
+    };
+    O_SERIES_FEATURES = {
+      supportsStrictTools: true,
+      acceptsDeveloperRole: true
+    };
+    CLAUDE_MID_SYSTEM = { acceptsMidConversationSystem: true };
+    FAMILIES = [
+      // Anthropic. Mid-conversation `system` messages: Opus 5 / 4.8, Fable 5, Mythos 5.
+      // `claude-sonnet-5-5` — the default model — does not take one, so leading-system
+      // placement is the common path, not an edge case.
+      {
+        match: "claude-opus-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-opus-4-8",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-opus-4-7", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-opus-4-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-5", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-sonnet-4-6", provider: "anthropic", transport: "anthropic" },
+      { match: "claude-haiku-4-5", provider: "anthropic", transport: "anthropic" },
+      {
+        match: "claude-fable-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      {
+        match: "claude-mythos-5",
+        provider: "anthropic",
+        transport: "anthropic",
+        features: CLAUDE_MID_SYSTEM
+      },
+      { match: "claude-mythos-preview", provider: "anthropic", transport: "anthropic" },
+      // OpenAI, Responses API.
+      {
+        match: "gpt-5",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6-astra",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      {
+        match: "gpt-6.1-sol",
+        provider: "openai",
+        transport: "openai-responses",
+        features: GPT_REASONING_FEATURES
+      },
+      { match: "o1", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o3", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      { match: "o4", provider: "openai", transport: "openai-responses", features: O_SERIES_FEATURES },
+      // OpenAI, Chat Completions: non-reasoning models gain nothing from Responses.
+      {
+        match: "gpt-4o",
+        provider: "openai",
+        transport: "openai-chat",
+        features: {
+          supportsStrictTools: true,
+          supportsParallelToolCallsControl: true,
+          acceptsDeveloperRole: true
+        }
+      },
+      // Open-weights models OpenAI publishes. Not a first-party API model — it is
+      // reached through aggregators or local servers, never `developer`-role aware —
+      // and the entry exists to stop the broad `gpt-` fallback claiming its features.
+      { match: "gpt-oss", provider: "openai", transport: "openai-chat" }
+    ];
+    FIRST_PARTY_FALLBACKS = [
+      { prefix: "claude-", provider: "anthropic", transport: "anthropic" },
+      { prefix: "gpt-", provider: "openai", transport: "openai-chat" }
+    ];
+    BOUNDARY = /^[-.:@]/;
+    CLOUD_ROUTED = /* @__PURE__ */ new Set(["cloud", "openrouter", "extra-provider"]);
+  }
+});
+
 // packages/llm/src/model-catalog.ts
 function getModelInfo(model) {
   return MODEL_CATALOG[model] ?? null;
 }
 function inferCloudModelProvider(model) {
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
+  const { provider } = resolveModelFamily(model);
+  if (provider !== null) return provider;
   throw new Error(`Unknown cloud model provider for '${model}'`);
 }
 function cloudModelDisplayLabel(model) {
@@ -647,7 +845,7 @@ var init_model_catalog = __esm({
   "packages/llm/src/model-catalog.ts"() {
     init_model_catalog_generated();
     init_model_label();
-    init_model_selection();
+    init_model_families();
     DEFAULT_CLOUD_MODEL = "claude-sonnet-5-5";
     TRACKED_MODELS = [
       DEFAULT_CLOUD_MODEL,
@@ -714,6 +912,9 @@ function isEmptyModelParameters(params) {
 function matchesFamily(modelId, prefixes) {
   return prefixes.some((prefix) => modelId.startsWith(prefix));
 }
+function matchesOpenAiFamily(modelId, prefixes) {
+  return prefixes.some((prefix) => hasModelIdPrefix(modelId, prefix));
+}
 function claudeSupport(modelId) {
   const withoutOff = (ladder) => matchesFamily(modelId, CLAUDE_THINKING_ALWAYS_ON) ? ladder.filter((level) => level !== "off") : ladder;
   if (matchesFamily(modelId, CLAUDE_EFFORT_NO_SAMPLING)) {
@@ -743,7 +944,7 @@ function claudeSupport(modelId) {
   };
 }
 function openAiSupport(modelId) {
-  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
       reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: "openai-effort",
@@ -752,7 +953,7 @@ function openAiSupport(modelId) {
       temperatureMax: 2
     };
   }
-  if (matchesFamily(modelId, OPENAI_REASONING_PREFIXES)) {
+  if (matchesOpenAiFamily(modelId, OPENAI_REASONING_PREFIXES)) {
     return {
       reasoning: OPENAI_LADDER,
       reasoningWire: "openai-effort",
@@ -784,8 +985,9 @@ function modelParameterSupport(model) {
     };
   }
   if (selection2.namespace === "cloud") {
-    if (selection2.modelId.startsWith("claude")) return claudeSupport(selection2.modelId);
-    if (selection2.modelId.startsWith("gpt")) return openAiSupport(selection2.modelId);
+    const provider = firstPartyProviderOf(selection2);
+    if (provider === "anthropic") return claudeSupport(selection2.modelId);
+    if (provider === "openai") return openAiSupport(selection2.modelId);
     return {
       reasoning: [],
       reasoningWire: "none",
@@ -879,6 +1081,7 @@ var REASONING_LEVELS, isReasoningLevel, SAMPLING_FIELDS, NO_PARAMETERS, OPENAI_C
 var init_model_parameters = __esm({
   "packages/llm/src/model-parameters.ts"() {
     init_model_catalog();
+    init_model_families();
     init_model_selection();
     init_member_of();
     REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -21898,6 +22101,16 @@ var init_trace_player = __esm({
   }
 });
 
+// packages/llm/src/model-capabilities.ts
+var init_model_capabilities = __esm({
+  "packages/llm/src/model-capabilities.ts"() {
+    init_model_catalog();
+    init_model_families();
+    init_model_parameters();
+    init_model_selection();
+  }
+});
+
 // packages/agent/src/token-estimate.ts
 var CHARS_PER_TOKEN;
 var init_token_estimate = __esm({
@@ -37959,9 +38172,7 @@ function providerSlug(model) {
   if (model === void 0) return void 0;
   const colon = model.indexOf(":");
   if (colon > 0) return model.slice(0, colon);
-  if (model.startsWith("claude")) return "anthropic";
-  if (model.startsWith("gpt")) return "openai";
-  return void 0;
+  return firstPartyProviderOf(model) ?? void 0;
 }
 function stringArg2(args, key) {
   if (!isRecord(args)) return void 0;
@@ -38955,6 +39166,7 @@ var init_demo_api = __esm({
     init_advisor_strategy_plugin();
     init_working_brief();
     init_trace_player();
+    init_model_capabilities();
     init_token_estimate();
     init_files();
     init_unknown_value3();
@@ -53603,11 +53815,9 @@ function dataPolicyForModelPath(modelId, providers = [], opts = {}) {
     const bySlug = dataPolicyForProvider({ id: slug2 });
     if (bySlug) return { policy: bySlug, local: false };
   }
-  if (id.startsWith("claude")) {
-    return { policy: dataPolicyForProvider({ id: "anthropic" }), local: false };
-  }
-  if (id.startsWith("gpt")) {
-    return { policy: dataPolicyForProvider({ id: "openai" }), local: false };
+  const firstParty = firstPartyProviderOf(id);
+  if (firstParty !== null) {
+    return { policy: dataPolicyForProvider({ id: firstParty }), local: false };
   }
   if (id.toLowerCase().includes("grok")) {
     return {
@@ -53631,6 +53841,7 @@ function isNoTrainingModelPath(modelId, opts = {}) {
 var POLICIES_BY_SLUG, POLICIES_BY_HOST;
 var init_data_policies = __esm({
   "packages/llm/src/data-policies.ts"() {
+    init_model_families();
     init_provider_metadata2();
     POLICIES_BY_SLUG = /* @__PURE__ */ new Map();
     POLICIES_BY_HOST = /* @__PURE__ */ new Map();
@@ -54106,6 +54317,13 @@ var init_model_options = __esm({
 });
 
 // src/renderer/views/model-picker.ts
+function isTypeToFilterKey(e3) {
+  if (e3.ctrlKey || e3.metaKey || e3.altKey) return false;
+  if (e3.key.length !== 1) return false;
+  if (e3.key === " ") return false;
+  const code = e3.key.codePointAt(0);
+  return code !== void 0 && code >= 32;
+}
 function fieldMenuSurfacePlacement(menu, surface, trigger, gap) {
   if (menu.top >= surface.top - 1 && menu.bottom <= surface.bottom + 1) return "natural";
   return trigger.top - gap - menu.height >= surface.top ? "flipped" : "contained";
@@ -54523,20 +54741,35 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
   filter.addEventListener("input", () => {
     renderMenu(cachedOptions);
   });
-  menu.addEventListener("keydown", (e3) => {
-    if (e3.isComposing) return;
+  function enterAppliesHighlight(target) {
+    if (target === filter || target === menu || target === list) return true;
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.matches(".model-picker-option")) return true;
+    return !menu.contains(target);
+  }
+  function handleOpenMenuKeydown(e3) {
+    if (!open2 || e3.isComposing) return false;
     if (e3.key === "ArrowDown") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(1);
-    } else if (e3.key === "ArrowUp") {
+      return true;
+    }
+    if (e3.key === "ArrowUp") {
       e3.preventDefault();
+      e3.stopPropagation();
       moveActive(-1);
-    } else if (e3.key === "Enter" && (e3.target === filter || e3.target instanceof HTMLElement && e3.target.matches(".model-picker-option"))) {
+      return true;
+    }
+    if (e3.key === "Enter" && enterAppliesHighlight(e3.target)) {
       e3.preventDefault();
+      e3.stopPropagation();
       if (view === "group") {
         if (activeValue !== null) selectGroupValue(activeValue);
       } else selectOption(activeValue);
-    } else if (e3.key === "Escape") {
+      return true;
+    }
+    if (e3.key === "Escape") {
       e3.preventDefault();
       e3.stopPropagation();
       if (view === "group") {
@@ -54547,35 +54780,68 @@ function mountModelPicker(root, getCurrent, onSelect, loadOptions, pickerOpts = 
         setOpen(false);
         if (!recentMode) trigger.focus();
       }
-    } else if (e3.key === "ArrowLeft" && view === "group") {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "group") {
       e3.preventDefault();
       e3.stopPropagation();
       activeValue = null;
       setView(homeView);
-    } else if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowRight" && view === "recent" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("all");
-    } else if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
+      return true;
+    }
+    if (e3.key === "ArrowLeft" && view === "all" && recentMode) {
       e3.preventDefault();
       e3.stopPropagation();
       setView("recent");
+      return true;
     }
+    if (recentMode && view === "recent" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value = e3.key;
+      setView("all");
+      return true;
+    }
+    if (view === "all" && isTypeToFilterKey(e3) && e3.target !== filter) {
+      e3.preventDefault();
+      e3.stopPropagation();
+      filter.value += e3.key;
+      filter.focus();
+      renderMenu(cachedOptions);
+      return true;
+    }
+    return false;
+  }
+  menu.addEventListener("keydown", (e3) => {
+    handleOpenMenuKeydown(e3);
   });
   cleanups.push(
     on(document, "click", (e3) => {
       if (!open2) return;
       if (!(e3.target instanceof Node) || !wrap.contains(e3.target)) setOpen(false);
     }),
-    on(document, "keydown", (e3) => {
-      const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
-      if (isOpenShortcut && !document.querySelector("dialog[open]")) {
-        e3.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (e3.key === "Escape" && open2) setOpen(false);
-    })
+    on(
+      document,
+      "keydown",
+      (e3) => {
+        const isOpenShortcut = pickerOpts.enableShortcut === true && (e3.ctrlKey || e3.metaKey) && e3.shiftKey && !e3.altKey && (e3.key === "m" || e3.key === "M");
+        if (isOpenShortcut && !document.querySelector("dialog[open]")) {
+          e3.preventDefault();
+          setOpen(true);
+          return;
+        }
+        if (!open2) return;
+        if (e3.target instanceof Node && menu.contains(e3.target)) return;
+        handleOpenMenuKeydown(e3);
+      },
+      { capture: true }
+    )
   );
   const removalObserver = new MutationObserver(() => {
     if (document.contains(wrap)) return;
@@ -58217,13 +58483,14 @@ function createModelRoutingSection(api2, options = {}) {
 function canonicalRoleSelection(value) {
   const trimmed2 = value.trim();
   if (!trimmed2) return "";
-  if (trimmed2.includes(":") || trimmed2.startsWith("claude-") || trimmed2.startsWith("gpt-")) {
+  if (trimmed2.includes(":") || firstPartyProviderOf(trimmed2) !== null) {
     return trimmed2;
   }
   return lmStudioChatModelValue(trimmed2);
 }
 var init_model_routing_section = __esm({
   "src/renderer/views/setup/model-routing-section.ts"() {
+    init_model_capabilities();
     init_preferred_models();
     init_array_utils2();
     init_lm_studio_defaults();
@@ -79031,6 +79298,11 @@ function statusLabel(status) {
       return "Review";
   }
 }
+function skippedReviewReason(summary) {
+  const reason = summary.trim().replace(/^Review skipped\s*[—–-]\s*/i, "");
+  if (!reason) return "No review ran.";
+  return `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+}
 function shouldCollapseCleanReview(review) {
   return review.status === "done" && review.issuesFound === false;
 }
@@ -79049,6 +79321,11 @@ function appendReviewHeader(panel, review, onRetry) {
   if (review.status === "error" && onRetry) {
     header.append(createRetryButton(onRetry));
   }
+  if (review.status === "skipped") {
+    header.append(
+      el("span", { class: "review-panel-skipped-summary" }, skippedReviewReason(review.summary))
+    );
+  }
   panel.append(header);
 }
 function createReviewCardEl(review, api2, onRetry) {
@@ -79059,7 +79336,7 @@ function createReviewCardEl(review, api2, onRetry) {
     ...review.issuesFound !== void 0 ? { "data-issues-found": review.issuesFound ? "true" : "false" } : {}
   });
   appendReviewHeader(panel, review, onRetry);
-  if (review.status === "running") return panel;
+  if (review.status === "running" || review.status === "skipped") return panel;
   const body = el("div", { class: "review-panel-body message-text streaming-markdown" });
   const bodyMarkdown = review.followUpNote ? `${review.summary || "(no review output)"}
 
@@ -97322,9 +97599,7 @@ function threadHasExportableContent(thread) {
 function providerFromModelId(modelId) {
   const colon = modelId.indexOf(":");
   if (colon > 0) return modelId.slice(0, colon);
-  if (modelId.startsWith("claude")) return "anthropic";
-  if (modelId.startsWith("gpt")) return "openai";
-  return "unknown";
+  return firstPartyProviderOf(modelId) ?? "unknown";
 }
 function providersFromUsage(usage) {
   const models = usage.byModel ? Object.keys(usage.byModel) : [];
@@ -97388,6 +97663,7 @@ function threadToJsonl(thread) {
 var THREAD_JSONL_EXPORT_VERSION;
 var init_export_jsonl = __esm({
   "packages/thread-store/src/export-jsonl.ts"() {
+    init_model_families();
     THREAD_JSONL_EXPORT_VERSION = 8;
   }
 });

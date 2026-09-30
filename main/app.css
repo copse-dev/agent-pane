@@ -4271,8 +4271,11 @@ label {
 .msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
   margin-block: var(--spacing-xs);
   padding-block: var(--spacing-lg);
-  border-top: 1px solid var(--border-subtle);
   border-radius: 0;
+}
+.msg-concise.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
+  margin-block: 0;
+  padding-block: var(--spacing-xs);
 }
 .msg-assistant > .message-body > .message-text {
   --sm-line-height: 1.65;
@@ -12661,6 +12664,18 @@ dialog.activity-panel-overlay {
   text-transform: uppercase;
   letter-spacing: var(--group-header-letter-spacing);
   color: var(--sev);
+}
+.review-panel-skipped .review-panel-header {
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.review-panel-skipped-summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: anywhere;
 }
 .review-panel > summary.review-panel-header {
   cursor: pointer;
