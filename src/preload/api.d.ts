@@ -531,6 +531,8 @@ export interface ApiClient {
   }
   threads: {
     loadProject: (projectId: string) => Promise<import('@shared/types').Thread[]>
+    /** Fill legacy PR links for a bounded set of visible sidebar threads. */
+    backfillPrRefs: (projectId: string, threadIds: string[]) => Promise<void>
     loadMessages: (
       projectId: string,
       threadId: string,
