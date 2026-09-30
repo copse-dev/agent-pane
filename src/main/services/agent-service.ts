@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { patchTouchedPaths } from '@shared/patch/apply-patch.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { stripCursorAcpTransportNoise } from '@shared/acp-cursor-transport-noise.ts'
 import {
@@ -443,6 +444,7 @@ const INSTRUCTION_CONTEXT_PATH_FIELDS: Readonly<Record<string, readonly string[]
 }
 
 function instructionContextPathsForTool(name: string, args: unknown): string[] {
+  if (name === 'apply_patch') return isRecord(args) ? patchTouchedPaths(args['input']) : []
   const fields = INSTRUCTION_CONTEXT_PATH_FIELDS[name]
   if (!fields || !isRecord(args)) return []
   return fields.flatMap((field) => {

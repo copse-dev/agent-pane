@@ -10,7 +10,7 @@ interface CapturedRequest {
   stream: boolean
   tools: Array<Record<string, unknown>>
   max_output_tokens?: number
-  reasoning?: { summary?: string }
+  reasoning?: { summary?: string; effort?: string }
   include?: readonly string[]
   prompt_cache_key?: string
   store?: boolean
@@ -450,6 +450,64 @@ describe('ResponsesProvider reasoning', () => {
     // With store:false there is no server-side copy, so the encrypted blob has
     // to ride back on the response or it cannot be replayed.
     assert.deepEqual(request.include, ['reasoning.encrypted_content'])
+  })
+
+  it('sends both the summary request and the tuned effort', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-sol', {
+      apiKey: 'sk-test',
+      reasoningSummaries: true,
+      params: { reasoning: 'high' },
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'ok' }],
+    )
+
+    await collect(provider)
+
+    assert.ok(request)
+    assert.deepEqual(request.reasoning, { summary: 'auto', effort: 'high' })
+  })
+
+  it('sends only the summary request when no level is tuned', async () => {
+    const provider = reasoningProvider()
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'ok' }],
+    )
+
+    await collect(provider)
+
+    assert.ok(request)
+    assert.deepEqual(request.reasoning, { summary: 'auto' })
+  })
+
+  it('sends only the tuned effort when summaries are not requested', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-sol', {
+      apiKey: 'sk-test',
+      params: { reasoning: 'high' },
+    })
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'ok' }],
+    )
+
+    await collect(provider)
+
+    assert.ok(request)
+    assert.deepEqual(request.reasoning, { effort: 'high' })
   })
 
   it('omits both when the provider is not configured for reasoning', async () => {
