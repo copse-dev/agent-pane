@@ -4,6 +4,8 @@ import type { ModelUsage } from './wire-types.ts'
 interface PrefixHashes {
   systemHash: string
   toolsHash: string
+  /** Short per-item hashes of the request's conversation, when the caller supplies it. */
+  itemHashes: string[]
 }
 
 // Providers are rebuilt between user turns. Retain only hashes, bounded across
@@ -32,10 +34,23 @@ export class PromptCacheDiagnostics {
     this.cacheKey = cacheKey ?? randomUUID()
   }
 
-  begin(system: unknown, tools: unknown): (usage: ModelUsage | null) => void {
+  /**
+   * `items` is the request's whole ordered conversation (Responses `input`).
+   * With it, the report also says where the previous request's conversation
+   * first stopped being a prefix of this one — the index a cache miss starts at.
+   */
+  begin(
+    system: unknown,
+    tools: unknown,
+    items: readonly unknown[] = [],
+  ): (usage: ModelUsage | null) => void {
     if (process.env['COPSE_DEBUG_PROMPT_CACHE'] !== '1') return () => {}
     const scopeHash = hash([this.transport, this.model, this.endpoint, this.cacheKey])
-    const hashes = { systemHash: hash(system), toolsHash: hash(tools) }
+    const hashes = {
+      systemHash: hash(system),
+      toolsHash: hash(tools),
+      itemHashes: items.map((item) => hash(item).slice(0, 8)),
+    }
     const previous = previousPrefixes.get(scopeHash)
     previousPrefixes.delete(scopeHash)
     previousPrefixes.set(scopeHash, hashes)
@@ -43,12 +58,19 @@ export class PromptCacheDiagnostics {
       const oldest = previousPrefixes.keys().next().value
       if (oldest !== undefined) previousPrefixes.delete(oldest)
     }
+    const changedAt = previous
+      ? previous.itemHashes.findIndex((itemHash, index) => hashes.itemHashes[index] !== itemHash)
+      : -1
     const request = {
       transport: this.transport,
       model: this.model,
       requestId: randomUUID(),
       scopeHash,
-      ...hashes,
+      systemHash: hashes.systemHash,
+      toolsHash: hashes.toolsHash,
+      inputItems: hashes.itemHashes.length,
+      // Null: nothing to compare. -1: every earlier item was reproduced.
+      firstChangedInputIndex: previous && items.length > 0 ? changedAt : null,
       systemChanged: previous ? previous.systemHash !== hashes.systemHash : null,
       toolsChanged: previous ? previous.toolsHash !== hashes.toolsHash : null,
     }
