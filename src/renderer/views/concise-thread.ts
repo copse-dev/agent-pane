@@ -57,7 +57,11 @@ export function isConciseMessage(msg: Pick<Message, 'role' | 'model' | 'requeste
 export function isConciseWorkingMessage(
   msg: Pick<Message, 'role' | 'model' | 'requestedModel' | 'toolCalls' | 'turnOutcome'>,
 ): boolean {
-  return isConciseMessage(msg) && msg.toolCalls.length > 0 && msg.turnOutcome?.status !== 'failed'
+  return (
+    isConciseMessage(msg) &&
+    msg.toolCalls.some((toolCall) => toolCall.status === 'running') &&
+    msg.turnOutcome?.status !== 'failed'
+  )
 }
 
 /**
