@@ -339,15 +339,27 @@ export class AgentDispatcher {
     await this.epochWrites.get(key)
     for (;;) {
       const active = this.active.get(key)
-      if (!active) break
+      if (!active) {
+        // Claim before loading or persisting machine bookkeeping. Otherwise a
+        // foreground dispatch can take the thread during either await, after
+        // the continuation has already consumed budget and recorded a start.
+        return this.dispatchExclusively(request, key, (host) =>
+          this.executeClaimedMachine(request, key, host),
+        )
+      }
       try {
         await active
       } catch {
         // A failed foreground turn still releases the per-thread dispatch slot.
       }
     }
-    this.assertDispatchable(request.projectId, request.threadId)
+  }
 
+  private async executeClaimedMachine(
+    request: MachineAgentDispatchRequest,
+    key: string,
+    host: AgentHost<StreamChunk>,
+  ): Promise<MachineDispatchResult> {
     let epoch = this.epochs.get(key)
     if (!epoch) {
       const persisted = await this.dependencies.loadEpoch(request.projectId, request.threadId)
@@ -380,7 +392,7 @@ export class AgentDispatcher {
       await this.dependencies.saveEpoch(request.projectId, request.threadId, nextEpoch)
       this.epochs.set(key, nextEpoch)
       const display = request.display
-      this.host.emit(request.threadId, {
+      host.emit(request.threadId, {
         type: 'machine_turn_start',
         content: display?.content ?? request.payload.userContent,
         origin: { kind: 'machine', operationId: request.operationId },
@@ -390,14 +402,18 @@ export class AgentDispatcher {
           : {}),
         ...(display?.dirty !== undefined ? { dirty: display.dirty } : {}),
       })
-      turnOutcome = await this.dispatchInternal({
-        ...request,
-        payload: {
-          ...request.payload,
-          turnTreeId: request.turnTreeId,
-          continuationBudgetUsed: nextEpoch.continuationUsed,
+      turnOutcome = await this.execute(
+        {
+          ...request,
+          payload: {
+            ...request.payload,
+            turnTreeId: request.turnTreeId,
+            continuationBudgetUsed: nextEpoch.continuationUsed,
+          },
         },
-      })
+        key,
+        host,
+      )
     } catch (error) {
       await this.recordMachineFinish(request, 'failed', nextEpoch.continuationUsed)
       throw error
@@ -440,11 +456,6 @@ export class AgentDispatcher {
       result,
       ...(turnOutcome !== undefined ? { turnOutcome } : {}),
     })
-  }
-
-  private async dispatchInternal(request: AgentDispatchRequest): Promise<TurnOutcome | undefined> {
-    const key = dispatchKey(request.projectId, request.threadId)
-    return this.dispatchExclusively(request, key, (host) => this.execute(request, key, host))
   }
 
   /**

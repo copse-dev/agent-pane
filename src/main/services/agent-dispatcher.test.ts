@@ -807,6 +807,61 @@ describe('AgentDispatcher', () => {
     assert.deepEqual(prompts, ['continue', 'task completed'])
   })
 
+  it('claims the thread before machine bookkeeping can yield to a foreground turn', async () => {
+    let enteredBookkeeping!: () => void
+    let releaseBookkeeping!: () => void
+    const bookkeepingStarted = new Promise<void>((resolve) => {
+      enteredBookkeeping = resolve
+    })
+    const bookkeepingGate = new Promise<void>((resolve) => {
+      releaseBookkeeping = resolve
+    })
+    const prompts: UserContent[] = []
+    const dispatcher = new AgentDispatcher(
+      host,
+      registry,
+      dependencies({
+        loadEpoch: async () => ({ turnTreeId: 'tree-1', continuationUsed: 0 }),
+        appendMachineContinuation: async (_projectId, _threadId, line) => {
+          if (line.phase !== 'started') return
+          enteredBookkeeping()
+          await bookkeepingGate
+        },
+        run: async (_threadId, userContent, priorMessages) => {
+          prompts.push(userContent)
+          return {
+            usage: { inputTokens: 0, outputTokens: 0 },
+            messages: [...priorMessages, { role: 'user', content: userContent }],
+          }
+        },
+      }),
+    )
+
+    const machine = dispatcher.dispatchMachine({
+      ...request(),
+      operationId: 'background-1',
+      turnTreeId: 'tree-1',
+      payload: { userContent: 'machine wake', invokedSkills: [], priorTodos: [] },
+    })
+    await bookkeepingStarted
+
+    assert.equal(dispatcher.isActive('project-1', 'thread-1'), true)
+    try {
+      await assert.rejects(
+        dispatcher.dispatch(
+          request({
+            payload: { userContent: 'foreground', invokedSkills: [], priorTodos: [] },
+          }),
+        ),
+        { name: 'AgentTurnBusyError' },
+      )
+    } finally {
+      releaseBookkeeping()
+    }
+    assert.equal(await machine, 'completed')
+    assert.deepEqual(prompts, ['machine wake'])
+  })
+
   it('emits transcript presentation separately from the model-facing continuation', async () => {
     const emitted: StreamChunk[] = []
     const prompts: UserContent[] = []
