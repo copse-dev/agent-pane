@@ -4,6 +4,7 @@ import { isGhAvailable } from '../tool-availability.ts'
 import { decodeWithSchema, safeJsonParse, type JsonDecoder } from '@shared/safe-json.ts'
 import { z } from 'zod'
 import { optionalAuthorSchema, optionalNumber, optionalString } from './gh-json-schemas.ts'
+import { toolProbePath } from '../../launch-path.ts'
 
 const ghPrListEntrySchema = z.object({
   number: z.number(),
@@ -81,10 +82,6 @@ export function isFailingConclusion(value: string | undefined | null): boolean {
   return FAILING_CI_CONCLUSIONS.has((value ?? '').toUpperCase())
 }
 
-function ghPathPrefix(): string {
-  return process.platform === 'win32' ? '' : '/usr/bin:/bin:/exec-daemon:'
-}
-
 /**
  * Non-token GitHub env vars worth forwarding to gh regardless of which credential
  * it ends up using (host selection, config-dir location). These never shadow a
@@ -123,7 +120,7 @@ export function ghEnv(
   base: NodeJS.ProcessEnv = process.env,
   opts: { includeTokens?: boolean } = {},
 ): Record<string, string> {
-  const env: Record<string, string> = { PATH: `${ghPathPrefix()}${base['PATH'] ?? ''}` }
+  const env: Record<string, string> = { PATH: toolProbePath(base) }
   for (const key of GH_CONFIG_ENV_KEYS) {
     const value = base[key]
     if (value) env[key] = value

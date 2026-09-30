@@ -39,6 +39,7 @@ describe('isReasoningLevel', () => {
 describe('modelParameterSupport', () => {
   it('offers the full effort ladder and no sampling on the models that removed it', () => {
     for (const model of [
+      'claude-opus-5-5',
       'claude-opus-5',
       'claude-opus-4-8',
       'claude-sonnet-5-5',
@@ -64,8 +65,14 @@ describe('modelParameterSupport', () => {
   })
 
   it('omits "off" for models whose thinking cannot be disabled', () => {
-    assert.equal(modelParameterSupport('claude-fable-5').reasoning.includes('off'), false)
-    assert.equal(modelParameterSupport('claude-opus-5').reasoning.includes('off'), true)
+    // Opus 5.5 and Sonnet 5.5 400 on `thinking: { type: 'disabled' }` although
+    // their `claude-opus-5` / `claude-sonnet-5` prefixes still accept it.
+    for (const model of ['claude-fable-5', 'claude-opus-5-5', 'claude-sonnet-5-5']) {
+      assert.equal(modelParameterSupport(model).reasoning.includes('off'), false, model)
+    }
+    for (const model of ['claude-opus-5', 'claude-sonnet-5']) {
+      assert.equal(modelParameterSupport(model).reasoning.includes('off'), true, model)
+    }
   })
 
   it('falls back to a thinking budget on pre-effort Claude models', () => {
@@ -92,11 +99,13 @@ describe('modelParameterSupport', () => {
     assert.equal(gpt4o.temperatureMax, 2)
   })
 
-  it('offers Astra’s documented low-through-max effort ladder', () => {
-    const astra = modelParameterSupport('gpt-6-astra')
-    assert.equal(astra.reasoningWire, 'openai-effort')
-    assert.deepEqual([...astra.reasoning], ['low', 'medium', 'high', 'xhigh', 'max'])
-    assert.deepEqual([...astra.sampling], [])
+  it('offers the GPT-6 documented low-through-max effort ladder', () => {
+    for (const model of ['gpt-6-astra', 'gpt-6.1-sol']) {
+      const support = modelParameterSupport(model)
+      assert.equal(support.reasoningWire, 'openai-effort', model)
+      assert.deepEqual([...support.reasoning], ['low', 'medium', 'high', 'xhigh', 'max'], model)
+      assert.deepEqual([...support.sampling], [], model)
+    }
   })
 
   it('routes OpenRouter through its unified reasoning field', () => {
