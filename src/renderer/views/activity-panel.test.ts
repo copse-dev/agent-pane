@@ -534,12 +534,31 @@ describe('activity panel', () => {
     emitApproval(shell('first', 'a'))
     emitApproval(shell('second', 'b'))
     panel.open()
+    const list = qsRequired<HTMLElement>(document, '#activity-panel .activity-list')
+    list.scrollTop = 240
+    const replaceChildren = list.replaceChildren.bind(list)
+    list.replaceChildren = (...nodes): void => {
+      replaceChildren(...nodes)
+      list.scrollTop = 0
+    }
+    const focus = HTMLElement.prototype.focus
+    HTMLElement.prototype.focus = function (options?: FocusOptions): void {
+      focus.call(this, options)
+      if (this.classList.contains('activity-row-open') && options?.preventScroll !== true) {
+        list.scrollTop = 0
+      }
+    }
     const approve = review('approval:first')
-    approve.focus()
-    approve.click()
-    time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+    try {
+      approve.focus()
+      approve.click()
+      time.advance(ACTIVITY_RENDER_INTERVAL_MS)
+    } finally {
+      HTMLElement.prototype.focus = focus
+    }
     const opener = qsRequired(rowFor('approval:second'), '.activity-row-open')
     assert.equal(document.activeElement, opener)
+    assert.equal(list.scrollTop, 240, 'focus restoration must not undo scroll restoration')
   })
 
   it('offers Approve only beside the whole command, including its tail', () => {

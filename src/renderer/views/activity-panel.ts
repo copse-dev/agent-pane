@@ -560,7 +560,7 @@ export function mountActivityPanel(
     // The row that had focus went away (answered, finished): stay at its place
     // in the list rather than throwing focus back to the top of the dialog.
     const opener = selectedOpener()
-    if (opener) opener.focus()
+    if (opener) opener.focus({ preventScroll: true })
     else closeButton.focus()
   }
 
