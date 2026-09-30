@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { explainerInput, renderExplainerHtml } from '../explainer.ts'
 /**
  * Bundled, in-process MCP server(s) that ship with Copse so features "just work"
  * with zero user configuration — no subprocess, port, or network. Each server is
@@ -5,8 +7,8 @@
  * registry exactly like an external server, so its tool results flow through the
  * same flatten / UI-resource extraction path.
  *
- * Today this hosts the experimental canvas: a `render_html_artefact` tool that
- * returns a `text/html` MCP-UI resource for the host to render as a sandboxed
+ * This hosts the experimental canvas: `render_html_artefact` and `render_explainer`, which
+ * return a `text/html` MCP-UI resource for the host to render as a sandboxed
  * artefact. Gated by the `copse.mcp-ui-canvas` first-party plugin's `mcp-ui-canvas`
  * capability (the connect site in `mcp-registry.ts` reads
  * `isCapabilityActive('mcp-ui-canvas')`).
@@ -139,6 +141,41 @@ function buildCanvasServer(): { name: string; server: McpServer } {
               `first; otherwise just tell the user it is displayed.`,
           },
         ],
+      }
+    },
+  )
+
+  server.registerTool(
+    'render_explainer',
+    {
+      title: 'Create animated explanation',
+      description:
+        'Turn an explanation into a captioned animation embedded directly in this conversation. Write three narration beats from the thread/project evidence, choose concrete objects and a style, then call this tool. No editor or extra API key. For follow-ups like “simpler”, “shorter” or “try paper”, revise the narration/style and call again. Each call preserves the previous card. Silent captions, playback and transcript; no spoken voice or MP4 export.',
+      inputSchema: explainerInput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (input) => {
+      try {
+        const html = await renderExplainerHtml(input)
+        const slug =
+          input.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '') || 'explainer'
+        // Canvas keys by title. A unique resource tail preserves earlier cards
+        // when a follow-up revises the same story with the same human title.
+        const uri = `ui://canvas/explainer-${slug}-${randomUUID().slice(0, 8)}`
+        return {
+          content: [
+            { type: 'resource', resource: { uri, mimeType: 'text/html', text: html } },
+            {
+              type: 'text',
+              text: `Created “${input.title}” as a playable, captioned explainer in the conversation. Narration: ${input.beats.map((beat) => beat.caption).join(' ')} Grounding: ${input.source}`,
+            },
+          ],
+        }
+      } catch (err) {
+        return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
       }
     },
   )

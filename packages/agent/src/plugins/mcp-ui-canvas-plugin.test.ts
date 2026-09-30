@@ -55,7 +55,7 @@ describe('copse.mcp-ui-canvas plugin', () => {
     assert.deepEqual(mcpUiCanvasPlugin.contributions.toolNames, [])
     assert.deepEqual(
       mcpUiCanvasPlugin.contributions.blockingHooks.map((hook) => hook.id),
-      ['canvas-prototype-steering'],
+      ['canvas-prototype-steering', 'explainer-steering'],
     )
     assert.deepEqual(mcpUiCanvasPlugin.contributions.asyncHooks, [])
     assert.deepEqual(mcpUiCanvasPlugin.contributions.promptBlocks, [])
@@ -73,7 +73,9 @@ describe('copse.mcp-ui-canvas plugin', () => {
   it('atomically drops the capability and the steering hook on disable', () => {
     const registry = createFirstPartyPluginRegistry()
     const steeringActive = (): boolean =>
-      registry.activeBlockingHooks().some((hook) => hook.id === 'canvas-prototype-steering')
+      registry
+        .activeBlockingHooks()
+        .some((hook) => hook.id === 'canvas-prototype-steering' || hook.id === 'explainer-steering')
     assert.equal(registry.isEnabled(MCP_UI_CANVAS_PLUGIN_ID), true)
     assert.equal(registry.isCapabilityActive(MCP_UI_CANVAS_CAPABILITY), true)
     assert.equal(steeringActive(), true)

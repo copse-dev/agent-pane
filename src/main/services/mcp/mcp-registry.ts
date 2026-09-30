@@ -28,7 +28,7 @@ import {
   isMcpServerEffectivelyDisabled,
 } from './mcp-config.ts'
 import { extractMcpImages, flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
-import { createBundledMcpServers } from './bundled-mcp-server.ts'
+import { createBundledMcpServers, CANVAS_SERVER_NAME } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
 import { getActiveRunThread } from '../thread-models.ts'
 import { getDefaultPluginRegistry } from '@copse/agent/plugins/default-plugin-registry.ts'
@@ -518,7 +518,11 @@ function registerListedTools(
         const summarizeUiResources =
           getDefaultPluginRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
         if (summarizeUiResources) {
-          await dispatchCanvasArtefacts(result.content, getActiveRunThread() ?? undefined)
+          await dispatchCanvasArtefacts(
+            result.content,
+            getActiveRunThread() ?? undefined,
+            bundled && server.serverName === CANVAS_SERVER_NAME && tool.name === 'render_explainer',
+          )
         }
         const images = extractMcpImages(result.content)
         const text = flattenMcpContent(result.content, {

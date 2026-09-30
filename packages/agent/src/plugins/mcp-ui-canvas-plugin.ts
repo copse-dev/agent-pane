@@ -11,8 +11,8 @@
 // retired `mcpUiArtefactsEnabled` standalone setting, so a Settings > Plugins
 // disable turns canvas rendering off in one atomic flag flip (decision 15).
 //
-// It also contributes one **conditional turn-start hook**
-// (`canvasPrototypeSteeringHook`). A canvas that exists but is never reached is
+// It also contributes **conditional turn-start hooks**
+// (`canvasPrototypeSteeringHook` and `explainerSteeringHook`). A canvas that exists but is never reached is
 // worth nothing: asked to prototype something, a model with a long tool list
 // answers in prose or writes a file the user has to open. The hook fires only on
 // a prototype request, and only when this turn actually offers the bundled
@@ -43,6 +43,7 @@ import {
   type PluginCapabilityDecl,
   type RegisteredPlugin,
 } from './plugin-manifest.ts'
+import { explainerSteeringHook } from '../explainer-steering.ts'
 import { canvasPrototypeSteeringHook } from '../hooks/turn-start-hooks.ts'
 
 /** Stable plugin id — the manifest name + the grouping key across contributions. */
@@ -56,12 +57,12 @@ const MCP_UI_CANVAS_CAPABILITY_DECL: PluginCapabilityDecl = {
   name: MCP_UI_CANVAS_CAPABILITY,
   title: 'MCP-UI canvas rendering',
   description:
-    'Recognise UI resources returned by MCP tools (self-contained HTML) and render them as a fully sandboxed artefact in the Browser pane, plus a bundled canvas server exposing render_html_artefact. While off, UI resources are treated as plain tool output.',
+    'Recognise UI resources returned by MCP tools (self-contained HTML) and render them as a fully sandboxed artefact in the Browser pane, plus a bundled canvas server exposing render_html_artefact and render_explainer for captioned animations in the conversation. While off, UI resources are treated as plain tool output.',
 }
 
 /**
  * The `copse.mcp-ui-canvas` plugin: manifest declares the capability; runtime
- * contributions carry the same capability plus the prototype steering hook, so
+ * contributions carry the same capability plus the prototype and explainer steering hooks, so
  * `activeCapabilities()` reports the flag and `activeBlockingHooks()` the hook
  * while enabled (the atomicity contract test in `enable-disable-atomicity.test.ts`
  * asserts that `disable()` drops both in one flag flip).
@@ -70,13 +71,13 @@ export const mcpUiCanvasPlugin: RegisteredPlugin = definePlugin(
   {
     name: MCP_UI_CANVAS_PLUGIN_ID,
     description:
-      'Renders self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), ships a bundled canvas server with a `render_html_artefact` tool for demos, charts, and small interactive UIs, and steers prototype requests onto it.',
+      'Renders self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), ships a bundled canvas server with a `render_html_artefact` tool for demos, charts, and small interactive UIs, and turns explanation requests into captioned animations embedded in the conversation.',
     trust: 'first-party',
     stability: 'experimental',
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
   },
   {
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
-    blockingHooks: [canvasPrototypeSteeringHook],
+    blockingHooks: [canvasPrototypeSteeringHook, explainerSteeringHook],
   },
 )
