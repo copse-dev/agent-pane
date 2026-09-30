@@ -73039,6 +73039,7 @@ function trackGuestScroll(options) {
   let disposed = false;
   let enabled = false;
   let polling = false;
+  let guestFocused = false;
   let inFlight4 = false;
   let idleTimer = null;
   let interval = null;
@@ -73060,11 +73061,11 @@ function trackGuestScroll(options) {
     idleTimer = timer.setTimeout(() => {
       idleTimer = null;
       polling = false;
-      if (strokeDepth === 0) stopPolling();
+      if (strokeDepth === 0 && !guestFocused) stopPolling();
     }, IDLE_STOP_MS);
   };
   function poll() {
-    if (disposed || !enabled || inFlight4 || !polling && strokeDepth === 0) return;
+    if (disposed || !enabled || inFlight4 || !polling && strokeDepth === 0 && !guestFocused) return;
     inFlight4 = true;
     void options.fetchPosition().then((position2) => {
       if (!disposed && position2) emit(position2);
@@ -73093,7 +73094,7 @@ function trackGuestScroll(options) {
   };
   const onPointerUp = () => {
     strokeDepth = Math.max(0, strokeDepth - 1);
-    if (strokeDepth === 0 && !polling) stopPolling();
+    if (strokeDepth === 0 && !polling && !guestFocused) stopPolling();
   };
   const start = (refreshLayout = false) => {
     enabled = true;
@@ -73124,6 +73125,11 @@ function trackGuestScroll(options) {
       if (disposed || next === enabled) return;
       if (next) start(true);
       else stop();
+    },
+    setGuestFocused(focused) {
+      if (disposed || focused === guestFocused) return;
+      guestFocused = focused;
+      if (focused) wake();
     },
     dispose() {
       if (enabled) stop();
@@ -73337,6 +73343,21 @@ function createInlineArtefact(api2, projectId, threadId, title) {
           layer.setScrollOffset(position2.x, position2.y);
         }
       });
+      const scroll = annotationScroll;
+      stage.addEventListener(
+        "focus",
+        () => {
+          scroll.setGuestFocused(true);
+        },
+        true
+      );
+      stage.addEventListener(
+        "blur",
+        () => {
+          scroll.setGuestFocused(false);
+        },
+        true
+      );
     }
     annotate.setAttribute("aria-pressed", String(annotation.toggle()));
     syncAnnotationScroll();
@@ -116829,6 +116850,21 @@ function mountBrowserPane(listRoot, viewerRoot, store2, api2) {
             layer.setScrollOffset(position2.x, position2.y);
           }
         });
+        const scroll = tab.annotationScroll;
+        webviewHost.addEventListener(
+          "focus",
+          () => {
+            scroll.setGuestFocused(true);
+          },
+          true
+        );
+        webviewHost.addEventListener(
+          "blur",
+          () => {
+            scroll.setGuestFocused(false);
+          },
+          true
+        );
       }
       return tab.annotation;
     };
