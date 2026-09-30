@@ -35063,6 +35063,12 @@ function attachImageCopyMenu(image) {
     );
   });
 }
+function expandableImageSource(image) {
+  const authoredSrc = image.getAttribute("src");
+  const authoredSrcset = image.getAttribute("srcset");
+  if (!authoredSrc?.trim() && !authoredSrcset?.trim()) return "";
+  return image.currentSrc || image.src;
+}
 function imageTitle(item) {
   return item.alt.trim() || "Expanded attachment";
 }
@@ -35256,12 +35262,12 @@ function attachImageExpand(img, alt, gallery, galleryIndex) {
   img.setAttribute("aria-label", alt ? "Expand " + alt : "Expand image");
   const open2 = () => {
     const label = alt ?? (img.alt || "Expanded attachment");
-    const src = img.currentSrc || img.src;
+    const src = expandableImageSource(img);
     if (!src) return;
     const focusTarget = () => {
       if (img.isConnected) return img;
       for (const candidate of document.querySelectorAll("img.image-expandable")) {
-        if (candidate.getAttribute("aria-label") === "Expand " + label && (candidate.currentSrc || candidate.src) === src) {
+        if (candidate.getAttribute("aria-label") === "Expand " + label && expandableImageSource(candidate) === src) {
           return candidate;
         }
       }
