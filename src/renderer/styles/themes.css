@@ -120,3 +120,39 @@
   --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.2);
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.05);
 }
+
+/* Transient automation mode: preserve the user’s saved appearance while making
+   unattended work unmistakable in the shell. The important custom-property
+   overrides intentionally beat inline saved settings for the duration of a run;
+   removing the attribute reveals those settings unchanged. */
+[data-automation-active] {
+  --tint-hue: #9b6d00 !important;
+  --tint-amount: 12% !important;
+  --accent-color: #f3bd4d !important;
+  --text-on-accent: #2d2208 !important;
+  --warning: #e4aa20;
+  --highlight-current-bg: #f3bd4d;
+  --highlight-current-text: #2d2208;
+}
+
+[data-theme='dark'][data-automation-active] {
+  --bg-base: color-mix(in srgb, #9b6d00 12%, #1e1e1e);
+  --bg-elevated: color-mix(in srgb, #9b6d00 12%, #252526);
+  --bg-hover: color-mix(in srgb, #9b6d00 15%, #2a2d2e);
+  --bg-muted: color-mix(in srgb, #9b6d00 14%, #2d2d2d);
+  --bg-subtle: color-mix(in srgb, #9b6d00 11%, #232324);
+  --border: color-mix(in srgb, #d99b24 45%, #414141);
+  --border-subtle: color-mix(in srgb, #d99b24 28%, #333333);
+  --border-strong: color-mix(in srgb, #f3bd4d 58%, #565656);
+}
+
+[data-theme='light'][data-automation-active] {
+  --bg-base: color-mix(in srgb, #f3bd4d 10%, #ffffff);
+  --bg-elevated: color-mix(in srgb, #f3bd4d 10%, #f3f3f3);
+  --bg-hover: color-mix(in srgb, #f3bd4d 14%, #e8e8e8);
+  --bg-muted: color-mix(in srgb, #f3bd4d 12%, #ececec);
+  --bg-subtle: color-mix(in srgb, #f3bd4d 8%, #f7f7f7);
+  --border: color-mix(in srgb, #9b6d00 28%, #d4d4d4);
+  --border-subtle: color-mix(in srgb, #9b6d00 18%, #e4e4e4);
+  --border-strong: color-mix(in srgb, #9b6d00 42%, #ababab);
+}
