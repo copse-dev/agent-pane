@@ -767,6 +767,19 @@ const api: ApiClient = {
         ipcRenderer.removeListener('threads:pr-refs', listener)
       }
     },
+    onAutoArchived: (handler: (projectId: string, threadIds: string[]) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadIds: string[],
+      ): void => {
+        handler(projectId, threadIds)
+      }
+      ipcRenderer.on('threads:auto-archived', listener)
+      return (): void => {
+        ipcRenderer.removeListener('threads:auto-archived', listener)
+      }
+    },
     onPrCreated: (
       handler: (
         projectId: string,

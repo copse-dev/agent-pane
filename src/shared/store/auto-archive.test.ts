@@ -26,7 +26,7 @@ describe('selectAutoArchivable', () => {
   })
 
   it('waits out the delay, inclusive at the boundary', () => {
-    const at = (age: number) => candidate({ lastActivityAt: NOW - age })
+    const at = (age: number): AutoArchiveCandidate => candidate({ lastActivityAt: NOW - age })
     assert.deepEqual(selectAutoArchivable([at(7 * DAY_MS - 1)], options), [])
     assert.deepEqual(selectAutoArchivable([at(7 * DAY_MS)], options), ['t'])
   })

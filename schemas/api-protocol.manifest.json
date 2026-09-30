@@ -2569,6 +2569,13 @@
           1
         ]
       },
+      "threads:auto-archived": {
+        "api": "threads.onAutoArchived",
+        "args": [
+          2,
+          2
+        ]
+      },
       "threads:pr-created": {
         "api": "threads.onPrCreated",
         "args": [
