@@ -1,0 +1,2290 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Copse · Edit thread</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #141b18;
+        --panel: #18201c;
+        --raised: #202924;
+        --selected: #2d3830;
+        --text: #e6eae5;
+        --muted: #a2ada5;
+        --subtle: #76867c;
+        --line: #303b33;
+        --accent: #ff93d0;
+        --fill: #ff93d0;
+        --on-accent: #351b2c;
+        --success: #9bd5b1;
+        --success-bg: #243b2e;
+        --warning: #e4c789;
+        --code: #b8cbd5;
+        --shadow: 0 18px 60px #0005;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg: #fffdf7;
+        --panel: #f4f5ee;
+        --raised: #ecefe6;
+        --selected: #e3e9df;
+        --text: #263a30;
+        --muted: #596b60;
+        --subtle: #68786d;
+        --line: #d8ded2;
+        --accent: #9c366e;
+        --fill: #ff93d0;
+        --on-accent: #351b2c;
+        --success: #316345;
+        --success-bg: #e4f0e5;
+        --warning: #7e611f;
+        --code: #436371;
+        --shadow: 0 18px 60px #18312115;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          13px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      button,
+      input,
+      textarea {
+        color: inherit;
+      }
+      button:focus-visible,
+      textarea:focus-visible,
+      input:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      button {
+        border: 1px solid transparent;
+        background: transparent;
+        border-radius: 7px;
+        padding: 7px 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        white-space: nowrap;
+      }
+      button:hover:not(:disabled) {
+        background: var(--selected);
+      }
+      svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+      }
+      .secondary {
+        border-color: var(--line);
+        background: var(--panel);
+      }
+      .primary {
+        background: var(--fill);
+        color: var(--on-accent);
+        font-weight: 600;
+      }
+      .primary:hover:not(:disabled) {
+        background: var(--fill);
+        filter: brightness(1.06);
+      }
+      .quiet {
+        color: var(--muted);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+      button.icon {
+        padding: 7px;
+      }
+      button.active {
+        background: var(--selected);
+        color: var(--accent);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .app {
+        height: 100dvh;
+        min-height: 570px;
+        display: flex;
+        flex-direction: column;
+      }
+      .titlebar {
+        height: 47px;
+        flex: none;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        display: flex;
+        align-items: center;
+        padding: 0 18px;
+        gap: 15px;
+      }
+      .traffic {
+        display: flex;
+        gap: 7px;
+        margin-right: 12px;
+      }
+      .traffic i {
+        width: 10px;
+        height: 10px;
+        border: 1px solid var(--subtle);
+        border-radius: 50%;
+        opacity: 0.6;
+      }
+      .appname {
+        font-weight: 650;
+        letter-spacing: -0.4px;
+        font-size: 15px;
+      }
+      .slash {
+        color: var(--subtle);
+      }
+      .project {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .prototype-label {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+      .title-spacer {
+        flex: 1;
+      }
+      .theme-button {
+        width: 32px;
+      }
+      .workspace {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 190px minmax(370px, 1fr) minmax(280px, 340px);
+      }
+      .sidebar {
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        padding: 18px 10px 12px;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .nav-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 0 9px 10px;
+      }
+      .project-row {
+        padding: 8px 9px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-weight: 600;
+      }
+      .threads {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        margin-top: 4px;
+      }
+      .thread {
+        justify-content: flex-start;
+        text-align: left;
+        white-space: normal;
+        line-height: 1.4;
+        padding: 10px 9px;
+        font-size: 12px;
+        border-radius: 6px;
+      }
+      .thread.current {
+        background: var(--selected);
+      }
+      .thread svg {
+        width: 14px;
+      }
+      .thread small {
+        display: block;
+        color: var(--muted);
+        margin-top: 2px;
+        font-size: 10px;
+      }
+      .static-thread {
+        padding: 9px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sidebar-bottom {
+        margin-top: auto;
+        padding: 12px 9px 0;
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .branch {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .sidebar-footnote {
+        font-size: 10px;
+        color: var(--subtle);
+        margin-top: 8px;
+      }
+      .conversation {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+      .thread-header {
+        padding: 17px 24px 14px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 80px;
+      }
+      .heading-group {
+        min-width: 0;
+        flex: 1;
+      }
+      .eyebrow {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+      }
+      .thread-title {
+        display: block;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .edit-entry {
+        color: var(--accent);
+        border-color: var(--line);
+      }
+      .scroll {
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line) transparent;
+      }
+      .messages {
+        max-width: 760px;
+        margin: auto;
+        padding: 24px 26px;
+      }
+      .message {
+        position: relative;
+        margin-bottom: 23px;
+        animation: appear 0.15s ease-out;
+      }
+      .message-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .author {
+        font-weight: 650;
+        color: var(--text);
+      }
+      .avatar {
+        width: 21px;
+        height: 21px;
+        background: var(--selected);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+      }
+      .avatar.assistant {
+        border-radius: 50%;
+        color: var(--success);
+      }
+      .time {
+        font-size: 10px;
+        color: var(--subtle);
+        margin-left: auto;
+      }
+      .message-body {
+        font-size: 14px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        margin-left: 29px;
+      }
+      .message.user .message-body {
+        background: var(--raised);
+        border: 1px solid var(--line);
+        padding: 12px 14px;
+        border-radius: 9px;
+      }
+      .turn-actions {
+        opacity: 0;
+        margin-left: auto;
+        display: flex;
+        gap: 3px;
+      }
+      .message:hover .turn-actions,
+      .message:focus-within .turn-actions {
+        opacity: 1;
+      }
+      .turn-actions button {
+        padding: 3px 5px;
+        font-size: 10px;
+      }
+      .turn-actions svg {
+        width: 12px;
+        height: 12px;
+      }
+      .tool-note {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 10px 0 0 29px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .tool-note svg {
+        width: 13px;
+      }
+      .revised-tag {
+        font-size: 10px;
+        color: var(--accent);
+      }
+      .composer {
+        padding: 0 24px 16px;
+      }
+      .composer-box {
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--panel);
+        padding: 12px 13px;
+      }
+      .composer textarea {
+        width: 100%;
+        background: none;
+        border: 0;
+        outline: none;
+        resize: none;
+        height: 41px;
+        font-size: 13px;
+      }
+      .composer-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .composer-row .spacer {
+        flex: 1;
+      }
+      .composer-row button {
+        padding: 5px 7px;
+      }
+      .composer-hint {
+        font-size: 10px;
+        color: var(--subtle);
+        margin-top: 8px;
+        text-align: center;
+      }
+      .right-panel {
+        border-left: 1px solid var(--line);
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .panel-content {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      .pane-header {
+        height: 43px;
+        flex: none;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .pane-header .muted {
+        margin-left: auto;
+        font-size: 10px;
+      }
+      .editor-file {
+        font-size: 11px;
+        padding: 11px 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+      }
+      .ts {
+        color: var(--code);
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .code-view {
+        overflow: auto;
+        flex: 1;
+        padding: 20px 14px 20px 0;
+        font:
+          11px/1.95 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        counter-reset: line;
+        white-space: pre;
+      }
+      .code-line {
+        display: block;
+        counter-increment: line;
+      }
+      .code-line:before {
+        content: counter(line);
+        display: inline-block;
+        width: 32px;
+        text-align: right;
+        padding-right: 13px;
+        color: var(--subtle);
+      }
+      .kw {
+        color: var(--accent);
+      }
+      .fn {
+        color: var(--code);
+      }
+      .str {
+        color: var(--success);
+      }
+      .comment {
+        color: var(--subtle);
+      }
+      .editor-status {
+        padding: 9px 16px;
+        border-top: 1px solid var(--line);
+        font-size: 10px;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-between;
+      }
+      .edit-brief {
+        padding: 16px 26px 0;
+        max-width: 760px;
+        width: 100%;
+        margin: auto;
+      }
+      .edit-brief p {
+        margin: 5px 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .edit-heading {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .editing .messages {
+        padding-top: 17px;
+      }
+      .editing .message {
+        margin-bottom: 14px;
+        padding: 12px 13px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+      }
+      .editing .message.changed {
+        border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+      }
+      .editing .message.excluded {
+        background: transparent;
+        border-style: dashed;
+      }
+      .editing .message.excluded .edit-text {
+        opacity: 0.45;
+        text-decoration: line-through;
+      }
+      .editing .message-meta {
+        margin-bottom: 9px;
+      }
+      .turn-number {
+        font:
+          10px ui-monospace,
+          monospace;
+        color: var(--subtle);
+      }
+      .include-label {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        cursor: pointer;
+        font-size: 10px;
+      }
+      .include-label input {
+        accent-color: var(--fill);
+        width: 13px;
+        height: 13px;
+        margin: 0;
+      }
+      .edit-text {
+        display: block;
+        resize: vertical;
+        min-height: 68px;
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: var(--bg);
+        padding: 9px 10px;
+        line-height: 1.6;
+        font-size: 12px;
+      }
+      .edit-text:hover {
+        border-color: var(--line);
+      }
+      .edit-footer {
+        border-top: 1px solid var(--line);
+        padding: 13px 24px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        background: var(--panel);
+      }
+      .draft-indicator {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .draft-indicator strong {
+        font-weight: 500;
+        color: var(--text);
+      }
+      .footer-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .rebuild-panel {
+        overflow-y: auto;
+        flex: 1;
+        padding: 20px 18px;
+      }
+      .review-heading {
+        font-weight: 600;
+        font-size: 14px;
+        margin: 0 0 7px;
+      }
+      .review-copy {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 0 0 18px;
+        line-height: 1.6;
+      }
+      .quick-edit {
+        background: var(--raised);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 13px;
+        margin-bottom: 22px;
+      }
+      .quick-edit .eyebrow {
+        font-size: 9px;
+      }
+      .sample-request {
+        width: 100%;
+        text-align: left;
+        white-space: normal;
+        justify-content: flex-start;
+        padding: 8px 0 0;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .sample-request:hover:not(:disabled) {
+        background: transparent;
+        color: var(--accent);
+      }
+      .sample-request svg {
+        width: 14px;
+        align-self: flex-start;
+        margin-top: 4px;
+        color: var(--accent);
+      }
+      .sample-note {
+        font-size: 10px;
+        color: var(--subtle);
+        margin-top: 8px;
+      }
+      .stat-row {
+        display: flex;
+        align-items: center;
+        padding: 7px 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .stat-row strong {
+        margin-left: auto;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+      }
+      .divider {
+        height: 1px;
+        background: var(--line);
+        margin: 16px 0;
+      }
+      .change-list {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        margin: 13px 0;
+      }
+      .change-item {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        font-size: 11px;
+      }
+      .change-symbol {
+        color: var(--accent);
+        width: 10px;
+      }
+      .change-item small {
+        color: var(--muted);
+        margin-left: auto;
+        font-size: 10px;
+      }
+      .effect-note {
+        display: flex;
+        gap: 8px;
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--muted);
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+        margin-top: 20px;
+      }
+      .effect-note svg {
+        width: 14px;
+        margin-top: 2px;
+      }
+      .review-history {
+        margin-top: 17px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 11px;
+      }
+      .review-history summary {
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .preview-message {
+        padding-top: 12px;
+        margin-top: 12px;
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+      }
+      .preview-message strong {
+        font-size: 10px;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 3px;
+      }
+      .empty-review {
+        color: var(--muted);
+        font-size: 11px;
+        padding: 10px 0;
+      }
+      .revision-banner {
+        border-bottom: 1px solid var(--line);
+        padding: 9px 24px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        background: var(--success-bg);
+      }
+      .revision-banner svg {
+        width: 14px;
+        color: var(--success);
+      }
+      .revision-banner button {
+        margin-left: auto;
+        font-size: 11px;
+        padding: 3px 7px;
+        text-decoration: underline;
+      }
+      .revision-banner small {
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .statusbar {
+        height: 27px;
+        flex: none;
+        border-top: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        padding: 0 13px;
+        gap: 8px;
+        font-size: 10px;
+        color: var(--muted);
+        background: var(--panel);
+      }
+      .status-dot {
+        height: 5px;
+        width: 5px;
+        border-radius: 50%;
+        background: var(--success);
+      }
+      .statusbar .right {
+        margin-left: auto;
+      }
+      .statusbar button {
+        padding: 1px 7px;
+        font-size: 10px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 43px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--raised);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 11px 18px;
+        box-shadow: var(--shadow);
+        z-index: 5;
+        font-size: 12px;
+        max-width: 90vw;
+      }
+      .error-note {
+        color: var(--warning);
+        font-size: 11px;
+        margin-top: 12px;
+      }
+      .review-stage-label {
+        background: var(--selected);
+        color: var(--accent);
+        font-size: 10px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        margin-left: auto;
+      }
+      .mobile-review {
+        display: none;
+      }
+      .reviewing .edit-text {
+        resize: none;
+      }
+      .reviewing .message-meta input {
+        pointer-events: none;
+      }
+      dialog {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 23px;
+        width: min(420px, 90vw);
+        box-shadow: var(--shadow);
+      }
+      dialog::backdrop {
+        background: #0007;
+      }
+      dialog h4 {
+        font-size: 17px;
+        margin: 0 0 9px;
+      }
+      dialog p {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0 0 20px;
+      }
+      dialog .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 7px;
+      }
+      @keyframes appear {
+        from {
+          opacity: 0.7;
+          transform: translateY(3px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+        }
+      }
+      @media (max-width: 1080px) {
+        .workspace {
+          grid-template-columns: 155px minmax(350px, 1fr) 290px;
+        }
+        .thread-header {
+          padding: 15px 18px;
+        }
+        .messages {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+        .header-actions button {
+          padding: 6px 8px;
+        }
+        .project {
+          display: none;
+        }
+        .thread-title {
+          font-size: 15px;
+        }
+      }
+      @media (max-width: 900px) {
+        .workspace {
+          grid-template-columns: minmax(350px, 1fr) 290px;
+        }
+        .sidebar {
+          display: none;
+        }
+        .traffic {
+          display: none;
+        }
+        .titlebar {
+          padding: 0 16px;
+        }
+        .composer {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+      }
+      @media (max-width: 670px) {
+        .app {
+          height: 100dvh;
+          min-height: 500px;
+        }
+        .workspace {
+          display: flex;
+          flex-direction: column;
+        }
+        .conversation {
+          flex: 1;
+        }
+        .right-panel {
+          display: none;
+        }
+        .thread-header {
+          padding: 12px 16px;
+          min-height: 72px;
+        }
+        .thread-title {
+          font-size: 14px;
+        }
+        .header-actions button {
+          font-size: 11px;
+        }
+        .titlebar {
+          height: 42px;
+          gap: 9px;
+        }
+        .prototype-label {
+          font-size: 9px;
+        }
+        .messages {
+          padding: 20px 16px;
+        }
+        .message-body {
+          font-size: 13px;
+          margin-left: 0;
+        }
+        .tool-note {
+          margin-left: 0;
+        }
+        .turn-actions {
+          opacity: 1;
+        }
+        .edit-brief {
+          padding: 14px 16px 0;
+        }
+        .edit-footer {
+          padding: 12px 16px;
+          flex-wrap: wrap;
+        }
+        .edit-footer .footer-actions {
+          margin-left: auto;
+        }
+        .draft-indicator {
+          font-size: 10px;
+        }
+        .editing.reviewing .scroll,
+        .editing.reviewing .edit-brief {
+          display: none;
+        }
+        .editing.reviewing .conversation {
+          flex: none;
+        }
+        .editing.reviewing .right-panel {
+          display: flex;
+          flex: 1;
+          min-height: 0;
+          border-left: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .editing.reviewing .workspace {
+          position: relative;
+          padding-bottom: 69px;
+        }
+        .editing.reviewing .edit-footer {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          min-height: 69px;
+          z-index: 2;
+        }
+        .statusbar .right {
+          font-size: 9px;
+        }
+        .statusbar {
+          font-size: 9px;
+        }
+        .revision-banner {
+          padding: 9px 16px;
+        }
+        .revision-banner small {
+          display: none;
+        }
+        .composer {
+          padding: 0 16px 12px;
+        }
+        .rebuild-panel {
+          padding: 16px;
+        }
+        .reviewing .quick-edit {
+          display: none;
+        }
+        .reviewing .pane-header {
+          display: none;
+        }
+      }
+
+      /* Match the shipped workbench tokens and conversation geometry. */
+      :root {
+        --bg: color-mix(in srgb, #244c25 4%, #1e1e1e);
+        --panel: color-mix(in srgb, #244c25 4%, #252526);
+        --raised: color-mix(in srgb, #244c25 4%, #2d2d2d);
+        --selected: color-mix(in srgb, #ff93d0 20%, var(--panel));
+        --text: #d4d4d4;
+        --muted: #a6a6a6;
+        --subtle: #808080;
+        --line: #333333;
+        --success: #4ec9b0;
+        --on-accent: #444444;
+      }
+      :root[data-theme='light'] {
+        --bg: color-mix(in srgb, #244c25 7.6%, #fff);
+        --panel: color-mix(in srgb, #244c25 7.6%, #f3f3f3);
+        --raised: color-mix(in srgb, #244c25 7.6%, #ececec);
+        --selected: color-mix(in srgb, #ff93d0 22%, var(--panel));
+        --text: #333;
+        --muted: #5f5f5f;
+        --subtle: #767676;
+        --line: #d4d4d4;
+      }
+      body {
+        font-family:
+          'Pliant',
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      .titlebar {
+        height: 41px;
+        padding: 0 18px;
+        gap: 18px;
+        background: var(--panel);
+      }
+      .top-project {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: 42px;
+      }
+      .top-branch {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        font-size: 12px;
+        color: var(--subtle);
+      }
+      .top-branch svg {
+        width: 12px;
+      }
+      .top-editor {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        font-size: 12px;
+        padding: 5px 9px;
+      }
+      .top-surface {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .titlebar button {
+        font-size: 12px;
+        padding: 5px;
+      }
+      .prototype-label {
+        font-size: 9px;
+        text-transform: none;
+        letter-spacing: 0;
+        padding: 1px 5px;
+      }
+      .workspace {
+        grid-template-columns: 240px minmax(0, 1fr);
+      }
+      .right-panel {
+        display: none;
+      }
+      .editing .workspace,
+      .show-code .workspace {
+        grid-template-columns: 240px minmax(360px, 1fr) 300px;
+      }
+      .editing .right-panel,
+      .show-code .right-panel {
+        display: flex;
+      }
+      .sidebar {
+        padding: 0 0 12px;
+      }
+      .nav-heading {
+        height: 41px;
+        border-bottom: 1px solid var(--line);
+        padding: 0 12px;
+        font-size: 11px;
+        letter-spacing: 0.025em;
+      }
+      .nav-symbols {
+        font-size: 15px;
+        font-weight: 400;
+        color: var(--subtle);
+      }
+      .project-row {
+        padding: 13px 12px 10px;
+        gap: 9px;
+        font-size: 12px;
+      }
+      .threads {
+        margin-top: 2px;
+        gap: 0;
+      }
+      .thread-row {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        padding: 0 10px 0 22px;
+        min-height: 38px;
+      }
+      .thread-row.current {
+        background: var(--selected);
+      }
+      .thread {
+        padding: 9px 4px;
+        border-radius: 0;
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .thread span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .thread:hover:not(:disabled) {
+        background: transparent;
+      }
+      .thread-fork {
+        padding: 5px;
+        border-radius: 4px;
+        color: var(--muted);
+      }
+      .thread-fork:hover {
+        color: var(--text);
+      }
+      .static-thread {
+        padding: 9px 26px;
+        font-size: 12px;
+      }
+      .sidebar-bottom {
+        text-align: center;
+        font-size: 12px;
+        padding: 12px 0 0;
+      }
+      .conversation {
+        background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--panel) 42%, var(--bg)),
+          var(--bg) 45%,
+          color-mix(in srgb, var(--panel) 24%, var(--bg))
+        );
+      }
+      .thread-header {
+        display: none;
+      }
+      .editing .thread-header {
+        display: flex;
+        min-height: 49px;
+        padding: 9px 22px;
+      }
+      .editing .thread-title {
+        font-size: 12px;
+        margin-top: 2px;
+        font-weight: 500;
+      }
+      .editing .eyebrow {
+        font-size: 9px;
+        letter-spacing: 0.035em;
+      }
+      .messages {
+        padding: 25px 24px 20px;
+        max-width: 840px;
+      }
+      .message {
+        margin-bottom: 21px;
+      }
+      .message-body {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.65;
+        position: relative;
+      }
+      .message.user {
+        margin-left: 44px;
+      }
+      .message.user .message-body {
+        padding: 10px 13px;
+        background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+        border: 0;
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .message.assistant {
+        border-top: 1px solid var(--line);
+        padding: 15px 11px 0;
+      }
+      .message .tool-note {
+        margin: 8px 0 0;
+        font-size: 11px;
+      }
+      .turn-actions {
+        position: absolute;
+        right: 6px;
+        bottom: 5px;
+      }
+      .turn-actions button {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        font-size: 10px;
+        padding: 3px 6px;
+        box-shadow: 0 0 10px var(--panel);
+      }
+      .message.user:hover .message-body {
+        padding-bottom: 32px;
+      }
+      .message.user:focus-within .message-body {
+        padding-bottom: 32px;
+      }
+      .composer {
+        width: min(100%, 880px);
+        margin: 0 auto;
+        padding: 10px 24px 15px;
+      }
+      .composer-box {
+        position: relative;
+        padding: 15px 14px 0;
+        border-color: #414141;
+        border-radius: 9px;
+        background: var(--bg);
+        box-shadow: 0 -6px 18px #0001;
+      }
+      .composer textarea {
+        height: 47px;
+        font-size: 14px;
+        width: calc(100% - 84px);
+        padding: 0 4px;
+      }
+      .composer-row {
+        border-top: 1px solid var(--line);
+        margin: 7px -14px 0;
+        padding: 7px 13px;
+        font-size: 11px;
+        min-height: 33px;
+      }
+      .mode-label {
+        margin-left: 12px;
+        color: var(--subtle);
+      }
+      .composer-row #send {
+        position: absolute;
+        right: 13px;
+        top: 17px;
+        padding: 8px 15px;
+        border-radius: 999px;
+        font-size: 13px;
+      }
+      .composer-hint {
+        display: none;
+      }
+      .statusbar {
+        height: 22px;
+        font-size: 9px;
+        padding-left: 252px;
+      }
+      .statusbar button {
+        font-size: 9px;
+      }
+      .edit-brief {
+        padding: 16px 22px 0;
+      }
+      .edit-heading {
+        font-size: 13px;
+      }
+      .edit-brief p {
+        font-size: 11px;
+      }
+      .editing .message {
+        margin-left: 0;
+        margin-bottom: 12px;
+        padding: 11px 12px;
+        border-radius: 6px;
+      }
+      .editing .messages {
+        padding: 15px 22px;
+      }
+      .editing .message.assistant {
+        border: 1px solid var(--line);
+      }
+      .edit-text {
+        font-size: 12px;
+        min-height: 78px;
+      }
+      .edit-footer {
+        padding: 11px 18px;
+      }
+      .edit-footer button {
+        font-size: 12px;
+        border-radius: 999px;
+        padding: 7px 13px;
+      }
+      .rebuild-panel {
+        padding: 18px 16px;
+      }
+      .review-heading {
+        font-size: 13px;
+      }
+      .quick-edit {
+        padding: 11px;
+        border-radius: 6px;
+        background: var(--bg);
+      }
+      .review-history {
+        border-radius: 5px;
+      }
+      .fork-menu {
+        position: fixed;
+        z-index: 20;
+        width: 276px;
+        padding: 5px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        box-shadow: var(--shadow);
+      }
+      .menu-label {
+        padding: 5px 9px 6px;
+        font-size: 10px;
+        color: var(--subtle);
+      }
+      .fork-menu button {
+        display: flex;
+        width: 100%;
+        gap: 10px;
+        justify-content: flex-start;
+        white-space: normal;
+        text-align: left;
+        border-radius: 4px;
+        padding: 9px;
+        font-size: 12px;
+      }
+      .fork-menu button small {
+        display: block;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 400;
+      }
+      .fork-menu button svg {
+        align-self: flex-start;
+        margin-top: 2px;
+      }
+      .menu-divider {
+        height: 1px;
+        margin: 4px 3px;
+        background: var(--line);
+      }
+      @media (max-width: 1100px) {
+        .workspace {
+          grid-template-columns: 210px minmax(0, 1fr);
+        }
+        .editing .workspace,
+        .show-code .workspace {
+          grid-template-columns: 185px minmax(320px, 1fr) 280px;
+        }
+        .top-surface {
+          display: none;
+        }
+        .statusbar {
+          padding-left: 220px;
+        }
+        .message-body {
+          font-size: 15px;
+        }
+      }
+      @media (max-width: 900px) {
+        .workspace {
+          grid-template-columns: 190px minmax(0, 1fr);
+        }
+        .sidebar {
+          display: flex;
+        }
+        .editing .workspace,
+        .show-code .workspace {
+          grid-template-columns: minmax(320px, 1fr) 280px;
+        }
+        .editing .sidebar,
+        .show-code .sidebar {
+          display: none;
+        }
+        .top-project {
+          margin-left: 0;
+        }
+        .statusbar {
+          padding-left: 12px;
+        }
+      }
+      @media (max-width: 670px) {
+        .titlebar {
+          gap: 10px;
+        }
+        .top-editor,
+        .top-branch {
+          display: none;
+        }
+        #panel-toggle {
+          display: none;
+        }
+        .workspace,
+        .editing .workspace,
+        .show-code .workspace {
+          display: flex;
+        }
+        .sidebar {
+          display: none;
+        }
+        .thread-header {
+          display: flex;
+          min-height: 43px;
+          padding: 8px 14px;
+        }
+        .thread-header .eyebrow {
+          display: none;
+        }
+        .thread-title {
+          font-size: 12px;
+        }
+        .editing .right-panel,
+        .show-code .right-panel {
+          display: none;
+        }
+        .editing.reviewing .right-panel {
+          display: flex;
+        }
+        .messages {
+          padding: 18px 14px;
+        }
+        .message.user {
+          margin-left: 16px;
+        }
+        .message-body {
+          font-size: 14px;
+        }
+        .message.user .message-body {
+          font-size: 13px;
+          padding-bottom: 32px;
+        }
+        .composer {
+          padding: 8px 13px 12px;
+        }
+        .statusbar {
+          padding: 0 10px;
+        }
+        .edit-footer {
+          padding: 10px 12px;
+        }
+        .editing .message {
+          margin-left: 0;
+        }
+        .editing .messages {
+          padding: 13px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg aria-hidden="true" style="display: none">
+      <defs>
+        <symbol id="i-edit" viewBox="0 0 24 24">
+          <path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z" />
+        </symbol>
+        <symbol id="i-fork" viewBox="0 0 24 24">
+          <circle cx="6" cy="5" r="2" />
+          <circle cx="18" cy="5" r="2" />
+          <circle cx="6" cy="19" r="2" />
+          <path d="M6 7v10M18 7v2c0 5-12 2-12 8" />
+        </symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+        <symbol id="i-code" viewBox="0 0 24 24">
+          <path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16" />
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5m0-9v.1" />
+        </symbol>
+        <symbol id="i-theme" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+        </symbol>
+        <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6" /></symbol>
+        <symbol id="i-chat" viewBox="0 0 24 24">
+          <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 3V6a2 2 0 0 1 2-2Z" />
+        </symbol>
+        <symbol id="i-spark" viewBox="0 0 24 24">
+          <path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5h6l2 3h10v12H3Z" /></symbol>
+      </defs>
+    </svg>
+    <div class="app" id="app">
+      <header class="titlebar">
+        <span class="top-project">copse-panel</span>
+        <span class="top-branch"
+          ><svg><use href="#i-fork" /></svg>work</span
+        >
+        <span class="title-spacer"></span>
+        <span class="top-editor"
+          ><svg><use href="#i-code" /></svg>Open in editor <span class="muted">⌄</span></span
+        >
+        <button id="panel-toggle" class="quiet" aria-pressed="false">
+          <svg><use href="#i-code" /></svg>Panel
+        </button>
+        <span class="top-surface">›_&nbsp; Terminal</span>
+        <span class="top-surface"
+          ><svg><use href="#i-fork" /></svg>Changes</span
+        >
+        <span class="top-surface">PRs</span>
+        <span class="top-surface">◎&nbsp; Browser</span>
+        <span class="prototype-label">Prototype</span>
+        <button id="theme" class="icon quiet" aria-label="Switch to light theme">
+          <svg><use href="#i-theme" /></svg>
+        </button>
+      </header>
+      <div class="workspace">
+        <aside class="sidebar" aria-label="Project threads">
+          <div class="nav-heading">
+            <span>PROJECTS</span><span class="nav-symbols" aria-hidden="true">⌕ &nbsp; +</span>
+          </div>
+          <div class="project-row"><span class="muted">⌄</span>copse-panel</div>
+          <nav class="threads" id="thread-nav" aria-label="Threads"></nav>
+          <div class="static-thread">Refine tool call spacing</div>
+          <div class="static-thread">Review keyboard shortcuts</div>
+          <div class="sidebar-bottom">Settings</div>
+        </aside>
+        <main class="conversation">
+          <div class="thread-header">
+            <div class="heading-group">
+              <div class="eyebrow" id="thread-eyebrow">Thread · Today</div>
+              <span class="thread-title" id="thread-title">Command palette search</span>
+            </div>
+            <div class="header-actions" id="header-actions">
+              <button id="mobile-fork" class="quiet" aria-haspopup="menu" aria-label="Fork options">
+                <svg><use href="#i-fork" /></svg>Fork
+              </button>
+            </div>
+          </div>
+          <div class="revision-banner" id="revision-banner" hidden>
+            <svg><use href="#i-check" /></svg><span id="revision-text"></span
+            ><small>Ready for your next message</small><button id="undo">Undo</button>
+          </div>
+          <div class="edit-brief" id="edit-brief" hidden>
+            <div class="edit-heading" id="edit-heading">Edit thread history</div>
+            <p id="edit-description">
+              Revise a message or exclude it from the reconstructed history.
+            </p>
+          </div>
+          <div class="scroll" id="conversation-scroll">
+            <div class="messages" id="messages"></div>
+          </div>
+          <form class="composer" id="composer">
+            <div class="composer-box">
+              <textarea
+                id="compose-text"
+                aria-label="Message Copse"
+                placeholder="Message…"
+                rows="2"
+              ></textarea>
+              <div class="composer-row">
+                <span>Claude Sonnet 4.6 ⌄</span><span class="mode-label">work</span
+                ><span class="spacer"></span
+                ><button class="primary" id="send" aria-label="Send message">Send</button>
+              </div>
+            </div>
+            <div class="composer-hint"></div>
+          </form>
+          <div class="edit-footer" id="edit-footer" hidden>
+            <div class="draft-indicator" id="draft-indicator">No changes yet</div>
+            <div class="footer-actions">
+              <button id="cancel" class="quiet">Cancel</button
+              ><button id="review" class="primary">
+                Review changes <svg><use href="#i-chevron" /></svg>
+              </button>
+            </div>
+          </div>
+        </main>
+        <aside class="right-panel" aria-label="Editor and reconstruction preview">
+          <div id="code-panel" class="panel-content">
+            <div class="pane-header">
+              <svg><use href="#i-code" /></svg>Editor <span class="muted">Read-only mock</span>
+            </div>
+            <div class="editor-file"><span class="ts">TS</span>command-palette.ts</div>
+            <div class="code-view" aria-label="Mock TypeScript file">
+              <span class="code-line"><span class="comment">// Command palette search</span></span
+              ><span class="code-line"></span
+              ><span class="code-line"><span class="kw">type</span> Command = {</span
+              ><span class="code-line"> id: <span class="kw">string</span></span
+              ><span class="code-line"> title: <span class="kw">string</span></span
+              ><span class="code-line"> description?: <span class="kw">string</span></span
+              ><span class="code-line"> shortcut?: <span class="kw">string</span></span
+              ><span class="code-line">}</span><span class="code-line"></span
+              ><span class="code-line"
+                ><span class="kw">export function</span>
+                <span class="fn">filterCommands</span>(</span
+              ><span class="code-line"> commands: Command[],</span
+              ><span class="code-line"> query: <span class="kw">string</span>,</span
+              ><span class="code-line">): Command[] {</span
+              ><span class="code-line"> <span class="kw">const</span> search = query</span
+              ><span class="code-line"> .<span class="fn">trim</span>()</span
+              ><span class="code-line"> .<span class="fn">toLowerCase</span>()</span
+              ><span class="code-line"></span
+              ><span class="code-line">
+                <span class="kw">if</span> (!search) <span class="kw">return</span> commands</span
+              ><span class="code-line"></span
+              ><span class="code-line">
+                <span class="comment">// Implement matching here.</span></span
+              ><span class="code-line"> <span class="kw">return</span> commands</span
+              ><span class="code-line">}</span><span class="code-line"></span
+              ><span class="code-line"
+                ><span class="comment">// Keyboard shortcuts stay intact.</span></span
+              >
+            </div>
+            <div class="editor-status"><span>TypeScript</span><span>UTF-8 · LF</span></div>
+          </div>
+          <div id="review-panel" class="panel-content" hidden>
+            <div class="pane-header">
+              <svg><use href="#i-fork" /></svg>Reconstructed history
+              <span class="review-stage-label" id="stage-label">Draft</span>
+            </div>
+            <div class="rebuild-panel">
+              <h4 class="review-heading" id="review-heading">History preview</h4>
+              <p class="review-copy" id="review-copy">
+                Keep the useful context. Remove the paths you decided not to take.
+              </p>
+              <div class="quick-edit" id="quick-edit">
+                <div class="eyebrow">Try an example edit request</div>
+                <button class="sample-request" id="sample">
+                  <svg><use href="#i-spark" /></svg
+                  ><span>“Remove the Fuse.js detour and keep the final search requirements.”</span>
+                </button>
+                <div class="sample-note">Scripted suggestion for this prototype.</div>
+              </div>
+              <div class="stat-row">
+                <span>Messages in this thread</span><strong id="original-count">6</strong>
+              </div>
+              <div class="stat-row">
+                <span>After reconstruction</span><strong id="result-count">6</strong>
+              </div>
+              <div class="divider"></div>
+              <div class="eyebrow">Your changes</div>
+              <div class="change-list" id="change-list"></div>
+              <div class="error-note" id="error-note" role="status" hidden></div>
+              <details class="review-history" id="history-details">
+                <summary>Preview resulting history</summary>
+                <div id="history-preview"></div>
+              </details>
+              <div class="effect-note">
+                <svg><use href="#i-info" /></svg
+                ><span
+                  >The next message uses this edited history. Existing replies stay as reviewed;
+                  applying an edit does not rerun tools or change workspace files.</span
+                >
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <footer class="statusbar">
+        <span class="status-dot"></span><span id="status-label">Ready</span
+        ><span class="right">Demo only · changes stay in this tab</span
+        ><button id="reset" class="quiet">Reset demo</button>
+      </footer>
+    </div>
+    <div id="fork-menu" class="fork-menu" role="menu" aria-label="Fork" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="discard-dialog">
+      <h4>Discard these edits?</h4>
+      <p>Your thread will stay as it was before you opened the editor.</p>
+      <div class="actions">
+        <button id="keep-editing" class="secondary">Keep editing</button
+        ><button id="discard" class="primary">Discard edits</button>
+      </div>
+    </dialog>
+    <script>
+      'use strict'
+      const $ = (id) => document.getElementById(id)
+      const escapeHtml = (text) =>
+        String(text).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+        )
+      const icon = (name) => '<svg aria-hidden="true"><use href="#i-' + name + '"/></svg>'
+      const initialMessages = [
+        {
+          id: 1,
+          role: 'user',
+          text: 'Add fuzzy search to the command palette. Use Fuse.js so it can match command titles and descriptions.',
+          time: '10:42',
+        },
+        {
+          id: 2,
+          role: 'assistant',
+          text: 'I’ll use Fuse.js to rank the commands by relevance and keep the current palette layout.',
+          time: '10:42',
+          tool: 'Read command-palette.ts · 148 lines',
+        },
+        {
+          id: 3,
+          role: 'user',
+          text: 'Actually, skip fuzzy search. Use case-insensitive substring matching, with no new dependencies.',
+          time: '10:44',
+        },
+        {
+          id: 4,
+          role: 'assistant',
+          text: 'Understood. I’ll drop the Fuse.js approach and use a simple substring filter for titles and descriptions.',
+          time: '10:44',
+        },
+        {
+          id: 5,
+          role: 'user',
+          text: 'Keep the existing keyboard shortcuts. An empty query should show all commands.',
+          time: '10:45',
+        },
+        {
+          id: 6,
+          role: 'assistant',
+          text: 'I’ll update filterCommands to match titles and descriptions, preserve the shortcuts, and return every command when the query is empty. Ready to implement.',
+          time: '10:45',
+        },
+      ]
+      const clone = (value) => structuredClone(value)
+      let threads = [
+        {
+          id: 1,
+          name: 'Command palette search',
+          messages: clone(initialMessages),
+          revision: 0,
+          snapshot: null,
+        },
+      ]
+      let activeId = 1,
+        drafts = null,
+        stage = 'thread',
+        toastTimer,
+        nextId = 10
+      let currentTheme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+      const active = () => threads.find((t) => t.id === activeId)
+      const changed = () =>
+        drafts
+          ? drafts.filter((d, i) => d.included && d.text !== active().messages[i].text).length
+          : 0
+      const excluded = () => (drafts ? drafts.filter((d) => !d.included).length : 0)
+      function setTheme() {
+        document.documentElement.dataset.theme = currentTheme
+        $('theme').setAttribute(
+          'aria-label',
+          'Switch to ' + (currentTheme === 'dark' ? 'light' : 'dark') + ' theme',
+        )
+      }
+      function toast(text) {
+        clearTimeout(toastTimer)
+        $('toast').textContent = text
+        $('toast').hidden = false
+        toastTimer = setTimeout(() => ($('toast').hidden = true), 4200)
+      }
+      function renderNav() {
+        $('thread-nav').innerHTML = threads
+          .map(
+            (t) =>
+              '<div class="thread-row ' +
+              (t.id === activeId ? 'current' : '') +
+              '"><button class="thread" data-thread="' +
+              t.id +
+              '" ' +
+              (t.id === activeId ? 'aria-current="page"' : '') +
+              '><span>' +
+              escapeHtml(t.name) +
+              '</span></button>' +
+              (t.id === activeId
+                ? '<button id="fork" class="thread-fork" aria-label="Fork options" aria-haspopup="menu" aria-expanded="false" title="Fork">' +
+                  icon('fork') +
+                  '</button>'
+                : '') +
+              '</div>',
+          )
+          .join('')
+        $('fork').onclick = (event) => openForkMenu(event.currentTarget)
+      }
+      function renderMessages() {
+        const editing = stage !== 'thread',
+          reviewing = stage === 'review'
+        const source = editing ? drafts : active().messages
+        $('messages').innerHTML = source
+          .map((m, i) => {
+            const isChanged = editing && m.included && m.text !== active().messages[i].text
+            const author = m.role === 'user' ? 'You' : 'Copse'
+            const meta = editing
+              ? '<div class="message-meta"><span class="turn-number">' +
+                String(i + 1).padStart(2, '0') +
+                '</span><span class="author">' +
+                author +
+                '</span>' +
+                (isChanged || m.revised ? '<span class="revised-tag">Edited</span>' : '') +
+                '<label class="include-label"><input type="checkbox" data-include="' +
+                i +
+                '" aria-label="Include message ' +
+                (i + 1) +
+                '" ' +
+                (m.included ? 'checked' : '') +
+                ' ' +
+                (reviewing ? 'disabled' : '') +
+                '><span>' +
+                (m.included ? 'Include' : 'Excluded') +
+                '</span></label></div>'
+              : ''
+            const controls =
+              !editing && m.role === 'user'
+                ? '<span class="turn-actions"><button data-fork="' +
+                  i +
+                  '" aria-haspopup="menu" aria-label="Fork from message ' +
+                  (i + 1) +
+                  '">Fork from here</button></span>'
+                : ''
+            const body = editing
+              ? '<textarea class="edit-text" data-text="' +
+                i +
+                '" aria-label="Message ' +
+                (i + 1) +
+                ' by ' +
+                author +
+                '" ' +
+                (!m.included ? 'disabled' : '') +
+                ' ' +
+                (reviewing ? 'readonly' : '') +
+                '>' +
+                escapeHtml(m.text) +
+                '</textarea>'
+              : '<div class="message-body">' + escapeHtml(m.text) + controls + '</div>'
+            return (
+              '<article class="message ' +
+              m.role +
+              (editing && !m.included ? ' excluded' : '') +
+              (isChanged ? ' changed' : '') +
+              '" data-message="' +
+              i +
+              '" aria-label="' +
+              author +
+              ' message ' +
+              (i + 1) +
+              '">' +
+              meta +
+              body +
+              (m.tool
+                ? '<div class="tool-note">' +
+                  icon('check') +
+                  escapeHtml(m.tool) +
+                  (editing
+                    ? m.included
+                      ? ' · retained with this message'
+                      : ' · excluded with this message'
+                    : '') +
+                  '</div>'
+                : '') +
+              '</article>'
+            )
+          })
+          .join('')
+      }
+      function updatePreview() {
+        const edits = changed(),
+          omissions = excluded(),
+          kept = drafts.filter((m) => m.included),
+          total = edits + omissions
+        $('original-count').textContent = String(active().messages.length)
+        $('result-count').textContent = String(kept.length)
+        $('draft-indicator').innerHTML = total
+          ? '<strong>' + edits + ' edited · ' + omissions + ' excluded</strong>'
+          : 'No changes yet'
+        $('change-list').innerHTML =
+          drafts
+            .map((d, i) =>
+              !d.included
+                ? '<div class="change-item"><span class="change-symbol">−</span><span>Message ' +
+                  (i + 1) +
+                  '</span><small>Excluded</small></div>'
+                : d.text !== active().messages[i].text
+                  ? '<div class="change-item"><span class="change-symbol">~</span><span>Message ' +
+                    (i + 1) +
+                    '</span><small>Edited</small></div>'
+                  : '',
+            )
+            .join('') || '<div class="empty-review">Your edits will appear here.</div>'
+        $('history-preview').innerHTML = kept
+          .map(
+            (m) =>
+              '<div class="preview-message"><strong>' +
+              (m.role === 'user' ? 'You' : 'Copse') +
+              '</strong>' +
+              escapeHtml(m.text) +
+              (m.tool ? '<div class="tool-note">' + escapeHtml(m.tool) + '</div>' : '') +
+              '</div>',
+          )
+          .join('')
+        const error =
+          kept.length === 0
+            ? 'Keep at least one message to reconstruct the thread.'
+            : kept.some((m) => !m.text.trim())
+              ? 'Included messages need some text. Exclude a message to remove it.'
+              : ''
+        $('error-note').textContent = error
+        $('error-note').hidden = !error
+        $('review').disabled = total === 0 || !!error
+        $('status-label').textContent =
+          stage === 'review'
+            ? 'Review changes before applying'
+            : 'Editing a draft · original thread preserved'
+      }
+      function render() {
+        const editing = stage !== 'thread',
+          reviewing = stage === 'review',
+          thread = active()
+        closeForkMenu()
+        $('app').classList.toggle('editing', editing)
+        $('app').classList.toggle('reviewing', reviewing)
+        $('thread-title').textContent = thread.name
+        $('thread-eyebrow').textContent = reviewing
+          ? 'Edit thread · 2 of 2 · Review'
+          : editing
+            ? 'Edit thread · 1 of 2 · Revise'
+            : 'Thread · Today'
+        $('header-actions').hidden = editing
+        $('edit-brief').hidden = !editing
+        $('composer').hidden = editing
+        $('edit-footer').hidden = !editing
+        $('code-panel').hidden = editing
+        $('review-panel').hidden = !editing
+        $('review').innerHTML = reviewing
+          ? 'Apply &amp; reconstruct'
+          : 'Review changes ' + icon('chevron')
+        $('cancel').textContent = reviewing ? 'Back' : 'Cancel'
+        $('quick-edit').hidden = reviewing
+        $('stage-label').textContent = reviewing ? 'Review' : 'Draft'
+        $('edit-heading').textContent = reviewing
+          ? 'Review the thread you’ll continue from.'
+          : 'Edit thread history'
+        $('edit-description').textContent = reviewing
+          ? 'Check your edits and the resulting history before applying.'
+          : 'Revise a message or exclude it from the reconstructed history.'
+        $('review-heading').textContent = reviewing ? 'Ready to reconstruct' : 'History preview'
+        $('review-copy').textContent = reviewing
+          ? 'Apply these changes to this thread. A snapshot of the previous version stays available through Undo.'
+          : 'Keep the useful context. Remove the paths you decided not to take.'
+        $('revision-banner').hidden = editing || !thread.snapshot
+        $('revision-text').textContent = 'Thread reconstructed · revision ' + thread.revision
+        renderNav()
+        renderMessages()
+        if (editing) updatePreview()
+        else
+          $('status-label').textContent = thread.snapshot ? 'Using reconstructed history' : 'Ready'
+      }
+      function beginEdit(index) {
+        drafts = active().messages.map((m) => ({ ...m, included: true }))
+        stage = 'edit'
+        render()
+        if (Number.isInteger(index)) {
+          const field = document.querySelector('[data-text="' + index + '"]')
+          field.focus()
+          field.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        } else {
+          $('conversation-scroll').scrollTop = 0
+          document.querySelector('[data-text]').focus({ preventScroll: true })
+        }
+      }
+      function endEdit() {
+        drafts = null
+        stage = 'thread'
+        render()
+        $('fork').focus()
+      }
+      function requestCancel() {
+        if (changed() + excluded() > 0) {
+          $('discard-dialog').showModal()
+          $('keep-editing').focus()
+        } else endEdit()
+      }
+      function forkAt(index) {
+        const source = active(),
+          messages = source.messages.slice(0, index === undefined ? undefined : index + 1)
+        const thread = {
+          id: ++nextId,
+          name: 'Command palette search · fork',
+          messages: clone(messages),
+          revision: 0,
+          snapshot: null,
+        }
+        threads.push(thread)
+        activeId = thread.id
+        render()
+        toast('Fork created with ' + messages.length + ' messages. The original is in the sidebar.')
+      }
+      let forkAnchor = null
+      function closeForkMenu(restoreFocus = false) {
+        $('fork-menu').hidden = true
+        $('fork-menu').replaceChildren()
+        forkAnchor?.setAttribute('aria-expanded', 'false')
+        if (restoreFocus) forkAnchor?.focus()
+      }
+      function openForkMenu(anchor, index) {
+        if (stage !== 'thread') return
+        forkAnchor = anchor
+        const menu = $('fork-menu')
+        menu.innerHTML =
+          '<div class="menu-label">Fork</div><button role="menuitem" id="fork-copy">' +
+          icon('fork') +
+          '<span>' +
+          (Number.isInteger(index) ? 'Fork from here' : 'Fork thread') +
+          '<small>Create a new thread with this history</small></span></button><div class="menu-divider"></div><button role="menuitem" id="edit-history">' +
+          icon('edit') +
+          '<span>Edit thread history…<small>Reconstruct the current thread</small></span></button>'
+        menu.hidden = false
+        anchor.setAttribute('aria-expanded', 'true')
+        const rect = anchor.getBoundingClientRect()
+        menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 284)) + 'px'
+        menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 180)) + 'px'
+        $('fork-copy').onclick = () => {
+          closeForkMenu()
+          forkAt(index)
+        }
+        $('edit-history').onclick = () => {
+          closeForkMenu()
+          beginEdit(index)
+        }
+        $('fork-copy').focus()
+      }
+      $('mobile-fork').onclick = (event) => openForkMenu(event.currentTarget)
+      $('panel-toggle').onclick = () => {
+        const shown = $('app').classList.toggle('show-code')
+        $('panel-toggle').setAttribute('aria-pressed', String(shown))
+      }
+      document.addEventListener('pointerdown', (event) => {
+        if (
+          !$('fork-menu').hidden &&
+          !$('fork-menu').contains(event.target) &&
+          !forkAnchor?.contains(event.target)
+        )
+          closeForkMenu()
+      })
+      $('fork-menu').addEventListener('keydown', (event) => {
+        const items = [...$('fork-menu').querySelectorAll('[role="menuitem"]')]
+        const index = items.indexOf(document.activeElement)
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault()
+          items[
+            (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+          ]?.focus()
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          closeForkMenu(true)
+        }
+      })
+      $('theme').onclick = () => {
+        currentTheme = currentTheme === 'dark' ? 'light' : 'dark'
+        setTheme()
+      }
+      $('messages').addEventListener('click', (e) => {
+        const button = e.target.closest('button')
+        if (!button) return
+        if (button.dataset.fork !== undefined) openForkMenu(button, Number(button.dataset.fork))
+      })
+      $('messages').addEventListener('input', (e) => {
+        if (!e.target.matches('[data-text]')) return
+        const i = Number(e.target.dataset.text)
+        drafts[i].text = e.target.value
+        const row = e.target.closest('.message')
+        row.classList.toggle('changed', drafts[i].text !== active().messages[i].text)
+        let badge = row.querySelector('.revised-tag')
+        if (drafts[i].text !== active().messages[i].text && !badge) {
+          badge = document.createElement('span')
+          badge.className = 'revised-tag'
+          badge.textContent = 'Edited'
+          row.querySelector('.author').after(badge)
+        }
+        if (drafts[i].text === active().messages[i].text && badge && !drafts[i].revised)
+          badge.remove()
+        updatePreview()
+      })
+      $('messages').addEventListener('change', (e) => {
+        if (!e.target.matches('[data-include]')) return
+        const i = Number(e.target.dataset.include)
+        drafts[i].included = e.target.checked
+        renderMessages()
+        updatePreview()
+        document.querySelector('[data-include="' + i + '"]').focus()
+      })
+      $('sample').onclick = () => {
+        if (
+          active().messages.length !== 6 ||
+          active().messages[0].text !== initialMessages[0].text
+        ) {
+          toast(
+            'The example uses the original six messages. Reset the demo to try it, or edit any message directly.',
+          )
+          return
+        }
+        drafts = active().messages.map((m) => ({ ...m, included: true }))
+        drafts[0].text =
+          'Add case-insensitive substring search to the command palette. Match command titles and descriptions, with no new dependencies.'
+        ;[1, 2, 3].forEach((i) => (drafts[i].included = false))
+        renderMessages()
+        updatePreview()
+        $('conversation-scroll').scrollTop = 0
+        toast(
+          'Sample suggestion: 1 message edited, 3 obsolete messages excluded. Review before applying.',
+        )
+      }
+      $('review').onclick = () => {
+        if (stage === 'review') {
+          applyDraft()
+          return
+        }
+        stage = 'review'
+        render()
+        $('history-details').open = true
+        $('review').focus()
+        $('conversation-scroll').scrollTop = 0
+      }
+      $('cancel').onclick = () => {
+        if (stage !== 'review') {
+          requestCancel()
+          return
+        }
+        stage = 'edit'
+        render()
+        $('review').focus()
+      }
+      $('keep-editing').onclick = () => $('discard-dialog').close()
+      $('discard').onclick = () => {
+        $('discard-dialog').close()
+        endEdit()
+        toast('Edits discarded. Your original thread is intact.')
+      }
+      function applyDraft() {
+        if ($('review').disabled) return
+        const thread = active()
+        thread.snapshot = { messages: clone(thread.messages), revision: thread.revision }
+        thread.messages = drafts.flatMap((m, i) =>
+          m.included
+            ? [
+                {
+                  id: m.id,
+                  role: m.role,
+                  text: m.text,
+                  time: m.time,
+                  ...(m.tool ? { tool: m.tool } : {}),
+                  revised: m.text !== thread.messages[i].text || m.revised === true,
+                },
+              ]
+            : [],
+        )
+        thread.revision++
+        endEdit()
+        toast('Thread reconstructed. Your next message will use the revised history.')
+      }
+      $('undo').onclick = () => {
+        const thread = active()
+        if (!thread.snapshot) return
+        thread.messages = thread.snapshot.messages
+        thread.revision = thread.snapshot.revision
+        thread.snapshot = null
+        render()
+        toast('Previous thread restored.')
+      }
+      $('thread-nav').addEventListener('click', (e) => {
+        const button = e.target.closest('[data-thread]')
+        if (!button) return
+        if (stage !== 'thread') {
+          toast('Apply or cancel your edits before switching threads.')
+          return
+        }
+        activeId = Number(button.dataset.thread)
+        render()
+      })
+      $('composer').onsubmit = (e) => {
+        e.preventDefault()
+        const text = $('compose-text').value.trim()
+        if (!text) return
+        const thread = active()
+        thread.messages.push({ id: ++nextId, role: 'user', text, time: 'Now' })
+        const context = thread.messages
+          .map((m) => m.text)
+          .join(' ')
+          .toLowerCase()
+        thread.messages.push({
+          id: ++nextId,
+          role: 'assistant',
+          text: context.includes('fuse.js')
+            ? 'Mock response: this history still contains the Fuse.js detour and the later correction. I would continue with your final requirement: substring matching with no new dependencies.'
+            : 'Mock response: I would continue from the cleaned-up requirements: case-insensitive substring matching for titles and descriptions, no new dependencies, existing shortcuts, and all commands on an empty query.',
+          time: 'Now',
+        })
+        thread.snapshot = null
+        $('compose-text').value = ''
+        render()
+        $('conversation-scroll').scrollTop = $('conversation-scroll').scrollHeight
+        toast('Simulated reply only. No tools ran and no files changed.')
+      }
+      $('reset').onclick = () => {
+        threads = [
+          {
+            id: 1,
+            name: 'Command palette search',
+            messages: clone(initialMessages),
+            revision: 0,
+            snapshot: null,
+          },
+        ]
+        activeId = 1
+        drafts = null
+        stage = 'thread'
+        $('compose-text').value = ''
+        $('discard-dialog').close()
+        render()
+        toast('Demo reset.')
+      }
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && stage !== 'thread' && !$('discard-dialog').open) {
+          e.preventDefault()
+          if (stage === 'review') {
+            stage = 'edit'
+            render()
+          } else requestCancel()
+        }
+      })
+      setTheme()
+      render()
+    </script>
+  </body>
+</html>

@@ -939,6 +939,9 @@ export function createDemoApi(scenario: DemoScenario, options: DemoApiOptions = 
       // The demo has no provider history sidecar to inherit; the forked thread's
       // transcript copy (which the renderer owns) is the whole demo story.
       fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
+      historySnapshot: unsupported,
+      editHistory: unsupported,
+      undoHistoryEdit: unsupported,
       catalog: () =>
         resolved(
           threads.map((thread) => ({

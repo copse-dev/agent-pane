@@ -34,7 +34,7 @@ import {
   type RefResolver,
 } from './fold.ts'
 import { parseOkfMessage } from './okf-message.ts'
-import { parseThreadMetaValue } from './thread-boundary.ts'
+import { parseThreadMetaValue, parseThreadValue } from './thread-boundary.ts'
 import {
   parseSpine,
   parseSpineEntries,
@@ -105,6 +105,9 @@ const AGENT_HISTORY_FILE = 'agent-history.json'
 const AGENT_HISTORY_VERSION = 1
 const ACP_SESSION_FILE = 'acp-session.json'
 const AGENT_EPOCH_FILE = 'agent-epoch.json'
+const HISTORY_EDIT_TRANSACTION_FILE = 'history-edit-transaction.json'
+const HISTORY_EDIT_UNDO_FILE = 'history-edit-undo.json'
+const HISTORY_EDIT_VERSION = 1
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
@@ -576,6 +579,7 @@ async function readThread(
   threadId: string,
   options: ThreadLoadOptions = {},
 ): Promise<Thread | null> {
+  recoverPendingHistoryEdit(projectId, threadId)
   const dir = threadDir(projectId, threadId)
   const [metaRaw, eventsRaw] = await Promise.all([
     readOrNull(join(dir, META_FILE)),
@@ -1949,6 +1953,176 @@ function agentEpochPath(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), AGENT_EPOCH_FILE)
 }
 
+function historyEditTransactionPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), HISTORY_EDIT_TRANSACTION_FILE)
+}
+
+function historyEditUndoPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), HISTORY_EDIT_UNDO_FILE)
+}
+
+export interface ThreadHistoryStateSnapshot {
+  thread: Thread
+  agentHistory: LLMMessage[]
+  hadAgentHistory: boolean
+}
+
+export interface ThreadHistoryUndoSnapshot extends ThreadHistoryStateSnapshot {
+  resultingRevision: string
+}
+
+function parseThreadHistoryState(value: unknown): ThreadHistoryStateSnapshot | null {
+  if (!isRecord(value) || typeof value['hadAgentHistory'] !== 'boolean') return null
+  const thread = parseThreadValue(value['thread'])
+  const agentHistory = value['agentHistory']
+  if (
+    thread === null ||
+    !Array.isArray(agentHistory) ||
+    !agentHistory.every(isAgentHistoryMessage)
+  ) {
+    return null
+  }
+  return { thread, agentHistory, hadAgentHistory: value['hadAgentHistory'] }
+}
+
+function parseHistoryEditTransaction(raw: string): ThreadHistoryStateSnapshot | null {
+  try {
+    const value = parseJsonUnknown(raw)
+    if (!isRecord(value) || value['v'] !== HISTORY_EDIT_VERSION) return null
+    return parseThreadHistoryState(value['rollback'])
+  } catch {
+    return null
+  }
+}
+
+function parseHistoryEditUndo(raw: string): ThreadHistoryUndoSnapshot | null {
+  try {
+    const value = parseJsonUnknown(raw)
+    if (
+      !isRecord(value) ||
+      value['v'] !== HISTORY_EDIT_VERSION ||
+      typeof value['resultingRevision'] !== 'string'
+    ) {
+      return null
+    }
+    const state = parseThreadHistoryState(value['previous'])
+    return state ? { ...state, resultingRevision: value['resultingRevision'] } : null
+  } catch {
+    return null
+  }
+}
+
+function writeAgentHistorySnapshot(
+  projectId: string,
+  threadId: string,
+  messages: LLMMessage[],
+): void {
+  const dir = threadDir(projectId, threadId)
+  mkdirSync(dir, { recursive: true })
+  const body = `${JSON.stringify({ v: AGENT_HISTORY_VERSION, messages: stripToolResultImages(messages) })}\n`
+  atomicWriteFile(join(dir, AGENT_HISTORY_FILE), body)
+}
+
+function unlinkIfPresent(path: string): void {
+  if (!existsSync(path)) return
+  try {
+    unlinkSync(path)
+  } catch {
+    // Best-effort cleanup; a later recovery/read retries stale sidecar cleanup.
+  }
+}
+
+/** Roll back an interrupted transcript/provider-history replacement before reads resume. */
+function recoverPendingHistoryEdit(projectId: string, threadId: string): void {
+  const path = historyEditTransactionPath(projectId, threadId)
+  const raw = safeRead(path)
+  if (raw === null) return
+  const rollback = parseHistoryEditTransaction(raw)
+  if (rollback === null || rollback.thread.id !== threadId) {
+    throw new Error(`Thread history recovery data for "${threadId}" is invalid`)
+  }
+  writeThread(projectId, rollback.thread)
+  upsertCatalogEntry(projectId, rollback.thread)
+  if (rollback.hadAgentHistory) {
+    writeAgentHistorySnapshot(projectId, threadId, rollback.agentHistory)
+  } else {
+    unlinkIfPresent(agentHistoryPath(projectId, threadId))
+  }
+  unlinkIfPresent(agentEpochPath(projectId, threadId))
+  unlinkIfPresent(path)
+}
+
+/** Durably record the state restored if the following history mutation is interrupted. */
+export function stageThreadHistoryMutation(
+  projectId: string,
+  threadId: string,
+  rollback: ThreadHistoryStateSnapshot,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    recoverPendingHistoryEdit(projectId, threadId)
+    if (rollback.thread.id !== threadId) throw new Error('History rollback thread id mismatch')
+    atomicWriteFile(
+      historyEditTransactionPath(projectId, threadId),
+      `${JSON.stringify({ v: HISTORY_EDIT_VERSION, rollback })}\n`,
+      0o600,
+    )
+  })
+}
+
+/** Save the one-step Undo snapshot, then make the staged replacement authoritative. */
+export function commitThreadHistoryMutation(
+  projectId: string,
+  threadId: string,
+  resultingRevision: string,
+  previous: ThreadHistoryStateSnapshot,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const transaction = historyEditTransactionPath(projectId, threadId)
+    if (!existsSync(transaction)) throw new Error('History mutation transaction is missing')
+    atomicWriteFile(
+      historyEditUndoPath(projectId, threadId),
+      `${JSON.stringify({ v: HISTORY_EDIT_VERSION, resultingRevision, previous })}\n`,
+      0o600,
+    )
+    unlinkIfPresent(transaction)
+  })
+}
+
+export function loadThreadHistoryUndo(
+  projectId: string,
+  threadId: string,
+): Promise<ThreadHistoryUndoSnapshot | null> {
+  return runSerialized(queueKey(projectId), () => {
+    recoverPendingHistoryEdit(projectId, threadId)
+    const raw = safeRead(historyEditUndoPath(projectId, threadId))
+    if (raw === null) return null
+    const parsed = parseHistoryEditUndo(raw)
+    if (parsed === null || parsed.thread.id !== threadId) return null
+    return parsed
+  })
+}
+
+export function clearThreadHistoryUndo(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    unlinkIfPresent(historyEditUndoPath(projectId, threadId))
+  })
+}
+
+/** Finish a successful Undo: its restored state is live, so no rollback remains pending. */
+export function finishThreadHistoryUndo(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    unlinkIfPresent(historyEditTransactionPath(projectId, threadId))
+    unlinkIfPresent(historyEditUndoPath(projectId, threadId))
+  })
+}
+
+/** Explicit recovery for a failed in-process mutation; reads also call this automatically. */
+export function recoverThreadHistoryMutation(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    recoverPendingHistoryEdit(projectId, threadId)
+  })
+}
+
 /**
  * A thread's blob directory — verbatim tool results, images, and the videos a
  * user attaches to the chat. It sits inside the chat store, which the agent's
@@ -2032,6 +2206,7 @@ export function readThreadDirectory(
 /** Load provider history for a thread. Missing/corrupt/future-version → `[]`. */
 export function loadAgentHistory(projectId: string, threadId: string): Promise<LLMMessage[]> {
   return runSerialized(queueKey(projectId), () => {
+    recoverPendingHistoryEdit(projectId, threadId)
     const raw = safeRead(agentHistoryPath(projectId, threadId))
     if (raw === null) return []
     return parseAgentHistoryFile(raw) ?? []
@@ -2045,13 +2220,10 @@ export function saveAgentHistory(
   messages: LLMMessage[],
 ): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    const dir = threadDir(projectId, threadId)
-    mkdirSync(dir, { recursive: true })
     // Images a tool produced (video frames) are regenerable from the paths its
     // text result names, so they never reach the sidecar — see
     // `stripToolResultImages` for why that matters to file size.
-    const body = `${JSON.stringify({ v: AGENT_HISTORY_VERSION, messages: stripToolResultImages(messages) })}\n`
-    atomicWriteFile(join(dir, AGENT_HISTORY_FILE), body)
+    writeAgentHistorySnapshot(projectId, threadId, messages)
   })
 }
 
@@ -2110,6 +2282,19 @@ export function clearAgentHistory(projectId: string, threadId: string): Promise<
       } catch {
         // Best-effort: a missing file is the desired end state.
       }
+    }
+  })
+}
+
+/** Remove only the machine-continuation epoch after transcript reconstruction. */
+export function clearAgentTurnEpoch(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = agentEpochPath(projectId, threadId)
+    if (!existsSync(path)) return
+    try {
+      unlinkSync(path)
+    } catch {
+      // Best-effort: a missing file is the desired end state.
     }
   })
 }

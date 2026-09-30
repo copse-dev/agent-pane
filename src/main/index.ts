@@ -652,6 +652,15 @@ app
           agentDispatcher.forgetHistory(projectId, threadId)
         },
       },
+      {
+        begin: (projectId, threadId) => agentDispatcher.beginThreadHistoryEdit(projectId, threadId),
+        end: (projectId, threadId) => {
+          agentDispatcher.endThreadHistoryEdit(projectId, threadId)
+        },
+        forgetAgentHistory: (projectId, threadId) => {
+          agentDispatcher.forgetHistory(projectId, threadId)
+        },
+      },
     )
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)

@@ -189,6 +189,12 @@ import {
   readVideoForPlayback,
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
+import {
+  applyThreadHistoryEdit,
+  loadThreadHistorySnapshot,
+  undoThreadHistoryEdit,
+  type ThreadHistoryEditRuntime,
+} from '../services/thread-history-edit.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -556,6 +562,7 @@ export function registerAllHandlers(
   registry: ToolRegistry,
   isDispatcherThreadActive: (projectId: string, threadId: string) => boolean,
   threadDeletionRuntime: ThreadDeletionRuntime,
+  threadHistoryEditRuntime: ThreadHistoryEditRuntime,
 ): void {
   ipcMain.handle('mobile:manage', async (event) => {
     assertMainFrameSender(event, win)
@@ -1960,6 +1967,48 @@ export function registerAllHandlers(
         [projectId, sourceThreadId, targetThreadId, throughMessageId],
       )
       return forkThreadHistory(pid, sourceId, targetId, messageId)
+    },
+  )
+  ipcMain.handle('threads:history-snapshot', (event, projectId: unknown, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
+    return loadThreadHistorySnapshot(pid, tid)
+  })
+  ipcMain.handle(
+    'threads:history-edit',
+    (event, projectId: unknown, threadId: unknown, request: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            expectedRevision: z.string().length(64),
+            messages: z
+              .array(
+                z.object({
+                  id: zNonEmptyString.max(256),
+                  content: z.string().max(1_000_000),
+                  included: z.boolean(),
+                }),
+              )
+              .max(10_000),
+          }),
+        ]),
+        [projectId, threadId, request],
+      )
+      return applyThreadHistoryEdit(pid, tid, payload, threadHistoryEditRuntime)
+    },
+  )
+  ipcMain.handle(
+    'threads:history-undo',
+    (event, projectId: unknown, threadId: unknown, expectedRevision: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, revision] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, z.string().length(64)]),
+        [projectId, threadId, expectedRevision],
+      )
+      return undoThreadHistoryEdit(pid, tid, revision, threadHistoryEditRuntime)
     },
   )
   // The whole thread directory, zipped — the archive counterpart to the
