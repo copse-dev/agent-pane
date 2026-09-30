@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copse explainer styles</title>
+    <link rel="stylesheet" href="shared.css" />
+    <style>
+      html,
+      body {
+        height: auto;
+        background: #fffdf7;
+        color: #002e2b;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 48px 24px 96px;
+      }
+      h1,
+      h2 {
+        font-family: 'Averia Serif Libre', serif;
+        font-weight: 400;
+      }
+      h1 {
+        font-size: 44px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 28px;
+        margin: 56px 0 12px;
+      }
+      p.lede {
+        font-size: 19px;
+        line-height: 1.5;
+        max-width: 720px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+        gap: 20px;
+        margin-top: 24px;
+      }
+      .card {
+        border: 2px solid #002e2b;
+        border-radius: 18px;
+        overflow: hidden;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+      }
+      .card svg {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+      }
+      .body {
+        padding: 16px 18px 20px;
+      }
+      .body h3 {
+        margin: 0 0 2px;
+        font-size: 20px;
+      }
+      .tag {
+        font-size: 13px;
+        font-weight: 600;
+        color: #4b6a65;
+        margin-bottom: 10px;
+      }
+      .pick {
+        display: inline-block;
+        background: #ff9fc5;
+        border-radius: 99px;
+        padding: 2px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        margin-left: 6px;
+      }
+      dl {
+        margin: 10px 0 0;
+        font-size: 14.5px;
+        line-height: 1.4;
+      }
+      dt {
+        font-weight: 700;
+        margin-top: 8px;
+      }
+      dd {
+        margin: 0;
+      }
+      .samples {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+        gap: 24px;
+      }
+      video {
+        width: 100%;
+        border-radius: 14px;
+        border: 2px solid #002e2b;
+        display: block;
+      }
+      .note {
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      .note li {
+        margin: 6px 0;
+      }
+      a {
+        color: #002e2b;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Six ways to explain Copse, in motion</h1>
+      <p class="lede">
+        Each direction picks one real Copse problem and tells it as problem → action → result with
+        everyday objects, readable labels, and visible cause and effect. No signal displays, no
+        hand-drawn forest, no mascot. Two are animated below so we can judge motion, not just
+        stills.
+      </p>
+
+      <h2>Animated samples (strongest two)</h2>
+      <div class="samples">
+        <div>
+          <video controls loop muted playsinline preload="metadata" src="out/scene-paper-desk.mp4" poster="out/scene-paper-desk-t9.2.png"></video>
+          <p class="note"><b>1 · Paper Desk</b> — <a href="scene-paper-desk.html">open live</a></p>
+        </div>
+        <div>
+          <video controls loop muted playsinline preload="metadata" src="out/scene-isometric-mailroom.mp4" poster="out/scene-isometric-mailroom-t13.png"></video>
+          <p class="note"><b>2 · Isometric Mailroom</b> — <a href="scene-isometric-mailroom.html">open live</a></p>
+        </div>
+      </div>
+      <ul class="note">
+        <li>
+          <b>Why these two:</b> they explain the two hardest-to-picture features (reviewing edits,
+          parallel subagents) with objects everyone already understands (stamped paperwork, a
+          warehouse with carts). Their labels carry the meaning, so the story survives with sound
+          off.
+        </li>
+        <li>
+          <b>They contrast on purpose:</b> flat top-down paper with snappy slide-and-thump motion
+          vs. isometric solids with continuous parallel travel. Both use only the Copse palette.
+        </li>
+        <li>
+          <b>Build notes:</b> each frame is a pure function of time (<code>runtime.js</code>), so the
+          same scene autoplays in a page and renders to MP4/GIF with <code>capture.mjs</code>.
+          That is the seam a reusable generator could grow from.
+        </li>
+      </ul>
+
+      <h2>All six directions</h2>
+      <div class="grid">
+        <!-- 1 -->
+        <article class="card">
+          <svg viewBox="0 0 320 180"><rect width="320" height="180" fill="#0a3f3a"/><rect x="14" y="14" width="292" height="152" rx="12" fill="#0d4a44" stroke="#2a736b" stroke-dasharray="6 5"/><g><rect x="34" y="40" width="74" height="86" rx="6" fill="#fffdf7"/><rect x="34" y="40" width="74" height="16" rx="6" fill="#ffe3a3"/><rect x="123" y="44" width="74" height="86" rx="6" fill="#fffdf7"/><rect x="123" y="44" width="74" height="16" rx="6" fill="#bfe3ff"/><rect x="212" y="40" width="74" height="86" rx="6" fill="#fffdf7"/><rect x="212" y="40" width="74" height="16" rx="6" fill="#e3d0ff"/><rect x="42" y="92" width="58" height="22" rx="4" fill="none" stroke="#0b7a45" stroke-width="3" transform="rotate(-8 71 103)"/><rect x="220" y="92" width="58" height="22" rx="4" fill="none" stroke="#d6336c" stroke-width="3" transform="rotate(-8 249 103)"/></g></svg>
+          <div class="body">
+            <h3>1 · Paper Desk <span class="pick">animated</span></h3>
+            <div class="tag">Cut paper · top-down · soft shadows · snap-and-thump</div>
+            <dl>
+              <dt>Problem</dt><dd>The agent edited three files; you can’t tell what changed.</dd>
+              <dt>Action</dt><dd>Edits land as diff sheets in a Changes tray; a rubber stamp marks Accept or Reject.</dd>
+              <dt>Result</dt><dd>Accepted edits go in the project folder; the rejected one reverts.</dd>
+            </dl>
+          </div>
+        </article>
+        <!-- 2 -->
+        <article class="card">
+          <svg viewBox="0 0 320 180"><rect width="320" height="180" fill="#f3ecdb"/><polygon points="160,20 300,90 160,160 20,90" fill="#e2d7bd" stroke="#b9ab86" stroke-width="3"/><g><polygon points="110,70 150,50 190,70 150,90" fill="#20fd85"/><polygon points="110,70 150,90 150,110 110,90" fill="#17c766"/><polygon points="150,90 190,70 190,90 150,110" fill="#12a152"/><polygon points="150,100 190,80 230,100 190,120" fill="#ff9fc5"/><polygon points="150,100 190,120 190,140 150,120" fill="#d680a1"/><polygon points="190,120 230,100 230,120 190,140" fill="#b06a86"/></g></svg>
+          <div class="body">
+            <h3>2 · Isometric Mailroom <span class="pick">animated</span></h3>
+            <div class="tag">Isometric solids · warehouse · continuous parallel travel</div>
+            <dl>
+              <dt>Problem</dt><dd>One agent searches a big codebase aisle by aisle; other aisles wait.</dd>
+              <dt>Action</dt><dd>Task slips go to three subagent carts that scan their own shelves at once.</dd>
+              <dt>Result</dt><dd>Each returns a note; the agent gets one answer: auth/session.ts:42.</dd>
+            </dl>
+          </div>
+        </article>
+        <!-- 3 -->
+        <article class="card">
+          <svg viewBox="0 0 320 180"><rect width="320" height="180" fill="#0b4f8a"/><g stroke="#fffdf7" stroke-width="2" fill="none" opacity=".9"><path d="M40 140 V90 L90 55 L140 90 V140z"/><path d="M190 30 V150" stroke-dasharray="6 4"/><rect x="186" y="82" width="8" height="26" fill="#0b4f8a"/><path d="M40 160 H140 M40 154 V166 M140 154 V166"/><path d="M230 70 h50 v50 h-50z"/></g><text x="255" y="100" font-size="11" fill="#fffdf7" text-anchor="middle" font-family="monospace">~/.ssh</text><circle cx="190" cy="95" r="9" fill="#ff9fc5"/></svg>
+          <div class="body">
+            <h3>3 · Blueprint Drafting Table</h3>
+            <div class="tag">Cyan ink on blueprint · dimension lines · lines draw themselves on</div>
+            <dl>
+              <dt>Problem</dt><dd>The agent wants to read a file outside your project fence (e.g. ~/.ssh).</dd>
+              <dt>Action</dt><dd>A gate in the fence shows a padlock and an “Allow once?” tag; your pen ticks it.</dd>
+              <dt>Result</dt><dd>Only that one door opens, this once; the rest of the fence stays drawn solid.</dd>
+            </dl>
+          </div>
+        </article>
+        <!-- 4 -->
+        <article class="card">
+          <svg viewBox="0 0 320 180"><rect width="320" height="180" fill="#fffdf7"/><g style="mix-blend-mode:multiply"><circle cx="110" cy="90" r="52" fill="#ff9fc5"/><circle cx="135" cy="95" r="52" fill="#20fd85" opacity=".85"/></g><g fill="#002e2b"><rect x="50" y="140" width="220" height="5"/></g><path d="M40 40 H120 M40 50 H100" stroke="#002e2b" stroke-width="3"/><g fill="#002e2b" opacity=".35"><circle cx="260" cy="40" r="2"/><circle cx="270" cy="40" r="2"/><circle cx="280" cy="40" r="2"/><circle cx="265" cy="50" r="2"/><circle cx="275" cy="50" r="2"/></g></svg>
+          <div class="body">
+            <h3>4 · Riso Print Shop</h3>
+            <div class="tag">Two-ink overprint · halftone grain · press passes at 12 fps</div>
+            <dl>
+              <dt>Problem</dt><dd>Most tools route your code through their own server before the model.</dd>
+              <dt>Action</dt><dd>A Copse envelope is printed and posted straight to the provider mailbox you picked (cloud or local).</dd>
+              <dt>Result</dt><dd>It arrives with no middle stop; the route is one printed line, pink to green.</dd>
+            </dl>
+          </div>
+        </article>
+        <!-- 5 -->
+        <article class="card">
+          <svg viewBox="0 0 320 180"><rect width="320" height="180" fill="#dff3e8"/><rect x="30" y="50" width="260" height="90" rx="26" fill="#fffdf7" stroke="#b7d8c6" stroke-width="3"/><g><circle cx="80" cy="95" r="22" fill="#20fd85"/><circle cx="140" cy="95" r="22" fill="#20fd85"/><circle cx="200" cy="95" r="22" fill="#ff6b8b"/><circle cx="260" cy="95" r="22" fill="#20fd85"/><ellipse cx="74" cy="86" rx="7" ry="4" fill="#fff" opacity=".6"/><ellipse cx="194" cy="86" rx="7" ry="4" fill="#fff" opacity=".6"/></g></svg>
+          <div class="body">
+            <h3>5 · Clay Control Panel</h3>
+            <div class="tag">Soft claymorphic 3D · glossy lamps · squash-and-stretch springs</div>
+            <dl>
+              <dt>Problem</dt><dd>After a change, one of four test lamps is red.</dd>
+              <dt>Action</dt><dd>The agent’s wrench tightens the loose part, then presses “Run tests”.</dd>
+              <dt>Result</dt><dd>Lamps flick on one by one until all four are green.</dd>
+            </dl>
+          </div>
+        </article>
+        <!-- 6 -->
+        <article class="card">
+          <svg viewBox="0 0 320 180"><rect width="320" height="180" fill="#c9a06b"/><g stroke="#8a5a2b" stroke-width="10" fill="none" stroke-linecap="round"><path d="M20 100 H130 L200 50 H300"/><path d="M130 100 L200 150 H300"/></g><g stroke="#fffdf7" stroke-width="3" fill="none" stroke-dasharray="8 6"><path d="M20 100 H130 L200 50 H300"/><path d="M130 100 L200 150 H300"/></g><rect x="216" y="36" width="36" height="22" rx="4" fill="#20fd85" stroke="#002e2b" stroke-width="3"/><rect x="216" y="139" width="36" height="22" rx="4" fill="#ff9fc5" stroke="#002e2b" stroke-width="3"/></svg>
+          <div class="body">
+            <h3>6 · Cardboard Stop-Motion Railway</h3>
+            <div class="tag">Corrugated card · felt-tip labels · stepped 8–12 fps motion</div>
+            <dl>
+              <dt>Problem</dt><dd>You want to try two approaches without losing the first.</dd>
+              <dt>Action</dt><dd>At a labelled “Fork” switch, the conversation train splits onto two tracks.</dd>
+              <dt>Result</dt><dd>Two trains reach two stations (“Approach A” / “B”); you keep whichever works.</dd>
+            </dl>
+          </div>
+        </article>
+      </div>
+    </main>
+  </body>
+</html>
