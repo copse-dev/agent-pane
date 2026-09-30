@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import {
+  commitThreadHistoryMutation,
   getProjectThread,
   loadAgentHistory,
+  recoverThreadHistoryMutation,
   saveAgentHistory,
   saveProjectThread,
   stageThreadHistoryMutation,
@@ -180,7 +182,7 @@ describe('thread history editing', () => {
     assert.equal(forgets, 2)
   })
 
-  it('recovers an interrupted multi-file replacement before the thread can be read', async () => {
+  it('rolls back an interrupted replacement when recovery is requested', async () => {
     const original = thread('thread')
     const originalHistory: LLMMessage[] = [{ role: 'user', content: 'Use PostgreSQL' }]
     await saveAgentHistory('project', 'thread', originalHistory)
@@ -197,8 +199,38 @@ describe('thread history editing', () => {
       { role: 'user', content: 'Half-written replacement' },
     ])
 
+    // An explicit recovery (the failure path of Apply/Undo) rolls the journal back.
+    await recoverThreadHistoryMutation('project', 'thread')
     assert.deepEqual((await getProjectThread('project', 'thread'))?.messages, original.messages)
     assert.deepEqual(await loadAgentHistory('project', 'thread'), originalHistory)
+  })
+
+  it('does not let a read consume the journal of a mutation still in flight', async () => {
+    const original = thread('thread')
+    const originalHistory: LLMMessage[] = [{ role: 'user', content: 'Use PostgreSQL' }]
+    await saveAgentHistory('project', 'thread', originalHistory)
+    await stageThreadHistoryMutation('project', 'thread', {
+      thread: original,
+      agentHistory: originalHistory,
+      hadAgentHistory: true,
+    })
+
+    const edited = thread('thread')
+    edited.messages = [message('u1', 'user', 'Use SQLite', 1)]
+    const editedHistory: LLMMessage[] = [{ role: 'user', content: 'Use SQLite' }]
+    await saveProjectThread('project', edited)
+    // A read queued between the transcript and provider-history writes.
+    const read = getProjectThread('project', 'thread')
+    await saveAgentHistory('project', 'thread', editedHistory)
+    await read
+    await commitThreadHistoryMutation('project', 'thread', 'revision', {
+      thread: original,
+      agentHistory: originalHistory,
+      hadAgentHistory: true,
+    })
+
+    assert.deepEqual((await getProjectThread('project', 'thread'))?.messages, edited.messages)
+    assert.deepEqual(await loadAgentHistory('project', 'thread'), editedHistory)
   })
 
   it('blocks reconstruction when attachment context is not recoverable', async () => {

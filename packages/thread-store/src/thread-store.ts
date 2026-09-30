@@ -2032,8 +2032,18 @@ function unlinkIfPresent(path: string): void {
   }
 }
 
+/** Threads whose staged history journal belongs to a mutation still in flight in this process. */
+const activeHistoryMutations = new Set<string>()
+
+function historyMutationKey(projectId: string, threadId: string): string {
+  return `${projectId}/${threadId}`
+}
+
 /** Roll back an interrupted transcript/provider-history replacement before reads resume. */
-function recoverPendingHistoryEdit(projectId: string, threadId: string): void {
+function recoverPendingHistoryEdit(projectId: string, threadId: string, force = false): void {
+  // A journal owned by a mutation still running in this process is live, not
+  // stale: a read between its separate writes must not roll it back.
+  if (!force && activeHistoryMutations.has(historyMutationKey(projectId, threadId))) return
   const path = historyEditTransactionPath(projectId, threadId)
   const raw = safeRead(path)
   if (raw === null) return
@@ -2059,6 +2069,9 @@ export function stageThreadHistoryMutation(
   rollback: ThreadHistoryStateSnapshot,
 ): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
+    const key = historyMutationKey(projectId, threadId)
+    if (activeHistoryMutations.has(key))
+      throw new Error('A history mutation is already in progress')
     recoverPendingHistoryEdit(projectId, threadId)
     if (rollback.thread.id !== threadId) throw new Error('History rollback thread id mismatch')
     atomicWriteFile(
@@ -2066,6 +2079,7 @@ export function stageThreadHistoryMutation(
       `${JSON.stringify({ v: HISTORY_EDIT_VERSION, rollback })}\n`,
       0o600,
     )
+    activeHistoryMutations.add(key)
   })
 }
 
@@ -2085,6 +2099,7 @@ export function commitThreadHistoryMutation(
       0o600,
     )
     unlinkIfPresent(transaction)
+    activeHistoryMutations.delete(historyMutationKey(projectId, threadId))
   })
 }
 
@@ -2113,13 +2128,18 @@ export function finishThreadHistoryUndo(projectId: string, threadId: string): Pr
   return runSerialized(queueKey(projectId), () => {
     unlinkIfPresent(historyEditTransactionPath(projectId, threadId))
     unlinkIfPresent(historyEditUndoPath(projectId, threadId))
+    activeHistoryMutations.delete(historyMutationKey(projectId, threadId))
   })
 }
 
 /** Explicit recovery for a failed in-process mutation; reads also call this automatically. */
 export function recoverThreadHistoryMutation(projectId: string, threadId: string): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
-    recoverPendingHistoryEdit(projectId, threadId)
+    try {
+      recoverPendingHistoryEdit(projectId, threadId, true)
+    } finally {
+      activeHistoryMutations.delete(historyMutationKey(projectId, threadId))
+    }
   })
 }
 
