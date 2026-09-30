@@ -198,7 +198,7 @@ export function reviewSectionChars(
 }
 
 /** The evidence a verdict is judged from, shared by the model prompt and the classifier. */
-function reviewEvidence(
+export function reviewEvidence(
   note: { body: string; status: string | null; fields: Record<string, string> },
   pinned: GhIssueSummary | null,
   linked: RoadmapReviewIssueEvidence[],
@@ -221,7 +221,8 @@ function reviewEvidence(
   )
 }
 
-function reviewPrompt(
+/** The small-tasks model's review prompt: a verdict word, then its reasoning. */
+export function reviewPrompt(
   note: { body: string; status: string | null; fields: Record<string, string> },
   pinned: GhIssueSummary | null,
   linked: RoadmapReviewIssueEvidence[],

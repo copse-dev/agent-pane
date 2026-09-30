@@ -118,6 +118,11 @@ question, classifier and model tokens are both recorded as `small-tasks` usage.
 Safety screening does not use this path: it has its own time budget, and a failed screening
 classifier asks the user rather than falling back to a model.
 
+To compare a classifier connection with a small-tasks model on these questions, run
+`pnpm run eval:background-questions`. It asks both of them labelled cases through the product's own
+requests, prompts and parsers; see
+[`benchmarks/background-questions/README.md`](../benchmarks/background-questions/README.md).
+
 ## Self-hosted systemone servers
 
 Several open classifiers serve TypeSafe's `POST /v1/systemone` format, so each is one profile

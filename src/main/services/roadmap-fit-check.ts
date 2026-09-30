@@ -45,6 +45,28 @@ const FIT_QUESTION: ClassifierQuestion = {
   },
 }
 
+/** The text a fit verdict is judged from, shared by the model prompt and the classifier. */
+export function fitEvidence(
+  issue: { number: number; title: string; body: string },
+  prompt: string,
+): string {
+  return (
+    `ISSUE #${String(issue.number)}: ${issue.title}\n${issue.body.slice(0, 4000)}\n\n` +
+    `PROMPT:\n${prompt.slice(0, 4000)}`
+  )
+}
+
+/** The small-tasks model's fit prompt: a verdict word, then what the prompt misses. */
+export function fitPrompt(evidence: string): string {
+  return (
+    'A coding agent will be given the PROMPT below. Judge whether executing it would ' +
+    'plausibly resolve the GitHub ISSUE below. First line: exactly one word — ' +
+    'likely, partial, or unlikely. Then up to three short bullet points naming what ' +
+    'the prompt misses or should double-check. Judge only from the text given.\n\n' +
+    evidence
+  )
+}
+
 /** The fit verdict from the chosen classifier connection, or null when none answers. */
 export async function classifyRoadmapFit(
   evidence: string,
@@ -74,15 +96,8 @@ export async function checkRoadmapFit(id: string): Promise<RoadmapFitResult> {
   const issue = await resolveGitHubBackend().getIssue(coords)
   if (!issue) throw new Error(`Issue ${ref} was not found on GitHub.`)
 
-  const evidence =
-    `ISSUE #${String(issue.number)}: ${issue.title}\n${issue.body.slice(0, 4000)}\n\n` +
-    `PROMPT:\n${note.body.slice(0, 4000)}`
-  const ask =
-    'A coding agent will be given the PROMPT below. Judge whether executing it would ' +
-    'plausibly resolve the GitHub ISSUE below. First line: exactly one word — ' +
-    'likely, partial, or unlikely. Then up to three short bullet points naming what ' +
-    'the prompt misses or should double-check. Judge only from the text given.\n\n' +
-    evidence
+  const evidence = fitEvidence(issue, note.body)
+  const ask = fitPrompt(evidence)
   const { verdict, detail } = await judgeWithReasoning(
     () => classifyRoadmapFit(evidence),
     async () => {

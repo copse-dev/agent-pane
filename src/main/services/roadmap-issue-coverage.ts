@@ -59,7 +59,7 @@ export function coverageCandidateItems(): {
     }))
 }
 
-type CoverageCandidate = ReturnType<typeof coverageCandidateItems>[number]
+export type CoverageCandidate = ReturnType<typeof coverageCandidateItems>[number]
 
 /**
  * The classifier's answers, weakest first: a tie goes to the earlier one. A
@@ -82,7 +82,9 @@ function coverageQuestion(item: CoverageCandidate): ClassifierQuestion {
     instructions:
       'Does this existing roadmap item already address the GitHub issue? ' +
       `Roadmap item ${JSON.stringify(item.title.slice(0, 120))}: ${item.body.slice(0, 400)}`,
-    options: COVERAGE_OPTIONS,
+    // A copy per question: request validation rejects an object reached twice,
+    // so questions sharing one options object fail every multi-item request.
+    options: { ...COVERAGE_OPTIONS },
   }
 }
 
@@ -151,6 +153,41 @@ export async function classifyCoverage(
   }))
 }
 
+/** The small-tasks model's coverage prompt: every open issue against every item, at once. */
+export function coveragePrompt(
+  open: readonly RoadmapImportIssue[],
+  candidates: readonly CoverageCandidate[],
+): string {
+  const itemBlock = candidates
+    .map(
+      (c) =>
+        `- id=${c.id}` +
+        (c.issue ? ` pin=${c.issue}` : '') +
+        ` title=${JSON.stringify(c.title.slice(0, 120))}\n` +
+        `  prompt=${JSON.stringify(c.body.slice(0, 400))}`,
+    )
+    .join('\n')
+  const issueBlock = open
+    .map(
+      (i) =>
+        `- #${String(i.number)} ${JSON.stringify(i.title.slice(0, 160))}\n` +
+        `  body=${JSON.stringify(i.body.slice(0, 600))}`,
+    )
+    .join('\n')
+  return (
+    'You are matching open GitHub issues to existing roadmap prompts.\n' +
+    'For each ISSUE that an ITEM already addresses (same goal, even if wording differs ' +
+    'or the item is not pinned), output one line:\n' +
+    '  #<issueNumber> <itemId> likely\n' +
+    'or\n' +
+    '  #<issueNumber> <itemId> partial\n' +
+    'Use likely when the prompt would largely resolve the issue; partial when it overlaps ' +
+    'but would leave meaningful work undone. Use only item ids from the list. ' +
+    'Output ONLY matching lines (or nothing). Do not invent issues or items.\n\n' +
+    `ITEMS:\n${itemBlock}\n\nISSUES:\n${issueBlock}`
+  )
+}
+
 /**
  * Judge which open issues are already covered by existing roadmap items: the
  * classifier connection first, then the small-tasks model. Issues already
@@ -183,34 +220,7 @@ export async function matchOpenIssuesToRoadmapItems(
     return classified.map((m) => ({ ...m, itemTitle: titleById.get(m.itemId) ?? m.itemId }))
   }
 
-  const itemBlock = candidates
-    .map(
-      (c) =>
-        `- id=${c.id}` +
-        (c.issue ? ` pin=${c.issue}` : '') +
-        ` title=${JSON.stringify(c.title.slice(0, 120))}\n` +
-        `  prompt=${JSON.stringify(c.body.slice(0, 400))}`,
-    )
-    .join('\n')
-  const issueBlock = open
-    .map(
-      (i) =>
-        `- #${String(i.number)} ${JSON.stringify(i.title.slice(0, 160))}\n` +
-        `  body=${JSON.stringify(i.body.slice(0, 600))}`,
-    )
-    .join('\n')
-
-  const ask =
-    'You are matching open GitHub issues to existing roadmap prompts.\n' +
-    'For each ISSUE that an ITEM already addresses (same goal, even if wording differs ' +
-    'or the item is not pinned), output one line:\n' +
-    '  #<issueNumber> <itemId> likely\n' +
-    'or\n' +
-    '  #<issueNumber> <itemId> partial\n' +
-    'Use likely when the prompt would largely resolve the issue; partial when it overlaps ' +
-    'but would leave meaningful work undone. Use only item ids from the list. ' +
-    'Output ONLY matching lines (or nothing). Do not invent issues or items.\n\n' +
-    `ITEMS:\n${itemBlock}\n\nISSUES:\n${issueBlock}`
+  const ask = coveragePrompt(open, candidates)
 
   let text: string
   try {

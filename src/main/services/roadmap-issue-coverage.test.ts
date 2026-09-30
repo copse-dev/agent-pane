@@ -7,6 +7,7 @@ import { addKnowledgeNote, setKnowledgeRootForTest } from './storage/knowledge-s
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { ROADMAP_TYPE } from '../tools/roadmap-tools.ts'
 import type { ClassifierRequest, ClassifierResult } from '@copse/llm/classifiers/types.ts'
+import { classifierRequestSchema } from '@copse/llm/classifiers/schemas.ts'
 import { classifyCoverage, matchOpenIssuesToRoadmapItems } from './roadmap-issue-coverage.ts'
 
 /** A classifier result answering each question with its own distribution. */
@@ -187,6 +188,21 @@ describe('classifyCoverage', () => {
     assert.ok(question?.type === 'choice')
     assert.match(question.instructions, /"Terminal toggle": Terminal toggle prompt/)
     assert.deepEqual(Object.keys(question.options), ['none', 'partial', 'likely'])
+  })
+
+  it('builds requests the classifier accepts', async () => {
+    const captured: { requests: readonly ClassifierRequest[] } = { requests: [] }
+    await classifyCoverage(
+      [{ number: 52, title: 'Toggle the terminal', body: '' }],
+      [candidate('a', 'Terminal toggle'), candidate('b', 'Theme fix')],
+      async (requests) => {
+        captured.requests = requests
+        return null
+      },
+    )
+    const request = captured.requests[0]
+    assert.ok(request)
+    assert.equal(classifierRequestSchema.safeParse(request).success, true)
   })
 
   it('splits an issue across requests when the items exceed one request', async () => {

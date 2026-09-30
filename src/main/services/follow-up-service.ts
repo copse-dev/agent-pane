@@ -41,7 +41,7 @@ const PICK_TIMEOUT_MS = 15_000
  * How sure a classifier must be before a preset is offered. The model prompt
  * asks for presets that are "obviously relevant" and nothing when unsure, so
  * "more likely than not" is too low a bar. A starting point, to be tuned with
- * an eval set.
+ * `pnpm run eval:background-questions`.
  */
 export const FOLLOW_UP_PROBABILITY = 0.7
 
@@ -120,15 +120,12 @@ async function pickModelFollowUps(context: FollowUpContext): Promise<FollowUpSug
   return (await classifyFollowUps(context)) ?? (await pickSmallTasksFollowUps(context))
 }
 
-async function pickSmallTasksFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
-  const route = await resolveSmallTasksRoute()
-  if (!route) return []
-
+/** The small-tasks model's follow-up prompt for one exchange. */
+export function followUpPrompt(context: FollowUpContext): string {
   const presetLines = MODEL_FOLLOW_UP_PRESETS.map((p) => `- ${p.id}: ${p.label}`).join('\n')
   const toolSummary =
     context.toolNames.length > 0 ? `\nTools used: ${context.toolNames.join(', ')}` : ''
-
-  const prompt =
+  return (
     'You suggest follow-up actions after an AI coding assistant finishes a turn.\n' +
     'Pick 0-2 preset ids that are obviously relevant to this exchange. ' +
     'Return ONLY a JSON array of id strings, e.g. ["run-tests"]. ' +
@@ -140,11 +137,31 @@ async function pickSmallTasksFollowUps(context: FollowUpContext): Promise<Follow
     '\n\nAssistant:\n' +
     context.assistantMessage.slice(0, 1200) +
     toolSummary
+  )
+}
 
+/** The presets a model reply names, known ones only, first two, without repeats. */
+export function followUpPicksFromModel(raw: string): FollowUpSuggestion[] {
+  const seen = new Set<string>()
+  const suggestions: FollowUpSuggestion[] = []
+  for (const id of parseModelFollowUpIds(raw)) {
+    if (seen.has(id)) continue
+    const preset = MODEL_FOLLOW_UP_PRESETS.find((p) => p.id === id)
+    if (!preset) continue
+    seen.add(id)
+    suggestions.push({ id: preset.id, label: preset.label, prompt: preset.prompt })
+    if (suggestions.length >= MAX_MODEL_PICKS) break
+  }
+  return suggestions
+}
+
+async function pickSmallTasksFollowUps(context: FollowUpContext): Promise<FollowUpSuggestion[]> {
+  const route = await resolveSmallTasksRoute()
+  if (!route) return []
   try {
     const { text: out, usage } = await completeTextWithUsage(
       route.provider,
-      prompt,
+      followUpPrompt(context),
       PICK_TIMEOUT_MS,
     )
     if (usage.inputTokens || usage.outputTokens) {
@@ -155,18 +172,7 @@ async function pickSmallTasksFollowUps(context: FollowUpContext): Promise<Follow
         outputTokens: usage.outputTokens,
       })
     }
-    const ids = parseModelFollowUpIds(out)
-    const seen = new Set<string>()
-    const suggestions: FollowUpSuggestion[] = []
-    for (const id of ids) {
-      if (seen.has(id)) continue
-      const preset = MODEL_FOLLOW_UP_PRESETS.find((p) => p.id === id)
-      if (!preset) continue
-      seen.add(id)
-      suggestions.push({ id: preset.id, label: preset.label, prompt: preset.prompt })
-      if (suggestions.length >= MAX_MODEL_PICKS) break
-    }
-    return suggestions
+    return followUpPicksFromModel(out)
   } catch {
     return []
   }
