@@ -44,6 +44,17 @@ export type ReasoningLevel = (typeof REASONING_LEVELS)[number]
 export const isReasoningLevel = memberOf(REASONING_LEVELS)
 
 /**
+ * How much prose the model writes around its work, cheapest-first. OpenAI's
+ * `verbosity`: it steers the length of the *answer*, not of hidden reasoning
+ * (that is `reasoning`), and defaults to `medium` server-side.
+ */
+export const VERBOSITY_LEVELS = ['low', 'medium', 'high'] as const
+
+export type VerbosityLevel = (typeof VERBOSITY_LEVELS)[number]
+
+export const isVerbosityLevel = memberOf(VERBOSITY_LEVELS)
+
+/**
  * Generation parameters for one model selection. Every field is optional and an
  * absent field means "send nothing" — the provider default, not a value of our
  * choosing. That distinction matters: a model's own default temperature is not
@@ -53,6 +64,12 @@ export const isReasoningLevel = memberOf(REASONING_LEVELS)
  */
 export interface ModelParameters {
   reasoning?: ReasoningLevel
+  /**
+   * Answer length. Responses `text.verbosity` / Chat Completions `verbosity`,
+   * first-party OpenAI GPT-5-and-later only — see
+   * {@link ModelParameterSupport.verbosity}.
+   */
+  verbosity?: VerbosityLevel
   /** User-selected per-response ceiling for OpenAI-compatible transports. */
   maxOutputTokens?: number
   temperature?: number
@@ -87,6 +104,7 @@ export type SamplingField = (typeof SAMPLING_FIELDS)[number]
 export function isEmptyModelParameters(params: ModelParameters): boolean {
   return (
     params.reasoning === undefined &&
+    params.verbosity === undefined &&
     params.maxOutputTokens === undefined &&
     SAMPLING_FIELDS.every((field) => params[field] === undefined)
   )
@@ -117,6 +135,13 @@ export interface ModelParameterSupport {
   sampling: readonly SamplingField[]
   /** Whether this route accepts a user-selected output-token ceiling. */
   outputCap: boolean
+  /**
+   * Answer-length levels this selection accepts; empty when it takes none.
+   * Unlike the sampling knobs an unsupported value is a 400 (`Unknown
+   * parameter` on older models, `Unsupported value` on the codex ones), so
+   * this is an allowlist of first-party OpenAI families, never inferred.
+   */
+  verbosity: readonly VerbosityLevel[]
   /** Upper bound for `temperature` (Anthropic caps at 1, OpenAI-shaped at 2). */
   temperatureMax: number
   /**
@@ -137,6 +162,7 @@ const NO_PARAMETERS: ModelParameterSupport = {
   reasoningWire: 'none',
   sampling: [],
   outputCap: false,
+  verbosity: [],
   temperatureMax: 1,
 }
 
@@ -248,6 +274,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
       reasoningWire: 'anthropic-effort',
       sampling: [],
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1,
     }
   }
@@ -257,6 +284,7 @@ function claudeSupport(modelId: string): ModelParameterSupport {
       reasoningWire: 'anthropic-effort',
       sampling: ANTHROPIC_SAMPLING,
       outputCap: false,
+      verbosity: [],
       temperatureMax: 1,
     }
   }
@@ -267,8 +295,32 @@ function claudeSupport(modelId: string): ModelParameterSupport {
     reasoningWire: 'anthropic-budget',
     sampling: ANTHROPIC_SAMPLING,
     outputCap: false,
+    verbosity: [],
     temperatureMax: 1,
   }
+}
+
+/**
+ * First-party OpenAI families that document `verbosity` (introduced with GPT-5;
+ * the o-series predates it and is not listed). Prefix-matched like the other
+ * family lists so dated snapshots resolve.
+ */
+const OPENAI_VERBOSITY_PREFIXES = ['gpt-5', 'gpt-6'] as const
+
+/**
+ * Ids inside those families that must not be sent `verbosity`. The `-codex`
+ * models accept only `medium` (`Unsupported value: 'low' is not supported with
+ * the 'gpt-5.2-codex' model. Supported values are: 'medium'`, param
+ * `text.verbosity`), so offering a ladder there is a 400 on every turn.
+ * `-chat` and `-search` snapshots are non-agentic variants the docs do not list
+ * as supporting it; excluded until one is confirmed rather than guessed at.
+ */
+const OPENAI_VERBOSITY_EXCLUDED = ['codex', '-chat', 'search'] as const
+
+function openAiVerbosity(modelId: string): readonly VerbosityLevel[] {
+  if (!matchesFamily(modelId, OPENAI_VERBOSITY_PREFIXES)) return []
+  if (OPENAI_VERBOSITY_EXCLUDED.some((marker) => modelId.includes(marker))) return []
+  return VERBOSITY_LEVELS
 }
 
 function openAiSupport(modelId: string): ModelParameterSupport {
@@ -278,6 +330,7 @@ function openAiSupport(modelId: string): ModelParameterSupport {
       reasoningWire: 'openai-effort',
       sampling: [],
       outputCap: false,
+      verbosity: openAiVerbosity(modelId),
       temperatureMax: 2,
     }
   }
@@ -287,6 +340,7 @@ function openAiSupport(modelId: string): ModelParameterSupport {
       reasoningWire: 'openai-effort',
       sampling: [],
       outputCap: false,
+      verbosity: openAiVerbosity(modelId),
       temperatureMax: 2,
     }
   }
@@ -295,6 +349,7 @@ function openAiSupport(modelId: string): ModelParameterSupport {
     reasoningWire: 'none',
     sampling: OPENAI_SAMPLING,
     outputCap: false,
+    verbosity: openAiVerbosity(modelId),
     temperatureMax: 2,
   }
 }
@@ -333,6 +388,7 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
       reasoningWire: 'none',
       sampling: UNIVERSAL_SAMPLING,
       outputCap: false,
+      verbosity: [],
       temperatureMax: 2,
     }
   }
@@ -343,6 +399,9 @@ export function modelParameterSupport(model: string): ModelParameterSupport {
     reasoningWire: selection.namespace === 'openrouter' ? 'openrouter' : 'openai-effort',
     sampling: OPENAI_COMPATIBLE_SAMPLING,
     outputCap: selection.namespace === 'openrouter' || selection.namespace === 'lmstudio',
+    // Not OpenAI's endpoint, so never OpenAI's field: local servers and
+    // aggregators reject or silently drop unknown body fields.
+    verbosity: [],
     temperatureMax: 2,
     upstreamDecides: true,
   }
@@ -417,6 +476,9 @@ export function sanitizeModelParameters(
   const sanitized: ModelParameters = {}
   if (params.reasoning !== undefined && support.reasoning.includes(params.reasoning)) {
     sanitized.reasoning = params.reasoning
+  }
+  if (params.verbosity !== undefined && support.verbosity.includes(params.verbosity)) {
+    sanitized.verbosity = params.verbosity
   }
   if (
     support.outputCap &&
@@ -736,6 +798,8 @@ export function anthropicParameterFields(
 /** OpenAI-shaped `reasoning_effort` / sampling fields for a request body. */
 export interface OpenAIParameterFields {
   reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  /** Chat Completions takes verbosity at the top level (Responses nests it in `text`). */
+  verbosity?: VerbosityLevel
   temperature?: number
   top_p?: number
   top_k?: number
@@ -745,7 +809,7 @@ export interface OpenAIParameterFields {
 }
 
 /** The numeric subset of the request shape — every key a sampling knob maps to. */
-type OpenAISamplingKey = Exclude<keyof OpenAIParameterFields, 'reasoning_effort'>
+type OpenAISamplingKey = Exclude<keyof OpenAIParameterFields, 'reasoning_effort' | 'verbosity'>
 
 /** Each knob's OpenAI-shaped request key. */
 const OPENAI_SAMPLING_KEYS: Readonly<Record<SamplingField, OpenAISamplingKey>> = {
@@ -772,6 +836,7 @@ export function openAiParameterFields(params: ModelParameters): OpenAIParameterF
   if (params.reasoning !== undefined) {
     fields.reasoning_effort = params.reasoning === 'off' ? 'none' : params.reasoning
   }
+  if (params.verbosity !== undefined) fields.verbosity = params.verbosity
   for (const field of SAMPLING_FIELDS) {
     const value = params[field]
     if (value !== undefined) fields[OPENAI_SAMPLING_KEYS[field]] = value
@@ -782,6 +847,8 @@ export function openAiParameterFields(params: ModelParameters): OpenAIParameterF
 /** Responses-API fields: same values, but reasoning is a nested object there. */
 export interface ResponsesParameterFields {
   reasoning?: { effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
+  /** Responses nests answer length under `text`; only `verbosity` is ever set here. */
+  text?: { verbosity: VerbosityLevel }
   temperature?: number
   top_p?: number
 }
@@ -795,8 +862,14 @@ export interface ResponsesParameterFields {
  * reach a request shape with no place for it.
  */
 export function responsesParameterFields(params: ModelParameters): ResponsesParameterFields {
-  const { reasoning_effort: effort, temperature, top_p: topP } = openAiParameterFields(params)
+  const {
+    reasoning_effort: effort,
+    verbosity,
+    temperature,
+    top_p: topP,
+  } = openAiParameterFields(params)
   return {
+    ...(verbosity === undefined ? {} : { text: { verbosity } }),
     ...(temperature === undefined ? {} : { temperature }),
     ...(topP === undefined ? {} : { top_p: topP }),
     ...(effort === undefined ? {} : { reasoning: { effort } }),
@@ -830,6 +903,7 @@ export function decodeModelParameters(value: unknown): ModelParameters {
   const record: Record<string, unknown> = { ...value }
   const params: ModelParameters = {}
   if (isReasoningLevel(record['reasoning'])) params.reasoning = record['reasoning']
+  if (isVerbosityLevel(record['verbosity'])) params.verbosity = record['verbosity']
   const maxOutputTokens = decodeNumber(record['maxOutputTokens'])
   if (maxOutputTokens !== undefined) params.maxOutputTokens = maxOutputTokens
   for (const field of SAMPLING_FIELDS) {

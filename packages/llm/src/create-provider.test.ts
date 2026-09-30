@@ -102,6 +102,8 @@ interface CapturedRequestBody {
   stream_options?: { include_usage?: boolean }
   reasoning?: { effort?: string; enabled?: boolean }
   reasoning_effort?: string
+  verbosity?: string
+  parallel_tool_calls?: boolean
   temperature?: number
   top_p?: number
   presence_penalty?: number
@@ -841,5 +843,79 @@ describe('createProvider OpenAI transport routing', () => {
     // OpenRouter serves its own endpoint; it must stay on the aggregator path.
     const provider = createOpenRouterProvider('openai/gpt-5.6-sol', 'sk-or-test')
     assert.ok(provider instanceof OpenAIProvider)
+  })
+})
+
+describe('createProvider verbosity', () => {
+  async function responsesBody(
+    provider: LLMProvider,
+  ): Promise<{ text?: { verbosity?: string }; verbosity?: string; parallel_tool_calls?: boolean }> {
+    assert.ok(provider instanceof ResponsesProvider)
+    const captured: {
+      request?: { text?: { verbosity?: string }; verbosity?: string; parallel_tool_calls?: boolean }
+    } = {}
+    Object.defineProperty(provider, 'client', {
+      value: {
+        responses: {
+          create: (request: { text?: { verbosity?: string } }): AsyncIterable<unknown> => {
+            captured.request = request
+            return oneTextDelta()
+          },
+        },
+      },
+      configurable: true,
+    })
+    for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) {
+      // Drain the stream so the provider sends and captures the request.
+    }
+    return captured.request ?? {}
+  }
+
+  it('sends text.verbosity on the Responses transport for a first-party GPT model', async () => {
+    const provider = createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+      params: { verbosity: 'low' },
+    })
+    const body = await responsesBody(provider)
+    assert.deepEqual(body.text, { verbosity: 'low' })
+    assert.equal(body.verbosity, undefined)
+    assert.equal(body.parallel_tool_calls, undefined)
+  })
+
+  it('sends top-level verbosity when a GPT-5 model is pinned to Chat Completions', async () => {
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+        params: { verbosity: 'medium' },
+        forceChatCompletions: true,
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.verbosity, 'medium')
+    assert.equal(request.parallel_tool_calls, undefined)
+  })
+
+  it('omits verbosity by default on both OpenAI transports', async () => {
+    const responses = await responsesBody(
+      createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }),
+    )
+    assert.equal(responses.text, undefined)
+    const chat = await captureRequest(
+      expectOpenAIProvider(
+        createProvider('gpt-5.6-sol', { openAiApiKey: 'test-openai' }, undefined, {
+          forceChatCompletions: true,
+        }),
+      ),
+    )
+    assert.equal(chat.verbosity, undefined)
+  })
+
+  it('never reaches OpenRouter, even if a stray value arrives in the params', async () => {
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('openai/gpt-5.6-sol', 'sk-or-test', undefined, {
+        params: { verbosity: 'low', temperature: 0.5 },
+      }),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.verbosity, undefined)
+    assert.equal(request.temperature, 0.5)
   })
 })

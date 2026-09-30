@@ -11,6 +11,8 @@ interface CapturedRequest {
   tools: Array<Record<string, unknown>>
   max_output_tokens?: number
   reasoning?: { summary?: string; effort?: string }
+  text?: { verbosity?: string }
+  parallel_tool_calls?: boolean
   include?: readonly string[]
   prompt_cache_key?: string
   store?: boolean
@@ -728,5 +730,63 @@ describe('ResponsesProvider reasoning', () => {
     assert.deepEqual(request.input, [
       { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{}' },
     ])
+  })
+})
+
+describe('ResponsesProvider request body: verbosity and parallel_tool_calls', () => {
+  async function bodyFor(
+    opts: ConstructorParameters<typeof ResponsesProvider>[1],
+  ): Promise<CapturedRequest> {
+    const provider = new ResponsesProvider('gpt-5.6-sol', opts)
+    let request: CapturedRequest | undefined
+    withFakeStream(
+      provider,
+      (captured) => {
+        request = captured
+      },
+      [{ type: 'response.output_text.delta', delta: 'ok' }],
+    )
+    await collect(provider)
+    assert.ok(request)
+    return request
+  }
+
+  it('sends text.verbosity when tuned', async () => {
+    const body = await bodyFor({ apiKey: 'sk-test', params: { verbosity: 'low' } })
+    assert.deepEqual(body.text, { verbosity: 'low' })
+    assert.equal(Object.hasOwn(body, 'verbosity'), false)
+  })
+
+  it('sends no text field at all by default', async () => {
+    const body = await bodyFor({ apiKey: 'sk-test' })
+    assert.equal(Object.hasOwn(body, 'text'), false)
+  })
+
+  it('sends verbosity alongside reasoning effort', async () => {
+    const body = await bodyFor({
+      apiKey: 'sk-test',
+      params: { verbosity: 'high', reasoning: 'medium' },
+    })
+    assert.deepEqual(body.text, { verbosity: 'high' })
+    assert.equal(body.reasoning?.effort, 'medium')
+  })
+
+  it('lets extraBody override it, last', async () => {
+    const body = await bodyFor({
+      apiKey: 'sk-test',
+      params: { verbosity: 'low' },
+      extraBody: { text: { verbosity: 'high' } },
+    })
+    assert.deepEqual(body.text, { verbosity: 'high' })
+  })
+
+  it('never sends parallel_tool_calls: the API default (true) is what Copse handles', async () => {
+    // The agent loop executes a batch's calls in order and answers them in one
+    // tool message, and reasoning replay is keyed to the whole batch (see
+    // "replays one reasoning block once for a parallel batch"), so there is
+    // nothing for an explicit value to fix. Pinned so a future change has to
+    // argue with docs/plans rather than slip in.
+    const body = await bodyFor({ apiKey: 'sk-test', params: { verbosity: 'low' } })
+    assert.equal(Object.hasOwn(body, 'parallel_tool_calls'), false)
   })
 })

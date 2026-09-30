@@ -273,8 +273,11 @@ export function createOpenRouterProvider(
   // `reasoning_effort` alias, so it normalises across upstream vendors and can
   // express "off". Sampling stays on the standard OpenAI-shaped fields, so the
   // reasoning level is dropped from `params` to avoid sending both spellings.
+  // `verbosity` is dropped too: it is OpenAI's own field, and an aggregator's
+  // upstream may reject it.
   const {
     reasoning: _reasoning,
+    verbosity: _verbosity,
     maxOutputTokens: _maxOutputTokens,
     ...sampling
   } = opts.params ?? {}
