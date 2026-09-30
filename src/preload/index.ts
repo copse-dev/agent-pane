@@ -72,6 +72,7 @@ const api: ApiClient = {
     captureScreenshot: (webContentsId: number) =>
       ipcRenderer.invoke('browser:capture-screenshot', webContentsId),
     exportPdf: (webContentsId: number) => ipcRenderer.invoke('browser:export-pdf', webContentsId),
+    exportPage: (webContentsId: number) => ipcRenderer.invoke('browser:export-page', webContentsId),
     exportArtefact: (artefact: { title: string; mimeType: string; body: string }) =>
       ipcRenderer.invoke('browser:export-artefact', artefact),
     onOpenTab: (handler: (url: string, partition?: string) => void) => {

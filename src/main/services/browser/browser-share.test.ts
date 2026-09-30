@@ -3,11 +3,14 @@ import assert from 'node:assert/strict'
 import {
   browserSelectionShare,
   captureBrowserPageText,
+  captureBrowserPageHtml,
   captureBrowserScreenshot,
   exportCanvasArtefact,
+  exportBrowserPageHtml,
   exportBrowserPagePdf,
   shareBrowserGuestContent,
   suggestedCanvasFilename,
+  suggestedHtmlFilename,
   suggestedPdfFilename,
 } from './browser-share.ts'
 
@@ -267,5 +270,55 @@ describe('canvas HTML export', () => {
       ),
       /Only HTML canvas artefacts can be downloaded/,
     )
+  })
+})
+
+describe('browser page HTML export', () => {
+  it('captures the current DOM and names it after the page', async () => {
+    let script = ''
+    const page = await captureBrowserPageHtml({
+      getTitle: () => 'Reference page',
+      getURL: () => 'https://example.com/guide',
+      executeJavaScript: (code) => {
+        script = code
+        return Promise.resolve({
+          title: 'Reference page',
+          url: 'https://example.com/guide',
+          body: '<!doctype html>\n<html><body><h1>Guide</h1></body></html>',
+        })
+      },
+    })
+
+    assert.match(script, /documentElement\.outerHTML/)
+    assert.equal(page.body, '<!doctype html>\n<html><body><h1>Guide</h1></body></html>')
+    assert.equal(suggestedHtmlFilename(page.title, page.url), 'Reference page.html')
+  })
+
+  it('writes the captured document and skips capture-side effects on cancel', async () => {
+    const writes: { filePath: string; body: string }[] = []
+    const body = '<!doctype html>\n<html><body><h1>Guide</h1></body></html>'
+    const saved = await exportBrowserPageHtml(
+      {
+        getTitle: () => 'Reference page',
+        getURL: () => 'https://example.com/guide',
+        executeJavaScript: () =>
+          Promise.resolve({
+            title: 'Reference page',
+            url: 'https://example.com/guide',
+            body,
+          }),
+      },
+      (defaultFilename) => {
+        assert.equal(defaultFilename, 'Reference page.html')
+        return Promise.resolve('/tmp/out/Reference page.html')
+      },
+      (filePath, html) => {
+        writes.push({ filePath, body: html })
+        return Promise.resolve()
+      },
+    )
+
+    assert.equal(saved, '/tmp/out/Reference page.html')
+    assert.deepEqual(writes, [{ filePath: '/tmp/out/Reference page.html', body }])
   })
 })

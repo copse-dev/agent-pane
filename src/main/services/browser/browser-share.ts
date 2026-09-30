@@ -133,6 +133,21 @@ interface BrowserCanvasArtefactContents {
   body: string
 }
 
+interface BrowserHtmlPageContents {
+  getTitle(): string
+  getURL(): string
+  executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
+}
+
+const PAGE_HTML_SCRIPT = `(() => {
+  const documentElement = document.documentElement;
+  return {
+    title: document.title,
+    url: location.href,
+    body: documentElement ? '<!doctype html>\\n' + documentElement.outerHTML : '',
+  };
+})()`
+
 /** Filename hint for Download canvas — the artefact title as a plain HTML file. */
 export function suggestedCanvasFilename(title: string): string {
   const base = cleanLabelPart(title)
@@ -140,6 +155,38 @@ export function suggestedCanvasFilename(title: string): string {
     .replace(/^\.+/, '')
     .trim()
   return `${base || 'Canvas artefact'}.html`
+}
+
+/** Filename hint for Download page — the page title as a plain HTML file. */
+export function suggestedHtmlFilename(title: string, url: string): string {
+  const base = pageIdentity(title, url)
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/^\.+/, '')
+    .trim()
+  return `${base || 'Browser page'}.html`
+}
+
+/** Capture the current live DOM so a regular browser tab can be downloaded. */
+export async function captureBrowserPageHtml(
+  contents: BrowserHtmlPageContents,
+): Promise<{ title: string; url: string; body: string }> {
+  const result = z
+    .strictObject({ title: z.string(), url: z.string(), body: z.string().min(1) })
+    .parse(await contents.executeJavaScript(PAGE_HTML_SCRIPT, true))
+  return result
+}
+
+/** Save the current live DOM as an HTML document at a user-chosen path. */
+export async function exportBrowserPageHtml(
+  contents: BrowserHtmlPageContents,
+  saveAs: (defaultFilename: string) => Promise<string | null>,
+  writeHtml: (filePath: string, body: string) => Promise<void>,
+): Promise<string | null> {
+  const page = await captureBrowserPageHtml(contents)
+  const filePath = await saveAs(suggestedHtmlFilename(page.title, page.url))
+  if (!filePath) return null
+  await writeHtml(filePath, page.body)
+  return filePath
 }
 
 /**
