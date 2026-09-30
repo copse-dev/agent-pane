@@ -26,16 +26,19 @@ const GENERATED_PATH = resolve('packages/llm/src/model-catalog.generated.ts')
 // Mirror of TRACKED_MODELS in src/shared/llm/model-catalog.ts (see header
 // comment for why this is duplicated). model-catalog.test.ts enforces parity.
 const TRACKED_MODELS = [
-  'claude-sonnet-4-6',
+  'claude-sonnet-5-5',
   'claude-fable-5-1',
   'claude-fable-5',
   'claude-sonnet-5',
+  'claude-sonnet-4-6',
+  'claude-opus-5-5',
   'claude-opus-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
+  'gpt-6.1-sol',
   'gpt-6-astra',
   'gpt-5.5',
   'gpt-5',

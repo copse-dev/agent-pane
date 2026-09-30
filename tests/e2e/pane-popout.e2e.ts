@@ -51,6 +51,14 @@ const PANES = [
     rowProbe: null,
     minImages: 0,
   },
+  {
+    mode: 'roadmap',
+    openLabel: 'Open roadmap',
+    listHost: '#roadmap-host',
+    probe: '#roadmap-host .roadmap-list',
+    rowProbe: '#roadmap-host .roadmap-list-empty',
+    minImages: 0,
+  },
 ] as const
 
 describe('Pane pop-out (mock gh)', () => {
@@ -61,7 +69,7 @@ describe('Pane pop-out (mock gh)', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     writeE2eEnv({ COPSE_PANEL_MOCK_GH: '1', COPSE_PANEL_MOCK_GH_STATUS: 'ready' })
     resetUserData()
-    seedPrPanelChatFixture(process.cwd())
+    seedPrPanelChatFixture(process.cwd(), { roadmapPlansEnabled: true })
     seedE2eViewport()
     seedE2eThreePaneLayout()
     await browser.reloadSession()
@@ -186,6 +194,13 @@ describe('Pane pop-out (mock gh)', () => {
         })
       }
 
+      if (pane.mode === 'roadmap') {
+        await expect(await $('.roadmap-list-empty')).toHaveText(
+          expect.stringContaining('No roadmap items yet'),
+        )
+        await expect(await $('.memories-error')).not.toBeDisplayed()
+      }
+
       // The probe above proves the list element exists, not that it has rows, and
       // rows are a stage before their icons paint. Capture only once every stage
       // this pane has is done.
@@ -210,7 +225,7 @@ describe('Pane pop-out (mock gh)', () => {
     await expect(await $('#pane-projects')).toBeDisplayed()
     await expect(await $('.prompt-input')).toBeExisting()
     await expect(await $('.titlebar-popout-btn')).not.toBeExisting()
-    await expect(await $('#browser-tabs-host .pane-popout-btn')).toBeDisplayed()
+    await expect(await $('#roadmap-host .pane-popout-btn')).toBeDisplayed()
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'pane-popout-main.png'))
   })
 })

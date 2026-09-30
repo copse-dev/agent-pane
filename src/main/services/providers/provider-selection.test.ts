@@ -39,6 +39,21 @@ function authHeader(init?: RequestInit): string | undefined {
   return expectStringRecord(headers)['Authorization']
 }
 
+describe('model maker execution policy', () => {
+  afterEach(() => {
+    setSetting('blockedModelMakers', [])
+  })
+
+  it('rejects a blocked maker before building a direct or OpenRouter provider', async () => {
+    setSetting('blockedModelMakers', ['xai'])
+    await assert.rejects(
+      () => describeProvider('openrouter:x-ai/grok-4.5'),
+      /xAI models are blocked/,
+    )
+    await assert.rejects(() => describeProvider('grok-4.5'), /xAI models are blocked/)
+  })
+})
+
 describe('lm-studio-models source integrity', () => {
   it('contains no embedded null bytes', () => {
     const src = readFileSync(SOURCE_PATH)
@@ -251,6 +266,26 @@ describe('per-model parameters reach the built provider', () => {
       await buildProvider('lmstudio:qwen-untuned', undefined, { maxReasoning: 'low' }),
     )
     assert.equal(request['reasoning_effort'], undefined)
+  })
+
+  it('applies a per-call output ceiling to an untuned model', async () => {
+    const request = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-untuned', undefined, { maxOutputTokens: 2048 }),
+    )
+    assert.equal(request['max_tokens'], 2048)
+  })
+
+  it('lets a per-call ceiling lower, never raise, the saved output cap', async () => {
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 1024 } })
+    const lower = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { maxOutputTokens: 2048 }),
+    )
+    assert.equal(lower['max_tokens'], 1024)
+    setSetting('modelParameters', { 'lmstudio:qwen-tuned': { maxOutputTokens: 8192 } })
+    const capped = await captureLocalRequest(
+      await buildProvider('lmstudio:qwen-tuned', undefined, { maxOutputTokens: 2048 }),
+    )
+    assert.equal(capped['max_tokens'], 2048)
   })
 
   it('sends nothing when the stored map fails its schema', async () => {

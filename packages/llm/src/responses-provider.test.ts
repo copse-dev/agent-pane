@@ -18,6 +18,7 @@ interface CapturedRequest {
 
 type TestEvent =
   | { type: 'response.output_text.delta'; delta: string }
+  | { type: 'error'; message: string; param: string | null; code: string | null }
   | { type: 'response.reasoning_summary_text.delta'; delta: string }
   | { type: 'response.reasoning_text.delta'; delta: string }
   | {
@@ -308,6 +309,96 @@ describe('ResponsesProvider streaming', () => {
     assert.ok(usage)
     assert.equal(usage.requestedServiceTier, 'flex')
     assert.equal(usage.responseServiceTier, 'priority')
+  })
+
+  it('retries without an output ceiling that the endpoint rejects', async () => {
+    const provider = new ResponsesProvider('gpt-5.6-sol', {
+      apiKey: 'test-key',
+      maxOutputTokens: 2_048,
+    })
+    const requests: CapturedRequest[] = []
+    const create: ResponsesProviderForTest['client']['responses']['create'] = async (
+      request,
+    ): Promise<AsyncIterable<TestEvent>> => {
+      requests.push(request)
+      if (requests.length === 1) {
+        throw Object.assign(new Error('max_output_tokens exceeds the limit for this model'), {
+          status: 400,
+        })
+      }
+      return streamEvents([{ type: 'response.output_text.delta', delta: 'ok' }])
+    }
+    Object.defineProperty(provider, 'client', {
+      value: { responses: { create } },
+      configurable: true,
+    })
+
+    const chunks = await collect(provider)
+
+    assert.equal(at(requests, 0).max_output_tokens, 2_048)
+    assert.equal(at(requests, 1).max_output_tokens, undefined)
+    assert.deepEqual(chunks, [{ type: 'text', text: 'ok' }])
+  })
+
+  it('retries without an output ceiling the endpoint rejects inside the stream', async () => {
+    async function run(firstStream: readonly TestEvent[]): Promise<{
+      requests: CapturedRequest[]
+      result: ProviderStreamChunk[] | Error
+    }> {
+      const provider = new ResponsesProvider('gpt-5.6-sol', {
+        apiKey: 'test-key',
+        maxOutputTokens: 2_048,
+      })
+      const requests: CapturedRequest[] = []
+      const create: ResponsesProviderForTest['client']['responses']['create'] = async (
+        request,
+      ): Promise<AsyncIterable<TestEvent>> => {
+        requests.push(request)
+        return streamEvents(
+          requests.length === 1
+            ? firstStream
+            : [{ type: 'response.output_text.delta', delta: 'ok' }],
+        )
+      }
+      Object.defineProperty(provider, 'client', {
+        value: { responses: { create } },
+        configurable: true,
+      })
+      try {
+        return { requests, result: await collect(provider) }
+      } catch (err) {
+        return { requests, result: err instanceof Error ? err : new Error(String(err)) }
+      }
+    }
+
+    // Rejected before any output: retried once without the field.
+    const rejected = await run([
+      {
+        type: 'error',
+        message: "Unsupported parameter: 'max_output_tokens'",
+        param: 'max_output_tokens',
+        code: 'unsupported_parameter',
+      },
+    ])
+    assert.equal(rejected.requests.length, 2)
+    assert.equal(at(rejected.requests, 0).max_output_tokens, 2_048)
+    assert.equal(at(rejected.requests, 1).max_output_tokens, undefined)
+    assert.deepEqual(rejected.result, [{ type: 'text', text: 'ok' }])
+
+    // An unrelated in-stream error still fails, with the ceiling kept.
+    const unrelated = await run([
+      { type: 'error', message: 'model overloaded', param: null, code: 'server_error' },
+    ])
+    assert.equal(unrelated.requests.length, 1)
+    assert.ok(unrelated.result instanceof Error)
+
+    // Once output reached the caller, a late rejection is not replayed.
+    const late = await run([
+      { type: 'response.output_text.delta', delta: 'partial' },
+      { type: 'error', message: 'max_output_tokens exceeded', param: null, code: null },
+    ])
+    assert.equal(late.requests.length, 1)
+    assert.ok(late.result instanceof Error)
   })
 
   it('synthesizes a tool-call id when a Responses endpoint omits call_id', async () => {

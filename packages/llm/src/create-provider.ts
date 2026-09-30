@@ -73,16 +73,18 @@ function openAiResponsesProvider(
   model: string,
   apiKey: string,
   promptCacheKey: string | undefined,
-  serviceTier: ServiceTier | undefined,
+  opts: {
+    serviceTier?: ServiceTier
+    params: ModelParameters
+    maxOutputTokens?: number
+  },
 ): LLMProvider {
   return new ResponsesProvider(model, {
     apiKey,
     reasoningSummaries: true,
     encryptedReasoning: true,
+    ...opts,
     ...(promptCacheKey ? { promptCacheKey } : {}),
-    // A billing choice, not a transport detail: moving a model to Responses
-    // must not silently drop the tier the user selected.
-    ...(serviceTier ? { serviceTier } : {}),
     ...OPENAI_STORE_OPT_OUT,
   })
 }
@@ -134,7 +136,10 @@ export function createProvider(
       )
     }
     if (usesResponsesApi(m) && !forceChatCompletions) {
-      return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, opts.serviceTier)
+      return openAiResponsesProvider(m, openAiApiKey, promptCacheKey, {
+        ...tierOpt,
+        ...tunedOpts(m),
+      })
     }
     return new OpenAIProvider(m, {
       apiKey: openAiApiKey,
@@ -162,7 +167,10 @@ export function createProvider(
   if (openAiApiKey) {
     const id = model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o'
     if (usesResponsesApi(id) && !forceChatCompletions) {
-      return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, opts.serviceTier)
+      return openAiResponsesProvider(id, openAiApiKey, promptCacheKey, {
+        ...tierOpt,
+        ...tunedOpts(id),
+      })
     }
     return new OpenAIProvider(id, {
       apiKey: openAiApiKey,
@@ -319,16 +327,15 @@ export function createExtraCloudProvider(
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   const cacheKeyOpt = !provider.local && promptCacheKey ? { promptCacheKey } : {}
   if (provider.apiStyle === 'responses') {
-    // No output ceiling on this transport: the cards we hold were written
-    // against Chat Completions endpoints, and this path has no drop-and-retry
-    // for a ceiling the server rejects. The server's own default stands.
     const { tools, ...extraBody } = provider.extraBody ?? {}
     const serverTools: Tool[] = Array.isArray(tools) ? tools.filter(isServerSideTool) : []
+    const ceiling = resolvedOutputCeiling(model, params)
     return new ResponsesProvider(model, {
       baseURL: provider.baseUrl,
       apiKey,
       serverTools,
       params,
+      ...(ceiling === undefined ? {} : { maxOutputTokens: ceiling }),
       ...cacheKeyOpt,
       ...(Object.keys(extraBody).length ? { extraBody } : {}),
     })

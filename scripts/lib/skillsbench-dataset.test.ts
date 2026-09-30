@@ -11,6 +11,7 @@ interface TaskRecord {
 
 interface Descriptor {
   dataset: { version: string; revision: string; benchflow: string }
+  studyExcluded: Array<{ name: string; reason: string }>
   active: TaskRecord[]
   excluded: Array<{ name: string; reason: string }>
 }
@@ -51,8 +52,10 @@ function isDescriptor(value: unknown): value is Descriptor {
   }
   const active = value['active']
   const excluded = value['excluded']
-  if (!Array.isArray(active) || !Array.isArray(excluded)) return false
-  return active.every(isTaskRecord) && excluded.every(isExcluded)
+  const studyExcluded = value['studyExcluded']
+  if (!Array.isArray(active) || !Array.isArray(excluded) || !Array.isArray(studyExcluded))
+    return false
+  return active.every(isTaskRecord) && excluded.every(isExcluded) && studyExcluded.every(isExcluded)
 }
 
 function loadDescriptor(): Descriptor {
@@ -81,6 +84,16 @@ describe('SkillsBench v1.1 descriptor', () => {
     assert.equal(new Set(descriptor.active.map((task) => task.name)).size, 87)
     assert.equal(descriptor.excluded.length, 14)
     assert.equal(new Set(descriptor.excluded.map((task) => task.name)).size, 14)
+  })
+
+  it('predeclares tasks excluded by the no-network study policy', () => {
+    assert.deepEqual(descriptor.studyExcluded, [
+      {
+        name: 'data-to-d3',
+        reason: 'upstream solve.sh fetches d3, but Copse trials and oracles run without network',
+      },
+    ])
+    assert.ok(descriptor.active.some((task) => task.name === 'data-to-d3'))
   })
 
   it('retains immutable task revisions, paths, and digests', () => {

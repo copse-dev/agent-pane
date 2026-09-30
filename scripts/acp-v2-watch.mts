@@ -37,7 +37,7 @@
 import { writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { isRecord, stringRecordOrEmpty } from '../src/shared/unknown-value.mts'
+import { isRecord, stringRecordOrEmpty } from '../packages/std/src/unknown-value.ts'
 
 export const SDK_PACKAGE = '@agentclientprotocol/sdk'
 

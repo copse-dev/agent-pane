@@ -129,7 +129,7 @@ import {
   getLmStudioDownloadStatus,
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
-import { suggestFollowUps } from './services/follow-up-service.ts'
+import { followUpExecutorForModels, suggestFollowUps } from './services/follow-up-service.ts'
 import { suggestPrBody } from './services/pr-body-service.ts'
 import { suggestNextStep } from './services/next-step-service.ts'
 import {
@@ -204,6 +204,7 @@ import {
   renameThreadWorktreeBranchAfterTitle,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
@@ -617,6 +618,9 @@ app
     getAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
+    getBranchCiAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
     // A container run is a turn on its thread but never passes through the
     // dispatcher; write it into the thread's model history when it settles
     // (A14), so the next message to the thread knows what the run did.
@@ -990,7 +994,9 @@ app
           throw new Error('agent:suggest-follow-ups: context failed validation')
         }
         const { root } = await resolveThreadExecutionContext(projectId, threadId)
-        return suggestFollowUps(parsed.data, root)
+        const thread = await getProjectThread(projectId, threadId)
+        const executor = followUpExecutorForModels(thread?.model, thread?.resolvedModel)
+        return suggestFollowUps(parsed.data, root, executor)
       },
     )
 
@@ -1129,6 +1135,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   perfDumpCounters('quit')
   flushPerfTrace()
   getAutomationService().stop()
+  getBranchCiAutomationService().stop()
   await stopMobileCompanion()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined

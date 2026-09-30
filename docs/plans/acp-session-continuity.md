@@ -1,15 +1,28 @@
 # ACP session continuity
 
-Status: **Proposed**
+Status: **In progress.** The changed-working-directory carry-over is implemented
+(see [below](#changed-working-directory)). The durable binding, replay
+reconciliation, discovery, and `copse --acp` phases are still proposed.
 
-Date: **2026-07-30**
+Date: **2026-07-30**, updated **2026-09-26**
 
 ## Outcome
 
-An ACP conversation should survive an idle reap, agent-process failure, Copse
-restart, and an intentional hand-off to another ACP surface. Returning to the
-same Copse thread should reconnect to the same agent session when possible and
-must accurately represent any history that Copse cannot display.
+An ACP conversation should survive an idle reap, agent-process failure, a
+restart into a **different working directory**, Copse restart, and an
+intentional hand-off to another ACP surface. Returning to the same Copse thread
+should reconnect to the same agent session when possible and must accurately
+represent any history that Copse cannot display.
+
+The changed-directory case comes first. Deferred thread worktrees
+(`claude/threads-no-workspace-prototype-cef7d7`,
+`docs/plans/deferred-thread-worktrees.md` on that branch) start a thread without
+a worktree and create one only when the agent first needs to write. Native Copse
+threads can switch roots mid-turn. An ACP agent cannot: its cwd and OS sandbox
+are fixed when its process starts and its session is created. The planned ACP
+flow starts the agent read-only, exposes a `request_write_access` tool through
+the native MCP bridge, creates the worktree, and then restarts the agent in it.
+That last step is acceptable only if the conversation comes along.
 
 This applies to every ACP agent Copse exposes: Claude Agent ACP, Claude Code ACP,
 Codex ACP, Cursor ACP, Gemini CLI ACP, agents started over SSH, and custom agent
@@ -23,6 +36,98 @@ There are two directions:
 2. **Copse as ACP agent (`copse --acp`):** another client can reconnect to a
    Copse session after the ACP process or client restarts, and the Copse GUI can
    open the same filesystem-native thread.
+
+## Changed working directory
+
+### Evidence
+
+`npm run probe:acp -- --continuity` restarts each agent, reattaches from the
+same or a different directory, and asks for a codeword planted before the
+restart ([method](../acp-capability-probe.md#session-continuity-trials-npm-run-probeacp----continuity),
+[results](../acp-support-findings.md#session-continuity-across-a-restart-and-a-new-cwd-2026-09-26)).
+On 2026-09-26:
+
+| Agent                   | load, same cwd | load, new cwd | resume, same cwd | resume, new cwd |
+| ----------------------- | -------------- | ------------- | ---------------- | --------------- |
+| Claude Agent ACP 0.70.0 | ✓              | ✓             | ✓                | ✓               |
+| Codex ACP 1.6.2         | ✓              | ✓             | ✓                | ✓               |
+
+Not probed: Cursor (`cursor-agent acp` required authentication on the probe
+host; it advertises `loadSession` only), and the retired Zed `claude-code-acp`
+(renamed upstream to Claude Agent ACP).
+
+Each new-cwd success held across a second restart in the new directory. After
+the move, each agent reported the new directory as its cwd. The hypothesis that
+Claude would lose a session filed under another directory is half right. Claude
+does store transcripts per directory, but it finds a session by id from any
+directory and keeps appending to the original project's file. Codex behaves the
+same from Copse's point of view.
+
+### Decisions
+
+1. **A session outlives its process.** The pool used to key reuse on one
+   fingerprint that includes cwd, sandbox, permission mode, and MCP servers. Any
+   change to it discarded the agent session. The fingerprint still decides
+   whether the **process** can be reused. A narrower **lineage** (command, args,
+   env, and SSH host) decides whether a new process may take over the
+   **session**. Cwd, sandbox, permission mode, and MCP servers are all supplied
+   again when the session is reattached (`session/load`/`resume` carry `cwd` and
+   `mcpServers`, and the mode is reapplied after attach). Changing them costs a
+   process, not the conversation. A different agent or host never inherits a
+   session.
+2. **Same directory: resume, then load.** Resume restores memory without
+   replay. Load is the fallback, and it is the only path for load-only agents
+   such as Cursor. This implements the first rows of the
+   [state machine](#copse-as-client-state-machine) for in-process restarts
+   (idle reap, dropped transport, fault replacement, and a mode or sandbox
+   change).
+3. **New directory: load only, and it must prove itself.** An agent that files
+   sessions per directory could answer a resume from the new one with an empty
+   session and no error. Resume replays nothing, so Copse could not tell
+   continuation from a silent reset. Load replays the conversation before it
+   returns, so after a move Copse requires the replay to contain at least one
+   user message whenever the old session had been prompted. Otherwise the load
+   counts as `history-missing`. The probe shows resume across directories
+   working for both adapters above. That is evidence about two adapter versions,
+   not a protocol guarantee, and both of them can also load. Revisit this if an
+   agent that can only resume matters.
+4. **Drop the load replay; do not import it.** When Copse reattaches a session
+   it drove itself, the replay is the conversation already in the thread. It is
+   counted, used as proof, and discarded before the update pump sees it.
+   Otherwise the pump would render the whole thread again as new output. State
+   updates that arrive with it (commands, mode, config options, title) still
+   apply. Importing replay remains Phase 2's job, for sessions that another
+   client also wrote to.
+5. **One writer.** The old process is disposed before the new one reattaches.
+   Two processes never hold one agent session.
+6. **When it cannot carry over, say what was lost.** The new session receives
+   the existing Copse-transcript preamble, which contains user and assistant
+   text only. The turn opens with a note, sent through the caller's sink so it
+   never enters the model history replayed into later turns. The note names the
+   cause (`moved-without-load`, `unsupported`, `rejected`, `history-missing`)
+   and states that the agent's earlier tool calls and their output, the files it
+   read, and its reasoning did not carry over. It is emitted only when the lost
+   session had been prompted. It is not emitted when the user switches agents,
+   which is a hand-off to someone else rather than a loss. It is also not yet
+   emitted after a Copse restart, because nothing binds the thread to its old
+   session until the [sidecar](#persist-an-acp-binding-beside-the-thread) lands.
+   Visual evidence: `tests/e2e/acp-session-handover.e2e.ts`.
+
+### What the deferred-worktree flow must do
+
+The carry-over happens when the pool acquires a session at a turn boundary. The
+`request_write_access` tool should therefore:
+
+1. create the worktree and return a tool result telling the agent it will
+   continue in that directory with write access;
+2. let the prompt settle, ending the turn rather than killing the process under
+   it (decision 5);
+3. start the continuation turn under the worktree's execution context, with the
+   relaxed sandbox and permission mode. The pool then respawns the agent there
+   and loads the same session.
+
+If the agent cannot load (a custom agent, or a failed load), that continuation
+turn opens with the handover note, and the agent works from Copse's transcript.
 
 ## Decisions
 
@@ -129,6 +234,11 @@ binding, select the first supported safe path:
 | Session missing or incompatible                 | Preserve a diagnostic, start new only after a clear user-visible fallback decision. |
 | Neither resume nor load supported               | Create a new session and use the existing Copse-history preamble fallback.          |
 
+Within one Copse run, the first three rows are implemented for every in-process
+restart, and the last row is implemented with an honest handover note (see
+[Changed working directory](#changed-working-directory)). Across a Copse restart
+there is no binding yet, so today every thread takes the last row.
+
 The ordering is policy, not a vendor test. Live capability probes currently show
 different combinations among Claude, Codex, and Cursor; Gemini, Claude Code ACP,
 and each custom command must be probed at the installed version before claiming
@@ -202,6 +312,17 @@ client-name branch.
 - Record installed command/version with results. Capability observations expire
   when that version changes.
 
+### Phase 0.5 — Changed-directory carry-over (implemented)
+
+- Split the pool's process fingerprint from the session lineage; carry the
+  session over on any same-lineage respawn.
+- Same cwd: resume, then load. New cwd: load, verified by its replay.
+- Drop the load replay before the update pump sees it.
+- Report `AcpSessionHandover` to the turn, and open the turn with a note that
+  says what did not carry over.
+- `npm run probe:acp -- --continuity`, which adds the observed _Resume in new
+  cwd_ capability to the support matrix.
+
 ### Phase 1 — Durable exact-session continuation
 
 - Add the sidecar codec and atomic thread-store operations.
@@ -252,7 +373,23 @@ WebdriverIO visual eval and screenshot.
 
 ## Verification
 
-Unit and integration coverage comes before end-to-end UI coverage:
+Changed-directory carry-over (Phase 0.5) is covered by:
+
+- `acp-session-continuity.test.ts`, which runs the real pool and client
+  against a fake agent whose session store outlives each process. It covers
+  load into a new cwd (no replay rendered, memory kept, commands applied); a
+  later idle reap in the new cwd; a mode-only change resuming in place;
+  load-only reattach after a reap; the move without load, refused load, and
+  empty-replay handovers; nothing reported when the old session was never
+  prompted; and no session crossing to another agent.
+- `acp-session-reattach.test.ts` for the method order, the replay split, and
+  the note copy.
+- `acp-continuity-probe.test.ts` for the probe against global, per-cwd, and
+  silently-empty per-cwd storage.
+- `acp-capability-probe.test.ts` for the matrix rows.
+- `tests/e2e/acp-session-handover.e2e.ts` and its screenshot for the note.
+
+Still to cover in later phases:
 
 - Decision-table tests for every capability combination and fallback.
 - Sidecar tests for atomic writes, corrupt/future data, redaction, config
@@ -289,6 +426,9 @@ visible phases that require them.
 - No transport-recovery path can duplicate a prompt or tool execution.
 - Unsupported/custom agents retain a correct new-session plus Copse-history
   fallback and display their negotiated limitation.
+- A thread whose ACP agent restarts in a different working directory keeps its
+  agent session when the agent can load it there (Claude and Codex today), and
+  otherwise says in the thread what did not carry over.
 
 ## Non-goals
 

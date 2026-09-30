@@ -14,10 +14,13 @@ Before implementation, record a short brief in the owning issue or task:
 - the smallest validation that can establish the outcome, plus required broader gates.
 
 Use the [product definition of done](product-definition-of-done-audit.md#definition-of-done).
-At handoff, state what changed, the exact checks and results (or immutable run links), independent
-review evidence when it exists, and anything unverified. Link remaining work instead of closing an
-issue based only on a related implementation. The PR template asks for the same evidence; do not
-paste an entire task transcript into it.
+At handoff, state what changed, the final source SHA, the exact checks and results (or immutable run
+links), independent review evidence when it exists, and anything unverified. For a visible change,
+record the focused visual-review result rather than treating screenshot generation as review. Replace
+stale draft or intermediate validation notes with the final-head result, while retaining unresolved
+failures under remaining work. Link remaining work instead of closing an issue based only on a
+related implementation. The PR template asks for the same evidence; do not paste an entire task
+transcript into it.
 
 Keep a small active queue with an accountable owner for each commitment. Historical plans remain
 design references. The [Shipping quality roadmap](plans/sdlc-improvement-roadmap.md) is tracked in
@@ -53,8 +56,9 @@ runtime, and gortex through fixed directories under `~/.copse/cache/`. The read-
 Pass its `planFingerprint` to one approved `prepare_worktree` call to install locked dependencies
 and run the setup declared in `.copse/worktree-preparation.json`. This repository declares its
 Electron/ChromeDriver/native/gortex steps there; other projects need none of those artifacts.
-Python projects with `pyproject.toml` and `uv.lock` automatically use locked uv workspace sync;
-they need an installed compatible Python and uv, but no Copse declaration. Preflight leaves the
+Python projects automatically use locked uv workspace sync (`pyproject.toml` + `uv.lock`) or
+wheel-only pip installation when every root requirement is exact and SHA-256-hashed. They need an
+installed compatible Python (and uv for uv projects), but no Copse declaration. Preflight leaves the
 project and shared caches read-only, using disposable scratch for manager bookkeeping.
 See [project worktree preparation](plans/project-worktree-preparation.md).
 

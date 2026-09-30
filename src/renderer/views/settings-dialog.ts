@@ -24,6 +24,7 @@ import {
   isAppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { MODEL_MAKERS, parseBlockedModelMakers } from '@copse/llm/model-maker-block.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
 import { validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
@@ -55,6 +56,7 @@ import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createModelParametersSection } from './setup/model-parameters-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createAboutSection } from './setup/about-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { AUTOMATIONS_PLUGIN_ID } from '@copse/agent/plugins/automations-plugin.ts'
@@ -124,6 +126,7 @@ export type SettingsSection =
   | 'appearance'
   | 'ssh'
   | 'experimental'
+  | 'about'
 
 const isSettingsSection: (value: unknown) => value is SettingsSection = (value) =>
   value === 'general' ||
@@ -136,7 +139,8 @@ const isSettingsSection: (value: unknown) => value is SettingsSection = (value) 
   value === 'storage' ||
   value === 'appearance' ||
   value === 'ssh' ||
-  value === 'experimental'
+  value === 'experimental' ||
+  value === 'about'
 
 /**
  * Friendly display name for a plugin row. First-party plugins ship with a
@@ -305,6 +309,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // (canvas) toggle moved to Settings > Plugins (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'nextStepSuggestionEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'conciseThreadsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'containerRunsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
@@ -554,6 +559,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
+          <button type="button" class="settings-nav-btn" data-section="about">About</button>
         </nav>
 
         <form class="settings-content">
@@ -598,6 +604,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                   an on-device model, then falls back to the chat model.
                 </span>
               </label>
+              <div id="settings-model-maker-block-host"></div>
               <div id="settings-model-parameters-host"></div>
               <div id="settings-model-routing-host"></div>
             </fieldset>
@@ -1475,6 +1482,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Concise threads</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="conciseThreadsEnabled" />
+                Show only the results of turns from highly capable models
+              </label>
+              <p class="field-hint">
+                For models scoring above 50 on the Artificial Analysis Intelligence Index, the
+                thread shows screenshots and the closing summary. Tool calls, reasoning, and the
+                tool errors the model recovers from stay hidden; while it works, you see what it
+                is doing now. Other models always show the full thread.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Unattended container runs</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="containerRunsEnabled" />
@@ -1536,6 +1557,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Tools. The optional <code>Ctrl+Shift+I</code> shortcut is a separate plugin.
               </p>
             </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="about">
+            <h3>About</h3>
+            <p class="settings-section-desc">
+              The version of Copse you are running, and the licences of the open-source software
+              it is built with.
+            </p>
+            <div id="settings-about-host" class="settings-mount"></div>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -1635,6 +1665,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-providers-host').append(providersPanel.root)
 
+  const makerBlockList = el('div', { class: 'model-maker-block-list' })
+  for (const maker of MODEL_MAKERS) {
+    makerBlockList.append(
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        el('input', { type: 'checkbox', name: 'blockedModelMakers', value: maker.id }),
+        maker.label,
+      ),
+    )
+  }
+  qsRequired(overlay, '#settings-model-maker-block-host').append(
+    el('h4', { class: 'model-role-heading' }, 'Blocked model makers'),
+    el(
+      'p',
+      { class: 'settings-fieldset-desc' },
+      'Hide their models across OpenRouter, direct providers, and agents with a named model. Saved selections from blocked makers cannot run.',
+    ),
+    makerBlockList,
+  )
+
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
 
@@ -1684,6 +1735,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
+
+  const aboutSection = createAboutSection(api)
+  qsRequired(overlay, '#settings-about-host').append(aboutSection.root)
 
   qsRequired<HTMLButtonElement>(overlay, '#mobile-companion-manage').addEventListener(
     'click',
@@ -1986,6 +2040,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         if (id === 'classifiers') void classifiersSection.refresh()
         if (id === 'usage') void usageSection.refresh()
         if (id === 'permissions') void toolPermissionsPanel.refresh()
+        if (id === 'about') void aboutSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger an fs walk (Sources) on open. The Providers panel defers
         // its own device scan until an agent block is actually shown.
@@ -4646,6 +4701,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'permissions') void toolPermissionsPanel.refresh()
+    if (openedSection === 'about') void aboutSection.refresh()
     if (openedSection === 'customise') {
       void refreshSources()
       void revealPluginDetail()
@@ -4704,6 +4760,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await refreshStage('form-fields', async () => {
         await loadSimpleFields(form, api)
+        const blockedMakers = parseBlockedModelMakers(await api.settings.get('blockedModelMakers'))
+        for (const input of makerBlockList.querySelectorAll<HTMLInputElement>('input')) {
+          input.checked = blockedMakers.some((maker) => maker === input.value)
+        }
         syncDeveloperOnlySettings()
         wireSafetySliders(form)
         const savedWebOrigins = storedStringArray(
@@ -4888,6 +4948,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
 
       saveIfDirty('model', model)
+      saveIfDirty('blockedModelMakers', parseBlockedModelMakers(data.getAll('blockedModelMakers')))
       saveIfDirty('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
       // `advisorModel` and the reviewer models are no longer saved here — they
       // are plugin-scoped `model` settings persisted on change via
@@ -4997,6 +5058,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
         animateAgentAvatars: data.get('animateAgentAvatars') === 'on',
+        conciseThreadsEnabled: data.get('conciseThreadsEnabled') === 'on',
         developerMode,
         settings: { ...store.getState().settings, model },
       })
