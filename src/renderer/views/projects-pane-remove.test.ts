@@ -23,6 +23,20 @@ function thread(id: string, title: string): Thread {
   }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let settle: ((value: T) => void) | undefined
+  const promise = new Promise<T>((resolve) => {
+    settle = resolve
+  })
+  return {
+    promise,
+    resolve: (value): void => {
+      if (!settle) throw new Error('Deferred promise was not initialized')
+      settle(value)
+    },
+  }
+}
+
 afterEach(() => {
   document.body.replaceChildren()
   resetProjectSwitchStateForTest()
@@ -252,8 +266,8 @@ describe('projects pane remove-from-sidebar (component)', () => {
   })
 
   it('keeps the newest result when orphan scans finish out of order', async () => {
-    const first = Promise.withResolvers<OrphanProjectStore[]>()
-    const second = Promise.withResolvers<OrphanProjectStore[]>()
+    const first = deferred<OrphanProjectStore[]>()
+    const second = deferred<OrphanProjectStore[]>()
     let scans = 0
     const store = createStore({
       projects: [
