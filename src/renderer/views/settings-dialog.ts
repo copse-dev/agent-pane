@@ -275,6 +275,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // P5: the master post-turn-review toggle moved to Settings > Plugins
   // (`copse.post-turn-review`); the threshold below stays a top-level setting.
   { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },
+  // 0 = never. The input's max (365) mirrors the schema bound and blocks the submit.
+  { name: 'autoArchiveAfterDays', kind: 'number', default: 0, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
   { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
@@ -1212,6 +1214,27 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               changes how the agent behaves — it is where you go to see what has accumulated and
               reclaim space.
             </p>
+
+            <fieldset class="storage-auto-archive-fieldset">
+              <legend>Merged threads</legend>
+              <label>
+                Archive a thread this many days after its pull requests merge (0 = never)
+                <input
+                  type="number"
+                  name="autoArchiveAfterDays"
+                  min="0"
+                  max="365"
+                  step="1"
+                  class="settings-number-input"
+                />
+              </label>
+              <p class="field-hint">
+                Hides finished threads from the sidebar. Only a thread whose pull requests are all
+                merged is archived, and only when its checkout is clean with nothing unpushed, it
+                has no pending proposed changes, and nothing is running or unread. Archived threads
+                stay on disk.
+              </p>
+            </fieldset>
 
             <label class="storage-project-field">
               <span>Project</span>
