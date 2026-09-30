@@ -652,6 +652,7 @@ export const FIT_CASES: readonly FitCase[] = [
     },
     prompt: 'Retry a failed GitHub issue fetch once before showing the error.',
     expected: 'partial',
+    note: 'Retries any failure, not only 5xx, and never shows the 403 reset time; `unlikely` is arguable.',
   },
   {
     id: 'pin-and-reorder',
