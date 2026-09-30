@@ -31,6 +31,11 @@ describe('CI dependency cache boundary', () => {
     assert.doesNotMatch(runtimeCache, /^\s+vendor\/gortex\/?$/m)
   })
 
+  it('keeps later pnpm commands on the selected job-local store', () => {
+    const selection = actionStep('Select pnpm content store')
+    assert.ok(selection.includes('echo "npm_config_store_dir=$path" >> "$GITHUB_ENV"'))
+  })
+
   it('materializes a clean locked install on every job', () => {
     const install = actionStep('Install a clean dependency tree')
     assert.doesNotMatch(install, /^\s+if:/m)
