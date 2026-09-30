@@ -12,8 +12,9 @@ import { backgroundClassifierId, createClassifierSession } from './classifier-se
  * backends. A classifier connection chosen in Settings → Classifiers answers
  * first, with a probability for every choice. When none is chosen, or it
  * fails, the question is rendered as a one-word prompt for the small-tasks
- * model, then the chat model. When nothing answers, the result is null and the
- * caller skips its stamp, as before.
+ * model, and for the chat model only when that call fails. When nothing
+ * answers, or a model answers without an offered word, the result is null and
+ * the caller skips its stamp, as before.
  *
  * Safety screening does not use this path: it has its own time budget and asks
  * the user when its classifier fails (`safety-screening.ts`).
@@ -158,9 +159,12 @@ export async function askClassifierChoice<T extends string>(
 }
 
 /**
- * Ask each model route in turn until one gives an offered word. Every
- * attempt's tokens are recorded — a rejected answer or a timed-out stream still
- * spent them.
+ * Ask the model routes in turn until one answers. Only a failed call — a
+ * stopped server, an unloaded model, a timeout — moves on to the next route. A
+ * model that answers without an offered word gives no verdict: these labels are
+ * optional, and a small model that answers off-format would otherwise spend the
+ * chat model on every save. Every attempt's tokens are recorded — a timed-out
+ * stream still spent them.
  */
 export async function askModelChoice<T extends string>(
   question: BackgroundChoiceQuestion<T>,
@@ -176,7 +180,7 @@ export async function askModelChoice<T extends string>(
         recordUsage(route.model, usage)
       })
       const choice = parseChoiceWord(question.choices, text)
-      if (choice) return { choice, source: 'model', model: route.model }
+      return choice && { choice, source: 'model', model: route.model }
     } catch {
       // A stopped server or unloaded model: try the next route.
     }
@@ -186,8 +190,9 @@ export async function askModelChoice<T extends string>(
 
 /**
  * Answer a background question: the chosen classifier connection first, then
- * the small-tasks model, then the chat model. `timeoutMs` bounds each model
- * attempt; the classifier keeps its own configured timeout.
+ * the small-tasks model, then the chat model when the small-tasks call fails.
+ * `timeoutMs` bounds each model attempt; the classifier keeps its own
+ * configured timeout.
  */
 export async function askBackgroundChoice<T extends string>(
   question: BackgroundChoiceQuestion<T>,

@@ -83,7 +83,10 @@ Each question is defined once (`BackgroundChoiceQuestion` in
 2. When no connection is chosen, or it fails for any reason (removed, no key, timeout, malformed
    answer), the same question rendered as a one-word prompt for the small-tasks model. The rendered
    prompt matches, word for word, the one these features used before.
-3. The chat model, when the small-tasks model fails or replies without an offered word.
+3. The chat model, only when the small-tasks call itself fails (a stopped server, an unloaded
+   model, a timeout). A model that answers without an offered word gives no verdict, and no
+   further model is asked: these labels are optional, and an off-format small model must not
+   spend the chat model on every save.
 
 Only an answer from a classifier carries probabilities, so a caller can apply a threshold only
 to that. When nothing answers, the item is left without a badge, as before. Classifier and model

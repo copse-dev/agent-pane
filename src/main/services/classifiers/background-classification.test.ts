@@ -122,7 +122,7 @@ describe('parseChoiceWord', () => {
 })
 
 describe('askModelChoice', () => {
-  it('moves to the chat route when the small-tasks model fails or gives no offered word', async () => {
+  it('moves to the chat route only when the small-tasks call fails', async () => {
     const usage: Array<[string, ModelUsage]> = []
     const record = (model: string, spent: ModelUsage): void => {
       usage.push([model, spent])
@@ -134,10 +134,6 @@ describe('askModelChoice', () => {
       routes(
         {
           model: 'local',
-          provider: textProvider(() => 'Hard to say', { inputTokens: 5, outputTokens: 3 }),
-        },
-        {
-          model: 'broken',
           provider: textProvider(() => {
             throw new Error('server stopped')
           }),
@@ -150,15 +146,44 @@ describe('askModelChoice', () => {
       record,
     )
     assert.deepEqual(answer, { choice: 'large', source: 'model', model: 'chat' })
-    // The rejected answer still spent its tokens; the failed route reports what it had.
+    // The failed route reports what it had spent, and the answering one its tokens.
     assert.deepEqual(
       usage.map(([model, spent]) => [model, spent.inputTokens, spent.outputTokens]),
       [
-        ['local', 5, 3],
-        ['broken', 0, 0],
+        ['local', 0, 0],
         ['chat', 7, 1],
       ],
     )
+  })
+
+  it('gives no verdict, and asks no further route, when a model answers off-format', async () => {
+    const usage: string[] = []
+    let chatAsked = false
+    const answer = await askModelChoice(
+      QUESTION,
+      'Rename a flag',
+      1_000,
+      routes(
+        {
+          model: 'local',
+          provider: textProvider(() => 'Hard to say', { inputTokens: 5, outputTokens: 3 }),
+        },
+        {
+          model: 'chat',
+          provider: textProvider(() => {
+            chatAsked = true
+            return 'large'
+          }),
+        },
+      ),
+      (model) => {
+        usage.push(model)
+      },
+    )
+    assert.equal(answer, null)
+    // A small model answering off-format must not spend the chat model on an optional label.
+    assert.equal(chatAsked, false)
+    assert.deepEqual(usage, ['local'])
   })
 
   it('returns null when no route answers', async () => {
