@@ -23,6 +23,7 @@
 // checks them against hardcoded name lists that must be extended by hand when
 // either grows.
 
+import { firstPartyProviderOf } from './model-families.ts'
 import { PROVIDER_DATA_POLICIES, PROVIDER_METADATA_LAST_VERIFIED } from './provider-metadata.ts'
 
 /** When the entries below were last checked against the linked sources. */
@@ -258,11 +259,9 @@ export function dataPolicyForModelPath(
     if (bySlug) return { policy: bySlug, local: false }
   }
 
-  if (id.startsWith('claude')) {
-    return { policy: dataPolicyForProvider({ id: 'anthropic' }), local: false }
-  }
-  if (id.startsWith('gpt')) {
-    return { policy: dataPolicyForProvider({ id: 'openai' }), local: false }
+  const firstParty = firstPartyProviderOf(id)
+  if (firstParty !== null) {
+    return { policy: dataPolicyForProvider({ id: firstParty }), local: false }
   }
   if (id.toLowerCase().includes('grok')) {
     return {

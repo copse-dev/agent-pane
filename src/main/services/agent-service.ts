@@ -69,6 +69,7 @@ import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import { operatorInstructionPlacement } from '@copse/llm/model-catalog.ts'
+import { firstPartyProviderOf } from '@copse/llm/model-capabilities.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -553,8 +554,8 @@ function continuationBudgetChunk(
 }
 
 function providerIdForModel(model: string): string {
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
+  const firstParty = firstPartyProviderOf(model)
+  if (firstParty !== null) return firstParty
   const colon = model.indexOf(':')
   return colon > 0 ? model.slice(0, colon) : model
 }

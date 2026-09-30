@@ -1,3 +1,4 @@
+import { firstPartyProviderOf } from '@copse/llm/model-families.ts'
 import type { Thread } from './thread-types.ts'
 
 export function threadHasExportableContent(thread: Thread | undefined): thread is Thread {
@@ -12,9 +13,7 @@ export function threadHasExportableContent(thread: Thread | undefined): thread i
 function providerFromModelId(modelId: string): string {
   const colon = modelId.indexOf(':')
   if (colon > 0) return modelId.slice(0, colon)
-  if (modelId.startsWith('claude')) return 'anthropic'
-  if (modelId.startsWith('gpt')) return 'openai'
-  return 'unknown'
+  return firstPartyProviderOf(modelId) ?? 'unknown'
 }
 
 function providersFromUsage(usage: Thread['usage']): string[] {

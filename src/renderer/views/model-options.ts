@@ -626,7 +626,11 @@ export async function fetchModelOptions(
         disabled: true,
       })
     } else {
-      options.push({ value: current, label: `${modelDisplayLabel(current)} (no key)` })
+      const dynamicLabel = dynamicModelLabel(current)
+      options.push({
+        value: current,
+        label: dynamicLabel ?? `${modelDisplayLabel(current)} (no key)`,
+      })
     }
   }
 
