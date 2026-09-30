@@ -198,7 +198,8 @@ const CLAUDE_THINKING_ALWAYS_ON = [
 
 /** OpenAI families that take `reasoning_effort` and reject non-default sampling. */
 const OPENAI_REASONING_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const
-const OPENAI_ASTRA_PREFIXES = ['gpt-6-astra'] as const
+/** GPT-6 models documented with a `low`–`max` effort ladder (no `none`/`minimal`). */
+const OPENAI_GPT6_PREFIXES = ['gpt-6-astra', 'gpt-6.1-sol'] as const
 
 const FULL_EFFORT_LADDER: readonly ReasoningLevel[] = [
   'off',
@@ -211,7 +212,7 @@ const FULL_EFFORT_LADDER: readonly ReasoningLevel[] = [
 const CAPPED_EFFORT_LADDER: readonly ReasoningLevel[] = ['off', 'low', 'medium', 'high', 'max']
 const BUDGET_LADDER: readonly ReasoningLevel[] = ['off', 'low', 'medium', 'high']
 const OPENAI_LADDER: readonly ReasoningLevel[] = ['minimal', 'low', 'medium', 'high']
-const OPENAI_ASTRA_LADDER: readonly ReasoningLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const OPENAI_GPT6_LADDER: readonly ReasoningLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const OPENAI_COMPATIBLE_LADDER: readonly ReasoningLevel[] = [
   'off',
   'minimal',
@@ -261,9 +262,9 @@ function claudeSupport(modelId: string): ModelParameterSupport {
 }
 
 function openAiSupport(modelId: string): ModelParameterSupport {
-  if (matchesFamily(modelId, OPENAI_ASTRA_PREFIXES)) {
+  if (matchesFamily(modelId, OPENAI_GPT6_PREFIXES)) {
     return {
-      reasoning: OPENAI_ASTRA_LADDER,
+      reasoning: OPENAI_GPT6_LADDER,
       reasoningWire: 'openai-effort',
       sampling: [],
       outputCap: false,

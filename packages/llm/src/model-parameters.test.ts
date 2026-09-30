@@ -92,11 +92,13 @@ describe('modelParameterSupport', () => {
     assert.equal(gpt4o.temperatureMax, 2)
   })
 
-  it('offers Astra’s documented low-through-max effort ladder', () => {
-    const astra = modelParameterSupport('gpt-6-astra')
-    assert.equal(astra.reasoningWire, 'openai-effort')
-    assert.deepEqual([...astra.reasoning], ['low', 'medium', 'high', 'xhigh', 'max'])
-    assert.deepEqual([...astra.sampling], [])
+  it('offers the GPT-6 documented low-through-max effort ladder', () => {
+    for (const model of ['gpt-6-astra', 'gpt-6.1-sol']) {
+      const support = modelParameterSupport(model)
+      assert.equal(support.reasoningWire, 'openai-effort', model)
+      assert.deepEqual([...support.reasoning], ['low', 'medium', 'high', 'xhigh', 'max'], model)
+      assert.deepEqual([...support.sampling], [], model)
+    }
   })
 
   it('routes OpenRouter through its unified reasoning field', () => {
