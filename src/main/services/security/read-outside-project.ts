@@ -14,15 +14,7 @@ import type { ShellPromptParts } from './permission-policy.ts'
 
 export * from '@copse/shell-guard/read-outside-project.ts'
 
-export const READ_OUTSIDE_PROJECT_TITLE = 'Allow read access outside of the project?'
-
-/**
- * The warning stays on the prompt even though the shape is a read: a grant does
- * widen what the agent can see, and the user is the one who knows whether the
- * paths in question are sensitive.
- */
-export const READ_OUTSIDE_PROJECT_WARNING =
-  'This may allow the agent to read from sensitive locations on your computer.'
+export const READ_OUTSIDE_PROJECT_TITLE = 'Read outside the project?'
 
 export function formatReadOutsideProjectPromptParts(
   command: string,
@@ -30,12 +22,11 @@ export function formatReadOutsideProjectPromptParts(
 ): ShellPromptParts {
   return {
     command,
-    bodyAdvice:
-      `The agent wants to read outside the project: ${describeReadOutsideTargets(analysis.targets)}\n\n` +
-      `⚠️ ${READ_OUTSIDE_PROJECT_WARNING}`,
+    bodyAdvice: `The agent wants to read ${describeReadOutsideTargets(analysis.targets)}.`,
+    // A grant does widen what the agent can see, so the footer says what stays
+    // off limits instead of leaving that to a separate warning.
     bodyFooter:
-      'Approving allows reads outside the project for the rest of this thread. ' +
-      'It does not allow writing, installing, or network access, and credential ' +
-      'files (.env, ~/.ssh, ~/.aws) always ask again.',
+      'Allow this for the rest of the thread? Writing, installing, and network access ' +
+      'still ask, and so do credential files (.env, ~/.ssh, ~/.aws).',
   }
 }
