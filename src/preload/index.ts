@@ -1124,6 +1124,8 @@ const api: ApiClient = {
   },
   appIcon: {
     apply: () => ipcRenderer.invoke('app-icon:apply'),
+    setAutomationMode: (active: boolean) =>
+      ipcRenderer.invoke('app-icon:set-automation-mode', active),
   },
   about: {
     getInfo: () => ipcRenderer.invoke('about:get-info'),

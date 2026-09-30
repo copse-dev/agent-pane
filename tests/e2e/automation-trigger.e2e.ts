@@ -345,6 +345,16 @@ describe('cron automation trigger', function () {
       )
     }
 
+    await browser.waitUntil(
+      () => browser.execute(() => document.documentElement.hasAttribute('data-automation-active')),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'a running scheduled thread never enabled automation appearance mode',
+      },
+    )
+    assert.equal(await browser.execute(() => document.documentElement.dataset['theme']), 'dark')
+    await saveAppScreenshot('automation-active.png')
+
     await scenario.release('review-ready')
     const expectedResponse = 'The CI review is complete; no failures were found.'
     await browser.waitUntil(
@@ -361,6 +371,13 @@ describe('cron automation trigger', function () {
       },
     )
     assert.equal(await $('.prompt-input').getText(), '')
+    await browser.waitUntil(
+      () => browser.execute(() => !document.documentElement.hasAttribute('data-automation-active')),
+      {
+        timeout: 10_000,
+        timeoutMsg: 'automation appearance mode did not restore after the scheduled run settled',
+      },
+    )
 
     const restoreFinalRunTime = await pinTextForCapture(
       '.automation-schedule-runs',
