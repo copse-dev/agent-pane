@@ -25,28 +25,10 @@ describe('conversation visual hierarchy', () => {
       toolOpen:
         document.querySelector('.tool-card[data-status="done"]')?.hasAttribute('open') ?? false,
     }))
-    expect(initialDisclosureState.reasoningOpen).toBe(true)
+    // Completed trace details stay compact: reasoning and done tools both start
+    // closed, so the outcome carries the turn.
+    expect(initialDisclosureState.reasoningOpen).toBe(false)
     expect(initialDisclosureState.toolOpen).toBe(false)
-
-    // Exercise the compact completed-trace treatment without changing the
-    // product's disclosure-state behavior as part of this visual-only change.
-    // A completed segment's reasoning now nests inside its (collapsed) tool
-    // rollup, so the summary isn't directly interactable — collapse it the way
-    // the summary click would (mark it user-toggled, then close it).
-    await browser.execute(() => {
-      const details = document.querySelector('.message-reasoning')
-      if (details instanceof HTMLDetailsElement) {
-        details.dataset['userToggled'] = '1'
-        details.open = false
-      }
-    })
-    await browser.waitUntil(
-      async () =>
-        !(await browser.execute(
-          () => document.querySelector('.message-reasoning')?.hasAttribute('open') ?? false,
-        )),
-      { timeout: 2_000, timeoutMsg: 'expected reasoning disclosure to collapse' },
-    )
 
     const layout = await browser.execute(() => {
       const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
