@@ -6,6 +6,7 @@ import {
   resolveSshHostForWorkspaceRoot,
 } from '../workspace.ts'
 import { findConfiguredSshHost } from './hosts.ts'
+import { currentThreadExecutionContext } from '../thread-execution-context-store.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 
 export type ExecutionTarget =
@@ -34,16 +35,50 @@ export function isSshWorkspaceExecutionEnabled(): boolean {
 function findActiveStoredProject(): StoredProject | null {
   const activeProjectId = storageGet('activeProjectId')
   if (typeof activeProjectId !== 'string') return null
+  return findStoredProject(activeProjectId)
+}
 
+function findStoredProject(projectId: string): StoredProject | null {
   const projects = storageGet('projects')
   if (!Array.isArray(projects)) return null
 
-  const active = projects.find((project): project is StoredProject => {
-    return (
-      isRecord(project) && project['id'] === activeProjectId && typeof project['path'] === 'string'
-    )
+  const found = projects.find((project): project is StoredProject => {
+    return isRecord(project) && project['id'] === projectId && typeof project['path'] === 'string'
   })
-  return active ?? null
+  return found ?? null
+}
+
+/**
+ * The execution target of the project the current agent turn belongs to, or
+ * null outside a turn or for a turn whose project is not persisted (headless
+ * runs). A turn keeps its own project's placement when the user switches the
+ * window to another project, so a command authorized as locally contained
+ * cannot be routed to an SSH host that became active before it spawned. Fails
+ * closed exactly like {@link getActiveExecutionTarget} for an unroutable remote.
+ */
+export function threadProjectExecutionTarget(): ExecutionTarget | null {
+  const context = currentThreadExecutionContext()
+  if (!context) return null
+  const project = findStoredProject(context.projectId)
+  if (!project) return null
+  const sshHost = project.sshHost
+  if (typeof sshHost !== 'string') return { kind: 'local' }
+  if (!isSshWorkspaceExecutionEnabled()) {
+    throw new ExecutionTargetMismatchError(
+      'SSH workspaces are disabled. Enable them in Settings to use this remote project.',
+    )
+  }
+  const host = findConfiguredSshHost(sshHost)
+  if (!host) {
+    throw new ExecutionTargetMismatchError(
+      `SSH host "${sshHost}" is not configured. Add it in Settings → SSH.`,
+    )
+  }
+  return {
+    kind: 'ssh',
+    hostId: host.id,
+    remoteRoot: normalizeRemoteWorkspacePath(project.path),
+  }
 }
 
 function findStoredProjectPathForHost(sshHost: string): string | undefined {

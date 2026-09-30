@@ -204,6 +204,7 @@ import {
   renameThreadWorktreeBranchAfterTitle,
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
+import { getBranchCiAutomationService } from './services/automations/branch-ci-automation-service.ts'
 import { getTaskSupervisor } from './services/supervisor/task-supervisor.ts'
 import { installLongTaskWakeConsumer } from './services/supervisor/long-task-wake.ts'
 import { installDarkFactorySensor } from './services/supervisor/dark-factory-sensor.ts'
@@ -615,6 +616,9 @@ app
       },
     )
     getAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
+    getBranchCiAutomationService().start((event) => {
       if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
     })
     // A container run is a turn on its thread but never passes through the
@@ -1129,6 +1133,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   perfDumpCounters('quit')
   flushPerfTrace()
   getAutomationService().stop()
+  getBranchCiAutomationService().stop()
   await stopMobileCompanion()
   disposeDarkFactorySensor?.()
   disposeDarkFactorySensor = undefined

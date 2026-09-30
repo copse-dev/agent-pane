@@ -1041,6 +1041,24 @@ describe('acp-v2-watch.yml workflow invariants', () => {
   })
 })
 
+describe('install-free scheduled repository script invariants', () => {
+  const workflows = [
+    '.github/workflows/acp-v2-watch.yml',
+    '.github/workflows/prune-scaleway-ips.yml',
+    '.github/workflows/prune-scaleway-volumes.yml',
+  ].map((path) => readFileSync(resolve(path), 'utf8'))
+
+  it('resolves the workspace leaf from source without restoring node_modules', () => {
+    for (const workflow of workflows) {
+      assert.ok(!workflow.includes('uses: ./.github/actions/setup'))
+    }
+    const watch = readFileSync(resolve('scripts/acp-v2-watch.mts'), 'utf8')
+    const helper = readFileSync(resolve('scripts/lib/cloud-hosts.mts'), 'utf8')
+    assert.ok(watch.includes('../packages/std/src/unknown-value.ts'))
+    assert.ok(helper.includes('../../packages/std/src/unknown-value.ts'))
+  })
+})
+
 describe('gitleaks workflow invariants', () => {
   const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
   const gitleaksWorkflow = readFileSync(resolve('.github/workflows/gitleaks.yml'), 'utf8')

@@ -67,7 +67,7 @@ describe('acquireSandboxNetworkScope', () => {
     const probe = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     const server = acquireSandboxNetworkScope({
       domains: [],
@@ -76,7 +76,7 @@ describe('acquireSandboxNetworkScope', () => {
     })
     try {
       assert.deepEqual(activeSandboxNetworkScopeLabels(), [
-        'ACP agent: codex',
+        'agent: codex',
         'background task: npm run dev',
       ])
       probe()
@@ -91,15 +91,15 @@ describe('acquireSandboxNetworkScope', () => {
     const first = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     const second = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
       allowLocalBinding: false,
-      label: 'ACP agent: codex',
+      label: 'agent: codex',
     })
     try {
-      assert.deepEqual(activeSandboxNetworkScopeLabels(), ['ACP agent: codex'])
+      assert.deepEqual(activeSandboxNetworkScopeLabels(), ['agent: codex'])
     } finally {
       first()
       second()
