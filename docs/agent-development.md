@@ -143,6 +143,14 @@ Known environment behavior:
   while true; do DISPLAY=:1 xdotool key F15; sleep 0.5; done
   ```
 
+## Per-model behaviour
+
+Do not branch on a model id string (`startsWith('gpt')`). Ask `modelCapabilities(selection)` from
+`@copse/llm/model-capabilities.ts` for the transport, provider and per-model feature flags;
+`scripts/model-id-routing.test.ts` fails on new prefix routing elsewhere. Unknown models get
+conservative defaults. Field meanings, the matching rules and how to add a family are in the
+[`@copse/llm` README](../packages/llm/README.md#model-capabilities-one-lookup-not-id-prefix-checks).
+
 ## Model-free agent runs
 
 No provider key is needed to exercise the core loop. With no credentials Copse falls back to
