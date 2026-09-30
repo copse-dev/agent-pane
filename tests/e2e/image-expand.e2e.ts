@@ -238,7 +238,7 @@ describe('Screenshot click-to-expand', () => {
       async () => (await $('.image-expand-image').getAttribute('data-image-index')) === '1',
       { timeout: 2_000, timeoutMsg: 'expected ArrowLeft to select the second image' },
     )
-    await $('.image-expand-thumbnail').first().click()
+    await $('.image-expand-thumbnail').click()
     await expect($('.image-expand-counter')).toHaveText('1 / 3')
 
     await saveAppScreenshot(THREAD_SHOT)
